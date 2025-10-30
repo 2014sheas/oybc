@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Social Bingo",
+    "slug": "social-bingo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.socialbingo.app"
+    },
+    "android": {
+      "package": "com.socialbingo.app"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to submit verification evidence."
+        }
+      ]
+    ]
+  }
+}
