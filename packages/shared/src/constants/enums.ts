@@ -1,0 +1,66 @@
+/**
+ * Board status lifecycle
+ */
+export enum BoardStatus {
+  DRAFT = 'draft',           // Board being created, not yet active
+  ACTIVE = 'active',         // Currently playable board
+  COMPLETED = 'completed',   // All tasks completed (greenlog)
+  ARCHIVED = 'archived'      // User archived the board
+}
+
+/**
+ * Task type definitions
+ */
+export enum TaskType {
+  NORMAL = 'normal',         // Simple completion task
+  COUNTING = 'counting',     // Tasks with counts (e.g., "Read 100 pages")
+  PROGRESS = 'progress'      // Multi-step tasks with sub-steps
+}
+
+/**
+ * Board timeframe options
+ */
+export enum Timeframe {
+  DAILY = 'daily',
+  WEEKLY = 'weekly',
+  MONTHLY = 'monthly',
+  YEARLY = 'yearly',
+  CUSTOM = 'custom'          // Custom date range
+}
+
+/**
+ * Center square behavior
+ */
+export enum CenterSquareType {
+  FREE = 'free',             // Auto-completed (traditional bingo)
+  CUSTOM = 'custom',         // User-defined task
+  NONE = 'none'              // No center square (even-sized boards)
+}
+
+/**
+ * Bingo line types (for detection)
+ */
+export enum BingoLineType {
+  ROW = 'row',
+  COLUMN = 'column',
+  DIAGONAL = 'diagonal'
+}
+
+/**
+ * Sync operation types
+ */
+export enum SyncOperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete'
+}
+
+/**
+ * Sync status
+ */
+export enum SyncStatus {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  FAILED = 'failed'
+}
