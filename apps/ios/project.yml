@@ -1,0 +1,85 @@
+name: OYBC
+options:
+  bundleIdPrefix: com.oybc
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+
+settings:
+  MARKETING_VERSION: "1.0.0"
+  CURRENT_PROJECT_VERSION: "1"
+  IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+  SWIFT_VERSION: "5.9"
+  ENABLE_PREVIEWS: YES
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: "6.24.0"
+
+targets:
+  OYBC:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: OYBC
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - package: GRDB
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        PRODUCT_NAME: "$(TARGET_NAME)"
+        PRODUCT_BUNDLE_IDENTIFIER: "com.oybc.OYBC"
+        SWIFT_EMIT_LOC_STRINGS: YES
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: YES
+        DEVELOPMENT_ASSET_PATHS: ""
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: ""
+    preBuildScripts:
+      - script: |
+          # Create database directory if it doesn't exist
+          echo "Setting up app directories..."
+        name: "Setup App Directories"
+        basedOnDependencyAnalysis: false
+
+  OYBCTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - OYBCTests
+    dependencies:
+      - target: OYBC
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "com.oybc.OYBCTests"
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  OYBC:
+    build:
+      targets:
+        OYBC: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OYBCTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

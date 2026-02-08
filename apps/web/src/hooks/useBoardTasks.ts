@@ -34,7 +34,7 @@ export function useBoardTask(boardTaskId: string | undefined) {
 export function useAchievementSquares() {
   return useLiveQuery(
     async () => {
-      return db.boardTasks.where('isAchievementSquare').equals(true).toArray();
+      return db.boardTasks.where('isAchievementSquare').equals(true as any).toArray();
     },
     [],
     []

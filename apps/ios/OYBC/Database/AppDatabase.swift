@@ -80,7 +80,7 @@ final class AppDatabase {
 
         // v1: Initial schema
         migrator.registerMigration("v1") { db in
-            try createInitialSchema(db)
+            try self.createInitialSchema(db)
         }
 
         return migrator
@@ -90,7 +90,7 @@ final class AppDatabase {
         // Load and execute schema.sql
         guard let schemaURL = Bundle.main.url(forResource: "Schema", withExtension: "sql"),
               let schemaSQL = try? String(contentsOf: schemaURL) else {
-            throw DatabaseError.message("Schema.sql not found")
+            throw DatabaseError(message: "Schema.sql not found")
         }
 
         try db.execute(sql: schemaSQL)
@@ -310,11 +310,11 @@ extension AppDatabase {
     func fetchBoardsWithAchievements(userId: String) throws -> [Board] {
         return try read { db in
             // Find distinct board IDs with achievement squares
-            let boardIds = try BoardTask
-                .filter(Column("isAchievementSquare") == true)
-                .selectSQL("DISTINCT boardId")
-                .asRequest(of: String.self)
-                .fetchAll(db)
+            let boardIds = try String.fetchAll(db, sql: """
+                SELECT DISTINCT boardId 
+                FROM board_tasks 
+                WHERE isAchievementSquare = 1
+                """)
 
             // Fetch boards
             return try Board

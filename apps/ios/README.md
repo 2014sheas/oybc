@@ -48,8 +48,40 @@ OYBC/
 
 ### Setup
 
+**Note**: The Xcode project file (`OYBC.xcodeproj`) needs to be created.
+
+#### Creating the Xcode Project (First Time Setup)
+
+1. Open Xcode
+2. Create a new project: **File → New → Project**
+3. Select **iOS → App** template
+4. Configure the project:
+   - **Product Name**: OYBC
+   - **Organization Identifier**: com.yourcompany (or your identifier)
+   - **Interface**: SwiftUI
+   - **Language**: Swift
+   - **Include Tests**: Yes
+5. Save the project in `/Users/stephen/repos/oybc/apps/ios/`
+6. In the project navigator, delete the auto-generated files (keep the project structure)
+7. Add existing files:
+   - Right-click project → Add Files to "OYBC"
+   - Select the `OYBC` folder (with "Create groups" option)
+   - Ensure "OYBC" target is selected
+8. Add GRDB Swift Package:
+   - **File → Add Package Dependencies**
+   - Enter: `https://github.com/groue/GRDB.swift.git`
+   - Select version 6.24.0 or later
+9. Add `Schema.sql` to the app bundle:
+   - Select `Database/Schema.sql` in navigator
+   - In File Inspector, check "Target Membership → OYBC"
+10. Build and run (⌘R)
+
+#### Running the App
+
+Once the Xcode project is created:
 1. Open `OYBC.xcodeproj` in Xcode
-2. Build and run (⌘R)
+2. Select a simulator or device
+3. Build and run (⌘R)
 
 ### Dependencies
 

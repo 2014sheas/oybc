@@ -12,7 +12,7 @@ import { generateUUID, currentTimestamp } from '../utils';
 export async function fetchTasks(userId: string): Promise<Task[]> {
   return db.tasks
     .where('[userId+isDeleted]')
-    .equals([userId, false])
+    .equals([userId, false] as any)
     .sortBy('title');
 }
 
@@ -136,7 +136,7 @@ export async function addTaskStep(
     taskId,
     stepIndex: maxIndex + 1,
     title: stepInput.title,
-    type: stepInput.type,
+    type: stepInput.type as any,
     action: stepInput.action,
     unit: stepInput.unit,
     maxCount: stepInput.maxCount,

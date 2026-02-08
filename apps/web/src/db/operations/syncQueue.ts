@@ -1,5 +1,6 @@
 import { db } from '../database';
 import type { SyncQueueItem } from '@oybc/shared';
+import { SyncOperationType, SyncStatus } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 
 /**
@@ -12,7 +13,7 @@ import { generateUUID, currentTimestamp } from '../utils';
 export async function addToSyncQueue(
   entityType: string,
   entityId: string,
-  operationType: 'create' | 'update' | 'delete',
+  operationType: SyncOperationType,
   payload: unknown,
   priority: number = 0
 ): Promise<void> {
@@ -22,7 +23,7 @@ export async function addToSyncQueue(
     entityId,
     operationType,
     payload: JSON.stringify(payload),
-    status: 'pending',
+    status: SyncStatus.PENDING,
     retryCount: 0,
     createdAt: currentTimestamp(),
     priority,
@@ -38,8 +39,8 @@ export async function fetchPendingSyncItems(): Promise<SyncQueueItem[]> {
   return db.syncQueue
     .where('[status+priority+createdAt]')
     .between(
-      ['pending', 0, ''],
-      ['pending', Infinity, '\uffff']
+      [SyncStatus.PENDING, 0, ''],
+      [SyncStatus.PENDING, Infinity, '\uffff']
     )
     .reverse()
     .toArray();
@@ -50,7 +51,7 @@ export async function fetchPendingSyncItems(): Promise<SyncQueueItem[]> {
  */
 export async function markSyncItemInProgress(id: string): Promise<void> {
   await db.syncQueue.update(id, {
-    status: 'in_progress',
+    status: SyncStatus.IN_PROGRESS,
     lastAttemptAt: currentTimestamp(),
   });
 }
@@ -60,7 +61,7 @@ export async function markSyncItemInProgress(id: string): Promise<void> {
  */
 export async function markSyncItemCompleted(id: string): Promise<void> {
   await db.syncQueue.update(id, {
-    status: 'completed',
+    status: SyncStatus.COMPLETED,
     completedAt: currentTimestamp(),
   });
 }
@@ -76,7 +77,7 @@ export async function markSyncItemFailed(
   if (!item) return;
 
   await db.syncQueue.update(id, {
-    status: 'failed',
+    status: SyncStatus.FAILED,
     retryCount: item.retryCount + 1,
     lastError: error,
     lastAttemptAt: currentTimestamp(),
@@ -94,7 +95,7 @@ export async function deleteSyncItem(id: string): Promise<void> {
  * Clear completed sync items
  */
 export async function clearCompletedSyncItems(): Promise<void> {
-  await db.syncQueue.where('status').equals('completed').delete();
+  await db.syncQueue.where('status').equals(SyncStatus.COMPLETED).delete();
 }
 
 /**
@@ -103,13 +104,13 @@ export async function clearCompletedSyncItems(): Promise<void> {
 export async function retryFailedSyncItems(): Promise<void> {
   const failedItems = await db.syncQueue
     .where('status')
-    .equals('failed')
+    .equals(SyncStatus.FAILED)
     .filter((item) => item.retryCount < 3)
     .toArray();
 
   for (const item of failedItems) {
     await db.syncQueue.update(item.id, {
-      status: 'pending',
+      status: SyncStatus.PENDING,
       lastError: undefined,
     });
   }

@@ -147,7 +147,7 @@ export async function updateAchievementProgress(
  * Find all achievement squares across all boards
  */
 export async function fetchAchievementSquares(): Promise<BoardTask[]> {
-  return db.boardTasks.where('isAchievementSquare').equals(true).toArray();
+  return db.boardTasks.where('isAchievementSquare').equals(true as any).toArray();
 }
 
 /**
@@ -158,7 +158,7 @@ export async function fetchAchievementSquaresByTimeframe(
 ): Promise<BoardTask[]> {
   return db.boardTasks
     .where('[isAchievementSquare+achievementTimeframe]')
-    .equals([true, timeframe])
+    .equals([true, timeframe] as any)
     .toArray();
 }
 

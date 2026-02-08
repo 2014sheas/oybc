@@ -11,7 +11,7 @@ export function useTasks(userId: string | undefined) {
 
       return db.tasks
         .where('[userId+isDeleted]')
-        .equals([userId, false])
+        .equals([userId, false] as any)
         .sortBy('title');
     },
     [userId],
@@ -42,7 +42,7 @@ export function useTaskSteps(taskId: string | undefined) {
 
       return db.taskSteps
         .where('[taskId+stepIndex]')
-        .between([taskId, 0], [taskId, Infinity])
+        .between([taskId, 0] as any, [taskId, Infinity] as any)
         .filter((s) => !s.isDeleted)
         .toArray();
     },

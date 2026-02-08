@@ -219,7 +219,7 @@ See `docs/SYNC_STRATEGY.md` for detailed conflict resolution patterns.
 
 ## Development Workflow
 
-### Phase 1: Local Database (Current Phase)
+### Phase 1: Local Database
 
 **Status**: ✅ Complete
 
@@ -227,9 +227,40 @@ See `docs/SYNC_STRATEGY.md` for detailed conflict resolution patterns.
 - [x] Web Dexie implementation (database.ts, operations/, hooks/)
 - [x] Shared TypeScript types and validation schemas
 
+### Phase 1.5: Working App Infrastructure (Current Phase)
+
+**Status**: 🚧 In Progress
+
+**Goal**: Get both iOS and web apps running locally for rapid testing
+
+**Priority**: Must complete BEFORE building Phase 2 features
+
+**iOS**:
+- [ ] Create/verify Xcode project structure
+- [ ] OYBCApp.swift entry point
+- [ ] ContentView.swift with basic navigation
+- [ ] Verify database connection (AppDatabase.shared)
+- [ ] App builds and runs in simulator
+
+**Web**:
+- [ ] index.html entry point
+- [ ] main.tsx with React setup
+- [ ] App.tsx with basic structure
+- [ ] Verify database connection (Dexie)
+- [ ] `pnpm dev` runs successfully
+
+**Success Criteria**:
+- ✅ iOS app builds in Xcode and displays "Hello OYBC"
+- ✅ Web app runs on localhost:5173 and displays "Hello OYBC"
+- ✅ Both apps can initialize and read from local databases
+- ✅ No compilation errors
+- ✅ Ready for Phase 2 feature development
+
 ### Phase 2: Core Game Loop (Offline-Only)
 
 **Goal**: Complete bingo game working entirely offline
+
+**Prerequisites**: Phase 1.5 complete (working apps)
 
 **Focus**:
 
@@ -440,10 +471,19 @@ All sync operations must be background/async. User should never see "Syncing..."
 
 ## Development Status
 
-**Current Phase**: Phase 1 - Local Database Setup ✅ COMPLETE
+**Phase 1**: Local Database Setup ✅ COMPLETE
+
+**Current Phase**: Phase 1.5 - Working App Infrastructure 🚧 IN PROGRESS
+
+**Priority**: Get iOS and web apps running locally before building features
+
+**Immediate Goals**:
+1. Set up web app infrastructure (Vite + React entry points)
+2. Set up iOS app infrastructure (Xcode project + SwiftUI entry points)
+3. Verify database connections on both platforms
+4. Ensure apps can build and run successfully
 
 **Next Phase**: Phase 2 - Core Game Loop (Offline-Only)
-
 - Board creation UI
 - Board grid display
 - Task completion interaction

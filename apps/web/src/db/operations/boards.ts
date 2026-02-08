@@ -1,5 +1,6 @@
 import { db } from '../database';
 import type { Board, CreateBoardInput } from '@oybc/shared';
+import { BoardStatus } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 
 /**
@@ -12,7 +13,7 @@ import { generateUUID, currentTimestamp } from '../utils';
 export async function fetchBoards(userId: string): Promise<Board[]> {
   return db.boards
     .where('[userId+isDeleted]')
-    .equals([userId, false])
+    .equals([userId, false] as any)
     .reverse()
     .sortBy('updatedAt');
 }
@@ -36,7 +37,7 @@ export async function createBoard(
     userId,
     name: input.name,
     description: input.description,
-    status: 'draft',
+    status: BoardStatus.DRAFT,
     boardSize: input.boardSize,
     timeframe: input.timeframe,
     startDate: input.startDate,
@@ -105,7 +106,7 @@ export async function updateBoardStats(
  */
 export async function completeBoard(boardId: string): Promise<void> {
   await db.boards.update(boardId, {
-    status: 'completed',
+    status: BoardStatus.COMPLETED,
     completedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
     version: db.boards.get(boardId).then((b) => (b?.version ?? 0) + 1),
@@ -121,7 +122,7 @@ export async function fetchBoardsByTimeframe(
 ): Promise<Board[]> {
   return db.boards
     .where('[userId+timeframe+status]')
-    .equals([userId, timeframe, 'completed'])
+    .equals([userId, timeframe, BoardStatus.COMPLETED] as any)
     .toArray();
 }
 
@@ -135,8 +136,8 @@ export async function countBingos(
   return db.boards
     .where('[userId+timeframe+linesCompleted]')
     .between(
-      [userId, timeframe, 1],
-      [userId, timeframe, Infinity]
+      [userId, timeframe, 1] as any,
+      [userId, timeframe, Infinity] as any
     )
     .count();
 }
@@ -150,7 +151,7 @@ export async function countCompletedBoards(
 ): Promise<number> {
   return db.boards
     .where('[userId+isDeleted]')
-    .equals([userId, false])
+    .equals([userId, false] as any)
     .filter((b) => b.timeframe === timeframe && b.status === 'completed')
     .count();
 }

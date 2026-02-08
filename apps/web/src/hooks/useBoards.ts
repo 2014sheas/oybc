@@ -13,7 +13,7 @@ export function useBoards(userId: string | undefined) {
 
       return db.boards
         .where('[userId+isDeleted]')
-        .equals([userId, false])
+        .equals([userId, false] as any)
         .reverse()
         .sortBy('updatedAt');
     },
@@ -45,7 +45,7 @@ export function useBoardsWithBingos(userId: string | undefined, timeframe: strin
 
       return db.boards
         .where('[userId+timeframe+linesCompleted]')
-        .between([userId, timeframe, 1], [userId, timeframe, Infinity])
+        .between([userId, timeframe, 1] as any, [userId, timeframe, Infinity] as any)
         .toArray();
     },
     [userId, timeframe],
