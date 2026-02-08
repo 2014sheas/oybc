@@ -33,13 +33,273 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 ## Feature Implementation Guidelines
 
+**CRITICAL: Playground-First Development Process**
+
+1. **ONE Feature at a Time**: Only implement the single feature that the user explicitly decides to work on. Do not proactively suggest or implement multiple features.
+
+2. **User-Driven Selection**: The user determines which feature to implement. Do not assume or choose features independently.
+
+3. **Playground Before Integration**: ALL features must first be added to a "Playground" page on both platforms (web and iOS) before any integration into the main application codebase.
+
+4. **No Integration Without Approval**: Features must NOT be introduced into the tactical/production code until the user explicitly gives the green light after testing.
+
+5. **Comprehensive Testing in Playground**: The Playground must demonstrate and allow testing of ALL use cases for the feature:
+   - All user interactions
+   - All edge cases
+   - All error states
+   - All data scenarios
+
+6. **Display Mode Coverage**: If the feature has any UI component, the Playground implementation must consider and demonstrate:
+   - **iOS**: Light mode, Dark mode, different device sizes
+   - **Web**: Light mode, Dark mode, responsive layouts, different browsers
+   - Cross-platform consistency
+
+7. **Playground Persistence**: The Playground page persists across all feature development. New features are added to the existing Playground, not replacing previous features.
+
+**Standard Development Process**:
+
 - Ask as many clarifying questions as needed before starting implementation.
 - Create a new branch for each feature or bug fix.
 - Write tests before implementing the feature (TDD approach).
 - Create a detailed plan before implementing new features, including data flow diagrams and state management strategies.
-- Upon feature creation, do not implement into existing code without first being explicitly instructed to do so.
-- New features will first be added to a preview page on all platforms for testing before being integrated into the main app.
-- The preview page will persist across all features, with new features being added to it as they are developed.
+
+## Agent Team Development Guidelines
+
+**When to Use Agent Teams**: For complex features that benefit from specialized expertise and parallel work. Simple features can be handled by a single agent.
+
+### Feature Development Workflow with Agents
+
+**Phase 1: Planning & Design**
+
+1. **system-design-engineer**: Creates technical specifications for the feature
+   - Define data models and schema changes
+   - Specify API contracts
+   - Document cross-platform considerations
+   - Create architecture diagrams
+
+2. **design-research-analyst**: Research implementation approaches (if needed)
+   - Evaluate library options
+   - Research best practices for offline-first patterns
+   - Investigate cross-platform solutions
+   - Compare architectural approaches
+
+3. **Plan agent**: Creates detailed implementation plan
+   - Break down work into tasks
+   - Identify dependencies
+   - Estimate complexity
+   - Define success criteria
+
+**Phase 2: Playground Implementation**
+
+4. **cross-platform-coordinator**: Orchestrates cross-platform implementation
+   - Ensure UI/UX consistency between web and iOS
+   - Coordinate feature parity
+   - Manage shared type definitions
+   - Prevent scope creep
+
+5. **react-web-implementer**: Builds web Playground feature
+   - Implement React components in Playground
+   - Use Dexie for local database operations
+   - Follow iOS design patterns for consistency
+   - Test all display modes (light/dark, responsive)
+
+6. **steve-jobs** (ios-developer): Builds iOS Playground feature
+   - Implement SwiftUI views in Playground
+   - Use GRDB for local database operations
+   - Ensure cross-platform design consistency
+   - Test all display modes and device sizes
+
+7. **sync-specialist**: Implements sync logic (if feature requires sync)
+   - Design sync queue operations
+   - Implement conflict resolution
+   - Handle offline scenarios
+   - Ensure local-first principles
+
+**Phase 3: Testing & Quality Assurance**
+
+8. **unit-test-generator**: Creates comprehensive unit tests
+   - Test business logic in `packages/shared`
+   - Test database operations
+   - Test edge cases and error handling
+   - Aim for 80%+ coverage
+
+9. **ui-comprehensive-tester**: Performs end-to-end UI testing
+   - Test user flows in Playground
+   - Verify cross-platform consistency
+   - Test offline scenarios
+   - Validate accessibility
+
+10. **testing-czar**: Comprehensive quality validation
+    - Run all tests across platforms
+    - Check code coverage
+    - Verify no regressions
+    - Ensure security best practices
+
+11. **code-quality-pragmatist**: Review for over-engineering
+    - Check for unnecessary complexity
+    - Ensure YAGNI (You Aren't Gonna Need It)
+    - Verify simplicity and maintainability
+    - Flag premature abstractions
+
+**Phase 4: Verification & Integration**
+
+12. **Jenny**: Verify implementation matches specifications
+    - Compare implementation to original spec
+    - Identify gaps or deviations
+    - Ensure all requirements met
+    - Validate cross-platform parity
+
+13. **task-completion-validator**: Validate feature completion
+    - Verify feature is actually functional (not just mocked)
+    - Test end-to-end workflows
+    - Ensure integration readiness
+    - Confirm user acceptance criteria met
+
+14. **karen**: Reality check before integration
+    - Cut through incomplete implementations
+    - Create realistic integration plan
+    - Identify what actually works vs. claimed
+    - Ensure no BS, production-ready code
+
+**Phase 5: Debugging (as needed)**
+
+15. **ultrathink-debugger**: Deep debugging for complex issues
+    - Root cause analysis for bugs
+    - Trace execution paths
+    - Diagnose environment-specific failures
+    - Implement robust fixes
+
+### Agent Team Best Practices
+
+**Team Coordination**:
+- Use `TeamCreate` to establish a team for complex features
+- Use `TaskCreate` to break down work into specific tasks
+- Assign tasks to specialized agents based on their expertise
+- Agents should communicate via `SendMessage` for coordination
+
+**Parallel vs. Sequential Work**:
+- **Parallel**: Web and iOS Playground implementation can happen simultaneously
+- **Sequential**: Design → Implementation → Testing → Integration must be sequential
+- **Dependencies**: Sync logic requires database implementation to be complete first
+
+**Agent Selection Rules**:
+
+1. **Always use for cross-platform features**:
+   - `cross-platform-coordinator` to orchestrate
+   - `react-web-implementer` for web
+   - `steve-jobs` for iOS
+
+2. **Always use for sync features**:
+   - `sync-specialist` for any feature involving Firestore sync
+   - Critical for maintaining offline-first principles
+
+3. **Always use before integration**:
+   - `testing-czar` for quality validation
+   - `Jenny` to verify spec compliance
+   - `karen` for reality check
+
+4. **Use conditionally**:
+   - `design-research-analyst` for novel or complex features
+   - `ultrathink-debugger` only when debugging complex issues
+   - `unit-test-generator` for complex business logic (simple features can write tests inline)
+
+**Avoid Over-Agenting**:
+- Don't spawn 15 agents for a simple button component
+- Simple features (< 100 lines) can be handled by a single agent
+- Use teams for features that touch multiple platforms, involve sync, or have complex business logic
+
+**Communication Patterns**:
+- Agents should report completion to the team lead
+- Use task status updates (`TaskUpdate`) to track progress
+- Block on dependencies using `addBlockedBy` in task management
+- Share findings in concise messages (avoid long reports)
+
+### Project-Specific Agent Priorities
+
+**For OYBC specifically**:
+
+1. **Offline-first enforcement**: `sync-specialist` is critical for any feature that touches data
+2. **Cross-platform consistency**: `cross-platform-coordinator` should oversee all UI features
+3. **Quality gates**: `testing-czar`, `Jenny`, and `karen` are non-negotiable before integration
+4. **Playground-first**: All implementation agents work in Playground first, no exceptions
+
+### Quick Reference: Which Agent to Use
+
+| Task Type | Agent(s) | When to Use |
+|-----------|----------|-------------|
+| **Architecture & Design** | `system-design-engineer` | New features, schema changes, API design |
+| **Research** | `design-research-analyst` | Library selection, pattern research, approach evaluation |
+| **Planning** | `Plan` | Breaking down complex features into tasks |
+| **Cross-Platform Coordination** | `cross-platform-coordinator` | Any feature for both web + iOS |
+| **Web Implementation** | `react-web-implementer` | React components, web UI, Dexie operations |
+| **iOS Implementation** | `steve-jobs` | SwiftUI views, GRDB operations, iOS UI |
+| **Sync Logic** | `sync-specialist` | Firestore sync, conflict resolution, offline-first patterns |
+| **Unit Testing** | `unit-test-generator` | Creating tests for business logic, algorithms |
+| **UI Testing** | `ui-comprehensive-tester` | End-to-end testing, user flows, cross-platform validation |
+| **Quality Validation** | `testing-czar` | Pre-integration quality gates, coverage checks |
+| **Over-engineering Check** | `code-quality-pragmatist` | Reviewing for unnecessary complexity |
+| **Spec Verification** | `Jenny` | Ensuring implementation matches requirements |
+| **Completion Validation** | `task-completion-validator` | Verifying features are truly complete |
+| **Reality Check** | `karen` | Cutting through BS, realistic planning |
+| **Debugging** | `ultrathink-debugger` | Complex bugs, root cause analysis |
+| **Codebase Exploration** | `Explore` | Finding files, understanding patterns |
+| **Backlog Management** | `project-backlog-manager` | Managing tasks, priorities, project status |
+
+### Example Team Composition
+
+**Simple UI Feature** (e.g., Settings Toggle):
+- Solo: `react-web-implementer` or `steve-jobs` handles everything
+- No team needed
+
+**Medium Feature** (e.g., Board Creation Form):
+- `cross-platform-coordinator` (orchestrate)
+- `react-web-implementer` (web implementation)
+- `steve-jobs` (iOS implementation)
+- `testing-czar` (quality validation)
+
+**Complex Feature** (e.g., Task Progress Tracking with Sync):
+- `system-design-engineer` (architecture)
+- `cross-platform-coordinator` (orchestrate)
+- `react-web-implementer` (web implementation)
+- `steve-jobs` (iOS implementation)
+- `sync-specialist` (sync logic and conflict resolution)
+- `unit-test-generator` (business logic tests)
+- `ui-comprehensive-tester` (UI testing)
+- `testing-czar` (quality validation)
+- `Jenny` (spec verification)
+- `karen` (reality check before integration)
+
+## Playground Development Environment
+
+**Purpose**: Safe, isolated environment for testing new features before production integration.
+
+**Structure**:
+
+- **Web**: `/apps/web/src/pages/Playground.tsx` (accessible via `/playground` route)
+- **iOS**: `PlaygroundView.swift` (accessible from main navigation during development)
+
+**Requirements**:
+
+1. **Feature Isolation**: Each feature in the Playground should be clearly labeled and visually separated
+2. **Display Mode Testing**: Toggle buttons/controls to switch between:
+   - Light/Dark mode
+   - Different device sizes (iOS)
+   - Responsive layouts (web)
+3. **Use Case Coverage**: For each feature, include:
+   - Normal operation examples
+   - Edge case scenarios
+   - Error state demonstrations
+   - Different data states (empty, partial, complete)
+4. **Documentation**: Each feature should have a brief description of what it does and what to test
+5. **Persistence**: Previous features remain in Playground for regression testing
+
+**Workflow**:
+
+1. Implement feature in Playground
+2. User tests all scenarios manually
+3. User approves feature
+4. Extract feature from Playground and integrate into main app
+5. Feature remains in Playground for future reference
 
 ## Branching Strategy
 
@@ -442,6 +702,18 @@ await db.boards.update(id, {
 
 ## Common Pitfalls
 
+### ❌ Don't Skip the Playground
+
+**NEVER** integrate features directly into the main app. ALL features must go through Playground testing first and receive explicit user approval before integration.
+
+### ❌ Don't Implement Multiple Features at Once
+
+Only work on ONE feature at a time. Wait for user direction before moving to the next feature.
+
+### ❌ Don't Assume Feature Approval
+
+Just because a feature works in the Playground does NOT mean it's ready for integration. Wait for explicit user approval.
+
 ### ❌ Don't Copy Code from MVP Archive
 
 The `oybc_v1.archive/` directory is for **reference only** (algorithm patterns). This is a fresh rebuild with simplified architecture.
@@ -484,6 +756,14 @@ All sync operations must be background/async. User should never see "Syncing..."
 4. Ensure apps can build and run successfully
 
 **Next Phase**: Phase 2 - Core Game Loop (Offline-Only)
+
+**Approach**: All Phase 2 features will be built in the Playground first:
+- Create Playground page on both web and iOS
+- Implement one feature at a time in Playground
+- Test all display modes and use cases
+- Get user approval before integrating into main app
+
+**Features to Build** (in Playground first, then integrate after approval):
 - Board creation UI
 - Board grid display
 - Task completion interaction
