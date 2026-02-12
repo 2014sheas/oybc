@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "true"
+  },
   "permissions": {
     "allow": [
       "Bash(tree:*)",
@@ -9,10 +12,20 @@
       "WebFetch(domain:traycer.ai)",
       "WebSearch",
       "Bash(ls:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(find:*)",
+      "Bash(swift build:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(xcrun:*)",
+      "Bash(code --list-extensions:*)",
+      "mcp__context7__resolve-library-id",
+      "WebFetch(domain:github.com)",
+      "Bash(swift -print-target-info:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:build-server-protocol.github.io)",
+      "Bash(xcodegen generate:*)"
     ]
-  },
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "true"
   }
 }

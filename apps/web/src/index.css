@@ -4,13 +4,107 @@
   box-sizing: border-box;
 }
 
+/* Light theme (default) */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --border-color: #e0e0e0;
+
+  /* Navbar */
+  --navbar-bg: #ffffff;
+  --hover-bg: #f0f0f0;
+  --active-bg: #007bff;
+  --active-text: #ffffff;
+
+  /* Buttons */
+  --button-bg: #f5f5f5;
+  --button-hover-bg: #e0e0e0;
+  --button-hover-border: #c0c0c0;
+
+  /* Cards */
+  --card-bg: #ffffff;
+  --feature-header-bg: #f8f9fa;
+  --feature-header-hover: #e9ecef;
+
+  /* Status colors */
+  --success-bg: #d4edda;
+  --success-text: #155724;
+  --success-border: #c3e6cb;
+
+  --error-bg: #f8d7da;
+  --error-text: #721c24;
+  --error-border: #f5c6cb;
+
+  --warning-bg: #fff3cd;
+  --warning-text: #856404;
+  --warning-border: #ffeeba;
+
+  --info-bg: #e7f3ff;
+  --info-text: #0056b3;
+
+  /* Danger button */
+  --danger-bg: #dc3545;
+  --danger-hover: #c82333;
+  --disabled-bg: #6c757d;
+}
+
+/* Dark theme */
+[data-theme='dark'] {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --border-color: #404040;
+
+  /* Navbar */
+  --navbar-bg: #2d2d2d;
+  --hover-bg: #3d3d3d;
+  --active-bg: #0066cc;
+  --active-text: #ffffff;
+
+  /* Buttons */
+  --button-bg: #3d3d3d;
+  --button-hover-bg: #4d4d4d;
+  --button-hover-border: #5d5d5d;
+
+  /* Cards */
+  --card-bg: #2d2d2d;
+  --feature-header-bg: #353535;
+  --feature-header-hover: #404040;
+
+  /* Status colors (adjusted for dark mode) */
+  --success-bg: #1e4620;
+  --success-text: #66d96a;
+  --success-border: #2d5a2f;
+
+  --error-bg: #5a1f1f;
+  --error-text: #ff6b6b;
+  --error-border: #6d2929;
+
+  --warning-bg: #5a4a1f;
+  --warning-text: #ffd966;
+  --warning-border: #6d5929;
+
+  --info-bg: #1f3a5a;
+  --info-text: #66b3ff;
+
+  /* Danger button */
+  --danger-bg: #dc3545;
+  --danger-hover: #c82333;
+  --disabled-bg: #6c757d;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f5f5;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  transition: background-color 0.3s, color 0.3s;
 }
 
 #root {

@@ -67,6 +67,43 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 **When to Use Agent Teams**: For complex features that benefit from specialized expertise and parallel work. Simple features can be handled by a single agent.
 
+### CRITICAL: Agent Accountability & Verification
+
+**Every agent-driven implementation MUST follow this verification checklist:**
+
+1. **Scope Adherence** - Agent must ONLY implement what was explicitly requested
+   - ❌ No "nice-to-have" features
+   - ❌ No "while I'm here" additions
+   - ❌ No assumptions about what the user "probably wants"
+   - ✅ ONLY what was specified in the prompt
+
+2. **Compilation Verification** - Code must compile before delivery
+   - iOS: Must build successfully in Xcode
+   - Web: Must run `pnpm build` without errors
+   - If it doesn't compile, IT'S NOT DONE
+
+3. **Cross-Platform Consistency** - When working on both platforms
+   - Both implementations must have feature parity
+   - Both must compile/run successfully
+   - No platform should get features the other doesn't have (unless explicitly scoped that way)
+
+4. **Dependency Verification** - Before referencing any code
+   - Verify the file exists
+   - Verify it's properly imported/included in the project
+   - For iOS: Verify it's in the Xcode project.pbxproj
+   - For web: Verify it's in package.json or properly imported
+
+5. **Mandatory Quality Gates Before Delivery**:
+   - `testing-czar`: Run compilation and basic tests
+   - `Jenny`: Verify implementation matches specification exactly
+   - `karen`: Reality check - does it actually work or just look done?
+
+**If ANY of these fail, the work is INCOMPLETE and must be fixed before delivery.**
+
+## Agent Team Development Guidelines (Original)
+
+**When to Use Agent Teams**: For complex features that benefit from specialized expertise and parallel work. Simple features can be handled by a single agent.
+
 ### Feature Development Workflow with Agents
 
 **Phase 1: Planning & Design**
@@ -89,93 +126,167 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
    - Estimate complexity
    - Define success criteria
 
+4. **karen** ⚠️ GATE #1: Plan Review (MANDATORY)
+   - **Review the plan BEFORE implementation starts**
+   - Verify plan only includes explicitly requested features
+   - Cut any "nice-to-have" or "while we're here" additions
+   - Ensure plan is realistic and matches user requirements exactly
+   - **GATE**: If scope creep detected, plan must be revised
+   - **OUTPUT**: Approved plan with scope confirmed
+
 **Phase 2: Playground Implementation**
 
-4. **cross-platform-coordinator**: Orchestrates cross-platform implementation
+5. **cross-platform-coordinator**: Orchestrates cross-platform implementation
    - Ensure UI/UX consistency between web and iOS
    - Coordinate feature parity
    - Manage shared type definitions
-   - Prevent scope creep
+   - **CRITICAL**: Prevent scope creep - only implement what was requested
+   - **CRITICAL**: Verify BOTH platforms compile before delivery
+   - **CRITICAL**: Must invoke karen at mid-point and completion
 
-5. **react-web-implementer**: Builds web Playground feature
+6. **react-web-implementer**: Builds web Playground feature
    - Implement React components in Playground
    - Use Dexie for local database operations
    - Follow iOS design patterns for consistency
    - Test all display modes (light/dark, responsive)
+   - **MUST ONLY** implement features from approved plan
 
-6. **steve-jobs** (ios-developer): Builds iOS Playground feature
+7. **steve-jobs** (ios-developer): Builds iOS Playground feature
    - Implement SwiftUI views in Playground
    - Use GRDB for local database operations
    - Ensure cross-platform design consistency
    - Test all display modes and device sizes
+   - **MUST ONLY** implement features from approved plan
 
-7. **sync-specialist**: Implements sync logic (if feature requires sync)
+8. **karen** ⚠️ GATE #2: Mid-Implementation Check (MANDATORY)
+   - **Check in when ~50% complete**
+   - Review what's been implemented so far
+   - Verify implementation matches approved plan
+   - Catch scope creep early before too much work is done
+   - Check for "bonus features" or assumptions
+   - **GATE**: If scope creep detected, stop and remove it immediately
+   - **OUTPUT**: Confirmation to continue or corrections needed
+
+9. **sync-specialist**: Implements sync logic (if feature requires sync)
    - Design sync queue operations
    - Implement conflict resolution
    - Handle offline scenarios
    - Ensure local-first principles
+   - **MUST ONLY** implement sync for features in approved plan
 
 **Phase 3: Testing & Quality Assurance**
 
-8. **unit-test-generator**: Creates comprehensive unit tests
-   - Test business logic in `packages/shared`
-   - Test database operations
-   - Test edge cases and error handling
-   - Aim for 80%+ coverage
+10. **unit-test-generator**: Creates comprehensive unit tests
+    - Test business logic in `packages/shared`
+    - Test database operations
+    - Test edge cases and error handling
+    - Aim for 80%+ coverage
+    - **ONLY** test features from approved plan
 
-9. **ui-comprehensive-tester**: Performs end-to-end UI testing
-   - Test user flows in Playground
-   - Verify cross-platform consistency
-   - Test offline scenarios
-   - Validate accessibility
+11. **ui-comprehensive-tester**: Performs end-to-end UI testing
+    - Test user flows in Playground
+    - Verify cross-platform consistency
+    - Test offline scenarios
+    - Validate accessibility
 
-10. **testing-czar**: Comprehensive quality validation
+12. **testing-czar**: Comprehensive quality validation (REQUIRED)
+    - **MUST verify code compiles on all platforms**
     - Run all tests across platforms
     - Check code coverage
     - Verify no regressions
     - Ensure security best practices
+    - **GATE**: If compilation fails, work is INCOMPLETE
 
-11. **code-quality-pragmatist**: Review for over-engineering
+13. **code-quality-pragmatist**: Review for over-engineering
     - Check for unnecessary complexity
     - Ensure YAGNI (You Aren't Gonna Need It)
     - Verify simplicity and maintainability
     - Flag premature abstractions
+    - Flag features that weren't in the approved plan
 
-**Phase 4: Verification & Integration**
+**Phase 4: Verification & Integration** (MANDATORY - NOT OPTIONAL)
 
-12. **Jenny**: Verify implementation matches specifications
+14. **Jenny**: Verify implementation matches specifications (REQUIRED)
     - Compare implementation to original spec
     - Identify gaps or deviations
+    - **Check for scope creep** (features not requested)
     - Ensure all requirements met
     - Validate cross-platform parity
+    - **GATE**: If scope was exceeded, work must be trimmed
 
-13. **task-completion-validator**: Validate feature completion
-    - Verify feature is actually functional (not just mocked)
-    - Test end-to-end workflows
-    - Ensure integration readiness
-    - Confirm user acceptance criteria met
-
-14. **karen**: Reality check before integration
+15. **karen** ⚠️ GATE #3: Final Reality Check (REQUIRED)
+    - **This is the THIRD karen checkpoint** (after Plan Review and Mid-Implementation)
     - Cut through incomplete implementations
-    - Create realistic integration plan
+    - **Actually test the feature** (not just read code)
+    - Verify ONLY approved features were implemented
+    - Compare deliverable to original user request
     - Identify what actually works vs. claimed
     - Ensure no BS, production-ready code
+    - **GATE**: If it doesn't actually work OR has scope creep, work is INCOMPLETE
+    - **OUTPUT**: Final approval or list of issues to fix
 
 **Phase 5: Debugging (as needed)**
 
-15. **ultrathink-debugger**: Deep debugging for complex issues
+16. **ultrathink-debugger**: Deep debugging for complex issues
     - Root cause analysis for bugs
     - Trace execution paths
     - Diagnose environment-specific failures
     - Implement robust fixes
 
+---
+
+### The Three-Gate Karen System (Scope Creep Prevention)
+
+**Problem**: Scope creep happens incrementally throughout development. Catching it only at the end is too late and wastes effort.
+
+**Solution**: `karen` acts as a scope enforcer at THREE mandatory checkpoints:
+
+#### Gate #1: Plan Review (After Phase 1)
+**When**: Immediately after `Plan` agent creates implementation plan, BEFORE any coding starts
+**Purpose**: Prevent scope creep from entering the plan itself
+**Karen's Questions**:
+- Does this plan include anything the user didn't explicitly request?
+- Are there "nice-to-have" features that crept in?
+- Is this the simplest approach that meets the actual requirements?
+**Action**: Remove any features not in the original request
+
+#### Gate #2: Mid-Implementation Check (During Phase 2)
+**When**: When implementation is ~50% complete
+**Purpose**: Catch scope creep early before too much work is wasted
+**Karen's Questions**:
+- What features have been implemented so far?
+- Does each feature map directly to the approved plan?
+- Are there any "bonus" features or assumptions?
+**Action**: Stop immediately and remove scope creep before more work is done
+
+#### Gate #3: Final Reality Check (End of Phase 4)
+**When**: After all implementation and testing, before delivery
+**Purpose**: Final verification that deliverable matches original request exactly
+**Karen's Questions**:
+- Does the deliverable match the original user request?
+- Does it actually work, or just look complete?
+- Are there features that weren't requested?
+**Action**: Reject delivery if scope creep exists or if it doesn't actually work
+
+**Key Principle**: karen is not optional at any of these three gates. If karen wasn't invoked, the work is INCOMPLETE.
+
+---
+
 ### Agent Team Best Practices
+
+**Mandatory: The Three-Gate Karen System**:
+- **Gate #1**: After planning, before implementation
+- **Gate #2**: Mid-implementation (~50% complete)
+- **Gate #3**: Before delivery
+- **ALL THREE are REQUIRED** - not optional
+- If karen wasn't invoked at all three gates, work is INCOMPLETE
 
 **Team Coordination**:
 - Use `TeamCreate` to establish a team for complex features
 - Use `TaskCreate` to break down work into specific tasks
 - Assign tasks to specialized agents based on their expertise
 - Agents should communicate via `SendMessage` for coordination
+- **cross-platform-coordinator is responsible** for invoking karen at checkpoints
 
 **Parallel vs. Sequential Work**:
 - **Parallel**: Web and iOS Playground implementation can happen simultaneously
@@ -240,7 +351,9 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 | **Over-engineering Check** | `code-quality-pragmatist` | Reviewing for unnecessary complexity |
 | **Spec Verification** | `Jenny` | Ensuring implementation matches requirements |
 | **Completion Validation** | `task-completion-validator` | Verifying features are truly complete |
-| **Reality Check** | `karen` | Cutting through BS, realistic planning |
+| **Scope Enforcement (Gate #1)** | `karen` | Plan review - prevent scope creep in planning |
+| **Scope Enforcement (Gate #2)** | `karen` | Mid-implementation check - catch scope creep early |
+| **Reality Check (Gate #3)** | `karen` | Final check - cutting through BS, verify actual work |
 | **Debugging** | `ultrathink-debugger` | Complex bugs, root cause analysis |
 | **Codebase Exploration** | `Explore` | Finding files, understanding patterns |
 | **Backlog Management** | `project-backlog-manager` | Managing tasks, priorities, project status |
@@ -252,22 +365,29 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 - No team needed
 
 **Medium Feature** (e.g., Board Creation Form):
+- `Plan` (create implementation plan)
+- `karen` **Gate #1** (review plan for scope creep)
 - `cross-platform-coordinator` (orchestrate)
 - `react-web-implementer` (web implementation)
 - `steve-jobs` (iOS implementation)
+- `karen` **Gate #2** (mid-implementation check)
 - `testing-czar` (quality validation)
+- `karen` **Gate #3** (final reality check)
 
 **Complex Feature** (e.g., Task Progress Tracking with Sync):
 - `system-design-engineer` (architecture)
+- `Plan` (detailed implementation plan)
+- `karen` **Gate #1** (review plan for scope creep)
 - `cross-platform-coordinator` (orchestrate)
 - `react-web-implementer` (web implementation)
 - `steve-jobs` (iOS implementation)
 - `sync-specialist` (sync logic and conflict resolution)
+- `karen` **Gate #2** (mid-implementation check)
 - `unit-test-generator` (business logic tests)
 - `ui-comprehensive-tester` (UI testing)
 - `testing-czar` (quality validation)
 - `Jenny` (spec verification)
-- `karen` (reality check before integration)
+- `karen` **Gate #3** (final reality check before integration)
 
 ## Playground Development Environment
 
@@ -701,6 +821,27 @@ await db.boards.update(id, {
 - **Sync (background)**: Don't block UI
 
 ## Common Pitfalls
+
+### ❌ Don't Skip Verification Gates
+
+**CRITICAL FAILURE MODE**: Delivering code that doesn't compile or has scope creep.
+
+**Real Example** (2026-02-07): The Playground infrastructure was delivered with:
+- iOS code that referenced `OYBC.Task` without verifying the model was in the Xcode project
+- "Clear Test Data" functionality that was NOT requested (scope creep)
+- No compilation verification before delivery
+- testing-czar, Jenny, and karen were never invoked
+
+**Prevention - The Three-Gate Karen System**:
+1. **Gate #1 (karen)**: Review plan after creation, before implementation
+2. **Gate #2 (karen)**: Check implementation at 50% completion
+3. **Gate #3 (karen)**: Final reality check before delivery
+4. **ALWAYS run testing-czar** before claiming work is done
+5. **ALWAYS run Jenny** to verify scope adherence
+6. **Test compilation** on BOTH platforms before delivery
+7. **Never add "nice-to-have" features** without explicit approval
+
+**Rule**: If karen was not invoked at ALL THREE gates, the work is INCOMPLETE. If testing-czar or Jenny were not invoked, the work is INCOMPLETE.
 
 ### ❌ Don't Skip the Playground
 

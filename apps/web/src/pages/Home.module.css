@@ -1,0 +1,81 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 80px); /* Account for navbar height */
+  padding: 20px;
+  text-align: center;
+}
+
+.title {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.statusCard {
+  padding: 1rem;
+  border-radius: 8px;
+  max-width: 500px;
+  border: 1px solid;
+  margin-bottom: 1rem;
+}
+
+.statusCard.connected {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  border-color: var(--success-border);
+}
+
+.statusCard.error {
+  background-color: var(--error-bg);
+  color: var(--error-text);
+  border-color: var(--error-border);
+}
+
+.statusCard.loading {
+  background-color: var(--warning-bg);
+  color: var(--warning-text);
+  border-color: var(--warning-border);
+}
+
+.infoCard {
+  margin-top: 2rem;
+  padding: 1rem;
+  background-color: var(--info-bg);
+  border-radius: 8px;
+  max-width: 600px;
+}
+
+.infoCard strong {
+  color: var(--info-text);
+}
+
+.infoCard p {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .title {
+    font-size: 2rem;
+  }
+
+  .subtitle {
+    font-size: 1rem;
+  }
+
+  .statusCard,
+  .infoCard {
+    max-width: 90%;
+  }
+}
