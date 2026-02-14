@@ -25,7 +25,18 @@
       "Bash(swift -print-target-info:*)",
       "Bash(python3:*)",
       "WebFetch(domain:build-server-protocol.github.io)",
-      "Bash(xcodegen generate:*)"
+      "Bash(xcodegen generate:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(pnpm test:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(npx eslint:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_snapshot",
+      "Bash(pkill:*)"
     ]
   }
 }

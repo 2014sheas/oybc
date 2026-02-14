@@ -14,12 +14,40 @@ struct Feature: Identifiable {
 struct PlaygroundView: View {
     /// Features under test - new features will be added here
     private let features: [Feature] = [
-        // Example structure - features will be added here as they're developed
-        // Feature(
-        //     id: "feature-1",
-        //     title: "Feature Name",
-        //     content: AnyView(FeatureView())
-        // )
+        Feature(
+            id: "bingo-square",
+            title: "Bingo Square",
+            content: AnyView(
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("A single bingo board square that toggles between incomplete and completed states. Tap to toggle.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading) {
+                            BingoSquare()
+                            Text("Default (100pt)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        VStack(alignment: .leading) {
+                            BingoSquare(size: 150)
+                            Text("Large (150pt)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        VStack(alignment: .leading) {
+                            BingoSquare(initialCompleted: true)
+                            Text("Initially Completed")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            )
+        )
     ]
 
     var body: some View {
@@ -50,6 +78,8 @@ struct PlaygroundView: View {
                             .foregroundColor(.secondary)
                             .italic()
                             .padding(.vertical, 8)
+
+                        Button("Test Button") { }
                     } else {
                         ForEach(features) { feature in
                             DisclosureGroup {

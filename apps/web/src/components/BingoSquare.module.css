@@ -1,0 +1,43 @@
+.square {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  border: 2px solid var(--border-color, #ddd);
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.square:hover {
+  opacity: 0.85;
+}
+
+.square:focus-visible {
+  outline: 3px solid #2196F3;
+  outline-offset: 2px;
+}
+
+.incomplete {
+  background-color: var(--card-bg, #f5f5f5);
+}
+
+.completed {
+  background-color: #4CAF50;
+  border-color: #388E3C;
+}
+
+.taskName {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+  word-break: break-word;
+  line-height: 1.2;
+  color: var(--text-primary, #333);
+}
+
+.completed .taskName {
+  color: #fff;
+}

@@ -1,3 +1,9 @@
+---
+name: feature
+description: Implement features using playground-first workflow with mandatory Three-Gate Karen System for scope enforcement
+user-invocable: true
+---
+
 # Feature Development Skill
 
 **Usage**: `/feature [feature description]`
@@ -11,10 +17,11 @@
 You are the **Feature Development Orchestrator**. Your job is to:
 
 1. Coordinate agent teams to implement features according to CLAUDE.md guidelines
-2. Enforce the **Three-Gate Karen System** (mandatory checkpoints)
-3. Ensure **playground-first** development (no integration without approval)
-4. Verify **cross-platform parity** (web + iOS)
-5. Guarantee **compilation verification** before delivery
+2. Enforce the **Three-Gate Karen System** (mandatory scope checkpoints)
+3. Enforce the **Three User Approval Checkpoints** (mandatory user review)
+4. Ensure **playground-first** development (no integration without approval)
+5. Verify **cross-platform parity** (web + iOS)
+6. Guarantee **compilation verification** before delivery
 
 ---
 
@@ -124,22 +131,51 @@ Repeat before every implementation decision:
      - Data models needed (if any)
      - UI components for web and iOS
      - Database operations required
-     - Testing strategy
+     - **Testing strategy** (unit tests, UI tests, manual testing required)
      - Success criteria
      - **Explicit list of what is OUT of scope**
 
 3. **⚠️ GATE #1: karen Plan Review** (MANDATORY)
    - Invoke `karen` agent to review the plan
-   - karen must verify:
-     - **Plan only includes requested features - NOTHING ELSE**
-     - No "nice-to-have" additions
-     - No "while I'm here" features
-     - No assumptions about what user wants
-     - Simplest approach that meets requirements
-     - OUT OF SCOPE list is accurate
-   - karen should compare plan line-by-line to user's original request
-   - If karen finds scope creep: STOP and revise plan
-   - If karen approves: Proceed to Phase 2
+   - karen must identify:
+     - **Core requirements** (what user explicitly requested)
+     - **Optional features** (included in plan but NOT explicitly requested)
+     - Examples of optional features:
+       - Accessibility features (ARIA labels, keyboard support, screen reader support)
+       - Visual polish (hover states, focus states, transitions/animations)
+       - Additional examples or demos beyond minimum needed
+       - Extra props/parameters for flexibility
+       - Error handling beyond basic requirements
+       - Edge case handling not explicitly mentioned
+   - karen should create two lists:
+     - ✅ **CORE** (must implement - user requested these)
+     - ⚠️ **OPTIONAL** (not requested but included - user should decide)
+
+   **3a. User Feedback on Optional Features** (MANDATORY)
+   - Present optional features to user using `AskUserQuestion`
+   - For each optional feature, ask: "Include this feature?"
+   - Provide context on what it does and why it might be helpful
+   - User decides: Keep or Remove for each optional feature
+   - **Rationale**: Some "unrequested" features may be valuable (accessibility, polish)
+
+   **3b. Revise Plan Based on User Decisions**
+   - Remove any optional features user rejected
+   - Keep optional features user approved
+   - Update OUT OF SCOPE list accordingly
+   - Re-invoke karen to verify revised plan matches user's decisions
+
+4. **👤 USER APPROVAL CHECKPOINT #1: Approve Plan** (MANDATORY)
+   - **STOP and present plan to user for approval**
+   - Show:
+     - What will be implemented (IN SCOPE)
+     - What will NOT be implemented (OUT OF SCOPE)
+     - Testing strategy
+     - Estimated complexity
+   - User can:
+     - ✅ Approve - Proceed to Phase 2
+     - ✋ Request changes - Revise plan and re-run Gate #1
+     - ❌ Cancel - Stop work
+   - **Do NOT proceed to implementation without explicit user approval**
 
 **Deliverable**: User-approved implementation plan with scope confirmed by karen
 
@@ -179,7 +215,25 @@ Repeat before every implementation decision:
    - If karen finds scope creep: STOP and remove it immediately
    - If karen approves: Continue implementation
 
-**Deliverable**: Working feature in Playground on both web and iOS, verified at mid-point
+5. **Complete Implementation**
+   - Finish remaining work on both platforms
+   - Ensure both platforms compile
+   - Verify feature parity
+
+6. **👤 USER APPROVAL CHECKPOINT #2: Review Implementation** (MANDATORY)
+   - **STOP and show user the implementation**
+   - Demonstrate:
+     - What was implemented on web
+     - What was implemented on iOS
+     - How to test it locally (provide commands)
+     - Show actual code changes (file paths and snippets)
+   - User can:
+     - ✅ Approve - Proceed to Phase 3 (testing)
+     - ✋ Request changes - Make adjustments and show again
+     - ❌ Cancel - Stop work
+   - **Do NOT proceed to testing phase without user seeing the implementation**
+
+**Deliverable**: Working feature in Playground on both web and iOS, user has reviewed and approved
 
 ---
 
@@ -244,34 +298,39 @@ Repeat before every implementation decision:
    - What was implemented (match to original request)
    - How to test it (instructions for both platforms)
    - What's in scope vs. out of scope
-   - Next steps (user testing in Playground)
+   - Verification report (all gates passed)
 
-**Deliverable**: Verified, working feature ready for user testing
+**Deliverable**: Verified, working feature ready for final user approval
 
 ---
 
-### PHASE 5: User Testing & Approval
+### PHASE 5: Final User Approval & Completion
 
-**Goal**: User tests feature in Playground and approves for integration (or requests changes)
+**Goal**: User tests feature in Playground and gives final approval
 
 **Steps**:
-1. **Present to User**
-   - Show feature in Playground on both platforms
-   - Provide testing instructions
-   - Explain what was implemented vs. what was deferred
-   - **Wait for explicit approval** - do NOT assume
+1. **👤 USER APPROVAL CHECKPOINT #3: Final Testing & Approval** (MANDATORY)
+   - **Present complete feature to user**
+   - Provide:
+     - Testing instructions for both platforms
+     - Verification report (all gates passed)
+     - What was implemented vs. what was deferred
+     - How feature fulfills original request
+   - **User tests in Playground**:
+     - User manually tests all scenarios
+     - User verifies cross-platform consistency
+     - User checks all display modes
+   - User can:
+     - ✅ Approve - Feature is COMPLETE
+     - ✋ Request changes - Return to appropriate phase and re-run gates
+     - ❌ Reject - Document issues and learnings
 
-2. **User Tests in Playground**
-   - User manually tests all scenarios
-   - User verifies cross-platform consistency
-   - User checks all display modes
-
-3. **Gather Feedback**
+2. **Completion**
    - If user approves: Feature is DONE (stays in Playground until integration decision)
-   - If user requests changes: Return to appropriate phase and re-run gates
-   - If user finds scope creep: Document failure, update process
+   - If user requests changes: Return to appropriate phase, make changes, re-run all gates
+   - If user finds scope creep: Document failure, update process to prevent recurrence
 
-**Deliverable**: User-approved feature in Playground, ready for future integration
+**Deliverable**: User-approved feature in Playground, ready for future integration (when user decides)
 
 ---
 
@@ -281,8 +340,9 @@ Repeat before every implementation decision:
 
 ### Gate #1: Plan Review (End of Phase 1)
 - **Before**: Plan is created
-- **After**: Plan is approved or revised
-- **Purpose**: Prevent scope creep from entering the plan
+- **After**: Plan is approved or revised, with user feedback on optional features
+- **Purpose**: Identify core vs. optional features, get user input on optional features, prevent unwanted scope creep
+- **Process**: karen identifies core (requested) and optional (not requested) features → user decides which optional features to keep → plan revised based on user decisions
 
 ### Gate #2: Mid-Implementation Check (During Phase 2)
 - **Before**: ~50% implementation complete
@@ -295,6 +355,49 @@ Repeat before every implementation decision:
 - **Purpose**: Ensure deliverable matches request and actually works
 
 **If ANY gate fails, the work is INCOMPLETE and must be fixed.**
+
+---
+
+## The Three User Approval Checkpoints
+
+**Critical**: User must approve at THREE mandatory checkpoints:
+
+### 👤 Checkpoint #1: Approve Plan (End of Phase 1)
+- **Before**: Plan is created and karen-approved
+- **After**: User approves plan or requests changes
+- **Purpose**: Ensure user agrees with approach before implementation starts
+- **User sees**: What will be implemented, testing strategy, what's out of scope
+
+### 👤 Checkpoint #2: Review Implementation (End of Phase 2)
+- **Before**: Implementation is complete
+- **After**: User reviews code and approves or requests changes
+- **Purpose**: Let user see actual implementation before extensive testing
+- **User sees**: Code changes, how to test locally, what was built
+
+### 👤 Checkpoint #3: Final Testing & Approval (End of Phase 5)
+- **Before**: All testing and verification complete
+- **After**: User tests feature and gives final approval
+- **Purpose**: User validates feature meets their needs
+- **User sees**: Complete feature in Playground, verification report, testing instructions
+
+**If user doesn't approve at ANY checkpoint, work stops until issues are addressed.**
+
+---
+
+## Checkpoint Summary
+
+The workflow has **6 mandatory checkpoints** (3 karen gates + 3 user approvals):
+
+| Phase | Checkpoint | Type | Purpose |
+|-------|-----------|------|---------|
+| End of Phase 1 | Gate #1: karen Plan Review + User Feedback | Scope | Identify core vs optional features, user decides on optional items |
+| End of Phase 1 | 👤 Checkpoint #1: User Approves Plan | Approval | User agrees with final approach (after optional feature decisions) |
+| Mid Phase 2 | Gate #2: karen Mid-Check | Scope | Catch scope creep early |
+| End of Phase 2 | 👤 Checkpoint #2: User Reviews Code | Approval | User sees implementation |
+| End of Phase 4 | Gate #3: karen Final Check | Scope | Verify deliverable matches request |
+| End of Phase 5 | 👤 Checkpoint #3: User Final Approval | Approval | User validates feature |
+
+**All 6 checkpoints are MANDATORY - skip none.**
 
 ---
 
@@ -370,13 +473,18 @@ pnpm dev
 ```
 
 This would:
-1. Create plan (only dark mode toggle, nothing else)
-2. Gate #1: karen reviews plan
-3. Implement toggle in Playground on web and iOS
-4. Gate #2: karen checks at 50% completion
-5. Test and verify compilation
-6. Gate #3: karen final check
-7. Present working toggle in Playground for user testing
+1. Create plan with testing strategy
+2. Gate #1: karen identifies core features (dark mode toggle) and optional features (e.g., hover states, transitions, accessibility)
+3. Ask user: "Include hover states? Include smooth transition? Include keyboard support?"
+4. User decides which optional features to keep
+5. Revise plan based on user's decisions
+6. 👤 Checkpoint #1: Present final plan to user for approval
+7. Implement toggle in Playground on web and iOS (only approved features)
+8. Gate #2: karen checks at 50% completion (verify only approved features implemented)
+9. 👤 Checkpoint #2: Show implementation to user for approval
+10. Test and verify compilation
+11. Gate #3: karen final reality check (compare to approved plan)
+12. 👤 Checkpoint #3: User tests and gives final approval
 
 ---
 
@@ -384,8 +492,10 @@ This would:
 
 - **Playground FIRST** - Never integrate without approval
 - **Scope discipline** - Only implement what was requested
-- **Three gates** - karen at planning, mid-point, and delivery
+- **Six checkpoints** - 3 karen gates + 3 user approvals (ALL mandatory)
+- **User involvement** - User approves plan, reviews code, tests feature
+- **Testing strategy** - Plan testing approach during Phase 1
 - **Compilation** - Both platforms must build
-- **User approval** - Wait for explicit green light
+- **Stop and wait** - Get user approval before proceeding past checkpoints
 
-This is a **quality-first, scope-controlled** workflow. Better to deliver less that works than more that doesn't compile or includes unwanted features.
+This is a **quality-first, scope-controlled, user-involved** workflow. Better to deliver less that works than more that doesn't compile or includes unwanted features.

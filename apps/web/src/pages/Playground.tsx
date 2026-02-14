@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { db } from '../db';
+import { BingoSquare } from '../components/BingoSquare';
 import styles from './Playground.module.css';
 
 /**
@@ -27,12 +28,38 @@ export function Playground() {
 
   // Features under test - new features will be added here
   const features: Feature[] = [
-    // Example structure - features will be added here as they're developed
-    // {
-    //   id: 'feature-1',
-    //   title: 'Feature Name',
-    //   content: <FeatureComponent />
-    // }
+    {
+      id: 'bingo-square',
+      title: 'Bingo Square',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            A single bingo board square that toggles between incomplete and completed states.
+            Click or use keyboard (Space/Enter) to toggle.
+          </p>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div style={{ textAlign: 'center' }}>
+              <BingoSquare />
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                Default (100px)
+              </p>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <BingoSquare size={150} />
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                Large (150px)
+              </p>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <BingoSquare initialCompleted />
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                Initially Completed
+              </p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
   ];
 
   /**
@@ -124,10 +151,13 @@ export function Playground() {
 
         <div className={styles.featuresList}>
           {features.length === 0 ? (
-            <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-              No features currently under test. Features will be added here as they are
-              developed.
-            </p>
+            <>
+              <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                No features currently under test. Features will be added here as they are
+                developed.
+              </p>
+              <button>Test Button</button>
+            </>
           ) : (
             features.map((feature) => (
               <div key={feature.id} className={styles.featureItem}>
