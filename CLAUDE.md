@@ -640,14 +640,21 @@ See `docs/SYNC_STRATEGY.md` for detailed conflict resolution patterns.
 
 **Goal**: Complete bingo game working entirely offline
 
-**Prerequisites**: Phase 1.5 complete (working apps)
+**Prerequisites**: Phase 1.5 complete ✅ (working apps)
+
+**Implementation Order** (Playground-first for each):
+
+1. **5×5 Bingo Board Grid** - Grid layout with BingoSquare components, hardcoded task names
+2. **Different Board Sizes** - 3×3, 4×4, 5×5 variants with size selector
+3. **Bingo Detection Logic** - Detect rows, columns, diagonals; visual indication
+4. **Tasks & Task Creation** - Real task data, creation UI, board creation flow
+5. **Celebrations & Polish** - Animations, haptics, visual effects
 
 **Focus**:
-
-- Board creation UI (both platforms)
 - Board grid display (LazyVGrid on iOS, CSS Grid on web)
 - Task completion with instant feedback
 - Bingo detection algorithm
+- Board creation UI (both platforms)
 - Celebrations (animations/haptics)
 
 **Testing**: Airplane mode, all operations < 10ms
@@ -886,29 +893,57 @@ All sync operations must be background/async. User should never see "Syncing..."
 
 **Phase 1**: Local Database Setup ✅ COMPLETE
 
-**Current Phase**: Phase 1.5 - Working App Infrastructure 🚧 IN PROGRESS
+**Phase 1.5**: Working App Infrastructure ✅ COMPLETE
+- ✅ Web app infrastructure (Vite + React)
+- ✅ iOS app infrastructure (Xcode + SwiftUI)
+- ✅ Database connections verified
+- ✅ Apps build and run successfully
+- ✅ Playground infrastructure (both platforms)
+- ✅ BingoSquare component (2026-02-13)
 
-**Priority**: Get iOS and web apps running locally before building features
+**Current Phase**: Phase 2 - Core Game Loop (Offline-Only) 🚧 IN PROGRESS
 
-**Immediate Goals**:
-1. Set up web app infrastructure (Vite + React entry points)
-2. Set up iOS app infrastructure (Xcode project + SwiftUI entry points)
-3. Verify database connections on both platforms
-4. Ensure apps can build and run successfully
+**Priority**: Build game loop features in Playground, test, then integrate
 
-**Next Phase**: Phase 2 - Core Game Loop (Offline-Only)
+**Phase 2 Implementation Plan** (Playground-first approach):
 
-**Approach**: All Phase 2 features will be built in the Playground first:
-- Create Playground page on both web and iOS
+### Feature 1: 5×5 Bingo Board Grid (Next)
+- 5 rows × 5 columns grid layout
+- Uses BingoSquare components
+- Hardcoded task names ("Task 1", "Task 2", etc.)
+- All squares toggleable
+- Center square special styling
+- Both web (CSS Grid) and iOS (LazyVGrid)
+
+### Feature 2: Different Board Sizes
+- 3×3 mini board
+- 4×4 standard board
+- 5×5 full board (from Feature 1)
+- Size selector/toggle in Playground
+
+### Feature 3: Bingo Detection Logic
+- Detect completed rows (5 in a row)
+- Detect completed columns (5 in a column)
+- Detect completed diagonals (2 diagonals)
+- Visual indication when bingo detected
+- Celebration trigger (simple animation/message)
+
+### Feature 4: Tasks & Task Creation (Later - After Features 1-3)
+- Real task data from database
+- Task creation UI
+- Task assignment to board squares
+- Board creation flow
+
+### Feature 5: Celebrations & Polish
+- Animations when bingo detected
+- Haptic feedback (iOS)
+- Visual effects
+- Sound effects (optional)
+
+**Approach**:
 - Implement one feature at a time in Playground
 - Test all display modes and use cases
-- Get user approval before integrating into main app
-
-**Features to Build** (in Playground first, then integrate after approval):
-- Board creation UI
-- Board grid display
-- Task completion interaction
-- Bingo detection
-- Celebrations
+- Get user approval before moving to next feature
+- Integration into main app happens AFTER all Playground features approved
 
 **Timeline**: 12-14 weeks to production (see ARCHITECTURE.md)
