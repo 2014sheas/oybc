@@ -23,6 +23,8 @@
 		B1C2D3E4F5A6B7C8D9E0F1A2 /* BingoSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */; };
 		D4E5F6A7B8C9D0E1F2A3B4C5 /* BingoBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */; };
 		E5F6A7B8C9D0E1F2A3B4C5D6 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */; };
+		A1B2C3D4E5F6A7B8D9E0F1A3 /* Shuffle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */; };
+		C3D4E5F6A7B8C9D1E2F3A4B5 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +55,8 @@
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoSquare.swift; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoBoard.swift; sourceTree = "<group>"; };
 		F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
+		B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
+		D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +96,7 @@
 			isa = PBXGroup;
 			children = (
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */,
+				B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -122,6 +127,7 @@
 			isa = PBXGroup;
 			children = (
 				2822E1DBF15699974C2F70C5 /* OYBCTests.swift */,
+				D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */,
 			);
 			path = OYBCTests;
 			sourceTree = "<group>";
@@ -285,6 +291,7 @@
 				E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */,
 				619A5E4D57F256C847CC9A50 /* SyncQueue.swift in Sources */,
 				1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */,
+				A1B2C3D4E5F6A7B8D9E0F1A3 /* Shuffle.swift in Sources */,
 				9C24CDBF218203559E063F7F /* User.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -294,6 +301,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5C2D41E4AAD6F8F30FAF9B67 /* OYBCTests.swift in Sources */,
+				C3D4E5F6A7B8C9D1E2F3A4B5 /* ShuffleTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -437,6 +445,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -454,6 +463,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

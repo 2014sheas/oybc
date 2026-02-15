@@ -5,3 +5,5 @@ export {
 } from './bingoDetection';
 
 export type { BingoDetectionResult } from './bingoDetection';
+
+export { fisherYatesShuffle } from './shuffle';

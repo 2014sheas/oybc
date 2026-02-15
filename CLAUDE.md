@@ -644,20 +644,25 @@ See `docs/SYNC_STRATEGY.md` for detailed conflict resolution patterns.
 
 **Implementation Order** (Playground-first for each):
 
-1. **5×5 Bingo Board Grid** - Grid layout with BingoSquare components, hardcoded task names
-2. **Different Board Sizes** - 3×3, 4×4, 5×5 variants with size selector
-3. **Bingo Detection Logic** - Detect rows, columns, diagonals; visual indication
-4. **Tasks & Task Creation** - Real task data, creation UI, board creation flow
-5. **Celebrations & Polish** - Animations, haptics, visual effects
+1. **5×5 Bingo Board Grid** ✅ COMPLETE - Grid layout with BingoSquare components, hardcoded task names
+2. **Different Board Sizes** ✅ COMPLETE - 3×3, 4×4, 5×5 variants with size selector
+3. **Bingo Detection Logic** ✅ COMPLETE - Detect rows, columns, diagonals; visual indication, GREENLOG
+4. **Board Randomization** - Shuffle/randomize the faux task names on board creation/reset
+5. **Free Space Logic** - Center square auto-complete, special handling for odd-sized boards
+6. **Tasks & Task Creation** - Real task data, creation UI, board creation flow
+7. **Celebrations & Polish** - Animations, haptics, visual effects
 
 **Focus**:
 - Board grid display (LazyVGrid on iOS, CSS Grid on web)
 - Task completion with instant feedback
 - Bingo detection algorithm
+- Board randomization and free space mechanics
 - Board creation UI (both platforms)
 - Celebrations (animations/haptics)
 
 **Testing**: Airplane mode, all operations < 10ms
+
+**Rationale for Order**: Complete all basic board mechanics (grid, detection, randomization, free space) with faux data before introducing the task system. This allows testing core gameplay without database complexity.
 
 ### Phase 3: Authentication & Sync Layer
 
@@ -907,7 +912,7 @@ All sync operations must be background/async. User should never see "Syncing..."
 
 **Phase 2 Implementation Plan** (Playground-first approach):
 
-### Feature 1: 5×5 Bingo Board Grid (Next)
+### Feature 1: 5×5 Bingo Board Grid ✅ COMPLETE
 - 5 rows × 5 columns grid layout
 - Uses BingoSquare components
 - Hardcoded task names ("Task 1", "Task 2", etc.)
@@ -915,26 +920,40 @@ All sync operations must be background/async. User should never see "Syncing..."
 - Center square special styling
 - Both web (CSS Grid) and iOS (LazyVGrid)
 
-### Feature 2: Different Board Sizes
+### Feature 2: Different Board Sizes ✅ COMPLETE
 - 3×3 mini board
 - 4×4 standard board
 - 5×5 full board (from Feature 1)
-- Size selector/toggle in Playground
+- Existing board sections in Playground
 
-### Feature 3: Bingo Detection Logic
+### Feature 3: Bingo Detection Logic ✅ COMPLETE (2026-02-15)
 - Detect completed rows (5 in a row)
 - Detect completed columns (5 in a column)
 - Detect completed diagonals (2 diagonals)
-- Visual indication when bingo detected
-- Celebration trigger (simple animation/message)
+- Visual indication when bingo detected (gold highlighting)
+- Bingo message display ("Bingo! (row_0, col_2)")
+- GREENLOG detection (all squares complete)
+- 100% test coverage (48 tests passing)
 
-### Feature 4: Tasks & Task Creation (Later - After Features 1-3)
+### Feature 4: Board Randomization (NEXT)
+- Shuffle/randomize the faux task names on board creation
+- Randomize on board reset
+- Different randomization each time
+- Same randomization algorithm across platforms
+
+### Feature 5: Free Space Logic
+- Center square auto-complete for odd-sized boards (3×3, 5×5)
+- Special handling for center square
+- Visual indication (different color/style)
+- No center square for even-sized boards (4×4)
+
+### Feature 6: Tasks & Task Creation (Later - After Basic Board Mechanics)
 - Real task data from database
 - Task creation UI
 - Task assignment to board squares
 - Board creation flow
 
-### Feature 5: Celebrations & Polish
+### Feature 7: Celebrations & Polish
 - Animations when bingo detected
 - Haptic feedback (iOS)
 - Visual effects

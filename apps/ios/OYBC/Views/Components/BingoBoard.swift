@@ -22,6 +22,9 @@ struct BingoBoard: View {
     /// Tracks which squares are completed by index
     @State private var completedSquares: Set<Int> = []
 
+    /// Task names displayed on the board (shuffled via Fisher-Yates)
+    @State private var taskNames: [String] = []
+
     /// Total number of squares
     private var totalSquares: Int {
         gridSize * gridSize
@@ -38,7 +41,7 @@ struct BingoBoard: View {
     }
 
     /// Generate hardcoded task names
-    private var taskNames: [String] {
+    private func generateTaskNames() -> [String] {
         (1...totalSquares).map { "Task \($0)" }
     }
 
@@ -74,7 +77,8 @@ struct BingoBoard: View {
                 ForEach(0..<totalSquares, id: \.self) { index in
                     let isCenter = index == centerIndex
                     let isHighlighted = highlightedSquares.contains(index)
-                    let taskName = isCenter ? "\(taskNames[index]) *" : taskNames[index]
+                    let name = index < taskNames.count ? taskNames[index] : "Task \(index + 1)"
+                    let taskName = isCenter ? "\(name) *" : name
 
                     BingoSquare(
                         taskName: taskName,
@@ -138,15 +142,26 @@ struct BingoBoard: View {
             }
 
             // Controls
-            HStack {
+            VStack(spacing: 12) {
                 Text("\(completedCount) / \(totalSquares) completed")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.secondary)
 
-                Spacer()
-
                 HStack(spacing: 8) {
+                    Button("Shuffle Board") {
+                        shuffleBoard()
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(uiColor: .systemGray6))
+                    )
+                    .accessibilityLabel("Shuffle board task names and reset completion")
+
                     Button("Reset Board") {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             completedSquares.removeAll()
@@ -179,6 +194,11 @@ struct BingoBoard: View {
                 }
             }
         }
+        .onAppear {
+            if taskNames.isEmpty {
+                taskNames = generateTaskNames()
+            }
+        }
     }
 
     /// Toggle a square's completed state by index.
@@ -189,6 +209,14 @@ struct BingoBoard: View {
             completedSquares.remove(index)
         } else {
             completedSquares.insert(index)
+        }
+    }
+
+    /// Shuffle task names using Fisher-Yates algorithm and reset completion state.
+    private func shuffleBoard() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            taskNames = Shuffle.fisherYatesShuffle(taskNames)
+            completedSquares.removeAll()
         }
     }
 }

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { BingoSquare } from './BingoSquare';
-import { detectBingos, formatBingoMessage, getHighlightedSquares } from '@oybc/shared';
+import { detectBingos, formatBingoMessage, getHighlightedSquares, fisherYatesShuffle } from '@oybc/shared';
 import type { BoardSize } from '@oybc/shared';
 import styles from './BingoBoard.module.css';
 
@@ -35,7 +35,7 @@ interface BingoBoardProps {
 export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
   const totalSquares = gridSize * gridSize;
   const centerIndex = gridSize % 2 === 1 ? Math.floor(totalSquares / 2) : -1;
-  const taskNames = generateTaskNames(totalSquares);
+  const [taskNames, setTaskNames] = useState<string[]>(() => generateTaskNames(totalSquares));
   const [completedSquares, setCompletedSquares] = useState<Set<number>>(new Set());
 
   /**
@@ -68,6 +68,14 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
   const handleFillAll = useCallback(() => {
     setCompletedSquares(new Set(Array.from({ length: totalSquares }, (_, i) => i)));
   }, [totalSquares]);
+
+  /**
+   * Shuffle task names using Fisher-Yates algorithm and reset completion state.
+   */
+  const handleShuffle = useCallback(() => {
+    setTaskNames((prev) => fisherYatesShuffle(prev));
+    setCompletedSquares(new Set());
+  }, []);
 
   const completedCount = completedSquares.size;
 
@@ -150,6 +158,13 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
           {completedCount} / {totalSquares} completed
         </span>
         <div className={styles.buttonGroup}>
+          <button
+            className={styles.shuffleButton}
+            onClick={handleShuffle}
+            aria-label="Shuffle board task names and reset completion"
+          >
+            Shuffle Board
+          </button>
           <button
             className={styles.resetButton}
             onClick={handleReset}

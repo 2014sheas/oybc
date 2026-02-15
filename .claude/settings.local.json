@@ -37,7 +37,9 @@
       "mcp__playwright__browser_press_key",
       "mcp__playwright__browser_snapshot",
       "Bash(pkill:*)",
-      "Bash(pnpm test:coverage:*)"
+      "Bash(pnpm test:coverage:*)",
+      "Bash(pnpm dev)",
+      "Bash(curl:*)"
     ]
   }
 }
