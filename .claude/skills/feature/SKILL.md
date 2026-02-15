@@ -199,6 +199,7 @@ Repeat before every implementation decision:
 3. **Implementation Guidelines**
    - Web: Add to `/apps/web/src/pages/Playground.tsx`
    - iOS: Add to `/apps/ios/OYBC/Views/PlaygroundView.swift`
+   - **Add new features at the TOP of the Playground page** (newest first)
    - Use collapsible sections for each feature
    - Both platforms must have feature parity
    - Both must compile successfully
