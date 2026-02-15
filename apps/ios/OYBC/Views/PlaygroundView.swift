@@ -47,6 +47,19 @@ struct PlaygroundView: View {
                     }
                 }
             )
+        ),
+        Feature(
+            id: "bingo-board",
+            title: "5x5 Bingo Board Grid",
+            content: AnyView(
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("A 5x5 bingo board grid with 25 toggleable squares. The center square (Task 13) has special styling with an orange border and star marker. Use the Reset Board button to clear all squares, or Fill All to complete them all.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+
+                    BingoBoard()
+                }
+            )
         )
     ]
 

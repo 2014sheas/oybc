@@ -1,0 +1,94 @@
+.boardContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.grid {
+  display: grid;
+  gap: 4px;
+  padding: 4px;
+  background-color: var(--border-color, #ddd);
+  border-radius: 10px;
+  width: fit-content;
+}
+
+.cellWrapper {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.centerCell {
+  position: relative;
+}
+
+/* Thicker border for center square */
+.centerCell > * {
+  border-width: 3px;
+  border-color: #FF9800;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  max-width: 420px;
+  flex-wrap: wrap;
+}
+
+.progressText {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-secondary, #666);
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.resetButton,
+.fillButton {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  background-color: var(--card-bg, #f5f5f5);
+  color: var(--text-primary, #333);
+}
+
+.resetButton:hover,
+.fillButton:hover {
+  opacity: 0.85;
+}
+
+.resetButton:active,
+.fillButton:active {
+  transform: scale(0.97);
+}
+
+.resetButton:focus-visible,
+.fillButton:focus-visible {
+  outline: 3px solid #2196F3;
+  outline-offset: 2px;
+}
+
+/* Responsive: shrink squares on small screens */
+@media (max-width: 500px) {
+  .grid {
+    gap: 2px;
+    padding: 2px;
+  }
+
+  .controls {
+    flex-direction: column;
+    align-items: center;
+  }
+}

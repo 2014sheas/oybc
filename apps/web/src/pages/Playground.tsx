@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { db } from '../db';
 import { BingoSquare } from '../components/BingoSquare';
+import { BingoBoard } from '../components/BingoBoard';
 import styles from './Playground.module.css';
 
 /**
@@ -57,6 +58,20 @@ export function Playground() {
               </p>
             </div>
           </div>
+        </div>
+      ),
+    },
+    {
+      id: 'bingo-board',
+      title: '5x5 Bingo Board Grid',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            A 5x5 bingo board grid with 25 toggleable squares. The center square (Task 13)
+            has special styling with an orange border and star marker. Use the Reset Board
+            button to clear all squares, or Fill All to complete them all.
+          </p>
+          <BingoBoard />
         </div>
       ),
     },
