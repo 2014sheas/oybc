@@ -2,25 +2,19 @@ import { useState, useCallback } from 'react';
 import { BingoSquare } from './BingoSquare';
 import styles from './BingoBoard.module.css';
 
-/** Number of rows/columns in the grid */
-const GRID_SIZE = 5;
-
-/** Total number of squares */
-const TOTAL_SQUARES = GRID_SIZE * GRID_SIZE;
-
-/** Index of the center square (0-based) */
-const CENTER_INDEX = Math.floor(TOTAL_SQUARES / 2);
-
 /**
  * Generate hardcoded task names for the board.
  *
- * @returns Array of 25 task name strings ("Task 1" through "Task 25")
+ * @param count - Number of task names to generate
+ * @returns Array of task name strings ("Task 1" through "Task N")
  */
-function generateTaskNames(): string[] {
-  return Array.from({ length: TOTAL_SQUARES }, (_, i) => `Task ${i + 1}`);
+function generateTaskNames(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `Task ${i + 1}`);
 }
 
 interface BingoBoardProps {
+  /** Number of rows/columns in the grid (default: 5) */
+  gridSize?: number;
   /** Size of each square in pixels (default: 80) */
   squareSize?: number;
 }
@@ -28,14 +22,18 @@ interface BingoBoardProps {
 /**
  * BingoBoard Component
  *
- * A 5x5 bingo board grid using CSS Grid layout and BingoSquare components.
- * All squares are toggleable. The center square (Task 13) has special styling
- * with a thicker border and star indicator.
+ * A bingo board grid using CSS Grid layout and BingoSquare components.
+ * Supports 3x3, 4x4, and 5x5 grid sizes. All squares are toggleable.
+ * For odd-sized grids, the center square has special styling with a
+ * thicker border and star indicator.
  *
+ * @param gridSize - Number of rows/columns (3, 4, or 5; default: 5)
  * @param squareSize - Width and height of each square in pixels (default: 80)
  */
-export function BingoBoard({ squareSize = 80 }: BingoBoardProps) {
-  const taskNames = generateTaskNames();
+export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
+  const totalSquares = gridSize * gridSize;
+  const centerIndex = gridSize % 2 === 1 ? Math.floor(totalSquares / 2) : -1;
+  const taskNames = generateTaskNames(totalSquares);
   const [completedSquares, setCompletedSquares] = useState<Set<number>>(new Set());
 
   /**
@@ -66,8 +64,8 @@ export function BingoBoard({ squareSize = 80 }: BingoBoardProps) {
    * Set all squares to completed state (for testing).
    */
   const handleFillAll = useCallback(() => {
-    setCompletedSquares(new Set(Array.from({ length: TOTAL_SQUARES }, (_, i) => i)));
-  }, []);
+    setCompletedSquares(new Set(Array.from({ length: totalSquares }, (_, i) => i)));
+  }, [totalSquares]);
 
   const completedCount = completedSquares.size;
 
@@ -77,16 +75,16 @@ export function BingoBoard({ squareSize = 80 }: BingoBoardProps) {
       <div
         className={styles.grid}
         style={{
-          gridTemplateColumns: `repeat(${GRID_SIZE}, ${squareSize}px)`,
-          gridTemplateRows: `repeat(${GRID_SIZE}, ${squareSize}px)`,
+          gridTemplateColumns: `repeat(${gridSize}, ${squareSize}px)`,
+          gridTemplateRows: `repeat(${gridSize}, ${squareSize}px)`,
         }}
         role="grid"
-        aria-label={`5 by 5 bingo board, ${completedCount} of ${TOTAL_SQUARES} completed`}
+        aria-label={`${gridSize} by ${gridSize} bingo board, ${completedCount} of ${totalSquares} completed`}
       >
         {taskNames.map((name, index) => {
-          const isCenter = index === CENTER_INDEX;
-          const row = Math.floor(index / GRID_SIZE);
-          const col = index % GRID_SIZE;
+          const isCenter = index === centerIndex;
+          const row = Math.floor(index / gridSize);
+          const col = index % gridSize;
 
           return (
             <div
@@ -112,7 +110,7 @@ export function BingoBoard({ squareSize = 80 }: BingoBoardProps) {
       {/* Board info and controls */}
       <div className={styles.controls}>
         <span className={styles.progressText}>
-          {completedCount} / {TOTAL_SQUARES} completed
+          {completedCount} / {totalSquares} completed
         </span>
         <div className={styles.buttonGroup}>
           <button

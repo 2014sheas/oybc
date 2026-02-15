@@ -1,27 +1,34 @@
 import SwiftUI
 
-/// Number of rows/columns in the grid
-private let gridSize = 5
-
-/// Total number of squares
-private let totalSquares = gridSize * gridSize
-
-/// Index of the center square (0-based)
-private let centerIndex = totalSquares / 2
-
-/// A 5x5 bingo board grid using LazyVGrid and BingoSquare components.
+/// A bingo board grid using LazyVGrid and BingoSquare components.
 ///
-/// All squares are toggleable. The center square (Task 13) has special styling
-/// with a thicker orange border and star indicator. Includes reset and fill-all
+/// Supports 3x3, 4x4, and 5x5 grid sizes. All squares are toggleable.
+/// For odd-sized grids, the center square has special styling with a
+/// thicker orange border and star indicator. Includes reset and fill-all
 /// buttons for testing.
 ///
-/// - Parameter squareSize: Width and height of each square in points (default: 60)
+/// - Parameters:
+///   - gridSize: Number of rows/columns in the grid (default: 5)
+///   - squareSize: Width and height of each square in points (default: 60)
 struct BingoBoard: View {
+    /// Number of rows/columns in the grid
+    var gridSize: Int = 5
+
     /// Size of each square in points
     var squareSize: CGFloat = 60
 
     /// Tracks which squares are completed by index
     @State private var completedSquares: Set<Int> = []
+
+    /// Total number of squares
+    private var totalSquares: Int {
+        gridSize * gridSize
+    }
+
+    /// Index of the center square (0-based), or -1 for even-sized grids
+    private var centerIndex: Int {
+        gridSize % 2 == 1 ? totalSquares / 2 : -1
+    }
 
     /// Grid column layout
     private var columns: [GridItem] {
@@ -74,7 +81,7 @@ struct BingoBoard: View {
                     .fill(Color(uiColor: .systemGray5))
             )
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("5 by 5 bingo board, \(completedCount) of \(totalSquares) completed")
+            .accessibilityLabel("\(gridSize) by \(gridSize) bingo board, \(completedCount) of \(totalSquares) completed")
 
             // Controls
             HStack {
@@ -132,16 +139,23 @@ struct BingoBoard: View {
     }
 }
 
-#Preview("Empty Board") {
+#Preview("5x5 Board") {
     ScrollView {
         BingoBoard()
             .padding()
     }
 }
 
-#Preview("Large Squares") {
+#Preview("3x3 Mini Board") {
     ScrollView {
-        BingoBoard(squareSize: 80)
+        BingoBoard(gridSize: 3, squareSize: 90)
+            .padding()
+    }
+}
+
+#Preview("4x4 Standard Board") {
+    ScrollView {
+        BingoBoard(gridSize: 4, squareSize: 85)
             .padding()
     }
 }

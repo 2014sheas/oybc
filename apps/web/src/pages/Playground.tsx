@@ -75,6 +75,32 @@ export function Playground() {
         </div>
       ),
     },
+    {
+      id: 'bingo-board-3x3',
+      title: '3x3 Mini Board',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            A compact 3x3 mini bingo board with 9 toggleable squares. The center square
+            (Task 5) has special styling. Ideal for quick, focused goal sets.
+          </p>
+          <BingoBoard gridSize={3} squareSize={90} />
+        </div>
+      ),
+    },
+    {
+      id: 'bingo-board-4x4',
+      title: '4x4 Standard Board',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            A 4x4 standard bingo board with 16 toggleable squares. Even-sized grids have
+            no center square. A balanced size for moderate goal tracking.
+          </p>
+          <BingoBoard gridSize={4} squareSize={85} />
+        </div>
+      ),
+    },
   ];
 
   /**
