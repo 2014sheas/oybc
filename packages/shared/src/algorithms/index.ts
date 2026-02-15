@@ -7,3 +7,9 @@ export {
 export type { BingoDetectionResult } from './bingoDetection';
 
 export { fisherYatesShuffle } from './shuffle';
+
+export {
+  getCenterSquareIndex,
+  isCenterAutoCompleted,
+  getCenterDisplayText,
+} from './centerSquare';

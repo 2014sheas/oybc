@@ -397,3 +397,95 @@ describe('getHighlightedSquares', () => {
     expect(result).toEqual(new Set([3, 7, 11, 15]));
   });
 });
+
+// ── Center Square + Bingo Detection Integration Tests ─────────────────
+describe('bingo detection with auto-completed center', () => {
+  describe('5x5 board with center (index 12) auto-completed', () => {
+    const size = 5;
+    const total = 25;
+    const centerIndex = 12;
+
+    /**
+     * Helper: create a 5x5 grid with center pre-completed plus additional indices.
+     */
+    function makeGridWithCenter(additionalIndices: number[]): boolean[] {
+      const grid = new Array(total).fill(false);
+      grid[centerIndex] = true;
+      for (const i of additionalIndices) {
+        grid[i] = true;
+      }
+      return grid;
+    }
+
+    it('detects bingo through center row (row_2) with auto-completed center', () => {
+      // Row 2: indices 10, 11, 12, 13, 14 — center at 12 is auto-completed
+      const result = detectBingos(makeGridWithCenter([10, 11, 13, 14]), size);
+      expect(result.completedLines).toContain('row_2');
+    });
+
+    it('detects bingo through center column (col_2) with auto-completed center', () => {
+      // Col 2: indices 2, 7, 12, 17, 22 — center at 12 is auto-completed
+      const result = detectBingos(makeGridWithCenter([2, 7, 17, 22]), size);
+      expect(result.completedLines).toContain('col_2');
+    });
+
+    it('detects bingo through main diagonal with auto-completed center', () => {
+      // Main diagonal: 0, 6, 12, 18, 24 — center at 12 is auto-completed
+      const result = detectBingos(makeGridWithCenter([0, 6, 18, 24]), size);
+      expect(result.completedLines).toContain('diag_main');
+    });
+
+    it('detects bingo through anti diagonal with auto-completed center', () => {
+      // Anti diagonal: 4, 8, 12, 16, 20 — center at 12 is auto-completed
+      const result = detectBingos(makeGridWithCenter([4, 8, 16, 20]), size);
+      expect(result.completedLines).toContain('diag_anti');
+    });
+
+    it('detects GREENLOG with auto-completed center', () => {
+      const allExceptCenter = Array.from({ length: total }, (_, i) => i).filter(i => i !== centerIndex);
+      const result = detectBingos(makeGridWithCenter(allExceptCenter), size);
+      expect(result.isGreenlog).toBe(true);
+      expect(result.totalCompleted).toBe(25);
+    });
+  });
+
+  describe('3x3 board with center (index 4) auto-completed', () => {
+    const size = 3;
+    const total = 9;
+    const centerIndex = 4;
+
+    function makeGridWithCenter(additionalIndices: number[]): boolean[] {
+      const grid = new Array(total).fill(false);
+      grid[centerIndex] = true;
+      for (const i of additionalIndices) {
+        grid[i] = true;
+      }
+      return grid;
+    }
+
+    it('detects bingo through center row (row_1) with auto-completed center', () => {
+      // Row 1: indices 3, 4, 5 — center at 4 is auto-completed
+      const result = detectBingos(makeGridWithCenter([3, 5]), size);
+      expect(result.completedLines).toContain('row_1');
+    });
+
+    it('detects bingo through center column (col_1) with auto-completed center', () => {
+      // Col 1: indices 1, 4, 7 — center at 4 is auto-completed
+      const result = detectBingos(makeGridWithCenter([1, 7]), size);
+      expect(result.completedLines).toContain('col_1');
+    });
+
+    it('detects bingo through main diagonal with auto-completed center', () => {
+      // Main diagonal: 0, 4, 8 — center at 4 is auto-completed
+      const result = detectBingos(makeGridWithCenter([0, 8]), size);
+      expect(result.completedLines).toContain('diag_main');
+    });
+
+    it('detects GREENLOG with auto-completed center on 3x3', () => {
+      const allExceptCenter = [0, 1, 2, 3, 5, 6, 7, 8];
+      const result = detectBingos(makeGridWithCenter(allExceptCenter), size);
+      expect(result.isGreenlog).toBe(true);
+      expect(result.totalCompleted).toBe(9);
+    });
+  });
+});

@@ -908,6 +908,10 @@ All sync operations must be background/async. User should never see "Syncing..."
 
 **Current Phase**: Phase 2 - Core Game Loop (Offline-Only) 🚧 IN PROGRESS
 
+**Progress**: Features 1-5 COMPLETE (Basic board mechanics done)
+
+**Next**: Feature 6 - Tasks & Task Creation (Real data integration)
+
 **Priority**: Build game loop features in Playground, test, then integrate
 
 **Phase 2 Implementation Plan** (Playground-first approach):
@@ -935,19 +939,29 @@ All sync operations must be background/async. User should never see "Syncing..."
 - GREENLOG detection (all squares complete)
 - 100% test coverage (48 tests passing)
 
-### Feature 4: Board Randomization (NEXT)
+### Feature 4: Board Randomization ✅ COMPLETE
 - Shuffle/randomize the faux task names on board creation
 - Randomize on board reset
 - Different randomization each time
 - Same randomization algorithm across platforms
+- Shuffle button in Playground boards
+- Preserves auto-completed center squares (FREE, CUSTOM_FREE)
+- Keeps CHOSEN center square fixed during shuffle
 
-### Feature 5: Free Space Logic
-- Center square auto-complete for odd-sized boards (3×3, 5×5)
-- Special handling for center square
-- Visual indication (different color/style)
-- No center square for even-sized boards (4×4)
+### Feature 5: Center Space Logic ✅ COMPLETE (2026-02-15)
+- Four center space types for odd-sized boards (3×3, 5×5):
+  - True Free Space: auto-completed, locked, shows "FREE SPACE"
+  - Customizable Free Space: auto-completed, locked, shows custom name
+  - User-Chosen Center: NOT auto-completed, toggleable, stays fixed during shuffle
+  - No Center Space: ordinary square, no special treatment
+- Five Playground demo sections (both platforms)
+- Data model complete (CenterSquareType enum, helper functions, Zod validation)
+- 86 tests passing with 100% coverage
+- Orange border for special centers (FREE, CUSTOM_FREE, CHOSEN)
+- No border for NONE type
+- Even-sized boards (4×4): No center space logic
 
-### Feature 6: Tasks & Task Creation (Later - After Basic Board Mechanics)
+### Feature 6: Tasks & Task Creation (NEXT)
 - Real task data from database
 - Task creation UI
 - Task assignment to board squares

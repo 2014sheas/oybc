@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { db } from '../db';
 import { BingoSquare } from '../components/BingoSquare';
 import { BingoBoard } from '../components/BingoBoard';
+import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
 
 /**
@@ -27,8 +28,68 @@ export function Playground() {
     message: string;
   }>({ type: null, message: '' });
 
-  // Features under test - new features will be added here
+  // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'center-space-free',
+      title: 'Center Space: True Free Space (5x5)',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            Center is auto-completed, shows "FREE SPACE", locked (cannot toggle off), counts toward bingo.
+          </p>
+          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.FREE} />
+        </div>
+      ),
+    },
+    {
+      id: 'center-space-custom-free',
+      title: 'Center Space: Customizable Free Space (5x5)',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            Center is auto-completed with custom text, locked, counts toward bingo.
+          </p>
+          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.CUSTOM_FREE} centerSquareCustomName="My Goal!" />
+        </div>
+      ),
+    },
+    {
+      id: 'center-space-chosen',
+      title: 'Center Space: User-Chosen Center (5x5)',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            Center has a fixed task (e.g., "My Special Task"), NOT auto-completed, can toggle like any square.
+          </p>
+          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.CHOSEN} />
+        </div>
+      ),
+    },
+    {
+      id: 'center-space-none',
+      title: 'Center Space: No Center Space (5x5)',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            Center is an ordinary square, no special treatment.
+          </p>
+          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.NONE} />
+        </div>
+      ),
+    },
+    {
+      id: 'center-space-3x3',
+      title: 'Center Space: Works on 3x3 Too!',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            True Free Space works on smaller odd-sized boards (center is index 4 on 3x3).
+          </p>
+          <BingoBoard gridSize={3} squareSize={90} centerSquareType={CenterSquareType.FREE} />
+        </div>
+      ),
+    },
     {
       id: 'bingo-square',
       title: 'Bingo Square',

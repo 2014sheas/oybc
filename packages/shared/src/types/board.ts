@@ -25,7 +25,9 @@ export interface Board {
   timeframe: Timeframe;          // daily, weekly, monthly, yearly, custom
   startDate: string;             // ISO8601 (start of timeframe)
   endDate: string;               // ISO8601 (end of timeframe)
-  centerSquareType: CenterSquareType; // free, custom, none
+  centerSquareType: CenterSquareType; // free, custom_free, chosen, none
+  centerSquareCustomName?: string;   // Custom display name for CUSTOM_FREE type
+  centerTaskId?: string;             // Task ID for CHOSEN type (future use)
   isRandomized: boolean;         // Whether tasks are randomized on grid
 
   // Denormalized stats (for instant reads, updated on task completion)
@@ -58,6 +60,8 @@ export interface CreateBoardInput {
   startDate: string;
   endDate: string;
   centerSquareType: CenterSquareType;
+  centerSquareCustomName?: string;   // Required when centerSquareType is CUSTOM_FREE
+  centerTaskId?: string;             // Required when centerSquareType is CHOSEN
   isRandomized: boolean;
 }
 

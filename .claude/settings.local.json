@@ -39,7 +39,8 @@
       "Bash(pkill:*)",
       "Bash(pnpm test:coverage:*)",
       "Bash(pnpm dev)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npx jest:*)"
     ]
   }
 }

@@ -20,6 +20,8 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     var startDate: String // ISO8601
     var endDate: String // ISO8601
     var centerSquareType: CenterSquareType
+    var centerSquareCustomName: String?
+    var centerTaskId: String?
     var isRandomized: Bool
 
     // Denormalized stats
@@ -49,7 +51,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
 
     enum CodingKeys: String, CodingKey {
         case id, userId, name, description, status, boardSize, timeframe
-        case startDate, endDate, centerSquareType, isRandomized
+        case startDate, endDate, centerSquareType, centerSquareCustomName, centerTaskId, isRandomized
         case totalTasks, completedTasks, linesCompleted, completedLineIds
         case createdAt, updatedAt, completedAt
         case lastSyncedAt, version, isDeleted, deletedAt
@@ -69,6 +71,8 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         startDate = try container.decode(String.self, forKey: .startDate)
         endDate = try container.decode(String.self, forKey: .endDate)
         centerSquareType = try container.decode(CenterSquareType.self, forKey: .centerSquareType)
+        centerSquareCustomName = try container.decodeIfPresent(String.self, forKey: .centerSquareCustomName)
+        centerTaskId = try container.decodeIfPresent(String.self, forKey: .centerTaskId)
         isRandomized = try container.decode(Bool.self, forKey: .isRandomized)
         totalTasks = try container.decode(Int.self, forKey: .totalTasks)
         completedTasks = try container.decode(Int.self, forKey: .completedTasks)
@@ -105,6 +109,8 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         try container.encode(startDate, forKey: .startDate)
         try container.encode(endDate, forKey: .endDate)
         try container.encode(centerSquareType, forKey: .centerSquareType)
+        try container.encodeIfPresent(centerSquareCustomName, forKey: .centerSquareCustomName)
+        try container.encodeIfPresent(centerTaskId, forKey: .centerTaskId)
         try container.encode(isRandomized, forKey: .isRandomized)
         try container.encode(totalTasks, forKey: .totalTasks)
         try container.encode(completedTasks, forKey: .completedTasks)
@@ -146,7 +152,8 @@ enum Timeframe: String, Codable, DatabaseValueConvertible {
 
 enum CenterSquareType: String, Codable, DatabaseValueConvertible {
     case free
-    case custom
+    case customFree = "custom_free"
+    case chosen
     case none
 }
 

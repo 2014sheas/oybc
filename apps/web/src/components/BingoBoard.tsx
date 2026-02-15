@@ -1,6 +1,15 @@
 import { useState, useCallback, useMemo } from 'react';
 import { BingoSquare } from './BingoSquare';
-import { detectBingos, formatBingoMessage, getHighlightedSquares, fisherYatesShuffle } from '@oybc/shared';
+import {
+  detectBingos,
+  formatBingoMessage,
+  getHighlightedSquares,
+  fisherYatesShuffle,
+  getCenterSquareIndex,
+  isCenterAutoCompleted,
+  getCenterDisplayText,
+  CenterSquareType,
+} from '@oybc/shared';
 import type { BoardSize } from '@oybc/shared';
 import styles from './BingoBoard.module.css';
 
@@ -19,6 +28,10 @@ interface BingoBoardProps {
   gridSize?: number;
   /** Size of each square in pixels (default: 80) */
   squareSize?: number;
+  /** Center square type (default: none) */
+  centerSquareType?: CenterSquareType;
+  /** Custom name for CUSTOM_FREE center square type */
+  centerSquareCustomName?: string;
 }
 
 /**
@@ -29,21 +42,46 @@ interface BingoBoardProps {
  * For odd-sized grids, the center square has special styling with a
  * thicker border and star indicator.
  *
+ * Center square types:
+ * - FREE: Auto-completed, shows "FREE SPACE", locked (cannot toggle off)
+ * - CUSTOM_FREE: Auto-completed with custom text, locked
+ * - CHOSEN: Fixed task name, NOT auto-completed, toggleable like any square
+ * - NONE: Center is an ordinary square, no special treatment
+ *
  * @param gridSize - Number of rows/columns (3, 4, or 5; default: 5)
  * @param squareSize - Width and height of each square in pixels (default: 80)
+ * @param centerSquareType - Center square behavior type (default: NONE)
+ * @param centerSquareCustomName - Custom name for CUSTOM_FREE type
  */
-export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
+export function BingoBoard({
+  gridSize = 5,
+  squareSize = 80,
+  centerSquareType = CenterSquareType.NONE,
+  centerSquareCustomName,
+}: BingoBoardProps) {
   const totalSquares = gridSize * gridSize;
-  const centerIndex = gridSize % 2 === 1 ? Math.floor(totalSquares / 2) : -1;
+  const centerIndex = getCenterSquareIndex(gridSize);
+  const autoCompleted = isCenterAutoCompleted(centerSquareType);
+  const centerDisplayText = getCenterDisplayText(centerSquareType, centerSquareCustomName);
+
   const [taskNames, setTaskNames] = useState<string[]>(() => generateTaskNames(totalSquares));
-  const [completedSquares, setCompletedSquares] = useState<Set<number>>(new Set());
+  const [completedSquares, setCompletedSquares] = useState<Set<number>>(() => {
+    if (centerIndex >= 0 && autoCompleted) {
+      return new Set([centerIndex]);
+    }
+    return new Set();
+  });
 
   /**
    * Toggle a square's completed state by index.
+   * Prevents toggling auto-completed center squares (FREE, CUSTOM_FREE).
    *
    * @param index - The 0-based index of the square to toggle
    */
   const handleToggle = useCallback((index: number) => {
+    if (index === centerIndex && autoCompleted) {
+      return;
+    }
     setCompletedSquares((prev) => {
       const next = new Set(prev);
       if (next.has(index)) {
@@ -53,14 +91,19 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
       }
       return next;
     });
-  }, []);
+  }, [centerIndex, autoCompleted]);
 
   /**
    * Reset all squares to incomplete state.
+   * Preserves auto-completed center square if applicable.
    */
   const handleReset = useCallback(() => {
-    setCompletedSquares(new Set());
-  }, []);
+    if (centerIndex >= 0 && autoCompleted) {
+      setCompletedSquares(new Set([centerIndex]));
+    } else {
+      setCompletedSquares(new Set());
+    }
+  }, [centerIndex, autoCompleted]);
 
   /**
    * Set all squares to completed state (for testing).
@@ -71,11 +114,28 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
 
   /**
    * Shuffle task names using Fisher-Yates algorithm and reset completion state.
+   * Preserves auto-completed center square.
+   * For CHOSEN type, keeps the center task fixed and only shuffles other squares.
    */
   const handleShuffle = useCallback(() => {
-    setTaskNames((prev) => fisherYatesShuffle(prev));
-    setCompletedSquares(new Set());
-  }, []);
+    if (centerSquareType === CenterSquareType.CHOSEN && centerIndex >= 0) {
+      setTaskNames((prev) => {
+        const centerTask = prev[centerIndex];
+        const otherTasks = prev.filter((_, i) => i !== centerIndex);
+        const shuffled = fisherYatesShuffle(otherTasks);
+        const newTasks = [...shuffled];
+        newTasks.splice(centerIndex, 0, centerTask);
+        return newTasks;
+      });
+    } else {
+      setTaskNames((prev) => fisherYatesShuffle(prev));
+    }
+    if (centerIndex >= 0 && autoCompleted) {
+      setCompletedSquares(new Set([centerIndex]));
+    } else {
+      setCompletedSquares(new Set());
+    }
+  }, [centerIndex, autoCompleted, centerSquareType]);
 
   const completedCount = completedSquares.size;
 
@@ -120,16 +180,25 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
           const row = Math.floor(index / gridSize);
           const col = index % gridSize;
 
+          let displayName = name;
+          if (isCenter && centerDisplayText) {
+            displayName = centerDisplayText;
+          } else if (isCenter && centerSquareType === CenterSquareType.NONE) {
+            displayName = name;
+          } else if (isCenter) {
+            displayName = `${name} *`;
+          }
+
           return (
             <div
               key={index}
-              className={`${styles.cellWrapper} ${isCenter ? styles.centerCell : ''} ${isHighlighted ? styles.highlightedCell : ''}`}
+              className={`${styles.cellWrapper} ${isCenter && centerSquareType !== CenterSquareType.NONE ? styles.centerCell : ''} ${isHighlighted ? styles.highlightedCell : ''}`}
               role="gridcell"
               aria-rowindex={row + 1}
               aria-colindex={col + 1}
             >
               <BingoSquare
-                taskName={isCenter ? `${name} *` : name}
+                taskName={displayName}
                 initialCompleted={completedSquares.has(index)}
                 size={squareSize}
                 onToggle={() => handleToggle(index)}

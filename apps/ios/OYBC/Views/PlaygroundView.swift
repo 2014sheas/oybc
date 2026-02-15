@@ -12,8 +12,78 @@ struct Feature: Identifiable {
 /// A dedicated space for testing new features before integrating them into the main app.
 /// Features are displayed in collapsible sections using DisclosureGroup.
 struct PlaygroundView: View {
-    /// Features under test - new features will be added here
+    /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
+        Feature(
+            id: "center-space-free",
+            title: "Center Space: True Free Space (5x5)",
+            content: AnyView(
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Center is auto-completed, shows \"FREE SPACE\", locked (cannot toggle off), counts toward bingo.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .free)
+                        .frame(maxWidth: .infinity)
+                }
+            )
+        ),
+        Feature(
+            id: "center-space-custom-free",
+            title: "Center Space: Customizable Free Space (5x5)",
+            content: AnyView(
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Center is auto-completed with custom text, locked, counts toward bingo.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .customFree, centerSquareCustomName: "My Goal!")
+                        .frame(maxWidth: .infinity)
+                }
+            )
+        ),
+        Feature(
+            id: "center-space-chosen",
+            title: "Center Space: User-Chosen Center (5x5)",
+            content: AnyView(
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Center has a fixed task (e.g., \"My Special Task\"), NOT auto-completed, can toggle like any square.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .chosen)
+                        .frame(maxWidth: .infinity)
+                }
+            )
+        ),
+        Feature(
+            id: "center-space-none",
+            title: "Center Space: No Center Space (5x5)",
+            content: AnyView(
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Center is an ordinary square, no special treatment.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .none)
+                        .frame(maxWidth: .infinity)
+                }
+            )
+        ),
+        Feature(
+            id: "center-space-3x3",
+            title: "Center Space: Works on 3x3 Too!",
+            content: AnyView(
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("True Free Space works on smaller odd-sized boards (center is index 4 on 3x3).")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    BingoBoard(gridSize: 3, squareSize: 80, centerSquareType: .free)
+                        .frame(maxWidth: .infinity)
+                }
+            )
+        ),
         Feature(
             id: "bingo-square",
             title: "Bingo Square",

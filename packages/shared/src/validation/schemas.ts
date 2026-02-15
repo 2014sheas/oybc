@@ -20,10 +20,28 @@ export const CreateBoardInputSchema = z.object({
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
   centerSquareType: z.nativeEnum(CenterSquareType),
+  centerSquareCustomName: z.string().max(100).optional(),
+  centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
 }).refine(
   (data) => new Date(data.endDate) > new Date(data.startDate),
   { message: 'End date must be after start date' }
+).refine(
+  (data) => {
+    if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
+      return data.centerSquareCustomName !== undefined && data.centerSquareCustomName.length > 0;
+    }
+    return true;
+  },
+  { message: 'centerSquareCustomName is required when centerSquareType is custom_free' }
+).refine(
+  (data) => {
+    if (data.centerSquareType === CenterSquareType.CHOSEN) {
+      return data.centerTaskId !== undefined;
+    }
+    return true;
+  },
+  { message: 'centerTaskId is required when centerSquareType is chosen' }
 );
 
 export const UpdateBoardInputSchema = z.object({
@@ -43,6 +61,8 @@ export const BoardSchema = z.object({
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
   centerSquareType: z.nativeEnum(CenterSquareType),
+  centerSquareCustomName: z.string().max(100).optional(),
+  centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
   totalTasks: z.number().int().min(0),
   completedTasks: z.number().int().min(0),
