@@ -1,5 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { BingoSquare } from './BingoSquare';
+import { detectBingos, formatBingoMessage, getHighlightedSquares } from '@oybc/shared';
+import type { BoardSize } from '@oybc/shared';
 import styles from './BingoBoard.module.css';
 
 /**
@@ -69,6 +71,29 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
 
   const completedCount = completedSquares.size;
 
+  /** Build the flat boolean completion grid from the Set of completed indices. */
+  const completionGrid = useMemo(() => {
+    return Array.from({ length: totalSquares }, (_, i) => completedSquares.has(i));
+  }, [completedSquares, totalSquares]);
+
+  /** Run bingo detection on every state change. */
+  const bingoResult = useMemo(
+    () => detectBingos(completionGrid, gridSize as BoardSize),
+    [completionGrid, gridSize]
+  );
+
+  /** Format the display message (null if no bingos). */
+  const bingoMessage = useMemo(
+    () => formatBingoMessage(bingoResult),
+    [bingoResult]
+  );
+
+  /** Set of square indices that should be highlighted (part of a completed line). */
+  const highlightedSquares = useMemo(
+    () => getHighlightedSquares(bingoResult.completedLines, gridSize as BoardSize),
+    [bingoResult.completedLines, gridSize]
+  );
+
   return (
     <div className={styles.boardContainer}>
       {/* Board grid */}
@@ -83,13 +108,14 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
       >
         {taskNames.map((name, index) => {
           const isCenter = index === centerIndex;
+          const isHighlighted = highlightedSquares.has(index);
           const row = Math.floor(index / gridSize);
           const col = index % gridSize;
 
           return (
             <div
               key={index}
-              className={`${styles.cellWrapper} ${isCenter ? styles.centerCell : ''}`}
+              className={`${styles.cellWrapper} ${isCenter ? styles.centerCell : ''} ${isHighlighted ? styles.highlightedCell : ''}`}
               role="gridcell"
               aria-rowindex={row + 1}
               aria-colindex={col + 1}
@@ -106,6 +132,17 @@ export function BingoBoard({ gridSize = 5, squareSize = 80 }: BingoBoardProps) {
           );
         })}
       </div>
+
+      {/* Bingo detection message */}
+      {bingoMessage && (
+        <div
+          className={`${styles.bingoMessage} ${bingoResult.isGreenlog ? styles.greenlog : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {bingoMessage}
+        </div>
+      )}
 
       {/* Board info and controls */}
       <div className={styles.controls}>

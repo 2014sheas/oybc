@@ -22,6 +22,7 @@
 		E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */; };
 		B1C2D3E4F5A6B7C8D9E0F1A2 /* BingoSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */; };
 		D4E5F6A7B8C9D0E1F2A3B4C5 /* BingoBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */; };
+		E5F6A7B8C9D0E1F2A3B4C5D6 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +52,7 @@
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoSquare.swift; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoBoard.swift; sourceTree = "<group>"; };
+		F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,9 +82,18 @@
 			children = (
 				C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */,
 				3AD387F508B024065D14DBAE /* Database */,
+				A7B8C9D0E1F2A3B4C5D6E7F8 /* Services */,
 				E04B680C4AB00EFB7FB680F9 /* Views */,
 			);
 			path = OYBC;
+			sourceTree = "<group>";
+		};
+		A7B8C9D0E1F2A3B4C5D6E7F8 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		58CCF2A47CA60303B518F138 /* Products */ = {
@@ -263,6 +274,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9ECE28E0A8E7C648C808CD01 /* AppDatabase.swift in Sources */,
+				E5F6A7B8C9D0E1F2A3B4C5D6 /* BingoDetection.swift in Sources */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* BingoBoard.swift in Sources */,
 				B1C2D3E4F5A6B7C8D9E0F1A2 /* BingoSquare.swift in Sources */,
 				9F0D8D9AA79597CE605BD66A /* Board.swift in Sources */,

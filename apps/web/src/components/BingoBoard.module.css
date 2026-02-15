@@ -30,6 +30,33 @@
   border-color: #FF9800;
 }
 
+/* Highlight for squares that are part of a completed bingo line */
+.highlightedCell > * {
+  border-color: #FFD700;
+  border-width: 3px;
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+}
+
+/* Bingo detection message */
+.bingoMessage {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #FFD700;
+  text-align: center;
+  padding: 0.5rem 1rem;
+  border: 2px solid #FFD700;
+  border-radius: 8px;
+  background-color: rgba(255, 215, 0, 0.1);
+}
+
+/* GREENLOG message styling */
+.greenlog {
+  color: #4CAF50;
+  border-color: #4CAF50;
+  background-color: rgba(76, 175, 80, 0.1);
+  font-size: 1.3rem;
+}
+
 .controls {
   display: flex;
   align-items: center;

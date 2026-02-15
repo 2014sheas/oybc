@@ -5,7 +5,9 @@ import SwiftUI
 /// Supports 3x3, 4x4, and 5x5 grid sizes. All squares are toggleable.
 /// For odd-sized grids, the center square has special styling with a
 /// thicker orange border and star indicator. Includes reset and fill-all
-/// buttons for testing.
+/// buttons for testing. Detects completed bingo lines (rows, columns,
+/// diagonals) and highlights them with a gold border. Displays a message
+/// when bingo is achieved and "GREENLOG!" when all squares are complete.
 ///
 /// - Parameters:
 ///   - gridSize: Number of rows/columns in the grid (default: 5)
@@ -45,12 +47,33 @@ struct BingoBoard: View {
         completedSquares.count
     }
 
+    /// Flat boolean completion grid built from the completed squares set.
+    private var completionGrid: [Bool] {
+        (0..<totalSquares).map { completedSquares.contains($0) }
+    }
+
+    /// Bingo detection result computed from the current completion state.
+    private var bingoResult: BingoDetectionResult {
+        BingoDetection.detectBingos(completionGrid: completionGrid, gridSize: gridSize)
+    }
+
+    /// Display message for bingo status (nil if no bingos).
+    private var bingoMessage: String? {
+        BingoDetection.formatBingoMessage(result: bingoResult)
+    }
+
+    /// Set of square indices that should be highlighted (part of a completed line).
+    private var highlightedSquares: Set<Int> {
+        BingoDetection.getHighlightedSquares(completedLines: bingoResult.completedLines, gridSize: gridSize)
+    }
+
     var body: some View {
         VStack(spacing: 16) {
             // Board grid
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(0..<totalSquares, id: \.self) { index in
                     let isCenter = index == centerIndex
+                    let isHighlighted = highlightedSquares.contains(index)
                     let taskName = isCenter ? "\(taskNames[index]) *" : taskNames[index]
 
                     BingoSquare(
@@ -65,9 +88,14 @@ struct BingoBoard: View {
                         }
                     )
                     .overlay(
-                        // Thicker orange border for center square
                         Group {
-                            if isCenter {
+                            if isHighlighted {
+                                // Gold highlight for bingo line squares
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.yellow, lineWidth: 3)
+                                    .shadow(color: Color.yellow.opacity(0.5), radius: 3)
+                            } else if isCenter {
+                                // Thicker orange border for center square
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(Color.orange, lineWidth: 3)
                             }
@@ -82,6 +110,32 @@ struct BingoBoard: View {
             )
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(gridSize) by \(gridSize) bingo board, \(completedCount) of \(totalSquares) completed")
+
+            // Bingo detection message
+            if let message = bingoMessage {
+                Text(message)
+                    .font(bingoResult.isGreenlog ? .title2 : .headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(bingoResult.isGreenlog ? .green : Color.yellow)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(
+                                bingoResult.isGreenlog ? Color.green : Color.yellow,
+                                lineWidth: 2
+                            )
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(
+                                        bingoResult.isGreenlog
+                                            ? Color.green.opacity(0.1)
+                                            : Color.yellow.opacity(0.1)
+                                    )
+                            )
+                    )
+                    .accessibilityLabel(message)
+            }
 
             // Controls
             HStack {
