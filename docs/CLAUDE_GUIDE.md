@@ -524,3 +524,93 @@ When in doubt:
 4. **Instant UX**: Is the UI updating immediately?
 
 If the answer is "yes" to all four, you're on the right track!
+
+---
+
+## Composite Task Development
+
+### Quick Overview
+
+Composite tasks use logical operators (AND, OR, M-of-N) to combine existing tasks into complex workflows. They're represented as tree structures stored across three tables:
+
+- `composite_tasks` - Root task definitions
+- `composite_nodes` - Tree structure (operators + leaf task references)
+- `board_composite_tasks` - Per-board completion state
+
+**Key Pattern**: Same as progress tasks - leaf nodes ALWAYS reference real tasks (auto-created if inline). No embedded task data.
+
+### Core Implementation Pattern
+
+```typescript
+// Evaluation: Recursive tree traversal from leaves to root
+async function evaluateNode(node, allNodes, boardId) {
+  if (node.nodeType === 'leaf') {
+    // Check if leaf task is complete on this board
+    const boardTask = await db.boardTasks
+      .where(['boardId', 'taskId'])
+      .equals([boardId, node.taskId])
+      .first();
+    return boardTask?.isCompleted ?? false;
+  }
+
+  // Recursive: evaluate children, apply operator
+  const children = allNodes.filter(n => n.parentNodeId === node.id);
+  const results = await Promise.all(children.map(c => evaluateNode(c, allNodes, boardId)));
+
+  switch (node.operatorType) {
+    case 'AND': return results.every(r => r);
+    case 'OR': return results.some(r => r);
+    case 'M_OF_N': return results.filter(r => r).length >= node.threshold;
+  }
+}
+```
+
+### Key Guidelines
+
+**Performance**:
+- Enforce limits: Max 5 levels depth, 20 nodes per tree
+- Cache evaluation results per board
+- Fetch all nodes in one query (not individual queries)
+- Invalidate cache when sub-tasks complete
+
+**Sync**:
+- Sync entire trees atomically (all-or-nothing)
+- Never modify individual nodes during sync
+- Use standard LWW at tree level (not node level)
+
+**Validation**:
+- Prevent circular references at creation time
+- Validate M_OF_N threshold (1 ≤ M ≤ N)
+- Ensure leaf nodes always reference tasks
+
+### Common Patterns
+
+```typescript
+// Auto-create task for leaf node
+if (!taskId && input.autoCreateTask) {
+  const task = await db.tasks.add({ ...input.autoCreateTask });
+  taskId = task.id;
+}
+
+// Check composite completion when sub-task completes
+const nodes = await db.compositeNodes.where('taskId').equals(taskId).toArray();
+for (const node of nodes) {
+  await evaluateAndUpdateCompositeTask(node.compositeTaskId, boardId);
+}
+
+// Sync entire tree
+await db.transaction('rw', [db.compositeTasks, db.compositeNodes], async () => {
+  await db.compositeNodes.where('compositeTaskId').equals(id).delete();
+  await db.compositeTasks.put(remoteTask);
+  await db.compositeNodes.bulkPut(remoteNodes);
+});
+```
+
+### For Complete Details
+
+See **[COMPOSITE_TASKS.md](./COMPOSITE_TASKS.md)** for:
+- Full evaluation algorithm implementation
+- Tree builder UI patterns
+- Comprehensive validation examples
+- Testing strategies
+- Edge cases and conflict resolution

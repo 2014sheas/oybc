@@ -40,7 +40,10 @@
       "Bash(pnpm test:coverage:*)",
       "Bash(pnpm dev)",
       "Bash(curl:*)",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(npm test*)",
+      "Bash(pnpm test*)",
+      "Bash(npm test:*)"
     ]
   }
 }

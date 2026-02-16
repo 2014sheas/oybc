@@ -214,6 +214,48 @@ User taps task → Update local DB (isCompleted = true)
 - Later: Syncs to Firestore
 - Later: Other devices receive update
 
+### Completing a Composite Task (Offline)
+
+**Scenario**: User completes sub-task in composite task "(Exercise OR Yoga) AND (2 of [Meditate, Journal, Read])"
+
+```
+User completes "Exercise" task
+  ↓
+Update local DB (board_tasks: Exercise isCompleted = true)
+  ↓
+Detect composite tasks referencing "Exercise"
+  ↓
+Evaluate composite tree (recursive traversal)
+  ├─ Check AND operator (root)
+  │  ├─ Check OR operator (left child)
+  │  │  ├─ Exercise: ✅ Complete
+  │  │  └─ Yoga: ❌ Incomplete
+  │  │  → OR result: ✅ True (at least one complete)
+  │  └─ Check M_OF_N operator (right child, threshold=2)
+  │     ├─ Meditate: ✅ Complete
+  │     ├─ Journal: ✅ Complete
+  │     └─ Read: ❌ Incomplete
+  │     → M_OF_N result: ✅ True (2/3 complete, meets threshold)
+  → AND result: ✅ True (both children complete)
+  ↓
+Auto-complete composite task
+  ↓
+Update board stats + detect bingo
+  ↓
+Queue sync operations
+  ↓
+UI updates (instant) ✨
+```
+
+**Timeline**:
+- 0ms: User completes "Exercise"
+- 5ms: Local DB updated (board_tasks)
+- 8ms: Composite tree evaluated (< 50ms target)
+- 8ms: Composite task auto-completed
+- 10ms: Board stats updated
+- 10ms: UI shows composite completion ✨
+- Later: Syncs entire composite task tree to Firestore
+
 ### Multi-Device Sync
 
 **Scenario**: User completes task on iPhone, views on web

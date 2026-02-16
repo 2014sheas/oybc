@@ -13,7 +13,8 @@ This document details the synchronization strategies for complex features in OYB
 3. [Cross-Board Queries](#cross-board-queries)
 4. [Task Step Linking Sync](#task-step-linking-sync)
 5. [Bingo Line Detection Sync](#bingo-line-detection-sync)
-6. [Performance Considerations](#performance-considerations)
+6. [Composite Task Sync](#composite-task-sync)
+7. [Performance Considerations](#performance-considerations)
 
 ---
 
@@ -553,145 +554,243 @@ CREATE INDEX idx_task_steps_deleted ON task_steps(isDeleted, taskId);
 
 ---
 
-## Task Step Linking Sync
+## Progress Task Step Sync
 
-### Problem Statement
+### Key Design: All Steps Are Tasks
 
-Progress tasks can link to existing tasks as steps. When a linked task completes, the step should auto-complete. This requires bi-directional sync.
+**Critical**: Progress task steps are NOT embedded data - they are **always tasks** in the `tasks` table. The `task_steps` table only stores structure (order and relationships).
 
 ### Data Relationships
 
 ```typescript
-// Parent progress task
+// Progress task (parent)
 Task {
-  id: 'task-123',
+  id: 'prog-1',
   type: 'progress',
   title: 'Clean House'
 }
 
-// Steps for parent
+// Step structure (references tasks, NO data)
 TaskStep {
   id: 'step-1',
-  taskId: 'task-123',
-  stepIndex: 0,
-  title: 'Vacuum living room',
-  linkedTaskId: 'task-456'  // References separate task
+  progressTaskId: 'prog-1',     // Parent progress task
+  stepIndex: 0,                  // Order
+  stepTaskId: 'task-456'         // The step's task (ALWAYS set)
+  // NO title, type, action, unit, maxCount - data comes from task
 }
 
-// Linked standalone task
+// Step task (standalone task)
 Task {
   id: 'task-456',
   type: 'normal',
-  title: 'Vacuum living room',
-  parentStepId: 'step-1',      // Back-reference to step
-  parentStepIndex: 0           // Position in parent
+  title: 'Vacuum living room'
+  // No back-reference needed
+}
+
+// Completion state (per-board)
+BoardTask {
+  boardId: 'board-a',
+  taskId: 'prog-1',              // Progress task on board
+  isCompleted: false
+}
+
+BoardTask {
+  boardId: 'board-a',
+  taskId: 'task-456',            // Step task on board
+  isCompleted: true              // Completing this triggers progress check
 }
 ```
 
-### Sync Strategy: Propagate Completion
+### Sync Strategy: Independent Entity Sync
 
-When a linked task completes on **any board**, update all parent progress tasks:
+**Key Principle**: Sync `tasks`, `task_steps`, and `board_tasks` independently. No special linking logic needed.
+
+**Sync Order**:
+1. **tasks** table first (both progress tasks and step tasks)
+2. **task_steps** table next (structure only)
+3. **board_tasks** table last (completion state per board)
 
 ```typescript
-async function completeTaskOnBoard(boardId: string, taskId: string) {
-  const task = await db.tasks.get(taskId);
+// Pull sync order
+async function pullAllUpdates() {
+  // 1. Pull tasks (includes progress tasks and step tasks)
+  await pullTasks();
 
-  // Mark complete on this board
-  await db.boardTasks
-    .where('[boardId+taskId]').equals([boardId, taskId])
-    .modify({
-      isCompleted: true,
-      completedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
+  // 2. Pull task steps (structure)
+  await pullTaskSteps();
 
-  // If this task is linked to a step, propagate completion
-  if (task.parentStepId) {
-    await propagateStepCompletion(task.parentStepId);
-  }
+  // 3. Pull board tasks (completion state)
+  await pullBoardTasks();
+
+  // 4. After all data pulled, check progress task completion
+  await recheckAllProgressTasks();
 }
 
-async function propagateStepCompletion(stepId: string) {
-  // Find the parent task
-  const step = await db.taskSteps.get(stepId);
-  const parentTask = await db.tasks.get(step.taskId);
+async function pullTasks() {
+  const remoteTasks = await firestore
+    .collection('tasks')
+    .where('userId', '==', getCurrentUserId())
+    .where('updatedAt', '>', lastSyncTimestamp)
+    .get();
 
-  // Find all boards using the parent task
-  const boardTasks = await db.boardTasks
-    .where('taskId').equals(parentTask.id)
-    .toArray();
+  for (const doc of remoteTasks.docs) {
+    const remoteTask = doc.data();
+    const localTask = await db.tasks.get(remoteTask.id);
 
-  for (const boardTask of boardTasks) {
-    // Add step to completedStepIds
-    const completedStepIds = boardTask.completedStepIds || [];
-    if (!completedStepIds.includes(stepId)) {
-      completedStepIds.push(stepId);
-
-      await db.boardTasks.update(boardTask.id, {
-        completedStepIds,
-        updatedAt: new Date().toISOString(),
-        version: boardTask.version + 1
-      });
-
-      // Check if all steps complete
-      await checkProgressTaskCompletion(boardTask.id);
+    if (!localTask || remoteTask.version > localTask.version) {
+      await db.tasks.put(remoteTask);
     }
   }
 }
 
-async function checkProgressTaskCompletion(boardTaskId: string) {
-  const boardTask = await db.boardTasks.get(boardTaskId);
-  const task = await db.tasks.get(boardTask.taskId);
+async function pullTaskSteps() {
+  const remoteSteps = await firestore
+    .collection('task_steps')
+    .where('updatedAt', '>', lastSyncTimestamp)
+    .get();
 
-  // Get all steps for this task
+  for (const doc of remoteSteps.docs) {
+    const remoteStep = doc.data();
+    const localStep = await db.taskSteps.get(remoteStep.id);
+
+    if (!localStep || remoteStep.version > localStep.version) {
+      await db.taskSteps.put(remoteStep);
+    }
+  }
+}
+
+async function pullBoardTasks() {
+  const remoteBoardTasks = await firestore
+    .collection('board_tasks')
+    .where('updatedAt', '>', lastSyncTimestamp)
+    .get();
+
+  for (const doc of remoteBoardTasks.docs) {
+    const remote = doc.data();
+    const local = await db.boardTasks
+      .where(['boardId', 'taskId'])
+      .equals([remote.boardId, remote.taskId])
+      .first();
+
+    if (!local || remote.version > local.version) {
+      await db.boardTasks.put(remote);
+    }
+  }
+}
+```
+
+### Progress Task Completion Check
+
+**When to check**: After any step task completes on a board.
+
+```typescript
+async function completeStepTask(boardId: string, stepTaskId: string) {
+  // 1. Mark step task complete
+  const boardTask = await db.boardTasks
+    .where(['boardId', 'taskId'])
+    .equals([boardId, stepTaskId])
+    .first();
+
+  await db.boardTasks.update(boardTask.id, {
+    isCompleted: true,
+    completedAt: currentTimestamp(),
+    version: boardTask.version + 1
+  });
+
+  // 2. Find progress tasks that include this step
+  const progressSteps = await db.taskSteps
+    .where('stepTaskId')
+    .equals(stepTaskId)
+    .toArray();
+
+  // 3. Check completion for each progress task
+  for (const step of progressSteps) {
+    await checkProgressTaskCompletion(boardId, step.progressTaskId);
+  }
+}
+
+async function checkProgressTaskCompletion(boardId: string, progressTaskId: string) {
+  // Get all steps for this progress task
   const steps = await db.taskSteps
-    .where('taskId').equals(task.id)
+    .where('progressTaskId')
+    .equals(progressTaskId)
     .and(s => !s.isDeleted)
     .toArray();
 
-  const allComplete = steps.every(step =>
-    boardTask.completedStepIds?.includes(step.id)
-  );
+  // Check if each step task is complete on this board
+  let allComplete = true;
+  for (const step of steps) {
+    const stepBoardTask = await db.boardTasks
+      .where(['boardId', 'taskId'])
+      .equals([boardId, step.stepTaskId])
+      .first();
 
-  if (allComplete && !boardTask.isCompleted) {
-    await db.boardTasks.update(boardTask.id, {
-      isCompleted: true,
-      completedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      version: boardTask.version + 1
-    });
+    if (!stepBoardTask?.isCompleted) {
+      allComplete = false;
+      break;
+    }
+  }
+
+  // If all steps complete, mark progress task complete
+  if (allComplete) {
+    const progressBoardTask = await db.boardTasks
+      .where(['boardId', 'taskId'])
+      .equals([boardId, progressTaskId])
+      .first();
+
+    if (progressBoardTask && !progressBoardTask.isCompleted) {
+      await db.boardTasks.update(progressBoardTask.id, {
+        isCompleted: true,
+        completedAt: currentTimestamp(),
+        version: progressBoardTask.version + 1
+      });
+
+      await updateBoardStats(boardId);
+    }
   }
 }
 ```
 
 ### Conflict Resolution
 
-**Scenario:** Device A completes step 1, Device B completes step 2, both offline.
+**No special conflict resolution needed** - each table syncs independently with last-write-wins:
 
-**Resolution:**
+1. **tasks table**: Standard LWW based on version field
+2. **task_steps table**: Standard LWW based on version field (structure rarely changes)
+3. **board_tasks table**: Standard LWW based on version field
+
+**Example Conflict**:
 
 ```typescript
-async function resolveProgressTaskConflict(local: BoardTask, remote: BoardTask) {
-  // Merge completedStepIds (union of both sets)
-  const localSteps = new Set(local.completedStepIds || []);
-  const remoteSteps = new Set(remote.completedStepIds || []);
-  const mergedSteps = [...new Set([...localSteps, ...remoteSteps])];
+// Device A: Completes step task on Board 1
+Device A: board_tasks { boardId: 'board-1', taskId: 'step-task-1', isCompleted: true, version: 2 }
 
-  const resolved = {
-    ...local,
-    completedStepIds: mergedSteps,
-    version: Math.max(local.version, remote.version) + 1,
-    updatedAt: new Date().toISOString()
-  };
+// Device B: Also completes same step task on Board 1
+Device B: board_tasks { boardId: 'board-1', taskId: 'step-task-1', isCompleted: true, version: 2 }
 
-  // Recompute completion status
-  await checkProgressTaskCompletion(resolved.id);
-
-  return resolved;
-}
+// Resolution: Both have same result, higher version or newer timestamp wins (doesn't matter)
+// No data loss because completion state is the same
 ```
 
-**Key Principle:** Step completion is **additive** - merge both sets, never delete completions.
+**Cross-Board Independence**: Each board has independent completion state, so no conflicts across boards:
+
+```typescript
+// Device A: Completes step task on Board 1
+board_tasks { boardId: 'board-1', taskId: 'step-task-1', isCompleted: true }
+
+// Device B: Completes same step task on Board 2
+board_tasks { boardId: 'board-2', taskId: 'step-task-1', isCompleted: true }
+
+// No conflict - different boards, independent state
+```
+
+### Benefits of This Sync Strategy
+
+1. **Simpler**: No special linking logic, just standard entity sync
+2. **Consistent**: Same pattern as other entities (boards, tasks, board_tasks)
+3. **Atomic**: Each entity syncs independently, no partial states
+4. **Scalable**: No complex merge logic, just LWW per entity
+5. **Clear**: Completion state always in board_tasks, never duplicated
 
 ---
 
@@ -766,6 +865,340 @@ function detectBingoLines(boardSize: number, boardTasks: BoardTask[]): string[] 
 ```
 
 **Key Principle:** Never trust stored `completedLineIds` during conflict - always recompute from task completion grid.
+
+---
+
+## Composite Task Sync
+
+### Problem Statement
+
+Composite tasks represent tree structures with operators (AND/OR/M_OF_N) and leaf nodes (task references). Syncing these trees across devices requires special handling to maintain tree integrity and prevent partial updates.
+
+### Data Structure
+
+```typescript
+// Root composite task
+CompositeTask {
+  id: string;
+  userId: string;
+  title: string;
+  rootNodeId: string;  // FK to composite_nodes (root of tree)
+  version: number;
+}
+
+// Tree nodes (operators and leaf references)
+CompositeNode {
+  id: string;
+  compositeTaskId: string;
+  parentNodeId?: string;
+  nodeIndex: number;
+  nodeType: 'operator' | 'leaf';
+
+  // Operator node fields
+  operatorType?: 'AND' | 'OR' | 'M_OF_N';
+  threshold?: number;
+
+  // Leaf node field (always task reference after auto-conversion)
+  taskId?: string;  // FK to tasks table
+
+  version: number;
+}
+
+// Board-level completion state
+BoardCompositeTask {
+  id: string;
+  boardId: string;
+  compositeTaskId: string;
+  isCompleted: boolean;
+  completedAt?: string;
+  version: number;
+}
+```
+
+### Sync Strategy: Atomic Tree Operations
+
+**Key Principle**: Sync entire composite task trees atomically (all nodes or none) to prevent partial tree corruption.
+
+#### Pull Sync (Fetch from Firestore)
+
+```typescript
+async function pullCompositeTaskTree(compositeTaskId: string) {
+  // 1. Fetch composite task
+  const remoteTask = await firestore
+    .collection('compositeTasks')
+    .doc(compositeTaskId)
+    .get();
+
+  // 2. Fetch all nodes for this composite task
+  const remoteNodes = await firestore
+    .collection('compositeNodes')
+    .where('compositeTaskId', '==', compositeTaskId)
+    .where('isDeleted', '==', false)
+    .get();
+
+  // 3. Replace local tree atomically (transaction)
+  await db.transaction('rw', [db.compositeTasks, db.compositeNodes], async () => {
+    // Delete old nodes
+    await db.compositeNodes
+      .where('compositeTaskId')
+      .equals(compositeTaskId)
+      .delete();
+
+    // Insert remote task and nodes
+    await db.compositeTasks.put(remoteTask.data());
+    await db.compositeNodes.bulkPut(remoteNodes.docs.map(d => d.data()));
+  });
+}
+```
+
+#### Push Sync (Send to Firestore)
+
+```typescript
+async function pushCompositeTaskTree(compositeTaskId: string) {
+  // 1. Fetch local task and nodes
+  const localTask = await db.compositeTasks.get(compositeTaskId);
+  const localNodes = await db.compositeNodes
+    .where('compositeTaskId')
+    .equals(compositeTaskId)
+    .toArray();
+
+  // 2. Push to Firestore atomically (batch)
+  const batch = firestore.batch();
+
+  batch.set(
+    firestore.collection('compositeTasks').doc(localTask.id),
+    localTask
+  );
+
+  localNodes.forEach(node => {
+    batch.set(
+      firestore.collection('compositeNodes').doc(node.id),
+      node
+    );
+  });
+
+  await batch.commit();
+}
+```
+
+### Conflict Resolution
+
+**Strategy**: Last-write-wins at composite task level (not individual nodes).
+
+```typescript
+async function resolveCompositeTaskConflict(
+  local: CompositeTask,
+  remote: CompositeTask
+) {
+  // Compare versions
+  if (remote.version > local.version) {
+    // Remote wins - pull entire tree
+    await pullCompositeTaskTree(remote.id);
+    return remote;
+
+  } else if (local.version > remote.version) {
+    // Local wins - push entire tree
+    await pushCompositeTaskTree(local.id);
+    return local;
+
+  } else {
+    // Same version - use timestamp tiebreaker
+    const winner = new Date(remote.updatedAt) > new Date(local.updatedAt)
+      ? remote
+      : local;
+
+    if (winner === remote) {
+      await pullCompositeTaskTree(remote.id);
+    } else {
+      await pushCompositeTaskTree(local.id);
+    }
+
+    return winner;
+  }
+}
+```
+
+**Why Not Node-Level Merging?**
+
+Node-level conflict resolution (merging individual node changes) is too complex and error-prone:
+- Tree structure dependencies make partial merges dangerous
+- Operator changes can invalidate child nodes
+- Parent-child relationships can break during partial sync
+- MVP uses simpler atomic tree sync (entire tree wins)
+
+**Future Enhancement (v1.1)**: Operational transformation for concurrent tree edits.
+
+### Board Composite Task Completion Sync
+
+Completion state for composite tasks on boards follows standard BoardTask pattern:
+
+```typescript
+async function syncBoardCompositeTask(boardCompositeTaskId: string) {
+  const local = await db.boardCompositeTasks.get(boardCompositeTaskId);
+  const remote = await firestoreGet(`boardCompositeTasks/${boardCompositeTaskId}`);
+
+  // Last-write-wins
+  if (remote.version > local.version) {
+    await db.boardCompositeTasks.put(remote);
+  } else if (local.version > remote.version) {
+    await firestorePut(`boardCompositeTasks/${boardCompositeTaskId}`, local);
+  } else {
+    // Timestamp tiebreaker
+    const winner = new Date(remote.updatedAt) > new Date(local.updatedAt)
+      ? remote
+      : local;
+    await db.boardCompositeTasks.put(winner);
+    await firestorePut(`boardCompositeTasks/${boardCompositeTaskId}`, winner);
+  }
+}
+```
+
+### Auto-Created Task Sync
+
+When users create "inline" tasks in composite tree builder, they're automatically converted to real tasks:
+
+```typescript
+async function createCompositeNodeWithAutoTask(
+  input: CreateCompositeNodeInput
+) {
+  if (input.nodeType === 'leaf' && input.autoCreateTask) {
+    // 1. Create real task first
+    const newTask = await db.tasks.add({
+      id: generateUUID(),
+      userId: getCurrentUserId(),
+      title: input.autoCreateTask.title,
+      type: input.autoCreateTask.type,
+      // ... other fields
+    });
+
+    // 2. Queue task for sync
+    await syncQueue.enqueue({
+      entityType: 'task',
+      entityId: newTask.id,
+      operationType: 'CREATE',
+      payload: newTask
+    });
+
+    // 3. Create composite node referencing the task
+    return {
+      id: generateUUID(),
+      nodeType: 'leaf',
+      taskId: newTask.id,  // Reference to auto-created task
+      // ... other fields
+    };
+  }
+}
+```
+
+Auto-created tasks sync like any other task (standard task sync strategy).
+
+### Performance Considerations
+
+**Tree Size Limits**:
+- Recommend max 20 nodes per composite task (soft limit)
+- Recommend max 5 nesting levels (soft limit)
+- Validation can enforce limits to prevent performance issues
+
+**Sync Batch Size**:
+- Single composite task tree = 1 root + N nodes
+- Firestore batch limit = 500 operations
+- Max ~400 nodes per composite task (leaves room for metadata)
+
+**Evaluation Performance**:
+- Target: < 50ms for 20-node tree
+- Cache evaluation results per board
+- Invalidate cache when sub-tasks complete
+
+### Edge Cases
+
+#### Deleted Task References
+
+When a task referenced by a composite node is deleted:
+
+```typescript
+async function evaluateLeafNode(
+  node: CompositeNode,
+  boardId: string
+) {
+  if (node.taskId) {
+    const task = await db.tasks.get(node.taskId);
+
+    // Deleted task → always incomplete
+    if (task?.isDeleted) {
+      return false;
+    }
+
+    // Check completion on board
+    const boardTask = await db.boardTasks
+      .where(['boardId', 'taskId'])
+      .equals([boardId, node.taskId])
+      .first();
+
+    return boardTask?.isCompleted ?? false;
+  }
+
+  return false;
+}
+```
+
+UI shows warning: "⚠️ Referenced task deleted" with option to replace.
+
+#### Circular References
+
+Prevented at creation time:
+
+```typescript
+async function validateNoCircularReferences(
+  input: CreateCompositeTaskInput
+) {
+  const visited = new Set<string>();
+  await checkNodeForCircularReferences(input.rootNode, visited, db);
+}
+
+async function checkNodeForCircularReferences(
+  nodeInput: CreateCompositeNodeInput,
+  visited: Set<string>,
+  db: DatabaseInstance
+) {
+  if (nodeInput.nodeType === 'leaf' && nodeInput.taskId) {
+    // Check if already visited (circular reference)
+    if (visited.has(nodeInput.taskId)) {
+      throw new Error(`Circular reference detected: task ${nodeInput.taskId}`);
+    }
+
+    visited.add(nodeInput.taskId);
+
+    // Check if referenced task is itself a composite task
+    const compositeTask = await db.compositeTasks
+      .where('id')
+      .equals(nodeInput.taskId)
+      .first();
+
+    if (compositeTask) {
+      // Recursively check composite task tree
+      // ... validation logic
+    }
+  }
+
+  // Recursively check children
+  if (nodeInput.children) {
+    for (const child of nodeInput.children) {
+      await checkNodeForCircularReferences(child, new Set(visited), db);
+    }
+  }
+}
+```
+
+### Testing Checklist
+
+- [ ] Create composite task offline → syncs to Firestore when online
+- [ ] Modify composite task on Device A → Device B pulls changes → tree updates correctly
+- [ ] Delete composite task → soft delete syncs → removed from other devices
+- [ ] Conflict scenario: Edit tree on two devices offline → LWW resolves correctly
+- [ ] Large tree (20 nodes) syncs in < 500ms
+- [ ] Auto-created tasks sync independently of composite task
+- [ ] Deleted task reference → evaluation handles gracefully
+- [ ] Circular reference → validation prevents creation
 
 ---
 

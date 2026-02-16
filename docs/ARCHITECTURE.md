@@ -4,7 +4,7 @@
 
 Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first architecture**. Local databases are the source of truth (GRDB on iOS, Dexie on web), Firestore syncs in background for multi-device support.
 
-**Timeline**: 12-14 weeks to production
+**Timeline**: 14-16 weeks to production (includes composite task system)
 
 **Key Principles**:
 - ✅ **Local-first**: All reads from local DB (< 10ms), instant UX
@@ -15,7 +15,8 @@ Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first a
 
 **What Changed from MVP**:
 - ❌ No copying types, utilities, or code from MVP (fresh start)
-- ❌ No complex task linking (simplified/deferred to v1.1)
+- ✅ Composite task system with logical operators (AND/OR/M-of-N)
+- ✅ Tree-based task composition for complex workflows
 - ✅ Firestore is sync layer only, NOT primary storage
 - ✅ Instant offline UX (no loading spinners, no "waiting for network")
 - ✅ Robust conflict resolution (last-write-wins with version fields)
@@ -80,13 +81,16 @@ User completes task → Update local DB immediately (< 10ms) → UI updates
 **Tables** (identical structure on iOS SQLite and web IndexedDB):
 
 ```
-users              -- Cached user profiles
-boards             -- Board documents
-tasks              -- Task definitions (reusable across boards)
-task_steps         -- Progress task steps (embedded)
-board_tasks        -- Junction: board ↔ task (completion state per board)
-bingo_lines        -- Completed lines (denormalized for performance)
-sync_queue         -- Pending Firestore operations
+users                   -- Cached user profiles
+boards                  -- Board documents
+tasks                   -- Task definitions (reusable across boards)
+task_steps              -- Progress task steps (structure only, data in tasks table)
+board_tasks             -- Junction: board ↔ task (completion state per board)
+composite_tasks         -- Composite task definitions (tree roots)
+composite_nodes         -- Tree structure (operators + leaf references)
+board_composite_tasks   -- Junction: board ↔ composite task (completion state)
+bingo_lines             -- Completed lines (denormalized for performance)
+sync_queue              -- Pending Firestore operations
 ```
 
 **Key Design Decisions**:
@@ -95,6 +99,8 @@ sync_queue         -- Pending Firestore operations
 - **Version fields** (optimistic locking for conflict resolution)
 - **Soft deletes** (`isDeleted` flag, not hard delete - prevents data loss)
 - **Denormalized stats** (board.completedTasks stored directly for instant reads)
+- **All progress steps are tasks** (task_steps only stores structure/order, all data in tasks table)
+- **Cross-board task reusability** (same task can appear on multiple boards with independent completion)
 
 **Example: Board Table**:
 ```sql
@@ -166,9 +172,9 @@ CREATE TABLE boards (
 
 ---
 
-### Phase 2: Core Game Loop (Offline-Only) (Weeks 3-5)
+### Phase 2: Core Game Loop & Task System (Offline-Only) (Weeks 3-7)
 
-**Goal**: Complete bingo game working entirely offline
+**Goal**: Complete bingo game with comprehensive task system working entirely offline
 
 **Week 3: Board Creation UI**
 
@@ -227,20 +233,88 @@ CREATE TABLE boards (
 - [ ] Bingo detection algorithm (TypeScript)
 - [ ] Comprehensive tests (all 8 line types, edge cases, 3x3/4x4/5x5 boards)
 
-**Success Criteria**:
+**Success Criteria** (Basic Game Loop):
 - ✅ Full game loop works on iOS (offline): create board, complete tasks, get bingos, greenlog
 - ✅ Full game loop works on web (offline)
 - ✅ All operations instant (< 10ms from local DB)
 - ✅ Bingo detection identical on both platforms
 - ✅ Airplane mode works perfectly
 
+**Week 6: Composite Task Data Layer**
+
+**Goal**: Add database tables and evaluation algorithm for composite tasks
+
+**iOS**:
+- [ ] Add `composite_tasks`, `composite_nodes`, `board_composite_tasks` tables to Schema.sql
+- [ ] Create Swift models (CompositeTask, CompositeNode, BoardCompositeTask)
+- [ ] Implement GRDB migrations for new tables
+- [ ] CRUD operations for composite tasks
+- [ ] Swift implementation of tree evaluation algorithm
+
+**Web**:
+- [ ] Add composite task tables to Dexie schema
+- [ ] TypeScript interfaces (import from `@oybc/shared`)
+- [ ] CRUD operations for composite tasks
+- [ ] Dexie queries and indexes for tree traversal
+
+**Shared**:
+- [ ] Define CompositeTask, CompositeNode TypeScript types
+- [ ] Define CompositeOperator enum (AND, OR, M_OF_N)
+- [ ] Implement `evaluateCompositeTask()` algorithm (recursive tree traversal)
+- [ ] Zod validation schemas for composite tasks
+- [ ] Circular reference detection algorithm
+- [ ] 100+ unit tests for evaluation algorithm
+
+**Testing**:
+- [ ] Create composite task with AND operator (all children must complete)
+- [ ] Create composite task with OR operator (any child can complete)
+- [ ] Create composite task with M_OF_N operator (threshold-based)
+- [ ] Nested composite tasks ((A AND B) OR C)
+- [ ] Circular reference validation prevents invalid trees
+- [ ] All operations < 50ms for 20-node trees
+
+**Week 7: Composite Task UI & Integration**
+
+**Goal**: Build tree builder UI and integrate into main app
+
+**iOS Playground**:
+- [ ] Tree builder UI (nested operators and tasks)
+- [ ] Operator picker (AND/OR/M_OF_N)
+- [ ] Task reference selector (existing tasks)
+- [ ] Auto-create task flow (inline → real task)
+- [ ] Visual tree preview with completion state
+- [ ] Demo: Simple AND ("Exercise AND Meditate")
+- [ ] Demo: Simple OR ("Run 3 miles OR Bike 10 miles")
+- [ ] Demo: M_OF_N ("2 of [Read, Journal, Meditate]")
+- [ ] Demo: Nested ("(Exercise OR Yoga) AND (2 of [tasks])")
+
+**Web Playground**:
+- [ ] Mirror iOS tree builder functionality
+- [ ] Drag-and-drop tree builder (optional enhancement)
+- [ ] Form-based tree construction
+- [ ] Real-time evaluation display
+- [ ] Same demo scenarios as iOS
+
+**Integration** (Both Platforms):
+- [ ] Add composite task option to board creation
+- [ ] Composite task completion UI (show tree structure)
+- [ ] Evaluation runs when sub-tasks complete
+- [ ] Auto-complete composite when all conditions met
+
+**Success Criteria** (Complete Task System):
+- ✅ Normal, Counting, Progress, and Composite tasks all work
+- ✅ Composite evaluation < 50ms for complex trees
+- ✅ Tree builder UI functional on both platforms
+- ✅ Auto-task-conversion working (inline → real tasks)
+- ✅ Cross-platform task parity (web and iOS identical)
+
 ---
 
-### Phase 3: Authentication & Sync Layer (Weeks 6-8)
+### Phase 3: Authentication & Sync Layer (Weeks 8-10)
 
 **Goal**: Add Firebase auth and background sync for multi-device support
 
-**Week 6: Authentication**
+**Week 8: Authentication**
 
 **iOS**:
 - [ ] Install Firebase iOS SDK (Auth only for now)
@@ -261,7 +335,7 @@ CREATE TABLE boards (
 - [ ] Sign in on web with same credentials
 - [ ] User's boards isolated by userId (can't see other users' data)
 
-**Week 7: Sync Queue & Background Sync**
+**Week 9: Sync Queue & Background Sync**
 
 **iOS**:
 - [ ] Add Firebase Firestore SDK
@@ -283,7 +357,7 @@ CREATE TABLE boards (
 - [ ] Disconnect again → operations queue locally
 - [ ] Reconnect → all operations sync
 
-**Week 8: Pull Sync & Conflict Resolution**
+**Week 10: Pull Sync & Conflict Resolution**
 
 **iOS & Web**:
 - [ ] Implement pull sync (fetch changes from Firestore since last sync)
@@ -413,20 +487,25 @@ oybc/                           # Monorepo root
 - ✅ Offline CRUD works on both platforms
 - ✅ Shared package builds without errors
 
-### Phase 2 (Weeks 3-5)
+### Phase 2 (Weeks 3-7)
 - ✅ Full game loop works offline
 - ✅ Bingo detection identical on iOS and web
+- ✅ All task types working (Normal, Counting, Progress, Composite)
+- ✅ Composite task evaluation < 50ms
 - ✅ All operations instant (no loading spinners)
 
-### Phase 3 (Weeks 6-8)
+### Phase 3 (Weeks 8-10)
 - ✅ Multi-device sync < 5 seconds
-- ✅ Conflicts resolve correctly
+- ✅ Conflicts resolve correctly (including composite tasks)
 - ✅ No data loss in offline scenarios
+- ✅ Composite task trees sync correctly
 
-### Launch (Week 12)
+### Phase 4: Polish & Launch (Weeks 11-15)
+- ✅ UI polish and animations
+- ✅ Achievement squares and progress counters
 - ✅ TestFlight beta (5-10 users)
 - ✅ No sync bugs (1 week testing)
-- ✅ Performance targets met (< 10ms reads)
+- ✅ Performance targets met (< 10ms reads, < 50ms composite evaluation)
 - ✅ Security verified (can't access other users' data)
 
 ---
