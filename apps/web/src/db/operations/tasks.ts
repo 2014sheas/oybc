@@ -11,8 +11,7 @@ import { generateUUID, currentTimestamp } from '../utils';
  */
 export async function fetchTasks(userId: string): Promise<Task[]> {
   return db.tasks
-    .where('[userId+isDeleted]')
-    .equals([userId, false] as any)
+    .filter((t) => t.userId === userId && !t.isDeleted)
     .sortBy('title');
 }
 
@@ -84,10 +83,11 @@ export async function updateTask(
   id: string,
   updates: Partial<Task>
 ): Promise<void> {
+  const existing = await db.tasks.get(id);
   await db.tasks.update(id, {
     ...updates,
     updatedAt: currentTimestamp(),
-    version: db.tasks.get(id).then((t) => (t?.version ?? 0) + 1),
+    version: (existing?.version ?? 0) + 1,
   });
 }
 

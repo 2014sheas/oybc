@@ -11,8 +11,7 @@ import { generateUUID, currentTimestamp } from '../utils';
  */
 export async function fetchProgressCounters(userId: string): Promise<ProgressCounter[]> {
   return db.progressCounters
-    .where('[userId+isDeleted]')
-    .equals([userId, false] as any)
+    .filter((c) => c.userId === userId && !c.isDeleted)
     .sortBy('name');
 }
 

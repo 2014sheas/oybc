@@ -10,8 +10,7 @@ export function useTasks(userId: string | undefined) {
       if (!userId) return [];
 
       return db.tasks
-        .where('[userId+isDeleted]')
-        .equals([userId, false] as any)
+        .filter((t) => t.userId === userId && !t.isDeleted)
         .sortBy('title');
     },
     [userId],

@@ -17,43 +17,28 @@ final class AppDatabase {
 
     private init() {
         do {
-            // Get database file path
             let databaseURL = try FileManager.default
                 .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appendingPathComponent("oybc.sqlite")
 
-            // Create database queue
-            dbQueue = try DatabaseQueue(path: databaseURL.path)
+            // WAL journal mode reduces write I/O significantly — especially important
+            // during first-run migration when all tables and indexes are created.
+            // Must be passed to DatabaseQueue at creation time; configuring it after
+            // the fact has no effect on the already-opened database connection.
+            var config = Configuration()
+            config.prepareDatabase { db in
+                try db.execute(sql: "PRAGMA journal_mode = WAL")
+                try db.execute(sql: "PRAGMA foreign_keys = ON")
+            }
 
-            // Configure database
-            try configureDatabase()
-
-            // Run migrations
+            let start = Date()
+            dbQueue = try DatabaseQueue(path: databaseURL.path, configuration: config)
             try migrator.migrate(dbQueue)
-
-            print("✅ Database initialized at: \(databaseURL.path)")
+            let elapsed = Date().timeIntervalSince(start)
+            print("✅ Database initialized at: \(databaseURL.path) (\(String(format: "%.2f", elapsed))s)")
         } catch {
             fatalError("Database initialization failed: \(error)")
         }
-    }
-
-    // MARK: - Database Configuration
-
-    private func configureDatabase() throws {
-        var configuration = Configuration()
-
-        // Enable foreign key constraints
-        configuration.prepareDatabase { db in
-            try db.execute(sql: "PRAGMA foreign_keys = ON")
-            try db.execute(sql: "PRAGMA journal_mode = WAL") // Write-Ahead Logging for better concurrency
-        }
-
-        // Enable verbose SQL logging in debug builds
-        #if DEBUG
-        configuration.prepareDatabase { db in
-            db.trace { print("SQL: \($0)") }
-        }
-        #endif
     }
 
     // MARK: - Database Access

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { db } from '../db';
 import { BingoSquare } from '../components/BingoSquare';
 import { BingoBoard } from '../components/BingoBoard';
+import { TaskCreationPlayground } from '../components/TaskCreationPlayground';
 import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
 
@@ -30,6 +31,19 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'task-creation',
+      title: 'NORMAL Task Creation',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            Create NORMAL tasks and see them listed below. Tasks are stored in the local Dexie
+            database with reactive updates. Includes field-level validation and character counts.
+          </p>
+          <TaskCreationPlayground />
+        </div>
+      ),
+    },
     {
       id: 'center-space-free',
       title: 'Center Space: True Free Space (5x5)',

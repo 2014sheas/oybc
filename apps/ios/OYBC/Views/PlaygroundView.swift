@@ -7,6 +7,228 @@ struct Feature: Identifiable {
     let content: AnyView
 }
 
+// MARK: - Task Creation Playground
+
+/// NORMAL Task Creation form and task list for Playground testing.
+///
+/// Allows creating NORMAL tasks with title and optional description,
+/// validates input, persists to local database, and displays created tasks.
+struct TaskCreationPlayground: View {
+    @State private var title = ""
+    @State private var taskDescription = ""
+    @State private var errorMessage: String?
+    @State private var showSuccess = false
+    @State private var tasks: [Task] = []
+    @FocusState private var focusedField: TaskField?
+
+    enum TaskField { case title, description }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // -- Creation Form --
+            VStack(alignment: .leading, spacing: 12) {
+                // Title field
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Task Title", text: $title)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .title)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .description }
+                    Text("\(title.count)/200")
+                        .font(.caption)
+                        .foregroundColor(title.count > 200 ? .red : .secondary)
+                }
+
+                // Description field
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Task Description", text: $taskDescription, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .description)
+                        .lineLimit(5...)
+                        .submitLabel(.done)
+                        .onSubmit { focusedField = nil }
+                    Text("\(taskDescription.count)/1000")
+                        .font(.caption)
+                        .foregroundColor(taskDescription.count > 1000 ? .red : .secondary)
+                }
+
+                // Error message
+                if let error = errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+
+                // Success message
+                if showSuccess {
+                    Text("Task created!")
+                        .foregroundColor(.green)
+                        .font(.caption)
+                }
+
+                // Create button
+                Button("Create Task") {
+                    handleCreateTask()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            Divider()
+
+            // -- Task List --
+            VStack(alignment: .leading, spacing: 8) {
+                if tasks.isEmpty {
+                    Text("No tasks created yet.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(tasks, id: \.id) { task in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(task.title)
+                                    .font(.headline)
+                                Spacer()
+                                Text("NORMAL")
+                                    .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
+                            if let desc = task.description {
+                                Text(desc)
+                                    .font(.body)
+                            }
+                            Text("Created: \(formatDate(task.createdAt))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            ensurePlaygroundUser()
+            loadTasks()
+        }
+    }
+
+    // MARK: - Actions
+
+    /// Validates input and creates a NORMAL task in the local database.
+    ///
+    /// Database write is dispatched to a background thread to avoid blocking the main thread.
+    /// UI state updates are dispatched back to the main thread after the write completes.
+    private func handleCreateTask() {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+
+        guard !trimmedTitle.isEmpty else {
+            errorMessage = "Title is required"
+            return
+        }
+        guard title.count <= 200 else {
+            errorMessage = "Title must be 200 characters or less"
+            return
+        }
+        guard taskDescription.count <= 1000 else {
+            errorMessage = "Description must be 1000 characters or less"
+            return
+        }
+
+        errorMessage = nil
+
+        let newTask = Task(
+            id: AppDatabase.generateUUID(),
+            userId: "playground-user-1",
+            title: trimmedTitle,
+            description: taskDescription.isEmpty ? nil : taskDescription,
+            type: .normal,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: AppDatabase.currentTimestamp(),
+            updatedAt: AppDatabase.currentTimestamp(),
+            version: 1,
+            isDeleted: false
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try AppDatabase.shared.saveTask(newTask)
+                DispatchQueue.main.async {
+                    self.title = ""
+                    self.taskDescription = ""
+                    self.showSuccess = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        self.showSuccess = false
+                    }
+                    self.loadTasks()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to create task: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Ensures the playground user exists in the users table (required by FK constraint on tasks).
+    private func ensurePlaygroundUser() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                if try AppDatabase.shared.fetchUser(id: "playground-user-1") == nil {
+                    let user = User(
+                        id: "playground-user-1",
+                        email: "playground@oybc.local",
+                        displayName: "Playground User",
+                        photoURL: nil,
+                        createdAt: AppDatabase.currentTimestamp(),
+                        updatedAt: AppDatabase.currentTimestamp(),
+                        lastSyncedAt: nil,
+                        version: 1
+                    )
+                    try AppDatabase.shared.saveUser(user)
+                }
+            } catch {
+                // Non-fatal: surface error so tasks will fail visibly rather than silently
+                DispatchQueue.main.async {
+                    self.errorMessage = "Setup error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Loads all non-deleted tasks for the playground user from the local database.
+    private func loadTasks() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let fetched = try AppDatabase.shared.fetchTasks(userId: "playground-user-1")
+                DispatchQueue.main.async {
+                    self.tasks = fetched
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to load tasks"
+                }
+            }
+        }
+    }
+
+    /// Formats an ISO8601 string into a medium-style date with time for display.
+    ///
+    /// - Parameter iso: An ISO8601 date string.
+    /// - Returns: A human-readable date string with time, or the original string if parsing fails.
+    private func formatDate(_ iso: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: iso) else { return iso }
+        let display = DateFormatter()
+        display.dateStyle = .medium
+        display.timeStyle = .short
+        return display.string(from: date)
+    }
+}
+
 /// Playground View
 ///
 /// A dedicated space for testing new features before integrating them into the main app.
@@ -14,6 +236,11 @@ struct Feature: Identifiable {
 struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
+        Feature(
+            id: "task-creation",
+            title: "NORMAL Task Creation",
+            content: AnyView(TaskCreationPlayground())
+        ),
         Feature(
             id: "center-space-free",
             title: "Center Space: True Free Space (5x5)",
@@ -162,8 +389,11 @@ struct PlaygroundView: View {
         )
     ]
 
+    @State private var expandedFeatureIds: Set<String> = []
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        GeometryReader { geometry in
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     // Header
@@ -172,53 +402,69 @@ struct PlaygroundView: View {
                             .font(.largeTitle)
                             .fontWeight(.bold)
 
-                        Text("This is a dedicated space for testing new features before integrating them into the main application. Each feature is isolated in its own section below.")
+                        Text("Isolated space for testing features before integrating them into the main app.")
                             .font(.body)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.bottom, 8)
 
-                    // Features Under Test
+                    // Features — plain state-driven expand/collapse, no DisclosureGroup gesture overhead
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Features Under Test")
                             .font(.title2)
                             .fontWeight(.semibold)
 
-                        if features.isEmpty {
-                            Text("No features currently under test. Features will be added here as they are developed.")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                                .italic()
-                                .padding(.vertical, 8)
-
-                            Button("Test Button") { }
-                        } else {
-                            ForEach(features) { feature in
-                                DisclosureGroup {
-                                    feature.content
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
+                        ForEach(features) { feature in
+                            VStack(alignment: .leading, spacing: 0) {
+                                Button {
+                                    if expandedFeatureIds.contains(feature.id) {
+                                        expandedFeatureIds.remove(feature.id)
+                                    } else {
+                                        expandedFeatureIds.insert(feature.id)
+                                    }
                                 } label: {
-                                    Text(feature.title)
-                                        .font(.headline)
-                                        .padding(.vertical, 6)
+                                    HStack {
+                                        Text(feature.title)
+                                            .font(.headline)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Image(systemName: expandedFeatureIds.contains(feature.id) ? "chevron.up" : "chevron.down")
+                                            .foregroundColor(.secondary)
+                                            .font(.subheadline)
+                                    }
+                                    .padding(.vertical, 8)
+                                    .contentShape(Rectangle())
                                 }
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color(.systemGray6))
-                                )
+                                .buttonStyle(.plain)
+
+                                if expandedFeatureIds.contains(feature.id) {
+                                    feature.content
+                                        .padding(.top, 4)
+                                        .padding(.horizontal, 4)
+                                        .padding(.bottom, 8)
+                                }
                             }
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(.systemGray6))
+                            )
                         }
                     }
                 }
-                .frame(width: geometry.size.width - 24, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle("Playground")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
-        .navigationTitle("Playground")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

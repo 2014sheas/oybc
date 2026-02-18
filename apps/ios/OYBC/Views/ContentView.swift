@@ -8,6 +8,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var dbStatus: String = "Connecting..."
     @State private var dbConnected: Bool = false
+    @State private var showPlayground = false
 
     var body: some View {
         NavigationStack {
@@ -52,8 +53,11 @@ struct ContentView: View {
                 }
                 .padding()
 
-                // Navigation to Playground
-                NavigationLink(destination: PlaygroundView()) {
+                // Navigation to Playground — fullScreenCover avoids adding
+                // NavigationStack's swipe-back gesture recognizers to the hierarchy
+                Button {
+                    showPlayground = true
+                } label: {
                     HStack {
                         Image(systemName: "hammer.fill")
                         Text("Go to Playground")
@@ -65,6 +69,9 @@ struct ContentView: View {
                     .cornerRadius(10)
                 }
                 .padding(.horizontal)
+                .fullScreenCover(isPresented: $showPlayground) {
+                    PlaygroundView()
+                }
             }
             .padding()
             .navigationTitle("Home")
@@ -75,22 +82,26 @@ struct ContentView: View {
         }
     }
 
-    /// Test database connection
+    /// Test database connection on a background thread to avoid blocking the main thread.
     private func testDatabaseConnection() {
-        do {
-            // Try to read from database
-            let db = AppDatabase.shared
-            _ = try db.read { database in
-                // Simple query to test connection
-                try String.fetchAll(database, sql: "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1")
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let db = AppDatabase.shared
+                _ = try db.read { database in
+                    try String.fetchAll(database, sql: "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1")
+                }
+                DispatchQueue.main.async {
+                    dbStatus = "✅ Connected"
+                    dbConnected = true
+                    print("✅ Database connection successful")
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    dbStatus = "❌ Error: \(error.localizedDescription)"
+                    dbConnected = false
+                    print("❌ Database connection failed: \(error)")
+                }
             }
-            dbStatus = "✅ Connected"
-            dbConnected = true
-            print("✅ Database connection successful")
-        } catch {
-            dbStatus = "❌ Error: \(error.localizedDescription)"
-            dbConnected = false
-            print("❌ Database connection failed: \(error)")
         }
     }
 }

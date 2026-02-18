@@ -62,3 +62,4 @@ SCHEMA_CHANGES.md
 
 # Archive
 oybc_v1.archive/
+.claude/settings.local.json

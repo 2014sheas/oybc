@@ -12,8 +12,7 @@ import { generateUUID, currentTimestamp } from '../utils';
  */
 export async function fetchBoards(userId: string): Promise<Board[]> {
   return db.boards
-    .where('[userId+isDeleted]')
-    .equals([userId, false] as any)
+    .filter((b) => b.userId === userId && !b.isDeleted)
     .reverse()
     .sortBy('updatedAt');
 }
@@ -150,8 +149,6 @@ export async function countCompletedBoards(
   timeframe: string
 ): Promise<number> {
   return db.boards
-    .where('[userId+isDeleted]')
-    .equals([userId, false] as any)
-    .filter((b) => b.timeframe === timeframe && b.status === 'completed')
+    .filter((b) => b.userId === userId && !b.isDeleted && b.timeframe === timeframe && b.status === 'completed')
     .count();
 }

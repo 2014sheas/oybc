@@ -47,6 +47,51 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
     static let steps = hasMany(TaskStep.self)
     static let boardTasks = hasMany(BoardTask.self)
 
+    // MARK: - Memberwise Init
+
+    /// Explicit memberwise initializer (needed since custom Codable init is defined)
+    init(
+        id: String,
+        userId: String,
+        title: String,
+        description: String? = nil,
+        type: TaskType,
+        action: String? = nil,
+        unit: String? = nil,
+        maxCount: Int? = nil,
+        parentStepId: String? = nil,
+        parentStepIndex: Int? = nil,
+        progressCounters: [TaskProgressCounter]? = nil,
+        totalCompletions: Int,
+        totalInstances: Int,
+        createdAt: String,
+        updatedAt: String,
+        lastSyncedAt: String? = nil,
+        version: Int,
+        isDeleted: Bool,
+        deletedAt: String? = nil
+    ) {
+        self.id = id
+        self.userId = userId
+        self.title = title
+        self.description = description
+        self.type = type
+        self.action = action
+        self.unit = unit
+        self.maxCount = maxCount
+        self.parentStepId = parentStepId
+        self.parentStepIndex = parentStepIndex
+        self.progressCounters = progressCounters
+        self.totalCompletions = totalCompletions
+        self.totalInstances = totalInstances
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.lastSyncedAt = lastSyncedAt
+        self.version = version
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
+    }
+
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {

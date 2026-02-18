@@ -12,8 +12,7 @@ export function useBoards(userId: string | undefined) {
       if (!userId) return [];
 
       return db.boards
-        .where('[userId+isDeleted]')
-        .equals([userId, false] as any)
+        .filter((b) => b.userId === userId && !b.isDeleted)
         .reverse()
         .sortBy('updatedAt');
     },
