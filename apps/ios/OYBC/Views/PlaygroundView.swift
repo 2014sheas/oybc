@@ -7,6 +7,263 @@ struct Feature: Identifiable {
     let content: AnyView
 }
 
+// MARK: - Counter Task Creation Playground
+
+/// COUNTING Task Creation form and task list for Playground testing.
+///
+/// Allows creating COUNTING tasks with action, unit, maxCount, optional title,
+/// and optional description. Validates input, persists to local database, and
+/// displays created counter tasks.
+struct CounterTaskCreationPlayground: View {
+    @State private var action = ""
+    @State private var unit = ""
+    @State private var maxCountText = ""
+    @State private var title = ""
+    @State private var taskDescription = ""
+    @State private var errorMessage: String?
+    @State private var showSuccess = false
+    @State private var tasks: [Task] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // -- Creation Form --
+            VStack(alignment: .leading, spacing: 12) {
+                // Action field (required)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Action (e.g. Run, Read, Drink)", text: $action)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                // Max Count field (required)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Max Count (e.g. 10)", text: $maxCountText)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                }
+
+                // Unit field (required)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Unit (e.g. miles, books, glasses)", text: $unit)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                // Title field (optional)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Title (auto-generated if blank)", text: $title)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                // Description field (optional)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Description (optional)", text: $taskDescription, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(3...)
+                }
+
+                // Error message
+                if let error = errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+
+                // Success message
+                if showSuccess {
+                    Text("Counter task created!")
+                        .foregroundColor(.green)
+                        .font(.caption)
+                }
+
+                // Create button
+                Button("Create Counter Task") {
+                    handleCreateCounterTask()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            Divider()
+
+            // -- Counter Task List --
+            VStack(alignment: .leading, spacing: 8) {
+                if tasks.isEmpty {
+                    Text("No counter tasks created yet.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(tasks, id: \.id) { task in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(task.title)
+                                    .font(.headline)
+                                Spacer()
+                                Text("COUNTING")
+                                    .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
+                            if let action = task.action, let maxCount = task.maxCount, let unit = task.unit {
+                                Text("\(action) \(maxCount) \(unit)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            if let desc = task.description {
+                                Text(desc)
+                                    .font(.body)
+                            }
+                            Text("Created: \(formatDate(task.createdAt))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            ensurePlaygroundUser()
+            loadCounterTasks()
+        }
+    }
+
+    // MARK: - Actions
+
+    /// Validates input and creates a COUNTING task in the local database.
+    ///
+    /// Auto-generates title from action/maxCount/unit if title is left blank.
+    /// Database write is dispatched to a background thread to avoid blocking the main thread.
+    private func handleCreateCounterTask() {
+        let trimmedAction = action.trimmingCharacters(in: .whitespaces)
+        let trimmedUnit = unit.trimmingCharacters(in: .whitespaces)
+        let trimmedMaxCount = maxCountText.trimmingCharacters(in: .whitespaces)
+        let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+
+        guard !trimmedAction.isEmpty else {
+            errorMessage = "Action is required"
+            return
+        }
+        guard !trimmedUnit.isEmpty else {
+            errorMessage = "Unit is required"
+            return
+        }
+        guard !trimmedMaxCount.isEmpty else {
+            errorMessage = "Max count is required"
+            return
+        }
+        guard let maxCount = Int(trimmedMaxCount), maxCount > 0 else {
+            errorMessage = "Max count must be a positive number"
+            return
+        }
+
+        errorMessage = nil
+
+        // Mirror of generateCounterTaskTitle in packages/shared/src/algorithms/taskTitle.ts
+        let resolvedTitle = trimmedTitle.isEmpty
+            ? "\(trimmedAction) \(maxCount) \(trimmedUnit)"
+            : trimmedTitle
+
+        let newTask = Task(
+            id: AppDatabase.generateUUID(),
+            userId: "playground-user-1",
+            title: resolvedTitle,
+            description: taskDescription.isEmpty ? nil : taskDescription,
+            type: .counting,
+            action: trimmedAction,
+            unit: trimmedUnit,
+            maxCount: maxCount,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: AppDatabase.currentTimestamp(),
+            updatedAt: AppDatabase.currentTimestamp(),
+            version: 1,
+            isDeleted: false
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try AppDatabase.shared.saveTask(newTask)
+                DispatchQueue.main.async {
+                    self.action = ""
+                    self.unit = ""
+                    self.maxCountText = ""
+                    self.title = ""
+                    self.taskDescription = ""
+                    self.showSuccess = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        self.showSuccess = false
+                    }
+                    self.loadCounterTasks()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to create task: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Ensures the playground user exists in the users table (required by FK constraint on tasks).
+    private func ensurePlaygroundUser() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                if try AppDatabase.shared.fetchUser(id: "playground-user-1") == nil {
+                    let user = User(
+                        id: "playground-user-1",
+                        email: "playground@oybc.local",
+                        displayName: "Playground User",
+                        photoURL: nil,
+                        createdAt: AppDatabase.currentTimestamp(),
+                        updatedAt: AppDatabase.currentTimestamp(),
+                        lastSyncedAt: nil,
+                        version: 1
+                    )
+                    try AppDatabase.shared.saveUser(user)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Setup error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Loads counting tasks for the playground user from the local database.
+    private func loadCounterTasks() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let fetched = try AppDatabase.shared.fetchTasks(userId: "playground-user-1")
+                let counterTasks = fetched.filter { $0.type == .counting }
+                DispatchQueue.main.async {
+                    self.tasks = counterTasks
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to load tasks"
+                }
+            }
+        }
+    }
+
+    private static let isoFormatter = ISO8601DateFormatter()
+    private static let displayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    /// Formats an ISO8601 string into a medium-style date with time for display.
+    ///
+    /// - Parameter iso: An ISO8601 date string.
+    /// - Returns: A human-readable date string with time, or the original string if parsing fails.
+    private func formatDate(_ iso: String) -> String {
+        guard let date = Self.isoFormatter.date(from: iso) else { return iso }
+        return Self.displayFormatter.string(from: date)
+    }
+}
+
 // MARK: - Task Creation Playground
 
 /// NORMAL Task Creation form and task list for Playground testing.
@@ -236,6 +493,11 @@ struct TaskCreationPlayground: View {
 struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
+        Feature(
+            id: "counter-task-creation",
+            title: "Counter Task Creation",
+            content: AnyView(CounterTaskCreationPlayground())
+        ),
         Feature(
             id: "task-creation",
             title: "NORMAL Task Creation",

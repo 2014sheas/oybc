@@ -43,7 +43,17 @@
       "Bash(npx jest:*)",
       "Bash(npm test*)",
       "Bash(pnpm test*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(pnpm --filter @oybc/shared build:*)",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_close",
+      "WebFetch(domain:www.hackingwithswift.com)",
+      "WebFetch(domain:forums.developer.apple.com)",
+      "WebFetch(domain:www.codespeedy.com)",
+      "WebFetch(domain:blog.kulman.sk)",
+      "mcp__playwright__browser_run_code"
     ]
   }
 }

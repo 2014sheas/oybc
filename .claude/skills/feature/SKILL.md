@@ -247,9 +247,16 @@ Repeat before every implementation decision:
    - Use `unit-test-generator` for shared package tests
    - 80%+ coverage for business logic
 
-2. **UI Testing**
-   - Use `ui-comprehensive-tester` for end-to-end flows
+2. **UI Testing** (MANDATORY for any web UI changes)
+   - Use `ui-comprehensive-tester` with Playwright for end-to-end flows
+   - **Web**: Always run Playwright against `http://localhost:5173/playground`
+   - **Screenshots/output**: Always save to `.playwright-mcp/` in the repo root — never the working directory
    - Test all display modes (light/dark, responsive)
+   - Minimum scenarios to cover:
+     - Feature section exists and expands
+     - Happy path (valid submission, task appears)
+     - Required field validation (empty submit shows errors)
+     - Edge cases specific to the feature
 
 3. **Quality Validation** (MANDATORY)
    - Use `testing-czar` to verify:

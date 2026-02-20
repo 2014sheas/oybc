@@ -13,3 +13,5 @@ export {
   isCenterAutoCompleted,
   getCenterDisplayText,
 } from './centerSquare';
+
+export { generateCounterTaskTitle } from './taskTitle';

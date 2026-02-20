@@ -3,6 +3,7 @@ import { db } from '../db';
 import { BingoSquare } from '../components/BingoSquare';
 import { BingoBoard } from '../components/BingoBoard';
 import { TaskCreationPlayground } from '../components/TaskCreationPlayground';
+import { CounterTaskCreationPlayground } from '../components/CounterTaskCreationPlayground';
 import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
 
@@ -31,6 +32,20 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'counter-task-creation',
+      title: 'Counter Task Creation',
+      content: (
+        <div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            Create COUNTING tasks with action, unit, and max count fields. Title is
+            auto-generated from the formula if left blank. Tasks are stored in the local
+            Dexie database with reactive updates.
+          </p>
+          <CounterTaskCreationPlayground />
+        </div>
+      ),
+    },
     {
       id: 'task-creation',
       title: 'NORMAL Task Creation',
