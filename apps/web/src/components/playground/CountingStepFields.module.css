@@ -1,0 +1,53 @@
+/* CountingStepFields - Reusable counting step sub-fields (Action → Max Count → Unit) */
+
+.countingFields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  background-color: var(--card-bg);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.required {
+  color: var(--error-text);
+  margin-left: 2px;
+}
+
+.input {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+}
+
+.input.inputError {
+  border-color: var(--error-text);
+}
+
+.fieldError {
+  font-size: 0.85rem;
+  color: var(--error-text);
+}

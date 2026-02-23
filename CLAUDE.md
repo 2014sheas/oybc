@@ -17,6 +17,9 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 - Use consistent naming conventions and code style throughout the codebase.
 - Class names should be in PascalCase, function and variable names in camelCase.
 - Avoid code duplication; extract common logic into reusable functions or classes.
+- **Reuse before creating**: Before writing new code, search for existing utilities, components, or helpers that solve the same problem. Prefer extending existing abstractions over creating new ones.
+- **Extract at three**: When the same logic appears in three or more places, extract it into a shared utility. Two instances can be tolerated; three is a signal to consolidate.
+- **Share across platforms**: Constants (user IDs, limits, timeouts), formatting functions, and validation logic that must be consistent across web and iOS should be centralised in a single definition.
 - Ensure proper error handling and logging for all operations, especially database and network interactions.
 - Ensure security best practices are followed, especially when handling user data and authentication.
 - Reference app store guidelines for iOS standards and ensure compliance.
@@ -56,6 +59,13 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 7. **Playground Persistence**: The Playground page persists across all feature development. New features are added to the existing Playground, not replacing previous features.
 
+8. **Reuse Existing Playground Infrastructure**: Before adding new utilities or components, check whether the Playground already has something equivalent:
+   - Shared constants live in `playgroundUtils.ts` (web) and `PlaygroundUtils.swift` (iOS).
+   - Reusable form components live in `apps/web/src/components/playground/` (web) and `apps/ios/OYBC/Views/Components/` (iOS).
+   - When implementing a new feature that requires a constant or helper already defined elsewhere, import it rather than re-defining it.
+
+9. **Mirror File Structure Across Platforms**: Every new playground feature or reusable component must be a separate file on both platforms. The container views (`Playground.tsx` and `PlaygroundView.swift`) must remain thin shells. See Cross-Platform File Structure below for the canonical layout.
+
 **Standard Development Process**:
 
 - Ask as many clarifying questions as needed before starting implementation.
@@ -86,6 +96,7 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
    - Both implementations must have feature parity
    - Both must compile/run successfully
    - No platform should get features the other doesn't have (unless explicitly scoped that way)
+   - **Both must mirror each other's file structure** — if a feature lives in its own file on web, it must be its own file on iOS, and vice versa (see Cross-Platform File Structure below)
 
 4. **Dependency Verification** - Before referencing any code
    - Verify the file exists
@@ -389,6 +400,42 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 - `Jenny` (spec verification)
 - `karen` **Gate #3** (final reality check before integration)
 
+## Cross-Platform File Structure
+
+Web and iOS must mirror each other's directory and file structure. When a file exists on one platform, the equivalent must exist on the other.
+
+### Playground Structure (canonical mirror)
+
+```
+Web                                                  iOS
+apps/web/src/                                        apps/ios/OYBC/
+├── pages/
+│   └── Playground.tsx          ←→                  Views/PlaygroundView.swift
+│       (container only — no feature logic)              (container only — no feature logic)
+│
+├── components/
+│   └── playground/
+│       ├── playgroundUtils.ts  ←→                  Views/Playground/PlaygroundUtils.swift
+│       ├── [X]Playground.tsx   ←→                  Views/Playground/[X]Playground.swift
+│       ├── ProgressStepRow.tsx ←→                  Views/Components/ProgressStepRowView.swift
+│       └── CountingStepFields.tsx ←→               Views/Components/CountingStepFieldsView.swift
+│
+└── components/
+    ├── BingoBoard.tsx          ←→                  Views/Components/BingoBoard.swift
+    └── BingoSquare.tsx         ←→                  Views/Components/BingoSquare.swift
+```
+
+### Rules
+
+1. **Container views stay thin**: `Playground.tsx` and `PlaygroundView.swift` list features only — no form logic, no state, no database calls.
+2. **One file per playground feature**: Each feature section (`[X]Playground`) is its own file on both platforms, never inlined into the container.
+3. **One file per reusable component**: Shared form components (`ProgressStepRow`, `CountingStepFields`) live in their own files under `components/playground/` (web) and `Views/Components/` (iOS).
+4. **Name mapping**: Web uses `[Name].tsx`; iOS uses `[Name]View.swift` for view components (Swift convention). Feature files use `[Name]Playground.swift` / `[Name]Playground.tsx`.
+5. **iOS registration**: Every new Swift file in `Views/Playground/` or `Views/Components/` must be added to `project.pbxproj` (PBXFileReference, PBXBuildFile, group children, Sources build phase) or it will not compile.
+6. **Verify before delivery**: Before claiming a feature is complete, confirm both platforms have the same number of files and that no feature logic lives in the container.
+
+---
+
 ## Playground Development Environment
 
 **Purpose**: Safe, isolated environment for testing new features before production integration.
@@ -396,7 +443,7 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 **Structure**:
 
 - **Web**: `/apps/web/src/pages/Playground.tsx` (accessible via `/playground` route)
-- **iOS**: `PlaygroundView.swift` (accessible from main navigation during development)
+- **iOS**: `Views/PlaygroundView.swift` (accessible from main navigation during development)
 
 **Requirements**:
 
@@ -886,6 +933,28 @@ Achievement squares, bingo lines, completion percentages — always recompute fr
 ### ❌ Don't Block UI for Sync
 
 All sync operations must be background/async. User should never see "Syncing..." spinners.
+
+### ❌ Don't Get the Counting Task Field Order Wrong
+
+**COUNTING task fields must always appear in this order: Action → Max Count → Unit**
+
+- ✅ Correct: Action, Max Count, Unit, Title (optional), Description (optional)
+- ❌ Wrong: Action, Unit, Max Count — or Title first
+
+Source of truth: `CounterTaskCreationPlayground` on both platforms.
+
+**Real Example** (2026-02-23): The Unified Task Creator was built with Action → Unit → Max Count. Had to be corrected post-delivery.
+
+### ❌ Don't Treat Counting Task Title Like Normal Task Title
+
+**COUNTING tasks have a special title behavior** — title is **optional and auto-generated** from `action + maxCount + unit` if left blank.
+
+- Use `generateCounterTaskTitle(action, maxCount, unit, providedTitle?)` from `@oybc/shared` on web
+- iOS mirrors this: `"\(action) \(maxCount) \(unit)"` if title is blank
+- Title is **NOT required** for Counting tasks — do not add a required asterisk or guard
+- Source of truth: `packages/shared/src/algorithms/taskTitle.ts` and `CounterTaskCreationPlayground`
+
+**Real Example** (2026-02-23): The Unified Task Creator was implemented treating Counting title identically to Normal (required manual input). Had to be corrected post-delivery.
 
 ## Documentation
 

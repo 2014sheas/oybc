@@ -124,16 +124,24 @@ Repeat before every implementation decision:
    - Confirm feature scope explicitly
    - Document what is IN scope and OUT of scope
 
-2. **Create Implementation Plan**
+2. **Identify Reusable Components** (BEFORE planning implementation)
+   - Search the Playground codebase for existing utilities, constants, and components the new feature can reuse
+   - **Web**: Check `playgroundUtils.ts` (shared constants/formatters), `ProgressStepRow.tsx`, `CountingStepFields.tsx`
+   - **iOS**: Check top-level declarations in `PlaygroundView.swift` (e.g., `playgroundUserId`, `formatPlaygroundDate`)
+   - Document: "These existing pieces will be reused" and "These new pieces will be created"
+   - **Prefer reuse**: If an equivalent already exists, use it — do not re-implement it
+
+3. **Create Implementation Plan**
    - Use `Plan` agent to create detailed implementation plan
    - **CRITICAL**: Plan must ONLY include features from user's request
    - Plan should include:
      - Data models needed (if any)
-     - UI components for web and iOS
+     - UI components for web and iOS (noting which are new vs. reused)
      - Database operations required
      - **Testing strategy** (unit tests, UI tests, manual testing required)
      - Success criteria
      - **Explicit list of what is OUT of scope**
+     - **Explicit list of existing components/utilities being reused**
 
 3. **⚠️ GATE #1: karen Plan Review** (MANDATORY)
    - Invoke `karen` agent to review the plan
@@ -197,12 +205,22 @@ Repeat before every implementation decision:
    - Ensure both platforms implement ONLY approved features
 
 3. **Implementation Guidelines**
-   - Web: Add to `/apps/web/src/pages/Playground.tsx`
-   - iOS: Add to `/apps/ios/OYBC/Views/PlaygroundView.swift`
    - **Add new features at the TOP of the Playground page** (newest first)
    - Use collapsible sections for each feature
    - Both platforms must have feature parity
    - Both must compile successfully
+   - **Reuse shared Playground utilities**: import from `playgroundUtils.ts` (web) and `PlaygroundUtils.swift` (iOS) — never re-define `PLAYGROUND_USER_ID`, `SUCCESS_DISMISS_MS`, `formatDate`, etc.
+   - **Reuse existing components**: `ProgressStepRow`, `CountingStepFields` (web); `ProgressStepRowView`, `CountingStepFieldsView` (iOS)
+
+   **File placement (MANDATORY — structural mirroring)**:
+   - Each playground feature section MUST be its own file, never inlined in the container view
+     - Web: create `apps/web/src/components/playground/[FeatureName]Playground.tsx`
+     - iOS: create `apps/ios/OYBC/Views/Playground/[FeatureName]Playground.swift`
+   - Each new reusable component MUST be its own file
+     - Web: create `apps/web/src/components/playground/[ComponentName].tsx`
+     - iOS: create `apps/ios/OYBC/Views/Components/[ComponentName]View.swift`
+   - `Playground.tsx` and `PlaygroundView.swift` import and reference only — no feature logic inline
+   - iOS: every new `.swift` file in `Views/Playground/` or `Views/Components/` MUST be registered in `project.pbxproj` (PBXFileReference, PBXBuildFile, group children, Sources build phase)
 
 4. **⚠️ GATE #2: karen Mid-Implementation Check** (MANDATORY)
    - Invoke `karen` when ~50% complete
@@ -212,8 +230,10 @@ Repeat before every implementation decision:
      - No bonus features or assumptions
      - No "I thought it would be helpful" additions
      - Code compiles on both platforms (test builds)
+     - **Structural mirroring**: each new feature/component is a separate file on BOTH platforms; container views contain no feature logic
+     - **iOS registration**: any new Swift files are listed in `project.pbxproj`
    - karen should list what's been implemented and match to original request
-   - If karen finds scope creep: STOP and remove it immediately
+   - If karen finds scope creep or structural drift: STOP and fix it immediately
    - If karen approves: Continue implementation
 
 5. **Complete Implementation**
@@ -285,9 +305,10 @@ Repeat before every implementation decision:
    - Use `Jenny` to verify:
      - Implementation matches original specification
      - All requirements met
-     - Cross-platform parity achieved
+     - Cross-platform parity achieved — same features AND same file structure
      - **NO scope creep** (no unapproved features)
-   - **GATE**: If scope exceeded, trim features immediately
+     - **Structural mirroring**: count files in `components/playground/` vs `Views/Playground/` — they should match
+   - **GATE**: If scope exceeded or structure diverges, fix immediately
 
 2. **⚠️ GATE #3: karen Final Reality Check** (MANDATORY)
    - Invoke `karen` for final verification
@@ -299,8 +320,9 @@ Repeat before every implementation decision:
      - No unapproved features exist
      - No "bonus" functionality added
      - Nothing beyond the minimum necessary to fulfill the request
+     - **Structural mirror check**: verify container views are thin, each feature/component is a separate file on both platforms, no logic inlined in the container
    - karen should **actually test** the feature in Playground
-   - **GATE**: If doesn't work or has scope creep, work is INCOMPLETE
+   - **GATE**: If doesn't work, has scope creep, or has structural drift, work is INCOMPLETE
 
 3. **Prepare Delivery Summary**
    - What was implemented (match to original request)
@@ -360,7 +382,7 @@ Repeat before every implementation decision:
 ### Gate #3: Final Reality Check (End of Phase 4)
 - **Before**: Feature claims to be complete
 - **After**: Feature is verified working or marked incomplete
-- **Purpose**: Ensure deliverable matches request and actually works
+- **Purpose**: Ensure deliverable matches request, actually works, and both platforms mirror each other's structure
 
 **If ANY gate fails, the work is INCOMPLETE and must be fixed.**
 
@@ -400,9 +422,9 @@ The workflow has **6 mandatory checkpoints** (3 karen gates + 3 user approvals):
 |-------|-----------|------|---------|
 | End of Phase 1 | Gate #1: karen Plan Review + User Feedback | Scope | Identify core vs optional features, user decides on optional items |
 | End of Phase 1 | 👤 Checkpoint #1: User Approves Plan | Approval | User agrees with final approach (after optional feature decisions) |
-| Mid Phase 2 | Gate #2: karen Mid-Check | Scope | Catch scope creep early |
+| Mid Phase 2 | Gate #2: karen Mid-Check | Scope | Catch scope creep + structural drift early |
 | End of Phase 2 | 👤 Checkpoint #2: User Reviews Code | Approval | User sees implementation |
-| End of Phase 4 | Gate #3: karen Final Check | Scope | Verify deliverable matches request |
+| End of Phase 4 | Gate #3: karen Final Check | Scope | Verify deliverable matches request + structural mirror |
 | End of Phase 5 | 👤 Checkpoint #3: User Final Approval | Approval | User validates feature |
 
 **All 6 checkpoints are MANDATORY - skip none.**

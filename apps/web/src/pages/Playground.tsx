@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { db } from '../db';
 import { BingoSquare } from '../components/BingoSquare';
 import { BingoBoard } from '../components/BingoBoard';
-import { TaskCreationPlayground } from '../components/TaskCreationPlayground';
-import { CounterTaskCreationPlayground } from '../components/CounterTaskCreationPlayground';
-import { ProgressTaskCreationPlayground } from '../components/playground/ProgressTaskCreationPlayground';
+import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTaskCreatorPlayground';
 import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
 
@@ -34,43 +32,17 @@ export function Playground() {
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
     {
-      id: 'progress-task-creation',
-      title: 'Progress Task Creation',
+      id: 'unified-task-creator',
+      title: 'Task Creation (Unified)',
       content: (
         <div>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Create PROGRESS tasks with multiple sub-steps. Each step can be Normal
-            or Counting type. Tasks and steps are stored in the local Dexie database
-            with reactive updates.
+            Unified task creator supporting Normal, Counting, and Progress types.
+            Select a type, fill in the shared and type-specific fields, then submit
+            to store in the local Dexie database. The Task Library below reactively
+            shows all created tasks with type filtering.
           </p>
-          <ProgressTaskCreationPlayground />
-        </div>
-      ),
-    },
-    {
-      id: 'counter-task-creation',
-      title: 'Counter Task Creation',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Create COUNTING tasks with action, unit, and max count fields. Title is
-            auto-generated from the formula if left blank. Tasks are stored in the local
-            Dexie database with reactive updates.
-          </p>
-          <CounterTaskCreationPlayground />
-        </div>
-      ),
-    },
-    {
-      id: 'task-creation',
-      title: 'NORMAL Task Creation',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Create NORMAL tasks and see them listed below. Tasks are stored in the local Dexie
-            database with reactive updates. Includes field-level validation and character counts.
-          </p>
-          <TaskCreationPlayground />
+          <UnifiedTaskCreatorPlayground />
         </div>
       ),
     },

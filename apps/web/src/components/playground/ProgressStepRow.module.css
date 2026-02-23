@@ -1,0 +1,122 @@
+/* ProgressStepRow - Reusable step row (title + type selector + conditional counting fields) */
+
+.stepRow {
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.stepHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stepNumber {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.removeStepButton {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--error-text);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--error-text);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.removeStepButton:hover:not(:disabled) {
+  background-color: var(--error-text);
+  color: #ffffff;
+}
+
+.removeStepButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.stepFields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.required {
+  color: var(--error-text);
+  margin-left: 2px;
+}
+
+.input {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+}
+
+.input.inputError {
+  border-color: var(--error-text);
+}
+
+.charCount {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.charCount.charCountWarning {
+  color: var(--warning-text);
+}
+
+.charCount.charCountError {
+  color: var(--error-text);
+}
+
+.fieldError {
+  font-size: 0.85rem;
+  color: var(--error-text);
+}
+
+.stepTypeSelect {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+
+.stepTypeSelect:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+}
