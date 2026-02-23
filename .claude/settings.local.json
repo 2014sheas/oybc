@@ -53,7 +53,9 @@
       "WebFetch(domain:forums.developer.apple.com)",
       "WebFetch(domain:www.codespeedy.com)",
       "WebFetch(domain:blog.kulman.sk)",
-      "mcp__playwright__browser_run_code"
+      "mcp__playwright__browser_run_code",
+      "mcp__playwright__browser_select_option",
+      "Bash(git status:*)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { CreateTaskInputSchema } from '../../src/validation/schemas';
+import { CreateTaskInputSchema, CreateTaskStepInputSchema } from '../../src/validation/schemas';
 import { TaskType } from '../../src/constants/enums';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -423,6 +423,185 @@ describe('CreateTaskInputSchema — steps array (CreateTaskStepInputSchema)', ()
         steps: [{ title: 'Bad step', type: TaskType.COUNTING, maxCount: 0 }],
       })
     );
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── CreateTaskStepInputSchema (direct) ──────────────────────────────────────
+
+/**
+ * Returns a minimal valid NORMAL step input.
+ */
+function validStep(overrides: Record<string, unknown> = {}) {
+  return {
+    title: 'Draft outline',
+    type: TaskType.NORMAL,
+    ...overrides,
+  };
+}
+
+/**
+ * Returns a valid COUNTING step input with action, unit, and maxCount.
+ */
+function validCountingStep(overrides: Record<string, unknown> = {}) {
+  return {
+    title: 'Read chapters',
+    type: TaskType.COUNTING,
+    action: 'Read',
+    unit: 'chapters',
+    maxCount: 10,
+    ...overrides,
+  };
+}
+
+describe('CreateTaskStepInputSchema — happy path', () => {
+  it('accepts a minimal valid NORMAL step (title + type only)', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep());
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid COUNTING step with action, unit, and maxCount', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validCountingStep());
+    expect(result.success).toBe(true);
+  });
+
+  it('preserves parsed values on success', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validCountingStep());
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.title).toBe('Read chapters');
+      expect(result.data.type).toBe(TaskType.COUNTING);
+      expect(result.data.action).toBe('Read');
+      expect(result.data.unit).toBe('chapters');
+      expect(result.data.maxCount).toBe(10);
+    }
+  });
+
+  it('accepts a PROGRESS type step (schema does not prevent recursion)', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ type: TaskType.PROGRESS })
+    );
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('CreateTaskStepInputSchema — title', () => {
+  it('rejects an empty title', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep({ title: '' }));
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing title', () => {
+    const { title: _omitted, ...withoutTitle } = validStep();
+    const result = CreateTaskStepInputSchema.safeParse(withoutTitle);
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a title of exactly 1 character', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep({ title: 'X' }));
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a title of exactly 200 characters', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ title: 'A'.repeat(200) })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a title of 201 characters', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ title: 'A'.repeat(201) })
+    );
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('CreateTaskStepInputSchema — type', () => {
+  it('rejects a missing type', () => {
+    const { type: _omitted, ...withoutType } = validStep();
+    const result = CreateTaskStepInputSchema.safeParse(withoutType);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an unrecognised type string', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ type: 'checkbox' })
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an empty type string', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep({ type: '' }));
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('CreateTaskStepInputSchema — action (optional field)', () => {
+  it('accepts input with no action field', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep());
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an action of exactly 50 characters', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ action: 'C'.repeat(50) })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an action of 51 characters', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ action: 'C'.repeat(51) })
+    );
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('CreateTaskStepInputSchema — unit (optional field)', () => {
+  it('accepts input with no unit field', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep());
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a unit of exactly 50 characters', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ unit: 'D'.repeat(50) })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a unit of 51 characters', () => {
+    const result = CreateTaskStepInputSchema.safeParse(
+      validStep({ unit: 'D'.repeat(51) })
+    );
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('CreateTaskStepInputSchema — maxCount (optional field)', () => {
+  it('accepts input with no maxCount field', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep());
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a positive integer maxCount', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep({ maxCount: 42 }));
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects maxCount of zero', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep({ maxCount: 0 }));
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a negative maxCount', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep({ maxCount: -3 }));
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-integer maxCount', () => {
+    const result = CreateTaskStepInputSchema.safeParse(validStep({ maxCount: 2.5 }));
     expect(result.success).toBe(false);
   });
 });

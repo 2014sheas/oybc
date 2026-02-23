@@ -7,6 +7,372 @@ struct Feature: Identifiable {
     let content: AnyView
 }
 
+// MARK: - Progress Step Form State
+
+/// Form state for a single step in a progress task creation form.
+struct ProgressStepFormState: Identifiable {
+    let id = UUID()
+    var title: String = ""
+    var type: TaskType = .normal
+    var action: String = ""
+    var unit: String = ""
+    var maxCount: String = ""
+}
+
+// MARK: - Progress Task Creation Playground
+
+/// PROGRESS Task Creation form and task list for Playground testing.
+///
+/// Allows creating PROGRESS tasks with a title, optional description, and
+/// one or more steps (each of which can be normal or counting). Validates
+/// input, persists task and steps to local database in a single transaction,
+/// and displays created progress tasks with their steps.
+struct ProgressTaskCreationPlayground: View {
+    @State private var title = ""
+    @State private var taskDescription = ""
+    @State private var steps: [ProgressStepFormState] = [ProgressStepFormState()]
+    @State private var isSubmitting = false
+    @State private var successMessage: String?
+    @State private var errorMessage: String?
+    @State private var createdTasks: [(task: Task, steps: [TaskStep])] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // -- Creation Form --
+            VStack(alignment: .leading, spacing: 12) {
+                // Title field (required)
+                TextField("Progress task title", text: $title)
+                    .textFieldStyle(.roundedBorder)
+
+                // Description field (optional)
+                TextField("Description (optional)", text: $taskDescription, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(3...)
+
+                // Steps section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Steps")
+                        .font(.headline)
+
+                    ForEach(steps.indices, id: \.self) { i in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Step \(i + 1)")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Spacer()
+                                if steps.count > 1 {
+                                    Button("Remove") {
+                                        steps.remove(at: i)
+                                    }
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                }
+                            }
+
+                            TextField("Step title", text: $steps[i].title)
+                                .textFieldStyle(.roundedBorder)
+
+                            Picker("Type", selection: $steps[i].type) {
+                                Text("Normal").tag(TaskType.normal)
+                                Text("Counting").tag(TaskType.counting)
+                            }
+                            .pickerStyle(.segmented)
+
+                            if steps[i].type == .counting {
+                                TextField("Action (e.g. Read)", text: $steps[i].action)
+                                    .textFieldStyle(.roundedBorder)
+                                TextField("Unit (e.g. pages)", text: $steps[i].unit)
+                                    .textFieldStyle(.roundedBorder)
+                                TextField("Max count", text: $steps[i].maxCount)
+                                    .textFieldStyle(.roundedBorder)
+                                    .keyboardType(.numberPad)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(6)
+                    }
+
+                    Button("Add Step") {
+                        steps.append(ProgressStepFormState())
+                    }
+                    .font(.subheadline)
+                }
+
+                // Error message
+                if let error = errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+
+                // Success message
+                if let success = successMessage {
+                    Text(success)
+                        .foregroundColor(.green)
+                        .font(.caption)
+                }
+
+                // Create button
+                Button("Create Progress Task") {
+                    handleCreateProgressTask()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSubmitting)
+            }
+
+            Divider()
+
+            // -- Progress Task List --
+            VStack(alignment: .leading, spacing: 8) {
+                if createdTasks.isEmpty {
+                    Text("No progress tasks created yet.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(createdTasks, id: \.task.id) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(entry.task.title)
+                                    .font(.headline)
+                                Spacer()
+                                Text("PROGRESS")
+                                    .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.purple.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
+                            if let desc = entry.task.description {
+                                Text(desc)
+                                    .font(.body)
+                            }
+                            ForEach(entry.steps.sorted(by: { $0.stepIndex < $1.stepIndex }), id: \.id) { step in
+                                HStack(spacing: 4) {
+                                    Text("\(step.stepIndex + 1).")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(step.title)
+                                        .font(.subheadline)
+                                    if step.type == .counting {
+                                        Text("COUNTING")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color.orange.opacity(0.2))
+                                            .cornerRadius(3)
+                                        if let action = step.action, let maxCount = step.maxCount, let unit = step.unit {
+                                            Text("\(action) \(maxCount) \(unit)")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    } else {
+                                        Text("NORMAL")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color.blue.opacity(0.2))
+                                            .cornerRadius(3)
+                                    }
+                                }
+                            }
+                            Text("Created: \(formatDate(entry.task.createdAt))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            ensurePlaygroundUser()
+            loadProgressTasks()
+        }
+    }
+
+    // MARK: - Actions
+
+    /// Validates input and creates a PROGRESS task with steps in the local database.
+    ///
+    /// Saves the parent task and all steps in a single database transaction.
+    /// Database write is dispatched to a background thread to avoid blocking the main thread.
+    private func handleCreateProgressTask() {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedTitle.isEmpty else {
+            errorMessage = "Title is required"
+            return
+        }
+
+        for (i, step) in steps.enumerated() {
+            guard !step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                errorMessage = "Step \(i + 1) title is required"
+                return
+            }
+            if step.type == .counting {
+                guard !step.action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    errorMessage = "Step \(i + 1): Action is required for counting steps"
+                    return
+                }
+                guard !step.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    errorMessage = "Step \(i + 1): Unit is required for counting steps"
+                    return
+                }
+                guard let count = Int(step.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)), count > 0 else {
+                    errorMessage = "Step \(i + 1): Max count must be a positive number"
+                    return
+                }
+            }
+        }
+
+        isSubmitting = true
+        errorMessage = nil
+
+        let now = AppDatabase.currentTimestamp()
+        let taskId = AppDatabase.generateUUID()
+
+        let newTask = Task(
+            id: taskId,
+            userId: "playground-user-1",
+            title: trimmedTitle,
+            description: taskDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil
+                : taskDescription.trimmingCharacters(in: .whitespacesAndNewlines),
+            type: .progress,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false
+        )
+
+        var taskSteps: [TaskStep] = []
+        for (index, stepForm) in steps.enumerated() {
+            let step = TaskStep(
+                id: AppDatabase.generateUUID(),
+                taskId: taskId,
+                stepIndex: index,
+                title: stepForm.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                type: stepForm.type,
+                action: stepForm.type == .counting
+                    ? stepForm.action.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : nil,
+                unit: stepForm.type == .counting
+                    ? stepForm.unit.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : nil,
+                maxCount: stepForm.type == .counting
+                    ? Int(stepForm.maxCount.trimmingCharacters(in: .whitespacesAndNewlines))
+                    : nil,
+                linkedTaskId: nil,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+            taskSteps.append(step)
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try AppDatabase.shared.write { db in
+                    try newTask.save(db)
+                    for step in taskSteps {
+                        try step.save(db)
+                    }
+                }
+                DispatchQueue.main.async {
+                    self.title = ""
+                    self.taskDescription = ""
+                    self.steps = [ProgressStepFormState()]
+                    self.isSubmitting = false
+                    self.successMessage = "Progress task created!"
+                    self.loadProgressTasks()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        self.successMessage = nil
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to create task: \(error.localizedDescription)"
+                    self.isSubmitting = false
+                }
+            }
+        }
+    }
+
+    /// Ensures the playground user exists in the users table (required by FK constraint on tasks).
+    private func ensurePlaygroundUser() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                if try AppDatabase.shared.fetchUser(id: "playground-user-1") == nil {
+                    let user = User(
+                        id: "playground-user-1",
+                        email: "playground@oybc.local",
+                        displayName: "Playground User",
+                        photoURL: nil,
+                        createdAt: AppDatabase.currentTimestamp(),
+                        updatedAt: AppDatabase.currentTimestamp(),
+                        lastSyncedAt: nil,
+                        version: 1
+                    )
+                    try AppDatabase.shared.saveUser(user)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Setup error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Loads progress tasks for the playground user from the local database.
+    private func loadProgressTasks() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let allTasks = try AppDatabase.shared.fetchTasks(userId: "playground-user-1")
+                let progressTasks = allTasks.filter { $0.type == .progress }
+
+                var result: [(task: Task, steps: [TaskStep])] = []
+                for task in progressTasks {
+                    let taskSteps = try AppDatabase.shared.fetchTaskSteps(taskId: task.id)
+                    result.append((task: task, steps: taskSteps))
+                }
+
+                DispatchQueue.main.async {
+                    self.createdTasks = result
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to load tasks"
+                }
+            }
+        }
+    }
+
+    private static let isoFormatter = ISO8601DateFormatter()
+    private static let displayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    /// Formats an ISO8601 string into a medium-style date with time for display.
+    ///
+    /// - Parameter iso: An ISO8601 date string.
+    /// - Returns: A human-readable date string with time, or the original string if parsing fails.
+    private func formatDate(_ iso: String) -> String {
+        guard let date = Self.isoFormatter.date(from: iso) else { return iso }
+        return Self.displayFormatter.string(from: date)
+    }
+}
+
 // MARK: - Counter Task Creation Playground
 
 /// COUNTING Task Creation form and task list for Playground testing.
@@ -493,6 +859,11 @@ struct TaskCreationPlayground: View {
 struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
+        Feature(
+            id: "progress-task-creation",
+            title: "Progress Task Creation",
+            content: AnyView(ProgressTaskCreationPlayground())
+        ),
         Feature(
             id: "counter-task-creation",
             title: "Counter Task Creation",
