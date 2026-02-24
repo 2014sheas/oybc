@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus } from '../constants/enums';
+import { BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus, OperatorType } from '../constants/enums';
 
 /**
  * Validation schemas using Zod
@@ -261,6 +261,136 @@ export const SyncQueueItemSchema = z.object({
   lastAttemptAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
   priority: z.number().int(),
+});
+
+// ===== Composite Task Schemas =====
+
+/**
+ * Inline task auto-creation input (used in leaf nodes)
+ */
+export const AutoCreateTaskInputSchema = z.object({
+  type: z.nativeEnum(TaskType),
+  title: z.string().min(1).max(200),
+  action: z.string().max(50).optional(),
+  unit: z.string().max(50).optional(),
+  maxCount: z.number().int().positive().optional(),
+});
+
+/**
+ * Recursive composite node input schema.
+ *
+ * Uses z.lazy() because operator nodes contain children of the same type.
+ */
+export const CreateCompositeNodeInputSchema: z.ZodType<unknown> = z.lazy(() =>
+  z
+    .object({
+      nodeType: z.enum(['operator', 'leaf']),
+
+      // Operator node fields
+      operatorType: z.nativeEnum(OperatorType).optional(),
+      threshold: z.number().int().positive().optional(),
+      children: z.array(CreateCompositeNodeInputSchema).optional(),
+
+      // Leaf node fields
+      taskId: z.string().uuid().optional(),
+      childCompositeTaskId: z.string().uuid().optional(),
+      autoCreateTask: AutoCreateTaskInputSchema.optional(),
+    })
+    .refine(
+      (data) => {
+        if (data.nodeType === 'operator') {
+          return (
+            data.operatorType !== undefined &&
+            Array.isArray(data.children) &&
+            data.children.length > 0
+          );
+        }
+        return true;
+      },
+      { message: 'Operator nodes must have operatorType and at least one child' }
+    )
+    .refine(
+      (data) => {
+        if (data.operatorType === OperatorType.M_OF_N) {
+          return data.threshold !== undefined && data.threshold > 0;
+        }
+        return true;
+      },
+      { message: 'M_OF_N operator must have threshold > 0' }
+    )
+    .refine(
+      (data) => {
+        if (
+          data.operatorType === OperatorType.M_OF_N &&
+          data.threshold !== undefined &&
+          Array.isArray(data.children)
+        ) {
+          return data.threshold <= data.children.length;
+        }
+        return true;
+      },
+      { message: 'M_OF_N threshold must be <= number of children' }
+    )
+    .refine(
+      (data) => {
+        if (data.nodeType === 'leaf') {
+          const count = [data.taskId, data.childCompositeTaskId, data.autoCreateTask].filter(Boolean).length;
+          return count === 1;
+        }
+        return true;
+      },
+      {
+        message:
+          'Leaf nodes must have exactly one of taskId, childCompositeTaskId, or autoCreateTask',
+      }
+    )
+    .refine(
+      (data) => {
+        if (data.nodeType === 'leaf') {
+          return !data.children || data.children.length === 0;
+        }
+        return true;
+      },
+      { message: 'Leaf nodes cannot have children' }
+    )
+);
+
+export const CreateCompositeTaskInputSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  rootNode: CreateCompositeNodeInputSchema,
+});
+
+export const CompositeTaskSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  rootNodeId: z.string().uuid(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+});
+
+export const CompositeNodeSchema = z.object({
+  id: z.string().uuid(),
+  compositeTaskId: z.string().uuid(),
+  parentNodeId: z.string().uuid().optional(),
+  nodeIndex: z.number().int().min(0),
+  nodeType: z.enum(['operator', 'leaf']),
+  operatorType: z.nativeEnum(OperatorType).optional(),
+  threshold: z.number().int().positive().optional(),
+  taskId: z.string().uuid().optional(),
+  childCompositeTaskId: z.string().uuid().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
 });
 
 // ===== User Schema =====

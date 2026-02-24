@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { TaskType, generateCounterTaskTitle, type Task, type TaskStep } from '@oybc/shared';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { TaskType, generateCounterTaskTitle, type Task, type TaskStep, type CompositeTask } from '@oybc/shared';
+import { db } from '../../db/database';
 import { createTask } from '../../db';
 import { useTasks, useTaskSteps } from '../../hooks';
 import { ProgressStepRow, type StepFormState, createEmptyStep } from './ProgressStepRow';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
+import { CompositeTaskForm } from './CompositeTaskForm';
 import styles from './UnifiedTaskCreatorPlayground.module.css';
 
 /** Maximum character lengths matching shared validation schemas */
@@ -14,18 +17,23 @@ const UNIT_MAX_LENGTH = 50;
 /** Step title max length for the unified creator */
 const STEP_TITLE_MAX_LENGTH = 200;
 
-// To add COMPOUND task type in future: add entry here and define its field config
-const TASK_TYPES: { value: TaskType; label: string }[] = [
+/** Sentinel value used for the composite type selector (not a TaskType enum value) */
+const COMPOSITE_TYPE = 'composite' as const;
+type TaskTypeOrComposite = TaskType | typeof COMPOSITE_TYPE;
+
+const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
   { value: TaskType.PROGRESS, label: 'Progress' },
+  { value: COMPOSITE_TYPE, label: 'Composite' },
 ];
 
-const TYPE_FILTER_TABS: { value: 'all' | TaskType; label: string }[] = [
+const TYPE_FILTER_TABS: { value: 'all' | TaskTypeOrComposite; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
   { value: TaskType.PROGRESS, label: 'Progress' },
+  { value: COMPOSITE_TYPE, label: 'Composite' },
 ];
 
 /**
@@ -237,7 +245,7 @@ function TaskLibraryCard({ task }: { task: Task }): React.ReactElement {
  * the real Dexie database with reactive updates.
  */
 export function UnifiedTaskCreatorPlayground(): React.ReactElement {
-  const [taskType, setTaskType] = useState<TaskType>(TaskType.NORMAL);
+  const [taskType, setTaskType] = useState<TaskTypeOrComposite>(TaskType.NORMAL);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   // Counting fields
@@ -251,14 +259,27 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Library filter
-  const [filterType, setFilterType] = useState<'all' | TaskType>('all');
+  const [filterType, setFilterType] = useState<'all' | TaskTypeOrComposite>('all');
 
   // Reactive task list - auto-updates when database changes
   const allTasks = useTasks(PLAYGROUND_USER_ID) ?? [];
 
-  const filteredTasks = filterType === 'all'
+  // Reactive composite task list for the composite filter tab
+  const allCompositeTasks = useLiveQuery(
+    () =>
+      db.compositeTasks
+        .filter((ct) => ct.userId === PLAYGROUND_USER_ID && !ct.isDeleted)
+        .toArray(),
+    []
+  ) ?? [];
+
+  const filteredTasks = filterType === 'all' || filterType === COMPOSITE_TYPE
     ? allTasks
     : allTasks.filter((t: Task) => t.type === filterType);
+
+  const filteredCompositeTasks = filterType === 'all' || filterType === COMPOSITE_TYPE
+    ? allCompositeTasks
+    : [];
 
   /**
    * Resets the form to its default state (type = Normal, empty fields).
@@ -277,9 +298,9 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
   /**
    * Handles task type change, clearing type-specific field errors.
    *
-   * @param newType - The newly selected task type
+   * @param newType - The newly selected task type or composite sentinel
    */
-  function handleTypeChange(newType: TaskType): void {
+  function handleTypeChange(newType: TaskTypeOrComposite): void {
     setTaskType(newType);
     setErrors((prev) => ({
       ...prev,
@@ -351,9 +372,13 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
    * Handles form submission to create a new task of the selected type.
    * Validates inputs, persists to Dexie, resets the form,
    * and shows a success message that auto-dismisses after 3s.
+   * Composite type is handled by CompositeTaskForm and should not reach here.
    */
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
+
+    // Composite tasks are handled by the CompositeTaskForm component
+    if (taskType === COMPOSITE_TYPE) return;
 
     const validationErrors = validateForm(
       taskType,
@@ -441,206 +466,211 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
       <section className={styles.section}>
         <h4 className={styles.sectionTitle}>Create Task</h4>
 
-        <form className={styles.form} onSubmit={handleSubmit}>
-          {/* Type Selector */}
-          <div className={styles.fieldGroup}>
-            <label className={styles.label}>
-              Type<span className={styles.required}>*</span>
-            </label>
-            <div className={styles.typeSelector}>
-              {TASK_TYPES.map((t) => (
-                <button
-                  key={t.value}
-                  type="button"
-                  className={`${styles.typeButton} ${taskType === t.value ? styles.typeButtonActive : ''}`}
-                  onClick={() => handleTypeChange(t.value)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Title */}
-          <div className={styles.fieldGroup}>
-            <label className={styles.label} htmlFor="unified-task-title">
-              Title{taskType !== TaskType.COUNTING && <span className={styles.required}>*</span>}
-            </label>
-            <input
-              id="unified-task-title"
-              type="text"
-              className={`${styles.input} ${errors.title ? styles.inputError : ''}`}
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                if (errors.title) {
-                  setErrors((prev) => ({ ...prev, title: undefined }));
-                }
-              }}
-              placeholder={taskType === TaskType.COUNTING ? 'Auto-generated if blank (e.g., "Run 26 miles")' : 'Enter task title'}
-              maxLength={TITLE_MAX_LENGTH + 1}
-            />
-            <span className={getCharCountClass(title.length, TITLE_MAX_LENGTH)}>
-              {title.length}/{TITLE_MAX_LENGTH}
-            </span>
-            {errors.title && (
-              <span className={styles.fieldError}>{errors.title}</span>
-            )}
-          </div>
-
-          {/* Description */}
-          <div className={styles.fieldGroup}>
-            <label className={styles.label} htmlFor="unified-task-description">
-              Description
-            </label>
-            <textarea
-              id="unified-task-description"
-              className={`${styles.input} ${styles.textarea} ${errors.description ? styles.inputError : ''}`}
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                if (errors.description) {
-                  setErrors((prev) => ({ ...prev, description: undefined }));
-                }
-              }}
-              placeholder="Enter task description (optional)"
-              maxLength={DESCRIPTION_MAX_LENGTH + 1}
-            />
-            <span className={getCharCountClass(description.length, DESCRIPTION_MAX_LENGTH)}>
-              {description.length}/{DESCRIPTION_MAX_LENGTH}
-            </span>
-            {errors.description && (
-              <span className={styles.fieldError}>{errors.description}</span>
-            )}
-          </div>
-
-          {/* Counting Fields (conditional) */}
-          {taskType === TaskType.COUNTING && (
-            <div className={styles.countingFields}>
-              {/* Action */}
-              <div className={styles.fieldGroup}>
-                <label className={styles.label} htmlFor="unified-task-action">
-                  Action<span className={styles.required}>*</span>
-                </label>
-                <input
-                  id="unified-task-action"
-                  type="text"
-                  className={`${styles.input} ${errors.action ? styles.inputError : ''}`}
-                  value={action}
-                  onChange={(e) => {
-                    setAction(e.target.value);
-                    if (errors.action) {
-                      setErrors((prev) => ({ ...prev, action: undefined }));
-                    }
-                  }}
-                  placeholder='e.g., "Run"'
-                  maxLength={ACTION_MAX_LENGTH}
-                />
-                {errors.action && (
-                  <span className={styles.fieldError}>{errors.action}</span>
-                )}
-              </div>
-
-              {/* Max Count */}
-              <div className={styles.fieldGroup}>
-                <label className={styles.label} htmlFor="unified-task-maxcount">
-                  Max Count<span className={styles.required}>*</span>
-                </label>
-                <input
-                  id="unified-task-maxcount"
-                  type="number"
-                  className={`${styles.input} ${errors.maxCount ? styles.inputError : ''}`}
-                  value={maxCountStr}
-                  onChange={(e) => {
-                    setMaxCountStr(e.target.value);
-                    if (errors.maxCount) {
-                      setErrors((prev) => ({ ...prev, maxCount: undefined }));
-                    }
-                  }}
-                  placeholder="e.g., 26"
-                  min="1"
-                />
-                {errors.maxCount && (
-                  <span className={styles.fieldError}>{errors.maxCount}</span>
-                )}
-              </div>
-
-              {/* Unit */}
-              <div className={styles.fieldGroup}>
-                <label className={styles.label} htmlFor="unified-task-unit">
-                  Unit<span className={styles.required}>*</span>
-                </label>
-                <input
-                  id="unified-task-unit"
-                  type="text"
-                  className={`${styles.input} ${errors.unit ? styles.inputError : ''}`}
-                  value={unit}
-                  onChange={(e) => {
-                    setUnit(e.target.value);
-                    if (errors.unit) {
-                      setErrors((prev) => ({ ...prev, unit: undefined }));
-                    }
-                  }}
-                  placeholder='e.g., "miles"'
-                  maxLength={UNIT_MAX_LENGTH}
-                />
-                {errors.unit && (
-                  <span className={styles.fieldError}>{errors.unit}</span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Progress Steps (conditional) */}
-          {taskType === TaskType.PROGRESS && (
-            <div className={styles.stepsSection}>
-              <span className={styles.stepsHeader}>Steps</span>
-
-              <div className={styles.stepsList}>
-                {steps.map((step, index) => (
-                  <ProgressStepRow
-                    key={step.id}
-                    index={index}
-                    idPrefix={`unified-step-${step.id}`}
-                    step={step}
-                    errors={errors.steps?.[step.id]}
-                    canRemove={steps.length > 1}
-                    stepTitleMaxLength={STEP_TITLE_MAX_LENGTH}
-                    onFieldChange={(field, value) =>
-                      updateStep(step.id, field, value)
-                    }
-                    onRemove={() => removeStep(step.id)}
-                  />
-                ))}
-              </div>
-
+        {/* Type Selector — shown for all types */}
+        <div className={styles.fieldGroup}>
+          <label className={styles.label}>
+            Type<span className={styles.required}>*</span>
+          </label>
+          <div className={styles.typeSelector}>
+            {TASK_TYPES.map((t) => (
               <button
+                key={t.value}
                 type="button"
-                className={styles.addStepButton}
-                onClick={addStep}
+                className={`${styles.typeButton} ${taskType === t.value ? styles.typeButtonActive : ''}`}
+                onClick={() => handleTypeChange(t.value)}
               >
-                + Add Step
+                {t.label}
               </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Composite Task Form — shown when composite type is selected */}
+        {taskType === COMPOSITE_TYPE ? (
+          <CompositeTaskForm />
+        ) : (
+          <form className={styles.form} onSubmit={handleSubmit}>
+            {/* Title */}
+            <div className={styles.fieldGroup}>
+              <label className={styles.label} htmlFor="unified-task-title">
+                Title{taskType !== TaskType.COUNTING && <span className={styles.required}>*</span>}
+              </label>
+              <input
+                id="unified-task-title"
+                type="text"
+                className={`${styles.input} ${errors.title ? styles.inputError : ''}`}
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (errors.title) {
+                    setErrors((prev) => ({ ...prev, title: undefined }));
+                  }
+                }}
+                placeholder={taskType === TaskType.COUNTING ? 'Auto-generated if blank (e.g., "Run 26 miles")' : 'Enter task title'}
+                maxLength={TITLE_MAX_LENGTH + 1}
+              />
+              <span className={getCharCountClass(title.length, TITLE_MAX_LENGTH)}>
+                {title.length}/{TITLE_MAX_LENGTH}
+              </span>
+              {errors.title && (
+                <span className={styles.fieldError}>{errors.title}</span>
+              )}
             </div>
-          )}
 
-          {/* Submit */}
-          <button
-            type="submit"
-            className={styles.submitButton}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Creating...' : 'Create Task'}
-          </button>
-        </form>
+            {/* Description */}
+            <div className={styles.fieldGroup}>
+              <label className={styles.label} htmlFor="unified-task-description">
+                Description
+              </label>
+              <textarea
+                id="unified-task-description"
+                className={`${styles.input} ${styles.textarea} ${errors.description ? styles.inputError : ''}`}
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  if (errors.description) {
+                    setErrors((prev) => ({ ...prev, description: undefined }));
+                  }
+                }}
+                placeholder="Enter task description (optional)"
+                maxLength={DESCRIPTION_MAX_LENGTH + 1}
+              />
+              <span className={getCharCountClass(description.length, DESCRIPTION_MAX_LENGTH)}>
+                {description.length}/{DESCRIPTION_MAX_LENGTH}
+              </span>
+              {errors.description && (
+                <span className={styles.fieldError}>{errors.description}</span>
+              )}
+            </div>
 
-        {/* Success Message */}
-        {successMessage && (
+            {/* Counting Fields (conditional) */}
+            {taskType === TaskType.COUNTING && (
+              <div className={styles.countingFields}>
+                {/* Action */}
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label} htmlFor="unified-task-action">
+                    Action<span className={styles.required}>*</span>
+                  </label>
+                  <input
+                    id="unified-task-action"
+                    type="text"
+                    className={`${styles.input} ${errors.action ? styles.inputError : ''}`}
+                    value={action}
+                    onChange={(e) => {
+                      setAction(e.target.value);
+                      if (errors.action) {
+                        setErrors((prev) => ({ ...prev, action: undefined }));
+                      }
+                    }}
+                    placeholder='e.g., "Run"'
+                    maxLength={ACTION_MAX_LENGTH}
+                  />
+                  {errors.action && (
+                    <span className={styles.fieldError}>{errors.action}</span>
+                  )}
+                </div>
+
+                {/* Max Count */}
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label} htmlFor="unified-task-maxcount">
+                    Max Count<span className={styles.required}>*</span>
+                  </label>
+                  <input
+                    id="unified-task-maxcount"
+                    type="number"
+                    className={`${styles.input} ${errors.maxCount ? styles.inputError : ''}`}
+                    value={maxCountStr}
+                    onChange={(e) => {
+                      setMaxCountStr(e.target.value);
+                      if (errors.maxCount) {
+                        setErrors((prev) => ({ ...prev, maxCount: undefined }));
+                      }
+                    }}
+                    placeholder="e.g., 26"
+                    min="1"
+                  />
+                  {errors.maxCount && (
+                    <span className={styles.fieldError}>{errors.maxCount}</span>
+                  )}
+                </div>
+
+                {/* Unit */}
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label} htmlFor="unified-task-unit">
+                    Unit<span className={styles.required}>*</span>
+                  </label>
+                  <input
+                    id="unified-task-unit"
+                    type="text"
+                    className={`${styles.input} ${errors.unit ? styles.inputError : ''}`}
+                    value={unit}
+                    onChange={(e) => {
+                      setUnit(e.target.value);
+                      if (errors.unit) {
+                        setErrors((prev) => ({ ...prev, unit: undefined }));
+                      }
+                    }}
+                    placeholder='e.g., "miles"'
+                    maxLength={UNIT_MAX_LENGTH}
+                  />
+                  {errors.unit && (
+                    <span className={styles.fieldError}>{errors.unit}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Progress Steps (conditional) */}
+            {taskType === TaskType.PROGRESS && (
+              <div className={styles.stepsSection}>
+                <span className={styles.stepsHeader}>Steps</span>
+
+                <div className={styles.stepsList}>
+                  {steps.map((step, index) => (
+                    <ProgressStepRow
+                      key={step.id}
+                      index={index}
+                      idPrefix={`unified-step-${step.id}`}
+                      step={step}
+                      errors={errors.steps?.[step.id]}
+                      canRemove={steps.length > 1}
+                      stepTitleMaxLength={STEP_TITLE_MAX_LENGTH}
+                      onFieldChange={(field, value) =>
+                        updateStep(step.id, field, value)
+                      }
+                      onRemove={() => removeStep(step.id)}
+                    />
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  className={styles.addStepButton}
+                  onClick={addStep}
+                >
+                  + Add Step
+                </button>
+              </div>
+            )}
+
+            {/* Submit */}
+            <button
+              type="submit"
+              className={styles.submitButton}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Creating...' : 'Create Task'}
+            </button>
+          </form>
+        )}
+
+        {/* Success Message (only for non-composite types) */}
+        {taskType !== COMPOSITE_TYPE && successMessage && (
           <div className={styles.successMessage}>{successMessage}</div>
         )}
 
-        {/* General Error */}
-        {errors.general && (
+        {/* General Error (only for non-composite types) */}
+        {taskType !== COMPOSITE_TYPE && errors.general && (
           <div className={styles.errorMessage}>{errors.general}</div>
         )}
       </section>
@@ -664,12 +694,22 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
         </div>
 
         {/* Task List */}
-        {filteredTasks.length === 0 ? (
+        {filteredTasks.length === 0 && filteredCompositeTasks.length === 0 ? (
           <p className={styles.emptyState}>No tasks yet — create one above</p>
         ) : (
           <div className={styles.taskList}>
             {filteredTasks.map((task: Task) => (
               <TaskLibraryCard key={task.id} task={task} />
+            ))}
+            {filteredCompositeTasks.map((ct: CompositeTask) => (
+              <div key={ct.id} className={styles.taskCard}>
+                <div className={styles.taskCardHeader}>
+                  <span className={styles.taskTitle}>{ct.title}</span>
+                  <span className={`${styles.typeBadge} ${styles.typeBadgeComposite}`}>
+                    COMPOSITE
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
         )}

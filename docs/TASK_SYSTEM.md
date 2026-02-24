@@ -218,13 +218,14 @@ User taps task → Modal opens
 
 ### 4. Composite Tasks (Logical Combinations)
 
-**Definition**: Tasks composed using logical operators (AND, OR, M-of-N) over other tasks.
+**Definition**: Tasks composed using one of three logical operators over a **flat list of subtasks** (depth 1). Composite tasks live in a separate `composite_tasks` / `composite_nodes` table hierarchy and are not a `TaskType` enum value.
 
 **Use Cases**:
-- Flexible goals: "Exercise OR Yoga" (either satisfies the requirement)
-- Combined requirements: "Run 3 miles AND Stretch"
-- Threshold-based: "2 of [Meditate, Journal, Read]" (pick any 2 of 3)
-- Complex workflows: "(Exercise OR Yoga) AND (2 of [Meditate, Journal, Read])"
+- Flexible goals: "Run OR Bike" (either satisfies the requirement) — **Any of**
+- Combined requirements: "Run AND Stretch" — **All of**
+- Threshold-based: "2 of [Meditate, Journal, Read]" (pick any 2 of 3) — **At least 2 of**
+
+**Structure**: Always flat — one root operator node with direct leaf children. No nested tree building in the UI. For deeper composition, users create inner composite tasks first, then add them as existing subtasks in the outer composite.
 
 **Data Structure**:
 
@@ -233,9 +234,9 @@ Root Composite Task:
 {
   id: string;
   userId: string;
-  title: string;             // "Weekly Wellness"
+  title: string;             // "Wellness Routine"
   description?: string;
-  rootNodeId: string;        // FK to composite_nodes (root of tree)
+  rootNodeId: string;        // FK to composite_nodes (always the operator node)
   createdAt: string;
   updatedAt: string;
   version: number;
@@ -248,18 +249,19 @@ Tree Nodes (in `composite_nodes` table):
 {
   id: string;
   compositeTaskId: string;
-  parentNodeId?: string;     // NULL for root
+  parentNodeId?: string;     // NULL for root operator node
   nodeIndex: number;         // Order among siblings
 
   // Node type discriminator
   nodeType: 'operator' | 'leaf';
 
-  // Operator node fields
+  // Operator node fields (root only)
   operatorType?: 'AND' | 'OR' | 'M_OF_N';
-  threshold?: number;        // For M_OF_N (e.g., 2 in "2 of 3")
+  threshold?: number;        // For M_OF_N (e.g., 2 in "at least 2 of 3")
 
-  // Leaf node field (always task reference)
-  taskId?: string;           // FK to tasks table
+  // Leaf node fields — exactly one is set
+  taskId?: string;                 // FK to tasks (normal/counting/progress)
+  childCompositeTaskId?: string;   // FK to composite_tasks (existing composite subtask)
 
   createdAt: string;
   updatedAt: string;
@@ -268,30 +270,19 @@ Tree Nodes (in `composite_nodes` table):
 }
 ```
 
-**Completion Tracking** (in `board_composite_tasks` table):
-```typescript
-{
-  boardId: string;
-  compositeTaskId: string;
-  isCompleted: boolean;      // Evaluated from tree
-  completedAt?: string;
-}
-```
+**Operators** (user-facing names):
+- **All of** (AND): Every subtask must be complete
+- **Any of** (OR): At least one subtask must be complete
+- **At least N of** (M_OF_N): N or more subtasks must be complete (N shown as stepper below picker)
 
-**Operators**:
-- **AND**: All children must be complete
-  - Example: "Exercise AND Meditate" (both required)
-  - Evaluation: `childResults.every(r => r === true)`
+**Constraints**:
+- Minimum 2 subtasks required to save
+- No duplicate subtasks (same task or composite cannot appear twice)
+- Circular references prevented at creation time
 
-- **OR**: Any child can be complete
-  - Example: "Run 3 miles OR Bike 10 miles" (either satisfies)
-  - Evaluation: `childResults.some(r => r === true)`
+**Subtasks when adding existing**: all task types shown — Normal, Counting, Progress, and existing Composite tasks
 
-- **M_OF_N**: M out of N children must be complete
-  - Example: "2 of [Meditate, Journal, Read]" (choose any 2)
-  - Evaluation: `completedCount >= threshold`
-
-**Tree Evaluation**: Recursive traversal from leaves to root.
+**Subtasks when creating inline**: only Normal, Counting, Progress (Composite must be created separately first)
 
 **See [COMPOSITE_TASKS.md](./COMPOSITE_TASKS.md) for detailed documentation.**
 
@@ -641,15 +632,15 @@ task_steps:
 
 | Feature | Normal | Counting | Progress | Composite |
 |---------|--------|----------|----------|-----------|
-| **Complexity** | Simple | Medium | High | Very High |
-| **Completion** | Binary | Partial (0-100%) | Multi-step | Tree evaluation |
-| **UI Interaction** | Single tap | Counter modal | Step checklist | Tree display |
+| **Complexity** | Simple | Medium | High | Medium |
+| **Completion** | Binary | Partial (0-100%) | Multi-step | Flat operator evaluation |
+| **UI Interaction** | Single tap | Counter modal | Step checklist | Subtask list |
 | **Use Case** | One-time actions | Quantifiable goals | Multi-step workflows | Logical combinations |
-| **Nested Support** | No | No | Steps (1 level) | Unlimited (tree) |
-| **Example** | "Call Mom" | "Read 100 pages" | "Clean House" | "(Exercise OR Yoga) AND ..." |
+| **Nested Support** | No | No | Steps (1 level) | Depth 1 (flat subtask list) |
+| **Example** | "Call Mom" | "Read 100 pages" | "Clean House" | "Run OR Yoga" (Any of) |
 | **Storage** | `tasks` | `tasks` | `tasks` + `task_steps` | `composite_tasks` + `composite_nodes` |
-| **Completion Tracking** | `board_tasks.isCompleted` | `board_tasks.currentCount` | `board_tasks.completedStepIds` | Tree evaluation |
-| **Auto-Completion** | Manual only | When count >= maxCount | When all steps done | When conditions met |
+| **Completion Tracking** | `board_tasks.isCompleted` | `board_tasks.currentCount` | All step tasks complete | Operator applied to subtask completions |
+| **Auto-Completion** | Manual only | When count >= maxCount | When all steps done | When operator conditions met |
 
 ---
 
@@ -755,14 +746,16 @@ CREATE TABLE composite_tasks (
 CREATE TABLE composite_nodes (
     id TEXT PRIMARY KEY,
     compositeTaskId TEXT NOT NULL,
-    parentNodeId TEXT,                     -- NULL for root
+    parentNodeId TEXT,                     -- NULL for root operator node
     nodeIndex INTEGER NOT NULL,
 
     nodeType TEXT NOT NULL,                -- 'operator' or 'leaf'
     operatorType TEXT,                     -- 'AND', 'OR', 'M_OF_N'
     threshold INTEGER,                     -- For M_OF_N
 
-    taskId TEXT,                           -- FK to tasks (for leaf nodes)
+    taskId TEXT,                           -- FK to tasks (leaf → normal/counting/progress)
+    childCompositeTaskId TEXT,             -- FK to composite_tasks (leaf → nested composite)
+    -- Exactly one of taskId / childCompositeTaskId is set for leaf nodes
 
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
@@ -773,7 +766,8 @@ CREATE TABLE composite_nodes (
 
     FOREIGN KEY (compositeTaskId) REFERENCES composite_tasks(id),
     FOREIGN KEY (parentNodeId) REFERENCES composite_nodes(id),
-    FOREIGN KEY (taskId) REFERENCES tasks(id)
+    FOREIGN KEY (taskId) REFERENCES tasks(id),
+    FOREIGN KEY (childCompositeTaskId) REFERENCES composite_tasks(id)
 );
 
 -- Per-board composite task completion state
@@ -903,12 +897,13 @@ const CreateProgressTaskSchema = z.object({
 **See [COMPOSITE_TASKS.md](./COMPOSITE_TASKS.md) for comprehensive validation rules.**
 
 Summary:
-- ✅ Operator nodes must have `operatorType` and children
-- ✅ M_OF_N must have valid threshold (1 <= M <= N)
-- ✅ Leaf nodes must reference a task (via `taskId` or auto-create)
-- ❌ No circular references allowed
-- ❌ Tree depth limit: 5 levels (soft limit)
-- ❌ Node count limit: 20 nodes (soft limit)
+- ✅ Title required (1–200 characters)
+- ✅ Operator required (All of / Any of / At least N of)
+- ✅ Minimum 2 subtasks required
+- ✅ M_OF_N threshold: integer in `[1, subtaskCount]`
+- ✅ Each leaf has exactly one of `taskId` or `childCompositeTaskId`
+- ❌ No duplicate subtasks (same task cannot appear twice)
+- ❌ No circular references (composite cannot reference itself transitively)
 
 ---
 
@@ -998,30 +993,26 @@ Summary:
 
 **Board Grid**:
 - Display: Task title + evaluation result
-  - "Weekly Wellness ✅"
-  - "Fitness Combo (1/2 conditions met)"
+  - "Wellness Routine ✅"
+  - "Fitness Combo (1/2 complete)"
 
 **Detail Modal**:
 ```
 ┌─────────────────────────┐
-│  Weekly Wellness        │
+│  Fitness Combo          │
 │                         │
-│  ✅ AND (both required) │
-│    ├─ ✅ OR (any of)    │
-│    │  ├─ ✅ Exercise    │
-│    │  └─ ❌ Yoga        │
-│    └─ ✅ 2 of 3         │
-│       ├─ ✅ Meditate    │
-│       ├─ ✅ Journal     │
-│       └─ ❌ Read        │
+│  Any of (1 required)    │
+│                         │
+│  ✅ Run 5 miles         │
+│  ❌ Yoga session        │
 │                         │
 │  Status: Complete ✅    │
 └─────────────────────────┘
 ```
 
 **Interactions**:
-- View tree structure with completion state
-- Tap leaf task to navigate to task detail
+- View flat subtask list with completion state
+- Tap a subtask to navigate to its detail
 - Real-time evaluation updates when sub-tasks complete
 
 ---

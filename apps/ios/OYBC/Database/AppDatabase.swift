@@ -68,6 +68,87 @@ final class AppDatabase {
             try self.createInitialSchema(db)
         }
 
+        // v2: Composite task tables
+        migrator.registerMigration("v2") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS composite_tasks (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    rootNodeId TEXT NOT NULL,
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+
+                    FOREIGN KEY (userId) REFERENCES users(id)
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE INDEX idx_composite_tasks_user_deleted
+                    ON composite_tasks(userId, isDeleted)
+                """)
+
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS composite_nodes (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    compositeTaskId TEXT NOT NULL,
+                    parentNodeId TEXT,
+                    nodeIndex INTEGER NOT NULL,
+
+                    nodeType TEXT NOT NULL,
+                    operatorType TEXT,
+                    threshold INTEGER,
+
+                    taskId TEXT,
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+
+                    FOREIGN KEY (compositeTaskId) REFERENCES composite_tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (parentNodeId) REFERENCES composite_nodes(id),
+                    FOREIGN KEY (taskId) REFERENCES tasks(id)
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE INDEX idx_composite_nodes_composite
+                    ON composite_nodes(compositeTaskId)
+                """)
+
+            try db.execute(sql: """
+                CREATE INDEX idx_composite_nodes_parent_index
+                    ON composite_nodes(parentNodeId, nodeIndex)
+                """)
+
+            try db.execute(sql: """
+                CREATE INDEX idx_composite_nodes_task
+                    ON composite_nodes(taskId)
+                """)
+        }
+
+        // v3: Add childCompositeTaskId column and index to composite_nodes
+        migrator.registerMigration("v3") { db in
+            try db.execute(sql: """
+                ALTER TABLE composite_nodes
+                ADD COLUMN childCompositeTaskId TEXT
+                REFERENCES composite_tasks(id)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX idx_composite_nodes_child_composite
+                    ON composite_nodes(childCompositeTaskId)
+                """)
+        }
+
         return migrator
     }
 
@@ -332,6 +413,9 @@ extension AppDatabase {
             try db.execute(sql: "DELETE FROM task_steps")
             try db.execute(sql: "DELETE FROM tasks")
             try db.execute(sql: "DELETE FROM boards")
+            // Composite nodes before composite tasks (FK: composite_nodes.compositeTaskId → composite_tasks)
+            try db.execute(sql: "DELETE FROM composite_nodes")
+            try db.execute(sql: "DELETE FROM composite_tasks")
             try db.execute(sql: "DELETE FROM users")
         }
     }

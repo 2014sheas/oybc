@@ -65,3 +65,12 @@ export enum SyncStatus {
   COMPLETED = 'completed',
   FAILED = 'failed'
 }
+
+/**
+ * Composite task operator types
+ */
+export enum OperatorType {
+  AND = 'AND',       // All children must be complete
+  OR = 'OR',         // Any child must be complete
+  M_OF_N = 'M_OF_N' // M of N children must be complete (requires threshold)
+}

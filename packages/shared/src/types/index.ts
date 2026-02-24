@@ -5,3 +5,4 @@ export * from './task';
 export * from './boardTask';
 export * from './progressCounter';
 export * from './syncQueue';
+export * from './compositeTask';

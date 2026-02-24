@@ -1,23 +1,47 @@
 import SwiftUI
 
+// MARK: - PlaygroundTaskType
+
+/// Wrapper type for the task-type picker that includes Composite alongside the three TaskType cases.
+///
+/// Composite tasks are NOT a `TaskType`; they live in their own `composite_tasks` table.
+/// This enum lets the playground picker treat all four as a single selection.
+private enum PlaygroundTaskType: String, CaseIterable {
+    case normal = "Normal"
+    case counting = "Counting"
+    case progress = "Progress"
+    case composite = "Composite"
+}
+
 // MARK: - Unified Task Creator Playground
 
 /// Unified Task Creator + Task Library for Playground testing.
 ///
-/// Provides a single form that handles Normal, Counting, and Progress task creation,
-/// plus a filterable library showing all tasks for the test user.
+/// Provides a single form that handles Normal, Counting, Progress, and Composite task
+/// creation, plus a filterable library showing all tasks for the test user.
 ///
 /// - Normal: title + optional description only.
 /// - Counting: shared fields + action, unit, maxCount.
 /// - Progress: shared fields + steps section (each step is Normal or Counting).
+/// - Composite: title + flat subtask list with operator (via CompositeTaskFormView).
 ///
 /// On valid submission the task (and steps for Progress) are written to the local
 /// database via AppDatabase.shared, then the library is refreshed automatically.
 struct UnifiedTaskCreatorPlayground: View {
     // MARK: - Form State
 
-    // To add COMPOUND task type in future: add entry here and define its field config
-    @State private var selectedType: TaskType = .normal
+    @State private var playgroundTaskType: PlaygroundTaskType = .normal
+
+    /// Maps the current `playgroundTaskType` to the corresponding `TaskType` for
+    /// Normal / Counting / Progress logic. Returns `nil` for `.composite`.
+    private var selectedType: TaskType? {
+        switch playgroundTaskType {
+        case .normal:    return .normal
+        case .counting:  return .counting
+        case .progress:  return .progress
+        case .composite: return nil
+        }
+    }
 
     // Shared fields
     @State private var title = ""
@@ -41,13 +65,21 @@ struct UnifiedTaskCreatorPlayground: View {
 
     @State private var libraryTasks: [Task] = []
     @State private var librarySteps: [String: [TaskStep]] = [:]
-    @State private var selectedFilter: TaskType? = nil // nil = All
+    @State private var libraryCompositeTasks: [CompositeTask] = []
+    @State private var selectedFilter: TaskType? = nil  // nil = All; use isCompositeFilter for composite
+    @State private var isCompositeFilter: Bool = false
 
     // MARK: - Computed
 
     private var filteredTasks: [Task] {
+        if isCompositeFilter { return [] }
         guard let filter = selectedFilter else { return libraryTasks }
         return libraryTasks.filter { $0.type == filter }
+    }
+
+    private var filteredCompositeTasks: [CompositeTask] {
+        guard isCompositeFilter || selectedFilter == nil else { return [] }
+        return libraryCompositeTasks
     }
 
     // MARK: - Body
@@ -60,114 +92,119 @@ struct UnifiedTaskCreatorPlayground: View {
                     .font(.headline)
 
                 // Task type picker
-                Picker("Task Type", selection: $selectedType) {
-                    Text("Normal").tag(TaskType.normal)
-                    Text("Counting").tag(TaskType.counting)
-                    Text("Progress").tag(TaskType.progress)
+                Picker("Task Type", selection: $playgroundTaskType) {
+                    ForEach(PlaygroundTaskType.allCases, id: \.self) { pt in
+                        Text(pt.rawValue).tag(pt)
+                    }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: selectedType) {
+                .onChange(of: playgroundTaskType) {
                     errorMessage = nil
                 }
 
-                // Title (required for Normal/Progress; optional/auto-generated for Counting)
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField(
-                        selectedType == .counting ? "Title (auto-generated if blank)" : "Title (required)",
-                        text: $title
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    Text("\(title.count)/200")
-                        .font(.caption)
-                        .foregroundColor(title.count > 200 ? .red : .secondary)
-                }
-
-                // Description (optional, max 1000)
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("Description (optional)", text: $taskDescription, axis: .vertical)
+                if playgroundTaskType == .composite {
+                    // Composite task creation is fully handled by CompositeTaskFormView
+                    CompositeTaskFormView()
+                } else {
+                    // Title (required for Normal/Progress; optional/auto-generated for Counting)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField(
+                            selectedType == .counting ? "Title (auto-generated if blank)" : "Title (required)",
+                            text: $title
+                        )
                         .textFieldStyle(.roundedBorder)
-                        .lineLimit(3...)
-                    Text("\(taskDescription.count)/1000")
-                        .font(.caption)
-                        .foregroundColor(taskDescription.count > 1000 ? .red : .secondary)
-                }
+                        Text("\(title.count)/200")
+                            .font(.caption)
+                            .foregroundColor(title.count > 200 ? .red : .secondary)
+                    }
 
-                // Counting-specific fields
-                if selectedType == .counting {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Counting Details")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            TextField("Action (e.g. Run, Read)", text: $countingAction)
-                                .textFieldStyle(.roundedBorder)
-                            Text("\(countingAction.count)/50")
-                                .font(.caption)
-                                .foregroundColor(countingAction.count > 50 ? .red : .secondary)
-                        }
-
-                        TextField("Max Count (positive integer)", text: $countingMaxCount)
+                    // Description (optional, max 1000)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("Description (optional)", text: $taskDescription, axis: .vertical)
                             .textFieldStyle(.roundedBorder)
-                            .keyboardType(.numberPad)
+                            .lineLimit(3...)
+                        Text("\(taskDescription.count)/1000")
+                            .font(.caption)
+                            .foregroundColor(taskDescription.count > 1000 ? .red : .secondary)
+                    }
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            TextField("Unit (e.g. miles, pages)", text: $countingUnit)
+                    // Counting-specific fields
+                    if selectedType == .counting {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Counting Details")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("Action (e.g. Run, Read)", text: $countingAction)
+                                    .textFieldStyle(.roundedBorder)
+                                Text("\(countingAction.count)/50")
+                                    .font(.caption)
+                                    .foregroundColor(countingAction.count > 50 ? .red : .secondary)
+                            }
+
+                            TextField("Max Count (positive integer)", text: $countingMaxCount)
                                 .textFieldStyle(.roundedBorder)
-                            Text("\(countingUnit.count)/50")
-                                .font(.caption)
-                                .foregroundColor(countingUnit.count > 50 ? .red : .secondary)
-                        }
-                    }
-                    .padding(8)
-                    .background(Color(.systemGray5))
-                    .cornerRadius(6)
-                }
+                                .keyboardType(.numberPad)
 
-                // Progress-specific fields
-                if selectedType == .progress {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Steps")
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("Unit (e.g. miles, pages)", text: $countingUnit)
+                                    .textFieldStyle(.roundedBorder)
+                                Text("\(countingUnit.count)/50")
+                                    .font(.caption)
+                                    .foregroundColor(countingUnit.count > 50 ? .red : .secondary)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(6)
+                    }
+
+                    // Progress-specific fields
+                    if selectedType == .progress {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Steps")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+
+                            ForEach(progressSteps.indices, id: \.self) { i in
+                                ProgressStepRowView(
+                                    index: i,
+                                    step: $progressSteps[i],
+                                    stepCount: progressSteps.count,
+                                    errors: progressStepErrors[progressSteps[i].id],
+                                    onRemove: { progressSteps.remove(at: i) }
+                                )
+                            }
+
+                            Button("Add Step") {
+                                progressSteps.append(ProgressStepFormState())
+                            }
                             .font(.subheadline)
-                            .fontWeight(.semibold)
-
-                        ForEach(progressSteps.indices, id: \.self) { i in
-                            ProgressStepRowView(
-                                index: i,
-                                step: $progressSteps[i],
-                                stepCount: progressSteps.count,
-                                errors: progressStepErrors[progressSteps[i].id],
-                                onRemove: { progressSteps.remove(at: i) }
-                            )
                         }
-
-                        Button("Add Step") {
-                            progressSteps.append(ProgressStepFormState())
-                        }
-                        .font(.subheadline)
                     }
-                }
 
-                // Error message
-                if let error = errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                }
+                    // Error message
+                    if let error = errorMessage {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
 
-                // Success message
-                if let success = successMessage {
-                    Text(success)
-                        .foregroundColor(.green)
-                        .font(.caption)
-                }
+                    // Success message
+                    if let success = successMessage {
+                        Text(success)
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    }
 
-                // Create button
-                Button("Create Task") {
-                    handleCreateTask()
+                    // Create button
+                    Button("Create Task") {
+                        handleCreateTask()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSubmitting)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(isSubmitting)
             }
 
             Divider()
@@ -184,16 +221,20 @@ struct UnifiedTaskCreatorPlayground: View {
                         filterButton(label: "Normal", filter: .normal)
                         filterButton(label: "Counting", filter: .counting)
                         filterButton(label: "Progress", filter: .progress)
+                        compositeFilterButton
                     }
                 }
 
-                if filteredTasks.isEmpty {
+                if filteredTasks.isEmpty && filteredCompositeTasks.isEmpty {
                     Text("No tasks yet — create one above")
                         .foregroundColor(.secondary)
                         .font(.subheadline)
                 } else {
                     ForEach(filteredTasks, id: \.id) { task in
                         taskRow(task)
+                    }
+                    ForEach(filteredCompositeTasks, id: \.id) { ct in
+                        compositeRow(ct)
                     }
                 }
             }
@@ -212,10 +253,24 @@ struct UnifiedTaskCreatorPlayground: View {
     ///   - label: The display label for this filter.
     ///   - filter: The TaskType to filter by, or nil for "All".
     @ViewBuilder
+    private var compositeFilterButton: some View {
+        Button("Composite") {
+            isCompositeFilter = true
+            selectedFilter = nil
+        }
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(isCompositeFilter ? Color.indigo : Color(.systemGray5))
+        .foregroundColor(isCompositeFilter ? .white : .primary)
+        .cornerRadius(6)
+    }
+
     private func filterButton(label: String, filter: TaskType?) -> some View {
-        let isActive = selectedFilter == filter
+        let isActive = !isCompositeFilter && selectedFilter == filter
         Button(label) {
             selectedFilter = filter
+            isCompositeFilter = false
         }
         .font(.caption)
         .padding(.horizontal, 10)
@@ -288,6 +343,34 @@ struct UnifiedTaskCreatorPlayground: View {
         .cornerRadius(8)
     }
 
+    /// Renders a single composite task row in the Task Library.
+    ///
+    /// - Parameter ct: The CompositeTask to display.
+    @ViewBuilder
+    private func compositeRow(_ ct: CompositeTask) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(ct.title)
+                    .font(.headline)
+                Spacer()
+                Text("COMPOSITE")
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.indigo.opacity(0.2))
+                    .cornerRadius(4)
+            }
+            if let desc = ct.description, !desc.isEmpty {
+                Text(desc)
+                    .font(.body)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+
     /// Renders a colored type badge label.
     ///
     /// - Parameter type: The TaskType to render a badge for.
@@ -319,8 +402,11 @@ struct UnifiedTaskCreatorPlayground: View {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDesc = taskDescription.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Composite tasks are handled by CompositeTaskFormView, not this method
+        guard let resolvedTaskType = selectedType else { return }
+
         // Title required for Normal and Progress; optional for Counting (auto-generated)
-        if selectedType != .counting {
+        if resolvedTaskType != .counting {
             guard !trimmedTitle.isEmpty else {
                 errorMessage = "Title is required"
                 return
@@ -336,7 +422,7 @@ struct UnifiedTaskCreatorPlayground: View {
         }
 
         // Type-specific validation
-        switch selectedType {
+        switch resolvedTaskType {
         case .normal:
             break // No extra fields
 
@@ -400,7 +486,7 @@ struct UnifiedTaskCreatorPlayground: View {
         // For Counting tasks, auto-generate title from action/maxCount/unit if left blank
         // Mirror of generateCounterTaskTitle in packages/shared/src/algorithms/taskTitle.ts
         let resolvedTitle: String
-        if selectedType == .counting && trimmedTitle.isEmpty {
+        if resolvedTaskType == .counting && trimmedTitle.isEmpty {
             let trimmedAction = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedUnit = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
             let maxCount = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
@@ -411,11 +497,12 @@ struct UnifiedTaskCreatorPlayground: View {
 
         let newTask = buildTask(
             id: taskId,
+            resolvedTaskType: resolvedTaskType,
             trimmedTitle: resolvedTitle,
             trimmedDesc: trimmedDesc.isEmpty ? nil : trimmedDesc,
             now: now
         )
-        let newSteps: [TaskStep] = selectedType == .progress
+        let newSteps: [TaskStep] = resolvedTaskType == .progress
             ? buildSteps(taskId: taskId, now: now)
             : []
 
@@ -452,12 +539,13 @@ struct UnifiedTaskCreatorPlayground: View {
     ///
     /// - Parameters:
     ///   - id: Pre-generated UUID string.
+    ///   - resolvedTaskType: The concrete TaskType (never nil; caller has already guarded).
     ///   - trimmedTitle: Validated, trimmed title.
     ///   - trimmedDesc: Validated, trimmed description (nil if empty).
     ///   - now: ISO8601 timestamp for createdAt/updatedAt.
     /// - Returns: A Task ready to persist.
-    private func buildTask(id: String, trimmedTitle: String, trimmedDesc: String?, now: String) -> Task {
-        switch selectedType {
+    private func buildTask(id: String, resolvedTaskType: TaskType, trimmedTitle: String, trimmedDesc: String?, now: String) -> Task {
+        switch resolvedTaskType {
         case .normal:
             return Task(
                 id: id,
@@ -551,7 +639,7 @@ struct UnifiedTaskCreatorPlayground: View {
 
     /// Resets all form fields to their initial state after a successful submission.
     private func resetForm() {
-        selectedType = .normal
+        playgroundTaskType = .normal
         title = ""
         taskDescription = ""
         countingAction = ""
@@ -587,7 +675,7 @@ struct UnifiedTaskCreatorPlayground: View {
         }
     }
 
-    /// Loads all tasks for the playground user and their steps from the local database.
+    /// Loads all tasks and composite tasks for the playground user from the local database.
     private func loadLibrary() {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -596,9 +684,16 @@ struct UnifiedTaskCreatorPlayground: View {
                 for task in fetched where task.type == .progress {
                     steps[task.id] = try AppDatabase.shared.fetchTaskSteps(taskId: task.id)
                 }
+                let composites = try AppDatabase.shared.read { db in
+                    try CompositeTask
+                        .filter(Column("userId") == playgroundUserId && Column("isDeleted") == false)
+                        .order(Column("updatedAt").desc)
+                        .fetchAll(db)
+                }
                 DispatchQueue.main.async {
                     self.libraryTasks = fetched
                     self.librarySteps = steps
+                    self.libraryCompositeTasks = composites
                 }
             } catch {
                 DispatchQueue.main.async {

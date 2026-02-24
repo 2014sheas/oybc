@@ -15,3 +15,7 @@ export {
 } from './centerSquare';
 
 export { generateCounterTaskTitle } from './taskTitle';
+
+export {
+  evaluateCompositeTree,
+} from './compositeEvaluation';

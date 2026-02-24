@@ -7,6 +7,8 @@ import type {
   ProgressCounter,
   User,
   SyncQueueItem,
+  CompositeTask,
+  CompositeNode,
 } from '@oybc/shared';
 
 /**
@@ -23,6 +25,8 @@ export class AppDatabase extends Dexie {
   boardTasks!: Table<BoardTask, string>;
   progressCounters!: Table<ProgressCounter, string>;
   syncQueue!: Table<SyncQueueItem, string>;
+  compositeTasks!: Table<CompositeTask, string>;
+  compositeNodes!: Table<CompositeNode, string>;
 
   constructor() {
     super('oybc');
@@ -83,6 +87,38 @@ export class AppDatabase extends Dexie {
         [entityType+entityId]
       `,
     });
+
+    // v2: Add composite task tables
+    this.version(2).stores({
+      // CompositeTasks table
+      compositeTasks: `
+        id,
+        [userId+isDeleted],
+        updatedAt
+      `,
+
+      // CompositeNodes table
+      compositeNodes: `
+        id,
+        compositeTaskId,
+        [compositeTaskId+isDeleted],
+        parentNodeId,
+        taskId
+      `,
+    });
+
+    // v3: Add childCompositeTaskId index to compositeNodes
+    this.version(3).stores({
+      // Only the changed table needs to be specified
+      compositeNodes: `
+        id,
+        compositeTaskId,
+        [compositeTaskId+isDeleted],
+        parentNodeId,
+        taskId,
+        childCompositeTaskId
+      `,
+    });
   }
 }
 
@@ -115,4 +151,6 @@ export type {
   ProgressCounter,
   User,
   SyncQueueItem,
+  CompositeTask,
+  CompositeNode,
 };

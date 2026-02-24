@@ -361,6 +361,11 @@
   color: var(--success-text);
 }
 
+.typeBadgeComposite {
+  background-color: var(--info-bg, #cfe2ff);
+  color: var(--info-text, #084298);
+}
+
 .taskDescription {
   font-size: 0.9rem;
   color: var(--text-secondary);
