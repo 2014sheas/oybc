@@ -19,6 +19,7 @@ interface ExistingSubtaskItem {
   mode: 'existing';
   selectionType: 'task' | 'composite';
   selectedId: string;
+  confirmed: boolean;
 }
 
 interface InlineSubtaskItem {
@@ -32,6 +33,8 @@ interface InlineSubtaskItem {
   maxCountStr: string;
   // progress fields
   steps: StepFormState[];
+  confirmed: boolean;
+  confirmError?: string;
 }
 
 type SubtaskItem = ExistingSubtaskItem | InlineSubtaskItem;
@@ -71,6 +74,7 @@ function createEmptyExistingSubtask(): ExistingSubtaskItem {
     mode: 'existing',
     selectionType: 'task',
     selectedId: '',
+    confirmed: false,
   };
 }
 
@@ -89,6 +93,7 @@ function createEmptyInlineSubtask(): InlineSubtaskItem {
     unit: '',
     maxCountStr: '',
     steps: [createEmptyStep()],
+    confirmed: false,
   };
 }
 
@@ -451,12 +456,135 @@ export function CompositeTaskForm(): React.ReactElement {
   // ─── Render helpers ─────────────────────────────────────────────────────────
 
   /**
-   * Renders a single subtask card.
+   * Resolves the display title and badge label for a confirmed subtask chip.
+   *
+   * @param subtask - The confirmed subtask item
+   * @returns title and badge strings
+   */
+  function getSubtaskDisplayInfo(subtask: SubtaskItem): { title: string; badge: string } {
+    if (subtask.mode === 'existing') {
+      if (subtask.selectionType === 'task') {
+        const task = allTasks.find((t) => t.id === subtask.selectedId);
+        return { title: task?.title ?? '?', badge: (task?.type ?? 'task').toUpperCase() };
+      }
+      const ct = allCompositeTasks.find((c) => c.id === subtask.selectedId);
+      return { title: ct?.title ?? '?', badge: 'COMPOSITE' };
+    }
+    // inline
+    const badge = subtask.inlineType.toUpperCase();
+    let title: string;
+    if (subtask.inlineType === 'counting') {
+      title =
+        subtask.title.trim() ||
+        `${subtask.action.trim()} ${subtask.maxCountStr.trim()} ${subtask.unit.trim()}`.trim();
+    } else {
+      title = subtask.title.trim();
+    }
+    return { title: title || 'Untitled', badge };
+  }
+
+  /**
+   * Returns the CSS module class for a type badge given its label.
+   *
+   * @param badge - Uppercase badge label (e.g. 'NORMAL', 'COUNTING')
+   * @returns CSS class string
+   */
+  function getBadgeClass(badge: string): string {
+    switch (badge.toLowerCase()) {
+      case 'normal': return styles.typeBadgeNormal;
+      case 'counting': return styles.typeBadgeCounting;
+      case 'progress': return styles.typeBadgeProgress;
+      case 'composite': return styles.typeBadgeComposite;
+      default: return styles.typeBadgeNormal;
+    }
+  }
+
+  /**
+   * Attempts to confirm an inline subtask after validating required fields.
+   * Sets confirmError on the subtask if validation fails.
+   *
+   * @param id - Subtask ID to confirm
+   */
+  function confirmSubtask(id: string): void {
+    const subtask = subtasks.find((s) => s.id === id);
+    if (!subtask || subtask.mode !== 'inline') return;
+
+    let error: string | undefined;
+    if (subtask.inlineType === 'counting') {
+      if (
+        !subtask.action.trim() ||
+        !subtask.unit.trim() ||
+        !(parseInt(subtask.maxCountStr, 10) > 0)
+      ) {
+        error = 'Action, max count, and unit are required';
+      }
+    } else {
+      if (!subtask.title.trim()) {
+        error = 'Title is required';
+      }
+    }
+
+    if (error) {
+      updateSubtask(id, { confirmError: error } as Partial<InlineSubtaskItem>);
+      return;
+    }
+    updateSubtask(id, { confirmed: true, confirmError: undefined } as Partial<InlineSubtaskItem>);
+  }
+
+  /**
+   * Sets a subtask back to unconfirmed (editing) state, clearing any confirm error.
+   *
+   * @param id - Subtask ID to un-confirm
+   */
+  function editSubtask(id: string): void {
+    setSubtasks((prev) =>
+      prev.map((s): SubtaskItem => {
+        if (s.id !== id) return s;
+        if (s.mode === 'inline') return { ...s, confirmed: false, confirmError: undefined };
+        return { ...s, confirmed: false };
+      })
+    );
+  }
+
+  /**
+   * Renders a single subtask as either a compact chip (confirmed) or the full edit form.
    *
    * @param subtask - The subtask item to render
    * @returns JSX element for the subtask card
    */
   function renderSubtask(subtask: SubtaskItem): React.ReactElement {
+    // Confirmed state: compact chip
+    if (subtask.confirmed) {
+      const { title, badge } = getSubtaskDisplayInfo(subtask);
+      return (
+        <div key={subtask.id} className={styles.subtaskChip}>
+          <span className={`${styles.subtaskChipBadge} ${getBadgeClass(badge)}`}>
+            {badge}
+          </span>
+          <span className={styles.subtaskChipTitle}>{title}</span>
+          <div className={styles.subtaskChipActions}>
+            <button
+              type="button"
+              className={styles.subtaskChipEditButton}
+              onClick={() => editSubtask(subtask.id)}
+              aria-label="Edit"
+            >
+              ✏
+            </button>
+            <button
+              type="button"
+              className={styles.subtaskChipRemoveButton}
+              onClick={() => removeSubtask(subtask.id)}
+              aria-label="Remove"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Editing state: full form
     const selectedIds = getSelectedIds(subtask.id);
 
     return (
@@ -488,6 +616,7 @@ export function CompositeTaskForm(): React.ReactElement {
                 updateSubtask(subtask.id, {
                   selectedId,
                   selectionType: inferSelectionType(selectedId),
+                  confirmed: selectedId !== '',
                 });
               }}
             >
@@ -596,6 +725,20 @@ export function CompositeTaskForm(): React.ReactElement {
                 </button>
               </div>
             )}
+
+            {/* Confirm error */}
+            {subtask.confirmError && (
+              <span className={styles.fieldError}>{subtask.confirmError}</span>
+            )}
+
+            {/* Done button */}
+            <button
+              type="button"
+              className={styles.doneButton}
+              onClick={() => confirmSubtask(subtask.id)}
+            >
+              ✓ Done
+            </button>
           </div>
         )}
       </div>

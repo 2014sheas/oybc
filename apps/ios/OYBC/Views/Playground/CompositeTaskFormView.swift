@@ -38,6 +38,8 @@ class SubtaskItem: ObservableObject, Identifiable {
     @Published var inlineMaxCountStr: String = ""
     // Progress steps
     @Published var inlineSteps: [ProgressStepFormState] = []
+    @Published var isConfirmed: Bool = false
+    @Published var confirmError: String?   // inline only — validation message
 
     enum SelectionType {
         case task
@@ -536,7 +538,7 @@ struct CompositeTaskFormView: View {
 
 /// A single row in the flat subtask list.
 ///
-/// Handles both existing-selection mode and inline-creation mode.
+/// Renders a compact chip when the subtask is confirmed, or the full edit form otherwise.
 private struct SubtaskRowView: View {
     @ObservedObject var item: SubtaskItem
     let libraryTasks: [OYBC.Task]
@@ -546,6 +548,101 @@ private struct SubtaskRowView: View {
     let onRemove: () -> Void
 
     var body: some View {
+        if item.isConfirmed {
+            confirmedChipView
+        } else {
+            fullFormView
+        }
+    }
+
+    // MARK: - Confirmed Chip
+
+    private var confirmedChipView: some View {
+        HStack(spacing: 8) {
+            Text(chipBadgeLabel)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(chipBadgeColor.opacity(0.15))
+                .foregroundColor(chipBadgeColor)
+                .cornerRadius(4)
+            Text(chipTitle)
+                .font(.subheadline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+            Button { item.isConfirmed = false } label: {
+                Image(systemName: "pencil")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+
+    private var chipTitle: String {
+        switch item.mode {
+        case .existing:
+            if item.selectionType == .task {
+                return libraryTasks.first { $0.id == item.selectedTaskId }?.title ?? "?"
+            } else {
+                return libraryCompositeTasks.first { $0.id == item.selectedCompositeId }?.title ?? "?"
+            }
+        case .inline_:
+            if item.inlineType == .counting {
+                let t = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { return t }
+                let a = item.inlineAction.trimmingCharacters(in: .whitespacesAndNewlines)
+                let c = item.inlineMaxCountStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let u = item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines)
+                let generated = "\(a) \(c) \(u)".trimmingCharacters(in: .whitespacesAndNewlines)
+                return generated.isEmpty ? "Untitled" : generated
+            } else {
+                let t = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? "Untitled" : t
+            }
+        }
+    }
+
+    private var chipBadgeLabel: String {
+        switch item.mode {
+        case .existing:
+            if item.selectionType == .task {
+                guard let task = libraryTasks.first(where: { $0.id == item.selectedTaskId }) else {
+                    return "TASK"
+                }
+                return task.type.rawValue.uppercased()
+            } else {
+                return "COMPOSITE"
+            }
+        case .inline_:
+            return item.inlineType.rawValue.uppercased()
+        }
+    }
+
+    private var chipBadgeColor: Color {
+        switch chipBadgeLabel.lowercased() {
+        case "normal": return .blue
+        case "counting": return .orange
+        case "progress": return .purple
+        case "composite": return .indigo
+        default: return .blue
+        }
+    }
+
+    // MARK: - Full Form
+
+    private var fullFormView: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header: mode indicator + remove button
             HStack {
@@ -575,7 +672,6 @@ private struct SubtaskRowView: View {
 
     @ViewBuilder
     private var existingModeContent: some View {
-        // Selection type toggle
         Picker("Select from", selection: $item.selectionType) {
             Text("Task").tag(SubtaskItem.SelectionType.task)
             Text("Composite").tag(SubtaskItem.SelectionType.composite)
@@ -600,7 +696,7 @@ private struct SubtaskRowView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         } else {
-            Picker("Task", selection: $item.selectedTaskId) {
+            Picker("Task", selection: taskSelectionBinding) {
                 Text("Select a task").tag("")
                 ForEach(availableTasks, id: \.id) { task in
                     Text(task.title).tag(task.id)
@@ -621,7 +717,7 @@ private struct SubtaskRowView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         } else {
-            Picker("Composite", selection: $item.selectedCompositeId) {
+            Picker("Composite", selection: compositeSelectionBinding) {
                 Text("Select a composite").tag("")
                 ForEach(availableComposites, id: \.id) { ct in
                     Text(ct.title).tag(ct.id)
@@ -631,11 +727,32 @@ private struct SubtaskRowView: View {
         }
     }
 
+    /// Custom binding that auto-confirms when a non-empty task ID is selected.
+    private var taskSelectionBinding: Binding<String> {
+        Binding(
+            get: { item.selectedTaskId },
+            set: { newId in
+                item.selectedTaskId = newId
+                if !newId.isEmpty { item.isConfirmed = true }
+            }
+        )
+    }
+
+    /// Custom binding that auto-confirms when a non-empty composite ID is selected.
+    private var compositeSelectionBinding: Binding<String> {
+        Binding(
+            get: { item.selectedCompositeId },
+            set: { newId in
+                item.selectedCompositeId = newId
+                if !newId.isEmpty { item.isConfirmed = true }
+            }
+        )
+    }
+
     // MARK: - Inline Mode
 
     @ViewBuilder
     private var inlineModeContent: some View {
-        // Inline type picker
         Picker("Type", selection: $item.inlineType) {
             ForEach(InlineSubtaskType.allCases) { t in
                 Text(t.rawValue).tag(t)
@@ -643,7 +760,6 @@ private struct SubtaskRowView: View {
         }
         .pickerStyle(.segmented)
 
-        // Title field (shown for all types; required for normal and progress)
         TextField(
             item.inlineType == .counting
                 ? "Title (auto-generated if blank)"
@@ -652,7 +768,6 @@ private struct SubtaskRowView: View {
         )
         .textFieldStyle(.roundedBorder)
 
-        // Type-specific additional fields
         switch item.inlineType {
         case .normal:
             EmptyView()
@@ -665,6 +780,18 @@ private struct SubtaskRowView: View {
         case .progress:
             progressStepsContent
         }
+
+        if let err = item.confirmError {
+            Text(err)
+                .font(.caption)
+                .foregroundColor(.red)
+        }
+
+        Button("✓ Done") {
+            confirmInlineSubtask()
+        }
+        .font(.subheadline)
+        .buttonStyle(.bordered)
     }
 
     @ViewBuilder
@@ -693,5 +820,26 @@ private struct SubtaskRowView: View {
             }
             .font(.caption)
         }
+    }
+
+    // MARK: - Confirm Inline
+
+    private func confirmInlineSubtask() {
+        item.confirmError = nil
+        switch item.inlineType {
+        case .normal, .progress:
+            guard !item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                item.confirmError = "Title is required"
+                return
+            }
+        case .counting:
+            guard !item.inlineAction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  (Int(item.inlineMaxCountStr) ?? 0) > 0 else {
+                item.confirmError = "Action, max count, and unit are required"
+                return
+            }
+        }
+        item.isConfirmed = true
     }
 }

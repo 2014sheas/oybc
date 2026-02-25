@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { TaskType, generateCounterTaskTitle, type Task, type TaskStep, type CompositeTask } from '@oybc/shared';
+import { TaskType, generateCounterTaskTitle, type Task, type TaskStep, type CompositeTask, type CompositeNode } from '@oybc/shared';
 import { db } from '../../db/database';
 import { createTask } from '../../db';
 import { useTasks, useTaskSteps } from '../../hooks';
@@ -36,6 +36,31 @@ const TYPE_FILTER_TABS: { value: 'all' | TaskTypeOrComposite; label: string }[] 
   { value: COMPOSITE_TYPE, label: 'Composite' },
 ];
 
+/** A resolved subtask entry within a composite detail */
+interface CompositeLeaf {
+  title: string;
+  badgeType: 'normal' | 'counting' | 'progress' | 'composite';
+}
+
+/** Composite membership info shown on a task card badge */
+interface TaskCompositeMembership {
+  /** Title of the most recently updated composite this task belongs to */
+  title: string;
+  /** Number of additional composites beyond the first (total - 1) */
+  extra: number;
+}
+
+/** Maps task ID → composite membership badge data */
+type TaskCompositeMembershipMap = Record<string, TaskCompositeMembership>;
+
+/** Resolved operator info and subtask list for a composite task card */
+interface CompositeDetail {
+  operatorType: 'AND' | 'OR' | 'M_OF_N';
+  threshold?: number;
+  leafCount: number;
+  leaves: CompositeLeaf[];
+}
+
 /**
  * Validation error state for the unified task creation form
  */
@@ -55,6 +80,18 @@ interface FormErrors {
     }
   >;
   general?: string;
+}
+
+/**
+ * Returns the human-readable operator label for a composite detail.
+ *
+ * @param detail - The resolved composite detail
+ * @returns Display string such as "All of", "Any of", or "At least 2 of 3"
+ */
+function operatorLabel(detail: CompositeDetail): string {
+  if (detail.operatorType === 'AND') return 'All of';
+  if (detail.operatorType === 'OR') return 'Any of';
+  return `At least ${detail.threshold ?? '?'} of ${detail.leafCount}`;
 }
 
 /**
@@ -212,8 +249,9 @@ function ProgressStepList({ taskId }: { taskId: string }): React.ReactElement {
  * TaskLibraryCard - Displays a single task in the task library
  *
  * @param task - The task to display
+ * @param membership - Composite membership badge data (absent = not in any composite)
  */
-function TaskLibraryCard({ task }: { task: Task }): React.ReactElement {
+function TaskLibraryCard({ task, membership }: { task: Task; membership?: TaskCompositeMembership }): React.ReactElement {
   return (
     <div className={styles.taskCard}>
       <div className={styles.taskCardHeader}>
@@ -221,6 +259,11 @@ function TaskLibraryCard({ task }: { task: Task }): React.ReactElement {
         <span className={`${styles.typeBadge} ${styles[`typeBadge${task.type.charAt(0).toUpperCase()}${task.type.slice(1)}`]}`}>
           {task.type.toUpperCase()}
         </span>
+        {membership && (
+          <span className={styles.compositeMemberBadge}>
+            {membership.title}{membership.extra > 0 ? ` +${membership.extra}` : ''}
+          </span>
+        )}
       </div>
       {task.description && (
         <p className={styles.taskDescription}>{task.description}</p>
@@ -260,6 +303,8 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Library filter
   const [filterType, setFilterType] = useState<'all' | TaskTypeOrComposite>('all');
+  // Expanded composite IDs in the library
+  const [expandedCompositeIds, setExpandedCompositeIds] = useState<Set<string>>(new Set());
 
   // Reactive task list - auto-updates when database changes
   const allTasks = useTasks(PLAYGROUND_USER_ID) ?? [];
@@ -273,6 +318,12 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
     []
   ) ?? [];
 
+  // Reactive composite node list - used to resolve subtask details
+  const allCompositeNodes = useLiveQuery(
+    () => db.compositeNodes.filter((n: CompositeNode) => !n.isDeleted).toArray(),
+    []
+  ) ?? [];
+
   const filteredTasks = filterType === 'all' || filterType === COMPOSITE_TYPE
     ? allTasks
     : allTasks.filter((t: Task) => t.type === filterType);
@@ -280,6 +331,68 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
   const filteredCompositeTasks = filterType === 'all' || filterType === COMPOSITE_TYPE
     ? allCompositeTasks
     : [];
+
+  // ── Derived: composite details and task membership counts ──────────────────
+  // Build lookup maps
+  const taskMap: Record<string, Task> = {};
+  for (const t of allTasks) taskMap[t.id] = t;
+  const compositeTaskMap: Record<string, CompositeTask> = {};
+  for (const ct of allCompositeTasks) compositeTaskMap[ct.id] = ct;
+
+  // Single pass over nodes: group by composite + collect composite IDs per task
+  const taskCompositeIds: Record<string, string[]> = {};
+  const nodesByComposite: Record<string, CompositeNode[]> = {};
+  for (const node of allCompositeNodes) {
+    if (!nodesByComposite[node.compositeTaskId]) {
+      nodesByComposite[node.compositeTaskId] = [];
+    }
+    nodesByComposite[node.compositeTaskId].push(node);
+    if (node.nodeType === 'leaf' && node.taskId) {
+      if (!taskCompositeIds[node.taskId]) taskCompositeIds[node.taskId] = [];
+      taskCompositeIds[node.taskId].push(node.compositeTaskId);
+    }
+  }
+
+  // Build membership map: most recently updated composite title + extra count
+  const taskCompositeMembership: TaskCompositeMembershipMap = {};
+  for (const [taskId, compositeIds] of Object.entries(taskCompositeIds)) {
+    const sorted = compositeIds
+      .map((id) => compositeTaskMap[id])
+      .filter(Boolean)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    if (sorted.length > 0) {
+      taskCompositeMembership[taskId] = {
+        title: sorted[0].title,
+        extra: sorted.length - 1,
+      };
+    }
+  }
+
+  // Build composite details from grouped nodes
+  const compositeDetails: Record<string, CompositeDetail> = {};
+  for (const ct of allCompositeTasks) {
+    const nodes = nodesByComposite[ct.id] ?? [];
+    const rootNode = nodes.find((n) => n.id === ct.rootNodeId);
+    if (!rootNode || rootNode.nodeType !== 'operator' || !rootNode.operatorType) continue;
+    const leafNodes = nodes.filter((n) => n.nodeType === 'leaf');
+    const leaves: CompositeLeaf[] = leafNodes.map((n) => {
+      if (n.taskId && taskMap[n.taskId]) {
+        const t = taskMap[n.taskId];
+        return { title: t.title, badgeType: t.type as 'normal' | 'counting' | 'progress' };
+      }
+      if (n.childCompositeTaskId && compositeTaskMap[n.childCompositeTaskId]) {
+        return { title: compositeTaskMap[n.childCompositeTaskId].title, badgeType: 'composite' as const };
+      }
+      return { title: '(unknown)', badgeType: 'normal' as const };
+    });
+    compositeDetails[ct.id] = {
+      operatorType: rootNode.operatorType as 'AND' | 'OR' | 'M_OF_N',
+      threshold: rootNode.threshold,
+      leafCount: leafNodes.length,
+      leaves,
+    };
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   /**
    * Resets the form to its default state (type = Normal, empty fields).
@@ -366,6 +479,20 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
         };
       });
     }
+  }
+
+  /**
+   * Toggles the expanded state of a composite task card in the library.
+   *
+   * @param id - The composite task ID to toggle
+   */
+  function toggleComposite(id: string): void {
+    setExpandedCompositeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   /**
@@ -699,18 +826,59 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
         ) : (
           <div className={styles.taskList}>
             {filteredTasks.map((task: Task) => (
-              <TaskLibraryCard key={task.id} task={task} />
+              <TaskLibraryCard
+                key={task.id}
+                task={task}
+                membership={taskCompositeMembership[task.id]}
+              />
             ))}
-            {filteredCompositeTasks.map((ct: CompositeTask) => (
-              <div key={ct.id} className={styles.taskCard}>
-                <div className={styles.taskCardHeader}>
-                  <span className={styles.taskTitle}>{ct.title}</span>
-                  <span className={`${styles.typeBadge} ${styles.typeBadgeComposite}`}>
-                    COMPOSITE
-                  </span>
+            {filteredCompositeTasks.map((ct: CompositeTask) => {
+              const detail = compositeDetails[ct.id];
+              const isExpanded = expandedCompositeIds.has(ct.id);
+              return (
+                <div key={ct.id} className={styles.taskCard}>
+                  <div className={styles.taskCardHeader}>
+                    <span className={styles.taskTitle}>{ct.title}</span>
+                    <span className={`${styles.typeBadge} ${styles.typeBadgeComposite}`}>
+                      COMPOSITE
+                    </span>
+                  </div>
+                  {ct.description && (
+                    <p className={styles.taskDescription}>{ct.description}</p>
+                  )}
+                  {detail && (
+                    <>
+                      <div className={styles.compositeOperatorRow}>
+                        <span className={styles.taskMeta}>
+                          {operatorLabel(detail)} · {detail.leafCount} subtask{detail.leafCount === 1 ? '' : 's'}
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.compositeExpandButton}
+                          onClick={() => toggleComposite(ct.id)}
+                          aria-label={isExpanded ? 'Collapse subtasks' : 'Expand subtasks'}
+                        >
+                          {isExpanded ? '▼' : '▶'}
+                        </button>
+                      </div>
+                      {isExpanded && detail.leaves.length > 0 && (
+                        <ul className={styles.compositeSubtaskList}>
+                          {detail.leaves.map((leaf, i) => (
+                            <li key={i} className={styles.compositeSubtaskItem}>
+                              <span className={styles.compositeSubtaskBullet}>·</span>
+                              <span className={styles.compositeSubtaskTitle}>{leaf.title}</span>
+                              <span className={`${styles.typeBadge} ${styles[`typeBadge${leaf.badgeType.charAt(0).toUpperCase()}${leaf.badgeType.slice(1)}`]}`}>
+                                {leaf.badgeType.toUpperCase()}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

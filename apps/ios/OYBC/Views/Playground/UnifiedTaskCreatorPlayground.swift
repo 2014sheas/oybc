@@ -1,4 +1,43 @@
 import SwiftUI
+import GRDB
+
+// MARK: - Composite Library Types
+
+/// Badge type used for a leaf entry in the composite detail view.
+private enum CompositeBadgeType {
+    case normal, counting, progress, composite
+}
+
+/// A resolved subtask entry shown when a composite card is expanded.
+private struct CompositeLeaf {
+    let title: String
+    let badgeType: CompositeBadgeType
+}
+
+/// Composite membership badge data shown on a task card.
+private struct TaskCompositeMembership {
+    /// Title of the most recently updated composite this task belongs to.
+    let title: String
+    /// Number of additional composites beyond the first (total - 1).
+    let extra: Int
+}
+
+/// Resolved operator info and flat subtask list for a composite task card.
+private struct CompositeDetail {
+    let operatorType: OperatorType
+    let threshold: Int?
+    let leafCount: Int
+    let leaves: [CompositeLeaf]
+
+    /// Human-readable operator label.
+    var operatorLabel: String {
+        switch operatorType {
+        case .and:   return "All of"
+        case .or:    return "Any of"
+        case .mOfN:  return "At least \(threshold ?? 0) of \(leafCount)"
+        }
+    }
+}
 
 // MARK: - PlaygroundTaskType
 
@@ -66,6 +105,9 @@ struct UnifiedTaskCreatorPlayground: View {
     @State private var libraryTasks: [Task] = []
     @State private var librarySteps: [String: [TaskStep]] = [:]
     @State private var libraryCompositeTasks: [CompositeTask] = []
+    @State private var compositeDetails: [String: CompositeDetail] = [:]
+    @State private var taskCompositeMembership: [String: TaskCompositeMembership] = [:]
+    @State private var expandedCompositeIds: Set<String> = []
     @State private var selectedFilter: TaskType? = nil  // nil = All; use isCompositeFilter for composite
     @State private var isCompositeFilter: Bool = false
 
@@ -266,6 +308,7 @@ struct UnifiedTaskCreatorPlayground: View {
         .cornerRadius(6)
     }
 
+    @ViewBuilder
     private func filterButton(label: String, filter: TaskType?) -> some View {
         let isActive = !isCompositeFilter && selectedFilter == filter
         Button(label) {
@@ -285,12 +328,23 @@ struct UnifiedTaskCreatorPlayground: View {
     /// - Parameter task: The Task to display.
     @ViewBuilder
     private func taskRow(_ task: Task) -> some View {
+        let membership = taskCompositeMembership[task.id]
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(task.title)
                     .font(.headline)
                 Spacer()
                 typeBadge(for: task.type)
+                if let membership = membership {
+                    let suffix = membership.extra > 0 ? " +\(membership.extra)" : ""
+                    Text("\(membership.title)\(suffix)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(4)
+                }
             }
             if let desc = task.description, !desc.isEmpty {
                 Text(desc)
@@ -345,10 +399,15 @@ struct UnifiedTaskCreatorPlayground: View {
 
     /// Renders a single composite task row in the Task Library.
     ///
+    /// Shows operator info and a chevron to expand/collapse a flat subtask list.
+    ///
     /// - Parameter ct: The CompositeTask to display.
     @ViewBuilder
     private func compositeRow(_ ct: CompositeTask) -> some View {
+        let isExpanded = expandedCompositeIds.contains(ct.id)
+        let detail = compositeDetails[ct.id]
         VStack(alignment: .leading, spacing: 4) {
+            // Title row
             HStack {
                 Text(ct.title)
                     .font(.headline)
@@ -365,10 +424,69 @@ struct UnifiedTaskCreatorPlayground: View {
                     .font(.body)
                     .foregroundColor(.secondary)
             }
+            // Operator row (only when detail is loaded)
+            if let detail = detail {
+                HStack {
+                    Text("\(detail.operatorLabel) · \(detail.leafCount) subtask\(detail.leafCount == 1 ? "" : "s")")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button {
+                        if expandedCompositeIds.contains(ct.id) {
+                            expandedCompositeIds.remove(ct.id)
+                        } else {
+                            expandedCompositeIds.insert(ct.id)
+                        }
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                // Expanded subtask list
+                if isExpanded && !detail.leaves.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(detail.leaves.indices, id: \.self) { i in
+                            HStack(spacing: 6) {
+                                Text("·")
+                                    .foregroundColor(.secondary)
+                                Text(detail.leaves[i].title)
+                                    .font(.subheadline)
+                                Spacer()
+                                leafTypeBadge(detail.leaves[i].badgeType)
+                            }
+                        }
+                    }
+                    .padding(.leading, 8)
+                    .padding(.top, 2)
+                }
+            }
         }
         .padding(12)
         .background(Color(.systemGray6))
         .cornerRadius(8)
+    }
+
+    /// Renders a colored type badge for a composite subtask leaf.
+    ///
+    /// - Parameter badgeType: The badge type to display.
+    @ViewBuilder
+    private func leafTypeBadge(_ badgeType: CompositeBadgeType) -> some View {
+        let (label, color): (String, Color) = {
+            switch badgeType {
+            case .normal:    return ("NORMAL", .blue)
+            case .counting:  return ("COUNTING", .orange)
+            case .progress:  return ("PROGRESS", .purple)
+            case .composite: return ("COMPOSITE", .indigo)
+            }
+        }()
+        Text(label)
+            .font(.caption)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.2))
+            .cornerRadius(4)
     }
 
     /// Renders a colored type badge label.
@@ -675,7 +793,10 @@ struct UnifiedTaskCreatorPlayground: View {
         }
     }
 
-    /// Loads all tasks and composite tasks for the playground user from the local database.
+    /// Loads all tasks, composite tasks, and composite nodes for the playground user.
+    ///
+    /// Uses a single GRDB query for all nodes across all composites to avoid N+1 queries.
+    /// Builds `compositeDetails` and `taskCompositeCount` in a single pass over the nodes.
     private func loadLibrary() {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -690,10 +811,83 @@ struct UnifiedTaskCreatorPlayground: View {
                         .order(Column("updatedAt").desc)
                         .fetchAll(db)
                 }
+
+                // Fetch all nodes for all composites in one query
+                let compositeIds = composites.map { $0.id }
+                let allNodes: [CompositeNode]
+                if compositeIds.isEmpty {
+                    allNodes = []
+                } else {
+                    allNodes = try AppDatabase.shared.read { db in
+                        try CompositeNode
+                            .filter(compositeIds.contains(Column("compositeTaskId")) && Column("isDeleted") == false)
+                            .fetchAll(db)
+                    }
+                }
+
+                // Single pass: group nodes by composite + collect composite IDs per task
+                var nodesByComposite: [String: [CompositeNode]] = [:]
+                var taskCompositeIds: [String: [String]] = [:]
+                for node in allNodes {
+                    nodesByComposite[node.compositeTaskId, default: []].append(node)
+                    if node.nodeType == .leaf, let taskId = node.taskId {
+                        taskCompositeIds[taskId, default: []].append(node.compositeTaskId)
+                    }
+                }
+
+                // Build membership map: most recently updated composite title + extra count
+                let compositeMap = Dictionary(uniqueKeysWithValues: composites.map { ($0.id, $0) })
+                var membershipMap: [String: TaskCompositeMembership] = [:]
+                for (taskId, compositeIds) in taskCompositeIds {
+                    let sorted = compositeIds
+                        .compactMap { compositeMap[$0] }
+                        .sorted { $0.updatedAt > $1.updatedAt }
+                    if let first = sorted.first {
+                        membershipMap[taskId] = TaskCompositeMembership(
+                            title: first.title,
+                            extra: sorted.count - 1
+                        )
+                    }
+                }
+
+                // Build composite details
+                let taskMap = Dictionary(uniqueKeysWithValues: fetched.map { ($0.id, $0) })
+                var details: [String: CompositeDetail] = [:]
+                for ct in composites {
+                    let nodes = nodesByComposite[ct.id] ?? []
+                    guard let rootNode = nodes.first(where: { $0.id == ct.rootNodeId }),
+                          rootNode.nodeType == .operator,
+                          let opType = rootNode.operatorType else { continue }
+                    let leafNodes = nodes.filter { $0.nodeType == .leaf }
+                    let leaves: [CompositeLeaf] = leafNodes.compactMap { node -> CompositeLeaf? in
+                        if let taskId = node.taskId, let t = taskMap[taskId] {
+                            let badge: CompositeBadgeType
+                            switch t.type {
+                            case .normal:   badge = .normal
+                            case .counting: badge = .counting
+                            case .progress: badge = .progress
+                            }
+                            return CompositeLeaf(title: t.title, badgeType: badge)
+                        }
+                        if let childId = node.childCompositeTaskId, let child = compositeMap[childId] {
+                            return CompositeLeaf(title: child.title, badgeType: .composite)
+                        }
+                        return nil
+                    }
+                    details[ct.id] = CompositeDetail(
+                        operatorType: opType,
+                        threshold: rootNode.threshold,
+                        leafCount: leafNodes.count,
+                        leaves: leaves
+                    )
+                }
+
                 DispatchQueue.main.async {
                     self.libraryTasks = fetched
                     self.librarySteps = steps
                     self.libraryCompositeTasks = composites
+                    self.taskCompositeMembership = membershipMap
+                    self.compositeDetails = details
                 }
             } catch {
                 DispatchQueue.main.async {

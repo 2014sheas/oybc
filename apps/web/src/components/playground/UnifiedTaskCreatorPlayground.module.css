@@ -406,6 +406,69 @@
   font-size: 0.8rem;
 }
 
+/* Composite card: operator row (label + expand chevron) */
+.compositeOperatorRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.compositeExpandButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.compositeExpandButton:hover {
+  color: var(--text-primary);
+}
+
+/* Composite card: expanded subtask list */
+.compositeSubtaskList {
+  list-style: none;
+  padding: 0.35rem 0 0 0.75rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-left: 2px solid var(--border-color);
+}
+
+.compositeSubtaskItem {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.compositeSubtaskBullet {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.compositeSubtaskTitle {
+  color: var(--text-primary);
+  flex: 1;
+}
+
+/* Task card: composite membership badge */
+.compositeMemberBadge {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .container {

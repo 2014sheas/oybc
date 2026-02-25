@@ -406,3 +406,112 @@
   font-style: italic;
   font-size: 0.95rem;
 }
+
+/* Compact subtask chip (confirmed state) */
+.subtaskChip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-primary);
+  min-height: 2.5rem;
+}
+
+.subtaskChipBadge {
+  flex-shrink: 0;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.typeBadgeNormal {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: rgb(59, 130, 246);
+}
+
+.typeBadgeCounting {
+  background-color: rgba(249, 115, 22, 0.15);
+  color: rgb(249, 115, 22);
+}
+
+.typeBadgeProgress {
+  background-color: rgba(139, 92, 246, 0.15);
+  color: rgb(139, 92, 246);
+}
+
+.typeBadgeComposite {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: rgb(99, 102, 241);
+}
+
+.subtaskChipTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.subtaskChipActions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.subtaskChipEditButton,
+.subtaskChipRemoveButton {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s;
+  padding: 0;
+}
+
+.subtaskChipEditButton {
+  color: var(--text-secondary);
+}
+
+.subtaskChipEditButton:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.subtaskChipRemoveButton {
+  color: var(--error-text);
+}
+
+.subtaskChipRemoveButton:hover {
+  background-color: var(--error-bg, #f8d7da);
+}
+
+/* Done button for inline subtask confirmation */
+.doneButton {
+  align-self: flex-start;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--active-bg);
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--active-bg);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.doneButton:hover {
+  background-color: var(--active-bg);
+  color: #ffffff;
+}
