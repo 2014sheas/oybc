@@ -13,17 +13,9 @@ import {
 import type { BoardSize } from '@oybc/shared';
 import styles from './BingoBoard.module.css';
 
-/**
- * Generate hardcoded task names for the board.
- *
- * @param count - Number of task names to generate
- * @returns Array of task name strings ("Task 1" through "Task N")
- */
-function generateTaskNames(count: number): string[] {
-  return Array.from({ length: count }, (_, i) => `Task ${i + 1}`);
-}
-
 interface BingoBoardProps {
+  /** Task names to display on the board squares */
+  taskNames: string[];
   /** Number of rows/columns in the grid (default: 5) */
   gridSize?: number;
   /** Size of each square in pixels (default: 80) */
@@ -54,6 +46,7 @@ interface BingoBoardProps {
  * @param centerSquareCustomName - Custom name for CUSTOM_FREE type
  */
 export function BingoBoard({
+  taskNames,
   gridSize = 5,
   squareSize = 80,
   centerSquareType = CenterSquareType.NONE,
@@ -64,7 +57,7 @@ export function BingoBoard({
   const autoCompleted = isCenterAutoCompleted(centerSquareType);
   const centerDisplayText = getCenterDisplayText(centerSquareType, centerSquareCustomName);
 
-  const [taskNames, setTaskNames] = useState<string[]>(() => generateTaskNames(totalSquares));
+  const [taskLabels, setTaskLabels] = useState<string[]>(taskNames);
   const [completedSquares, setCompletedSquares] = useState<Set<number>>(() => {
     if (centerIndex >= 0 && autoCompleted) {
       return new Set([centerIndex]);
@@ -114,12 +107,13 @@ export function BingoBoard({
 
   /**
    * Shuffle task names using Fisher-Yates algorithm and reset completion state.
-   * Preserves auto-completed center square.
-   * For CHOSEN type, keeps the center task fixed and only shuffles other squares.
+   * For any special center type (FREE, CUSTOM_FREE, CHOSEN), keeps the center
+   * position fixed and only shuffles the other squares.
+   * For NONE, shuffles all squares freely.
    */
   const handleShuffle = useCallback(() => {
-    if (centerSquareType === CenterSquareType.CHOSEN && centerIndex >= 0) {
-      setTaskNames((prev) => {
+    if (centerIndex >= 0 && centerSquareType !== CenterSquareType.NONE) {
+      setTaskLabels((prev) => {
         const centerTask = prev[centerIndex];
         const otherTasks = prev.filter((_, i) => i !== centerIndex);
         const shuffled = fisherYatesShuffle(otherTasks);
@@ -128,7 +122,7 @@ export function BingoBoard({
         return newTasks;
       });
     } else {
-      setTaskNames((prev) => fisherYatesShuffle(prev));
+      setTaskLabels((prev) => fisherYatesShuffle(prev));
     }
     if (centerIndex >= 0 && autoCompleted) {
       setCompletedSquares(new Set([centerIndex]));
@@ -174,7 +168,7 @@ export function BingoBoard({
         role="grid"
         aria-label={`${gridSize} by ${gridSize} bingo board, ${completedCount} of ${totalSquares} completed`}
       >
-        {taskNames.map((name, index) => {
+        {taskLabels.map((name, index) => {
           const isCenter = index === centerIndex;
           const isHighlighted = highlightedSquares.has(index);
           const row = Math.floor(index / gridSize);

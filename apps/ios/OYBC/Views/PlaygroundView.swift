@@ -21,6 +21,11 @@ struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
         Feature(
+            id: "board-generator",
+            title: "Board Generator",
+            content: AnyView(BoardGeneratorPlayground())
+        ),
+        Feature(
             id: "unified-task-creation",
             title: "Task Creation (Unified)",
             content: AnyView(UnifiedTaskCreatorPlayground())
@@ -34,7 +39,7 @@ struct PlaygroundView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .free)
+                    BingoBoard(taskNames: generateTaskNames(count: 25), gridSize: 5, squareSize: 58, centerSquareType: .free)
                         .frame(maxWidth: .infinity)
                 }
             )
@@ -48,7 +53,7 @@ struct PlaygroundView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .customFree, centerSquareCustomName: "My Goal!")
+                    BingoBoard(taskNames: generateTaskNames(count: 25), gridSize: 5, squareSize: 58, centerSquareType: .customFree, centerSquareCustomName: "My Goal!")
                         .frame(maxWidth: .infinity)
                 }
             )
@@ -62,7 +67,7 @@ struct PlaygroundView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .chosen)
+                    BingoBoard(taskNames: generateTaskNames(count: 25), gridSize: 5, squareSize: 58, centerSquareType: .chosen)
                         .frame(maxWidth: .infinity)
                 }
             )
@@ -76,7 +81,7 @@ struct PlaygroundView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    BingoBoard(gridSize: 5, squareSize: 58, centerSquareType: .none)
+                    BingoBoard(taskNames: generateTaskNames(count: 25), gridSize: 5, squareSize: 58, centerSquareType: .none)
                         .frame(maxWidth: .infinity)
                 }
             )
@@ -90,7 +95,7 @@ struct PlaygroundView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    BingoBoard(gridSize: 3, squareSize: 80, centerSquareType: .free)
+                    BingoBoard(taskNames: generateTaskNames(count: 9), gridSize: 3, squareSize: 80, centerSquareType: .free)
                         .frame(maxWidth: .infinity)
                 }
             )
@@ -129,48 +134,6 @@ struct PlaygroundView: View {
                 }
             )
         ),
-        Feature(
-            id: "bingo-board",
-            title: "5x5 Bingo Board Grid",
-            content: AnyView(
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("A 5x5 bingo board grid with 25 toggleable squares. The center square (Task 13) has special styling with an orange border and star marker.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    BingoBoard(gridSize: 5, squareSize: 58)
-                        .frame(maxWidth: .infinity)
-                }
-            )
-        ),
-        Feature(
-            id: "bingo-board-3x3",
-            title: "3x3 Mini Board",
-            content: AnyView(
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("A compact 3x3 mini bingo board with 9 toggleable squares. The center square (Task 5) has special styling.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    BingoBoard(gridSize: 3, squareSize: 80)
-                        .frame(maxWidth: .infinity)
-                }
-            )
-        ),
-        Feature(
-            id: "bingo-board-4x4",
-            title: "4x4 Standard Board",
-            content: AnyView(
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("A 4x4 standard bingo board with 16 toggleable squares. Even-sized grids have no center square.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    BingoBoard(gridSize: 4, squareSize: 70)
-                        .frame(maxWidth: .infinity)
-                }
-            )
-        )
     ]
 
     @State private var expandedFeatureIds: Set<String> = []

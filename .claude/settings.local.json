@@ -57,7 +57,15 @@
       "mcp__playwright__browser_select_option",
       "Bash(git status:*)",
       "Bash(pnpm --filter web build:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(xargs cat:*)",
+      "Bash(pnpm --filter @oybc/shared test:*)",
+      "mcp__playwright__browser_install",
+      "Bash(lsof:*)",
+      "Bash(/Users/stephen/repos/oybc/packages/shared/tsconfig.test.json:*)",
+      "Bash(git stash:*)",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_wait_for"
     ]
   }
 }

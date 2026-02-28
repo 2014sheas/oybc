@@ -211,6 +211,7 @@ Repeat before every implementation decision:
    - Both must compile successfully
    - **Reuse shared Playground utilities**: import from `playgroundUtils.ts` (web) and `PlaygroundUtils.swift` (iOS) — never re-define `PLAYGROUND_USER_ID`, `SUCCESS_DISMISS_MS`, `formatDate`, etc.
    - **Reuse existing components**: `ProgressStepRow`, `CountingStepFields` (web); `ProgressStepRowView`, `CountingStepFieldsView` (iOS)
+   - **Replace obsolete playground sections**: We are building toward production. If a new feature supersedes an older playground section (e.g., the Board Generator replaces the hardcoded "5x5 Bingo Board Grid" demo), the older section is removed — not preserved alongside the new one. Do NOT add backward-compat props or optional shims to existing components just to keep old playground code working. Update existing component APIs to production-ready signatures, update all call sites, and remove sections that have served their purpose.
 
    **File placement (MANDATORY — structural mirroring)**:
    - Each playground feature section MUST be its own file, never inlined in the container view

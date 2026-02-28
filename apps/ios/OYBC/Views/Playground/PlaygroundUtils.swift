@@ -27,6 +27,32 @@ func formatPlaygroundDate(_ iso: String) -> String {
     return _playgroundDisplayFormatter.string(from: date)
 }
 
+/// Generates placeholder task names for demo and test sections.
+///
+/// - Parameter count: Number of task names to generate.
+/// - Returns: Array of strings in the format ["Task 1", "Task 2", ...].
+func generateTaskNames(count: Int) -> [String] {
+    (1...max(1, count)).map { "Task \($0)" }
+}
+
+/// Returns a fixed list of realistic sample task titles for seeding the Board Generator.
+///
+/// - Returns: Array of 10 sample task title strings.
+func generateSampleTaskTitles() -> [String] {
+    [
+        "Morning workout",
+        "Read for 30 minutes",
+        "Cook a meal at home",
+        "Call a friend or family member",
+        "Go for a walk outside",
+        "Meditate for 10 minutes",
+        "Try a new recipe",
+        "Clean and tidy a room",
+        "Write in a journal",
+        "Learn something new",
+    ]
+}
+
 /// Ensures the shared playground user record exists in the local database.
 ///
 /// Creates the user with a fixed ID and email if it has not been inserted yet.

@@ -3,6 +3,8 @@ import { db } from '../db';
 import { BingoSquare } from '../components/BingoSquare';
 import { BingoBoard } from '../components/BingoBoard';
 import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTaskCreatorPlayground';
+import { BoardGeneratorPlayground } from '../components/playground/BoardGeneratorPlayground';
+import { generateTaskNames } from '../components/playground/playgroundUtils';
 import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
 
@@ -32,6 +34,11 @@ export function Playground() {
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
     {
+      id: 'board-generator',
+      title: 'Board Generator',
+      content: <BoardGeneratorPlayground />,
+    },
+    {
       id: 'unified-task-creator',
       title: 'Task Creation (Unified)',
       content: (
@@ -54,7 +61,7 @@ export function Playground() {
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
             Center is auto-completed, shows "FREE SPACE", locked (cannot toggle off), counts toward bingo.
           </p>
-          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.FREE} />
+          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.FREE} />
         </div>
       ),
     },
@@ -66,7 +73,7 @@ export function Playground() {
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
             Center is auto-completed with custom text, locked, counts toward bingo.
           </p>
-          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.CUSTOM_FREE} centerSquareCustomName="My Goal!" />
+          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.CUSTOM_FREE} centerSquareCustomName="My Goal!" />
         </div>
       ),
     },
@@ -78,7 +85,7 @@ export function Playground() {
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
             Center has a fixed task (e.g., "My Special Task"), NOT auto-completed, can toggle like any square.
           </p>
-          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.CHOSEN} />
+          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.CHOSEN} />
         </div>
       ),
     },
@@ -90,7 +97,7 @@ export function Playground() {
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
             Center is an ordinary square, no special treatment.
           </p>
-          <BingoBoard gridSize={5} centerSquareType={CenterSquareType.NONE} />
+          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.NONE} />
         </div>
       ),
     },
@@ -102,7 +109,7 @@ export function Playground() {
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
             True Free Space works on smaller odd-sized boards (center is index 4 on 3x3).
           </p>
-          <BingoBoard gridSize={3} squareSize={90} centerSquareType={CenterSquareType.FREE} />
+          <BingoBoard taskNames={generateTaskNames(9)} gridSize={3} squareSize={90} centerSquareType={CenterSquareType.FREE} />
         </div>
       ),
     },
@@ -135,46 +142,6 @@ export function Playground() {
               </p>
             </div>
           </div>
-        </div>
-      ),
-    },
-    {
-      id: 'bingo-board',
-      title: '5x5 Bingo Board Grid',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            A 5x5 bingo board grid with 25 toggleable squares. The center square (Task 13)
-            has special styling with an orange border and star marker. Use the Reset Board
-            button to clear all squares, or Fill All to complete them all.
-          </p>
-          <BingoBoard />
-        </div>
-      ),
-    },
-    {
-      id: 'bingo-board-3x3',
-      title: '3x3 Mini Board',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            A compact 3x3 mini bingo board with 9 toggleable squares. The center square
-            (Task 5) has special styling. Ideal for quick, focused goal sets.
-          </p>
-          <BingoBoard gridSize={3} squareSize={90} />
-        </div>
-      ),
-    },
-    {
-      id: 'bingo-board-4x4',
-      title: '4x4 Standard Board',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            A 4x4 standard bingo board with 16 toggleable squares. Even-sized grids have
-            no center square. A balanced size for moderate goal tracking.
-          </p>
-          <BingoBoard gridSize={4} squareSize={85} />
         </div>
       ),
     },

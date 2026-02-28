@@ -21,6 +21,9 @@ import SwiftUI
 ///   - centerSquareType: Center square behavior type (default: .none)
 ///   - centerSquareCustomName: Custom name for .customFree type
 struct BingoBoard: View {
+    /// Task names to display on the board squares
+    var taskNames: [String]
+
     /// Number of rows/columns in the grid
     var gridSize: Int = 5
 
@@ -36,8 +39,8 @@ struct BingoBoard: View {
     /// Tracks which squares are completed by index
     @State private var completedSquares: Set<Int> = []
 
-    /// Task names displayed on the board (shuffled via Fisher-Yates)
-    @State private var taskNames: [String] = []
+    /// Internal mutable copy of taskNames, managed by shuffle
+    @State private var displayedTaskNames: [String] = []
 
     /// Whether initial setup has been performed
     @State private var hasInitialized: Bool = false
@@ -65,11 +68,6 @@ struct BingoBoard: View {
     /// Grid column layout
     private var columns: [GridItem] {
         Array(repeating: GridItem(.fixed(squareSize), spacing: 4), count: gridSize)
-    }
-
-    /// Generate hardcoded task names
-    private func generateTaskNames() -> [String] {
-        (1...totalSquares).map { "Task \($0)" }
     }
 
     /// Number of completed squares
@@ -104,7 +102,7 @@ struct BingoBoard: View {
                 ForEach(0..<totalSquares, id: \.self) { index in
                     let isCenter = index == centerIndex
                     let isHighlighted = highlightedSquares.contains(index)
-                    let name = index < taskNames.count ? taskNames[index] : "Task \(index + 1)"
+                    let name = index < displayedTaskNames.count ? displayedTaskNames[index] : "Task \(index + 1)"
                     let taskName: String = {
                         if isCenter && !centerDisplayText.isEmpty {
                             return centerDisplayText
@@ -236,7 +234,7 @@ struct BingoBoard: View {
         }
         .onAppear {
             if !hasInitialized {
-                taskNames = generateTaskNames()
+                displayedTaskNames = taskNames
                 if centerIndex >= 0 && isAutoCompleted {
                     completedSquares = [centerIndex]
                 }
@@ -261,21 +259,22 @@ struct BingoBoard: View {
     }
 
     /// Shuffle task names using Fisher-Yates algorithm and reset completion state.
-    /// Preserves auto-completed center square.
-    /// For CHOSEN type, keeps the center task fixed and only shuffles other squares.
+    /// For any special center type (FREE, CUSTOM_FREE, CHOSEN), keeps the center
+    /// position fixed and only shuffles the other squares.
+    /// For NONE, shuffles all squares freely.
     private func shuffleBoard() {
         withAnimation(.easeInOut(duration: 0.2)) {
-            if centerSquareType == .chosen && centerIndex >= 0 {
-                let centerTask = taskNames[centerIndex]
-                var otherTasks = taskNames.enumerated()
+            if centerIndex >= 0 && centerSquareType != .none {
+                let centerTask = displayedTaskNames[centerIndex]
+                var otherTasks = displayedTaskNames.enumerated()
                     .filter { $0.offset != centerIndex }
                     .map { $0.element }
                 otherTasks = Shuffle.fisherYatesShuffle(otherTasks)
                 var newTasks = otherTasks
                 newTasks.insert(centerTask, at: centerIndex)
-                taskNames = newTasks
+                displayedTaskNames = newTasks
             } else {
-                taskNames = Shuffle.fisherYatesShuffle(taskNames)
+                displayedTaskNames = Shuffle.fisherYatesShuffle(displayedTaskNames)
             }
             if centerIndex >= 0 && isAutoCompleted {
                 completedSquares = [centerIndex]
@@ -288,35 +287,35 @@ struct BingoBoard: View {
 
 #Preview("5x5 Board") {
     ScrollView {
-        BingoBoard()
+        BingoBoard(taskNames: generateTaskNames(count: 25))
             .padding()
     }
 }
 
 #Preview("3x3 Mini Board") {
     ScrollView {
-        BingoBoard(gridSize: 3, squareSize: 90)
+        BingoBoard(taskNames: generateTaskNames(count: 9), gridSize: 3, squareSize: 90)
             .padding()
     }
 }
 
 #Preview("4x4 Standard Board") {
     ScrollView {
-        BingoBoard(gridSize: 4, squareSize: 85)
+        BingoBoard(taskNames: generateTaskNames(count: 16), gridSize: 4, squareSize: 85)
             .padding()
     }
 }
 
 #Preview("5x5 Free Space") {
     ScrollView {
-        BingoBoard(centerSquareType: .free)
+        BingoBoard(taskNames: generateTaskNames(count: 25), centerSquareType: .free)
             .padding()
     }
 }
 
 #Preview("5x5 Custom Free") {
     ScrollView {
-        BingoBoard(centerSquareType: .customFree, centerSquareCustomName: "My Goal!")
+        BingoBoard(taskNames: generateTaskNames(count: 25), centerSquareType: .customFree, centerSquareCustomName: "My Goal!")
             .padding()
     }
 }
