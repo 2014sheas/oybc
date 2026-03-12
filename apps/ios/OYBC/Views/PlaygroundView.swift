@@ -21,6 +21,11 @@ struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
         Feature(
+            id: "task-square-actions",
+            title: "Task Square Interactions",
+            content: AnyView(TaskSquareActionsPlayground())
+        ),
+        Feature(
             id: "board-generator",
             title: "Board Generator",
             content: AnyView(BoardGeneratorPlayground())

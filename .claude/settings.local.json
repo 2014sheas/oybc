@@ -65,7 +65,8 @@
       "Bash(/Users/stephen/repos/oybc/packages/shared/tsconfig.test.json:*)",
       "Bash(git stash:*)",
       "mcp__playwright__browser_fill_form",
-      "mcp__playwright__browser_wait_for"
+      "mcp__playwright__browser_wait_for",
+      "Bash(pnpm:*)"
     ]
   }
 }

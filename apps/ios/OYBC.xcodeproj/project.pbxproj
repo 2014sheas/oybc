@@ -33,6 +33,7 @@
 		E5F6A7B8C9D0E1F2A3B4C5D6 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */; };
 		E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */; };
 		F7A8B9C0D1E2F3A4B5C6D7E8 /* CenterSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */; };
+		B0C1D2E3F4A5B6C7D8E9F0A1 /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +74,7 @@
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
 		F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
 		G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenterSquare.swift; sourceTree = "<group>"; };
+		A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -177,6 +179,7 @@
 				Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */,
 					D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */,
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */,
+				A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */,
 			);
 			path = Playground;
 			sourceTree = "<group>";
@@ -332,6 +335,7 @@
 				1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */,
 				A1B2C3D4E5F6A7B8D9E0F1A3 /* Shuffle.swift in Sources */,
 				F7A8B9C0D1E2F3A4B5C6D7E8 /* CenterSquare.swift in Sources */,
+				B0C1D2E3F4A5B6C7D8E9F0A1 /* TaskSquareActionsPlayground.swift in Sources */,
 				9C24CDBF218203559E063F7F /* User.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

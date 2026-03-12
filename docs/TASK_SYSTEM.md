@@ -1794,3 +1794,78 @@ All task types:
 - ✅ Follow same validation and testing patterns
 
 Choose the appropriate task type based on your use case, validate inputs, and follow offline-first patterns for optimal UX.
+
+---
+
+## Task Square Interaction Patterns (UX Exploration)
+
+The following five approaches are implemented in the Playground to compare UX models before committing to a production design. Each maps to a distinct gesture model with platform-appropriate equivalents on iOS and web.
+
+### Gesture Mapping Table
+
+| # | Name | iOS Primary | iOS Secondary | Web Primary | Web Secondary |
+|---|------|-------------|---------------|-------------|---------------|
+| 1 | Tap-to-Act | Tap body → type action | ⓘ button → detail sheet | Click → type action | ⓘ button → modal |
+| 2 | Tap-to-Info | Tap → detail sheet | — | Click → modal | — |
+| 3 | Act + Inspect | Tap → type action | Long press → detail sheet | Click → type action | Right-click → modal |
+| 4 | Act + Context Menu | Tap → type action | Long press → action menu | Click → type action | Right-click → action menu |
+| 5 | Double-tap to Act | Double-tap → type action | Single tap → detail sheet | Double-click → type action | Single click → modal |
+
+### Approach 1 — Tap-to-Act
+
+The most "gamified" feel. Every square reacts instantly to a tap. Type-specific:
+- **Normal**: tap toggles complete
+- **Counting**: tap increments by 1; auto-completes at max
+- **Progress**: tap opens step-check sheet
+
+A persistent ⓘ corner button provides an escape hatch for details. Best for users who understand the task types and want speed.
+
+### Approach 2 — Tap-to-Info
+
+The most cautious, information-first design. Every interaction routes through a detail view where the user consciously acts. Best for users who want to see what they're doing before changing state.
+
+### Approach 3 — Act + Inspect (Long Press / Right-Click)
+
+Combines speed with discoverability. Daily use is fast (tap/click acts immediately); curiosity or correction is one deliberate gesture away. No visible ⓘ button — the gesture is the affordance.
+
+- **iOS**: `.onLongPressGesture(minimumDuration: 0.5)` → detail sheet
+- **Web**: `onContextMenu` (right-click, `e.preventDefault()`) → info modal
+
+Native feel on both platforms. Good middle ground between approaches 1 and 2.
+
+### Approach 4 — Act + Context Menu (Long Press / Right-Click)
+
+The most native iOS feel — matches Mail, Reminders, Photos. Long press reveals a type-specific quick-action list rather than a full detail sheet:
+
+- **Normal**: "Mark Complete / Incomplete" • "View Details"
+- **Counting**: "+1 [action]" • "−1 [action]" • "Reset" • "View Details"
+- **Progress**: "View Steps" • "Mark All Complete" • "View Details"
+
+- **iOS**: `.contextMenu { }` — provides haptic peek-and-pop natively
+- **Web**: `onContextMenu` → custom floating menu div positioned at cursor, clamped to viewport
+
+Best for power users who want options without opening a full modal.
+
+### Approach 5 — Double-Tap to Act
+
+Counter-intuitive at first, but becomes very fast after muscle memory forms. Inspired by Instagram double-tap-to-like / photo-app patterns. Single tap intentionally opens details (no accidental completions).
+
+- **iOS**: `.onTapGesture(count: 2)` declared before `.onTapGesture(count: 1)`; SwiftUI resolves greedily
+- **Web**: 300ms debounce on single click distinguishes it from double-click
+
+### Type-Action Summary
+
+When any approach triggers a "type action" on a square:
+
+| Type | Action triggered |
+|------|-----------------|
+| Normal | Toggle `isCompleted` |
+| Counting | Increment `currentCount` by 1 (no-op if already at max) |
+| Progress | Open detail sheet to check off steps |
+
+### Implementation Notes
+
+- All interaction state is local to the Playground component (no database writes)
+- Sub-components receive data + callbacks only; they hold no state
+- `SquareState = { isCompleted, currentCount, completedStepIds }` per square
+- Reset restores all states to initial and closes any open UI, but preserves the current approach selection

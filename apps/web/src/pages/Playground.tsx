@@ -4,6 +4,7 @@ import { BingoSquare } from '../components/BingoSquare';
 import { BingoBoard } from '../components/BingoBoard';
 import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTaskCreatorPlayground';
 import { BoardGeneratorPlayground } from '../components/playground/BoardGeneratorPlayground';
+import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
 import { generateTaskNames } from '../components/playground/playgroundUtils';
 import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
@@ -33,6 +34,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'task-square-actions',
+      title: 'Task Square Interactions',
+      content: <TaskSquareActionsPlayground />,
+    },
     {
       id: 'board-generator',
       title: 'Board Generator',
