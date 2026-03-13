@@ -18,23 +18,6 @@
   white-space: nowrap;
 }
 
-.approachSelect {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 0.9rem;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.approachSelect:focus {
-  outline: none;
-  border-color: #007aff;
-  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
-}
-
 .resetButton {
   padding: 0.5rem 1rem;
   border: 1px solid var(--border-color);
@@ -79,14 +62,19 @@
   user-select: none;
   overflow: hidden;
   box-sizing: border-box;
-  transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.2s ease, border-color 0.2s ease;
   display: flex;
   flex-direction: column;
   align-items: stretch;
 }
 
 .taskSquare:hover {
-  opacity: 0.88;
+  transform: scale(0.97);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.taskSquare:active {
+  transform: scale(0.93);
 }
 
 .taskSquare:focus-visible {
@@ -100,57 +88,25 @@
   border-color: #28a745;
 }
 
-/* ── Type badge (top-left pill) ───────────────────────────── */
-.typeBadge {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  padding: 1px 5px;
-  border-radius: 20px;
-  color: #ffffff;
-  line-height: 1.4;
-  z-index: 1;
-}
-
-.typeBadgeNormal {
-  background-color: #007aff;
-}
-
-.typeBadgeCounting {
-  background-color: #ff9500;
-}
-
-.typeBadgeProgress {
-  background-color: #af52de;
-}
-
-/* ── Info button (top-right, Approach 1 only) ─────────────── */
-.infoButton {
+/* ── Checkmark (completed state) ─────────────────────────── */
+.checkmark {
+  display: none;
   position: absolute;
   top: 4px;
   right: 4px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: none;
-  background-color: rgba(0, 0, 0, 0.18);
-  color: #fff;
-  font-size: 0.65rem;
-  display: flex;
+  background-color: rgba(255, 255, 255, 0.3);
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  padding: 0;
+  font-size: 11px;
+  color: #ffffff;
   z-index: 2;
-  line-height: 1;
-  transition: background-color 0.15s;
 }
 
-.infoButton:hover {
-  background-color: rgba(0, 0, 0, 0.35);
+.taskSquareCompleted .checkmark {
+  display: flex;
 }
 
 /* ── Task name (centered) ─────────────────────────────────── */
@@ -164,17 +120,32 @@
   font-weight: 600;
   line-height: 1.25;
   color: var(--text-primary);
-  padding: 18px 6px 4px; /* top padding to clear badge */
-  /* 3-line clamp */
+  padding: 6px;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
   word-break: break-word;
 }
 
 .taskSquareCompleted .taskName {
   color: #ffffff;
+}
+
+/* ── Action hint (counting tasks, hover only) ────────────── */
+.actionHint {
+  font-size: 0.58rem;
+  color: #999;
+  text-align: center;
+  margin-top: -2px;
+  padding: 0 4px 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.taskSquare:hover .actionHint {
+  opacity: 1;
+}
+
+.taskSquareCompleted .actionHint {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 /* ── Progress bar (bottom, counting / progress only) ─────── */
@@ -216,9 +187,8 @@
   justify-content: center;
   font-size: 0.6rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-secondary);
   white-space: nowrap;
-  text-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
 }
 
 /* ── Detail modal ─────────────────────────────────────────── */

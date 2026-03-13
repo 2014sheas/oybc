@@ -28,17 +28,6 @@ struct TaskSquareData: Identifiable {
     var steps: [PlaygroundStep]? = nil
 }
 
-/// The five interaction approaches demonstrated in this playground section.
-enum InteractionApproach: String, CaseIterable, Identifiable {
-    case tapToAct = "Tap-to-Act"
-    case tapToInfo = "Tap-to-Info"
-    case tapActLongPress = "Act + Long Press for Details"
-    case tapActContextMenu = "Act + Long Press for Options"
-    case doubleTapToAct = "Double-tap to Act"
-
-    var id: String { rawValue }
-}
-
 /// Mutable state for a task square (completion progress).
 struct SquareState {
     var isCompleted: Bool = false
@@ -279,13 +268,15 @@ private struct TaskDetailSheetContent: View {
 
 // MARK: - TaskBingoSquareView
 
-/// A single 80pt bingo square that renders differently based on task type and approach.
+/// A single 80pt bingo square that renders differently based on task type.
+/// Tap to act, long-press for context menu with type-specific actions.
 private struct TaskBingoSquareView: View {
     let data: TaskSquareData
     @Binding var state: SquareState
-    let approach: InteractionApproach
     let onTapBody: () -> Void
     let onShowDetail: () -> Void
+
+    @State private var isPressed: Bool = false
 
     private var isComplete: Bool { state.isFullyComplete(for: data) }
 
@@ -315,27 +306,17 @@ private struct TaskBingoSquareView: View {
         case .normal: return ""
         case .counting:
             let maxVal = data.maxCount ?? 0
-            return "\(state.currentCount)/\(maxVal)"
+            let unit = data.unit ?? ""
+            return unit.isEmpty ? "\(state.currentCount)/\(maxVal)" : "\(state.currentCount)/\(maxVal) \(unit)"
         case .progress:
             let steps = data.steps ?? []
-            return "\(state.completedStepIds.count)/\(steps.count)"
+            return "\(state.completedStepIds.count)/\(steps.count) steps"
         }
     }
 
-    private var badgeLabel: String {
-        switch data.type {
-        case .normal: return "N"
-        case .counting: return "C"
-        case .progress: return "P"
-        }
-    }
-
-    private var badgeColor: Color {
-        switch data.type {
-        case .normal: return .blue
-        case .counting: return .orange
-        case .progress: return .purple
-        }
+    private var actionHintText: String? {
+        guard data.type == .counting, let unit = data.unit else { return nil }
+        return "Tap: +1 \(unit)"
     }
 
     private var showProgressBar: Bool {
@@ -361,6 +342,12 @@ private struct TaskBingoSquareView: View {
                     .foregroundColor(isComplete ? .white : .primary)
                     .padding(.horizontal, 4)
 
+                if let hint = actionHintText, state.currentCount == 0 {
+                    Text(hint)
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.secondary.opacity(0.7))
+                }
+
                 Spacer()
 
                 // Progress bar (counting/progress only)
@@ -374,7 +361,7 @@ private struct TaskBingoSquareView: View {
                                 .frame(width: geo.size.width * fillFraction)
                             Text(barLabel)
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundColor(.white)
+                                .foregroundColor(.secondary)
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -384,78 +371,42 @@ private struct TaskBingoSquareView: View {
                 }
             }
 
-            // Type badge (top-left)
-            VStack {
-                HStack {
-                    Text(badgeLabel)
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 3)
-                        .padding(.vertical, 1)
-                        .background(badgeColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(3)
-                    Spacer()
-                    // Info button (tap-to-act approach only)
-                    if approach == .tapToAct {
-                        Button(action: onShowDetail) {
-                            Image(systemName: "info.circle")
-                                .font(.system(size: 12))
-                                .foregroundColor(isComplete ? .white.opacity(0.8) : .secondary)
-                        }
-                        .buttonStyle(.plain)
+            // Checkmark (top-right, visible when complete)
+            if isComplete {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 18, height: 18)
+                            .background(Color.white.opacity(0.3))
+                            .clipShape(Circle())
                     }
+                    Spacer()
                 }
-                Spacer()
+                .padding(4)
             }
-            .padding(3)
         }
         .frame(width: 80, height: 80)
-        .applyGestures(approach: approach, onTapBody: onTapBody, onShowDetail: onShowDetail, data: data, state: $state, isComplete: isComplete)
-    }
-}
-
-// MARK: - Gesture Application
-
-private extension View {
-    /// Applies the appropriate gestures to a square based on the selected approach.
-    @ViewBuilder
-    func applyGestures(
-        approach: InteractionApproach,
-        onTapBody: @escaping () -> Void,
-        onShowDetail: @escaping () -> Void,
-        data: TaskSquareData,
-        state: Binding<SquareState>,
-        isComplete: Bool
-    ) -> some View {
-        switch approach {
-        case .tapToAct:
-            self.onTapGesture { onTapBody() }
-
-        case .tapToInfo:
-            self.onTapGesture { onShowDetail() }
-
-        case .tapActLongPress:
-            self
-                .onTapGesture { onTapBody() }
-                .onLongPressGesture(minimumDuration: 0.5) { onShowDetail() }
-
-        case .tapActContextMenu:
-            self
-                .onTapGesture { onTapBody() }
-                .contextMenu {
-                    contextMenuItems(for: data, state: state, isComplete: isComplete, onShowDetail: onShowDetail)
-                }
-
-        case .doubleTapToAct:
-            self
-                .onTapGesture(count: 2) { onTapBody() }
-                .onTapGesture(count: 1) { onShowDetail() }
+        .scaleEffect(isPressed ? 0.93 : 1.0)
+        .animation(.easeInOut(duration: 0.1), value: isPressed)
+        .onTapGesture {
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            onTapBody()
+        }
+        .onLongPressGesture(minimumDuration: 0.01, pressing: { pressing in
+            isPressed = pressing
+        }, perform: {})
+        .contextMenu {
+            contextMenuItems(for: data, state: $state, isComplete: isComplete, onShowDetail: onShowDetail)
         }
     }
 
     /// Builds context menu items appropriate for the task type.
     @ViewBuilder
-    func contextMenuItems(
+    private func contextMenuItems(
         for data: TaskSquareData,
         state: Binding<SquareState>,
         isComplete: Bool,
@@ -533,14 +484,13 @@ private extension View {
 
 // MARK: - TaskSquareActionsPlayground
 
-/// Playground section demonstrating 5 different interaction approaches for task squares.
+/// Playground section demonstrating the "Act + Context Menu" interaction model.
 ///
-/// Presents a 3x3 grid of mixed task types (normal, counting, progress) and lets the
-/// user switch between approaches using a menu Picker. Each approach uses different
-/// iOS gestures to trigger completion and detail viewing.
+/// Presents a 3x3 grid of mixed task types (normal, counting, progress).
+/// Tap to perform the primary action. Long-press for a context menu with
+/// type-specific quick actions and a "View Details" option.
 struct TaskSquareActionsPlayground: View {
 
-    @State private var selectedApproach: InteractionApproach = .tapToAct
     @State private var squareStates: [String: SquareState] = {
         var states: [String: SquareState] = [:]
         demoSquares.forEach { states[$0.id] = SquareState() }
@@ -552,30 +502,16 @@ struct TaskSquareActionsPlayground: View {
         VStack(alignment: .leading, spacing: 16) {
 
             // Description
-            Text("A 3x3 grid of tasks demonstrating different tap/gesture interaction models. Switch approaches to compare how each feels.")
+            Text("Tap a square to perform its primary action. Long-press for a context menu with type-specific quick actions and details.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Approach picker
-            HStack {
-                Text("Interaction:")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Picker("Approach", selection: $selectedApproach) {
-                    ForEach(InteractionApproach.allCases) { approach in
-                        Text(approach.rawValue).tag(approach)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-
-            // Approach description
-            Text(approachDescription)
+            // Gesture hint
+            Text("Tap to act · Long-press for quick options")
                 .font(.caption)
                 .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 2)
+                .italic()
 
             // 3x3 grid
             LazyVGrid(
@@ -590,7 +526,6 @@ struct TaskSquareActionsPlayground: View {
                     TaskBingoSquareView(
                         data: square,
                         state: state,
-                        approach: selectedApproach,
                         onTapBody: {
                             handleTapBody(for: square, state: state)
                         },
@@ -601,7 +536,6 @@ struct TaskSquareActionsPlayground: View {
                 }
             }
             .frame(maxWidth: .infinity)
-
 
             // Reset button
             Button("Reset All") {
@@ -624,21 +558,6 @@ struct TaskSquareActionsPlayground: View {
     }
 
     // MARK: - Helpers
-
-    private var approachDescription: String {
-        switch selectedApproach {
-        case .tapToAct:
-            return "Single tap completes/increments. Tap the (i) button to see details."
-        case .tapToInfo:
-            return "Single tap opens the detail sheet — all actions happen there."
-        case .tapActLongPress:
-            return "Single tap completes/increments. Long press (0.5s) opens details."
-        case .tapActContextMenu:
-            return "Single tap completes/increments. Long press reveals a context menu with type-specific actions."
-        case .doubleTapToAct:
-            return "Double-tap completes/increments. Single tap opens details."
-        }
-    }
 
     /// Handles the primary tap-to-act interaction for a given square.
     private func handleTapBody(for square: TaskSquareData, state: Binding<SquareState>) {

@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149C3CA55D0467096B13D935 /* Task.swift */; };
-		F0A1B2C3D4E5F6A7B8C9D0E1 /* CompositeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F2A3B4C5D6E7F8A9B0C1D2 /* CompositeTask.swift */; };
 		2EF19E402C1B931693900274 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = FB60A2471061045431151B6B /* GRDB */; };
 		37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */; };
 		3D1E96D35DF0BF6B1DE02EB4 /* Schema.sql in Resources */ = {isa = PBXBuildFile; fileRef = B70713D5FB25DE3392CD3CEE /* Schema.sql */; };
@@ -21,19 +20,20 @@
 		A1B2C3D4E5F6A7B8D9E0F1A3 /* Shuffle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */; };
 		A3FBDF82011C7F6ED8D3F7C5 /* PlaygroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032F40E3064154C5E3108AB4 /* PlaygroundView.swift */; };
 		A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854FEF8734BD37239F0A8462 /* BoardTask.swift */; };
+		B0C1D2E3F4A5B6C7D8E9F0A1 /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */; };
 		B1C2D3E4F5A6B7C8D9E0F1A2 /* BingoSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */; };
-		H9C0D1E2F3A4B5C6D7E8F9A0 /* CountingStepFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = I0D1E2F3A4B5C6D7E8F9A0B1 /* CountingStepFieldsView.swift */; };
-		J1E2F3A4B5C6D7E8F9A0B1C2 /* ProgressStepRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = K2F3A4B5C6D7E8F9A0B1C2D3 /* ProgressStepRowView.swift */; };
 		C0D1E2F3G4H5I6J7K8L9M0N1 /* PlaygroundUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = X5Y6Z7A8B9C0D1E2F3G4H5I6 /* PlaygroundUtils.swift */; };
-		D1E2F3G4H5I6J7K8L9M0N1O2 /* UnifiedTaskCreatorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */; };
-		C4D5E6F7A8B9C0D1E2F3A4B5 /* CompositeTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */; };
-		E6F7A8B9C0D1E2F3A4B5C6D7 /* BoardGeneratorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */; };
 		C3D4E5F6A7B8C9D1E2F3A4B5 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */; };
+		C4D5E6F7A8B9C0D1E2F3A4B5 /* CompositeTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */; };
+		D1E2F3G4H5I6J7K8L9M0N1O2 /* UnifiedTaskCreatorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */; };
 		D4E5F6A7B8C9D0E1F2A3B4C5 /* BingoBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */; };
 		E5F6A7B8C9D0E1F2A3B4C5D6 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */; };
+		E6F7A8B9C0D1E2F3A4B5C6D7 /* BoardGeneratorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */; };
 		E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */; };
+		F0A1B2C3D4E5F6A7B8C9D0E1 /* CompositeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F2A3B4C5D6E7F8A9B0C1D2 /* CompositeTask.swift */; };
 		F7A8B9C0D1E2F3A4B5C6D7E8 /* CenterSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */; };
-		B0C1D2E3F4A5B6C7D8E9F0A1 /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */; };
+		H9C0D1E2F3A4B5C6D7E8F9A0 /* CountingStepFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = I0D1E2F3A4B5C6D7E8F9A0B1 /* CountingStepFieldsView.swift */; };
+		J1E2F3A4B5C6D7E8F9A0B1C2 /* ProgressStepRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = K2F3A4B5C6D7E8F9A0B1C2D3 /* ProgressStepRowView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -50,7 +50,6 @@
 		032F40E3064154C5E3108AB4 /* PlaygroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundView.swift; sourceTree = "<group>"; };
 		0436CC51A477FF70932A9546 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		149C3CA55D0467096B13D935 /* Task.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Task.swift; sourceTree = "<group>"; };
-		E1F2A3B4C5D6E7F8A9B0C1D2 /* CompositeTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTask.swift; sourceTree = "<group>"; };
 		16B24FB7FF9CEDD9A319B968 /* OYBCTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OYBCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B37DB9688050E788877CC59 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		2822E1DBF15699974C2F70C5 /* OYBCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCTests.swift; sourceTree = "<group>"; };
@@ -60,21 +59,22 @@
 		73F91261A5D2B914C87A9E59 /* Board.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Board.swift; sourceTree = "<group>"; };
 		854FEF8734BD37239F0A8462 /* BoardTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardTask.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoSquare.swift; sourceTree = "<group>"; };
+		A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
+		B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardGeneratorPlayground.swift; sourceTree = "<group>"; };
 		B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
 		B70713D5FB25DE3392CD3CEE /* Schema.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = Schema.sql; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoBoard.swift; sourceTree = "<group>"; };
+		C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCApp.swift; sourceTree = "<group>"; };
+		D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
+		D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTaskFormView.swift; sourceTree = "<group>"; };
+		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
+		E1F2A3B4C5D6E7F8A9B0C1D2 /* CompositeTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTask.swift; sourceTree = "<group>"; };
+		F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
+		G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenterSquare.swift; sourceTree = "<group>"; };
 		I0D1E2F3A4B5C6D7E8F9A0B1 /* CountingStepFieldsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountingStepFieldsView.swift; sourceTree = "<group>"; };
 		K2F3A4B5C6D7E8F9A0B1C2D3 /* ProgressStepRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressStepRowView.swift; sourceTree = "<group>"; };
 		X5Y6Z7A8B9C0D1E2F3G4H5I6 /* PlaygroundUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundUtils.swift; sourceTree = "<group>"; };
 		Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTaskCreatorPlayground.swift; sourceTree = "<group>"; };
-		D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTaskFormView.swift; sourceTree = "<group>"; };
-		B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardGeneratorPlayground.swift; sourceTree = "<group>"; };
-		C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCApp.swift; sourceTree = "<group>"; };
-		D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
-		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
-		F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
-		G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenterSquare.swift; sourceTree = "<group>"; };
-		A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -172,18 +172,6 @@
 			);
 			sourceTree = "<group>";
 		};
-		W4X5Y6Z7A8B9C0D1E2F3G4H5 /* Playground */ = {
-			isa = PBXGroup;
-			children = (
-				X5Y6Z7A8B9C0D1E2F3G4H5I6 /* PlaygroundUtils.swift */,
-				Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */,
-					D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */,
-				B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */,
-				A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */,
-			);
-			path = Playground;
-			sourceTree = "<group>";
-		};
 		E04B680C4AB00EFB7FB680F9 /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -193,6 +181,18 @@
 				W4X5Y6Z7A8B9C0D1E2F3G4H5 /* Playground */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		W4X5Y6Z7A8B9C0D1E2F3G4H5 /* Playground */ = {
+			isa = PBXGroup;
+			children = (
+				X5Y6Z7A8B9C0D1E2F3G4H5I6 /* PlaygroundUtils.swift */,
+				Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */,
+				D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */,
+				B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */,
+				A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */,
+			);
+			path = Playground;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -322,7 +322,7 @@
 				J1E2F3A4B5C6D7E8F9A0B1C2 /* ProgressStepRowView.swift in Sources */,
 				C0D1E2F3G4H5I6J7K8L9M0N1 /* PlaygroundUtils.swift in Sources */,
 				D1E2F3G4H5I6J7K8L9M0N1O2 /* UnifiedTaskCreatorPlayground.swift in Sources */,
-					C4D5E6F7A8B9C0D1E2F3A4B5 /* CompositeTaskFormView.swift in Sources */,
+				C4D5E6F7A8B9C0D1E2F3A4B5 /* CompositeTaskFormView.swift in Sources */,
 				E6F7A8B9C0D1E2F3A4B5C6D7 /* BoardGeneratorPlayground.swift in Sources */,
 				9F0D8D9AA79597CE605BD66A /* Board.swift in Sources */,
 				A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */,

@@ -63,3 +63,7 @@ SCHEMA_CHANGES.md
 # Archive
 oybc_v1.archive/
 .claude/settings.local.json
+.superpowers/
+docs/superpowers/plans/2026-03-12-task-square-ux-improvements.md
+docs/superpowers/specs/2026-03-12-task-square-ux-improvements-design.md
+.claude/settings.local.json

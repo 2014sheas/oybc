@@ -3,13 +3,6 @@ import styles from './TaskSquareActionsPlayground.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type InteractionApproach =
-  | 'tapToAct'
-  | 'tapToInfo'
-  | 'tapActRightClick'
-  | 'contextMenu'
-  | 'doubleTap';
-
 type SquareTaskType = 'normal' | 'counting' | 'progress';
 
 interface ProgressStep {
@@ -132,22 +125,13 @@ function buildInitialState(): Record<string, SquareState> {
   return record;
 }
 
-/** Hint text shown below the approach picker */
-const GESTURE_HINTS: Record<InteractionApproach, string> = {
-  tapToAct: 'Click to act  •  ⓘ for details',
-  tapToInfo: 'Click to open details',
-  tapActRightClick: 'Click to act  •  Right-click to open details',
-  contextMenu: 'Click to act  •  Right-click for quick options',
-  doubleTap: 'Double-click to act  •  Single click to open details',
-};
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * Perform the "type-specific action" for a square:
  * - normal: toggle completion
  * - counting: increment count (caps at maxCount, marks complete at max)
- * - progress: open detail modal (no direct action makes sense from the grid)
+ * - progress: no grid-level action (callers should open modal instead)
  *
  * Returns the updated SquareState.
  */
@@ -200,79 +184,39 @@ function progressBarLabel(sq: DemoSquare, state: SquareState): string {
 interface TaskBingoSquareProps {
   sq: DemoSquare;
   state: SquareState;
-  approach: InteractionApproach;
   onAct: () => void;
-  onOpenInfo: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
 /**
- * A single 90×90 bingo square with type badge, task name, optional progress bar,
- * and interaction handling delegated entirely via callbacks.
+ * A single 90x90 bingo square with task name, optional progress bar, and checkmark on completion.
+ * Click to act, right-click for context menu.
  */
 function TaskBingoSquare({
   sq,
   state,
-  approach,
   onAct,
-  onOpenInfo,
   onContextMenu,
 }: TaskBingoSquareProps) {
   const hasProgress = sq.type === 'counting' || sq.type === 'progress';
   const fraction = progressFraction(sq, state);
   const barLabel = progressBarLabel(sq, state);
 
-  // Per-square click-timer for double-tap approach
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
-      if (approach === 'tapToAct') {
-        onAct();
-      } else if (approach === 'tapToInfo') {
-        onOpenInfo();
-      } else if (approach === 'tapActRightClick') {
-        onAct();
-      } else if (approach === 'contextMenu') {
-        onAct();
-      } else if (approach === 'doubleTap') {
-        if (clickTimerRef.current !== null) {
-          // Second click within window → treat as double-click: act
-          clearTimeout(clickTimerRef.current);
-          clickTimerRef.current = null;
-          onAct();
-        } else {
-          // First click: start 300ms window
-          clickTimerRef.current = setTimeout(() => {
-            clickTimerRef.current = null;
-            onOpenInfo();
-          }, 300);
-        }
-      }
+      onAct();
     },
-    [approach, onAct, onOpenInfo],
+    [onAct],
   );
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
-      if (approach === 'tapActRightClick' || approach === 'contextMenu') {
-        e.preventDefault();
-        onContextMenu(e);
-      }
+      e.preventDefault();
+      onContextMenu(e);
     },
-    [approach, onContextMenu],
+    [onContextMenu],
   );
-
-  const typeBadgeClass =
-    sq.type === 'normal'
-      ? styles.typeBadgeNormal
-      : sq.type === 'counting'
-        ? styles.typeBadgeCounting
-        : styles.typeBadgeProgress;
-
-  const typeBadgeLabel =
-    sq.type === 'normal' ? 'N' : sq.type === 'counting' ? 'C' : 'P';
 
   return (
     <div
@@ -290,28 +234,16 @@ function TaskBingoSquare({
       aria-label={sq.title}
       aria-pressed={state.isCompleted}
     >
-      {/* Type badge */}
-      <span className={`${styles.typeBadge} ${typeBadgeClass}`}>
-        {typeBadgeLabel}
-      </span>
-
-      {/* Info button — Approach 1 only */}
-      {approach === 'tapToAct' && (
-        <button
-          className={styles.infoButton}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenInfo();
-          }}
-          aria-label={`Details for ${sq.title}`}
-          tabIndex={-1}
-        >
-          ⓘ
-        </button>
-      )}
+      {/* Checkmark (visible when completed) */}
+      <span className={styles.checkmark}>✓</span>
 
       {/* Task name */}
       <span className={styles.taskName}>{sq.title}</span>
+
+      {/* Action hint (counting tasks only, visible on hover) */}
+      {sq.type === 'counting' && sq.unit && (
+        <span className={styles.actionHint}>Tap: +1 {sq.unit}</span>
+      )}
 
       {/* Progress bar */}
       {hasProgress && (
@@ -661,12 +593,12 @@ function FloatingContextMenu({
 /**
  * TaskSquareActionsPlayground
  *
- * Demonstrates five distinct interaction approaches for acting on and inspecting
- * task squares on a 3×3 bingo grid.  Select an approach from the dropdown and
- * interact with the squares to see how each approach behaves.
+ * Demonstrates the "Act + Context Menu" interaction model for task squares on a
+ * 3x3 bingo grid. Click/tap a square to perform its primary action (toggle,
+ * increment, or open details). Right-click (web) or long-press (iOS) to open a
+ * context menu with type-specific quick actions.
  */
 export function TaskSquareActionsPlayground() {
-  const [approach, setApproach] = useState<InteractionApproach>('tapToAct');
   const [squareStates, setSquareStates] = useState<Record<string, SquareState>>(
     buildInitialState,
   );
@@ -774,36 +706,20 @@ export function TaskSquareActionsPlayground() {
 
   return (
     <div>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-        A 3×3 bingo grid demonstrating five interaction approaches for acting on and
-        inspecting task squares. Select an approach from the dropdown, then interact
-        with the squares below.
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+        Click a square to perform its primary action. Right-click for a context menu
+        with type-specific quick actions and details.
+      </p>
+      <p className={styles.gestureHint}>
+        Click to act · Right-click for quick options
       </p>
 
-      {/* Approach picker */}
+      {/* Reset button */}
       <div className={styles.controls}>
-        <label className={styles.controlLabel} htmlFor="approach-select">
-          Approach:
-        </label>
-        <select
-          id="approach-select"
-          className={styles.approachSelect}
-          value={approach}
-          onChange={(e) => setApproach(e.target.value as InteractionApproach)}
-        >
-          <option value="tapToAct">1 — Tap-to-Act (ⓘ button for details)</option>
-          <option value="tapToInfo">2 — Tap-to-Info (always opens details)</option>
-          <option value="tapActRightClick">3 — Act + Inspect (right-click for details)</option>
-          <option value="contextMenu">4 — Act + Context Menu (right-click menu)</option>
-          <option value="doubleTap">5 — Double-click to Act (single = details)</option>
-        </select>
         <button className={styles.resetButton} onClick={handleResetAll}>
           Reset
         </button>
       </div>
-
-      {/* Gesture hint */}
-      <p className={styles.gestureHint}>{GESTURE_HINTS[approach]}</p>
 
       {/* 3×3 grid */}
       <div className={styles.grid}>
@@ -812,16 +728,9 @@ export function TaskSquareActionsPlayground() {
             key={sq.id}
             sq={sq}
             state={squareStates[sq.id]}
-            approach={approach}
             onAct={() => handleAct(sq)}
-            onOpenInfo={() => setSelectedSquareId(sq.id)}
             onContextMenu={(e) => {
-              if (approach === 'contextMenu') {
-                setContextMenu({ squareId: sq.id, x: e.clientX, y: e.clientY });
-              } else {
-                // tapActRightClick → open detail modal
-                setSelectedSquareId(sq.id);
-              }
+              setContextMenu({ squareId: sq.id, x: e.clientX, y: e.clientY });
             }}
           />
         ))}
@@ -840,7 +749,7 @@ export function TaskSquareActionsPlayground() {
         />
       )}
 
-      {/* Floating context menu (Approach 4) */}
+      {/* Floating context menu */}
       {contextMenu && (() => {
         const sq = DEMO_SQUARES.find((s) => s.id === contextMenu.squareId);
         if (!sq) return null;
