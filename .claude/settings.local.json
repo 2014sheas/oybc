@@ -66,7 +66,29 @@
       "Bash(git stash:*)",
       "mcp__playwright__browser_fill_form",
       "mcp__playwright__browser_wait_for",
-      "Bash(pnpm:*)"
+      "Bash(pnpm:*)",
+      "Skill(claude-md-management:revise-claude-md)",
+      "Bash(cd /Users/stephen/local-repos/oybc/apps/web && npm run build 2>&1 | tail -50)",
+      "Bash(npm run:*)",
+      "Bash(npx -p typescript tsc --noEmit 2>&1 | tail -30)",
+      "Bash(cd /Users/stephen/local-repos/oybc/packages/shared && npx -p typescript tsc 2>&1 | tail -5)",
+      "Bash(cd /Users/stephen/local-repos/oybc/apps/web && npx -p typescript tsc --noEmit 2>&1 | tail -10)",
+      "Bash(cd /Users/stephen/local-repos/oybc/packages/shared && npx -p typescript tsc --declaration 2>&1 && ls dist/index.d.ts 2>&1)",
+      "Bash(cd /Users/stephen/local-repos/oybc/packages/shared && rm -rf dist && npx -p typescript tsc -p tsconfig.json 2>&1 && ls dist/index.* 2>&1)",
+      "Bash(cd /Users/stephen/local-repos/oybc/packages/shared && ls node_modules/.bin/tsc 2>&1 && node_modules/.bin/tsc 2>&1 | head -5 && ls dist/index.d.ts 2>&1)",
+      "Bash(cd /Users/stephen/local-repos/oybc/packages/shared && node_modules/.bin/tsc 2>&1)",
+      "Bash(node_modules/.bin/tsc --showConfig 2>&1 | head -30)",
+      "Bash(npm install:*)",
+      "Bash(corepack enable:*)",
+      "Bash(/usr/local/lib/node_modules/corepack/shims/pnpm --version 2>&1)",
+      "Bash(cd /Users/stephen/local-repos/oybc && /usr/local/lib/node_modules/corepack/shims/pnpm install 2>&1 | tail -10)",
+      "Bash(cd /Users/stephen/local-repos/oybc/packages/shared && /usr/local/lib/node_modules/corepack/shims/pnpm build 2>&1 && ls dist/index.d.ts)",
+      "Bash(cd /Users/stephen/local-repos/oybc/packages/shared && node_modules/.bin/tsc --listEmittedFiles 2>&1 | head -20)",
+      "Bash(/Users/stephen/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.1/skills/brainstorming/scripts/start-server.sh --project-dir /Users/stephen/local-repos/oybc 2>&1)",
+      "Bash(node_modules/.bin/tsc --noEmit 2>&1)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot"
     ]
   }
 }

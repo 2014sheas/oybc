@@ -255,9 +255,9 @@ async function pullChanges(lastSyncTime: string) {
 
 **Collaboration Triggers**:
 
-- If sync implementation is overly complex: "Consider @code-quality-pragmatist to identify simplification opportunities"
-- If sync doesn't meet offline-first requirements: "Recommend @Jenny to verify implementation matches CLAUDE.md specifications"
-- If sync implementation claims completion: "Suggest @task-completion-validator to verify sync actually works end-to-end"
+- If sync implementation is overly complex: Use `superpowers:simplify` skill or `/simplify` to identify simplification opportunities
+- If sync doesn't meet offline-first requirements: Use **Serena** to verify implementation matches CLAUDE.md specifications
+- If sync implementation claims completion: Use **Playwright** to verify sync actually works end-to-end in the UI
 - For cross-platform sync UI implementation: "Consider @cross-platform-coordinator to ensure consistent sync status indicators"
 
 ## Quality Standards

@@ -28,27 +28,44 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 ## Feature Implementation Guidelines
 
-**CRITICAL: Playground-First Development Process**
+**Playground-first, one feature at a time, user-driven.** Use `/feature` skill for the full workflow.
 
-1. **ONE Feature at a Time**: Only implement the single feature the user explicitly decides to work on.
-2. **User-Driven Selection**: The user determines which feature to implement.
-3. **Playground Before Integration**: ALL features must first be added to a "Playground" page on both platforms before integration into the main app.
-4. **No Integration Without Approval**: Features must NOT be introduced into production code until the user explicitly approves after testing.
-5. **Comprehensive Testing in Playground**: Must demonstrate all user interactions, edge cases, error states, and data scenarios.
-6. **Display Mode Coverage**: UI features must demonstrate light/dark mode, responsive layouts, and cross-platform consistency.
-7. **Playground Persistence**: New features are added to the existing Playground, not replacing previous features.
-8. **Reuse Existing Infrastructure**: Shared constants in `playgroundUtils.ts` / `PlaygroundUtils.swift`. Reusable components in `apps/web/src/components/playground/` / `apps/ios/OYBC/Views/Components/`.
-9. **Mirror File Structure**: Every playground feature must be a separate file on both platforms. Container views stay thin. See Cross-Platform File Structure below.
+**Core Principles**:
+- ONE feature at a time — user picks what to build.
+- Playground before integration — no production code without explicit user approval.
+- Mirror file structure — every playground feature is a separate file on both platforms. Container views stay thin.
+- Reuse existing infrastructure — shared constants in `playgroundUtils.ts` / `PlaygroundUtils.swift`, reusable components in `components/playground/` / `Views/Components/`.
 
 **Standard Development Process**: Ask clarifying questions first. Create a branch per feature/bugfix. TDD approach. Plan before implementing.
+
+**Workflow Skills**:
+- `/feature` — New feature development (Playground-first, Two-Gate)
+- `/bugfix` — Diagnose and fix bugs (systematic debugging, plugin verification)
+- `/refactor` — Restructure code without changing behavior (safety verification)
+- `/integrate` — Move approved Playground features into production (Two-Gate, highest risk)
 
 ## Agent Guidelines
 
 - Simple features (< 100 lines): single agent. Don't over-agent.
 - Complex cross-platform features: use `cross-platform-coordinator` to orchestrate `react-web-implementer` (web) + `steve-jobs` (iOS).
-- Before delivery: verify BOTH platforms compile, run `testing-czar`, `Jenny`, and `karen`.
-- **Three-Gate Karen System**: Run `karen` after planning (Gate #1), at ~50% implementation (Gate #2), and before delivery (Gate #3). All three required or work is INCOMPLETE.
-- iOS files must be added to `project.pbxproj` or they won't compile — always verify.
+- **Two-Gate System**: Gate 1 (plan approval by user) and Gate 2 (final review by user after automated verification). Both mandatory.
+- **Plugin-driven verification** replaces manual agent reviews:
+  - **Serena**: Code navigation, scope verification (compare implemented symbols vs plan), reusable component discovery.
+  - **Playwright**: Mandatory web UI validation — navigate playground, interact, screenshot. Saves to `.playwright-mcp/`.
+  - **Context7**: Library documentation lookups during implementation.
+- Before delivery: verify BOTH platforms compile, run Playwright validation (web), use `superpowers:verification-before-completion`.
+- iOS uses XcodeGen — after adding new `.swift` files, run `xcodegen generate` to regenerate the Xcode project.
+
+### Agents
+
+| Agent | Purpose |
+|-------|---------|
+| `cross-platform-coordinator` | Orchestration, scope control, spec compliance, consistency enforcement |
+| `react-web-implementer` | Web (React) implementation |
+| `steve-jobs` | iOS (Swift/SwiftUI) implementation |
+| `sync-specialist` | Offline-first sync (Phase 3) |
+| `system-design-engineer` | Complex technical design decisions |
+| `ultrathink-debugger` | Deep root cause analysis for hard bugs |
 
 ## Cross-Platform File Structure
 
@@ -63,11 +80,15 @@ apps/web/src/                                        apps/ios/OYBC/
 ├── components/
 │   └── playground/
 │       ├── playgroundUtils.ts  ←→                  Views/Playground/PlaygroundUtils.swift
-│       ├── [X]Playground.tsx   ←→                  Views/Playground/[X]Playground.swift
+│       ├── BoardGeneratorPlayground.tsx ←→          Views/Playground/BoardGeneratorPlayground.swift
+│       ├── UnifiedTaskCreatorPlayground.tsx ←→      Views/Playground/UnifiedTaskCreatorPlayground.swift
+│       ├── TaskSquareActionsPlayground.tsx ←→       Views/Playground/TaskSquareActionsPlayground.swift
+│       ├── CompositeTaskForm.tsx ←→                 Views/Playground/CompositeTaskFormView.swift
 │       ├── ProgressStepRow.tsx ←→                  Views/Components/ProgressStepRowView.swift
 │       └── CountingStepFields.tsx ←→               Views/Components/CountingStepFieldsView.swift
 │
 └── components/
+    ├── Navbar.tsx
     ├── BingoBoard.tsx          ←→                  Views/Components/BingoBoard.swift
     └── BingoSquare.tsx         ←→                  Views/Components/BingoSquare.swift
 ```
@@ -76,7 +97,7 @@ apps/web/src/                                        apps/ios/OYBC/
 1. Container views stay thin — no form logic, no state, no database calls.
 2. One file per playground feature, one file per reusable component.
 3. Web: `[Name].tsx`. iOS: `[Name]View.swift` (views) or `[Name]Playground.swift` (features).
-4. iOS: Every new Swift file must be added to `project.pbxproj` or it won't compile.
+4. iOS: After adding new Swift files, run `xcodegen generate` to regenerate the Xcode project.
 5. Verify both platforms have matching files before claiming completion.
 
 ## Commands
@@ -112,10 +133,10 @@ pnpm lint       # Lint
 
 ### iOS App (`apps/ios`)
 ```bash
-open OYBC.xcodeproj  # Open in Xcode
+open OYBC.xcodeproj          # Open in Xcode
 # Build: ⌘R  |  Tests: ⌘U
-swift build          # CLI build
-swift test           # CLI tests
+xcodegen generate            # Regenerate project from project.yml
+xcodebuild -scheme OYBC build  # CLI build (simulator)
 ```
 
 ## Architecture
@@ -210,10 +231,10 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 
 ## Common Pitfalls
 
-- **Don't skip verification gates**: If karen/testing-czar/Jenny weren't invoked, work is INCOMPLETE.
+- **Don't skip verification gates**: Both gates (plan approval + final review) are mandatory. Playwright validation is mandatory for web changes.
 - **Don't skip the Playground**: ALL features go through Playground first with explicit user approval.
 - **Don't implement multiple features at once**: ONE at a time, user-directed.
-- **Don't copy from MVP archive**: `oybc_v1.archive/` is reference only.
+- **Don't copy from old code**: If archived/legacy code exists, it's reference only.
 - **Don't use Firestore as primary storage**: Local DB is source of truth.
 - **Don't hard delete**: Always soft delete for sync compatibility.
 - **Don't trust denormalized values during conflicts**: Recompute from source data.
@@ -252,10 +273,10 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 | 3 | Bingo Detection Logic | COMPLETE |
 | 4 | Board Randomization | COMPLETE |
 | 5 | Center Space Logic | COMPLETE |
-| 6 | Tasks & Task Creation | NEXT |
+| 6 | Tasks & Task Creation | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions) |
 | 7 | Celebrations & Polish | — |
 
-**Next**: Feature 6 - Tasks & Task Creation (real data, creation UI, board creation flow)
+**Current**: Feature 6 - Tasks & Task Creation (task creation UI, composite tasks, board generation with real data in Playground)
 
 **Phase 3** (future): Authentication & Sync Layer (Firebase Auth, sync queue, conflict resolution)
 

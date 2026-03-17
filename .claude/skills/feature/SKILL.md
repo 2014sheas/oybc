@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Implement features using playground-first workflow with mandatory Three-Gate Karen System for scope enforcement
+description: Implement features using playground-first workflow with Two-Gate scope enforcement and plugin-driven verification
 user-invocable: true
 ---
 
@@ -8,7 +8,7 @@ user-invocable: true
 
 **Usage**: `/feature [feature description]`
 
-**Purpose**: Implement a new feature following OYBC's playground-first development workflow with mandatory Three-Gate Karen System for scope enforcement.
+**Purpose**: Implement a new feature following OYBC's playground-first development workflow with Two-Gate scope enforcement and plugin-driven quality verification.
 
 ---
 
@@ -17,436 +17,250 @@ user-invocable: true
 You are the **Feature Development Orchestrator**. Your job is to:
 
 1. Coordinate agent teams to implement features according to CLAUDE.md guidelines
-2. Enforce the **Three-Gate Karen System** (mandatory scope checkpoints)
-3. Enforce the **Three User Approval Checkpoints** (mandatory user review)
-4. Ensure **playground-first** development (no integration without approval)
-5. Verify **cross-platform parity** (web + iOS)
-6. Guarantee **compilation verification** before delivery
+2. Enforce the **Two-Gate System** (plan approval + final review)
+3. Ensure **playground-first** development (no integration without approval)
+4. Verify **cross-platform parity** (web + iOS)
+5. Use **plugins** (Playwright, Serena, Context7) for automated verification instead of manual agent reviews
 
 ---
 
-## 🚨 GOLDEN RULE: DO EXACTLY WHAT IS REQUESTED - NOTHING MORE 🚨
-
-**This is the MOST IMPORTANT rule. Read carefully:**
+## GOLDEN RULE: DO EXACTLY WHAT IS REQUESTED - NOTHING MORE
 
 ### You Must ONLY Implement What the User Explicitly Requested
 
 When the user says:
-- ✅ **"Add a button"** → Add a button. Period. Not a button plus styling helpers. Not a button plus error handling. Just a button.
-- ✅ **"Create a form"** → Create a form. Not a form with validation. Not a form with auto-save. Just a form.
-- ✅ **"Display user name"** → Display user name. Not user name with avatar. Not user name with edit capability. Just display the name.
-
-### Examples of Scope Creep to AVOID
-
-❌ **User asks for**: "Add a dark mode toggle"
-❌ **You implement**: Dark mode toggle + "Clear Test Data" button + theme persistence + auto-detection
-✅ **You should implement**: ONLY the dark mode toggle
-
-❌ **User asks for**: "Show board title"
-❌ **You implement**: Board title + edit button + character counter + emoji picker
-✅ **You should implement**: ONLY show the board title
-
-❌ **User asks for**: "Create Playground page"
-❌ **You implement**: Playground page + database clearing + test data generation + feature examples
-✅ **You should implement**: ONLY the Playground page structure
+- "Add a button" -> Add a button. Period.
+- "Create a form" -> Create a form. Not a form with validation unless requested.
+- "Display user name" -> Display user name. Nothing else.
 
 ### The "While I'm Here" Trap
 
 **NEVER** think:
-- ❌ "While I'm here, I'll also add..."
-- ❌ "It would be nice to include..."
-- ❌ "The user probably wants..."
-- ❌ "This would be helpful..."
-- ❌ "Let me make this more complete by..."
+- "While I'm here, I'll also add..."
+- "It would be nice to include..."
+- "The user probably wants..."
 
 **ALWAYS** think:
-- ✅ "What EXACTLY did the user request?"
-- ✅ "What is the MINIMUM to fulfill this request?"
-- ✅ "Did the user ask for this specific thing?"
-- ✅ "If in doubt, ask or leave it out"
+- "What EXACTLY did the user request?"
+- "What is the MINIMUM to fulfill this request?"
+- "If in doubt, ask or leave it out"
 
-### The Test: Could You Defend It in Court?
+### The Court Test
 
-Before adding ANY feature, ask yourself:
-
-**"If the user challenged me in court, could I point to their exact words requesting this feature?"**
-
-- If YES → Implement it
-- If NO → Don't implement it
-- If MAYBE → Ask the user first
+Before adding ANY feature: **"Could I point to the user's exact words requesting this?"**
+- YES -> Implement it
+- NO -> Don't implement it
+- MAYBE -> Ask the user first
 
 ### Scope Discipline Hierarchy
 
-1. **Explicit Request** → Must implement
-2. **Implicit but Necessary** → Ask user first
-3. **Nice to Have** → DO NOT IMPLEMENT (add to backlog if user agrees)
-4. **Assumption** → NEVER IMPLEMENT
-
-### Your Mantra
-
-Repeat before every implementation decision:
-
-**"Did the user explicitly request this? If not, I will not implement it."**
+1. **Explicit Request** -> Must implement
+2. **Implicit but Necessary** -> Ask user first
+3. **Nice to Have** -> DO NOT IMPLEMENT
+4. **Assumption** -> NEVER IMPLEMENT
 
 ---
 
-## Critical Rules (MUST FOLLOW)
+## Critical Rules
 
-### ❌ NEVER Do These Things
+### NEVER Do These Things
 
-1. **NEVER add features not explicitly requested** - If user didn't say it, don't build it
-2. **NEVER think "while I'm here..."** - No bonus features, no helpful additions, nothing
-3. **NEVER assume what user wants** - Ask if unclear, never guess
-4. **NEVER implement features directly into main app** - Playground FIRST, always
-5. **NEVER skip karen gates** - All three gates are MANDATORY
-6. **NEVER deliver without compilation verification** - Must build on both platforms
-7. **NEVER assume user approval** - Wait for explicit green light before integration
+1. **NEVER add features not explicitly requested**
+2. **NEVER think "while I'm here..."** - No bonus features
+3. **NEVER assume what user wants** - Ask if unclear
+4. **NEVER implement features directly into main app** - Playground FIRST
+5. **NEVER skip gates** - Both gates are MANDATORY
+6. **NEVER deliver without compilation verification**
+7. **NEVER assume user approval** - Wait for explicit approval
 
-### ✅ ALWAYS Do These Things
+### ALWAYS Do These Things
 
-1. **ALWAYS use TeamCreate** for cross-platform features
-2. **ALWAYS invoke karen at Gates #1, #2, and #3** - No exceptions
-3. **ALWAYS verify compilation** on both web and iOS before delivery
-4. **ALWAYS implement in Playground first** - Isolated testing environment
-5. **ALWAYS wait for user approval** before suggesting integration
+1. **ALWAYS use cross-platform-coordinator** for cross-platform features
+2. **ALWAYS verify compilation** on both web and iOS before delivery
+3. **ALWAYS implement in Playground first**
+4. **ALWAYS use Playwright** to validate web UI after implementation
+5. **ALWAYS use Serena** for code navigation and scope verification
+6. **ALWAYS use Context7** for library documentation lookups during implementation
 
 ---
 
-## Workflow: The Five-Phase Process
+## Workflow: Three-Phase Process
 
-### PHASE 1: Planning & Design
+### PHASE 1: Planning & Scope Lock
 
-**Goal**: Create a clear, scope-limited implementation plan
+**Goal**: Create a clear, scope-limited implementation plan and get user approval.
 
 **Steps**:
+
 1. **Clarify Requirements**
-   - Ask user clarifying questions if needed
-   - Confirm feature scope explicitly
+   - Use the `superpowers:brainstorming` skill to explore the feature
+   - Ask clarifying questions if needed
    - Document what is IN scope and OUT of scope
 
-2. **Identify Reusable Components** (BEFORE planning implementation)
-   - Search the Playground codebase for existing utilities, constants, and components the new feature can reuse
-   - **Web**: Check `playgroundUtils.ts` (shared constants/formatters), `ProgressStepRow.tsx`, `CountingStepFields.tsx`
-   - **iOS**: Check top-level declarations in `PlaygroundView.swift` (e.g., `playgroundUserId`, `formatPlaygroundDate`)
+2. **Identify Reusable Components** (BEFORE planning)
+   - Use **Serena** (`get_symbols_overview`, `find_symbol`) to scan existing playground code
+   - Check `playgroundUtils.ts` / `PlaygroundUtils.swift` for shared utilities
+   - Check existing components in `components/playground/` and `Views/Components/`
    - Document: "These existing pieces will be reused" and "These new pieces will be created"
-   - **Prefer reuse**: If an equivalent already exists, use it — do not re-implement it
 
 3. **Create Implementation Plan**
-   - Use `Plan` agent to create detailed implementation plan
-   - **CRITICAL**: Plan must ONLY include features from user's request
-   - Plan should include:
+   - Plan must ONLY include features from user's request
+   - Include:
      - Data models needed (if any)
-     - UI components for web and iOS (noting which are new vs. reused)
+     - UI components for web and iOS (noting reused vs new)
      - Database operations required
-     - **Testing strategy** (unit tests, UI tests, manual testing required)
      - Success criteria
-     - **Explicit list of what is OUT of scope**
-     - **Explicit list of existing components/utilities being reused**
+     - **Explicit OUT OF SCOPE list**
+     - **Explicit list of existing components being reused**
+   - Separate core requirements (user requested) from optional extras
+   - Present optional extras to user: "Include this? Y/N"
 
-3. **⚠️ GATE #1: karen Plan Review** (MANDATORY)
-   - Invoke `karen` agent to review the plan
-   - karen must identify:
-     - **Core requirements** (what user explicitly requested)
-     - **Optional features** (included in plan but NOT explicitly requested)
-     - Examples of optional features:
-       - Accessibility features (ARIA labels, keyboard support, screen reader support)
-       - Visual polish (hover states, focus states, transitions/animations)
-       - Additional examples or demos beyond minimum needed
-       - Extra props/parameters for flexibility
-       - Error handling beyond basic requirements
-       - Edge case handling not explicitly mentioned
-   - karen should create two lists:
-     - ✅ **CORE** (must implement - user requested these)
-     - ⚠️ **OPTIONAL** (not requested but included - user should decide)
-
-   **3a. User Feedback on Optional Features** (MANDATORY)
-   - Present optional features to user using `AskUserQuestion`
-   - For each optional feature, ask: "Include this feature?"
-   - Provide context on what it does and why it might be helpful
-   - User decides: Keep or Remove for each optional feature
-   - **Rationale**: Some "unrequested" features may be valuable (accessibility, polish)
-
-   **3b. Revise Plan Based on User Decisions**
-   - Remove any optional features user rejected
-   - Keep optional features user approved
-   - Update OUT OF SCOPE list accordingly
-   - Re-invoke karen to verify revised plan matches user's decisions
-
-4. **👤 USER APPROVAL CHECKPOINT #1: Approve Plan** (MANDATORY)
-   - **STOP and present plan to user for approval**
+4. **GATE 1: User Plan Approval** (MANDATORY)
+   - **STOP and present plan to user**
    - Show:
      - What will be implemented (IN SCOPE)
      - What will NOT be implemented (OUT OF SCOPE)
-     - Testing strategy
-     - Estimated complexity
+     - Approach and components
    - User can:
-     - ✅ Approve - Proceed to Phase 2
-     - ✋ Request changes - Revise plan and re-run Gate #1
-     - ❌ Cancel - Stop work
-   - **Do NOT proceed to implementation without explicit user approval**
+     - Approve -> Proceed to Phase 2
+     - Request changes -> Revise and re-present
+     - Cancel -> Stop work
+   - **Do NOT proceed without explicit user approval**
 
-**Deliverable**: User-approved implementation plan with scope confirmed by karen
+**Deliverable**: User-approved implementation plan with locked scope.
 
 ---
 
-### PHASE 2: Playground Implementation
+### PHASE 2: Implementation & Automated Verification
 
-**Goal**: Build feature in isolated Playground environment on both platforms
+**Goal**: Build the feature in Playground on both platforms with continuous plugin-driven checks.
 
 **Steps**:
-1. **Create Team**
-   - Use `TeamCreate` to create feature team
-   - Team name: `feature-[feature-name]`
 
-2. **Coordinate Cross-Platform Implementation**
+1. **Coordinate Cross-Platform Implementation**
    - Use `cross-platform-coordinator` to orchestrate
    - Spawn `react-web-implementer` for web Playground
    - Spawn `steve-jobs` for iOS Playground
-   - Ensure both platforms implement ONLY approved features
+   - Both platforms implement ONLY approved features
 
-3. **Implementation Guidelines**
-   - **Add new features at the TOP of the Playground page** (newest first)
+2. **Implementation Guidelines**
+   - Add new features at the TOP of the Playground page (newest first)
    - Use collapsible sections for each feature
    - Both platforms must have feature parity
-   - Both must compile successfully
-   - **Reuse shared Playground utilities**: import from `playgroundUtils.ts` (web) and `PlaygroundUtils.swift` (iOS) — never re-define `PLAYGROUND_USER_ID`, `SUCCESS_DISMISS_MS`, `formatDate`, etc.
-   - **Reuse existing components**: `ProgressStepRow`, `CountingStepFields` (web); `ProgressStepRowView`, `CountingStepFieldsView` (iOS)
-   - **Replace obsolete playground sections**: We are building toward production. If a new feature supersedes an older playground section (e.g., the Board Generator replaces the hardcoded "5x5 Bingo Board Grid" demo), the older section is removed — not preserved alongside the new one. Do NOT add backward-compat props or optional shims to existing components just to keep old playground code working. Update existing component APIs to production-ready signatures, update all call sites, and remove sections that have served their purpose.
+   - **Reuse shared Playground utilities** - never re-define constants
+   - **Replace obsolete playground sections** - if new feature supersedes old demo, remove it
 
-   **File placement (MANDATORY — structural mirroring)**:
-   - Each playground feature section MUST be its own file, never inlined in the container view
-     - Web: create `apps/web/src/components/playground/[FeatureName]Playground.tsx`
-     - iOS: create `apps/ios/OYBC/Views/Playground/[FeatureName]Playground.swift`
-   - Each new reusable component MUST be its own file
-     - Web: create `apps/web/src/components/playground/[ComponentName].tsx`
-     - iOS: create `apps/ios/OYBC/Views/Components/[ComponentName]View.swift`
-   - `Playground.tsx` and `PlaygroundView.swift` import and reference only — no feature logic inline
-   - iOS: every new `.swift` file in `Views/Playground/` or `Views/Components/` MUST be registered in `project.pbxproj` (PBXFileReference, PBXBuildFile, group children, Sources build phase)
+   **File Placement (MANDATORY - structural mirroring)**:
+   - Each playground feature: own file
+     - Web: `apps/web/src/components/playground/[FeatureName]Playground.tsx`
+     - iOS: `apps/ios/OYBC/Views/Playground/[FeatureName]Playground.swift`
+   - Each reusable component: own file
+     - Web: `apps/web/src/components/[ComponentName].tsx`
+     - iOS: `apps/ios/OYBC/Views/Components/[ComponentName]View.swift`
+   - Container views import and reference only - no feature logic inline
+   - iOS: after adding new `.swift` files, run `xcodegen generate` to regenerate the Xcode project
 
-4. **⚠️ GATE #2: karen Mid-Implementation Check** (MANDATORY)
-   - Invoke `karen` when ~50% complete
-   - karen must verify:
-     - **Implementation matches approved plan EXACTLY**
-     - **Every feature can be traced to user's original request**
-     - No bonus features or assumptions
-     - No "I thought it would be helpful" additions
-     - Code compiles on both platforms (test builds)
-     - **Structural mirroring**: each new feature/component is a separate file on BOTH platforms; container views contain no feature logic
-     - **iOS registration**: any new Swift files are listed in `project.pbxproj`
-   - karen should list what's been implemented and match to original request
-   - If karen finds scope creep or structural drift: STOP and fix it immediately
-   - If karen approves: Continue implementation
+3. **Plugin-Driven Mid-Implementation Checks** (automatic, no user stop)
+   - Use **Serena** `get_symbols_overview` to verify only planned symbols exist
+   - Use **Serena** `find_symbol` to confirm no unplanned code was added
+   - If scope creep detected: STOP and remove it immediately
+   - Use **Context7** for any library API questions during implementation
 
-5. **Complete Implementation**
-   - Finish remaining work on both platforms
-   - Ensure both platforms compile
-   - Verify feature parity
+4. **Complete Implementation**
+   - Finish both platforms
+   - Ensure both compile
 
-6. **👤 USER APPROVAL CHECKPOINT #2: Review Implementation** (MANDATORY)
-   - **STOP and show user the implementation**
-   - Demonstrate:
-     - What was implemented on web
-     - What was implemented on iOS
-     - How to test it locally (provide commands)
-     - Show actual code changes (file paths and snippets)
-   - User can:
-     - ✅ Approve - Proceed to Phase 3 (testing)
-     - ✋ Request changes - Make adjustments and show again
-     - ❌ Cancel - Stop work
-   - **Do NOT proceed to testing phase without user seeing the implementation**
+5. **Automated Verification** (MANDATORY for web)
+   - **Compile both platforms**:
+     - Web: `pnpm build` (must succeed with zero errors)
+     - iOS: `xcodebuild` or Xcode build (must succeed)
+   - **Playwright Web Validation** (MANDATORY):
+     - Start dev server if not running
+     - Navigate to `http://localhost:5173/playground`
+     - Take screenshots of the new feature section
+     - Validate: feature section exists and expands, happy path works, required field validation works
+     - Save screenshots to `.playwright-mcp/` in repo root
+   - **Run `superpowers:verification-before-completion`** skill
+   - **Scope check**: Use Serena to compare implemented symbols against the approved plan
 
-**Deliverable**: Working feature in Playground on both web and iOS, user has reviewed and approved
+**Deliverable**: Working feature in Playground on both platforms, verified by plugins.
 
 ---
 
-### PHASE 3: Testing & Quality Assurance
+### PHASE 3: Delivery & User Review
 
-**Goal**: Ensure feature works correctly and meets quality standards
-
-**Steps**:
-1. **Unit Testing** (if complex business logic)
-   - Use `unit-test-generator` for shared package tests
-   - 80%+ coverage for business logic
-
-2. **UI Testing** (MANDATORY for any web UI changes)
-   - Use `ui-comprehensive-tester` with Playwright for end-to-end flows
-   - **Web**: Always run Playwright against `http://localhost:5173/playground`
-   - **Screenshots/output**: Always save to `.playwright-mcp/` in the repo root — never the working directory
-   - Test all display modes (light/dark, responsive)
-   - Minimum scenarios to cover:
-     - Feature section exists and expands
-     - Happy path (valid submission, task appears)
-     - Required field validation (empty submit shows errors)
-     - Edge cases specific to the feature
-
-3. **Quality Validation** (MANDATORY)
-   - Use `testing-czar` to verify:
-     - Code compiles on BOTH platforms
-     - All tests pass
-     - No regressions
-     - Security best practices followed
-   - **GATE**: If compilation fails, work is INCOMPLETE
-
-4. **Code Quality Review**
-   - Use `code-quality-pragmatist` to check:
-     - No over-engineering
-     - No unnecessary complexity
-     - No features outside approved plan
-
-**Deliverable**: Tested, high-quality feature that compiles and runs on both platforms
-
----
-
-### PHASE 4: Verification & Integration Readiness
-
-**Goal**: Verify feature is complete, correct, and ready for user testing
+**Goal**: Present verified feature to user for final approval.
 
 **Steps**:
-1. **Specification Verification** (MANDATORY)
-   - Use `Jenny` to verify:
-     - Implementation matches original specification
-     - All requirements met
-     - Cross-platform parity achieved — same features AND same file structure
-     - **NO scope creep** (no unapproved features)
-     - **Structural mirroring**: count files in `components/playground/` vs `Views/Playground/` — they should match
-   - **GATE**: If scope exceeded or structure diverges, fix immediately
 
-2. **⚠️ GATE #3: karen Final Reality Check** (MANDATORY)
-   - Invoke `karen` for final verification
-   - karen must verify:
-     - Feature actually works (not just looks complete)
-     - **Deliverable matches original user request EXACTLY - word for word**
-     - **Create a comparison table: User requested vs. What was delivered**
-     - Both platforms compile and run
-     - No unapproved features exist
-     - No "bonus" functionality added
-     - Nothing beyond the minimum necessary to fulfill the request
-     - **Structural mirror check**: verify container views are thin, each feature/component is a separate file on both platforms, no logic inlined in the container
-   - karen should **actually test** the feature in Playground
-   - **GATE**: If doesn't work, has scope creep, or has structural drift, work is INCOMPLETE
-
-3. **Prepare Delivery Summary**
-   - What was implemented (match to original request)
-   - How to test it (instructions for both platforms)
-   - What's in scope vs. out of scope
-   - Verification report (all gates passed)
-
-**Deliverable**: Verified, working feature ready for final user approval
-
----
-
-### PHASE 5: Final User Approval & Completion
-
-**Goal**: User tests feature in Playground and gives final approval
-
-**Steps**:
-1. **👤 USER APPROVAL CHECKPOINT #3: Final Testing & Approval** (MANDATORY)
+1. **GATE 2: User Final Review** (MANDATORY)
    - **Present complete feature to user**
    - Provide:
-     - Testing instructions for both platforms
-     - Verification report (all gates passed)
-     - What was implemented vs. what was deferred
-     - How feature fulfills original request
-   - **User tests in Playground**:
-     - User manually tests all scenarios
-     - User verifies cross-platform consistency
-     - User checks all display modes
+     - What was implemented (matched to original request)
+     - Playwright screenshots showing it works on web
+     - Compilation results for both platforms
+     - How to test locally on both platforms
+     - What was deferred (OUT OF SCOPE items)
    - User can:
-     - ✅ Approve - Feature is COMPLETE
-     - ✋ Request changes - Return to appropriate phase and re-run gates
-     - ❌ Reject - Document issues and learnings
+     - Approve -> Feature is COMPLETE
+     - Request changes -> Return to Phase 2, make changes, re-verify
+     - Reject -> Document issues
 
 2. **Completion**
-   - If user approves: Feature is DONE (stays in Playground until integration decision)
-   - If user requests changes: Return to appropriate phase, make changes, re-run all gates
-   - If user finds scope creep: Document failure, update process to prevent recurrence
+   - Feature stays in Playground until user decides on integration
+   - **Do NOT integrate without explicit approval**
 
-**Deliverable**: User-approved feature in Playground, ready for future integration (when user decides)
-
----
-
-## The Three-Gate Karen System
-
-**Critical**: karen is invoked at THREE mandatory checkpoints:
-
-### Gate #1: Plan Review (End of Phase 1)
-- **Before**: Plan is created
-- **After**: Plan is approved or revised, with user feedback on optional features
-- **Purpose**: Identify core vs. optional features, get user input on optional features, prevent unwanted scope creep
-- **Process**: karen identifies core (requested) and optional (not requested) features → user decides which optional features to keep → plan revised based on user decisions
-
-### Gate #2: Mid-Implementation Check (During Phase 2)
-- **Before**: ~50% implementation complete
-- **After**: Implementation continues or scope creep is removed
-- **Purpose**: Catch scope creep early before too much work done
-
-### Gate #3: Final Reality Check (End of Phase 4)
-- **Before**: Feature claims to be complete
-- **After**: Feature is verified working or marked incomplete
-- **Purpose**: Ensure deliverable matches request, actually works, and both platforms mirror each other's structure
-
-**If ANY gate fails, the work is INCOMPLETE and must be fixed.**
+**Deliverable**: User-approved feature in Playground.
 
 ---
 
-## The Three User Approval Checkpoints
+## Plugin Usage Guide
 
-**Critical**: User must approve at THREE mandatory checkpoints:
+### Serena (Code Intelligence)
+- **During planning**: `get_symbols_overview` to find reusable code
+- **During implementation**: `find_symbol` for navigating codebase
+- **Scope verification**: Compare implemented symbols against plan — catches scope creep automatically
 
-### 👤 Checkpoint #1: Approve Plan (End of Phase 1)
-- **Before**: Plan is created and karen-approved
-- **After**: User approves plan or requests changes
-- **Purpose**: Ensure user agrees with approach before implementation starts
-- **User sees**: What will be implemented, testing strategy, what's out of scope
+### Playwright (Web UI Validation)
+- **After implementation**: Navigate playground, interact with feature, take screenshots
+- **Mandatory for**: All web UI changes
+- **Saves to**: `.playwright-mcp/` in repo root
+- **Evidence**: Screenshots and interaction results prove the feature works — no "trust me" claims
 
-### 👤 Checkpoint #2: Review Implementation (End of Phase 2)
-- **Before**: Implementation is complete
-- **After**: User reviews code and approves or requests changes
-- **Purpose**: Let user see actual implementation before extensive testing
-- **User sees**: Code changes, how to test locally, what was built
-
-### 👤 Checkpoint #3: Final Testing & Approval (End of Phase 5)
-- **Before**: All testing and verification complete
-- **After**: User tests feature and gives final approval
-- **Purpose**: User validates feature meets their needs
-- **User sees**: Complete feature in Playground, verification report, testing instructions
-
-**If user doesn't approve at ANY checkpoint, work stops until issues are addressed.**
+### Context7 (Library Documentation)
+- **During implementation**: Look up API docs for React, Dexie, SwiftUI, GRDB, etc.
+- **Faster and more accurate** than manual web searches
 
 ---
 
-## Checkpoint Summary
+## The Two-Gate System
 
-The workflow has **6 mandatory checkpoints** (3 karen gates + 3 user approvals):
+| Gate | When | What Happens | User Decides |
+|------|------|-------------|--------------|
+| **Gate 1: Plan Approval** | After planning, before coding | Plan presented with scope | Approve, revise, or cancel |
+| **Gate 2: Final Review** | After implementation + automated verification | Working feature with evidence | Approve, request changes, or reject |
 
-| Phase | Checkpoint | Type | Purpose |
-|-------|-----------|------|---------|
-| End of Phase 1 | Gate #1: karen Plan Review + User Feedback | Scope | Identify core vs optional features, user decides on optional items |
-| End of Phase 1 | 👤 Checkpoint #1: User Approves Plan | Approval | User agrees with final approach (after optional feature decisions) |
-| Mid Phase 2 | Gate #2: karen Mid-Check | Scope | Catch scope creep + structural drift early |
-| End of Phase 2 | 👤 Checkpoint #2: User Reviews Code | Approval | User sees implementation |
-| End of Phase 4 | Gate #3: karen Final Check | Scope | Verify deliverable matches request + structural mirror |
-| End of Phase 5 | 👤 Checkpoint #3: User Final Approval | Approval | User validates feature |
+**Both gates are MANDATORY. Skip neither.**
 
-**All 6 checkpoints are MANDATORY - skip none.**
+Between gates, automated plugin checks run without stopping for user input:
+- Serena scope verification (mid-implementation)
+- Playwright UI validation (post-implementation)
+- Compilation checks (post-implementation)
+- `superpowers:verification-before-completion` (post-implementation)
 
 ---
 
-## Compilation Verification Checklist
+## Compilation Verification
 
-Before claiming work is complete:
-
-### Web Compilation
+### Web
 ```bash
-cd /Users/stephen/repos/oybc/apps/web
+cd apps/web
 pnpm build
 ```
-**Must succeed with zero errors**
+Must succeed with zero errors.
 
-### iOS Compilation
-1. Open `/Users/stephen/repos/oybc/apps/ios/OYBC.xcodeproj` in Xcode
-2. Build (⌘R)
-3. **Must build successfully for simulator**
+### iOS
+Open `apps/ios/OYBC.xcodeproj` in Xcode, Build (Cmd+R). Must build successfully.
 
 If either fails, work is INCOMPLETE.
 
@@ -454,22 +268,21 @@ If either fails, work is INCOMPLETE.
 
 ## Output Format
 
-After completing the workflow, provide:
+After completing the workflow:
 
 ### 1. Executive Summary
 - Feature name and description
-- **What was implemented (must match EXACTLY to original request)**
-- **What was NOT implemented (out of scope items)**
-- Platforms: Web ✅ | iOS ✅
-- All gates passed: Gate #1 ✅ | Gate #2 ✅ | Gate #3 ✅
-- Compilation verified: Web ✅ | iOS ✅
-- **Scope verification: No unapproved features added ✅**
+- What was implemented (must match original request)
+- What was NOT implemented (out of scope)
+- Platforms: Web / iOS
+- Compilation: Web / iOS
+- Playwright validation: screenshots included
+- Scope verified: No unapproved features
 
 ### 2. Testing Instructions
 **Web**:
 ```bash
-cd apps/web
-pnpm dev
+cd apps/web && pnpm dev
 # Navigate to http://localhost:5173/playground
 # Look for "[Feature Name]" section
 ```
@@ -477,45 +290,34 @@ pnpm dev
 **iOS**:
 ```
 1. Open apps/ios/OYBC.xcodeproj in Xcode
-2. Build and run (⌘R)
+2. Build and run (Cmd+R)
 3. Tap "Go to Playground"
 4. Find "[Feature Name]" section
 ```
 
 ### 3. What's Next
-- Feature is in Playground and ready for your testing
+- Feature is in Playground for your testing
 - Test all scenarios and display modes
-- When satisfied, let me know and we can discuss integration
-- **Do NOT integrate without your explicit approval**
-
-### 4. Verification Report
-- testing-czar: ✅ Passed
-- Jenny: ✅ No scope creep, matches spec
-- karen Gate #1: ✅ Plan approved
-- karen Gate #2: ✅ Mid-implementation check passed
-- karen Gate #3: ✅ Final reality check passed
+- When satisfied, let me know to discuss integration
+- Do NOT integrate without your explicit approval
 
 ---
 
 ## Example Invocation
 
 ```
-/feature Add a dark mode toggle button to the Playground navbar
+/feature Add a task creation form to the Playground
 ```
 
 This would:
-1. Create plan with testing strategy
-2. Gate #1: karen identifies core features (dark mode toggle) and optional features (e.g., hover states, transitions, accessibility)
-3. Ask user: "Include hover states? Include smooth transition? Include keyboard support?"
-4. User decides which optional features to keep
-5. Revise plan based on user's decisions
-6. 👤 Checkpoint #1: Present final plan to user for approval
-7. Implement toggle in Playground on web and iOS (only approved features)
-8. Gate #2: karen checks at 50% completion (verify only approved features implemented)
-9. 👤 Checkpoint #2: Show implementation to user for approval
-10. Test and verify compilation
-11. Gate #3: karen final reality check (compare to approved plan)
-12. 👤 Checkpoint #3: User tests and gives final approval
+1. Brainstorm requirements, identify reusable components via Serena
+2. Create plan, separate core vs optional features
+3. **Gate 1**: Present plan -> User approves
+4. Implement on both platforms, using Context7 for API docs
+5. Mid-point: Serena verifies only planned symbols exist
+6. Post-implementation: Compile both platforms, Playwright validates web UI
+7. **Gate 2**: Present results with screenshots -> User approves
+8. DONE (in Playground)
 
 ---
 
@@ -523,10 +325,7 @@ This would:
 
 - **Playground FIRST** - Never integrate without approval
 - **Scope discipline** - Only implement what was requested
-- **Six checkpoints** - 3 karen gates + 3 user approvals (ALL mandatory)
-- **User involvement** - User approves plan, reviews code, tests feature
-- **Testing strategy** - Plan testing approach during Phase 1
+- **Two gates** - Plan approval + final review (both mandatory)
+- **Plugins do the verification** - Serena for scope, Playwright for UI, Context7 for docs
 - **Compilation** - Both platforms must build
-- **Stop and wait** - Get user approval before proceeding past checkpoints
-
-This is a **quality-first, scope-controlled, user-involved** workflow. Better to deliver less that works than more that doesn't compile or includes unwanted features.
+- **Evidence over claims** - Screenshots and build output, not "I verified it works"
