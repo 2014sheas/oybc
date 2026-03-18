@@ -253,6 +253,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 
 - `docs/ARCHITECTURE.md` — Technical plan, development phases
 - `docs/OFFLINE_FIRST.md` — Offline-first design and data flow
+- `docs/superpowers/specs/` — Feature design specs (created during `/feature` planning phase)
 - `docs/SYNC_STRATEGY.md` — Conflict resolution patterns
 - `docs/TASK_SYSTEM.md` — Comprehensive task system documentation
 - `docs/COMPOSITE_TASKS.md` — Composite/progress task system details

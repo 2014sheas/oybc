@@ -5,6 +5,7 @@ import { BingoBoard } from '../components/BingoBoard';
 import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTaskCreatorPlayground';
 import { BoardGeneratorPlayground } from '../components/playground/BoardGeneratorPlayground';
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
+import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
 import { generateTaskNames } from '../components/playground/playgroundUtils';
 import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
@@ -34,6 +35,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'subtask-derivation',
+      title: 'Subtask Derivation Engine',
+      content: <SubtaskDerivationPlayground />,
+    },
     {
       id: 'task-square-actions',
       title: 'Task Square Interactions',

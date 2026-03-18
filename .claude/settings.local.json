@@ -88,7 +88,16 @@
       "Bash(node_modules/.bin/tsc --noEmit 2>&1)",
       "mcp__plugin_playwright_playwright__browser_navigate",
       "mcp__plugin_playwright_playwright__browser_click",
-      "mcp__plugin_playwright_playwright__browser_take_screenshot"
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "Bash(brew list:*)",
+      "Read(//Users/stephen/**)",
+      "Read(//opt/homebrew/**)",
+      "Read(//usr/local/**)",
+      "Bash(mint list:*)",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "mcp__plugin_playwright_playwright__browser_fill_form",
+      "Bash(brew install:*)",
+      "Bash(sudo xcode-select:*)"
     ]
   }
 }

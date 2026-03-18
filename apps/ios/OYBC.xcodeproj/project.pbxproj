@@ -3,37 +3,38 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149C3CA55D0467096B13D935 /* Task.swift */; };
 		2EF19E402C1B931693900274 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = FB60A2471061045431151B6B /* GRDB */; };
 		37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */; };
+		385DD3AF707F8A87CB285762 /* BingoBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */; };
+		3C42ABF9B38079BEB9105DC2 /* UnifiedTaskCreatorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD08A8AFE2E5BD265E813DC4 /* UnifiedTaskCreatorPlayground.swift */; };
 		3D1E96D35DF0BF6B1DE02EB4 /* Schema.sql in Resources */ = {isa = PBXBuildFile; fileRef = B70713D5FB25DE3392CD3CEE /* Schema.sql */; };
+		40223EBA0D9B7B25CCB1931A /* PlaygroundUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */; };
 		4B2B6ED94B59B66095A2A7F4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADD7157FF545AFEC6EF9588 /* ContentView.swift */; };
+		4C1404F4AF8D7B699FF5DC50 /* BoardGeneratorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A4A008E558F76153F461B0B /* BoardGeneratorPlayground.swift */; };
+		5BBF160330B3C5EBABCE096B /* CenterSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F879A103A0FE383E497F464 /* CenterSquare.swift */; };
 		5C2D41E4AAD6F8F30FAF9B67 /* OYBCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2822E1DBF15699974C2F70C5 /* OYBCTests.swift */; };
 		619A5E4D57F256C847CC9A50 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0436CC51A477FF70932A9546 /* SyncQueue.swift */; };
 		9C24CDBF218203559E063F7F /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B55F24D17BE0A2E4D024288 /* User.swift */; };
+		9CFB0C8623103103E895A83D /* ProgressStepRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D833627B1CDD7BE3E829AC /* ProgressStepRowView.swift */; };
+		9D6C633E19038C7202F46256 /* SubtaskDerivationPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA07280EAE71A1F3F97DFC4D /* SubtaskDerivationPlayground.swift */; };
 		9ECE28E0A8E7C648C808CD01 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B37DB9688050E788877CC59 /* AppDatabase.swift */; };
 		9F0D8D9AA79597CE605BD66A /* Board.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F91261A5D2B914C87A9E59 /* Board.swift */; };
-		A1B2C3D4E5F6A7B8D9E0F1A3 /* Shuffle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */; };
 		A3FBDF82011C7F6ED8D3F7C5 /* PlaygroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032F40E3064154C5E3108AB4 /* PlaygroundView.swift */; };
+		A4D761B3D3CB7A3326F7B11F /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */; };
 		A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854FEF8734BD37239F0A8462 /* BoardTask.swift */; };
-		B0C1D2E3F4A5B6C7D8E9F0A1 /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */; };
-		B1C2D3E4F5A6B7C8D9E0F1A2 /* BingoSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */; };
-		C0D1E2F3G4H5I6J7K8L9M0N1 /* PlaygroundUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = X5Y6Z7A8B9C0D1E2F3G4H5I6 /* PlaygroundUtils.swift */; };
-		C3D4E5F6A7B8C9D1E2F3A4B5 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */; };
-		C4D5E6F7A8B9C0D1E2F3A4B5 /* CompositeTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */; };
-		D1E2F3G4H5I6J7K8L9M0N1O2 /* UnifiedTaskCreatorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */; };
-		D4E5F6A7B8C9D0E1F2A3B4C5 /* BingoBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */; };
-		E5F6A7B8C9D0E1F2A3B4C5D6 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */; };
-		E6F7A8B9C0D1E2F3A4B5C6D7 /* BoardGeneratorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */; };
+		A6F3DCD9274923158442DA36 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476EB8034735B0ACC9032FA9 /* BingoDetection.swift */; };
+		B2FCC0C6923A5FD1DD19A429 /* BingoSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34742747DBBD390A07DC633A /* BingoSquare.swift */; };
+		B92DF575684C12C09A6778F0 /* CompositeTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */; };
+		BD7E816390E48BAA75582B89 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */; };
+		C3B8B4FD9C30EBC428EC52E6 /* CountingStepFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */; };
 		E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */; };
-		F0A1B2C3D4E5F6A7B8C9D0E1 /* CompositeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F2A3B4C5D6E7F8A9B0C1D2 /* CompositeTask.swift */; };
-		F7A8B9C0D1E2F3A4B5C6D7E8 /* CenterSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */; };
-		H9C0D1E2F3A4B5C6D7E8F9A0 /* CountingStepFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = I0D1E2F3A4B5C6D7E8F9A0B1 /* CountingStepFieldsView.swift */; };
-		J1E2F3A4B5C6D7E8F9A0B1C2 /* ProgressStepRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = K2F3A4B5C6D7E8F9A0B1C2D3 /* ProgressStepRowView.swift */; };
+		E8FAA1849B7D23A6BE8201A2 /* CompositeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0052BFE5116994683E79480 /* CompositeTask.swift */; };
+		EB546963E080BD0C7D5EDDBD /* Shuffle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -50,31 +51,32 @@
 		032F40E3064154C5E3108AB4 /* PlaygroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundView.swift; sourceTree = "<group>"; };
 		0436CC51A477FF70932A9546 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		149C3CA55D0467096B13D935 /* Task.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Task.swift; sourceTree = "<group>"; };
-		16B24FB7FF9CEDD9A319B968 /* OYBCTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OYBCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		16B24FB7FF9CEDD9A319B968 /* OYBCTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OYBCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B37DB9688050E788877CC59 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
+		1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTaskFormView.swift; sourceTree = "<group>"; };
 		2822E1DBF15699974C2F70C5 /* OYBCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCTests.swift; sourceTree = "<group>"; };
+		34742747DBBD390A07DC633A /* BingoSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoSquare.swift; sourceTree = "<group>"; };
+		476EB8034735B0ACC9032FA9 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
+		49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoBoard.swift; sourceTree = "<group>"; };
 		4ADD7157FF545AFEC6EF9588 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B55F24D17BE0A2E4D024288 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		4C85054E57A078D4AAEC7EB6 /* OYBC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OYBC.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F879A103A0FE383E497F464 /* CenterSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenterSquare.swift; sourceTree = "<group>"; };
+		52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundUtils.swift; sourceTree = "<group>"; };
+		5A4A008E558F76153F461B0B /* BoardGeneratorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardGeneratorPlayground.swift; sourceTree = "<group>"; };
+		5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
+		6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
 		73F91261A5D2B914C87A9E59 /* Board.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Board.swift; sourceTree = "<group>"; };
 		854FEF8734BD37239F0A8462 /* BoardTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardTask.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoSquare.swift; sourceTree = "<group>"; };
-		A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
-		B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardGeneratorPlayground.swift; sourceTree = "<group>"; };
-		B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
+		A5D833627B1CDD7BE3E829AC /* ProgressStepRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressStepRowView.swift; sourceTree = "<group>"; };
 		B70713D5FB25DE3392CD3CEE /* Schema.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = Schema.sql; sourceTree = "<group>"; };
-		C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoBoard.swift; sourceTree = "<group>"; };
 		C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCApp.swift; sourceTree = "<group>"; };
-		D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
-		D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTaskFormView.swift; sourceTree = "<group>"; };
+		D0052BFE5116994683E79480 /* CompositeTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTask.swift; sourceTree = "<group>"; };
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
-		E1F2A3B4C5D6E7F8A9B0C1D2 /* CompositeTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTask.swift; sourceTree = "<group>"; };
-		F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
-		G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenterSquare.swift; sourceTree = "<group>"; };
-		I0D1E2F3A4B5C6D7E8F9A0B1 /* CountingStepFieldsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountingStepFieldsView.swift; sourceTree = "<group>"; };
-		K2F3A4B5C6D7E8F9A0B1C2D3 /* ProgressStepRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressStepRowView.swift; sourceTree = "<group>"; };
-		X5Y6Z7A8B9C0D1E2F3G4H5I6 /* PlaygroundUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundUtils.swift; sourceTree = "<group>"; };
-		Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTaskCreatorPlayground.swift; sourceTree = "<group>"; };
+		DD08A8AFE2E5BD265E813DC4 /* UnifiedTaskCreatorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTaskCreatorPlayground.swift; sourceTree = "<group>"; };
+		EA07280EAE71A1F3F97DFC4D /* SubtaskDerivationPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtaskDerivationPlayground.swift; sourceTree = "<group>"; };
+		F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountingStepFieldsView.swift; sourceTree = "<group>"; };
+		FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -89,6 +91,30 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1B45E6A56872A0AAB9A5199F /* Playground */ = {
+			isa = PBXGroup;
+			children = (
+				5A4A008E558F76153F461B0B /* BoardGeneratorPlayground.swift */,
+				1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */,
+				52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */,
+				EA07280EAE71A1F3F97DFC4D /* SubtaskDerivationPlayground.swift */,
+				FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */,
+				DD08A8AFE2E5BD265E813DC4 /* UnifiedTaskCreatorPlayground.swift */,
+			);
+			path = Playground;
+			sourceTree = "<group>";
+		};
+		34A9C4EF5E8E5F349CF44BB3 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */,
+				34742747DBBD390A07DC633A /* BingoSquare.swift */,
+				F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */,
+				A5D833627B1CDD7BE3E829AC /* ProgressStepRowView.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
 		3AD387F508B024065D14DBAE /* Database */ = {
 			isa = PBXGroup;
 			children = (
@@ -104,7 +130,7 @@
 			children = (
 				C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */,
 				3AD387F508B024065D14DBAE /* Database */,
-				A7B8C9D0E1F2A3B4C5D6E7F8 /* Services */,
+				5EB2589FD1AC89FEF6CE8CC3 /* Services */,
 				E04B680C4AB00EFB7FB680F9 /* Views */,
 			);
 			path = OYBC;
@@ -119,12 +145,22 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		5EB2589FD1AC89FEF6CE8CC3 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				476EB8034735B0ACC9032FA9 /* BingoDetection.swift */,
+				4F879A103A0FE383E497F464 /* CenterSquare.swift */,
+				6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
 		6BEC4DAFE1D783BB07E518EE /* Models */ = {
 			isa = PBXGroup;
 			children = (
 				73F91261A5D2B914C87A9E59 /* Board.swift */,
 				854FEF8734BD37239F0A8462 /* BoardTask.swift */,
-				E1F2A3B4C5D6E7F8A9B0C1D2 /* CompositeTask.swift */,
+				D0052BFE5116994683E79480 /* CompositeTask.swift */,
 				DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */,
 				0436CC51A477FF70932A9546 /* SyncQueue.swift */,
 				149C3CA55D0467096B13D935 /* Task.swift */,
@@ -137,30 +173,9 @@
 			isa = PBXGroup;
 			children = (
 				2822E1DBF15699974C2F70C5 /* OYBCTests.swift */,
-				D4E5F6A7B8C9D1E2F3A4B5C6 /* ShuffleTests.swift */,
+				5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */,
 			);
 			path = OYBCTests;
-			sourceTree = "<group>";
-		};
-		A7B8C9D0E1F2A3B4C5D6E7F8 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				F6A7B8C9D0E1F2A3B4C5D6E7 /* BingoDetection.swift */,
-				G8B9C0D1E2F3A4B5C6D7E8F9 /* CenterSquare.swift */,
-				B2C3D4E5F6A7B8C9D0E1F2A4 /* Shuffle.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
-		C2D3E4F5A6B7C8D9E0F1A2B3 /* Components */ = {
-			isa = PBXGroup;
-			children = (
-				C3D4E5F6A7B8C9D0E1F2A3B4 /* BingoBoard.swift */,
-				A1B2C3D4E5F6A7B8C9D0E1F2 /* BingoSquare.swift */,
-				I0D1E2F3A4B5C6D7E8F9A0B1 /* CountingStepFieldsView.swift */,
-				K2F3A4B5C6D7E8F9A0B1C2D3 /* ProgressStepRowView.swift */,
-			);
-			path = Components;
 			sourceTree = "<group>";
 		};
 		D73D18C4A782BA0C6CB59E47 = {
@@ -177,22 +192,10 @@
 			children = (
 				4ADD7157FF545AFEC6EF9588 /* ContentView.swift */,
 				032F40E3064154C5E3108AB4 /* PlaygroundView.swift */,
-				C2D3E4F5A6B7C8D9E0F1A2B3 /* Components */,
-				W4X5Y6Z7A8B9C0D1E2F3G4H5 /* Playground */,
+				34A9C4EF5E8E5F349CF44BB3 /* Components */,
+				1B45E6A56872A0AAB9A5199F /* Playground */,
 			);
 			path = Views;
-			sourceTree = "<group>";
-		};
-		W4X5Y6Z7A8B9C0D1E2F3G4H5 /* Playground */ = {
-			isa = PBXGroup;
-			children = (
-				X5Y6Z7A8B9C0D1E2F3G4H5I6 /* PlaygroundUtils.swift */,
-				Y6Z7A8B9C0D1E2F3G4H5I6J7 /* UnifiedTaskCreatorPlayground.swift */,
-				D5E6F7A8B9C0D1E2F3A4B5C6 /* CompositeTaskFormView.swift */,
-				B2C3D4E5F6A7B8C9D0E1F2A3 /* BoardGeneratorPlayground.swift */,
-				A9B0C1D2E3F4A5B6C7D8E9F0 /* TaskSquareActionsPlayground.swift */,
-			);
-			path = Playground;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -244,18 +247,14 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					649ED9C362239F55CE47277B = {
-						ProvisioningStyle = Automatic;
-					};
 					9F5E8011F4A8F3E3010DEF60 = {
 						ProvisioningStyle = Automatic;
 					};
 				};
 			};
 			buildConfigurationList = D57E4A84D33E00E3AD508C4A /* Build configuration list for PBXProject "OYBC" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -267,6 +266,8 @@
 			packageReferences = (
 				79E5F34F611D045523BAC683 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 58CCF2A47CA60303B518F138 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -315,27 +316,28 @@
 			buildActionMask = 2147483647;
 			files = (
 				9ECE28E0A8E7C648C808CD01 /* AppDatabase.swift in Sources */,
-				E5F6A7B8C9D0E1F2A3B4C5D6 /* BingoDetection.swift in Sources */,
-				D4E5F6A7B8C9D0E1F2A3B4C5 /* BingoBoard.swift in Sources */,
-				B1C2D3E4F5A6B7C8D9E0F1A2 /* BingoSquare.swift in Sources */,
-				H9C0D1E2F3A4B5C6D7E8F9A0 /* CountingStepFieldsView.swift in Sources */,
-				J1E2F3A4B5C6D7E8F9A0B1C2 /* ProgressStepRowView.swift in Sources */,
-				C0D1E2F3G4H5I6J7K8L9M0N1 /* PlaygroundUtils.swift in Sources */,
-				D1E2F3G4H5I6J7K8L9M0N1O2 /* UnifiedTaskCreatorPlayground.swift in Sources */,
-				C4D5E6F7A8B9C0D1E2F3A4B5 /* CompositeTaskFormView.swift in Sources */,
-				E6F7A8B9C0D1E2F3A4B5C6D7 /* BoardGeneratorPlayground.swift in Sources */,
+				385DD3AF707F8A87CB285762 /* BingoBoard.swift in Sources */,
+				A6F3DCD9274923158442DA36 /* BingoDetection.swift in Sources */,
+				B2FCC0C6923A5FD1DD19A429 /* BingoSquare.swift in Sources */,
 				9F0D8D9AA79597CE605BD66A /* Board.swift in Sources */,
+				4C1404F4AF8D7B699FF5DC50 /* BoardGeneratorPlayground.swift in Sources */,
 				A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */,
-				F0A1B2C3D4E5F6A7B8C9D0E1 /* CompositeTask.swift in Sources */,
+				5BBF160330B3C5EBABCE096B /* CenterSquare.swift in Sources */,
+				E8FAA1849B7D23A6BE8201A2 /* CompositeTask.swift in Sources */,
+				B92DF575684C12C09A6778F0 /* CompositeTaskFormView.swift in Sources */,
 				4B2B6ED94B59B66095A2A7F4 /* ContentView.swift in Sources */,
+				C3B8B4FD9C30EBC428EC52E6 /* CountingStepFieldsView.swift in Sources */,
 				37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */,
+				40223EBA0D9B7B25CCB1931A /* PlaygroundUtils.swift in Sources */,
 				A3FBDF82011C7F6ED8D3F7C5 /* PlaygroundView.swift in Sources */,
 				E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */,
+				9CFB0C8623103103E895A83D /* ProgressStepRowView.swift in Sources */,
+				EB546963E080BD0C7D5EDDBD /* Shuffle.swift in Sources */,
+				9D6C633E19038C7202F46256 /* SubtaskDerivationPlayground.swift in Sources */,
 				619A5E4D57F256C847CC9A50 /* SyncQueue.swift in Sources */,
 				1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */,
-				A1B2C3D4E5F6A7B8D9E0F1A3 /* Shuffle.swift in Sources */,
-				F7A8B9C0D1E2F3A4B5C6D7E8 /* CenterSquare.swift in Sources */,
-				B0C1D2E3F4A5B6C7D8E9F0A1 /* TaskSquareActionsPlayground.swift in Sources */,
+				A4D761B3D3CB7A3326F7B11F /* TaskSquareActionsPlayground.swift in Sources */,
+				3C42ABF9B38079BEB9105DC2 /* UnifiedTaskCreatorPlayground.swift in Sources */,
 				9C24CDBF218203559E063F7F /* User.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -345,7 +347,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5C2D41E4AAD6F8F30FAF9B67 /* OYBCTests.swift in Sources */,
-				C3D4E5F6A7B8C9D1E2F3A4B5 /* ShuffleTests.swift in Sources */,
+				BD7E816390E48BAA75582B89 /* ShuffleTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -382,6 +384,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.oybc.OYBC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;
@@ -428,7 +431,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -450,7 +452,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.9;
@@ -479,6 +480,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.oybc.OYBC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;
@@ -491,7 +493,6 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -509,7 +510,6 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -561,7 +561,6 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -576,7 +575,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;

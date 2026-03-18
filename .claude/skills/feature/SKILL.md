@@ -115,19 +115,25 @@ Before adding ANY feature: **"Could I point to the user's exact words requesting
    - Separate core requirements (user requested) from optional extras
    - Present optional extras to user: "Include this? Y/N"
 
-4. **GATE 1: User Plan Approval** (MANDATORY)
+4. **Save Design Doc** (MANDATORY for non-trivial features)
+   - Write design decisions and scope to `docs/superpowers/specs/YYYY-MM-DD-<feature>-design.md`
+   - This persists decisions across conversations so future sessions have context
+   - Include: design decisions, scope (in/out), sub-feature breakdown if applicable, data model changes
+
+5. **GATE 1: User Plan Approval** (MANDATORY)
    - **STOP and present plan to user**
    - Show:
      - What will be implemented (IN SCOPE)
      - What will NOT be implemented (OUT OF SCOPE)
      - Approach and components
+     - Link to saved design doc
    - User can:
      - Approve -> Proceed to Phase 2
      - Request changes -> Revise and re-present
      - Cancel -> Stop work
    - **Do NOT proceed without explicit user approval**
 
-**Deliverable**: User-approved implementation plan with locked scope.
+**Deliverable**: User-approved implementation plan with locked scope and persisted design doc.
 
 ---
 
