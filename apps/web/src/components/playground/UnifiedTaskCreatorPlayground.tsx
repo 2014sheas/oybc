@@ -4,8 +4,11 @@ import { TaskType, generateCounterTaskTitle, type Task, type TaskStep, type Comp
 import { db } from '../../db/database';
 import { createTask } from '../../db';
 import { useTasks, useTaskSteps } from '../../hooks';
-import { ProgressStepRow, type StepFormState, createEmptyStep } from './ProgressStepRow';
-import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
+import { TypeBadge } from '../TypeBadge';
+import { FilterTabs } from '../FilterTabs';
+import { TaskTypeSelector } from '../TaskTypeSelector';
+import { ProgressStepRow, type StepFormState, createEmptyStep } from '../ProgressStepRow';
+import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS, getCharCountClass, formatOperatorLabel } from './playgroundUtils';
 import { CompositeTaskForm } from './CompositeTaskForm';
 import styles from './UnifiedTaskCreatorPlayground.module.css';
 
@@ -80,31 +83,6 @@ interface FormErrors {
     }
   >;
   general?: string;
-}
-
-/**
- * Returns the human-readable operator label for a composite detail.
- *
- * @param detail - The resolved composite detail
- * @returns Display string such as "All of", "Any of", or "At least 2 of 3"
- */
-function operatorLabel(detail: CompositeDetail): string {
-  if (detail.operatorType === 'AND') return 'All of';
-  if (detail.operatorType === 'OR') return 'Any of';
-  return `At least ${detail.threshold ?? '?'} of ${detail.leafCount}`;
-}
-
-/**
- * Returns CSS class for character count based on proximity to limit.
- *
- * @param current - Current character count
- * @param max - Maximum allowed characters
- * @returns CSS class name string
- */
-function getCharCountClass(current: number, max: number): string {
-  if (current > max) return `${styles.charCount} ${styles.charCountError}`;
-  if (current >= max * 0.9) return `${styles.charCount} ${styles.charCountWarning}`;
-  return styles.charCount;
 }
 
 /**
@@ -233,9 +211,7 @@ function ProgressStepList({ taskId }: { taskId: string }): React.ReactElement {
       {steps.map((step: TaskStep) => (
         <li key={step.id} className={styles.libraryStepItem}>
           <span className={styles.libraryStepTitle}>{step.title}</span>
-          <span className={`${styles.typeBadge} ${styles[`typeBadge${step.type.charAt(0).toUpperCase()}${step.type.slice(1)}`]}`}>
-            {step.type.toUpperCase()}
-          </span>
+          <TypeBadge type={step.type} size="small" />
           {step.type === 'counting' && step.action && step.unit && step.maxCount !== undefined && (
             <span className={styles.libraryStepMeta}>{step.action} {step.maxCount} {step.unit}</span>
           )}
@@ -256,9 +232,7 @@ function TaskLibraryCard({ task, membership }: { task: Task; membership?: TaskCo
     <div className={styles.taskCard}>
       <div className={styles.taskCardHeader}>
         <span className={styles.taskTitle}>{task.title}</span>
-        <span className={`${styles.typeBadge} ${styles[`typeBadge${task.type.charAt(0).toUpperCase()}${task.type.slice(1)}`]}`}>
-          {task.type.toUpperCase()}
-        </span>
+        <TypeBadge type={task.type} />
         {membership && (
           <span className={styles.compositeMemberBadge}>
             {membership.title}{membership.extra > 0 ? ` +${membership.extra}` : ''}
@@ -598,18 +572,11 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
           <label className={styles.label}>
             Type<span className={styles.required}>*</span>
           </label>
-          <div className={styles.typeSelector}>
-            {TASK_TYPES.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                className={`${styles.typeButton} ${taskType === t.value ? styles.typeButtonActive : ''}`}
-                onClick={() => handleTypeChange(t.value)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <TaskTypeSelector
+            types={TASK_TYPES}
+            selectedType={taskType}
+            onTypeChange={(value) => handleTypeChange(value as TaskTypeOrComposite)}
+          />
         </div>
 
         {/* Composite Task Form — shown when composite type is selected */}
@@ -636,7 +603,7 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
                 placeholder={taskType === TaskType.COUNTING ? 'Auto-generated if blank (e.g., "Run 26 miles")' : 'Enter task title'}
                 maxLength={TITLE_MAX_LENGTH + 1}
               />
-              <span className={getCharCountClass(title.length, TITLE_MAX_LENGTH)}>
+              <span className={getCharCountClass(title.length, TITLE_MAX_LENGTH, styles)}>
                 {title.length}/{TITLE_MAX_LENGTH}
               </span>
               {errors.title && (
@@ -662,7 +629,7 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
                 placeholder="Enter task description (optional)"
                 maxLength={DESCRIPTION_MAX_LENGTH + 1}
               />
-              <span className={getCharCountClass(description.length, DESCRIPTION_MAX_LENGTH)}>
+              <span className={getCharCountClass(description.length, DESCRIPTION_MAX_LENGTH, styles)}>
                 {description.length}/{DESCRIPTION_MAX_LENGTH}
               </span>
               {errors.description && (
@@ -807,18 +774,11 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
         <h4 className={styles.sectionTitle}>Task Library</h4>
 
         {/* Filter Tabs */}
-        <div className={styles.filterTabs}>
-          {TYPE_FILTER_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              className={`${styles.filterTab} ${filterType === tab.value ? styles.filterTabActive : ''}`}
-              onClick={() => setFilterType(tab.value)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <FilterTabs
+          tabs={TYPE_FILTER_TABS}
+          activeTab={filterType}
+          onTabChange={(value) => setFilterType(value as 'all' | TaskTypeOrComposite)}
+        />
 
         {/* Task List */}
         {filteredTasks.length === 0 && filteredCompositeTasks.length === 0 ? (
@@ -839,9 +799,7 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
                 <div key={ct.id} className={styles.taskCard}>
                   <div className={styles.taskCardHeader}>
                     <span className={styles.taskTitle}>{ct.title}</span>
-                    <span className={`${styles.typeBadge} ${styles.typeBadgeComposite}`}>
-                      COMPOSITE
-                    </span>
+                    <TypeBadge type="composite" />
                   </div>
                   {ct.description && (
                     <p className={styles.taskDescription}>{ct.description}</p>
@@ -850,7 +808,7 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
                     <>
                       <div className={styles.compositeOperatorRow}>
                         <span className={styles.taskMeta}>
-                          {operatorLabel(detail)} · {detail.leafCount} subtask{detail.leafCount === 1 ? '' : 's'}
+                          {formatOperatorLabel(detail.operatorType, detail.threshold, detail.leafCount)} · {detail.leafCount} subtask{detail.leafCount === 1 ? '' : 's'}
                         </span>
                         <button
                           type="button"
@@ -867,9 +825,7 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
                             <li key={i} className={styles.compositeSubtaskItem}>
                               <span className={styles.compositeSubtaskBullet}>·</span>
                               <span className={styles.compositeSubtaskTitle}>{leaf.title}</span>
-                              <span className={`${styles.typeBadge} ${styles[`typeBadge${leaf.badgeType.charAt(0).toUpperCase()}${leaf.badgeType.slice(1)}`]}`}>
-                                {leaf.badgeType.toUpperCase()}
-                              </span>
+                              <TypeBadge type={leaf.badgeType} size="small" />
                             </li>
                           ))}
                         </ul>

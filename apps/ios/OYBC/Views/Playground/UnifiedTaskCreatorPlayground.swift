@@ -334,7 +334,7 @@ struct UnifiedTaskCreatorPlayground: View {
                 Text(task.title)
                     .font(.headline)
                 Spacer()
-                typeBadge(for: task.type)
+                TypeBadgeView(type: task.type.rawValue, size: .small)
                 if let membership = membership {
                     let suffix = membership.extra > 0 ? " +\(membership.extra)" : ""
                     Text("\(membership.title)\(suffix)")
@@ -374,7 +374,7 @@ struct UnifiedTaskCreatorPlayground: View {
                                 Text(step.title)
                                     .font(.subheadline)
                                 Spacer()
-                                typeBadge(for: step.type)
+                                TypeBadgeView(type: step.type.rawValue, size: .small)
                             }
                             if step.type == .counting,
                                let action = step.action,
@@ -412,12 +412,7 @@ struct UnifiedTaskCreatorPlayground: View {
                 Text(ct.title)
                     .font(.headline)
                 Spacer()
-                Text("COMPOSITE")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.indigo.opacity(0.2))
-                    .cornerRadius(4)
+                TypeBadgeView(type: "composite", size: .small)
             }
             if let desc = ct.description, !desc.isEmpty {
                 Text(desc)
@@ -454,7 +449,7 @@ struct UnifiedTaskCreatorPlayground: View {
                                 Text(detail.leaves[i].title)
                                     .font(.subheadline)
                                 Spacer()
-                                leafTypeBadge(detail.leaves[i].badgeType)
+                                TypeBadgeView(type: "\(detail.leaves[i].badgeType)", size: .small)
                             }
                         }
                     }
@@ -466,47 +461,6 @@ struct UnifiedTaskCreatorPlayground: View {
         .padding(12)
         .background(Color(.systemGray6))
         .cornerRadius(8)
-    }
-
-    /// Renders a colored type badge for a composite subtask leaf.
-    ///
-    /// - Parameter badgeType: The badge type to display.
-    @ViewBuilder
-    private func leafTypeBadge(_ badgeType: CompositeBadgeType) -> some View {
-        let (label, color): (String, Color) = {
-            switch badgeType {
-            case .normal:    return ("NORMAL", .blue)
-            case .counting:  return ("COUNTING", .orange)
-            case .progress:  return ("PROGRESS", .purple)
-            case .composite: return ("COMPOSITE", .indigo)
-            }
-        }()
-        Text(label)
-            .font(.caption)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.2))
-            .cornerRadius(4)
-    }
-
-    /// Renders a colored type badge label.
-    ///
-    /// - Parameter type: The TaskType to render a badge for.
-    @ViewBuilder
-    private func typeBadge(for type: TaskType) -> some View {
-        let (label, color): (String, Color) = {
-            switch type {
-            case .normal:   return ("NORMAL", .blue)
-            case .counting: return ("COUNTING", .orange)
-            case .progress: return ("PROGRESS", .purple)
-            }
-        }()
-        Text(label)
-            .font(.caption)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.2))
-            .cornerRadius(4)
     }
 
     // MARK: - Actions

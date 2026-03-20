@@ -21,7 +21,7 @@ import {
   type TaskSquareData,
   type SquareState,
   type ContextMenuState,
-} from './InteractiveTaskSquare';
+} from '../InteractiveTaskSquare';
 import styles from './CrossBoardRollupPlayground.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

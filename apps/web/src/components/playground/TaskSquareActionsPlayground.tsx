@@ -7,7 +7,7 @@ import {
   type TaskSquareData,
   type SquareState,
   type ContextMenuState,
-} from './InteractiveTaskSquare';
+} from '../InteractiveTaskSquare';
 import styles from './TaskSquareActionsPlayground.module.css';
 
 // ─── Demo data ────────────────────────────────────────────────────────────────

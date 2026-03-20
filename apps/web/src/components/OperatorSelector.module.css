@@ -1,0 +1,26 @@
+.operatorPicker {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.operatorButton {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.operatorButton:hover {
+  border-color: var(--active-bg);
+}
+
+.operatorButtonActive {
+  background-color: var(--active-bg);
+  border-color: var(--active-bg);
+  color: #ffffff;
+}

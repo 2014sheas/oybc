@@ -4,115 +4,11 @@
   gap: 1rem;
 }
 
-/* Filter tabs */
-.filterTabs {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.filterTab {
-  padding: 0.35rem 0.8rem;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.8rem;
-  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
-}
-
-.filterTab:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
-}
-
-.filterTab.filterTabActive {
-  border-color: var(--active-bg);
-  background-color: var(--active-bg);
-  color: #ffffff;
-}
-
 /* Task list in selector */
 .taskSelectorList {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-}
-
-.taskSelectorItem {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background-color: var(--bg-primary);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s, background-color 0.15s;
-  width: 100%;
-}
-
-.taskSelectorItem:hover {
-  border-color: var(--active-bg);
-  background-color: var(--card-bg);
-}
-
-.taskSelectorItem.taskSelectorItemActive {
-  border-color: var(--active-bg);
-  background-color: var(--active-bg);
-}
-
-.taskSelectorItem.taskSelectorItemActive .taskSelectorTitle {
-  color: #ffffff;
-}
-
-.taskSelectorItem.taskSelectorItemActive .typeBadge {
-  filter: brightness(1.2);
-}
-
-.taskSelectorTitle {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Type badges */
-.typeBadge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.typeBadgeNormal {
-  background-color: var(--info-bg);
-  color: var(--info-text);
-}
-
-.typeBadgeCounting {
-  background-color: var(--warning-bg, #fff3cd);
-  color: var(--warning-text, #856404);
-}
-
-.typeBadgeProgress {
-  background-color: var(--success-bg);
-  color: var(--success-text);
-}
-
-.typeBadgeComposite {
-  background-color: var(--info-bg, #cfe2ff);
-  color: var(--info-text, #084298);
 }
 
 /* Linked task badge (green) */
@@ -415,42 +311,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-}
-
-.poolItem {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background-color: var(--card-bg);
-}
-
-.poolItemTitle {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.poolRemoveButton {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 1.2rem;
-  cursor: pointer;
-  padding: 0 0.25rem;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.poolRemoveButton:hover {
-  color: var(--error-text);
 }
 
 .poolClearButton {

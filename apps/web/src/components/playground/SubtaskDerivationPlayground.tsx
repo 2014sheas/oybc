@@ -12,6 +12,10 @@ import {
 import { db } from '../../db/database';
 import { createTask } from '../../db/operations/tasks';
 import { useTasks, useTaskSteps } from '../../hooks';
+import { TypeBadge } from '../TypeBadge';
+import { FilterTabs } from '../FilterTabs';
+import { SelectableTaskItem } from '../SelectableTaskItem';
+import { PoolItem } from '../PoolItem';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
 import styles from './SubtaskDerivationPlayground.module.css';
 
@@ -29,24 +33,15 @@ const FILTER_TABS: { value: FilterType; label: string }[] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Returns the CSS class suffix for a task type badge.
- *
- * @param type - Task type string
- * @returns Capitalised type string matching the CSS module convention
- */
-function typeBadgeClass(type: string): string {
-  return type.charAt(0).toUpperCase() + type.slice(1);
-}
-
-/**
  * Returns the human-readable operator description for a composite's root operator.
+ * Uses a more detailed format than the shared utility for the derivation context.
  *
  * @param operatorType - The OperatorType enum value
  * @param threshold - Required for M_OF_N; the minimum count
  * @param leafCount - Total number of leaf nodes
  * @returns Display string such as "AND (all required)"
  */
-function formatOperatorLabel(
+function formatOperatorLabelDetailed(
   operatorType: OperatorType,
   threshold: number | undefined,
   leafCount: number
@@ -235,11 +230,7 @@ function ProgressDerivationPanel({
 
           <div className={styles.stepBadges}>
             {/* Step type badge */}
-            <span
-              className={`${styles.typeBadge} ${styles[`typeBadge${typeBadgeClass(step.type)}`]}`}
-            >
-              {step.type.toUpperCase()}
-            </span>
+            <TypeBadge type={step.type} size="small" />
 
             {/* Action: add to pool or extract first */}
             {step.linkedTaskId ? (
@@ -317,7 +308,7 @@ function CompositeDerivationPanel({
   }
 
   const operatorType = rootNode.operatorType as OperatorType;
-  const operatorDisplay = formatOperatorLabel(operatorType, rootNode.threshold, leafNodes.length);
+  const operatorDisplay = formatOperatorLabelDetailed(operatorType, rootNode.threshold, leafNodes.length);
 
   return (
     <>
@@ -352,11 +343,7 @@ function CompositeDerivationPanel({
               <li key={leaf.id} className={styles.leafItem}>
                 <span className={styles.leafBullet}>·</span>
                 <span className={styles.leafTitle}>{leafTitle}</span>
-                <span
-                  className={`${styles.typeBadge} ${styles[`typeBadge${typeBadgeClass(badgeType)}`]}`}
-                >
-                  {badgeType.toUpperCase()}
-                </span>
+                <TypeBadge type={badgeType} size="small" />
                 {inLibrary && leaf.taskId && (
                   isInPool(leaf.taskId) ? (
                     <span className={styles.linkedBadge}>In Pool ✓</span>
@@ -680,18 +667,11 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
       )}
 
       {/* Filter tabs */}
-      <div className={styles.filterTabs}>
-        {FILTER_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            className={`${styles.filterTab} ${filterType === tab.value ? styles.filterTabActive : ''}`}
-            onClick={() => handleFilterChange(tab.value)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <FilterTabs
+        tabs={FILTER_TABS}
+        activeTab={filterType}
+        onTabChange={(value) => handleFilterChange(value as FilterType)}
+      />
 
       {/* Task list with inline derivation panels */}
       {totalVisible === 0 ? (
@@ -703,21 +683,12 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
           {/* Regular tasks */}
           {filteredTasks.map((task: Task) => (
             <div key={task.id}>
-              <button
-                type="button"
-                className={`${styles.taskSelectorItem} ${
-                  selectedTaskId === task.id ? styles.taskSelectorItemActive : ''
-                }`}
-                onClick={() => handleSelect(task.id)}
-                aria-pressed={selectedTaskId === task.id}
-              >
-                <span className={styles.taskSelectorTitle}>{task.title}</span>
-                <span
-                  className={`${styles.typeBadge} ${styles[`typeBadge${typeBadgeClass(task.type)}`]}`}
-                >
-                  {task.type.toUpperCase()}
-                </span>
-              </button>
+              <SelectableTaskItem
+                title={task.title}
+                type={task.type}
+                isSelected={selectedTaskId === task.id}
+                onSelect={() => handleSelect(task.id)}
+              />
               {selectedTaskId === task.id && renderInlineTaskPanel(task)}
             </div>
           ))}
@@ -725,19 +696,12 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
           {/* Composite tasks */}
           {filteredCompositeTasks.map((ct: CompositeTask) => (
             <div key={ct.id}>
-              <button
-                type="button"
-                className={`${styles.taskSelectorItem} ${
-                  selectedTaskId === ct.id ? styles.taskSelectorItemActive : ''
-                }`}
-                onClick={() => handleSelect(ct.id)}
-                aria-pressed={selectedTaskId === ct.id}
-              >
-                <span className={styles.taskSelectorTitle}>{ct.title}</span>
-                <span className={`${styles.typeBadge} ${styles.typeBadgeComposite}`}>
-                  COMPOSITE
-                </span>
-              </button>
+              <SelectableTaskItem
+                title={ct.title}
+                type="composite"
+                isSelected={selectedTaskId === ct.id}
+                onSelect={() => handleSelect(ct.id)}
+              />
               {selectedTaskId === ct.id && renderInlineCompositePanel(ct)}
             </div>
           ))}
@@ -759,22 +723,12 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
         ) : (
           <div className={styles.poolList}>
             {boardPool.map((entry) => (
-              <div key={entry.taskId} className={styles.poolItem}>
-                <span className={styles.poolItemTitle}>{entry.title}</span>
-                <span
-                  className={`${styles.typeBadge} ${styles[`typeBadge${typeBadgeClass(entry.type)}`]}`}
-                >
-                  {entry.type.toUpperCase()}
-                </span>
-                <button
-                  type="button"
-                  className={styles.poolRemoveButton}
-                  onClick={() => removeFromPool(entry.taskId)}
-                  title="Remove from pool"
-                >
-                  ×
-                </button>
-              </div>
+              <PoolItem
+                key={entry.taskId}
+                title={entry.title}
+                type={entry.type}
+                onRemove={() => removeFromPool(entry.taskId)}
+              />
             ))}
             <button
               type="button"

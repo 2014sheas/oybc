@@ -202,7 +202,7 @@ struct SubtaskDerivationPlayground: View {
                                 .font(.subheadline)
                                 .lineLimit(1)
                             Spacer()
-                            taskTypeBadgeFromString(entry.type)
+                            TypeBadgeView(type: entry.type, size: .small)
                             Button {
                                 boardPool.removeAll { $0.taskId == entry.taskId }
                             } label: {
@@ -255,7 +255,7 @@ struct SubtaskDerivationPlayground: View {
                     }
                 }
                 Spacer()
-                taskTypeBadge(for: task.type)
+                TypeBadgeView(type: task.type.rawValue, size: .small)
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.accentColor)
@@ -292,12 +292,7 @@ struct SubtaskDerivationPlayground: View {
                     }
                 }
                 Spacer()
-                Text("COMPOSITE")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.indigo.opacity(0.2))
-                    .cornerRadius(4)
+                TypeBadgeView(type: "composite", size: .small)
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.accentColor)
@@ -346,7 +341,7 @@ struct SubtaskDerivationPlayground: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Spacer()
-                taskTypeBadge(for: task.type)
+                TypeBadgeView(type: task.type.rawValue, size: .small)
             }
 
             Text("Normal tasks cannot be subdivided.")
@@ -370,7 +365,7 @@ struct SubtaskDerivationPlayground: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Spacer()
-                taskTypeBadge(for: task.type)
+                TypeBadgeView(type: task.type.rawValue, size: .small)
             }
 
             // Parent task metadata
@@ -468,7 +463,7 @@ struct SubtaskDerivationPlayground: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Spacer()
-                taskTypeBadge(for: task.type)
+                TypeBadgeView(type: task.type.rawValue, size: .small)
             }
 
             if taskSteps.isEmpty {
@@ -509,7 +504,7 @@ struct SubtaskDerivationPlayground: View {
                         Text(step.title)
                             .font(.subheadline)
                         Spacer()
-                        taskTypeBadge(for: step.type)
+                        TypeBadgeView(type: step.type.rawValue, size: .small)
                     }
 
                     // Counting step metadata
@@ -594,12 +589,7 @@ struct SubtaskDerivationPlayground: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Spacer()
-                Text("COMPOSITE")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.indigo.opacity(0.2))
-                    .cornerRadius(4)
+                TypeBadgeView(type: "composite", size: .small)
             }
 
             if compositeNodes.isEmpty {
@@ -622,7 +612,12 @@ struct SubtaskDerivationPlayground: View {
                             Text(operatorLabel(opType, threshold: root.threshold, leafCount: leafNodes.count))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                            operatorBadge(opType)
+                            Text(opType.rawValue)
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.2))
+                                .cornerRadius(4)
                         }
                     }
 
@@ -676,17 +671,12 @@ struct SubtaskDerivationPlayground: View {
                     }
                 }
                 Spacer()
-                taskTypeBadge(for: task.type)
+                TypeBadgeView(type: task.type.rawValue, size: .small)
             } else if let childId = node.childCompositeTaskId, let child = compositeMap[childId] {
                 Text(child.title)
                     .font(.subheadline)
                 Spacer()
-                Text("COMPOSITE")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.indigo.opacity(0.2))
-                    .cornerRadius(4)
+                TypeBadgeView(type: "composite", size: .small)
             } else {
                 Text("Unknown reference")
                     .font(.subheadline)
@@ -697,48 +687,6 @@ struct SubtaskDerivationPlayground: View {
         .padding(8)
         .background(Color(.systemGray5))
         .cornerRadius(6)
-    }
-
-    // MARK: - Shared Badge Helpers
-
-    /// Renders a colored type badge for a task type.
-    ///
-    /// - Parameter type: The TaskType to render a badge for.
-    @ViewBuilder
-    private func taskTypeBadge(for type: TaskType) -> some View {
-        let (label, color): (String, Color) = {
-            switch type {
-            case .normal:   return ("NORMAL", .blue)
-            case .counting: return ("COUNTING", .orange)
-            case .progress: return ("PROGRESS", .purple)
-            }
-        }()
-        Text(label)
-            .font(.caption)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.2))
-            .cornerRadius(4)
-    }
-
-    /// Renders a small colored badge for a composite operator type.
-    ///
-    /// - Parameter type: The OperatorType to badge.
-    @ViewBuilder
-    private func operatorBadge(_ type: OperatorType) -> some View {
-        let (label, color): (String, Color) = {
-            switch type {
-            case .and:   return ("AND", .blue)
-            case .or:    return ("OR", .teal)
-            case .mOfN:  return ("M of N", .purple)
-            }
-        }()
-        Text(label)
-            .font(.caption)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.2))
-            .cornerRadius(4)
     }
 
     /// Inline key/value chip used in the counting panel metadata row.
@@ -1009,18 +957,4 @@ struct SubtaskDerivationPlayground: View {
         boardPool.append((taskId: taskId, title: title, type: type))
     }
 
-    /// Renders a type badge from a raw string value.
-    @ViewBuilder
-    private func taskTypeBadgeFromString(_ type: String) -> some View {
-        if let taskType = TaskType(rawValue: type) {
-            taskTypeBadge(for: taskType)
-        } else {
-            Text(type.uppercased())
-                .font(.caption)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.indigo.opacity(0.2))
-                .cornerRadius(4)
-        }
-    }
 }

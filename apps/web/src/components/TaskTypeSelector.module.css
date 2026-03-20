@@ -1,0 +1,33 @@
+.typeSelector {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.typeButton {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.typeButton:hover {
+  border-color: var(--active-bg);
+  color: var(--active-bg);
+}
+
+.typeButton.typeButtonActive {
+  border-color: var(--active-bg);
+  background-color: var(--active-bg);
+  color: #ffffff;
+}
+
+@media (max-width: 600px) {
+  .typeSelector {
+    flex-wrap: wrap;
+  }
+}
