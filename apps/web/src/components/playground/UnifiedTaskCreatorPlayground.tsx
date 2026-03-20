@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { TaskType, generateCounterTaskTitle, type Task, type TaskStep, type CompositeTask, type CompositeNode } from '@oybc/shared';
+import { TaskType, OperatorType, generateCounterTaskTitle, type Task, type TaskStep, type CompositeTask, type CompositeNode } from '@oybc/shared';
 import { db } from '../../db/database';
 import { createTask } from '../../db';
 import { useTasks, useTaskSteps } from '../../hooks';
@@ -58,7 +58,7 @@ type TaskCompositeMembershipMap = Record<string, TaskCompositeMembership>;
 
 /** Resolved operator info and subtask list for a composite task card */
 interface CompositeDetail {
-  operatorType: 'AND' | 'OR' | 'M_OF_N';
+  operatorType: OperatorType;
   threshold?: number;
   leafCount: number;
   leaves: CompositeLeaf[];
@@ -360,7 +360,7 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
       return { title: '(unknown)', badgeType: 'normal' as const };
     });
     compositeDetails[ct.id] = {
-      operatorType: rootNode.operatorType as 'AND' | 'OR' | 'M_OF_N',
+      operatorType: rootNode.operatorType as OperatorType,
       threshold: rootNode.threshold,
       leafCount: leafNodes.length,
       leaves,

@@ -1,5 +1,7 @@
 /** Shared constants and utilities for all Playground components */
 
+import { OperatorType } from '@oybc/shared';
+
 /** Mock user ID used consistently across all Playground features */
 export const PLAYGROUND_USER_ID = 'playground-user-1';
 
@@ -29,18 +31,18 @@ export function getCharCountClass(
 /**
  * Returns the human-readable operator description for a composite operator.
  *
- * @param operatorType - The operator type ('AND', 'OR', or 'M_OF_N')
+ * @param operatorType - The operator type (OperatorType.AND, OperatorType.OR, or OperatorType.M_OF_N)
  * @param threshold - Required for M_OF_N; the minimum count
  * @param leafCount - Total number of leaf nodes
  * @returns Display string such as "All of", "Any of", or "At least 2 of 3"
  */
 export function formatOperatorLabel(
-  operatorType: string,
+  operatorType: OperatorType,
   threshold: number | undefined,
   leafCount: number
 ): string {
-  if (operatorType === 'AND') return 'All of';
-  if (operatorType === 'OR') return 'Any of';
+  if (operatorType === OperatorType.AND) return 'All of';
+  if (operatorType === OperatorType.OR) return 'Any of';
   return `At least ${threshold ?? '?'} of ${leafCount}`;
 }
 
