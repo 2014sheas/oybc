@@ -155,6 +155,7 @@ Before adding ANY feature: **"Could I point to the user's exact words requesting
    - Both platforms must have feature parity
    - **Reuse shared Playground utilities** - never re-define constants
    - **Replace obsolete playground sections** - if new feature supersedes old demo, remove it
+   - **Build real components, not throwaway demos** - If a feature needs UI elements (squares, cards, forms), build them as reusable components in `components/` / `Views/Components/` FIRST, then import and use them in the Playground. The Playground is a testing harness for production-ready components, NOT a place to build inline approximations. Never inline UI code in a Playground file that should be a reusable component.
 
    **File Placement (MANDATORY - structural mirroring)**:
    - Each playground feature: own file
