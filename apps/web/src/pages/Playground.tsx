@@ -6,6 +6,7 @@ import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTa
 import { BoardGeneratorPlayground } from '../components/playground/BoardGeneratorPlayground';
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
 import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
+import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
 import { generateTaskNames } from '../components/playground/playgroundUtils';
 import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
@@ -35,6 +36,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'cross-board-rollup',
+      title: 'Cross-Board Progress Rollup',
+      content: <CrossBoardRollupPlayground />,
+    },
     {
       id: 'subtask-derivation',
       title: 'Subtask Derivation Engine',

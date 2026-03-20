@@ -10,8 +10,9 @@ import {
   type CompositeNode,
 } from '@oybc/shared';
 import { db } from '../../db/database';
+import { createTask } from '../../db/operations/tasks';
 import { useTasks, useTaskSteps } from '../../hooks';
-import { PLAYGROUND_USER_ID } from './playgroundUtils';
+import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
 import styles from './SubtaskDerivationPlayground.module.css';
 
 // ─── Filter tab configuration ─────────────────────────────────────────────────
@@ -79,22 +80,29 @@ interface CountingDerivationPanelProps {
   task: Task;
   partialCount: string;
   onPartialCountChange: (value: string) => void;
+  onCreateSubtask: (task: Task, count: number) => Promise<void>;
+  isCreating: boolean;
 }
 
 /**
  * CountingDerivationPanel — shown when the selected parent is a counting task.
  *
  * Displays parent counting metadata and allows the user to enter a partial count
- * allocation, with a live preview of the derived subtask title.
+ * allocation, with a live preview of the derived subtask title. Provides a
+ * "Create Subtask" button to persist the derived task to the task library.
  *
  * @param task - The selected counting task
  * @param partialCount - Current partial count input value (as string)
  * @param onPartialCountChange - Callback when the partial count field changes
+ * @param onCreateSubtask - Async callback invoked when the user clicks "Create Subtask"
+ * @param isCreating - Whether a creation operation is in progress
  */
 function CountingDerivationPanel({
   task,
   partialCount,
   onPartialCountChange,
+  onCreateSubtask,
+  isCreating,
 }: CountingDerivationPanelProps): React.ReactElement {
   const action = task.action ?? '';
   const unit = task.unit ?? '';
@@ -155,6 +163,20 @@ function CountingDerivationPanel({
           <span className={styles.previewTitle}>{previewTitle}</span>
         </div>
       )}
+
+      {/* Create subtask action */}
+      <button
+        type="button"
+        className={styles.actionButton}
+        disabled={!isValid || isCreating}
+        onClick={() => {
+          if (isValid) {
+            void onCreateSubtask(task, parsedCount);
+          }
+        }}
+      >
+        {isCreating ? 'Adding...' : 'Add to Board Pool'}
+      </button>
     </>
   );
 }
@@ -166,17 +188,30 @@ function CountingDerivationPanel({
  */
 interface ProgressDerivationPanelProps {
   taskId: string;
+  onExtractStep: (step: TaskStep) => Promise<void>;
+  onAddStepToPool: (step: TaskStep) => void;
+  isCreating: boolean;
+  isInPool: (taskId: string) => boolean;
 }
 
 /**
  * ProgressDerivationPanel — shown when the selected parent is a progress task.
  *
  * Reactively fetches and displays all steps, including type metadata and whether
- * each step already has a linked task.
+ * each step already has a linked task. Unlinked steps show an "Extract as Task"
+ * button to create a task record and link it.
  *
  * @param taskId - The ID of the selected progress task
+ * @param onExtractStep - Async callback invoked to extract a step as a task
+ * @param isCreating - Whether a creation operation is in progress
  */
-function ProgressDerivationPanel({ taskId }: ProgressDerivationPanelProps): React.ReactElement {
+function ProgressDerivationPanel({
+  taskId,
+  onExtractStep,
+  onAddStepToPool,
+  isCreating,
+  isInPool,
+}: ProgressDerivationPanelProps): React.ReactElement {
   const steps = useTaskSteps(taskId) ?? [];
 
   if (steps.length === 0) {
@@ -206,11 +241,28 @@ function ProgressDerivationPanel({ taskId }: ProgressDerivationPanelProps): Reac
               {step.type.toUpperCase()}
             </span>
 
-            {/* Linked task badge */}
+            {/* Action: add to pool or extract first */}
             {step.linkedTaskId ? (
-              <span className={styles.linkedBadge}>Existing Task</span>
+              isInPool(step.linkedTaskId) ? (
+                <span className={styles.linkedBadge}>In Pool ✓</span>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={() => onAddStepToPool(step)}
+                >
+                  Add to Pool
+                </button>
+              )
             ) : (
-              <span className={styles.unlinkedBadge}>Will Create New Task</span>
+              <button
+                type="button"
+                className={styles.actionButton}
+                disabled={isCreating}
+                onClick={() => void onExtractStep(step)}
+              >
+                Extract & Add to Pool
+              </button>
             )}
           </div>
         </li>
@@ -229,6 +281,8 @@ interface CompositeDerivationPanelProps {
   allNodes: CompositeNode[];
   taskMap: Record<string, Task>;
   compositeTaskMap: Record<string, CompositeTask>;
+  onAddLeafToPool: (taskId: string, title: string, type: string) => void;
+  isInPool: (taskId: string) => boolean;
 }
 
 /**
@@ -247,6 +301,8 @@ function CompositeDerivationPanel({
   allNodes,
   taskMap,
   compositeTaskMap,
+  onAddLeafToPool,
+  isInPool,
 }: CompositeDerivationPanelProps): React.ReactElement {
   const nodes = allNodes.filter((n) => n.compositeTaskId === compositeTask.id && !n.isDeleted);
   const rootNode = nodes.find((n) => n.id === compositeTask.rootNodeId);
@@ -279,14 +335,17 @@ function CompositeDerivationPanel({
           {leafNodes.map((leaf: CompositeNode) => {
             let leafTitle = '(unknown)';
             let badgeType = 'normal';
+            let inLibrary = false;
 
             if (leaf.taskId && taskMap[leaf.taskId]) {
               const referencedTask = taskMap[leaf.taskId];
               leafTitle = referencedTask.title;
               badgeType = referencedTask.type;
+              inLibrary = true;
             } else if (leaf.childCompositeTaskId && compositeTaskMap[leaf.childCompositeTaskId]) {
               leafTitle = compositeTaskMap[leaf.childCompositeTaskId].title;
               badgeType = 'composite';
+              inLibrary = true;
             }
 
             return (
@@ -298,6 +357,19 @@ function CompositeDerivationPanel({
                 >
                   {badgeType.toUpperCase()}
                 </span>
+                {inLibrary && leaf.taskId && (
+                  isInPool(leaf.taskId) ? (
+                    <span className={styles.linkedBadge}>In Pool ✓</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={() => onAddLeafToPool(leaf.taskId!, leafTitle, badgeType)}
+                    >
+                      Add to Pool
+                    </button>
+                  )
+                )}
               </li>
             );
           })}
@@ -310,22 +382,47 @@ function CompositeDerivationPanel({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 /**
- * SubtaskDerivationPlayground — Read-only feature playground.
+ * SubtaskDerivationPlayground — Feature playground for subtask creation.
  *
  * Allows users to select a parent task from the task library and inspect what
  * subtasks can be derived from it. Derivation panels vary by task type:
  * - Normal: informational message (no sub-structure)
- * - Counting: allocation input with live generated-title preview
- * - Progress: reactive step list with link-status badges
- * - Composite: operator type and resolved leaf node list
+ * - Counting: allocation input with live generated-title preview + "Create Subtask" button
+ * - Progress: reactive step list with link-status badges + "Extract as Task" buttons
+ * - Composite: operator type and resolved leaf node list with "In Library ✓" badges
  *
- * All data is read from the local Dexie database via reactive queries.
- * No database writes are performed by this component.
+ * All reads are reactive via Dexie live queries. Writes use createTask() and
+ * direct Dexie updates. Success messages auto-dismiss after SUCCESS_DISMISS_MS.
  */
+/**
+ * Entry in the Board Task Pool staging area.
+ * Tracks the task ID, display title, and type for rendering.
+ */
+interface PoolEntry {
+  taskId: string;
+  title: string;
+  type: string;
+}
+
 export function SubtaskDerivationPlayground(): React.ReactElement {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [partialCount, setPartialCount] = useState<string>('');
+  const [creationSuccess, setCreationSuccess] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [boardPool, setBoardPool] = useState<PoolEntry[]>([]);
+
+  // ── Success message helper ─────────────────────────────────────────────────
+
+  /**
+   * Shows a success message that auto-dismisses after SUCCESS_DISMISS_MS.
+   *
+   * @param message - The message string to display
+   */
+  function showSuccess(message: string): void {
+    setCreationSuccess(message);
+    setTimeout(() => setCreationSuccess(null), SUCCESS_DISMISS_MS);
+  }
 
   // ── Reactive data sources ──────────────────────────────────────────────────
 
@@ -421,6 +518,98 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
     }
   }
 
+  /**
+   * Adds a task to the board pool staging area. Skips duplicates.
+   *
+   * @param entry - The pool entry to add
+   */
+  function addToPool(entry: PoolEntry): void {
+    setBoardPool((prev) => {
+      if (prev.some((e) => e.taskId === entry.taskId)) return prev;
+      return [...prev, entry];
+    });
+  }
+
+  /**
+   * Removes a task from the board pool by task ID.
+   *
+   * @param taskId - The task ID to remove
+   */
+  function removeFromPool(taskId: string): void {
+    setBoardPool((prev) => prev.filter((e) => e.taskId !== taskId));
+  }
+
+  /**
+   * Creates a counting subtask from a parent counting task and a partial count.
+   * Persists the new task to the task library and adds it to the board pool.
+   *
+   * @param task - The parent counting task
+   * @param count - The partial count to allocate to the subtask
+   */
+  async function handleCreateCountingSubtask(task: Task, count: number): Promise<void> {
+    setIsCreating(true);
+    try {
+      const newTask = await createTask(PLAYGROUND_USER_ID, {
+        type: TaskType.COUNTING,
+        title: generateCounterTaskTitle(task.action!, count, task.unit!),
+        description: `Subtask of "${task.title}"`,
+        action: task.action!,
+        unit: task.unit!,
+        maxCount: count,
+      });
+      addToPool({ taskId: newTask.id, title: newTask.title, type: newTask.type });
+      showSuccess(`Added to board pool: "${newTask.title}"`);
+      setPartialCount('');
+    } catch (err) {
+      console.error('Failed to create subtask:', err);
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  /**
+   * Extracts a progress task step as a standalone task, then links the step back
+   * to the newly created task via its linkedTaskId field.
+   *
+   * @param step - The TaskStep to extract
+   */
+  async function handleExtractStep(step: TaskStep): Promise<void> {
+    setIsCreating(true);
+    try {
+      const isCountingStep =
+        step.type === TaskType.COUNTING &&
+        step.action !== undefined &&
+        step.unit !== undefined &&
+        step.maxCount !== undefined;
+
+      const newTask = await createTask(PLAYGROUND_USER_ID, {
+        type: isCountingStep ? TaskType.COUNTING : TaskType.NORMAL,
+        title: isCountingStep
+          ? generateCounterTaskTitle(step.action!, step.maxCount!, step.unit!)
+          : step.title,
+        description: step.title !== (isCountingStep ? generateCounterTaskTitle(step.action!, step.maxCount!, step.unit!) : step.title)
+          ? step.title
+          : undefined,
+        action: isCountingStep ? step.action! : undefined,
+        unit: isCountingStep ? step.unit! : undefined,
+        maxCount: isCountingStep ? step.maxCount! : undefined,
+      });
+
+      // Link the step to the newly created task
+      await db.taskSteps.update(step.id, {
+        linkedTaskId: newTask.id,
+        updatedAt: new Date().toISOString(),
+      });
+
+      addToPool({ taskId: newTask.id, title: newTask.title, type: newTask.type });
+      showSuccess(`Added to board pool: "${newTask.title}"`);
+    } catch (err) {
+      console.error('Failed to extract step as task:', err);
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   /**
@@ -436,10 +625,26 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
             task={task}
             partialCount={partialCount}
             onPartialCountChange={setPartialCount}
+            onCreateSubtask={handleCreateCountingSubtask}
+            isCreating={isCreating}
           />
         )}
         {task.type === TaskType.PROGRESS && (
-          <ProgressDerivationPanel taskId={task.id} />
+          <ProgressDerivationPanel
+            taskId={task.id}
+            onExtractStep={handleExtractStep}
+            onAddStepToPool={(step: TaskStep) => {
+              if (step.linkedTaskId) {
+                const linkedTask = taskMap[step.linkedTaskId];
+                if (linkedTask) {
+                  addToPool({ taskId: linkedTask.id, title: linkedTask.title, type: linkedTask.type });
+                  showSuccess(`Added to board pool: "${linkedTask.title}"`);
+                }
+              }
+            }}
+            isCreating={isCreating}
+            isInPool={(taskId: string) => boardPool.some((e) => e.taskId === taskId)}
+          />
         )}
       </div>
     );
@@ -457,6 +662,11 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
           allNodes={allCompositeNodes}
           taskMap={taskMap}
           compositeTaskMap={compositeTaskMap}
+          onAddLeafToPool={(taskId: string, title: string, type: string) => {
+            addToPool({ taskId, title, type });
+            showSuccess(`Added to board pool: "${title}"`);
+          }}
+          isInPool={(taskId: string) => boardPool.some((e) => e.taskId === taskId)}
         />
       </div>
     );
@@ -464,6 +674,11 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
 
   return (
     <div className={styles.container}>
+      {/* Success message */}
+      {creationSuccess && (
+        <div className={styles.successMessage}>{creationSuccess}</div>
+      )}
+
       {/* Filter tabs */}
       <div className={styles.filterTabs}>
         {FILTER_TABS.map((tab) => (
@@ -528,6 +743,49 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
           ))}
         </div>
       )}
+
+      {/* Board Task Pool */}
+      <div className={styles.poolSection}>
+        <h4 className={styles.poolTitle}>
+          Board Task Pool
+          {boardPool.length > 0 && (
+            <span className={styles.poolCount}>{boardPool.length}</span>
+          )}
+        </h4>
+        {boardPool.length === 0 ? (
+          <p className={styles.emptyState}>
+            No tasks in the pool yet. Use the buttons above to add subtasks.
+          </p>
+        ) : (
+          <div className={styles.poolList}>
+            {boardPool.map((entry) => (
+              <div key={entry.taskId} className={styles.poolItem}>
+                <span className={styles.poolItemTitle}>{entry.title}</span>
+                <span
+                  className={`${styles.typeBadge} ${styles[`typeBadge${typeBadgeClass(entry.type)}`]}`}
+                >
+                  {entry.type.toUpperCase()}
+                </span>
+                <button
+                  type="button"
+                  className={styles.poolRemoveButton}
+                  onClick={() => removeFromPool(entry.taskId)}
+                  title="Remove from pool"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className={styles.poolClearButton}
+              onClick={() => setBoardPool([])}
+            >
+              Clear Pool
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

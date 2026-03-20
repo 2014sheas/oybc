@@ -149,6 +149,12 @@ final class AppDatabase {
                 """)
         }
 
+        // v4: Add missing Board columns (centerSquareCustomName, centerTaskId)
+        migrator.registerMigration("v4") { db in
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN centerSquareCustomName TEXT")
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN centerTaskId TEXT REFERENCES tasks(id)")
+        }
+
         return migrator
     }
 

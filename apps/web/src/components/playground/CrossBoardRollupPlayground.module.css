@@ -1,0 +1,193 @@
+/* ─── Layout ──────────────────────────────────────────────────────────────────── */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.setupSection {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.setupDescription {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ─── Boards layout ──────────────────────────────────────────────────────────── */
+
+.boardsLayout {
+  display: flex;
+  flex-direction: row;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 700px) {
+  .boardsLayout {
+    flex-direction: column;
+  }
+}
+
+/* ─── Board card ──────────────────────────────────────────────────────────────── */
+
+.boardCard {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+}
+
+.boardHeader {
+  padding: 0.75rem 1rem;
+  background-color: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.boardTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.boardSubtitle {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.boardBody {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ─── Square grid ─────────────────────────────────────────────────────────────── */
+
+/* Wraps InteractiveTaskSquare tiles; auto-fills with 90px columns to match the
+   square size used by InteractiveTaskSquare. */
+.squareGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ─── Rollup highlight wrapper ────────────────────────────────────────────────── */
+
+/* Applied to the div wrapping a read-only Board A square when a rollup fires.
+   The outline sits outside the InteractiveTaskSquare border-box so it does not
+   alter layout. border-radius matches the square's 8px rounding. */
+.squareRollupHighlight {
+  border-radius: 8px;
+  outline: 3px solid #0d6efd;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgba(13, 110, 253, 0.2);
+}
+
+/* ─── Controls row ───────────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* ─── Buttons ────────────────────────────────────────────────────────────────── */
+
+.setupButton {
+  padding: 0.55rem 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--active-bg);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.setupButton:hover {
+  opacity: 0.85;
+}
+
+.setupButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.resetButton {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.resetButton:hover {
+  border-color: var(--error-text, #dc3545);
+  color: var(--error-text, #dc3545);
+}
+
+/* ─── Success / rollup message ───────────────────────────────────────────────── */
+
+.successMessage {
+  padding: 0.6rem 1rem;
+  background-color: var(--success-bg, #d1e7dd);
+  color: var(--success-text, #198754);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-left: 3px solid var(--success-text, #198754);
+}
+
+/* ─── Legend ─────────────────────────────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* ─── Loading / empty states ─────────────────────────────────────────────────── */
+
+.emptyState {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 0;
+}
+
+.loadingState {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  padding: 1rem 0;
+}

@@ -352,3 +352,121 @@
   font-size: 0.9rem;
 }
 
+/* Success message banner */
+.successMessage {
+  padding: 0.6rem 1rem;
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Action buttons (Create Subtask, Extract as Task) */
+.actionButton {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--active-bg);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.actionButton:hover {
+  opacity: 0.85;
+}
+
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Board Task Pool section */
+.poolSection {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--border-color);
+}
+
+.poolTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 0.75rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.poolCount {
+  font-size: 0.75rem;
+  font-weight: 700;
+  background-color: var(--active-bg);
+  color: #ffffff;
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+}
+
+.poolList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.poolItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--card-bg);
+}
+
+.poolItemTitle {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poolRemoveButton {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.poolRemoveButton:hover {
+  color: var(--error-text);
+}
+
+.poolClearButton {
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.poolClearButton:hover {
+  border-color: var(--error-text);
+  color: var(--error-text);
+}
+

@@ -19,3 +19,13 @@ export { generateCounterTaskTitle } from './taskTitle';
 export {
   evaluateCompositeTree,
 } from './compositeEvaluation';
+
+export {
+  calculateCountingRollup,
+  calculateProgressRollup,
+} from './rollup';
+
+export type {
+  CountingRollupResult,
+  ProgressRollupResult,
+} from './rollup';

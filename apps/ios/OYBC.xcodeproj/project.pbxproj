@@ -19,6 +19,7 @@
 		5BBF160330B3C5EBABCE096B /* CenterSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F879A103A0FE383E497F464 /* CenterSquare.swift */; };
 		5C2D41E4AAD6F8F30FAF9B67 /* OYBCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2822E1DBF15699974C2F70C5 /* OYBCTests.swift */; };
 		619A5E4D57F256C847CC9A50 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0436CC51A477FF70932A9546 /* SyncQueue.swift */; };
+		8C0AC5F740FA4EEADB74E2FF /* CrossBoardRollupPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28F87B121453F93D1A9C8372 /* CrossBoardRollupPlayground.swift */; };
 		9C24CDBF218203559E063F7F /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B55F24D17BE0A2E4D024288 /* User.swift */; };
 		9CFB0C8623103103E895A83D /* ProgressStepRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D833627B1CDD7BE3E829AC /* ProgressStepRowView.swift */; };
 		9D6C633E19038C7202F46256 /* SubtaskDerivationPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA07280EAE71A1F3F97DFC4D /* SubtaskDerivationPlayground.swift */; };
@@ -35,6 +36,7 @@
 		E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */; };
 		E8FAA1849B7D23A6BE8201A2 /* CompositeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0052BFE5116994683E79480 /* CompositeTask.swift */; };
 		EB546963E080BD0C7D5EDDBD /* Shuffle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */; };
+		F520EAF2A234007AFB744072 /* InteractiveTaskSquareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,6 +57,7 @@
 		1B37DB9688050E788877CC59 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTaskFormView.swift; sourceTree = "<group>"; };
 		2822E1DBF15699974C2F70C5 /* OYBCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCTests.swift; sourceTree = "<group>"; };
+		28F87B121453F93D1A9C8372 /* CrossBoardRollupPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossBoardRollupPlayground.swift; sourceTree = "<group>"; };
 		34742747DBBD390A07DC633A /* BingoSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoSquare.swift; sourceTree = "<group>"; };
 		476EB8034735B0ACC9032FA9 /* BingoDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoDetection.swift; sourceTree = "<group>"; };
 		49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoBoard.swift; sourceTree = "<group>"; };
@@ -76,6 +79,7 @@
 		DD08A8AFE2E5BD265E813DC4 /* UnifiedTaskCreatorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTaskCreatorPlayground.swift; sourceTree = "<group>"; };
 		EA07280EAE71A1F3F97DFC4D /* SubtaskDerivationPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtaskDerivationPlayground.swift; sourceTree = "<group>"; };
 		F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountingStepFieldsView.swift; sourceTree = "<group>"; };
+		F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTaskSquareView.swift; sourceTree = "<group>"; };
 		FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -96,6 +100,7 @@
 			children = (
 				5A4A008E558F76153F461B0B /* BoardGeneratorPlayground.swift */,
 				1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */,
+				28F87B121453F93D1A9C8372 /* CrossBoardRollupPlayground.swift */,
 				52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */,
 				EA07280EAE71A1F3F97DFC4D /* SubtaskDerivationPlayground.swift */,
 				FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */,
@@ -110,6 +115,7 @@
 				49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */,
 				34742747DBBD390A07DC633A /* BingoSquare.swift */,
 				F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */,
+				F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */,
 				A5D833627B1CDD7BE3E829AC /* ProgressStepRowView.swift */,
 			);
 			path = Components;
@@ -249,6 +255,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					649ED9C362239F55CE47277B = {
+						ProvisioningStyle = Automatic;
+					};
 					9F5E8011F4A8F3E3010DEF60 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -327,6 +336,8 @@
 				B92DF575684C12C09A6778F0 /* CompositeTaskFormView.swift in Sources */,
 				4B2B6ED94B59B66095A2A7F4 /* ContentView.swift in Sources */,
 				C3B8B4FD9C30EBC428EC52E6 /* CountingStepFieldsView.swift in Sources */,
+				8C0AC5F740FA4EEADB74E2FF /* CrossBoardRollupPlayground.swift in Sources */,
+				F520EAF2A234007AFB744072 /* InteractiveTaskSquareView.swift in Sources */,
 				37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */,
 				40223EBA0D9B7B25CCB1931A /* PlaygroundUtils.swift in Sources */,
 				A3FBDF82011C7F6ED8D3F7C5 /* PlaygroundView.swift in Sources */,
@@ -384,7 +395,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.oybc.OYBC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;
@@ -480,7 +490,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.oybc.OYBC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;

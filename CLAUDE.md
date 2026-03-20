@@ -33,6 +33,7 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 **Core Principles**:
 - ONE feature at a time — user picks what to build.
 - Playground before integration — no production code without explicit user approval.
+- **Build real components, not demos** — Playground features must use production-ready reusable components from `components/` / `Views/Components/`. The Playground is a testing harness, not a place for throwaway inline UI. If a component doesn't exist yet, create it as a reusable component first, then use it in the Playground.
 - Mirror file structure — every playground feature is a separate file on both platforms. Container views stay thin.
 - Reuse existing infrastructure — shared constants in `playgroundUtils.ts` / `PlaygroundUtils.swift`, reusable components in `components/playground/` / `Views/Components/`.
 

@@ -13,14 +13,18 @@ private enum DerivationFilter: String, CaseIterable {
 
 // MARK: - Subtask Derivation Playground
 
-/// Subtask Derivation Engine Playground — READ-ONLY.
+/// Subtask Derivation Engine Playground.
 ///
 /// Lets users select a parent task from the task library and inspect what subtasks
-/// can be derived from it. No database writes are performed.
+/// can be derived from it. Counting tasks support partial-count allocation and
+/// one-tap subtask creation. Progress tasks support per-step extraction into the
+/// task library. Composite tasks are displayed read-only.
 ///
 /// - Normal tasks: Shown as not subdivisible.
-/// - Counting tasks: TextField for partial count allocation with a live title preview.
-/// - Progress tasks: Lists each TaskStep with type, linked-task badge, and counting detail.
+/// - Counting tasks: TextField for partial count allocation with a live title preview
+///   and a "Create Subtask" button that writes the new task to the database.
+/// - Progress tasks: Lists each TaskStep with type, linked-task badge, counting
+///   detail, and an "Extract as Task" button for unlinked steps.
 /// - Composite tasks: Shows the operator type and resolves leaf nodes to named entries.
 struct SubtaskDerivationPlayground: View {
     // MARK: - State
@@ -36,8 +40,13 @@ struct SubtaskDerivationPlayground: View {
     @State private var taskSteps: [TaskStep] = []
     @State private var compositeNodes: [CompositeNode] = []
 
-    // Error state
+    // Error / success state
     @State private var loadError: String? = nil
+    @State private var creationSuccess: String? = nil
+    @State private var isCreating: Bool = false
+
+    // Board Task Pool
+    @State private var boardPool: [(taskId: String, title: String, type: String)] = []
 
     // MARK: - Computed
 
@@ -103,6 +112,17 @@ struct SubtaskDerivationPlayground: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
 
+            // ── Success banner ──
+            if let success = creationSuccess {
+                Text(success)
+                    .font(.subheadline)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.15))
+                    .foregroundColor(.green)
+                    .cornerRadius(8)
+            }
+
             // ── Section: Parent Task Selector ──
             VStack(alignment: .leading, spacing: 10) {
                 Text("Select Parent Task")
@@ -150,6 +170,57 @@ struct SubtaskDerivationPlayground: View {
                                 .transition(.opacity)
                         }
                     }
+                }
+            }
+
+            // ── Board Task Pool ──
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Board Task Pool")
+                        .font(.headline)
+                    if !boardPool.isEmpty {
+                        Text("\(boardPool.count)")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                }
+
+                if boardPool.isEmpty {
+                    Text("No tasks in the pool yet. Use the buttons above to add subtasks.")
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                } else {
+                    ForEach(boardPool, id: \.taskId) { entry in
+                        HStack {
+                            Text(entry.title)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Spacer()
+                            taskTypeBadgeFromString(entry.type)
+                            Button {
+                                boardPool.removeAll { $0.taskId == entry.taskId }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(8)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(6)
+                    }
+
+                    Button("Clear Pool") {
+                        boardPool.removeAll()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.red)
                 }
             }
         }
@@ -369,6 +440,17 @@ struct SubtaskDerivationPlayground: View {
                         .cornerRadius(6)
                 }
             }
+
+            // Create subtask action
+            Button(action: { createCountingSubtask(from: task) }) {
+                Text(isCreating ? "Adding..." : "Add to Board Pool")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!isPartialCountValid || isCreating)
         }
         .padding(12)
         .background(Color(.systemGray6))
@@ -442,8 +524,41 @@ struct SubtaskDerivationPlayground: View {
                 }
                 Spacer()
 
-                // Linked task badge
-                linkedTaskBadge(step.linkedTaskId != nil)
+                // Pool/extract action
+                if let linkedId = step.linkedTaskId {
+                    if boardPool.contains(where: { $0.taskId == linkedId }) {
+                        Text("In Pool ✓")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.2))
+                            .foregroundColor(.green)
+                            .cornerRadius(4)
+                    } else {
+                        Button("Add to Pool") {
+                            if let linkedTask = tasks.first(where: { $0.id == linkedId }) {
+                                addToPool(taskId: linkedTask.id, title: linkedTask.title, type: linkedTask.type.rawValue)
+                                showSuccess("Added to board pool: \"\(linkedTask.title)\"")
+                            }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                    }
+                } else {
+                    Text("No Task")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            // Extract button — only for unlinked steps
+            if step.linkedTaskId == nil {
+                Button("Extract & Add to Pool") {
+                    extractStepAsTask(step: step, parentTask: selectedTask!)
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+                .disabled(isCreating)
             }
         }
         .padding(8)
@@ -759,6 +874,153 @@ struct SubtaskDerivationPlayground: View {
                     self.loadError = "Failed to load composite nodes: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    // MARK: - Creation Actions
+
+    /// Creates a new counting subtask in the task library derived from the selected parent task.
+    ///
+    /// Uses `partialCount` as the `maxCount` for the new task. The title is auto-generated
+    /// following the `generateCounterTaskTitle` convention: "\(action) \(count) \(unit)".
+    /// Clears the partial count field and refreshes the task library on success.
+    ///
+    /// - Parameter parentTask: The counting Task from which the subtask is derived.
+    private func createCountingSubtask(from parentTask: Task) {
+        guard let action = parentTask.action,
+              let unit = parentTask.unit,
+              let count = partialCount else { return }
+
+        isCreating = true
+        let title = "\(action) \(count) \(unit)"
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        let newTask = Task(
+            id: UUID().uuidString,
+            userId: playgroundUserId,
+            title: title,
+            description: "Subtask of \"\(parentTask.title)\"",
+            type: .counting,
+            action: action,
+            unit: unit,
+            maxCount: count,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try AppDatabase.shared.saveTask(newTask)
+                DispatchQueue.main.async {
+                    self.isCreating = false
+                    self.addToPool(taskId: newTask.id, title: title, type: TaskType.counting.rawValue)
+                    self.showSuccess("Added to board pool: \"\(title)\"")
+                    self.partialCountStr = ""
+                    self.loadTasks()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isCreating = false
+                    self.loadError = "Failed to create subtask: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Extracts a progress task step into a standalone task in the library and links them.
+    ///
+    /// Creates a new Task whose type, action, unit, and maxCount mirror the step, then
+    /// updates the step's `linkedTaskId` to point at the new task in a single transaction.
+    /// Refreshes both the task library and the step list for the parent task on success.
+    ///
+    /// - Parameters:
+    ///   - step: The TaskStep to extract.
+    ///   - parentTask: The progress Task that owns the step (used for the description and
+    ///     for refreshing steps after the write).
+    private func extractStepAsTask(step: TaskStep, parentTask: Task) {
+        isCreating = true
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        let newTask = Task(
+            id: UUID().uuidString,
+            userId: playgroundUserId,
+            title: step.title,
+            description: "Step from \"\(parentTask.title)\"",
+            type: step.type,
+            action: step.action,
+            unit: step.unit,
+            maxCount: step.maxCount,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try AppDatabase.shared.write { db in
+                    try newTask.save(db)
+                    // Link the step to the newly created task in the same transaction
+                    try db.execute(
+                        sql: "UPDATE \(TaskStep.databaseTableName) SET linkedTaskId = ?, updatedAt = ? WHERE id = ?",
+                        arguments: [newTask.id, now, step.id]
+                    )
+                }
+                DispatchQueue.main.async {
+                    self.isCreating = false
+                    self.addToPool(taskId: newTask.id, title: newTask.title, type: newTask.type.rawValue)
+                    self.showSuccess("Added to board pool: \"\(newTask.title)\"")
+                    self.loadTasks()
+                    self.loadSteps(for: parentTask.id)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isCreating = false
+                    self.loadError = "Failed to extract step: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Shows a success banner that auto-dismisses after `successDismissSeconds`.
+    ///
+    /// If a newer message replaces this one before the timer fires, the old dismiss
+    /// closure is a no-op (guarded by message equality).
+    ///
+    /// - Parameter message: The success string to display.
+    private func showSuccess(_ message: String) {
+        creationSuccess = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + successDismissSeconds) {
+            if self.creationSuccess == message {
+                self.creationSuccess = nil
+            }
+        }
+    }
+
+    /// Adds a task to the board pool. Skips duplicates.
+    private func addToPool(taskId: String, title: String, type: String) {
+        guard !boardPool.contains(where: { $0.taskId == taskId }) else { return }
+        boardPool.append((taskId: taskId, title: title, type: type))
+    }
+
+    /// Renders a type badge from a raw string value.
+    @ViewBuilder
+    private func taskTypeBadgeFromString(_ type: String) -> some View {
+        if let taskType = TaskType(rawValue: type) {
+            taskTypeBadge(for: taskType)
+        } else {
+            Text(type.uppercased())
+                .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.indigo.opacity(0.2))
+                .cornerRadius(4)
         }
     }
 }
