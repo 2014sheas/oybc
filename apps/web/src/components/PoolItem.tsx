@@ -31,6 +31,7 @@ export function PoolItem({ title, type, onRemove }: PoolItemProps): React.ReactE
         className={styles.poolRemoveButton}
         onClick={onRemove}
         title="Remove from pool"
+        aria-label="Remove from pool"
       >
         ×
       </button>
