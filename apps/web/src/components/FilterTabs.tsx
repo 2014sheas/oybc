@@ -26,14 +26,12 @@ interface FilterTabsProps {
  */
 export function FilterTabs({ tabs, activeTab, onTabChange }: FilterTabsProps): React.ReactElement {
   return (
-    <div role="tablist" className={styles.filterTabs}>
+    <div className={styles.filterTabs}>
       {tabs.map((tab) => (
         <button
           key={tab.value}
-          role="tab"
           type="button"
-          aria-selected={activeTab === tab.value}
-          tabIndex={activeTab === tab.value ? 0 : -1}
+          aria-pressed={activeTab === tab.value}
           className={`${styles.filterTab} ${activeTab === tab.value ? styles.filterTabActive : ''}`}
           onClick={() => onTabChange(tab.value)}
         >
