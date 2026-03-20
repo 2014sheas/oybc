@@ -100,7 +100,13 @@
       "Bash(sudo xcode-select:*)",
       "mcp__plugin_playwright_playwright__browser_close",
       "mcp__plugin_playwright_playwright__browser_install",
-      "mcp__plugin_playwright_playwright__browser_snapshot"
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "Bash(git checkout:*)",
+      "Bash(mv playground/InteractiveTaskSquare.tsx .)",
+      "Bash(mv playground/InteractiveTaskSquare.module.css .)",
+      "Bash(mv playground/ProgressStepRow.tsx .)",
+      "Bash(mv playground/ProgressStepRow.module.css .)",
+      "Bash(mv playground/CountingStepFields.tsx .)"
     ]
   }
 }

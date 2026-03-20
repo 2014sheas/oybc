@@ -5,6 +5,7 @@ import { UnifiedTaskCreatorPlayground } from './UnifiedTaskCreatorPlayground';
 import { useTasks } from '../../hooks/useTasks';
 import { createTask } from '../../db/operations/tasks';
 import { fisherYatesShuffle, CenterSquareType, getCenterSquareIndex, TaskType } from '@oybc/shared';
+import styles from './BoardGeneratorPlayground.module.css';
 
 const BOARD_SIZE = 3;
 const CENTER_INDEX = getCenterSquareIndex(BOARD_SIZE); // 4 for 3x3
@@ -53,32 +54,23 @@ export function BoardGeneratorPlayground() {
 
   return (
     <div>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+      <p className={styles.description}>
         Create tasks using the task creator below, then generate a 3×3 bingo board from them.
         The center square is always a free space. You need at least {TASKS_NEEDED} tasks to
         generate a board. Clicking "Generate Board" again draws a fresh random selection.
       </p>
 
       {/* Quick seed button */}
-      <div style={{ marginBottom: '1.25rem' }}>
+      <div className={styles.seedSection}>
         <button
+          className={styles.seedButton}
           onClick={handleGenerateSamples}
           disabled={isGeneratingSamples}
-          style={{
-            padding: '0.5rem 1rem',
-            borderRadius: '6px',
-            border: '1px solid var(--border-color, #ccc)',
-            background: 'transparent',
-            color: 'var(--text-primary, #000)',
-            cursor: isGeneratingSamples ? 'not-allowed' : 'pointer',
-            opacity: isGeneratingSamples ? 0.6 : 1,
-            fontSize: '0.9rem',
-          }}
         >
           {isGeneratingSamples ? 'Generating…' : 'Generate Sample Tasks'}
         </button>
         {sampleError && (
-          <p style={{ color: '#e53e3e', marginTop: '0.5rem', fontSize: '0.875rem' }}>{sampleError}</p>
+          <p className={styles.seedError}>{sampleError}</p>
         )}
       </div>
 
@@ -86,25 +78,15 @@ export function BoardGeneratorPlayground() {
       <UnifiedTaskCreatorPlayground />
 
       {/* Board generation */}
-      <div style={{ marginTop: '1.5rem' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+      <div className={styles.generateSection}>
+        <p className={styles.taskCount}>
           {tasks.length} task{tasks.length !== 1 ? 's' : ''} available
           {!canGenerate && ` — need ${TASKS_NEEDED - tasks.length} more`}
         </p>
         <button
+          className={styles.generateButton}
           onClick={handleGenerateBoard}
           disabled={!canGenerate}
-          style={{
-            padding: '0.625rem 1.5rem',
-            borderRadius: '6px',
-            border: 'none',
-            background: canGenerate ? '#007aff' : 'var(--bg-secondary, #eee)',
-            color: canGenerate ? 'white' : 'var(--text-secondary, #999)',
-            cursor: canGenerate ? 'pointer' : 'not-allowed',
-            fontWeight: 700,
-            fontSize: '1rem',
-            marginBottom: boardTaskNames ? '1.5rem' : 0,
-          }}
         >
           Generate Board
         </button>
@@ -112,13 +94,15 @@ export function BoardGeneratorPlayground() {
 
       {/* Generated board */}
       {boardTaskNames && (
-        <BingoBoard
-          key={boardKey}
-          taskNames={boardTaskNames}
-          gridSize={BOARD_SIZE}
-          squareSize={90}
-          centerSquareType={CenterSquareType.FREE}
-        />
+        <div className={styles.boardContainer}>
+          <BingoBoard
+            key={boardKey}
+            taskNames={boardTaskNames}
+            gridSize={BOARD_SIZE}
+            squareSize={90}
+            centerSquareType={CenterSquareType.FREE}
+          />
+        </div>
       )}
     </div>
   );

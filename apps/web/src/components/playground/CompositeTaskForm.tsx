@@ -2,9 +2,12 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { OperatorType, TaskType, type CompositeTask, type Task } from '@oybc/shared';
 import { db } from '../../db/database';
-import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
-import { CountingStepFields } from './CountingStepFields';
-import { ProgressStepRow, type StepFormState, createEmptyStep } from './ProgressStepRow';
+import { OperatorSelector } from '../OperatorSelector';
+import { CounterStepper } from '../CounterStepper';
+import { SubtaskChip } from '../SubtaskChip';
+import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS, getCharCountClass } from './playgroundUtils';
+import { CountingStepFields } from '../CountingStepFields';
+import { ProgressStepRow, type StepFormState, createEmptyStep } from '../ProgressStepRow';
 import styles from './CompositeTaskForm.module.css';
 
 /** Maximum character length for composite task title */
@@ -50,18 +53,6 @@ function currentTimestamp(): string {
   return new Date().toISOString();
 }
 
-/**
- * Returns CSS class for character count based on proximity to limit.
- *
- * @param current - Current character count
- * @param max - Maximum allowed characters
- * @returns CSS class string
- */
-function getCharCountClass(current: number, max: number): string {
-  if (current > max) return `${styles.charCount} ${styles.charCountError}`;
-  if (current >= max * 0.9) return `${styles.charCount} ${styles.charCountWarning}`;
-  return styles.charCount;
-}
 
 /**
  * Creates a new empty ExistingSubtaskItem with a stable form key.
@@ -484,22 +475,6 @@ export function CompositeTaskForm(): React.ReactElement {
   }
 
   /**
-   * Returns the CSS module class for a type badge given its label.
-   *
-   * @param badge - Uppercase badge label (e.g. 'NORMAL', 'COUNTING')
-   * @returns CSS class string
-   */
-  function getBadgeClass(badge: string): string {
-    switch (badge.toLowerCase()) {
-      case 'normal': return styles.typeBadgeNormal;
-      case 'counting': return styles.typeBadgeCounting;
-      case 'progress': return styles.typeBadgeProgress;
-      case 'composite': return styles.typeBadgeComposite;
-      default: return styles.typeBadgeNormal;
-    }
-  }
-
-  /**
    * Attempts to confirm an inline subtask after validating required fields.
    * Sets confirmError on the subtask if validation fails.
    *
@@ -557,30 +532,13 @@ export function CompositeTaskForm(): React.ReactElement {
     if (subtask.confirmed) {
       const { title, badge } = getSubtaskDisplayInfo(subtask);
       return (
-        <div key={subtask.id} className={styles.subtaskChip}>
-          <span className={`${styles.subtaskChipBadge} ${getBadgeClass(badge)}`}>
-            {badge}
-          </span>
-          <span className={styles.subtaskChipTitle}>{title}</span>
-          <div className={styles.subtaskChipActions}>
-            <button
-              type="button"
-              className={styles.subtaskChipEditButton}
-              onClick={() => editSubtask(subtask.id)}
-              aria-label="Edit"
-            >
-              ✏
-            </button>
-            <button
-              type="button"
-              className={styles.subtaskChipRemoveButton}
-              onClick={() => removeSubtask(subtask.id)}
-              aria-label="Remove"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+        <SubtaskChip
+          key={subtask.id}
+          title={title}
+          type={badge.toLowerCase()}
+          onEdit={() => editSubtask(subtask.id)}
+          onRemove={() => removeSubtask(subtask.id)}
+        />
       );
     }
 
@@ -764,7 +722,7 @@ export function CompositeTaskForm(): React.ReactElement {
             placeholder="Enter composite task title"
             maxLength={TITLE_MAX_LENGTH + 1}
           />
-          <span className={getCharCountClass(title.length, TITLE_MAX_LENGTH)}>
+          <span className={getCharCountClass(title.length, TITLE_MAX_LENGTH, styles)}>
             {title.length}/{TITLE_MAX_LENGTH}
           </span>
         </div>
@@ -772,53 +730,19 @@ export function CompositeTaskForm(): React.ReactElement {
         {/* Operator selector */}
         <div className={styles.fieldGroup}>
           <span className={styles.label}>Completion rule</span>
-          <div className={styles.operatorPicker}>
-            <button
-              type="button"
-              className={`${styles.operatorButton} ${operator === OperatorType.AND ? styles.operatorButtonActive : ''}`}
-              onClick={() => setOperator(OperatorType.AND)}
-            >
-              All of
-            </button>
-            <button
-              type="button"
-              className={`${styles.operatorButton} ${operator === OperatorType.OR ? styles.operatorButtonActive : ''}`}
-              onClick={() => setOperator(OperatorType.OR)}
-            >
-              Any of
-            </button>
-            <button
-              type="button"
-              className={`${styles.operatorButton} ${operator === OperatorType.M_OF_N ? styles.operatorButtonActive : ''}`}
-              onClick={() => setOperator(OperatorType.M_OF_N)}
-            >
-              At least N of
-            </button>
-          </div>
+          <OperatorSelector
+            selectedOperator={operator}
+            onOperatorChange={setOperator}
+          />
 
           {operator === OperatorType.M_OF_N && (
-            <div className={styles.thresholdRow}>
-              <button
-                type="button"
-                className={styles.stepperButton}
-                onClick={() => setThreshold((t) => Math.max(1, t - 1))}
-                disabled={threshold <= 1}
-              >
-                −
-              </button>
-              <span className={styles.thresholdValue}>{threshold}</span>
-              <button
-                type="button"
-                className={styles.stepperButton}
-                onClick={() => setThreshold((t) => Math.min(subtasks.length, t + 1))}
-                disabled={threshold >= subtasks.length}
-              >
-                +
-              </button>
-              <span className={styles.thresholdLabel}>
-                of {subtasks.length} subtask{subtasks.length !== 1 ? 's' : ''}
-              </span>
-            </div>
+            <CounterStepper
+              value={threshold}
+              min={1}
+              max={subtasks.length}
+              onChange={setThreshold}
+              label={`of ${subtasks.length} subtask${subtasks.length !== 1 ? 's' : ''}`}
+            />
           )}
         </div>
 

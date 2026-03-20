@@ -1,0 +1,57 @@
+.subtaskChip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-primary);
+  min-height: 2.5rem;
+}
+
+.subtaskChipTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.subtaskChipActions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.subtaskChipEditButton,
+.subtaskChipRemoveButton {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.subtaskChipEditButton {
+  color: var(--text-secondary);
+}
+
+.subtaskChipEditButton:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.subtaskChipRemoveButton {
+  color: var(--error-text);
+}
+
+.subtaskChipRemoveButton:hover {
+  background-color: var(--error-bg, #f8d7da);
+}

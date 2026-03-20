@@ -1,0 +1,32 @@
+.taskSelectorItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.taskSelectorItem:hover {
+  border-color: var(--active-bg);
+}
+
+.taskSelectorItemActive {
+  border-color: var(--active-bg);
+  background-color: var(--active-bg-subtle, rgba(59, 130, 246, 0.08));
+}
+
+.taskSelectorTitle {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

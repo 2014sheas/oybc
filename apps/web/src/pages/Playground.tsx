@@ -1,14 +1,10 @@
 import { useState } from 'react';
 import { db } from '../db';
-import { BingoSquare } from '../components/BingoSquare';
-import { BingoBoard } from '../components/BingoBoard';
 import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTaskCreatorPlayground';
 import { BoardGeneratorPlayground } from '../components/playground/BoardGeneratorPlayground';
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
 import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
 import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
-import { generateTaskNames } from '../components/playground/playgroundUtils';
-import { CenterSquareType } from '@oybc/shared';
 import styles from './Playground.module.css';
 
 /**
@@ -59,109 +55,7 @@ export function Playground() {
     {
       id: 'unified-task-creator',
       title: 'Task Creation (Unified)',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Unified task creator supporting Normal, Counting, and Progress types.
-            Select a type, fill in the shared and type-specific fields, then submit
-            to store in the local Dexie database. The Task Library below reactively
-            shows all created tasks with type filtering.
-          </p>
-          <UnifiedTaskCreatorPlayground />
-        </div>
-      ),
-    },
-    {
-      id: 'center-space-free',
-      title: 'Center Space: True Free Space (5x5)',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Center is auto-completed, shows "FREE SPACE", locked (cannot toggle off), counts toward bingo.
-          </p>
-          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.FREE} />
-        </div>
-      ),
-    },
-    {
-      id: 'center-space-custom-free',
-      title: 'Center Space: Customizable Free Space (5x5)',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Center is auto-completed with custom text, locked, counts toward bingo.
-          </p>
-          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.CUSTOM_FREE} centerSquareCustomName="My Goal!" />
-        </div>
-      ),
-    },
-    {
-      id: 'center-space-chosen',
-      title: 'Center Space: User-Chosen Center (5x5)',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Center has a fixed task (e.g., "My Special Task"), NOT auto-completed, can toggle like any square.
-          </p>
-          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.CHOSEN} />
-        </div>
-      ),
-    },
-    {
-      id: 'center-space-none',
-      title: 'Center Space: No Center Space (5x5)',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            Center is an ordinary square, no special treatment.
-          </p>
-          <BingoBoard taskNames={generateTaskNames(25)} gridSize={5} centerSquareType={CenterSquareType.NONE} />
-        </div>
-      ),
-    },
-    {
-      id: 'center-space-3x3',
-      title: 'Center Space: Works on 3x3 Too!',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            True Free Space works on smaller odd-sized boards (center is index 4 on 3x3).
-          </p>
-          <BingoBoard taskNames={generateTaskNames(9)} gridSize={3} squareSize={90} centerSquareType={CenterSquareType.FREE} />
-        </div>
-      ),
-    },
-    {
-      id: 'bingo-square',
-      title: 'Bingo Square',
-      content: (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            A single bingo board square that toggles between incomplete and completed states.
-            Click or use keyboard (Space/Enter) to toggle.
-          </p>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <div style={{ textAlign: 'center' }}>
-              <BingoSquare />
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Default (100px)
-              </p>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <BingoSquare size={150} />
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Large (150px)
-              </p>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <BingoSquare initialCompleted />
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Initially Completed
-              </p>
-            </div>
-          </div>
-        </div>
-      ),
+      content: <UnifiedTaskCreatorPlayground />,
     },
   ];
 

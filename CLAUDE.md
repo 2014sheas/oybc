@@ -275,10 +275,10 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 | 3 | Bingo Detection Logic | COMPLETE |
 | 4 | Board Randomization | COMPLETE |
 | 5 | Center Space Logic | COMPLETE |
-| 6 | Tasks & Task Creation | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions) |
+| 6 | Tasks & Task Creation | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions, subtask derivation, subtask-to-pool, cross-board rollup) |
 | 7 | Celebrations & Polish | — |
 
-**Current**: Feature 6 - Tasks & Task Creation (task creation UI, composite tasks, board generation with real data in Playground)
+**Current**: Feature 6 - Tasks & Task Creation. Subtask system SF1-SF3 complete in Playground (derivation engine, subtask creation to board pool, cross-board progress rollup). SF4 (board-browse entry point) remaining. Playground component extraction needed — see `docs/superpowers/specs/2026-03-19-playground-component-extraction.md`.
 
 **Phase 3** (future): Authentication & Sync Layer (Firebase Auth, sync queue, conflict resolution)
 

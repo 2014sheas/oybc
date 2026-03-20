@@ -7,6 +7,44 @@ export const PLAYGROUND_USER_ID = 'playground-user-1';
 export const SUCCESS_DISMISS_MS = 3000;
 
 /**
+ * Returns CSS class for character count based on proximity to limit.
+ * The returned class includes a base `charCount` class and a modifier
+ * when the count is near or over the maximum.
+ *
+ * @param current - Current character count
+ * @param max - Maximum allowed characters
+ * @param styles - CSS module styles object with charCount, charCountWarning, charCountError
+ * @returns CSS class string
+ */
+export function getCharCountClass(
+  current: number,
+  max: number,
+  styles: Record<string, string>
+): string {
+  if (current > max) return `${styles.charCount} ${styles.charCountError}`;
+  if (current >= max * 0.9) return `${styles.charCount} ${styles.charCountWarning}`;
+  return styles.charCount;
+}
+
+/**
+ * Returns the human-readable operator description for a composite operator.
+ *
+ * @param operatorType - The operator type ('AND', 'OR', or 'M_OF_N')
+ * @param threshold - Required for M_OF_N; the minimum count
+ * @param leafCount - Total number of leaf nodes
+ * @returns Display string such as "All of", "Any of", or "At least 2 of 3"
+ */
+export function formatOperatorLabel(
+  operatorType: string,
+  threshold: number | undefined,
+  leafCount: number
+): string {
+  if (operatorType === 'AND') return 'All of';
+  if (operatorType === 'OR') return 'Any of';
+  return `At least ${threshold ?? '?'} of ${leafCount}`;
+}
+
+/**
  * Formats an ISO8601 date string for display.
  *
  * @param isoString - ISO8601 date string
@@ -20,16 +58,6 @@ export function formatDate(isoString: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-/**
- * Generates placeholder task names for demo and test sections.
- *
- * @param count - Number of task names to generate
- * @returns Array of strings in the format ["Task 1", "Task 2", ...]
- */
-export function generateTaskNames(count: number): string[] {
-  return Array.from({ length: count }, (_, i) => `Task ${i + 1}`);
 }
 
 /**

@@ -1,0 +1,60 @@
+.description {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.seedSection {
+  margin-bottom: 1.25rem;
+}
+
+.seedButton {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.seedButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.seedError {
+  color: var(--error-text, #e53e3e);
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.generateSection {
+  margin-top: 1.5rem;
+}
+
+.taskCount {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.generateButton {
+  padding: 0.625rem 1.5rem;
+  border-radius: 6px;
+  border: none;
+  background: var(--active-bg, #007aff);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.generateButton:disabled {
+  background: var(--bg-secondary, #eee);
+  color: var(--text-secondary, #999);
+  cursor: not-allowed;
+}
+
+.boardContainer {
+  margin-top: 1.5rem;
+}

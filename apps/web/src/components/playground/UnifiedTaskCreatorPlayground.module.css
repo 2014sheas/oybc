@@ -86,35 +86,6 @@
   color: var(--error-text);
 }
 
-/* Type Selector */
-.typeSelector {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.typeButton {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
-}
-
-.typeButton:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
-}
-
-.typeButton.typeButtonActive {
-  border-color: var(--active-bg);
-  background-color: var(--active-bg);
-  color: #ffffff;
-}
-
 /* Counting Fields */
 .countingFields {
   display: flex;
@@ -274,35 +245,6 @@
   font-weight: 600;
 }
 
-/* Filter Tabs */
-.filterTabs {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.filterTab {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
-}
-
-.filterTab:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
-}
-
-.filterTab.filterTabActive {
-  border-color: var(--active-bg);
-  background-color: var(--active-bg);
-  color: #ffffff;
-}
-
 /* Task List */
 .emptyState {
   color: var(--text-secondary);
@@ -333,37 +275,6 @@
   font-weight: 600;
   font-size: 1rem;
   color: var(--text-primary);
-}
-
-/* Type badges with distinct colors per type */
-.typeBadge {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.typeBadgeNormal {
-  background-color: var(--info-bg);
-  color: var(--info-text);
-}
-
-.typeBadgeCounting {
-  background-color: var(--warning-bg, #fff3cd);
-  color: var(--warning-text, #856404);
-}
-
-.typeBadgeProgress {
-  background-color: var(--success-bg);
-  color: var(--success-text);
-}
-
-.typeBadgeComposite {
-  background-color: var(--info-bg, #cfe2ff);
-  color: var(--info-text, #084298);
 }
 
 .taskDescription {
@@ -473,10 +384,6 @@
 @media (max-width: 768px) {
   .container {
     gap: 1.5rem;
-  }
-
-  .typeSelector {
-    flex-wrap: wrap;
   }
 
   .submitButton {
