@@ -15,6 +15,7 @@ user-invocable: true
 ## Prerequisites
 
 Before starting, the feature MUST have:
+
 - Been implemented and tested in Playground via `/feature`
 - Received explicit user approval in the Playground
 - Both platforms compiling with the feature in Playground
@@ -133,6 +134,7 @@ If any prerequisite is missing, **STOP and tell the user**.
 ## Rollback
 
 If anything goes wrong:
-- The branch can be discarded — master is untouched
+
+- The branch can be discarded — dev is untouched
 - The feature remains in Playground, working as before
 - Document what went wrong for the next integration attempt
