@@ -47,18 +47,6 @@
   font-weight: 500;
 }
 
-/* Unlinked task badge (yellow/warning) */
-.unlinkedBadge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  background-color: var(--warning-bg, #fff3cd);
-  color: var(--warning-text, #856404);
-}
-
 /* Board Task Pool section */
 .poolSection {
   margin-top: 1rem;
