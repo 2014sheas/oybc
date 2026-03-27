@@ -115,7 +115,13 @@ struct BoardBrowsePlayground: View {
                     Picker("Select Board", selection: Binding(
                         get: { selectedBoardId ?? "" },
                         set: { newValue in
-                            if let board = boards.first(where: { $0.id == newValue }) {
+                            if newValue.isEmpty {
+                                selectedBoardId = nil
+                                boardTasks = []
+                                selectedTaskId = nil
+                                taskSteps = []
+                                compositeNodes = []
+                            } else if let board = boards.first(where: { $0.id == newValue }) {
                                 selectBoard(board)
                             }
                         }
@@ -165,21 +171,25 @@ struct BoardBrowsePlayground: View {
                 // ── Task grid ──
                 let size = selectedBoard?.boardSize ?? 3
                 let columns = Array(repeating: GridItem(.fixed(90), spacing: 8), count: size)
+                let boardTaskMap = Dictionary(
+                    uniqueKeysWithValues: boardTasks.map { ("\($0.row)-\($0.col)", $0) }
+                )
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(0..<(size * size), id: \.self) { index in
                         let row = index / size
                         let col = index % size
-                        if let bt = boardTasks.first(where: { $0.row == row && $0.col == col }) {
+                        if let bt = boardTaskMap["\(row)-\(col)"] {
                             taskSquare(for: bt)
                         } else {
-                            // Empty cell — show "FREE" only at the center position
+                            // Empty cell — show "FREE" only at center when board uses a free center type
                             let isCenter = row == size / 2 && col == size / 2 && size % 2 == 1
+                            let showFree = isCenter && selectedBoard?.centerSquareType == .free
                             RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6]))
                                 .foregroundColor(Color(.systemGray3))
                                 .frame(width: 90, height: 90)
                                 .overlay(
-                                    Text(isCenter ? "FREE" : "—")
+                                    Text(showFree ? "FREE" : "—")
                                         .font(.caption)
                                         .fontWeight(.semibold)
                                         .foregroundColor(.secondary)
@@ -740,8 +750,9 @@ struct BoardBrowsePlayground: View {
                         if let newBoard = self.boards.first(where: { $0.id == boardId }) {
                             self.selectBoard(newBoard)
                         } else {
-                            // boards not yet refreshed; store ID and pick up on next render
+                            // boards not yet refreshed; store ID and eagerly load tasks
                             self.selectedBoardId = boardId
+                            self.loadBoardTasks(boardId: boardId)
                         }
                     }
                 }

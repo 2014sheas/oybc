@@ -551,11 +551,12 @@ export function BoardBrowsePlayground(): React.ReactElement {
                   for (let col = 0; col < size; col++) {
                     const bt = btMap[`${row}-${col}`];
                     if (!bt) {
-                      // Empty cell — show "FREE" only at the center of odd-sized boards
+                      // Empty cell — show "FREE" only at the center when board uses a free center type
                       const isCenter = row === Math.floor(size / 2) && col === Math.floor(size / 2) && size % 2 === 1;
+                      const showFree = isCenter && selectedBoard?.centerSquareType === CenterSquareType.FREE;
                       cells.push(
                         <div key={`empty-${row}-${col}`} className={styles.emptySquare}>
-                          <span className={styles.emptySquareLabel}>{isCenter ? 'FREE' : '—'}</span>
+                          <span className={styles.emptySquareLabel}>{showFree ? 'FREE' : '—'}</span>
                         </div>
                       );
                       continue;
@@ -586,11 +587,7 @@ export function BoardBrowsePlayground(): React.ReactElement {
                         title: composite.title,
                         type: 'normal',
                       };
-                      const squareState: SquareState = {
-                        isCompleted: false,
-                        currentCount: 0,
-                        completedStepIds: new Set(),
-                      };
+                      const squareState = boardTaskToSquareState(bt);
                       const isSelected = selectedTaskId === composite.id;
                       cells.push(
                         <div
