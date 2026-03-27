@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   TaskType,
-  OperatorType,
   generateCounterTaskTitle,
   type Task,
   type TaskStep,
@@ -11,11 +10,13 @@ import {
 } from '@oybc/shared';
 import { db } from '../../db/database';
 import { createTask } from '../../db/operations/tasks';
-import { useTasks, useTaskSteps } from '../../hooks';
-import { TypeBadge } from '../TypeBadge';
+import { useTasks } from '../../hooks';
 import { FilterTabs } from '../FilterTabs';
 import { SelectableTaskItem } from '../SelectableTaskItem';
 import { PoolItem } from '../PoolItem';
+import { CountingDerivationPanel } from '../CountingDerivationPanel';
+import { ProgressDerivationPanel } from '../ProgressDerivationPanel';
+import { CompositeDerivationPanel } from '../CompositeDerivationPanel';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
 import styles from './SubtaskDerivationPlayground.module.css';
 
@@ -30,27 +31,6 @@ const FILTER_TABS: { value: FilterType; label: string }[] = [
   { value: 'composite', label: 'Composite' },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Returns the human-readable operator description for a composite's root operator.
- * Uses a more detailed format than the shared utility for the derivation context.
- *
- * @param operatorType - The OperatorType enum value
- * @param threshold - Required for M_OF_N; the minimum count
- * @param leafCount - Total number of leaf nodes
- * @returns Display string such as "AND (all required)"
- */
-function formatOperatorLabelDetailed(
-  operatorType: OperatorType,
-  threshold: number | undefined,
-  leafCount: number
-): string {
-  if (operatorType === OperatorType.AND) return 'AND (all required)';
-  if (operatorType === OperatorType.OR) return 'OR (any one)';
-  return `M_OF_N (at least ${threshold ?? '?'} of ${leafCount})`;
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 /**
@@ -63,306 +43,6 @@ function NormalDerivationPanel(): React.ReactElement {
       Normal tasks cannot be subdivided. Select a Counting, Progress, or Composite task to see
       derivation options.
     </p>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Props for CountingDerivationPanel.
- */
-interface CountingDerivationPanelProps {
-  task: Task;
-  partialCount: string;
-  onPartialCountChange: (value: string) => void;
-  onCreateSubtask: (task: Task, count: number) => Promise<void>;
-  isCreating: boolean;
-}
-
-/**
- * CountingDerivationPanel — shown when the selected parent is a counting task.
- *
- * Displays parent counting metadata and allows the user to enter a partial count
- * allocation, with a live preview of the derived subtask title. Provides a
- * "Create Subtask" button to persist the derived task to the task library.
- *
- * @param task - The selected counting task
- * @param partialCount - Current partial count input value (as string)
- * @param onPartialCountChange - Callback when the partial count field changes
- * @param onCreateSubtask - Async callback invoked when the user clicks "Create Subtask"
- * @param isCreating - Whether a creation operation is in progress
- */
-function CountingDerivationPanel({
-  task,
-  partialCount,
-  onPartialCountChange,
-  onCreateSubtask,
-  isCreating,
-}: CountingDerivationPanelProps): React.ReactElement {
-  const action = task.action ?? '';
-  const unit = task.unit ?? '';
-  const maxCount = task.maxCount ?? 0;
-
-  const parsedCount = parseInt(partialCount, 10);
-  const isValid = partialCount !== '' && !isNaN(parsedCount) && parsedCount >= 1 && parsedCount <= maxCount;
-  const isOutOfRange =
-    partialCount !== '' && (!isNaN(parsedCount)) && (parsedCount < 1 || parsedCount > maxCount);
-  const previewTitle = isValid
-    ? generateCounterTaskTitle(action, parsedCount, unit)
-    : null;
-
-  return (
-    <>
-      {/* Parent counting metadata */}
-      <div className={styles.countingMeta}>
-        <div className={styles.countingMetaRow}>
-          <span className={styles.metaLabel}>Action:</span>
-          <span>{action || '—'}</span>
-        </div>
-        <div className={styles.countingMetaRow}>
-          <span className={styles.metaLabel}>Unit:</span>
-          <span>{unit || '—'}</span>
-        </div>
-        <div className={styles.countingMetaRow}>
-          <span className={styles.metaLabel}>Parent total:</span>
-          <span>{maxCount}</span>
-        </div>
-      </div>
-
-      {/* Partial count allocation input */}
-      <div className={styles.allocationField}>
-        <label className={styles.allocationLabel} htmlFor="subtask-partial-count">
-          Allocate count:
-        </label>
-        <input
-          id="subtask-partial-count"
-          type="number"
-          className={`${styles.allocationInput} ${isOutOfRange ? styles.allocationInputError : ''}`}
-          value={partialCount}
-          min={1}
-          max={maxCount}
-          onChange={(e) => onPartialCountChange(e.target.value)}
-          placeholder={`1 – ${maxCount}`}
-        />
-        {isOutOfRange && (
-          <span className={styles.validationError}>
-            Count must be between 1 and {maxCount}.
-          </span>
-        )}
-      </div>
-
-      {/* Live preview */}
-      {isValid && previewTitle !== null && (
-        <div className={styles.previewBox}>
-          <span className={styles.previewLabel}>Derived subtask title preview</span>
-          <span className={styles.previewTitle}>{previewTitle}</span>
-        </div>
-      )}
-
-      {/* Create subtask action */}
-      <button
-        type="button"
-        className={styles.actionButton}
-        disabled={!isValid || isCreating}
-        onClick={() => {
-          if (isValid) {
-            void onCreateSubtask(task, parsedCount);
-          }
-        }}
-      >
-        {isCreating ? 'Adding...' : 'Add to Board Pool'}
-      </button>
-    </>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Props for ProgressDerivationPanel.
- */
-interface ProgressDerivationPanelProps {
-  taskId: string;
-  onExtractStep: (step: TaskStep) => Promise<void>;
-  onAddStepToPool: (step: TaskStep) => void;
-  isCreating: boolean;
-  isInPool: (taskId: string) => boolean;
-}
-
-/**
- * ProgressDerivationPanel — shown when the selected parent is a progress task.
- *
- * Reactively fetches and displays all steps, including type metadata and whether
- * each step already has a linked task. Unlinked steps show an "Extract as Task"
- * button to create a task record and link it.
- *
- * @param taskId - The ID of the selected progress task
- * @param onExtractStep - Async callback invoked to extract a step as a task
- * @param isCreating - Whether a creation operation is in progress
- */
-function ProgressDerivationPanel({
-  taskId,
-  onExtractStep,
-  onAddStepToPool,
-  isCreating,
-  isInPool,
-}: ProgressDerivationPanelProps): React.ReactElement {
-  const steps = useTaskSteps(taskId) ?? [];
-
-  if (steps.length === 0) {
-    return <p className={styles.emptyState}>No steps defined for this progress task.</p>;
-  }
-
-  return (
-    <ol className={styles.stepList} style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-      {steps.map((step: TaskStep, index: number) => (
-        <li key={step.id} className={styles.stepItem}>
-          <span className={styles.stepIndex}>{index + 1}</span>
-
-          <div className={styles.stepInfo}>
-            <span className={styles.stepTitle}>{step.title}</span>
-            {step.type === TaskType.COUNTING && step.action && step.unit && step.maxCount !== undefined && (
-              <span className={styles.stepMeta}>
-                {step.action} {step.maxCount} {step.unit}
-              </span>
-            )}
-          </div>
-
-          <div className={styles.stepBadges}>
-            {/* Step type badge */}
-            <TypeBadge type={step.type} size="small" />
-
-            {/* Action: add to pool or extract first */}
-            {step.linkedTaskId ? (
-              isInPool(step.linkedTaskId) ? (
-                <span className={styles.linkedBadge}>In Pool ✓</span>
-              ) : (
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  onClick={() => onAddStepToPool(step)}
-                >
-                  Add to Pool
-                </button>
-              )
-            ) : (
-              <button
-                type="button"
-                className={styles.actionButton}
-                disabled={isCreating}
-                onClick={() => void onExtractStep(step)}
-              >
-                Extract & Add to Pool
-              </button>
-            )}
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Props for CompositeDerivationPanel.
- */
-interface CompositeDerivationPanelProps {
-  compositeTask: CompositeTask;
-  allNodes: CompositeNode[];
-  taskMap: Record<string, Task>;
-  compositeTaskMap: Record<string, CompositeTask>;
-  onAddLeafToPool: (taskId: string, title: string, type: string) => void;
-  isInPool: (taskId: string) => boolean;
-}
-
-/**
- * CompositeDerivationPanel — shown when the selected parent is a composite task.
- *
- * Resolves the root operator node and leaf nodes, displaying operator type and
- * each leaf with its referenced task or nested composite name.
- *
- * @param compositeTask - The selected composite task record
- * @param allNodes - All composite nodes (filtered to this composite's ID externally)
- * @param taskMap - Map of task ID → Task for name resolution
- * @param compositeTaskMap - Map of composite task ID → CompositeTask for name resolution
- */
-function CompositeDerivationPanel({
-  compositeTask,
-  allNodes,
-  taskMap,
-  compositeTaskMap,
-  onAddLeafToPool,
-  isInPool,
-}: CompositeDerivationPanelProps): React.ReactElement {
-  const nodes = allNodes.filter((n) => n.compositeTaskId === compositeTask.id && !n.isDeleted);
-  const rootNode = nodes.find((n) => n.id === compositeTask.rootNodeId);
-  const leafNodes = nodes.filter((n) => n.nodeType === 'leaf');
-
-  if (!rootNode || rootNode.nodeType !== 'operator' || !rootNode.operatorType) {
-    return (
-      <p className={styles.emptyState}>
-        This composite task has no operator structure yet.
-      </p>
-    );
-  }
-
-  const operatorType = rootNode.operatorType as OperatorType;
-  const operatorDisplay = formatOperatorLabelDetailed(operatorType, rootNode.threshold, leafNodes.length);
-
-  return (
-    <>
-      {/* Operator row */}
-      <div className={styles.operatorRow}>
-        <span className={styles.operatorLabel}>Operator:</span>
-        <span className={styles.operatorValue}>{operatorDisplay}</span>
-      </div>
-
-      {/* Leaf nodes */}
-      {leafNodes.length === 0 ? (
-        <p className={styles.emptyState}>No leaf nodes defined.</p>
-      ) : (
-        <ul className={styles.leafList} style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {leafNodes.map((leaf: CompositeNode) => {
-            let leafTitle = '(unknown)';
-            let badgeType = 'normal';
-            let inLibrary = false;
-
-            if (leaf.taskId && taskMap[leaf.taskId]) {
-              const referencedTask = taskMap[leaf.taskId];
-              leafTitle = referencedTask.title;
-              badgeType = referencedTask.type;
-              inLibrary = true;
-            } else if (leaf.childCompositeTaskId && compositeTaskMap[leaf.childCompositeTaskId]) {
-              leafTitle = compositeTaskMap[leaf.childCompositeTaskId].title;
-              badgeType = 'composite';
-              inLibrary = true;
-            }
-
-            return (
-              <li key={leaf.id} className={styles.leafItem}>
-                <span className={styles.leafBullet}>·</span>
-                <span className={styles.leafTitle}>{leafTitle}</span>
-                <TypeBadge type={badgeType} size="small" />
-                {inLibrary && leaf.taskId && (
-                  isInPool(leaf.taskId) ? (
-                    <span className={styles.linkedBadge}>In Pool ✓</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.actionButton}
-                      onClick={() => onAddLeafToPool(leaf.taskId!, leafTitle, badgeType)}
-                    >
-                      Add to Pool
-                    </button>
-                  )
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </>
   );
 }
 
@@ -574,9 +254,13 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
         title: isCountingStep
           ? generateCounterTaskTitle(step.action!, step.maxCount!, step.unit!)
           : step.title,
-        description: step.title !== (isCountingStep ? generateCounterTaskTitle(step.action!, step.maxCount!, step.unit!) : step.title)
-          ? step.title
-          : undefined,
+        description:
+          step.title !==
+          (isCountingStep
+            ? generateCounterTaskTitle(step.action!, step.maxCount!, step.unit!)
+            : step.title)
+            ? step.title
+            : undefined,
         action: isCountingStep ? step.action! : undefined,
         unit: isCountingStep ? step.unit! : undefined,
         maxCount: isCountingStep ? step.maxCount! : undefined,
@@ -662,9 +346,7 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
   return (
     <div className={styles.container}>
       {/* Success message */}
-      {creationSuccess && (
-        <div className={styles.successMessage}>{creationSuccess}</div>
-      )}
+      {creationSuccess && <div className={styles.successMessage}>{creationSuccess}</div>}
 
       {/* Filter tabs */}
       <FilterTabs
@@ -712,9 +394,7 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
       <div className={styles.poolSection}>
         <h4 className={styles.poolTitle}>
           Board Task Pool
-          {boardPool.length > 0 && (
-            <span className={styles.poolCount}>{boardPool.length}</span>
-          )}
+          {boardPool.length > 0 && <span className={styles.poolCount}>{boardPool.length}</span>}
         </h4>
         {boardPool.length === 0 ? (
           <p className={styles.emptyState}>

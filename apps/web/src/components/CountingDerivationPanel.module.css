@@ -1,0 +1,105 @@
+/* Counting panel metadata block */
+.countingMeta {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.countingMetaRow {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.metaLabel {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Partial count allocation input */
+.allocationField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.allocationLabel {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.allocationInput {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+  width: 120px;
+}
+
+.allocationInput:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+}
+
+.allocationInput.allocationInputError {
+  border-color: var(--error-text);
+}
+
+.validationError {
+  font-size: 0.85rem;
+  color: var(--error-text);
+}
+
+/* Live preview box */
+.previewBox {
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--active-bg);
+  border-radius: 6px;
+  background-color: var(--card-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.previewLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.previewTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Action button */
+.actionButton {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--active-bg);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.actionButton:hover {
+  opacity: 0.85;
+}
+
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
