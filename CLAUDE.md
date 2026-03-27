@@ -31,6 +31,7 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 **Playground-first, one feature at a time, user-driven.** Use `/feature` skill for the full workflow.
 
 **Core Principles**:
+
 - ONE feature at a time — user picks what to build.
 - Playground before integration — no production code without explicit user approval.
 - **Build real components, not demos** — Playground features must use production-ready reusable components from `components/` / `Views/Components/`. The Playground is a testing harness, not a place for throwaway inline UI. If a component doesn't exist yet, create it as a reusable component first, then use it in the Playground.
@@ -40,6 +41,7 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 **Standard Development Process**: Ask clarifying questions first. Create a branch per feature/bugfix. TDD approach. Plan before implementing.
 
 **Workflow Skills**:
+
 - `/feature` — New feature development (Playground-first, Two-Gate)
 - `/bugfix` — Diagnose and fix bugs (systematic debugging, plugin verification)
 - `/refactor` — Restructure code without changing behavior (safety verification)
@@ -59,14 +61,14 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 ### Agents
 
-| Agent | Purpose |
-|-------|---------|
+| Agent                        | Purpose                                                                |
+| ---------------------------- | ---------------------------------------------------------------------- |
 | `cross-platform-coordinator` | Orchestration, scope control, spec compliance, consistency enforcement |
-| `react-web-implementer` | Web (React) implementation |
-| `steve-jobs` | iOS (Swift/SwiftUI) implementation |
-| `sync-specialist` | Offline-first sync (Phase 3) |
-| `system-design-engineer` | Complex technical design decisions |
-| `ultrathink-debugger` | Deep root cause analysis for hard bugs |
+| `react-web-implementer`      | Web (React) implementation                                             |
+| `steve-jobs`                 | iOS (Swift/SwiftUI) implementation                                     |
+| `sync-specialist`            | Offline-first sync (Phase 3)                                           |
+| `system-design-engineer`     | Complex technical design decisions                                     |
+| `ultrathink-debugger`        | Deep root cause analysis for hard bugs                                 |
 
 ## Cross-Platform File Structure
 
@@ -95,6 +97,7 @@ apps/web/src/                                        apps/ios/OYBC/
 ```
 
 **Rules**:
+
 1. Container views stay thin — no form logic, no state, no database calls.
 2. One file per playground feature, one file per reusable component.
 3. Web: `[Name].tsx`. iOS: `[Name]View.swift` (views) or `[Name]Playground.swift` (features).
@@ -104,6 +107,7 @@ apps/web/src/                                        apps/ios/OYBC/
 ## Commands
 
 ### Monorepo (Root)
+
 ```bash
 pnpm install    # Install all dependencies
 pnpm build      # Build all packages
@@ -113,6 +117,7 @@ pnpm clean      # Clean all build artifacts
 ```
 
 ### Shared Package (`packages/shared`)
+
 ```bash
 cd packages/shared
 pnpm build          # Build types and validation
@@ -123,6 +128,7 @@ pnpm test:coverage  # Coverage report
 ```
 
 ### Web App (`apps/web`)
+
 ```bash
 cd apps/web
 pnpm dev        # Dev server (http://localhost:5173)
@@ -133,6 +139,7 @@ pnpm lint       # Lint
 ```
 
 ### iOS App (`apps/ios`)
+
 ```bash
 open OYBC.xcodeproj          # Open in Xcode
 # Build: ⌘R  |  Tests: ⌘U
@@ -143,6 +150,7 @@ xcodebuild -scheme OYBC build  # CLI build (simulator)
 ## Architecture
 
 ### Monorepo Structure
+
 ```
 oybc/
 ├── apps/
@@ -166,6 +174,7 @@ oybc/
 **Tables**: `users`, `boards`, `tasks`, `task_steps`, `board_tasks`, `progress_counters`, `sync_queue`
 
 **Key Design Elements**:
+
 - UUID primary keys (client-generated, enables offline creation)
 - Version fields (optimistic locking for conflict resolution)
 - Soft deletes (`isDeleted` flag, never hard delete)
@@ -190,6 +199,7 @@ See `docs/SYNC_STRATEGY.md` for details.
 ## Key Conventions
 
 ### iOS (Swift)
+
 ```swift
 // Read
 let boards = try AppDatabase.shared.fetchBoards(userId: userId)
@@ -201,10 +211,12 @@ try AppDatabase.shared.write { db in
     try steps.forEach { try $0.save(db) }
 }
 ```
+
 - JSON arrays stored as JSON strings with custom `Codable` encode/decode
 - Don't store derived values — compute from stored values
 
 ### Web (TypeScript)
+
 ```typescript
 // Read
 const boards = await fetchBoards(userId);
@@ -220,6 +232,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 ```
 
 ### Shared Package
+
 - No platform-specific code (no GRDB, Dexie, Firebase, React, SwiftUI)
 - Only pure TypeScript: types, algorithms, validation, constants
 
@@ -268,15 +281,15 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 
 **Current Phase**: Phase 2 - Core Game Loop (Offline-Only)
 
-| # | Feature | Status |
-|---|---------|--------|
-| 1 | 5x5 Bingo Board Grid | COMPLETE |
-| 2 | Different Board Sizes (3x3, 4x4, 5x5) | COMPLETE |
-| 3 | Bingo Detection Logic | COMPLETE |
-| 4 | Board Randomization | COMPLETE |
-| 5 | Center Space Logic | COMPLETE |
-| 6 | Tasks & Task Creation | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions, subtask derivation, subtask-to-pool, cross-board rollup) |
-| 7 | Celebrations & Polish | — |
+| #   | Feature                               | Status                                                                                                                                                         |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 5x5 Bingo Board Grid                  | COMPLETE                                                                                                                                                       |
+| 2   | Different Board Sizes (3x3, 4x4, 5x5) | COMPLETE                                                                                                                                                       |
+| 3   | Bingo Detection Logic                 | COMPLETE                                                                                                                                                       |
+| 4   | Board Randomization                   | COMPLETE                                                                                                                                                       |
+| 5   | Center Space Logic                    | COMPLETE                                                                                                                                                       |
+| 6   | Tasks & Task Creation                 | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions, subtask derivation, subtask-to-pool, cross-board rollup) |
+| 7   | Celebrations & Polish                 | —                                                                                                                                                              |
 
 **Current**: Feature 6 - Tasks & Task Creation. Subtask system SF1-SF3 complete in Playground (derivation engine, subtask creation to board pool, cross-board progress rollup). SF4 (board-browse entry point) remaining. Playground component extraction needed — see `docs/superpowers/specs/2026-03-19-playground-component-extraction.md`.
 
@@ -288,4 +301,4 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 
 - Feature branches: `feature/feature-name`
 - Bugfix branches: `bugfix/bug-description`
-- Merge to `master` only after code review and passing all tests.
+- Merge to `dev` only after code review and passing all tests.

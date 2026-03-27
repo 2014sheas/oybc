@@ -53,7 +53,7 @@ user-invocable: true
 
 1. **Create Branch**
    - Branch: `refactor/description`
-   - Refactoring always gets its own branch — never done on master
+   - Refactoring always gets its own branch — never done on dev
 
 2. **Apply Changes**
    - Use **Serena** (`replace_symbol_body`, `rename_symbol`, `insert_after_symbol`) for structural changes

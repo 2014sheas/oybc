@@ -1,0 +1,93 @@
+/* Composite operator row */
+.operatorRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.operatorLabel {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.operatorValue {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Leaf node list */
+.leafList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.leafItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--card-bg);
+}
+
+.leafBullet {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+.leafTitle {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Linked task badge (green) */
+.linkedBadge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background-color: var(--success-bg);
+  color: var(--success-text);
+}
+
+/* Action button */
+.actionButton {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--active-bg);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.actionButton:hover {
+  opacity: 0.85;
+}
+
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Empty / placeholder states */
+.emptyState {
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 0.9rem;
+}

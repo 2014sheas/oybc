@@ -1160,7 +1160,7 @@ extension Board {
     ///   - name: Board display name.
     ///   - now: ISO8601 timestamp string for all date fields.
     /// - Returns: A fully initialised Board ready to be saved.
-    static func makePlayground(id: String, userId: String, name: String, now: String) -> Board {
+    static func makePlayground(id: String, userId: String, name: String, now: String, centerSquareType: String = "none") -> Board {
         // Encode a minimal dict and decode through the model's own Codable path
         let dict: [String: Any] = [
             "id": id,
@@ -1171,7 +1171,7 @@ extension Board {
             "timeframe": "weekly",
             "startDate": now,
             "endDate": now,
-            "centerSquareType": "none",
+            "centerSquareType": centerSquareType,
             "isRandomized": false,
             "totalTasks": 0,
             "completedTasks": 0,

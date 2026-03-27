@@ -21,6 +21,11 @@ struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
         Feature(
+            id: "board-browse",
+            title: "Board Browse \u{2192} Subtask Derivation",
+            content: AnyView(BoardBrowsePlayground())
+        ),
+        Feature(
             id: "cross-board-rollup",
             title: "Cross-Board Progress Rollup",
             content: AnyView(CrossBoardRollupPlayground())

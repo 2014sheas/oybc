@@ -5,6 +5,7 @@ import { BoardGeneratorPlayground } from '../components/playground/BoardGenerato
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
 import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
 import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
+import { BoardBrowsePlayground } from '../components/playground/BoardBrowsePlayground';
 import styles from './Playground.module.css';
 
 /**
@@ -32,6 +33,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'board-browse',
+      title: 'Board Browse → Subtask Derivation',
+      content: <BoardBrowsePlayground />,
+    },
     {
       id: 'cross-board-rollup',
       title: 'Cross-Board Progress Rollup',
