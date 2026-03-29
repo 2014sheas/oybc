@@ -254,7 +254,7 @@ extension AppDatabase {
     func fetchAllTaskSteps(userId: String) throws -> [TaskStep] {
         return try read { db in
             try TaskStep
-                .joining(required: TaskStep.task.filter(Column("userId") == userId))
+                .joining(required: TaskStep.task.filter(Column("userId") == userId && Column("isDeleted") == false))
                 .filter(Column("isDeleted") == false)
                 .order(Column("stepIndex"))
                 .fetchAll(db)

@@ -9,6 +9,7 @@ import {
   type BoardTask,
 } from '@oybc/shared';
 import { useBoardTasks } from '../hooks';
+import { db } from '../db/database';
 import { createBoard } from '../db/operations/boards';
 import { createBoardTask } from '../db/operations/boardTasks';
 import {
@@ -230,58 +231,67 @@ export function BoardCreatorPanel({
         ? fisherYatesShuffle([...poolForGrid]).slice(0, gridTasksNeeded)
         : [...poolForGrid].slice(0, gridTasksNeeded);
 
-      const board = await createBoard(userId, {
-        name: trimmedName,
-        boardSize,
-        timeframe: Timeframe.CUSTOM,
-        startDate: now,
-        endDate,
-        centerSquareType: centerType,
-        centerSquareCustomName:
-          centerType === CenterSquareType.CUSTOM_FREE
-            ? centerCustomName.trim() || undefined
-            : undefined,
-        centerTaskId: centerType === CenterSquareType.CHOSEN ? centerTaskId ?? undefined : undefined,
-        isRandomized,
-      });
+      // Atomic transaction — board + all board tasks in one write
+      let boardId = '';
+      let totalPlaced = 0;
 
-      const centerRow = Math.floor(boardSize / 2);
-      const centerCol = Math.floor(boardSize / 2);
-      let taskIndex = 0;
-
-      // Place the chosen center task first
-      if (centerType === CenterSquareType.CHOSEN && centerTaskId && isOddBoard) {
-        await createBoardTask({
-          boardId: board.id,
-          taskId: centerTaskId,
-          row: centerRow,
-          col: centerCol,
-          isCenter: true,
+      await db.transaction('rw', [db.boards, db.boardTasks], async () => {
+        const board = await createBoard(userId, {
+          name: trimmedName,
+          boardSize,
+          timeframe: Timeframe.CUSTOM,
+          startDate: now,
+          endDate,
+          centerSquareType: centerType,
+          centerSquareCustomName:
+            centerType === CenterSquareType.CUSTOM_FREE
+              ? centerCustomName.trim() || undefined
+              : undefined,
+          centerTaskId: centerType === CenterSquareType.CHOSEN ? centerTaskId ?? undefined : undefined,
+          isRandomized,
         });
-      }
+        boardId = board.id;
 
-      for (let row = 0; row < boardSize; row++) {
-        for (let col = 0; col < boardSize; col++) {
-          const isCenter = isOddBoard && row === centerRow && col === centerCol;
-          if (isCenter && hasCenterSquare) continue;
-          if (taskIndex >= selectedTasks.length) break;
+        const centerRow = Math.floor(boardSize / 2);
+        const centerCol = Math.floor(boardSize / 2);
 
+        // Place the chosen center task first
+        if (centerType === CenterSquareType.CHOSEN && centerTaskId && isOddBoard) {
           await createBoardTask({
             boardId: board.id,
-            taskId: selectedTasks[taskIndex].taskId,
-            row,
-            col,
-            isCenter: isCenter && centerType === CenterSquareType.NONE,
+            taskId: centerTaskId,
+            row: centerRow,
+            col: centerCol,
+            isCenter: true,
           });
-          taskIndex++;
+          totalPlaced++;
         }
-      }
 
-      setCreatedBoardId(board.id);
+        let taskIndex = 0;
+        for (let row = 0; row < boardSize; row++) {
+          for (let col = 0; col < boardSize; col++) {
+            const isCenter = isOddBoard && row === centerRow && col === centerCol;
+            if (isCenter && hasCenterSquare) continue;
+            if (taskIndex >= selectedTasks.length) break;
+
+            await createBoardTask({
+              boardId: board.id,
+              taskId: selectedTasks[taskIndex].taskId,
+              row,
+              col,
+              isCenter: isCenter && centerType === CenterSquareType.NONE,
+            });
+            taskIndex++;
+            totalPlaced++;
+          }
+        }
+      });
+
+      setCreatedBoardId(boardId);
       setSuccessMessage(
-        `Created "${board.name}" — ${taskIndex} task${taskIndex !== 1 ? 's' : ''} placed.`
+        `Created "${trimmedName}" — ${totalPlaced} task${totalPlaced !== 1 ? 's' : ''} placed.`
       );
-      onBoardCreated?.(board.id);
+      onBoardCreated?.(boardId);
     } catch (err) {
       console.error('Failed to create board:', err);
       setErrorMessage(

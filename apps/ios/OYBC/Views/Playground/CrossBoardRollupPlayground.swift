@@ -1199,6 +1199,7 @@ extension BoardTask {
     ///   - row: Grid row (0-based).
     ///   - col: Grid column (0-based).
     ///   - now: ISO8601 timestamp string.
+    ///   - isCenter: Whether this is the physical center cell of an odd-sized board (default false).
     ///   - initialCurrentCount: Optional starting count for counting tasks (nil otherwise).
     ///   - initialCompletedStepIds: Optional starting step IDs for progress tasks (nil otherwise).
     /// - Returns: A fully initialised BoardTask ready to be saved.
