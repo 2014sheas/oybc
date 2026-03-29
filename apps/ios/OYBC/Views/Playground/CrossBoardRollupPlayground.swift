@@ -1208,6 +1208,7 @@ extension BoardTask {
         row: Int,
         col: Int,
         now: String,
+        isCenter: Bool = false,
         initialCurrentCount: Int? = nil,
         initialCompletedStepIds: [String]? = nil
     ) -> BoardTask {
@@ -1217,7 +1218,7 @@ extension BoardTask {
             "taskId": taskId,
             "row": row,
             "col": col,
-            "isCenter": false,
+            "isCenter": isCenter,
             "isCompleted": false,
             "createdAt": now,
             "updatedAt": now,

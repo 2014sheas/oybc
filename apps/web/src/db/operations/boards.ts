@@ -42,6 +42,8 @@ export async function createBoard(
     startDate: input.startDate,
     endDate: input.endDate,
     centerSquareType: input.centerSquareType,
+    centerSquareCustomName: input.centerSquareCustomName,
+    centerTaskId: input.centerTaskId,
     isRandomized: input.isRandomized,
     totalTasks: input.boardSize * input.boardSize,
     completedTasks: 0,

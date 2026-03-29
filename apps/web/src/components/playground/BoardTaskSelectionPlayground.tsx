@@ -35,6 +35,7 @@ import { CountingDerivationPanel } from '../CountingDerivationPanel';
 import { ProgressDerivationPanel } from '../ProgressDerivationPanel';
 import { CompositeDerivationPanel } from '../CompositeDerivationPanel';
 import { CompositeTaskForm } from './CompositeTaskForm';
+import { BoardCreatorPanel } from '../BoardCreatorPanel';
 import {
   PLAYGROUND_USER_ID,
   SUCCESS_DISMISS_MS,
@@ -1581,6 +1582,16 @@ export function BoardTaskSelectionPlayground(): React.ReactElement {
           </div>
         )}
       </div>
+
+      {/* ── Board Creator — shown when pool has tasks ── */}
+      {boardPool.length > 0 && (
+        <BoardCreatorPanel
+          pool={boardPool}
+          taskMap={taskMap}
+          allTaskSteps={allTaskSteps}
+          userId={PLAYGROUND_USER_ID}
+        />
+      )}
 
       {/* Sticky floating pool indicator — visible when scrolled past the mode tabs */}
       {boardPool.length > 0 && (
