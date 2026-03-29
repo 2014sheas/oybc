@@ -35,7 +35,6 @@
 		A4D761B3D3CB7A3326F7B11F /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */; };
 		A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854FEF8734BD37239F0A8462 /* BoardTask.swift */; };
 		A6F3DCD9274923158442DA36 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476EB8034735B0ACC9032FA9 /* BingoDetection.swift */; };
-		AB678DE238285DAA17529D3E /* BoardBrowsePlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BAA9F92ECA85118B7D37E35 /* BoardBrowsePlayground.swift */; };
 		AD7B6745F16D74F4733FF545 /* TypeBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37AE86E7BE2C5A2C66BEB50A /* TypeBadgeView.swift */; };
 		B2FCC0C6923A5FD1DD19A429 /* BingoSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34742747DBBD390A07DC633A /* BingoSquare.swift */; };
 		B92DF575684C12C09A6778F0 /* CompositeTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */; };
@@ -46,6 +45,7 @@
 		E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */; };
 		E8FAA1849B7D23A6BE8201A2 /* CompositeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0052BFE5116994683E79480 /* CompositeTask.swift */; };
 		EB546963E080BD0C7D5EDDBD /* Shuffle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */; };
+		F184BF3F494D793485812D9C /* BoardTaskSelectionPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759C64DAC632DDA057A45E5F /* BoardTaskSelectionPlayground.swift */; };
 		F520EAF2A234007AFB744072 /* InteractiveTaskSquareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */; };
 		FDD899F966D69F4B39AFE8AD /* SubtaskChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AAEEFFDD3526743C95A13D7 /* SubtaskChipView.swift */; };
 		FE2AA97E854569BAF2DFAE62 /* TaskTypeSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCE6F8AAD4860D11D04DF12E /* TaskTypeSelectorView.swift */; };
@@ -92,7 +92,7 @@
 		6AAEEFFDD3526743C95A13D7 /* SubtaskChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtaskChipView.swift; sourceTree = "<group>"; };
 		6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
 		73F91261A5D2B914C87A9E59 /* Board.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Board.swift; sourceTree = "<group>"; };
-		7BAA9F92ECA85118B7D37E35 /* BoardBrowsePlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardBrowsePlayground.swift; sourceTree = "<group>"; };
+		759C64DAC632DDA057A45E5F /* BoardTaskSelectionPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardTaskSelectionPlayground.swift; sourceTree = "<group>"; };
 		854FEF8734BD37239F0A8462 /* BoardTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardTask.swift; sourceTree = "<group>"; };
 		A5D833627B1CDD7BE3E829AC /* ProgressStepRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressStepRowView.swift; sourceTree = "<group>"; };
 		B70713D5FB25DE3392CD3CEE /* Schema.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = Schema.sql; sourceTree = "<group>"; };
@@ -122,8 +122,8 @@
 		1B45E6A56872A0AAB9A5199F /* Playground */ = {
 			isa = PBXGroup;
 			children = (
-				7BAA9F92ECA85118B7D37E35 /* BoardBrowsePlayground.swift */,
 				5A4A008E558F76153F461B0B /* BoardGeneratorPlayground.swift */,
+				759C64DAC632DDA057A45E5F /* BoardTaskSelectionPlayground.swift */,
 				1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */,
 				28F87B121453F93D1A9C8372 /* CrossBoardRollupPlayground.swift */,
 				52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */,
@@ -365,9 +365,9 @@
 				A6F3DCD9274923158442DA36 /* BingoDetection.swift in Sources */,
 				B2FCC0C6923A5FD1DD19A429 /* BingoSquare.swift in Sources */,
 				9F0D8D9AA79597CE605BD66A /* Board.swift in Sources */,
-				AB678DE238285DAA17529D3E /* BoardBrowsePlayground.swift in Sources */,
 				4C1404F4AF8D7B699FF5DC50 /* BoardGeneratorPlayground.swift in Sources */,
 				A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */,
+				F184BF3F494D793485812D9C /* BoardTaskSelectionPlayground.swift in Sources */,
 				5BBF160330B3C5EBABCE096B /* CenterSquare.swift in Sources */,
 				CD9EF03D19BE77339DC9E521 /* CompositeDerivationPanelView.swift in Sources */,
 				E8FAA1849B7D23A6BE8201A2 /* CompositeTask.swift in Sources */,

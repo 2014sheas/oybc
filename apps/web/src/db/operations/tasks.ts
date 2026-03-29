@@ -50,10 +50,33 @@ export async function createTask(
     // Add task
     await db.tasks.add(task);
 
-    // Add steps if progress task
+    // Add steps if progress task — each step also gets a standalone Task
+    // record linked via linkedTaskId so steps are immediately pool-addable
     if (input.type === 'progress' && input.steps) {
       for (let i = 0; i < input.steps.length; i++) {
         const stepInput = input.steps[i];
+
+        // Create standalone task for this step
+        const stepTaskId = generateUUID();
+        const now = currentTimestamp();
+        const stepTask: Task = {
+          id: stepTaskId,
+          userId,
+          title: stepInput.title,
+          type: stepInput.type,
+          action: stepInput.action,
+          unit: stepInput.unit,
+          maxCount: stepInput.maxCount,
+          totalCompletions: 0,
+          totalInstances: 0,
+          createdAt: now,
+          updatedAt: now,
+          version: 1,
+          isDeleted: false,
+        };
+        await db.tasks.add(stepTask);
+
+        // Create the step record linked to both the parent and the standalone task
         const step: TaskStep = {
           id: generateUUID(),
           taskId: task.id,
@@ -63,8 +86,9 @@ export async function createTask(
           action: stepInput.action,
           unit: stepInput.unit,
           maxCount: stepInput.maxCount,
-          createdAt: currentTimestamp(),
-          updatedAt: currentTimestamp(),
+          linkedTaskId: stepTaskId,
+          createdAt: now,
+          updatedAt: now,
           version: 1,
           isDeleted: false,
         };

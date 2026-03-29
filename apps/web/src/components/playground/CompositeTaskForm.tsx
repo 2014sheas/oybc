@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { OperatorType, TaskType, type CompositeTask, type Task } from '@oybc/shared';
+import { OperatorType, TaskType, generateCounterTaskTitle, type CompositeTask, type Task } from '@oybc/shared';
 import { db } from '../../db/database';
 import { OperatorSelector } from '../OperatorSelector';
 import { CounterStepper } from '../CounterStepper';
@@ -97,7 +97,12 @@ function createEmptyInlineSubtask(): InlineSubtaskItem {
  * Each subtask can reference an existing task or composite task, or create
  * a new task inline (normal, counting, or progress).
  */
-export function CompositeTaskForm(): React.ReactElement {
+interface CompositeTaskFormProps {
+  /** Optional callback invoked with the newly created CompositeTask after successful creation */
+  onCreated?: (compositeTask: CompositeTask) => void;
+}
+
+export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): React.ReactElement {
   const [title, setTitle] = useState('');
   const [operator, setOperator] = useState<OperatorType>(OperatorType.AND);
   const [threshold, setThreshold] = useState(2);
@@ -363,15 +368,42 @@ export function CompositeTaskForm(): React.ReactElement {
               });
               for (let i = 0; i < subtask.steps.length; i++) {
                 const step = subtask.steps[i];
+                const stepType = step.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL;
+                const trimmedStepTitle = step.title.trim();
+                const trimmedAction = step.type === 'counting' ? step.action.trim() : '';
+                const trimmedUnit = step.type === 'counting' ? step.unit.trim() : '';
+                const stepMaxCount = step.type === 'counting' ? parseInt(step.maxCount, 10) : undefined;
+                // Resolve title: for counting steps with blank title, auto-generate
+                const resolvedStepTitle = step.type === 'counting' && !trimmedStepTitle
+                  ? generateCounterTaskTitle(trimmedAction, stepMaxCount!, trimmedUnit)
+                  : trimmedStepTitle;
+                // Create standalone task for each step (matches createTask behavior)
+                const stepTaskId = crypto.randomUUID();
+                await db.tasks.add({
+                  id: stepTaskId,
+                  userId: PLAYGROUND_USER_ID,
+                  title: resolvedStepTitle,
+                  type: stepType,
+                  action: step.type === 'counting' ? step.action.trim() || undefined : undefined,
+                  unit: step.type === 'counting' ? step.unit.trim() || undefined : undefined,
+                  maxCount: step.type === 'counting' ? parseInt(step.maxCount, 10) || undefined : undefined,
+                  totalCompletions: 0,
+                  totalInstances: 0,
+                  createdAt: now,
+                  updatedAt: now,
+                  version: 1,
+                  isDeleted: false,
+                });
                 await db.taskSteps.add({
                   id: crypto.randomUUID(),
                   taskId: newTaskId,
                   stepIndex: i,
-                  title: step.title.trim(),
-                  type: step.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL,
-                  action: step.type === 'counting' ? step.action.trim() || undefined : undefined,
-                  unit: step.type === 'counting' ? step.unit.trim() || undefined : undefined,
-                  maxCount: step.type === 'counting' ? parseInt(step.maxCount, 10) || undefined : undefined,
+                  title: resolvedStepTitle,
+                  type: stepType,
+                  action: step.type === 'counting' ? trimmedAction || undefined : undefined,
+                  unit: step.type === 'counting' ? trimmedUnit || undefined : undefined,
+                  maxCount: stepMaxCount,
+                  linkedTaskId: stepTaskId,
                   createdAt: now,
                   updatedAt: now,
                   version: 1,
@@ -435,6 +467,17 @@ export function CompositeTaskForm(): React.ReactElement {
       });
 
       setSuccessMessage('Composite task created!');
+      onCreated?.({
+        id: compositeTaskId,
+        userId: PLAYGROUND_USER_ID,
+        title: title.trim(),
+        description: undefined,
+        rootNodeId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        isDeleted: false,
+      });
       resetForm();
       setTimeout(() => setSuccessMessage(null), SUCCESS_DISMISS_MS);
     } catch (err) {
