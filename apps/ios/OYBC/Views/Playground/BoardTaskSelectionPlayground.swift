@@ -210,6 +210,20 @@ struct BoardTaskSelectionPlayground: View {
             Divider()
             poolSection
 
+            // ── Board Creator ──
+            if !boardPool.isEmpty {
+                Divider()
+                BoardCreatorPanelView(
+                    boardPool: boardPool,
+                    libraryTasks: libraryTasks,
+                    allTaskSteps: [],
+                    onBoardCreated: { _ in
+                        // Board created from pool — library refresh picks up the new board
+                        loadLibrary()
+                    }
+                )
+            }
+
         }
         .preference(key: PoolCountPreferenceKey.self, value: boardPool.count)
         .onAppear {
