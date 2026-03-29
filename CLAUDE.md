@@ -83,17 +83,32 @@ apps/web/src/                                        apps/ios/OYBC/
 ├── components/
 │   └── playground/
 │       ├── playgroundUtils.ts  ←→                  Views/Playground/PlaygroundUtils.swift
+│       ├── BoardTaskSelectionPlayground.tsx ←→      Views/Playground/BoardTaskSelectionPlayground.swift
 │       ├── BoardGeneratorPlayground.tsx ←→          Views/Playground/BoardGeneratorPlayground.swift
 │       ├── UnifiedTaskCreatorPlayground.tsx ←→      Views/Playground/UnifiedTaskCreatorPlayground.swift
 │       ├── TaskSquareActionsPlayground.tsx ←→       Views/Playground/TaskSquareActionsPlayground.swift
-│       ├── CompositeTaskForm.tsx ←→                 Views/Playground/CompositeTaskFormView.swift
-│       ├── ProgressStepRow.tsx ←→                  Views/Components/ProgressStepRowView.swift
-│       └── CountingStepFields.tsx ←→               Views/Components/CountingStepFieldsView.swift
+│       ├── CrossBoardRollupPlayground.tsx ←→        Views/Playground/CrossBoardRollupPlayground.swift
+│       ├── SubtaskDerivationPlayground.tsx ←→       Views/Playground/SubtaskDerivationPlayground.swift
+│       └── CompositeTaskForm.tsx ←→                 Views/Playground/CompositeTaskFormView.swift
 │
-└── components/
+└── components/                                     Views/Components/
     ├── Navbar.tsx
-    ├── BingoBoard.tsx          ←→                  Views/Components/BingoBoard.swift
-    └── BingoSquare.tsx         ←→                  Views/Components/BingoSquare.swift
+    ├── BingoBoard.tsx          ←→                  BingoBoard.swift
+    ├── BingoSquare.tsx         ←→                  BingoSquare.swift
+    ├── InteractiveTaskSquare.tsx ←→                 InteractiveTaskSquareView.swift
+    ├── TypeBadge.tsx           ←→                  TypeBadgeView.swift
+    ├── FilterTabs.tsx          ←→                  FilterTabsView.swift
+    ├── TaskTypeSelector.tsx    ←→                  TaskTypeSelectorView.swift
+    ├── SelectableTaskItem.tsx  ←→                  SelectableTaskItemView.swift
+    ├── PoolItem.tsx            ←→                  PoolItemView.swift
+    ├── SubtaskChip.tsx         ←→                  SubtaskChipView.swift
+    ├── OperatorSelector.tsx    ←→                  OperatorSelectorView.swift
+    ├── CounterStepper.tsx      ←→                  CounterStepperView.swift
+    ├── ProgressStepRow.tsx     ←→                  ProgressStepRowView.swift
+    ├── CountingStepFields.tsx  ←→                  CountingStepFieldsView.swift
+    ├── CountingDerivationPanel.tsx ←→               CountingDerivationPanelView.swift
+    ├── ProgressDerivationPanel.tsx ←→               ProgressDerivationPanelView.swift
+    └── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
 ```
 
 **Rules**:
@@ -255,6 +270,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Don't block UI for sync**: All sync operations must be background/async.
 - **Counting task field order**: Action → Max Count → Unit (not Action → Unit → Max Count).
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
+- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskForm` inline progress subtasks.
 
 ## Performance Targets
 
@@ -288,10 +304,10 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 | 3   | Bingo Detection Logic                 | COMPLETE                                                                                                                                                       |
 | 4   | Board Randomization                   | COMPLETE                                                                                                                                                       |
 | 5   | Center Space Logic                    | COMPLETE                                                                                                                                                       |
-| 6   | Tasks & Task Creation                 | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions, subtask derivation, subtask-to-pool, cross-board rollup) |
+| 6   | Tasks & Task Creation                 | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions, subtask system SF1-SF4, board task selection, cross-board rollup) |
 | 7   | Celebrations & Polish                 | —                                                                                                                                                              |
 
-**Current**: Feature 6 - Tasks & Task Creation. Subtask system SF1-SF3 complete in Playground (derivation engine, subtask creation to board pool, cross-board progress rollup). SF4 (board-browse entry point) remaining. Playground component extraction needed — see `docs/superpowers/specs/2026-03-19-playground-component-extraction.md`.
+**Current**: Feature 6 - Tasks & Task Creation. Subtask system SF1-SF4 complete in Playground. Board Task Selection playground consolidates task creation, existing task selection, subtask derivation, and board browsing into a unified task pool builder. Component extraction complete — see `docs/superpowers/specs/2026-03-19-playground-component-extraction.md`.
 
 **Phase 3** (future): Authentication & Sync Layer (Firebase Auth, sync queue, conflict resolution)
 

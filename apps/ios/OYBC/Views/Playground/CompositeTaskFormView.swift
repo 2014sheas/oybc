@@ -61,7 +61,14 @@ class SubtaskItem: ObservableObject, Identifiable {
 /// Replaces the recursive tree builder with a flat, depth-1 subtask list.
 /// Supports existing task/composite selection and inline task creation.
 /// Also renders a read-only library of existing composite tasks below the form.
+///
+/// - Parameter onCreated: Optional callback invoked after a composite task is successfully
+///   persisted. Receives the newly created `CompositeTask` value. Defaults to `nil`.
 struct CompositeTaskFormView: View {
+    // MARK: - Callback
+
+    var onCreated: ((CompositeTask) -> Void)? = nil
+
     // MARK: - Form State
 
     @State private var compositeTitle = ""
@@ -482,6 +489,23 @@ struct CompositeTaskFormView: View {
                     resetForm()
                     successMessage = "Composite task created!"
                     loadLibrary()
+                    // Notify caller with the newly created composite task
+                    if let callback = onCreated {
+                        let createdComposite = CompositeTask(
+                            id: compositeTaskId,
+                            userId: playgroundUserId,
+                            title: capturedTitle,
+                            description: nil,
+                            rootNodeId: rootNodeId,
+                            createdAt: now,
+                            updatedAt: now,
+                            lastSyncedAt: nil,
+                            version: 1,
+                            isDeleted: false,
+                            deletedAt: nil
+                        )
+                        callback(createdComposite)
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + successDismissSeconds) {
                         successMessage = nil
                     }

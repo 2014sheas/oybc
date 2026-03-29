@@ -1,6 +1,9 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import styles from './InteractiveTaskSquare.module.css';
 
+/** Exported CSS module styles for use by consumers rendering custom FloatingContextMenu children */
+export { styles as interactiveTaskSquareStyles };
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** The three interaction modes a task square can have. */
@@ -131,17 +134,26 @@ export interface ContextMenuState {
 }
 
 interface ContextMenuProps {
+  /** Task data for the square that was right-clicked */
   sq: TaskSquareData;
+  /** Current state of that square */
   state: SquareState;
+  /** Cursor position for anchoring the menu */
   position: { x: number; y: number };
+  /** Dismiss the menu */
   onClose: () => void;
-  onToggleComplete: (id: string) => void;
-  onIncrementCount: (id: string) => void;
-  onDecrementCount: (id: string) => void;
-  onResetCount: (id: string) => void;
-  onMarkAllStepsComplete: (id: string) => void;
-  onMarkAllStepsIncomplete: (id: string) => void;
-  onViewDetails: (id: string) => void;
+  /** When provided, renders custom content instead of the default game-action buttons.
+   *  Use the CSS classes `styles.contextMenuItem` and `styles.contextMenuDivider`
+   *  from InteractiveTaskSquare.module.css for consistent styling. */
+  children?: React.ReactNode;
+  // Game-action callbacks — only required when children is not provided
+  onToggleComplete?: (id: string) => void;
+  onIncrementCount?: (id: string) => void;
+  onDecrementCount?: (id: string) => void;
+  onResetCount?: (id: string) => void;
+  onMarkAllStepsComplete?: (id: string) => void;
+  onMarkAllStepsIncomplete?: (id: string) => void;
+  onViewDetails?: (id: string) => void;
 }
 
 /**
@@ -171,6 +183,7 @@ export function FloatingContextMenu({
   onMarkAllStepsComplete,
   onMarkAllStepsIncomplete,
   onViewDetails,
+  children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -215,11 +228,12 @@ export function FloatingContextMenu({
       style={{ left: pos.x, top: pos.y }}
       onClick={(e) => e.stopPropagation()}
     >
+      {children ?? (<>
       {sq.type === 'normal' && (
         <button
           className={styles.contextMenuItem}
           onClick={() => {
-            onToggleComplete(sq.id);
+            onToggleComplete?.(sq.id);
             onClose();
           }}
         >
@@ -232,7 +246,7 @@ export function FloatingContextMenu({
           <button
             className={styles.contextMenuItem}
             onClick={() => {
-              onIncrementCount(sq.id);
+              onIncrementCount?.(sq.id);
               onClose();
             }}
             disabled={state.currentCount >= (sq.maxCount ?? 1)}
@@ -243,7 +257,7 @@ export function FloatingContextMenu({
             className={styles.contextMenuItem}
             disabled={state.currentCount <= 0}
             onClick={() => {
-              onDecrementCount(sq.id);
+              onDecrementCount?.(sq.id);
               onClose();
             }}
           >
@@ -253,7 +267,7 @@ export function FloatingContextMenu({
             className={styles.contextMenuItem}
             disabled={state.currentCount <= 0}
             onClick={() => {
-              onResetCount(sq.id);
+              onResetCount?.(sq.id);
               onClose();
             }}
           >
@@ -267,7 +281,7 @@ export function FloatingContextMenu({
           <button
             className={styles.contextMenuItem}
             onClick={() => {
-              onViewDetails(sq.id);
+              onViewDetails?.(sq.id);
               onClose();
             }}
           >
@@ -277,7 +291,7 @@ export function FloatingContextMenu({
             className={styles.contextMenuItem}
             disabled={allStepsDone}
             onClick={() => {
-              onMarkAllStepsComplete(sq.id);
+              onMarkAllStepsComplete?.(sq.id);
               onClose();
             }}
           >
@@ -287,7 +301,7 @@ export function FloatingContextMenu({
             className={styles.contextMenuItem}
             disabled={!allStepsDone}
             onClick={() => {
-              onMarkAllStepsIncomplete(sq.id);
+              onMarkAllStepsIncomplete?.(sq.id);
               onClose();
             }}
           >
@@ -300,12 +314,13 @@ export function FloatingContextMenu({
       <button
         className={styles.contextMenuItem}
         onClick={() => {
-          onViewDetails(sq.id);
+          onViewDetails?.(sq.id);
           onClose();
         }}
       >
         ⓘ View Details
       </button>
+      </>)}
     </div>
   );
 }

@@ -585,7 +585,26 @@ struct UnifiedTaskCreatorPlayground: View {
                 } else {
                     try AppDatabase.shared.write { db in
                         try newTask.save(db)
-                        for step in newSteps {
+                        for var step in newSteps {
+                            // Create standalone task for each step
+                            let stepTaskId = AppDatabase.generateUUID()
+                            let stepTask = Task(
+                                id: stepTaskId,
+                                userId: playgroundUserId,
+                                title: step.title,
+                                type: step.type,
+                                action: step.action,
+                                unit: step.unit,
+                                maxCount: step.maxCount,
+                                totalCompletions: 0,
+                                totalInstances: 0,
+                                createdAt: step.createdAt,
+                                updatedAt: step.updatedAt,
+                                version: 1,
+                                isDeleted: false
+                            )
+                            try stepTask.save(db)
+                            step.linkedTaskId = stepTaskId
                             try step.save(db)
                         }
                     }
