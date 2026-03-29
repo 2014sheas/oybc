@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { OperatorType, TaskType, type CompositeTask, type Task } from '@oybc/shared';
+import { OperatorType, TaskType, generateCounterTaskTitle, type CompositeTask, type Task } from '@oybc/shared';
 import { db } from '../../db/database';
 import { OperatorSelector } from '../OperatorSelector';
 import { CounterStepper } from '../CounterStepper';
@@ -369,12 +369,20 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
               for (let i = 0; i < subtask.steps.length; i++) {
                 const step = subtask.steps[i];
                 const stepType = step.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL;
+                const trimmedStepTitle = step.title.trim();
+                const trimmedAction = step.type === 'counting' ? step.action.trim() : '';
+                const trimmedUnit = step.type === 'counting' ? step.unit.trim() : '';
+                const stepMaxCount = step.type === 'counting' ? parseInt(step.maxCount, 10) : undefined;
+                // Resolve title: for counting steps with blank title, auto-generate
+                const resolvedStepTitle = step.type === 'counting' && !trimmedStepTitle
+                  ? generateCounterTaskTitle(trimmedAction, stepMaxCount!, trimmedUnit)
+                  : trimmedStepTitle;
                 // Create standalone task for each step (matches createTask behavior)
                 const stepTaskId = crypto.randomUUID();
                 await db.tasks.add({
                   id: stepTaskId,
                   userId: PLAYGROUND_USER_ID,
-                  title: step.title.trim(),
+                  title: resolvedStepTitle,
                   type: stepType,
                   action: step.type === 'counting' ? step.action.trim() || undefined : undefined,
                   unit: step.type === 'counting' ? step.unit.trim() || undefined : undefined,
@@ -390,11 +398,11 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
                   id: crypto.randomUUID(),
                   taskId: newTaskId,
                   stepIndex: i,
-                  title: step.title.trim(),
+                  title: resolvedStepTitle,
                   type: stepType,
-                  action: step.type === 'counting' ? step.action.trim() || undefined : undefined,
-                  unit: step.type === 'counting' ? step.unit.trim() || undefined : undefined,
-                  maxCount: step.type === 'counting' ? parseInt(step.maxCount, 10) || undefined : undefined,
+                  action: step.type === 'counting' ? trimmedAction || undefined : undefined,
+                  unit: step.type === 'counting' ? trimmedUnit || undefined : undefined,
+                  maxCount: stepMaxCount,
                   linkedTaskId: stepTaskId,
                   createdAt: now,
                   updatedAt: now,

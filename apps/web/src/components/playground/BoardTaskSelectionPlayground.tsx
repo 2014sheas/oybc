@@ -568,18 +568,22 @@ export function BoardTaskSelectionPlayground(): React.ReactElement {
           description: description.trim() || undefined,
           type: TaskType.PROGRESS,
           steps: steps.map((s) => {
+            const trimmedStepTitle = s.title.trim();
+            const trimmedAction = s.action.trim();
+            const trimmedUnit = s.unit.trim();
+            const maxCount = parseInt(s.maxCount, 10);
             const resolvedStepTitle =
               s.type === 'counting'
-                ? generateCounterTaskTitle(s.action, parseInt(s.maxCount, 10), s.unit, s.title || undefined)
-                : s.title.trim();
+                ? generateCounterTaskTitle(trimmedAction, maxCount, trimmedUnit, trimmedStepTitle || undefined)
+                : trimmedStepTitle;
             return {
               title: resolvedStepTitle,
               type: s.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL,
               ...(s.type === 'counting'
                 ? {
-                    action: s.action.trim(),
-                    unit: s.unit.trim(),
-                    maxCount: parseInt(s.maxCount, 10),
+                    action: trimmedAction,
+                    unit: trimmedUnit,
+                    maxCount,
                   }
                 : {}),
             };
@@ -830,9 +834,11 @@ export function BoardTaskSelectionPlayground(): React.ReactElement {
   // ── Existing Tasks tab filter logic ─────────────────────────────────────────
 
   const filteredTasks: Task[] =
-    existingFilter === 'all' || existingFilter === COMPOSITE_TYPE
+    existingFilter === 'all'
       ? allTasks
-      : allTasks.filter((t: Task) => t.type === existingFilter);
+      : existingFilter === COMPOSITE_TYPE
+        ? []
+        : allTasks.filter((t: Task) => t.type === existingFilter);
 
   const filteredCompositeTasks: CompositeTask[] =
     existingFilter === 'all' || existingFilter === COMPOSITE_TYPE ? allCompositeTasks : [];
