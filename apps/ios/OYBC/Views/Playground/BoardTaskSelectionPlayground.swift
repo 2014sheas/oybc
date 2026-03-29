@@ -124,6 +124,7 @@ struct BoardTaskSelectionPlayground: View {
 
     @State private var libraryTasks: [Task] = []
     @State private var libraryCompositeTasks: [CompositeTask] = []
+    @State private var allLibraryTaskSteps: [TaskStep] = []
     @State private var loadError: String? = nil
 
     // MARK: - Pool State
@@ -216,7 +217,7 @@ struct BoardTaskSelectionPlayground: View {
                 BoardCreatorPanelView(
                     boardPool: boardPool,
                     libraryTasks: libraryTasks,
-                    allTaskSteps: [],
+                    allTaskSteps: allLibraryTaskSteps,
                     onBoardCreated: { _ in
                         // Board created from pool — library refresh picks up the new board
                         loadLibrary()
@@ -1089,10 +1090,12 @@ struct BoardTaskSelectionPlayground: View {
                         .fetchAll(db)
                 }
                 let fetchedBoards = try AppDatabase.shared.fetchBoards(userId: playgroundUserId)
+                let fetchedSteps = try AppDatabase.shared.fetchAllTaskSteps(userId: playgroundUserId)
                 DispatchQueue.main.async {
                     self.libraryTasks = fetched
                     self.libraryCompositeTasks = composites
                     self.boards = fetchedBoards
+                    self.allLibraryTaskSteps = fetchedSteps
                     self.loadError = nil
                 }
             } catch {

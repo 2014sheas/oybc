@@ -221,9 +221,14 @@ export function BoardCreatorPanel({
         ? pool.filter((e) => e.taskId !== centerTaskId)
         : [...pool];
 
+      // For CHOSEN, center task is separate — only slice grid tasks
+      const gridTasksNeeded = centerType === CenterSquareType.CHOSEN && isOddBoard
+        ? boardSize * boardSize - 1
+        : tasksNeeded;
+
       const selectedTasks = isRandomized
-        ? fisherYatesShuffle([...poolForGrid]).slice(0, tasksNeeded)
-        : [...poolForGrid].slice(0, tasksNeeded);
+        ? fisherYatesShuffle([...poolForGrid]).slice(0, gridTasksNeeded)
+        : [...poolForGrid].slice(0, gridTasksNeeded);
 
       const board = await createBoard(userId, {
         name: trimmedName,
@@ -266,7 +271,7 @@ export function BoardCreatorPanel({
             taskId: selectedTasks[taskIndex].taskId,
             row,
             col,
-            isCenter: false,
+            isCenter: isCenter && centerType === CenterSquareType.NONE,
           });
           taskIndex++;
         }

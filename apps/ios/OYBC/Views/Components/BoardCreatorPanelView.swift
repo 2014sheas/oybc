@@ -414,7 +414,7 @@ struct BoardCreatorPanelView: View {
                         "endDate": now,
                         "centerSquareType": centerSquareTypeString,
                         "isRandomized": isRandomized,
-                        "totalTasks": selectedEntries.count,
+                        "totalTasks": size * size,
                         "completedTasks": 0,
                         "linesCompleted": 0,
                         "createdAt": now,
@@ -424,6 +424,9 @@ struct BoardCreatorPanelView: View {
                     ]
                     if let name = customCenterName, !name.isEmpty {
                         d["centerSquareCustomName"] = name
+                    }
+                    if centerType == .chosen, let ctId = capturedCenterTaskId {
+                        d["centerTaskId"] = ctId
                     }
                     return d
                 }()
@@ -465,7 +468,8 @@ struct BoardCreatorPanelView: View {
                             taskId: entry.taskId,
                             row: row,
                             col: col,
-                            now: now
+                            now: now,
+                            isCenter: isCenterCell && centerType == .none
                         )
                         boardTasks.append(bt)
                     }

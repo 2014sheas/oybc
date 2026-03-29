@@ -247,6 +247,20 @@ extension AppDatabase {
         }
     }
 
+    /// Fetches all non-deleted `TaskStep` records for progress tasks owned by a user.
+    ///
+    /// - Parameter userId: The owning user's ID.
+    /// - Returns: All matching steps ordered by `stepIndex`.
+    func fetchAllTaskSteps(userId: String) throws -> [TaskStep] {
+        return try read { db in
+            try TaskStep
+                .joining(required: TaskStep.task.filter(Column("userId") == userId))
+                .filter(Column("isDeleted") == false)
+                .order(Column("stepIndex"))
+                .fetchAll(db)
+        }
+    }
+
     func saveTaskStep(_ step: TaskStep) throws {
         try write { db in
             try step.save(db)
