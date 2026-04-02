@@ -30,6 +30,11 @@ struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
         Feature(
+            id: "board-lifecycle",
+            title: "Board Lifecycle",
+            content: AnyView(BoardLifecyclePlayground())
+        ),
+        Feature(
             id: "board-task-selection",
             title: "Board Task Selection",
             content: AnyView(BoardTaskSelectionPlayground())

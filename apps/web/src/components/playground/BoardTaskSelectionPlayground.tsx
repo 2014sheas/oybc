@@ -18,6 +18,7 @@ import { createTask } from '../../db/operations/tasks';
 import { createBoard } from '../../db/operations/boards';
 import { createBoardTask } from '../../db/operations/boardTasks';
 import { useBoards, useBoardTasks, useTasks } from '../../hooks';
+import { taskToSquareData, boardTaskToSquareState } from '../../db/adapters';
 import {
   InteractiveTaskSquare,
   FloatingContextMenu,
@@ -115,57 +116,8 @@ const EXISTING_FILTER_TABS: { value: 'all' | TaskTypeOrComposite; label: string 
   { value: COMPOSITE_TYPE, label: 'Composite' },
 ];
 
-// ─── Adapters ─────────────────────────────────────────────────────────────────
-
-/**
- * Converts a Task record (and its associated TaskStep records) to the
- * TaskSquareData shape expected by InteractiveTaskSquare.
- *
- * @param task - The Task record to adapt
- * @param taskSteps - All task steps; filtered internally by task ID
- * @returns TaskSquareData suitable for InteractiveTaskSquare
- */
-function taskToSquareData(task: Task, taskSteps: TaskStep[]): TaskSquareData {
-  const type =
-    task.type === TaskType.COUNTING
-      ? 'counting'
-      : task.type === TaskType.PROGRESS
-        ? 'progress'
-        : 'normal';
-
-  const steps =
-    task.type === TaskType.PROGRESS
-      ? taskSteps
-          .filter((s) => s.taskId === task.id)
-          .sort((a, b) => a.stepIndex - b.stepIndex)
-          .map((s) => ({ id: s.id, label: s.title }))
-      : undefined;
-
-  return {
-    id: task.id,
-    title: task.title,
-    type,
-    action: task.action ?? undefined,
-    maxCount: task.maxCount ?? undefined,
-    unit: task.unit ?? undefined,
-    steps,
-  };
-}
-
-/**
- * Converts a BoardTask record to the SquareState shape expected by
- * InteractiveTaskSquare.
- *
- * @param bt - The BoardTask record to adapt
- * @returns SquareState with completedStepIds as a Set
- */
-function boardTaskToSquareState(bt: BoardTask): SquareState {
-  return {
-    isCompleted: bt.isCompleted,
-    currentCount: bt.currentCount ?? 0,
-    completedStepIds: new Set(bt.completedStepIds ?? []),
-  };
-}
+// ─── Adapters (imported from shared module) ──────────────────────────────────
+// taskToSquareData and boardTaskToSquareState imported via db/adapters.ts
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 

@@ -115,6 +115,21 @@ export async function completeBoard(boardId: string): Promise<void> {
 }
 
 /**
+ * Activate a board (transition from DRAFT to ACTIVE)
+ *
+ * @param boardId - The board to activate
+ */
+export async function activateBoard(boardId: string): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board || board.status !== BoardStatus.DRAFT) return;
+  await db.boards.update(boardId, {
+    status: BoardStatus.ACTIVE,
+    updatedAt: currentTimestamp(),
+    version: (board.version ?? 1) + 1,
+  });
+}
+
+/**
  * Fetch boards by timeframe (for achievement tracking)
  */
 export async function fetchBoardsByTimeframe(

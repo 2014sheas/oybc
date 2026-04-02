@@ -14,12 +14,11 @@ import { createTask } from '../../db/operations/tasks';
 import { createBoard } from '../../db/operations/boards';
 import { createBoardTask } from '../../db/operations/boardTasks';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
+import { taskToSquareData, boardTaskToSquareState } from '../../db/adapters';
 import {
   InteractiveTaskSquare,
   DetailModal,
   FloatingContextMenu,
-  type TaskSquareData,
-  type SquareState,
   type ContextMenuState,
 } from '../InteractiveTaskSquare';
 import styles from './CrossBoardRollupPlayground.module.css';
@@ -61,62 +60,6 @@ interface DemoState {
   countingRelationships: Record<string, CountingRelationship>;
   /** step-task task ID → StepRelationship */
   stepRelationships: Record<string, StepRelationship>;
-}
-
-// ─── Adapters ─────────────────────────────────────────────────────────────────
-
-/**
- * Converts a Task record (and its associated TaskStep records) to the
- * TaskSquareData shape expected by InteractiveTaskSquare.
- *
- * Steps are included for progress tasks so that `progressFraction` inside
- * InteractiveTaskSquare can compute the correct completion fraction using the
- * `completedStepIds` set derived from the BoardTask record.
- *
- * @param task - The Task record to adapt
- * @param taskSteps - All task steps for the user; filtered internally by task ID
- * @returns TaskSquareData suitable for InteractiveTaskSquare
- */
-function taskToSquareData(task: Task, taskSteps: TaskStep[]): TaskSquareData {
-  const type =
-    task.type === TaskType.COUNTING
-      ? 'counting'
-      : task.type === TaskType.PROGRESS
-        ? 'progress'
-        : 'normal';
-
-  const steps =
-    task.type === TaskType.PROGRESS
-      ? taskSteps
-          .filter((s) => s.taskId === task.id)
-          .sort((a, b) => a.stepIndex - b.stepIndex)
-          .map((s) => ({ id: s.id, label: s.title }))
-      : undefined;
-
-  return {
-    id: task.id,
-    title: task.title,
-    type,
-    action: task.action ?? undefined,
-    maxCount: task.maxCount ?? undefined,
-    unit: task.unit ?? undefined,
-    steps,
-  };
-}
-
-/**
- * Converts a BoardTask record to the SquareState shape expected by
- * InteractiveTaskSquare.
- *
- * @param bt - The BoardTask record to adapt
- * @returns SquareState with completedStepIds as a Set
- */
-function boardTaskToSquareState(bt: BoardTask): SquareState {
-  return {
-    isCompleted: bt.isCompleted,
-    currentCount: bt.currentCount ?? 0,
-    completedStepIds: new Set(bt.completedStepIds ?? []),
-  };
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────

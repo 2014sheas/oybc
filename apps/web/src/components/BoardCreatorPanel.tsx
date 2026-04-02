@@ -3,19 +3,15 @@ import {
   CenterSquareType,
   Timeframe,
   fisherYatesShuffle,
-  TaskType,
   type Task,
   type TaskStep,
   type BoardTask,
 } from '@oybc/shared';
 import { useBoardTasks } from '../hooks';
+import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
 import { createBoard } from '../db/operations/boards';
 import { createBoardTask } from '../db/operations/boardTasks';
-import {
-  InteractiveTaskSquare,
-  type TaskSquareData,
-  type SquareState,
-} from './InteractiveTaskSquare';
+import { InteractiveTaskSquare } from './InteractiveTaskSquare';
 import styles from './BoardCreatorPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,58 +34,6 @@ export interface BoardCreatorPanelProps {
   userId: string;
   /** Called with the new board's ID after successful creation */
   onBoardCreated?: (boardId: string) => void;
-}
-
-// ─── Adapters ─────────────────────────────────────────────────────────────────
-
-/**
- * Converts a Task record (and its associated TaskStep records) to the
- * TaskSquareData shape expected by InteractiveTaskSquare.
- *
- * @param task - The Task record to adapt
- * @param taskSteps - All task steps; filtered internally by task ID
- * @returns TaskSquareData suitable for InteractiveTaskSquare
- */
-function taskToSquareData(task: Task, taskSteps: TaskStep[]): TaskSquareData {
-  const type =
-    task.type === TaskType.COUNTING
-      ? 'counting'
-      : task.type === TaskType.PROGRESS
-        ? 'progress'
-        : 'normal';
-
-  const steps =
-    task.type === TaskType.PROGRESS
-      ? taskSteps
-          .filter((s) => s.taskId === task.id)
-          .sort((a, b) => a.stepIndex - b.stepIndex)
-          .map((s) => ({ id: s.id, label: s.title }))
-      : undefined;
-
-  return {
-    id: task.id,
-    title: task.title,
-    type,
-    action: task.action ?? undefined,
-    maxCount: task.maxCount ?? undefined,
-    unit: task.unit ?? undefined,
-    steps,
-  };
-}
-
-/**
- * Converts a BoardTask record to the SquareState shape expected by
- * InteractiveTaskSquare.
- *
- * @param bt - The BoardTask record to adapt
- * @returns SquareState with completedStepIds as a Set
- */
-function boardTaskToSquareState(bt: BoardTask): SquareState {
-  return {
-    isCompleted: bt.isCompleted,
-    currentCount: bt.currentCount ?? 0,
-    completedStepIds: new Set(bt.completedStepIds ?? []),
-  };
 }
 
 // ─── Center type options (odd-board only) ─────────────────────────────────────

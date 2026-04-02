@@ -206,7 +206,10 @@ struct TaskStep: Codable, FetchableRecord, PersistableRecord {
 
     static let databaseTableName = "task_steps"
 
-    static let task = belongsTo(Task.self)
+    /// The parent progress task that owns this step (via `taskId` column).
+    /// Explicit ForeignKey needed because TaskStep has two FK columns to Task
+    /// (`taskId` for the parent, `linkedTaskId` for the extracted standalone task).
+    static let task = belongsTo(Task.self, using: ForeignKey(["taskId"]))
 }
 
 // MARK: - Supporting Types
