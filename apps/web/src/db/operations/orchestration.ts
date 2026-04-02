@@ -53,7 +53,14 @@ export async function handleTaskCompletion(
     const board = await db.boards.get(boardId);
     if (!board) throw new Error(`Board ${boardId} not found`);
 
-    // 2. Apply the update to the target boardTask
+    // 2. Validate the boardTask exists and belongs to this board
+    const targetBt = await db.boardTasks.get(boardTaskId);
+    if (!targetBt) throw new Error(`BoardTask ${boardTaskId} not found`);
+    if (targetBt.boardId !== boardId) {
+      throw new Error(`BoardTask ${boardTaskId} does not belong to board ${boardId}`);
+    }
+
+    // 3. Apply the update to the target boardTask
     const now = currentTimestamp();
     const updatePayload: Partial<BoardTask> = {
       ...updates,
@@ -62,7 +69,7 @@ export async function handleTaskCompletion(
 
     // Auto-detect completion for counting tasks
     if (updates.currentCount !== undefined) {
-      const bt = await db.boardTasks.get(boardTaskId);
+      const bt = targetBt;
       if (bt) {
         // Look up the task to get maxCount
         const task = await db.tasks.get(bt.taskId);
@@ -78,9 +85,8 @@ export async function handleTaskCompletion(
 
     // Auto-detect completion for progress tasks (all steps done)
     if (updates.completedStepIds !== undefined) {
-      const bt = await db.boardTasks.get(boardTaskId);
-      if (bt) {
-        const task = await db.tasks.get(bt.taskId);
+      {
+        const task = await db.tasks.get(targetBt.taskId);
         if (task) {
           const totalSteps = await db.taskSteps
             .where('taskId')
@@ -112,10 +118,7 @@ export async function handleTaskCompletion(
     }
 
     // Increment version
-    const currentBt = await db.boardTasks.get(boardTaskId);
-    if (currentBt) {
-      updatePayload.version = (currentBt.version ?? 1) + 1;
-    }
+    updatePayload.version = (targetBt.version ?? 1) + 1;
 
     await db.boardTasks.update(boardTaskId, updatePayload);
 

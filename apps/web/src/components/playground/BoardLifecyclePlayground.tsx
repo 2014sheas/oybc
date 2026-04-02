@@ -394,12 +394,18 @@ export function BoardLifecyclePlayground(): React.ReactElement {
                       col === Math.floor(gridSize / 2);
 
                     if (!bt) {
-                      // FREE center square — auto-completed, non-interactive
-                      if (isCenter) {
+                      if (isCenter && (selectedBoard.centerSquareType === CenterSquareType.FREE ||
+                          selectedBoard.centerSquareType === CenterSquareType.CUSTOM_FREE)) {
+                        // FREE center square — auto-completed, non-interactive
                         cells.push(
                           <div key={`center-${row}-${col}`} className={styles.freeSquare}>
                             FREE
                           </div>
+                        );
+                      } else {
+                        // Empty placeholder to preserve CSS grid alignment
+                        cells.push(
+                          <div key={`empty-${row}-${col}`} className={styles.freeSquare} />
                         );
                       }
                       continue;
