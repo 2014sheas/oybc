@@ -105,7 +105,8 @@ export function BoardLifecyclePlayground(): React.ReactElement {
   // ── Demo board creation ──────────────────────────────────────────────────
 
   /**
-   * Creates a demo 3×3 board with 8 mixed tasks and a FREE center square.
+   * Creates a demo 3×3 board with a FREE center square. Defines 9 tasks
+   * (2 counting, 2 progress, 5 normal), shuffles them, and places 8 on the grid.
    * Reuses the same task definitions as BoardTaskSelectionPlayground's demo
    * board so there is a consistent reference point across playground sections.
    */

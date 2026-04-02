@@ -505,7 +505,7 @@ describe('Cross-Board Task Sharing', () => {
         true, true, false, // [2,2] = parent, incomplete
       ];
 
-      // After rollup: parent completes at [2,2] → row_2 bingo + diag_anti
+      // After rollup: parent completes at [2,2] → row_2 bingo + diag_main ([0,0],[1,1],[2,2])
       const gridAfter: boolean[] = [
         true, false, false,
         false, true, false,

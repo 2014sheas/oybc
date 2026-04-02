@@ -1,5 +1,5 @@
 import { db } from '../database';
-import { BoardStatus, detectBingos, type BoardTask } from '@oybc/shared';
+import { BoardStatus, CenterSquareType, detectBingos, type BoardTask } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -98,11 +98,17 @@ export async function handleTaskCompletion(
       }
     }
 
-    // Set completedAt for explicit completion
-    if (updates.isCompleted === true) {
-      updatePayload.completedAt = now;
-    } else if (updates.isCompleted === false) {
-      updatePayload.completedAt = undefined;
+    // Set completedAt for explicit completion — only when auto-detection
+    // didn't already determine isCompleted (counting/progress auto-detection
+    // sets both isCompleted and completedAt together)
+    if (updates.isCompleted !== undefined &&
+        updates.currentCount === undefined &&
+        updates.completedStepIds === undefined) {
+      if (updates.isCompleted) {
+        updatePayload.completedAt = now;
+      } else {
+        updatePayload.completedAt = undefined;
+      }
     }
 
     // Increment version
@@ -139,7 +145,7 @@ export async function handleTaskCompletion(
       const hasCenterTask = allBoardTasks.some(
         (bt) => bt.row === Math.floor(gridSize / 2) && bt.col === Math.floor(gridSize / 2)
       );
-      if (!hasCenterTask && (board.centerSquareType === 'free' || board.centerSquareType === 'custom_free')) {
+      if (!hasCenterTask && (board.centerSquareType === CenterSquareType.FREE || board.centerSquareType === CenterSquareType.CUSTOM_FREE)) {
         completionGrid[centerIndex] = true;
       }
     }
@@ -162,7 +168,7 @@ export async function handleTaskCompletion(
       const hasCenterTask = allBoardTasks.some(
         (bt) => bt.row === Math.floor(gridSize / 2) && bt.col === Math.floor(gridSize / 2)
       );
-      if (!hasCenterTask && (board.centerSquareType === 'free' || board.centerSquareType === 'custom_free')) {
+      if (!hasCenterTask && (board.centerSquareType === CenterSquareType.FREE || board.centerSquareType === CenterSquareType.CUSTOM_FREE)) {
         totalCompleted++;
       }
     }
@@ -181,6 +187,8 @@ export async function handleTaskCompletion(
       await db.boards.update(boardId, {
         status: BoardStatus.COMPLETED,
         completedAt: now,
+        updatedAt: now,
+        version: (board.version ?? 1) + 2, // +2: one for stats update above, one for status change
       });
       boardCompleted = true;
     }
