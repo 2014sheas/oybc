@@ -185,11 +185,11 @@ export function BoardCreatorPanel({
         startDate = computedBoundaries.startDate;
         endDate = computedBoundaries.endDate;
       } else if (customStartDate && customEndDate) {
-        // Use toLocalISO to match the format used by getTimeframeBoundaries
-        const s = new Date(customStartDate);
-        const e = new Date(customEndDate);
-        startDate = toLocalISO(new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, 0));
-        endDate = toLocalISO(new Date(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999));
+        // Parse YYYY-MM-DD manually to avoid UTC shift from new Date("YYYY-MM-DD")
+        const [sy, sm, sd] = customStartDate.split('-').map(Number);
+        const [ey, em, ed] = customEndDate.split('-').map(Number);
+        startDate = toLocalISO(new Date(sy, sm - 1, sd, 0, 0, 0, 0));
+        endDate = toLocalISO(new Date(ey, em - 1, ed, 23, 59, 59, 999));
       } else {
         const now = new Date();
         startDate = toLocalISO(now);

@@ -8,6 +8,7 @@ import {
   fisherYatesShuffle,
   isTimeframeExpired,
   formatTimeframeLabel,
+  toLocalISO,
   type Task,
   type TaskStep,
   type BoardTask,
@@ -115,8 +116,9 @@ export function BoardLifecyclePlayground(): React.ReactElement {
   const handleCreateDemoBoard = useCallback(async (): Promise<void> => {
     setIsSettingUp(true);
     try {
-      const demoStart = new Date().toISOString();
-      const demoEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const now = new Date();
+      const demoStart = toLocalISO(now);
+      const demoEnd = toLocalISO(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59, 999));
 
       const taskDefs = [
         { type: TaskType.COUNTING, title: 'Read 50 pages', action: 'Read', unit: 'pages', maxCount: 50 },

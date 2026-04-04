@@ -929,9 +929,14 @@ struct BoardLifecyclePlayground: View {
                 let boardName = "Demo Board \(existingCount + 1)"
 
                 // Board starts in DRAFT status — transitions to ACTIVE on first interaction.
-                let thirtyDaysFromNow = ISO8601DateFormatter().string(
-                    from: Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-                )
+                // Use local ISO format for calendar-bound dates (startDate/endDate)
+                let localFormatter = DateFormatter()
+                localFormatter.locale = Locale(identifier: "en_US_POSIX")
+                localFormatter.timeZone = TimeZone.current
+                localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+                let localStart = localFormatter.string(from: Date())
+                let localEnd = localFormatter.string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date())!)
+
                 let boardDict: [String: Any] = [
                     "id": boardId,
                     "userId": playgroundUserId,
@@ -939,8 +944,8 @@ struct BoardLifecyclePlayground: View {
                     "status": "draft",
                     "boardSize": 3,
                     "timeframe": "custom",
-                    "startDate": now,
-                    "endDate": thirtyDaysFromNow,
+                    "startDate": localStart,
+                    "endDate": localEnd,
                     "centerSquareType": "free",
                     "isRandomized": true,
                     "totalTasks": 9,

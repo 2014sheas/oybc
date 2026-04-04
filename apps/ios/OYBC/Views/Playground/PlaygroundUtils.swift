@@ -63,11 +63,22 @@ func generateSampleTaskTitles() -> [String] {
 /// - Parameter string: An ISO8601-formatted date string.
 /// - Returns: The parsed `Date`, or `nil` if the string is not valid ISO8601.
 func parseISO8601Date(_ string: String) -> Date? {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = formatter.date(from: string) { return d }
-    formatter.formatOptions = [.withInternetDateTime]
-    return formatter.date(from: string)
+    // Try ISO8601 with timezone + fractional seconds first (e.g., "...000Z")
+    let isoFormatter = ISO8601DateFormatter()
+    isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = isoFormatter.date(from: string) { return d }
+    isoFormatter.formatOptions = [.withInternetDateTime]
+    if let d = isoFormatter.date(from: string) { return d }
+
+    // Fall back to local ISO strings without timezone (from toLocalISO on web)
+    // e.g., "2026-03-23T00:00:00.000"
+    let localFormatter = DateFormatter()
+    localFormatter.locale = Locale(identifier: "en_US_POSIX")
+    localFormatter.timeZone = TimeZone.current
+    localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+    if let d = localFormatter.date(from: string) { return d }
+    localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+    return localFormatter.date(from: string)
 }
 
 // MARK: - Timeframe Label Formatting

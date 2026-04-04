@@ -75,10 +75,16 @@ struct BoardCreatorPanelView: View {
         return formatTimeframeLabel(timeframe: timeframe, startDate: b.start)
     }
 
-    /// ISO8601 string for a Date, matching the timestamp format used throughout the app.
-    private func iso8601(_ date: Date) -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    /// Local ISO string for a Date, matching the shared TS `toLocalISO()` format.
+    ///
+    /// Intentionally omits timezone suffix so the stored value preserves the user's
+    /// local wall-clock boundary instead of converting to UTC.
+    private func toLocalISO(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar.current
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone.current
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
         return f.string(from: date)
     }
 
@@ -474,11 +480,11 @@ struct BoardCreatorPanelView: View {
         let resolvedStartDate: String
         let resolvedEndDate: String
         if let boundaries = computedBoundaries {
-            resolvedStartDate = iso8601(boundaries.start)
-            resolvedEndDate   = iso8601(boundaries.end)
+            resolvedStartDate = toLocalISO(boundaries.start)
+            resolvedEndDate   = toLocalISO(boundaries.end)
         } else {
-            resolvedStartDate = iso8601(customStartDate)
-            resolvedEndDate   = iso8601(customEndDate)
+            resolvedStartDate = toLocalISO(customStartDate)
+            resolvedEndDate   = toLocalISO(customEndDate)
         }
 
         // For CHOSEN, exclude the center task from the grid pool so it isn't placed twice.
