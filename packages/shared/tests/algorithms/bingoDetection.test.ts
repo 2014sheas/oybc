@@ -561,16 +561,15 @@ describe('uncomplete cascade scenarios', () => {
   });
 
   it('uncomplete a non-bingo square — no bingos lost', () => {
-    // Complete row_0 (0,1,2) and col_2 (2,5,8) — they share index 2
-    const gridBefore = makeGrid([0, 1, 2, 5, 8]);
+    // Complete row_0 (0,1,2), col_2 (2,5,8), AND index 3 (not part of any bingo)
+    const gridBefore = makeGrid([0, 1, 2, 3, 5, 8]);
     const before = detectBingos(gridBefore, size);
     expect(before.completedLines).toContain('row_0');
     expect(before.completedLines).toContain('col_2');
 
-    // Uncomplete index 4 (center) — not part of either completed line
-    // Grid stays the same since 4 was never completed; uncomplete index 3 instead
-    // Index 3 is in row_1 (not complete) and col_0 (not complete) — not in any bingo
-    const gridAfter = makeGrid([0, 1, 2, 5, 8]); // same grid, index 3 was never set
+    // Uncomplete index 3 — it's in row_1 (not complete) and col_0 (not complete)
+    // so removing it should not affect any existing bingos
+    const gridAfter = makeGrid([0, 1, 2, 5, 8]);
     const after = detectBingos(gridAfter, size);
 
     const currentLines = new Set(after.completedLines);

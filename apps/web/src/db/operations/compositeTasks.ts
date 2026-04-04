@@ -16,11 +16,11 @@ import type {
  * @returns Array of composite tasks, sorted by updatedAt descending
  */
 export async function fetchCompositeTasks(userId: string): Promise<CompositeTask[]> {
-  return db.compositeTasks
+  const tasks = await db.compositeTasks
     .where('[userId+isDeleted]')
     .equals([userId, 0])
-    .reverse()
     .sortBy('updatedAt');
+  return tasks.reverse();
 }
 
 /**

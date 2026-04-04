@@ -12,11 +12,11 @@ export function useCompositeTasks(userId: string | undefined): CompositeTask[] |
   return useLiveQuery(
     async () => {
       if (!userId) return [];
-      return db.compositeTasks
+      const tasks = await db.compositeTasks
         .where('[userId+isDeleted]')
         .equals([userId, 0])
-        .reverse()
         .sortBy('updatedAt');
+      return tasks.reverse();
     },
     [userId],
     undefined

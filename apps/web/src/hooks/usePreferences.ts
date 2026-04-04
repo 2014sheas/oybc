@@ -36,7 +36,13 @@ export function usePreferences(): [Preferences, (updates: Partial<Preferences>) 
     try {
       const stored = localStorage.getItem(PREFS_KEY);
       if (stored) {
-        return { ...DEFAULTS, ...JSON.parse(stored) };
+        const parsed = JSON.parse(stored);
+        return {
+          weekStartDay:
+            parsed.weekStartDay === 'monday' || parsed.weekStartDay === 'sunday'
+              ? parsed.weekStartDay
+              : DEFAULTS.weekStartDay,
+        };
       }
     } catch {
       // Invalid JSON — fall through to defaults

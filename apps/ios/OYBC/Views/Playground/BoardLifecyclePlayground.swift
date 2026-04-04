@@ -806,7 +806,7 @@ struct BoardLifecyclePlayground: View {
                         boardWasReactivated = true
                     }
 
-                    // Determine flash message: reactivated > lostBingos > newBingos > greenlog.
+                    // Determine flash message: reactivated > lostBingos > greenlog > newBingos.
                     if boardWasReactivated {
                         newBingoMsg = "Board reactivated — no longer complete"
                     } else if !lostBingos.isEmpty {
