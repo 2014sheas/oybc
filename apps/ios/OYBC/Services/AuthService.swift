@@ -153,6 +153,10 @@ final class AuthService: ObservableObject {
     ///
     /// - Throws: A Firebase `AuthError` if sign-out fails.
     func signOut() throws {
+        // Clear sync queue to prevent cross-user data leakage
+        try? AppDatabase.shared.write { db in
+            try db.execute(sql: "DELETE FROM sync_queue")
+        }
         try Auth.auth().signOut()
         currentUser = nil
     }

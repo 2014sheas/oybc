@@ -173,6 +173,7 @@ export async function pullSync(
   lastSyncedAt?: string,
 ): Promise<PullResult> {
   const result: PullResult = { pulled: 0, conflicts: 0, details: [] };
+  let hadPullError = false;
 
   for (const collectionName of SYNCABLE_COLLECTIONS) {
     try {
@@ -218,14 +219,18 @@ export async function pullSync(
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       result.details.push(`Pull failed for ${collectionName}: ${errorMsg}`);
+      hadPullError = true;
     }
   }
 
-  // Update lastSyncedAt on the local user record
-  const now = new Date().toISOString();
-  const user = await db.users.get(userId);
-  if (user) {
-    await db.users.update(userId, { lastSyncedAt: now });
+  // Only advance the watermark if pull completed without errors,
+  // otherwise we risk permanently skipping updates for failed collections.
+  if (!hadPullError) {
+    const now = new Date().toISOString();
+    const user = await db.users.get(userId);
+    if (user) {
+      await db.users.update(userId, { lastSyncedAt: now });
+    }
   }
 
   return result;

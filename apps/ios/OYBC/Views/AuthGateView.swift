@@ -302,7 +302,10 @@ private struct LoginView: View {
     private func randomNonceString(length: Int = 32) -> String {
         var randomBytes = [UInt8](repeating: 0, count: length)
         let errorCode = SecRandomCopyBytes(kSecRandomDefault, length, &randomBytes)
-        precondition(errorCode == errSecSuccess, "Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
+        guard errorCode == errSecSuccess else {
+            // Fallback to UUID-based nonce if secure random fails
+            return UUID().uuidString + UUID().uuidString
+        }
         return Data(randomBytes).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")

@@ -71,8 +71,9 @@ private func resolveConflict(
     local: [String: Any],
     remote: [String: Any]
 ) -> String {
-    let localVersion = (local["version"] as? Int) ?? 0
-    let remoteVersion = (remote["version"] as? Int) ?? 0
+    // Normalize version to Int — GRDB may return Int64, Firestore may return NSNumber
+    let localVersion = (local["version"] as? NSNumber)?.intValue ?? 0
+    let remoteVersion = (remote["version"] as? NSNumber)?.intValue ?? 0
 
     if localVersion > remoteVersion { return "local" }
     if remoteVersion > localVersion { return "remote" }

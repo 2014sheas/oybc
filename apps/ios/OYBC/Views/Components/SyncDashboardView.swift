@@ -39,7 +39,11 @@ struct SyncDashboardView: View {
         }
         .padding(.vertical, 8)
         .onAppear { refreshCounts() }
-        .onChange(of: syncService.lastSyncResult != nil) { refreshCounts() }
+        .onChange(of: syncService.isSyncing) { isSyncing in
+            if !isSyncing, syncService.lastSyncResult != nil {
+                refreshCounts()
+            }
+        }
     }
 
     // MARK: - Subviews
