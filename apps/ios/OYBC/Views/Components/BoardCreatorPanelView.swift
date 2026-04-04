@@ -29,6 +29,10 @@ struct BoardCreatorPanelView: View {
     @State private var centerCustomName: String = ""
     @State private var centerTaskId: String? = nil
     @State private var isRandomized: Bool = true
+    @State private var timeframe: Timeframe = .custom
+    @State private var weekStartDay: String = "monday"
+    @State private var customStartDate: Date = Date()
+    @State private var customEndDate: Date = Date().addingTimeInterval(30 * 24 * 60 * 60)
     @State private var isCreating: Bool = false
     @State private var createdBoardId: String? = nil
     @State private var previewBoardTasks: [BoardTask] = []
@@ -57,6 +61,26 @@ struct BoardCreatorPanelView: View {
 
     /// Whether the pool has enough tasks for the selected configuration.
     private var hasEnoughTasks: Bool { boardPool.count >= tasksNeeded }
+
+    /// Resolved (start, end) Date pair for the selected timeframe.
+    /// Returns `nil` when `timeframe == .custom` (user enters dates manually).
+    private var computedBoundaries: (start: Date, end: Date)? {
+        guard timeframe != .custom else { return nil }
+        return getTimeframeBoundaries(timeframe: timeframe, referenceDate: Date(), weekStartDay: weekStartDay)
+    }
+
+    /// Short human-readable label for the computed period, e.g. "Mon Apr 6" or "April 2026".
+    private var timeframeDisplayLabel: String? {
+        guard let b = computedBoundaries else { return nil }
+        return formatTimeframeLabel(timeframe: timeframe, startDate: b.start)
+    }
+
+    /// ISO8601 string for a Date, matching the timestamp format used throughout the app.
+    private func iso8601(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: date)
+    }
 
     /// Human-readable label for the centre-square type picker.
     private func centerTypeLabel(_ ct: CenterSquareType) -> String {
@@ -105,6 +129,75 @@ struct BoardCreatorPanelView: View {
                             centerType = .free
                         }
                         resetOutcome()
+                    }
+                }
+
+                // ── Timeframe ──
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Timeframe")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Picker("Timeframe", selection: $timeframe) {
+                        Text("Daily").tag(Timeframe.daily)
+                        Text("Weekly").tag(Timeframe.weekly)
+                        Text("Monthly").tag(Timeframe.monthly)
+                        Text("Yearly").tag(Timeframe.yearly)
+                        Text("Custom").tag(Timeframe.custom)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: timeframe) { resetOutcome() }
+                }
+
+                // ── Week start (only when Weekly) ──
+                if timeframe == .weekly {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Week Starts On")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Picker("Week Start", selection: $weekStartDay) {
+                            Text("Monday").tag("monday")
+                            Text("Sunday").tag("sunday")
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: weekStartDay) { resetOutcome() }
+                    }
+                }
+
+                // ── Auto-calculated date display (non-Custom) ──
+                if let boundaries = computedBoundaries {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let label = timeframeDisplayLabel {
+                            Text(label)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        let startStr = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
+                        let endStr   = DateFormatter.localizedString(from: boundaries.end,   dateStyle: .medium, timeStyle: .none)
+                        Text("\(startStr) – \(endStr)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(6)
+                }
+
+                // ── Custom date pickers ──
+                if timeframe == .custom {
+                    VStack(alignment: .leading, spacing: 8) {
+                        DatePicker(
+                            "Start Date",
+                            selection: $customStartDate,
+                            displayedComponents: .date
+                        )
+                        .font(.subheadline)
+                        DatePicker(
+                            "End Date",
+                            selection: $customEndDate,
+                            in: customStartDate...,
+                            displayedComponents: .date
+                        )
+                        .font(.subheadline)
                     }
                 }
 
@@ -375,6 +468,18 @@ struct BoardCreatorPanelView: View {
         let boardId = AppDatabase.generateUUID()
         let size = boardSize
         let capturedCenterTaskId = centerTaskId
+        let capturedTimeframe = timeframe
+
+        // Resolve start/end dates — computed boundaries for non-Custom, user picks for Custom.
+        let resolvedStartDate: String
+        let resolvedEndDate: String
+        if let boundaries = computedBoundaries {
+            resolvedStartDate = iso8601(boundaries.start)
+            resolvedEndDate   = iso8601(boundaries.end)
+        } else {
+            resolvedStartDate = iso8601(customStartDate)
+            resolvedEndDate   = iso8601(customEndDate)
+        }
 
         // For CHOSEN, exclude the center task from the grid pool so it isn't placed twice.
         let poolForGrid: [(taskId: String, title: String, type: String)] = {
@@ -409,9 +514,9 @@ struct BoardCreatorPanelView: View {
                         "name": trimmedName,
                         "status": "active",
                         "boardSize": size,
-                        "timeframe": "weekly",
-                        "startDate": now,
-                        "endDate": now,
+                        "timeframe": capturedTimeframe.rawValue,
+                        "startDate": resolvedStartDate,
+                        "endDate": resolvedEndDate,
                         "centerSquareType": centerSquareTypeString,
                         "isRandomized": isRandomized,
                         "totalTasks": size * size,
@@ -521,11 +626,126 @@ struct BoardCreatorPanelView: View {
         centerCustomName = ""
         centerTaskId = nil
         isRandomized = true
+        timeframe = .custom
+        weekStartDay = "monday"
+        customStartDate = Date()
+        customEndDate = Date().addingTimeInterval(30 * 24 * 60 * 60)
         isCreating = false
         createdBoardId = nil
         previewBoardTasks = []
         successMessage = nil
         errorMessage = nil
+    }
+}
+
+// MARK: - Timeframe Boundary Helpers
+//
+// Swift equivalents of the shared TypeScript algorithms in packages/shared.
+// Kept here (not in a separate utility file) until a proper Swift shared
+// utility layer is introduced in a later phase.
+
+private extension BoardCreatorPanelView {
+
+    /// Returns the (start, end) Date boundaries for the given timeframe relative
+    /// to `referenceDate`.
+    ///
+    /// - Parameters:
+    ///   - timeframe: The selected `Timeframe` (must not be `.custom`).
+    ///   - referenceDate: The date to anchor the period to (typically `Date()`).
+    ///   - weekStartDay: `"monday"` or `"sunday"` — only used for `.weekly`.
+    /// - Returns: A tuple of (start, end) dates for the period that contains `referenceDate`.
+    func getTimeframeBoundaries(
+        timeframe: Timeframe,
+        referenceDate: Date,
+        weekStartDay: String
+    ) -> (start: Date, end: Date)? {
+        switch timeframe {
+        case .daily:
+            return getDayBoundaries(referenceDate)
+        case .weekly:
+            return getWeekBoundaries(referenceDate, weekStartDay: weekStartDay)
+        case .monthly:
+            return getMonthBoundaries(referenceDate)
+        case .yearly:
+            return getYearBoundaries(referenceDate)
+        case .custom:
+            return nil
+        }
+    }
+
+    /// Returns the start-of-day and end-of-day (23:59:59.999) for `date`.
+    ///
+    /// - Parameter date: Reference date.
+    /// - Returns: (startOfDay, endOfDay).
+    func getDayBoundaries(_ date: Date) -> (start: Date, end: Date) {
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        let start = cal.startOfDay(for: date)
+        // End = start of next day minus 1 millisecond
+        let end = cal.date(byAdding: .day, value: 1, to: start)!
+            .addingTimeInterval(-0.001)
+        return (start, end)
+    }
+
+    /// Returns the start and end of the ISO week (or Sunday-anchored week)
+    /// that contains `date`.
+    ///
+    /// - Parameters:
+    ///   - date: Reference date.
+    ///   - weekStartDay: `"monday"` (ISO) or `"sunday"`.
+    /// - Returns: (startOfWeek, endOfWeek).
+    func getWeekBoundaries(_ date: Date, weekStartDay: String) -> (start: Date, end: Date) {
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        // weekday: 1 = Sunday, 2 = Monday … 7 = Saturday
+        let firstWeekday = weekStartDay == "sunday" ? 1 : 2
+        cal.firstWeekday = firstWeekday
+
+        let components = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        let start = cal.date(from: components)!
+        let end = cal.date(byAdding: .day, value: 7, to: start)!
+            .addingTimeInterval(-0.001)
+        return (start, end)
+    }
+
+    /// Returns the start of the month and end of the month (last millisecond)
+    /// for the month containing `date`.
+    ///
+    /// - Parameter date: Reference date.
+    /// - Returns: (startOfMonth, endOfMonth).
+    func getMonthBoundaries(_ date: Date) -> (start: Date, end: Date) {
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        let components = cal.dateComponents([.year, .month], from: date)
+        let start = cal.date(from: components)!
+        let end = cal.date(byAdding: .month, value: 1, to: start)!
+            .addingTimeInterval(-0.001)
+        return (start, end)
+    }
+
+    /// Returns the start of the year and end of the year (last millisecond)
+    /// for the year containing `date`.
+    ///
+    /// - Parameter date: Reference date.
+    /// - Returns: (startOfYear, endOfYear).
+    func getYearBoundaries(_ date: Date) -> (start: Date, end: Date) {
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        let components = cal.dateComponents([.year], from: date)
+        let start = cal.date(from: components)!
+        let end = cal.date(byAdding: .year, value: 1, to: start)!
+            .addingTimeInterval(-0.001)
+        return (start, end)
+    }
+
+    /// Returns a short human-readable label for the timeframe period.
+    ///
+    /// - Parameters:
+    ///   - timeframe: The selected timeframe.
+    ///   - startDate: The computed start date for the period.
+    /// - Returns: e.g. `"Today"`, `"Week of Mar 23 – 29, 2026"`, `"April 2026"`, `"2026"`.
+    func formatTimeframeLabel(timeframe: Timeframe, startDate: Date) -> String {
+        playgroundTimeframeLabel(timeframe: timeframe, startDate: startDate)
     }
 }
 

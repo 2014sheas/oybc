@@ -84,6 +84,39 @@
   opacity: 0.9;
 }
 
+/* Timeframe date display */
+.dateDisplay {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  background-color: var(--bg-secondary, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.dateLabel {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.dateRange {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+/* Custom date inputs row */
+.dateInputRow {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.dateInputRow .fieldGroup {
+  flex: 1;
+}
+
 /* Randomize checkbox row */
 .checkboxGroup {
   display: flex;

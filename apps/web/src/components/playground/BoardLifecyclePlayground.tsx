@@ -6,6 +6,8 @@ import {
   CenterSquareType,
   BoardStatus,
   fisherYatesShuffle,
+  isTimeframeExpired,
+  formatTimeframeLabel,
   type Task,
   type TaskStep,
   type BoardTask,
@@ -249,6 +251,36 @@ export function BoardLifecyclePlayground(): React.ReactElement {
     btByPosition[`${bt.row}-${bt.col}`] = bt;
   }
 
+  // ── Expiry helpers ───────────────────────────────────────────────────────
+
+  /**
+   * Returns whether a board is expired (past its end date and not Custom timeframe).
+   */
+  function isBoardExpired(board: { timeframe: string; endDate?: string }): boolean {
+    if (board.timeframe === Timeframe.CUSTOM) return false;
+    if (!board.endDate) return false;
+    return isTimeframeExpired(board.endDate);
+  }
+
+  /**
+   * Returns a human-readable expiry indicator for the board list.
+   * - "No deadline" for Custom
+   * - "Expired" for past-due
+   * - "N days left" for active timeframes
+   */
+  function getExpiryLabel(board: { timeframe: string; endDate?: string }): string {
+    if (board.timeframe === Timeframe.CUSTOM) return 'No deadline';
+    if (!board.endDate) return 'No deadline';
+    if (isTimeframeExpired(board.endDate)) return 'Expired';
+    const msLeft = new Date(board.endDate).getTime() - Date.now();
+    const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+    if (daysLeft <= 0) return 'Expires today';
+    if (daysLeft === 1) return '1 day left';
+    return `${daysLeft} days left`;
+  }
+
+  const isSelectedBoardExpired = selectedBoard ? isBoardExpired(selectedBoard) : false;
+
   // ── Status badge helper ──────────────────────────────────────────────────
 
   /**
@@ -325,6 +357,11 @@ export function BoardLifecyclePlayground(): React.ReactElement {
                 >
                   <div className={styles.boardRowLeft}>
                     <span className={styles.boardRowName}>{board.name}</span>
+                    {board.timeframe !== Timeframe.CUSTOM && board.startDate && (
+                      <span className={styles.timeframeLabel}>
+                        {formatTimeframeLabel(board.timeframe as Timeframe, board.startDate)}
+                      </span>
+                    )}
                     <div className={styles.boardRowMeta}>
                       <div
                         className={styles.progressBar}
@@ -346,6 +383,9 @@ export function BoardLifecyclePlayground(): React.ReactElement {
                           {board.linesCompleted} bingo{board.linesCompleted !== 1 ? 's' : ''}
                         </span>
                       )}
+                      <span className={`${styles.expiryLabel} ${isBoardExpired(board) ? styles.expiryExpired : ''}`}>
+                        {getExpiryLabel(board)}
+                      </span>
                     </div>
                   </div>
                   <span className={`${styles.statusBadge} ${statusBadgeClass(board.status as BoardStatus)}`}>
@@ -423,6 +463,7 @@ export function BoardLifecyclePlayground(): React.ReactElement {
                         sq={squareData}
                         state={squareState}
                         onAct={() => {
+                          if (isSelectedBoardExpired) return;
                           if (squareData.type === 'progress') {
                             setSelectedSquareId(bt.id);
                           } else if (squareData.type === 'counting') {
@@ -445,6 +486,13 @@ export function BoardLifecyclePlayground(): React.ReactElement {
 
                 return cells;
               })()}
+            </div>
+          )}
+
+          {/* Expired banner */}
+          {isSelectedBoardExpired && (
+            <div className={styles.expiredBanner}>
+              Board expired on {selectedBoard.endDate?.split('T')[0] ?? 'unknown date'}
             </div>
           )}
 

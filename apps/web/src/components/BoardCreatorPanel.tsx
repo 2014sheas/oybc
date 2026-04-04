@@ -3,9 +3,13 @@ import {
   CenterSquareType,
   Timeframe,
   fisherYatesShuffle,
+  getTimeframeBoundaries,
+  formatTimeframeLabel,
+  toLocalISO,
   type Task,
   type TaskStep,
   type BoardTask,
+  type WeekStartDay,
 } from '@oybc/shared';
 import { useBoardTasks } from '../hooks';
 import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
@@ -74,6 +78,10 @@ export function BoardCreatorPanel({
   const [centerCustomName, setCenterCustomName] = useState('');
   const [centerTaskId, setCenterTaskId] = useState<string | null>(null);
   const [isRandomized, setIsRandomized] = useState(true);
+  const [timeframe, setTimeframe] = useState<Timeframe>(Timeframe.CUSTOM);
+  const [weekStartDay, setWeekStartDay] = useState<WeekStartDay>('monday');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
 
   // ── Async / result state ───────────────────────────────────────────────────
   const [isCreating, setIsCreating] = useState(false);
@@ -87,6 +95,15 @@ export function BoardCreatorPanel({
   const previewBoardTasks = useBoardTasks(createdBoardId ?? '') ?? [];
 
   // ── Derived values ─────────────────────────────────────────────────────────
+
+  // ── Computed timeframe boundaries ──────────────────────────────────────────
+  const computedBoundaries = timeframe !== Timeframe.CUSTOM
+    ? getTimeframeBoundaries(timeframe, new Date(), weekStartDay)
+    : null;
+
+  const timeframeLabel = timeframe !== Timeframe.CUSTOM && computedBoundaries
+    ? formatTimeframeLabel(timeframe, computedBoundaries.startDate)
+    : null;
 
   const isOddBoard = boardSize % 2 !== 0;
   const hasCenterSquare = isOddBoard && centerType !== CenterSquareType.NONE;
@@ -129,6 +146,10 @@ export function BoardCreatorPanel({
     setCenterCustomName('');
     setCenterTaskId(null);
     setIsRandomized(true);
+    setTimeframe(Timeframe.CUSTOM);
+    setWeekStartDay('monday');
+    setCustomStartDate('');
+    setCustomEndDate('');
   }
 
   /**
@@ -157,8 +178,24 @@ export function BoardCreatorPanel({
 
     setIsCreating(true);
     try {
-      const now = new Date().toISOString();
-      const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      // Resolve dates — computed boundaries for non-Custom, user inputs for Custom
+      let startDate: string;
+      let endDate: string;
+      if (computedBoundaries) {
+        startDate = computedBoundaries.startDate;
+        endDate = computedBoundaries.endDate;
+      } else if (customStartDate && customEndDate) {
+        // Use toLocalISO to match the format used by getTimeframeBoundaries
+        const s = new Date(customStartDate);
+        const e = new Date(customEndDate);
+        startDate = toLocalISO(new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, 0));
+        endDate = toLocalISO(new Date(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999));
+      } else {
+        const now = new Date();
+        startDate = toLocalISO(now);
+        const future = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59, 999);
+        endDate = toLocalISO(future);
+      }
 
       // For CHOSEN center, separate the center task from the rest
       const poolForGrid = centerType === CenterSquareType.CHOSEN && centerTaskId
@@ -177,8 +214,8 @@ export function BoardCreatorPanel({
       const board = await createBoard(userId, {
         name: trimmedName,
         boardSize,
-        timeframe: Timeframe.CUSTOM,
-        startDate: now,
+        timeframe,
+        startDate,
         endDate,
         centerSquareType: centerType,
         centerSquareCustomName:
@@ -349,6 +386,91 @@ export function BoardCreatorPanel({
               ))}
             </div>
           </div>
+
+          {/* Timeframe selector */}
+          <div className={styles.fieldGroup}>
+            <span className={styles.label}>Timeframe</span>
+            <div className={styles.sizeSelector}>
+              {([
+                { value: Timeframe.DAILY, label: 'Daily' },
+                { value: Timeframe.WEEKLY, label: 'Weekly' },
+                { value: Timeframe.MONTHLY, label: 'Monthly' },
+                { value: Timeframe.YEARLY, label: 'Yearly' },
+                { value: Timeframe.CUSTOM, label: 'Custom' },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`${styles.sizeButton} ${timeframe === opt.value ? styles.sizeButtonActive : ''}`}
+                  onClick={() => setTimeframe(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Week start — only when Weekly is selected */}
+          {timeframe === Timeframe.WEEKLY && (
+            <div className={styles.fieldGroup}>
+              <span className={styles.label}>Week Starts On</span>
+              <div className={styles.sizeSelector}>
+                {([
+                  { value: 'monday' as WeekStartDay, label: 'Monday' },
+                  { value: 'sunday' as WeekStartDay, label: 'Sunday' },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`${styles.sizeButton} ${weekStartDay === opt.value ? styles.sizeButtonActive : ''}`}
+                    onClick={() => setWeekStartDay(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Date display — auto-calculated or editable for Custom */}
+          {timeframe !== Timeframe.CUSTOM && computedBoundaries && (
+            <div className={styles.dateDisplay}>
+              <span className={styles.dateLabel}>{timeframeLabel}</span>
+              <span className={styles.dateRange}>
+                {computedBoundaries.startDate.split('T')[0]} to{' '}
+                {computedBoundaries.endDate.split('T')[0]}
+              </span>
+            </div>
+          )}
+
+          {timeframe === Timeframe.CUSTOM && (
+            <div className={styles.dateInputRow}>
+              <div className={styles.fieldGroup}>
+                <label className={styles.label} htmlFor="bcp-start-date">
+                  Start Date
+                </label>
+                <input
+                  id="bcp-start-date"
+                  type="date"
+                  className={styles.input}
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                />
+              </div>
+              <div className={styles.fieldGroup}>
+                <label className={styles.label} htmlFor="bcp-end-date">
+                  End Date
+                </label>
+                <input
+                  id="bcp-end-date"
+                  type="date"
+                  className={styles.input}
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Center type — only for odd-sized boards */}
           {isOddBoard && (

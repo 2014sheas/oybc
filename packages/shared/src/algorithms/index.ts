@@ -29,3 +29,20 @@ export type {
   CountingRollupResult,
   ProgressRollupResult,
 } from './rollup';
+
+export {
+  toLocalISO,
+  getDayBoundaries,
+  getWeekBoundaries,
+  getMonthBoundaries,
+  getYearBoundaries,
+  getTimeframeBoundaries,
+  isWithinTimeframe,
+  isTimeframeExpired,
+  formatTimeframeLabel,
+} from './calendarBoundaries';
+
+export type {
+  WeekStartDay,
+  TimeframeBoundaries,
+} from './calendarBoundaries';

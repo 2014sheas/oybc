@@ -172,6 +172,38 @@
   white-space: nowrap;
 }
 
+/* ─── Timeframe & expiry labels ────────────────────────────────────────────── */
+
+.timeframeLabel {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.expiryLabel {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.expiryExpired {
+  color: var(--error-text, #dc3545);
+  font-weight: 600;
+}
+
+/* ─── Expired banner ───────────────────────────────────────────────────────── */
+
+.expiredBanner {
+  margin: 0.5rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--error-bg, #f8d7da);
+  color: var(--error-text, #dc3545);
+  border: 1px solid var(--error-border, #f5c6cb);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 /* ─── Status badges ─────────────────────────────────────────────────────────── */
 
 .statusBadge {
