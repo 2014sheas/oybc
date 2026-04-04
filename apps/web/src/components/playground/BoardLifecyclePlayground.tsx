@@ -479,6 +479,7 @@ export function BoardLifecyclePlayground(): React.ReactElement {
                           }
                         }}
                         onContextMenu={(e) => {
+                          if (isSelectedBoardExpired) return;
                           setContextMenu({ squareId: bt.id, x: e.clientX, y: e.clientY });
                         }}
                       />

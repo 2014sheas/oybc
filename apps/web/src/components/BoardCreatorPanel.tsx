@@ -188,8 +188,15 @@ export function BoardCreatorPanel({
         // Parse YYYY-MM-DD manually to avoid UTC shift from new Date("YYYY-MM-DD")
         const [sy, sm, sd] = customStartDate.split('-').map(Number);
         const [ey, em, ed] = customEndDate.split('-').map(Number);
-        startDate = toLocalISO(new Date(sy, sm - 1, sd, 0, 0, 0, 0));
-        endDate = toLocalISO(new Date(ey, em - 1, ed, 23, 59, 59, 999));
+        const customStart = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+        const customEnd = new Date(ey, em - 1, ed, 23, 59, 59, 999);
+        if (customEnd.getTime() < customStart.getTime()) {
+          setErrorMessage('End date must be the same as or later than the start date.');
+          setIsCreating(false);
+          return;
+        }
+        startDate = toLocalISO(customStart);
+        endDate = toLocalISO(customEnd);
       } else {
         const now = new Date();
         startDate = toLocalISO(now);

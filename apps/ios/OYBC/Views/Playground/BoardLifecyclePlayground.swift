@@ -934,8 +934,12 @@ struct BoardLifecyclePlayground: View {
                 localFormatter.locale = Locale(identifier: "en_US_POSIX")
                 localFormatter.timeZone = TimeZone.current
                 localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
-                let localStart = localFormatter.string(from: Date())
-                let localEnd = localFormatter.string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date())!)
+                let startDate = Date()
+                let localStart = localFormatter.string(from: startDate)
+                let cal = Calendar.current
+                let targetEndDate = cal.date(byAdding: .day, value: 30, to: startDate)!
+                let endOfTargetDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: targetEndDate))!.addingTimeInterval(-0.001)
+                let localEnd = localFormatter.string(from: endOfTargetDay)
 
                 let boardDict: [String: Any] = [
                     "id": boardId,

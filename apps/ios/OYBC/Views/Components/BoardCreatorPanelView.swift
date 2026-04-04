@@ -483,8 +483,13 @@ struct BoardCreatorPanelView: View {
             resolvedStartDate = toLocalISO(boundaries.start)
             resolvedEndDate   = toLocalISO(boundaries.end)
         } else {
-            resolvedStartDate = toLocalISO(customStartDate)
-            resolvedEndDate   = toLocalISO(customEndDate)
+            // Normalize custom dates to start-of-day / end-of-day to match web behavior
+            let cal = Calendar.current
+            let dayStart = cal.startOfDay(for: customStartDate)
+            let nextDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: customEndDate))!
+            let dayEnd = nextDay.addingTimeInterval(-0.001)
+            resolvedStartDate = toLocalISO(dayStart)
+            resolvedEndDate   = toLocalISO(dayEnd)
         }
 
         // For CHOSEN, exclude the center task from the grid pool so it isn't placed twice.
