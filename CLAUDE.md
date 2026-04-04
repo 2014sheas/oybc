@@ -119,7 +119,7 @@ apps/web/src/                                        apps/ios/OYBC/
 │   ├── syncService.ts             ←→               Services/SyncService.swift
 │   └── conflictResolver.ts       ←→               (inline in SyncService.swift)
 │
-├── playground/
+├── components/playground/
 │   └── SyncSimulationPlayground.tsx ←→             Views/Components/SyncDashboardView.swift
 ```
 
