@@ -30,7 +30,7 @@ struct BoardCreatorPanelView: View {
     @State private var centerTaskId: String? = nil
     @State private var isRandomized: Bool = true
     @State private var timeframe: Timeframe = .custom
-    @State private var weekStartDay: String = "monday"
+    @AppStorage("oybc-weekStartDay") private var weekStartDay: String = "monday"
     @State private var customStartDate: Date = Date()
     @State private var customEndDate: Date = Date().addingTimeInterval(30 * 24 * 60 * 60)
     @State private var isCreating: Bool = false
@@ -638,7 +638,6 @@ struct BoardCreatorPanelView: View {
         centerTaskId = nil
         isRandomized = true
         timeframe = .custom
-        weekStartDay = "monday"
         customStartDate = Date()
         customEndDate = Date().addingTimeInterval(30 * 24 * 60 * 60)
         isCreating = false

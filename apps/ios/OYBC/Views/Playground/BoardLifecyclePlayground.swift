@@ -23,6 +23,8 @@ struct BoardLifecyclePlayground: View {
 
     // MARK: - State
 
+    @AppStorage("oybc-weekStartDay") private var weekStartDay: String = "monday"
+
     @State private var boards: [Board] = []
     @State private var selectedBoardId: String? = nil
     @State private var boardTasks: [BoardTask] = []
@@ -770,15 +772,10 @@ struct BoardLifecyclePlayground: View {
                     // 5. Detect bingos.
                     let result = BingoDetection.detectBingos(completionGrid: grid, gridSize: size)
 
-                    // Diff for new lines only.
+                    // Diff for new and lost lines.
                     let newLineIds = Set(result.completedLines)
                     let brandNewLines = newLineIds.subtracting(previousLineIds)
-
-                    if result.isGreenlog {
-                        newBingoMsg = "GREENLOG!"
-                    } else if !brandNewLines.isEmpty {
-                        newBingoMsg = "Bingo! (\(brandNewLines.sorted().joined(separator: ", ")))"
-                    }
+                    let lostBingos = previousLineIds.filter { !newLineIds.contains($0) }
 
                     // Count non-center completed tasks.
                     let completedCount = allBoardTasks.filter { !$0.isCenter && $0.isCompleted }.count
@@ -798,10 +795,26 @@ struct BoardLifecyclePlayground: View {
                     updatedBoard.updatedAt = now
                     updatedBoard.version += 1
 
-                    // 7. Auto-complete board on greenlog.
+                    // 7. Auto-complete board on greenlog; revert COMPLETED → ACTIVE when no longer greenlog.
+                    var boardWasReactivated = false
                     if result.isGreenlog, updatedBoard.status == .active {
                         updatedBoard.status = .completed
                         updatedBoard.completedAt = now
+                    } else if !result.isGreenlog, updatedBoard.status == .completed {
+                        updatedBoard.status = .active
+                        updatedBoard.completedAt = nil
+                        boardWasReactivated = true
+                    }
+
+                    // Determine flash message: reactivated > lostBingos > greenlog > newBingos.
+                    if boardWasReactivated {
+                        newBingoMsg = "Board reactivated — no longer complete"
+                    } else if !lostBingos.isEmpty {
+                        newBingoMsg = "Bingo lost: \(lostBingos.sorted().joined(separator: ", "))"
+                    } else if result.isGreenlog {
+                        newBingoMsg = "GREENLOG!"
+                    } else if !brandNewLines.isEmpty {
+                        newBingoMsg = "Bingo! (\(brandNewLines.sorted().joined(separator: ", ")))"
                     }
 
                     try updatedBoard.save(db)
