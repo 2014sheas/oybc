@@ -58,6 +58,12 @@ struct BoardLifecyclePlayground: View {
         selectedBoard?.boardSize ?? 3
     }
 
+    /// Whether the currently selected board has expired (past its end date, non-Custom timeframe).
+    private var isSelectedBoardExpired: Bool {
+        guard let board = selectedBoard else { return false }
+        return isBoardExpired(board)
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -160,6 +166,13 @@ struct BoardLifecyclePlayground: View {
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
 
+                    // Timeframe label (e.g. "Week of Mar 23 – 29, 2026")
+                    if board.timeframe != .custom {
+                        Text(boardTimeframeLabel(for: board))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
                     HStack(spacing: 8) {
                         // Progress fraction
                         Text("\(completed)/\(total) tasks")
@@ -171,6 +184,13 @@ struct BoardLifecyclePlayground: View {
                                 .font(.caption)
                                 .foregroundColor(.accentColor)
                         }
+
+                        // Expiry indicator
+                        let expiryLabel = getExpiryLabel(board)
+                        let expired = isBoardExpired(board)
+                        Text(expiryLabel)
+                            .font(.caption)
+                            .foregroundColor(expired ? .red : .secondary)
                     }
 
                     // Progress bar
@@ -258,6 +278,18 @@ struct BoardLifecyclePlayground: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            // ── Expired banner ──
+            if isSelectedBoardExpired {
+                let expiredDate = board.endDate.prefix(10)
+                Text("Board expired on \(expiredDate)")
+                    .font(.subheadline)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red.opacity(0.12))
+                    .foregroundColor(.red)
+                    .cornerRadius(8)
+            }
+
             // ── Reset ──
             Button {
                 resetSelectedBoard()
@@ -290,16 +322,20 @@ struct BoardLifecyclePlayground: View {
                 title: task?.title ?? "Unknown",
                 taskType: .normal,
                 isCompleted: isCompleted,
-                onTap: { handleNormalTap(boardTask: boardTask) }
+                onTap: {
+                    guard !isSelectedBoardExpired else { return }
+                    handleNormalTap(boardTask: boardTask)
+                }
             )
             .contextMenu {
                 Button(
                     isCompleted ? "Mark Incomplete" : "Mark Complete",
                     systemImage: "checkmark.circle"
                 ) {
+                    guard !isSelectedBoardExpired else { return }
                     handleNormalTap(boardTask: boardTask)
                 }
-                .disabled(isProcessing)
+                .disabled(isProcessing || isSelectedBoardExpired)
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
                 }
@@ -317,18 +353,23 @@ struct BoardLifecyclePlayground: View {
                 currentCount: current,
                 maxCount: maxVal,
                 unit: unitText,
-                onTap: { if let t = task { handleCountingTap(boardTask: boardTask, task: t) } }
+                onTap: {
+                    guard !isSelectedBoardExpired else { return }
+                    if let t = task { handleCountingTap(boardTask: boardTask, task: t) }
+                }
             )
             .contextMenu {
                 if let t = task {
                     Button("+ Add \(actionLabel)", systemImage: "plus") {
+                        guard !isSelectedBoardExpired else { return }
                         handleCountingTap(boardTask: boardTask, task: t)
                     }
-                    .disabled(current >= maxVal || isProcessing)
+                    .disabled(current >= maxVal || isProcessing || isSelectedBoardExpired)
                     Button("- Remove \(actionLabel)", systemImage: "minus") {
+                        guard !isSelectedBoardExpired else { return }
                         handleCountingDecrement(boardTask: boardTask, task: t)
                     }
-                    .disabled(current == 0 || isProcessing)
+                    .disabled(current == 0 || isProcessing || isSelectedBoardExpired)
                     Button("View Details", systemImage: "info.circle") {
                         detailBoardTaskId = boardTask.id
                     }
@@ -351,7 +392,10 @@ struct BoardLifecyclePlayground: View {
                 // internally blocks onTap for progress type via isTappable guard.
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { detailBoardTaskId = boardTask.id }
+                    .onTapGesture {
+                        guard !isSelectedBoardExpired else { return }
+                        detailBoardTaskId = boardTask.id
+                    }
             }
             .frame(width: 90, height: 90)
             .contextMenu {
@@ -359,13 +403,15 @@ struct BoardLifecyclePlayground: View {
                     detailBoardTaskId = boardTask.id
                 }
                 Button("Mark All Complete", systemImage: "checkmark.circle.fill") {
+                    guard !isSelectedBoardExpired else { return }
                     handleProgressCompleteAll(boardTask: boardTask)
                 }
-                .disabled(isCompleted || isProcessing)
+                .disabled(isCompleted || isProcessing || isSelectedBoardExpired)
                 Button("Mark Incomplete", systemImage: "xmark.circle") {
+                    guard !isSelectedBoardExpired else { return }
                     handleProgressReset(boardTask: boardTask)
                 }
-                .disabled(!isCompleted || isProcessing)
+                .disabled(!isCompleted || isProcessing || isSelectedBoardExpired)
             }
         }
     }
@@ -526,6 +572,21 @@ struct BoardLifecyclePlayground: View {
             .font(.caption)
             .foregroundColor(.secondary)
         }
+    }
+
+    // MARK: - Expiry & Timeframe Helpers
+    //
+    // Delegates to shared utilities in PlaygroundUtils.swift:
+    //   - isBoardExpired(_:)
+    //   - getExpiryLabel(_:)
+    //   - playgroundTimeframeLabel(timeframe:startDate:)
+    //   - parseISO8601Date(_:)
+
+    /// Returns the timeframe label for a board's list row, or empty string if Custom.
+    private func boardTimeframeLabel(for board: Board) -> String {
+        guard board.timeframe != .custom else { return "" }
+        guard let start = parseISO8601Date(board.startDate) else { return "" }
+        return playgroundTimeframeLabel(timeframe: board.timeframe, startDate: start)
     }
 
     // MARK: - Tap Handlers
@@ -868,9 +929,18 @@ struct BoardLifecyclePlayground: View {
                 let boardName = "Demo Board \(existingCount + 1)"
 
                 // Board starts in DRAFT status — transitions to ACTIVE on first interaction.
-                let thirtyDaysFromNow = ISO8601DateFormatter().string(
-                    from: Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-                )
+                // Use local ISO format for calendar-bound dates (startDate/endDate)
+                let localFormatter = DateFormatter()
+                localFormatter.locale = Locale(identifier: "en_US_POSIX")
+                localFormatter.timeZone = TimeZone.current
+                localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+                let startDate = Date()
+                let localStart = localFormatter.string(from: startDate)
+                let cal = Calendar.current
+                let targetEndDate = cal.date(byAdding: .day, value: 30, to: startDate)!
+                let endOfTargetDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: targetEndDate))!.addingTimeInterval(-0.001)
+                let localEnd = localFormatter.string(from: endOfTargetDay)
+
                 let boardDict: [String: Any] = [
                     "id": boardId,
                     "userId": playgroundUserId,
@@ -878,8 +948,8 @@ struct BoardLifecyclePlayground: View {
                     "status": "draft",
                     "boardSize": 3,
                     "timeframe": "custom",
-                    "startDate": now,
-                    "endDate": thirtyDaysFromNow,
+                    "startDate": localStart,
+                    "endDate": localEnd,
                     "centerSquareType": "free",
                     "isRandomized": true,
                     "totalTasks": 9,

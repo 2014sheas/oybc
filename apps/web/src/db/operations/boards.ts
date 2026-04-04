@@ -125,7 +125,7 @@ export async function activateBoard(boardId: string): Promise<void> {
   await db.boards.update(boardId, {
     status: BoardStatus.ACTIVE,
     updatedAt: currentTimestamp(),
-    version: db.boards.get(boardId).then((b) => (b?.version ?? 0) + 1),
+    version: (board.version ?? 0) + 1,
   });
 }
 
