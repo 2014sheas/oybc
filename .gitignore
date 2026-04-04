@@ -61,6 +61,7 @@ Pods/
 .firebase/
 firebase-debug.log
 firestore-debug.log
+GoogleService-Info.plist
 SCHEMA_CHANGES.md
 
 # Archive

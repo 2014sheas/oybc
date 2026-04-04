@@ -7,6 +7,7 @@ import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDer
 import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
 import { BoardTaskSelectionPlayground } from '../components/playground/BoardTaskSelectionPlayground';
 import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
+import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import styles from './Playground.module.css';
 
 /**
@@ -34,6 +35,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'sync-simulation',
+      title: 'Sync & Authentication',
+      content: <SyncSimulationPlayground />,
+    },
     {
       id: 'board-lifecycle',
       title: 'Board Lifecycle',

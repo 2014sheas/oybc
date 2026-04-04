@@ -17,6 +17,12 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift.git
     from: "6.24.0"
+  FirebaseSDK:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: "11.0.0"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "8.0.0"
 
 targets:
   OYBC:
@@ -27,11 +33,37 @@ targets:
       - path: OYBC
         excludes:
           - "**/.DS_Store"
+    resources:
+      # Download from Firebase Console → Project Settings → iOS app → GoogleService-Info.plist
+      # This file is gitignored — each developer must provide their own copy
+      - path: OYBC/GoogleService-Info.plist
+        optional: true
     dependencies:
       - package: GRDB
+      - package: FirebaseSDK
+        product: FirebaseAuth
+      - package: FirebaseSDK
+        product: FirebaseFirestore
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
+    info:
+      path: OYBC/Info.plist
+      properties:
+        GIDClientID: "401044947930-j31aflmqoltb2gm4luj6gt2l5opn0beb.apps.googleusercontent.com"
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - "com.googleusercontent.apps.401044947930-j31aflmqoltb2gm4luj6gt2l5opn0beb"
+    entitlements:
+      path: OYBC/OYBC.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: OYBC/OYBC.entitlements
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{collection}/{docId} {
+      // Only allow known collections
+      function isKnownCollection() {
+        return collection in [
+          'boards', 'tasks', 'taskSteps',
+          'boardTasks', 'compositeTasks', 'compositeNodes'
+        ];
+      }
+
+      // Reads: auth + collection check only (no request.resource for reads)
+      allow read: if request.auth != null
+                  && request.auth.uid == userId
+                  && isKnownCollection();
+
+      // Writes: auth + collection + field validation + id consistency
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId
+                            && isKnownCollection()
+                            && request.resource.data.keys().hasAll(['id', 'version'])
+                            && request.resource.data.version is number
+                            && request.resource.data.id == docId
+                            && request.resource.size() < 10000;
+
+      // Deletes: auth + collection only (no resource validation needed)
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId
+                    && isKnownCollection();
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

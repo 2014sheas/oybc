@@ -30,6 +30,13 @@ struct PlaygroundView: View {
     /// Features under test - new features will be added here (newest first)
     private let features: [Feature] = [
         Feature(
+            id: "auth-test",
+            title: "Authentication & Sync",
+            content: AnyView(AuthGateView {
+                SyncDashboardView()
+            })
+        ),
+        Feature(
             id: "board-lifecycle",
             title: "Board Lifecycle",
             content: AnyView(BoardLifecyclePlayground())
@@ -82,8 +89,9 @@ struct PlaygroundView: View {
                     }
                 }
             } catch {
+                print("❌ clearAllData failed: \(error)")
                 DispatchQueue.main.async {
-                    clearStatus = .error(error.localizedDescription)
+                    clearStatus = .error(String(describing: error))
                 }
             }
         }

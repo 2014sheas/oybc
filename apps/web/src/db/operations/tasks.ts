@@ -1,6 +1,8 @@
 import { db } from '../database';
 import type { Task, TaskStep, CreateTaskInput } from '@oybc/shared';
+import { SyncOperationType } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 
 /**
  * Task CRUD Operations
@@ -97,6 +99,20 @@ export async function createTask(
     }
   });
 
+  void addToSyncQueue('tasks', task.id, SyncOperationType.CREATE, task);
+
+  // Also sync any task steps and linked step tasks that were created
+  const createdSteps = await db.taskSteps.where('taskId').equals(task.id).toArray();
+  for (const step of createdSteps) {
+    void addToSyncQueue('taskSteps', step.id, SyncOperationType.CREATE, step);
+    if (step.linkedTaskId) {
+      const linkedTask = await db.tasks.get(step.linkedTaskId);
+      if (linkedTask) {
+        void addToSyncQueue('tasks', linkedTask.id, SyncOperationType.CREATE, linkedTask);
+      }
+    }
+  }
+
   return task;
 }
 
@@ -113,6 +129,8 @@ export async function updateTask(
     updatedAt: currentTimestamp(),
     version: (existing?.version ?? 0) + 1,
   });
+  const updated = await db.tasks.get(id);
+  if (updated) void addToSyncQueue('tasks', id, SyncOperationType.UPDATE, updated);
 }
 
 /**
@@ -124,6 +142,8 @@ export async function deleteTask(id: string): Promise<void> {
     deletedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
   });
+  const task = await db.tasks.get(id);
+  if (task) void addToSyncQueue('tasks', id, SyncOperationType.DELETE, task);
 }
 
 /**
