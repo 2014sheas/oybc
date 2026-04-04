@@ -11,7 +11,7 @@ import {
   type BoardTask,
   type WeekStartDay,
 } from '@oybc/shared';
-import { useBoardTasks } from '../hooks';
+import { useBoardTasks, usePreferences } from '../hooks';
 import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
 import { createBoard } from '../db/operations/boards';
 import { createBoardTask } from '../db/operations/boardTasks';
@@ -79,7 +79,9 @@ export function BoardCreatorPanel({
   const [centerTaskId, setCenterTaskId] = useState<string | null>(null);
   const [isRandomized, setIsRandomized] = useState(true);
   const [timeframe, setTimeframe] = useState<Timeframe>(Timeframe.CUSTOM);
-  const [weekStartDay, setWeekStartDay] = useState<WeekStartDay>('monday');
+  const [preferences, updatePreferences] = usePreferences();
+  const weekStartDay = preferences.weekStartDay;
+  const setWeekStartDay = (day: WeekStartDay) => updatePreferences({ weekStartDay: day });
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
@@ -147,7 +149,7 @@ export function BoardCreatorPanel({
     setCenterTaskId(null);
     setIsRandomized(true);
     setTimeframe(Timeframe.CUSTOM);
-    setWeekStartDay('monday');
+    // weekStartDay is a persistent preference — don't reset it
     setCustomStartDate('');
     setCustomEndDate('');
   }

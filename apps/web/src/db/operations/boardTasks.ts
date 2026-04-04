@@ -48,60 +48,65 @@ export async function createBoardTask(
 }
 
 /**
- * Complete a board task
+ * Complete a board task.
+ *
+ * @param id - The board task ID to mark as completed
  */
 export async function completeBoardTask(id: string): Promise<void> {
+  const bt = await db.boardTasks.get(id);
+  if (!bt) return;
   await db.boardTasks.update(id, {
     isCompleted: true,
     completedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
-    version: db.boardTasks.get(id).then((bt) => (bt?.version ?? 0) + 1),
+    version: (bt.version ?? 0) + 1,
   });
 }
 
 /**
- * Uncomplete a board task
- */
-export async function uncompleteBoardTask(id: string): Promise<void> {
-  await db.boardTasks.update(id, {
-    isCompleted: false,
-    completedAt: undefined,
-    updatedAt: currentTimestamp(),
-    version: db.boardTasks.get(id).then((bt) => (bt?.version ?? 0) + 1),
-  });
-}
-
-/**
- * Update counting task progress
+ * Update counting task progress on a board task.
+ *
+ * Note: For game-loop interactions, prefer `handleTaskCompletion()` from
+ * orchestration.ts which also handles bingo detection and board stats.
+ *
+ * @param id - The board task ID
+ * @param currentCount - The new count value
+ * @param maxCount - The task's maximum count (for completion detection)
  */
 export async function updateCountingProgress(
   id: string,
-  currentCount: number
+  currentCount: number,
+  maxCount: number,
 ): Promise<void> {
   const boardTask = await db.boardTasks.get(id);
   if (!boardTask) return;
 
+  const isNowCompleted = currentCount >= maxCount;
   await db.boardTasks.update(id, {
     currentCount,
-    isCompleted: currentCount >= (boardTask.currentCount ?? 0),
-    completedAt:
-      currentCount >= (boardTask.currentCount ?? 0) ? currentTimestamp() : undefined,
+    isCompleted: isNowCompleted,
+    completedAt: isNowCompleted ? currentTimestamp() : undefined,
     updatedAt: currentTimestamp(),
     version: (boardTask.version ?? 0) + 1,
   });
 }
 
 /**
- * Update progress task step completion
+ * Update progress task step completion on a board task.
+ *
+ * @param id - The board task ID
+ * @param completedStepIds - Array of completed step IDs
  */
 export async function updateProgressSteps(
   id: string,
   completedStepIds: string[]
 ): Promise<void> {
+  const bt = await db.boardTasks.get(id);
+  if (!bt) return;
   await db.boardTasks.update(id, {
     completedStepIds,
     updatedAt: currentTimestamp(),
-    version: db.boardTasks.get(id).then((bt) => (bt?.version ?? 0) + 1),
+    version: (bt.version ?? 0) + 1,
   });
 }
 

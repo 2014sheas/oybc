@@ -7,14 +7,18 @@ import { currentTimestamp } from '../utils';
 /**
  * Result of a task completion, including bingo detection and board status changes.
  *
- * @property newBingos - Line IDs that are NEW (not previously in board.completedLineIds)
+ * @property newBingos - Line IDs that became complete (not previously in board.completedLineIds)
+ * @property lostBingos - Line IDs that became incomplete (were in board.completedLineIds, now gone)
  * @property isGreenlog - True when every square on the board is complete
  * @property boardCompleted - True if the board status transitioned to COMPLETED
+ * @property boardReactivated - True if the board reverted from COMPLETED to ACTIVE
  */
 export interface TaskCompletionResult {
   newBingos: string[];
+  lostBingos: string[];
   isGreenlog: boolean;
   boardCompleted: boolean;
+  boardReactivated: boolean;
 }
 
 // ─── Orchestration ───────────────────────────────────────────────────────────
@@ -44,8 +48,10 @@ export async function handleTaskCompletion(
 ): Promise<TaskCompletionResult> {
   let result: TaskCompletionResult = {
     newBingos: [],
+    lostBingos: [],
     isGreenlog: false,
     boardCompleted: false,
+    boardReactivated: false,
   };
 
   await db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.taskSteps], async () => {
@@ -156,9 +162,11 @@ export async function handleTaskCompletion(
     // 5. Detect bingos
     const bingoResult = detectBingos(completionGrid, gridSize as 3 | 4 | 5);
 
-    // 6. Diff against previous completedLineIds to find NEW bingos
+    // 6. Diff against previous completedLineIds to find NEW and LOST bingos
     const previousLineIds = new Set(board.completedLineIds ?? []);
+    const currentLineIds = new Set(bingoResult.completedLines);
     const newBingos = bingoResult.completedLines.filter((line) => !previousLineIds.has(line));
+    const lostBingos = (board.completedLineIds ?? []).filter((line) => !currentLineIds.has(line));
 
     // 7. Update board stats
     const completedCount = allBoardTasks.filter((bt) =>
@@ -176,30 +184,39 @@ export async function handleTaskCompletion(
       }
     }
 
-    await db.boards.update(boardId, {
+    // 8. Build a single board update with stats + optional status transition
+    let boardCompleted = false;
+    let boardReactivated = false;
+    const boardUpdate: Record<string, unknown> = {
       completedTasks: totalCompleted,
       linesCompleted: bingoResult.completedLines.length,
       completedLineIds: bingoResult.completedLines,
       updatedAt: now,
       version: (board.version ?? 1) + 1,
-    });
+    };
 
-    // 8. Auto-complete board on greenlog
-    let boardCompleted = false;
+    // Auto-complete board on greenlog
     if (bingoResult.isGreenlog && board.status === BoardStatus.ACTIVE) {
-      await db.boards.update(boardId, {
-        status: BoardStatus.COMPLETED,
-        completedAt: now,
-        updatedAt: now,
-        version: (board.version ?? 1) + 2, // +2: one for stats update above, one for status change
-      });
+      boardUpdate.status = BoardStatus.COMPLETED;
+      boardUpdate.completedAt = now;
       boardCompleted = true;
     }
 
+    // Revert COMPLETED → ACTIVE if board is no longer fully complete
+    if (!bingoResult.isGreenlog && board.status === BoardStatus.COMPLETED) {
+      boardUpdate.status = BoardStatus.ACTIVE;
+      boardUpdate.completedAt = undefined;
+      boardReactivated = true;
+    }
+
+    await db.boards.update(boardId, boardUpdate);
+
     result = {
       newBingos,
+      lostBingos,
       isGreenlog: bingoResult.isGreenlog,
       boardCompleted,
+      boardReactivated,
     };
   });
 

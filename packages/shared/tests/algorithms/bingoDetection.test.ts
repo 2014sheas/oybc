@@ -489,3 +489,94 @@ describe('bingo detection with auto-completed center', () => {
     });
   });
 });
+
+// ── Uncomplete Cascade Scenarios ────────────────────────────────────────
+describe('uncomplete cascade scenarios', () => {
+  const size = 3;
+  const total = 9;
+
+  /**
+   * Helper: create a 3x3 grid with specific indices completed.
+   */
+  function makeGrid(completedIndices: number[]): boolean[] {
+    const grid = new Array(total).fill(false);
+    for (const i of completedIndices) {
+      grid[i] = true;
+    }
+    return grid;
+  }
+
+  it('complete a row then uncomplete one square — bingo disappears', () => {
+    // Row 0 complete: indices 0, 1, 2
+    const gridBefore = makeGrid([0, 1, 2]);
+    const before = detectBingos(gridBefore, size);
+    expect(before.completedLines).toContain('row_0');
+
+    // Uncomplete index 1 in row 0
+    const gridAfter = makeGrid([0, 2]);
+    const after = detectBingos(gridAfter, size);
+    expect(after.completedLines).not.toContain('row_0');
+
+    // Simulate orchestration diff: lost bingos
+    const currentLines = new Set(after.completedLines);
+    const lostBingos = before.completedLines.filter(l => !currentLines.has(l));
+    expect(lostBingos).toEqual(['row_0']);
+  });
+
+  it('complete greenlog then uncomplete one square — isGreenlog becomes false', () => {
+    // All squares complete
+    const gridBefore = new Array(total).fill(true);
+    const before = detectBingos(gridBefore, size);
+    expect(before.isGreenlog).toBe(true);
+    // 3 rows + 3 cols + 2 diags = 8
+    expect(before.completedLines.length).toBe(8);
+
+    // Uncomplete index 0 (corner — affects row_0, col_0, diag_main)
+    const gridAfter = makeGrid([1, 2, 3, 4, 5, 6, 7, 8]);
+    const after = detectBingos(gridAfter, size);
+    expect(after.isGreenlog).toBe(false);
+    expect(after.completedLines.length).toBeLessThan(before.completedLines.length);
+  });
+
+  it('uncomplete a square that affects multiple bingos — both lost', () => {
+    // Center square (index 4) is part of row_1, col_1, diag_main, diag_anti
+    // Complete row_1 (3,4,5) and col_1 (1,4,7)
+    const gridBefore = makeGrid([1, 3, 4, 5, 7]);
+    const before = detectBingos(gridBefore, size);
+    expect(before.completedLines).toContain('row_1');
+    expect(before.completedLines).toContain('col_1');
+
+    // Uncomplete center (index 4) — both row_1 and col_1 should be lost
+    const gridAfter = makeGrid([1, 3, 5, 7]);
+    const after = detectBingos(gridAfter, size);
+    expect(after.completedLines).not.toContain('row_1');
+    expect(after.completedLines).not.toContain('col_1');
+
+    // Verify both bingos are in the lost set
+    const currentLines = new Set(after.completedLines);
+    const lostBingos = before.completedLines.filter(l => !currentLines.has(l));
+    expect(lostBingos).toContain('row_1');
+    expect(lostBingos).toContain('col_1');
+    expect(lostBingos.length).toBe(2);
+  });
+
+  it('uncomplete a non-bingo square — no bingos lost', () => {
+    // Complete row_0 (0,1,2) and col_2 (2,5,8) — they share index 2
+    const gridBefore = makeGrid([0, 1, 2, 5, 8]);
+    const before = detectBingos(gridBefore, size);
+    expect(before.completedLines).toContain('row_0');
+    expect(before.completedLines).toContain('col_2');
+
+    // Uncomplete index 4 (center) — not part of either completed line
+    // Grid stays the same since 4 was never completed; uncomplete index 3 instead
+    // Index 3 is in row_1 (not complete) and col_0 (not complete) — not in any bingo
+    const gridAfter = makeGrid([0, 1, 2, 5, 8]); // same grid, index 3 was never set
+    const after = detectBingos(gridAfter, size);
+
+    const currentLines = new Set(after.completedLines);
+    const lostBingos = before.completedLines.filter(l => !currentLines.has(l));
+    expect(lostBingos).toEqual([]);
+    expect(after.completedLines).toContain('row_0');
+    expect(after.completedLines).toContain('col_2');
+  });
+});

@@ -228,7 +228,12 @@ export function BoardLifecyclePlayground(): React.ReactElement {
       }
     ): Promise<void> => {
       const result = await handleTaskCompletion(boardId, boardTaskId, updates);
-      if (result.isGreenlog) {
+      // Priority: reactivated > lostBingos > greenlog > newBingos
+      if (result.boardReactivated) {
+        showFlash('Board reactivated — no longer complete', 'bingo');
+      } else if (result.lostBingos.length > 0) {
+        showFlash(`Bingo lost: ${result.lostBingos.join(', ')}`, 'bingo');
+      } else if (result.isGreenlog) {
         showFlash('GREENLOG! Board complete!', 'greenlog');
       } else if (result.newBingos.length > 0) {
         showFlash(`Bingo! ${result.newBingos.join(', ')}`, 'bingo');
