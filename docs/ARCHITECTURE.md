@@ -310,73 +310,73 @@ CREATE TABLE boards (
 
 ---
 
-### Phase 3: Authentication & Sync Layer (Weeks 8-10)
+### Phase 3: Authentication & Sync Layer (Weeks 8-10) -- COMPLETE
 
 **Goal**: Add Firebase auth and background sync for multi-device support
 
 **Week 8: Authentication**
 
 **iOS**:
-- [ ] Install Firebase iOS SDK (Auth only for now)
-- [ ] Create new Firebase project
-- [ ] `AuthService.swift` (sign up, sign in, sign out)
-- [ ] `LoginView.swift`, `RegisterView.swift`
-- [ ] Store userId in local DB (associate boards/tasks with user)
+- [x] Install Firebase iOS SDK (Auth only for now)
+- [x] Create new Firebase project
+- [x] `AuthService.swift` (sign up, sign in, sign out)
+- [x] `LoginView.swift`, `RegisterView.swift`
+- [x] Store userId in local DB (associate boards/tasks with user)
 
 **Web**:
-- [ ] Install Firebase JS SDK
-- [ ] Auth service (sign up, sign in, sign out)
-- [ ] Login/register pages
-- [ ] Auth context provider
-- [ ] Store userId in Dexie
+- [x] Install Firebase JS SDK
+- [x] Auth service (sign up, sign in, sign out)
+- [x] Login/register pages
+- [x] Auth context provider
+- [x] Store userId in Dexie
 
 **Testing**:
-- [ ] Sign up on iOS → account exists in Firebase console
-- [ ] Sign in on web with same credentials
-- [ ] User's boards isolated by userId (can't see other users' data)
+- [x] Sign up on iOS → account exists in Firebase console
+- [x] Sign in on web with same credentials
+- [x] User's boards isolated by userId (can't see other users' data)
 
 **Week 9: Sync Queue & Background Sync**
 
 **iOS**:
-- [ ] Add Firebase Firestore SDK
-- [ ] Implement `SyncService.swift`:
+- [x] Add Firebase Firestore SDK
+- [x] Implement `SyncService.swift`:
   - Read from `sync_queue` table
-  - Batch operations (up to 50)
+  - Sequential processing (batching deferred to future optimization)
   - Send to Firestore (create, update, delete)
   - Remove from queue on success, retry on failure
-- [ ] Trigger sync: on app launch, on reconnect, every 5 min
+- [x] Trigger sync: on app launch, on reconnect, every 5 min
 
 **Web**:
-- [ ] Implement `SyncService.ts` (mirrors iOS)
-- [ ] Same queue pattern
-- [ ] Trigger sync: on load, on reconnect, periodic
+- [x] Implement `SyncService.ts` (mirrors iOS)
+- [x] Same queue pattern
+- [x] Trigger sync: on load, on reconnect, periodic
 
 **Testing**:
-- [ ] Create board on iOS (offline) → goes to sync_queue
-- [ ] Connect to internet → sync processes → board appears in Firestore console
-- [ ] Disconnect again → operations queue locally
-- [ ] Reconnect → all operations sync
+- [x] Create board on iOS (offline) → goes to sync_queue
+- [x] Connect to internet → sync processes → board appears in Firestore console
+- [x] Disconnect again → operations queue locally
+- [x] Reconnect → all operations sync
 
 **Week 10: Pull Sync & Conflict Resolution**
 
 **iOS & Web**:
-- [ ] Implement pull sync (fetch changes from Firestore since last sync)
-- [ ] Query Firestore: `where('userId', '==', uid).where('updatedAt', '>', lastSyncAt)`
-- [ ] For each remote change:
+- [x] Implement pull sync (fetch changes from Firestore since last sync)
+- [x] Query Firestore: `where('_syncedAt', '>', lastSyncedAt)` watermark approach
+- [x] For each remote change:
   - Get local version
   - Compare version fields
   - If remote.version > local.version → update local DB
   - If local.version > remote.version → keep local (will push next sync)
-- [ ] Update `lastSyncedAt` timestamp
+- [x] Update `lastSyncedAt` timestamp
 
 **Testing**:
-- [ ] Create board on iOS → syncs to Firestore
-- [ ] Pull on web → board appears
-- [ ] Complete task on web → syncs to Firestore
-- [ ] Pull on iOS → task shows completed
-- [ ] **Conflict test**: Edit same board on both devices offline → reconnect → higher version wins
+- [x] Create board on iOS → syncs to Firestore
+- [x] Pull on web → board appears
+- [x] Complete task on web → syncs to Firestore
+- [x] Pull on iOS → task shows completed
+- [x] **Conflict test**: Edit same board on both devices offline → reconnect → higher version wins
 
-**Success Criteria**:
+**Success Criteria**: ALL MET
 - ✅ Create board on iOS → appears on web within 5 seconds
 - ✅ Complete task on web → updates on iOS within 5 seconds
 - ✅ Works offline, syncs when back online
@@ -448,18 +448,18 @@ oybc/                           # Monorepo root
 - [x] Create documentation
 
 ### Next Session (iOS Database)
-- [ ] Create Xcode project (SwiftUI)
-- [ ] Add GRDB.swift via SPM
-- [ ] Define SQLite schema
-- [ ] Implement GRDB models
-- [ ] Test offline CRUD operations
+- [x] Create Xcode project (SwiftUI)
+- [x] Add GRDB.swift via SPM
+- [x] Define SQLite schema
+- [x] Implement GRDB models
+- [x] Test offline CRUD operations
 
 ### Following Session (Web Database)
-- [ ] Create Next.js project
-- [ ] Set up Dexie.js
-- [ ] Mirror iOS schema in IndexedDB
-- [ ] Implement database service
-- [ ] Test offline CRUD operations
+- [x] Create web project
+- [x] Set up Dexie.js
+- [x] Mirror iOS schema in IndexedDB
+- [x] Implement database service
+- [x] Test offline CRUD operations
 
 ---
 

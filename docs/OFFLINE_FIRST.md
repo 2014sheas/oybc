@@ -558,24 +558,24 @@ Many users will use OYBC on commutes (subway, airplane, remote areas). Offline-f
 ### Phase 1: Local-Only (Weeks 1-5)
 
 - [x] Design database schema
-- [ ] Implement local DB (GRDB, Dexie)
-- [ ] Build UI (boards, tasks, grid)
-- [ ] Test offline (airplane mode)
-- [ ] Verify performance (< 10ms reads)
+- [x] Implement local DB (GRDB, Dexie)
+- [x] Build UI (boards, tasks, grid)
+- [x] Test offline (airplane mode)
+- [x] Verify performance (< 10ms reads)
 
 ### Phase 2: Authentication (Week 6)
 
-- [ ] Firebase Auth setup
-- [ ] Associate data with userId
-- [ ] Test multi-user isolation
+- [x] Firebase Auth setup
+- [x] Associate data with userId
+- [x] Test multi-user isolation
 
 ### Phase 3: Sync Layer (Weeks 7-8)
 
-- [ ] Implement sync queue
-- [ ] Background sync worker
-- [ ] Pull sync (fetch remote changes)
-- [ ] Conflict resolution
-- [ ] Test multi-device scenarios
+- [x] Implement sync queue
+- [x] Background sync worker
+- [x] Pull sync (fetch remote changes)
+- [x] Conflict resolution
+- [x] Test multi-device scenarios
 
 ### Phase 4: Polish (Weeks 9-12)
 
@@ -706,9 +706,9 @@ Offline-first architecture is **essential** for OYBC:
 1. **Instant UX**: All operations < 10ms (local DB)
 2. **Works offline**: Full functionality without internet
 3. **Reliable**: No network errors, no loading spinners
-4. **Multi-device**: Background sync for seamless experience
+4. **Multi-device**: Background sync via Firebase Auth + Firestore (implemented)
 5. **Future-proof**: Scales to recurring boards, templates, etc.
 
-The complexity is **worth it** for the dramatically better user experience.
+The complexity is **worth it** for the dramatically better user experience. Firebase Auth and Firestore background sync are now implemented on both platforms (web and iOS), completing the offline-first architecture with multi-device support.
 
 **Next**: Read [CLAUDE_GUIDE.md](./CLAUDE_GUIDE.md) for implementation guidelines.
