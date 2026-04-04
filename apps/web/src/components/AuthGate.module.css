@@ -1,0 +1,216 @@
+/* ─── Container ─────────────────────────────────────────────────────────────── */
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 2rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  padding: 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background-color: var(--bg-primary);
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  margin: 0 0 1.5rem 0;
+}
+
+/* ─── Form ──────────────────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.input {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 1rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+}
+
+.error {
+  padding: 0.5rem 0.75rem;
+  background-color: var(--error-bg, #f8d7da);
+  color: var(--error-text, #dc3545);
+  border: 1px solid var(--error-border, #f5c6cb);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.submitButton {
+  padding: 0.75rem;
+  background-color: var(--active-bg);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.submitButton:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Divider ───────────────────────────────────────────────────────────────── */
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: var(--border-color);
+}
+
+/* ─── Social buttons ────────────────────────────────────────────────────────── */
+
+.socialButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.googleButton,
+.appleButton {
+  padding: 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+  text-align: center;
+}
+
+.googleButton {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.googleButton:hover {
+  border-color: var(--active-bg);
+  background-color: var(--card-bg, #f8f9fa);
+}
+
+.appleButton {
+  background-color: #000000;
+  color: #ffffff;
+  border-color: #000000;
+}
+
+.appleButton:hover {
+  opacity: 0.9;
+}
+
+/* ─── Mode switch ───────────────────────────────────────────────────────────── */
+
+.switchMode {
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.switchButton {
+  background: none;
+  border: none;
+  color: var(--active-bg);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+}
+
+.switchButton:hover {
+  text-decoration: underline;
+}
+
+/* ─── User bar (authenticated state) ────────────────────────────────────────── */
+
+.userBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  background-color: var(--card-bg, #f8f9fa);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.signOutButton {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.signOutButton:hover {
+  border-color: var(--error-text, #dc3545);
+  color: var(--error-text, #dc3545);
+}

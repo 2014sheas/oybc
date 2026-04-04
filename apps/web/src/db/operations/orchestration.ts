@@ -1,6 +1,7 @@
 import { db } from '../database';
-import { BoardStatus, CenterSquareType, detectBingos, type BoardTask } from '@oybc/shared';
+import { BoardStatus, CenterSquareType, SyncOperationType, detectBingos, type BoardTask } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -202,6 +203,16 @@ export async function handleTaskCompletion(
       boardCompleted,
     };
   });
+
+  // Queue sync entries for changed entities (outside transaction — non-blocking)
+  const updatedBt = await db.boardTasks.get(boardTaskId);
+  if (updatedBt) {
+    void addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.UPDATE, updatedBt);
+  }
+  const updatedBoard = await db.boards.get(boardId);
+  if (updatedBoard) {
+    void addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard);
+  }
 
   return result;
 }

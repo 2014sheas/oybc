@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can only read/write their own data in known collections
+    match /users/{userId}/{collection}/{docId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId
+                         && collection in [
+                           'boards', 'tasks', 'taskSteps',
+                           'boardTasks', 'compositeTasks', 'compositeNodes'
+                         ]
+                         && request.resource.data.keys().hasAll(['id', 'version'])
+                         && request.resource.data.version is number
+                         && request.resource.data.id is string
+                         && request.resource.size() < 10000;
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

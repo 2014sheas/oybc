@@ -1,7 +1,8 @@
 import { db } from '../database';
 import type { Board, CreateBoardInput } from '@oybc/shared';
-import { BoardStatus } from '@oybc/shared';
+import { BoardStatus, SyncOperationType } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 
 /**
  * Board CRUD Operations
@@ -56,6 +57,7 @@ export async function createBoard(
   };
 
   await db.boards.add(board);
+  void addToSyncQueue('boards', board.id, SyncOperationType.CREATE, board);
   return board;
 }
 
@@ -66,11 +68,15 @@ export async function updateBoard(
   id: string,
   updates: Partial<Board>
 ): Promise<void> {
+  const board = await db.boards.get(id);
+  if (!board) return;
   await db.boards.update(id, {
     ...updates,
     updatedAt: currentTimestamp(),
-    version: db.boards.get(id).then((b) => (b?.version ?? 0) + 1),
+    version: (board.version ?? 0) + 1,
   });
+  const updated = await db.boards.get(id);
+  if (updated) void addToSyncQueue('boards', id, SyncOperationType.UPDATE, updated);
 }
 
 /**
@@ -82,6 +88,8 @@ export async function deleteBoard(id: string): Promise<void> {
     deletedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
   });
+  const board = await db.boards.get(id);
+  if (board) void addToSyncQueue('boards', id, SyncOperationType.DELETE, board);
 }
 
 /**
@@ -95,10 +103,12 @@ export async function updateBoardStats(
     completedLineIds?: string[];
   }
 ): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board) return;
   await db.boards.update(boardId, {
     ...stats,
     updatedAt: currentTimestamp(),
-    version: db.boards.get(boardId).then((b) => (b?.version ?? 0) + 1),
+    version: (board.version ?? 0) + 1,
   });
 }
 
@@ -106,11 +116,13 @@ export async function updateBoardStats(
  * Mark board as completed
  */
 export async function completeBoard(boardId: string): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board) return;
   await db.boards.update(boardId, {
     status: BoardStatus.COMPLETED,
     completedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
-    version: db.boards.get(boardId).then((b) => (b?.version ?? 0) + 1),
+    version: (board.version ?? 0) + 1,
   });
 }
 

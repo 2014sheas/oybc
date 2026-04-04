@@ -1,15 +1,17 @@
 import SwiftUI
+import FirebaseCore
 
 /// Main app entry point for OYBC iOS app
 @main
 struct OYBCApp: App {
-    /// Initialize database synchronously before the UI appears.
+    /// Initialize database and Firebase synchronously before the UI appears.
     ///
-    /// Running migration during init() means it completes during the launch screen,
-    /// before any interactive UI is shown. This avoids I/O contention while the
-    /// user is interacting with the app (e.g. tapping a TextField / showing keyboard).
+    /// Database migration runs first so the local store is ready before any
+    /// Firebase auth state callbacks fire. Both complete during the launch
+    /// screen before any interactive UI is shown.
     init() {
         _ = AppDatabase.shared
+        FirebaseApp.configure()
     }
 
     var body: some Scene {

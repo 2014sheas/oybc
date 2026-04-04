@@ -1,6 +1,52 @@
 import SwiftUI
 import GRDB
 
+// MARK: - Sync Queue Helpers (private to this file)
+
+/// Encodes a `Codable` value to a JSON string for storage in the sync queue payload.
+///
+/// - Parameter value: The value to encode.
+/// - Returns: A JSON string, or an empty JSON object string `"{}"` on failure.
+private func encodeSyncPayload<T: Codable>(_ value: T) -> String {
+    guard
+        let data = try? JSONEncoder().encode(value),
+        let string = String(data: data, encoding: .utf8)
+    else { return "{}" }
+    return string
+}
+
+/// Builds a `SyncQueueItem` for a local write that should be synced to Firestore.
+///
+/// - Parameters:
+///   - entityType: The Firestore collection name (e.g. `"boards"`, `"tasks"`).
+///   - entityId: The primary key of the entity.
+///   - operationType: `.create`, `.update`, or `.delete`.
+///   - payload: A `Codable` value whose JSON representation is stored as the payload.
+///   - now: The current ISO8601 timestamp.
+/// - Returns: A new `SyncQueueItem` with `status = .pending`.
+private func makeSyncItem<T: Codable>(
+    entityType: String,
+    entityId: String,
+    operationType: SyncOperationType,
+    payload: T,
+    now: String
+) -> SyncQueueItem {
+    SyncQueueItem(
+        id: AppDatabase.generateUUID(),
+        entityType: entityType,
+        entityId: entityId,
+        operationType: operationType,
+        payload: encodeSyncPayload(payload),
+        status: .pending,
+        retryCount: 0,
+        lastError: nil,
+        createdAt: now,
+        lastAttemptAt: nil,
+        completedAt: nil,
+        priority: 1
+    )
+}
+
 // MARK: - Board Lifecycle Playground
 
 /// Board Lifecycle Playground.
@@ -749,10 +795,14 @@ struct BoardLifecyclePlayground: View {
                         activated.updatedAt = now
                         activated.version += 1
                         try activated.save(db)
+                        try makeSyncItem(entityType: "boards", entityId: activated.id,
+                                         operationType: .update, payload: activated, now: now).save(db)
                     }
 
                     // 2. Persist the updated board task.
                     try updatedBoardTask.save(db)
+                    try makeSyncItem(entityType: "boardTasks", entityId: updatedBoardTask.id,
+                                     operationType: .update, payload: updatedBoardTask, now: now).save(db)
 
                     // 3. Reload all board tasks to build the completion grid.
                     let allBoardTasks = try BoardTask
@@ -805,6 +855,8 @@ struct BoardLifecyclePlayground: View {
                     }
 
                     try updatedBoard.save(db)
+                    try makeSyncItem(entityType: "boards", entityId: updatedBoard.id,
+                                     operationType: .update, payload: updatedBoard, now: now).save(db)
                 }
 
                 // 8. Refresh UI state on main thread.
@@ -965,9 +1017,24 @@ struct BoardLifecyclePlayground: View {
 
                 try AppDatabase.shared.write { db in
                     try board.save(db)
-                    for task in allDemoTasks { try task.save(db) }
-                    for stepTask in workoutStepTasks + cleanStepTasks { try stepTask.save(db) }
-                    for step in workoutSteps + cleanSteps { try step.save(db) }
+                    try makeSyncItem(entityType: "boards", entityId: board.id,
+                                     operationType: .create, payload: board, now: now).save(db)
+
+                    for task in allDemoTasks {
+                        try task.save(db)
+                        try makeSyncItem(entityType: "tasks", entityId: task.id,
+                                         operationType: .create, payload: task, now: now).save(db)
+                    }
+                    for stepTask in workoutStepTasks + cleanStepTasks {
+                        try stepTask.save(db)
+                        try makeSyncItem(entityType: "tasks", entityId: stepTask.id,
+                                         operationType: .create, payload: stepTask, now: now).save(db)
+                    }
+                    for step in workoutSteps + cleanSteps {
+                        try step.save(db)
+                        try makeSyncItem(entityType: "taskSteps", entityId: step.id,
+                                         operationType: .create, payload: step, now: now).save(db)
+                    }
 
                     // Place a FREE center square at (1,1).
                     let centerTaskId = AppDatabase.generateUUID()
@@ -978,11 +1045,15 @@ struct BoardLifecyclePlayground: View {
                         createdAt: now, updatedAt: now, version: 1, isDeleted: false
                     )
                     try freeTask.save(db)
+                    try makeSyncItem(entityType: "tasks", entityId: freeTask.id,
+                                     operationType: .create, payload: freeTask, now: now).save(db)
                     let centerBt = BoardTask.makePlayground(
                         boardId: boardId, taskId: centerTaskId,
                         row: 1, col: 1, now: now, isCenter: true
                     )
                     try centerBt.save(db)
+                    try makeSyncItem(entityType: "boardTasks", entityId: centerBt.id,
+                                     operationType: .create, payload: centerBt, now: now).save(db)
 
                     // Fill remaining 8 positions with shuffled tasks.
                     var taskIndex = 0
@@ -996,6 +1067,8 @@ struct BoardLifecyclePlayground: View {
                                 row: row, col: col, now: now
                             )
                             try bt.save(db)
+                            try makeSyncItem(entityType: "boardTasks", entityId: bt.id,
+                                             operationType: .create, payload: bt, now: now).save(db)
                             taskIndex += 1
                         }
                     }
@@ -1048,6 +1121,8 @@ struct BoardLifecyclePlayground: View {
                         reset.updatedAt = now
                         reset.version += 1
                         try reset.save(db)
+                        try makeSyncItem(entityType: "boardTasks", entityId: reset.id,
+                                         operationType: .update, payload: reset, now: now).save(db)
                     }
 
                     var resetBoard = board
@@ -1059,6 +1134,8 @@ struct BoardLifecyclePlayground: View {
                     resetBoard.updatedAt = now
                     resetBoard.version += 1
                     try resetBoard.save(db)
+                    try makeSyncItem(entityType: "boards", entityId: resetBoard.id,
+                                     operationType: .update, payload: resetBoard, now: now).save(db)
                 }
                 DispatchQueue.main.async {
                     isProcessing = false
@@ -1105,6 +1182,8 @@ struct BoardLifecyclePlayground: View {
                     activated.updatedAt = now
                     activated.version += 1
                     try activated.save(db)
+                    try makeSyncItem(entityType: "boards", entityId: activated.id,
+                                     operationType: .update, payload: activated, now: now).save(db)
                 }
                 DispatchQueue.main.async {
                     loadBoards()

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './firebase/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Home } from './pages/Home';
 import { Playground } from './pages/Playground';
@@ -41,13 +42,15 @@ function App() {
   };
 
   return (
-    <BrowserRouter>
-      <Navbar theme={theme} onThemeToggle={toggleTheme} />
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/playground" element={<Playground />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Navbar theme={theme} onThemeToggle={toggleTheme} />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/playground" element={<Playground />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

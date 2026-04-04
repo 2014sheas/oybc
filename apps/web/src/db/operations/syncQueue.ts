@@ -17,6 +17,10 @@ export async function addToSyncQueue(
   payload: unknown,
   priority: number = 0
 ): Promise<void> {
+  // Skip sync queue for playground data — prevents cross-user pollution
+  const payloadObj = payload as Record<string, unknown> | null;
+  if (payloadObj?.userId === 'playground-user-1') return;
+
   const item: SyncQueueItem = {
     id: generateUUID(),
     entityType,
