@@ -110,6 +110,8 @@ export async function updateBoardStats(
     updatedAt: currentTimestamp(),
     version: (board.version ?? 0) + 1,
   });
+  const updatedBoard = await db.boards.get(boardId);
+  if (updatedBoard) void addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard);
 }
 
 /**
@@ -124,6 +126,8 @@ export async function completeBoard(boardId: string): Promise<void> {
     updatedAt: currentTimestamp(),
     version: (board.version ?? 0) + 1,
   });
+  const completedBoard = await db.boards.get(boardId);
+  if (completedBoard) void addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, completedBoard);
 }
 
 /**

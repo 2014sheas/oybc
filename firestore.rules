@@ -15,13 +15,13 @@ service cloud.firestore {
                   && request.auth.uid == userId
                   && isKnownCollection();
 
-      // Writes: auth + collection + field validation
+      // Writes: auth + collection + field validation + id consistency
       allow create, update: if request.auth != null
                             && request.auth.uid == userId
                             && isKnownCollection()
                             && request.resource.data.keys().hasAll(['id', 'version'])
                             && request.resource.data.version is number
-                            && request.resource.data.id is string
+                            && request.resource.data.id == docId
                             && request.resource.size() < 10000;
 
       // Deletes: auth + collection only (no resource validation needed)

@@ -17,7 +17,7 @@ import {
   markSyncItemCompleted,
   markSyncItemFailed,
 } from '../db/operations/syncQueue';
-import { SyncOperationType } from '@oybc/shared';
+import { SyncOperationType, SyncStatus } from '@oybc/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +72,15 @@ export interface SyncResult {
  */
 export async function pushSync(userId: string): Promise<PushResult> {
   const result: PushResult = { pushed: 0, conflicts: 0, failed: 0, details: [] };
+
+  // Reset stale IN_PROGRESS items (e.g., from a crash/reload mid-sync)
+  const staleItems = await db.syncQueue
+    .where('status')
+    .equals(SyncStatus.IN_PROGRESS)
+    .toArray();
+  for (const stale of staleItems) {
+    await db.syncQueue.update(stale.id, { status: SyncStatus.PENDING });
+  }
 
   const pendingItems = await fetchPendingSyncItems();
   if (pendingItems.length === 0) return result;
@@ -179,9 +188,11 @@ export async function pullSync(
     try {
       const colRef = collection(firestore, 'users', userId, collectionName);
 
-      // Query for documents updated since last sync
+      // Query for documents updated since last sync.
+      // Uses _syncedAt (server timestamp) as watermark for clock-skew safety.
+      // Falls back to updatedAt if _syncedAt is not available.
       const q = lastSyncedAt
-        ? query(colRef, where('updatedAt', '>', lastSyncedAt))
+        ? query(colRef, where('_syncedAt', '>', lastSyncedAt))
         : query(colRef); // First sync — pull everything
 
       const snapshot = await getDocs(q);

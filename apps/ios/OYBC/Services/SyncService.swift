@@ -71,9 +71,9 @@ private func resolveConflict(
     local: [String: Any],
     remote: [String: Any]
 ) -> String {
-    // Normalize version to Int — GRDB may return Int64, Firestore may return NSNumber
-    let localVersion = (local["version"] as? NSNumber)?.intValue ?? 0
-    let remoteVersion = (remote["version"] as? NSNumber)?.intValue ?? 0
+    // Normalize version — GRDB returns Int64, Firestore returns NSNumber or Int
+    let localVersion = toInt(local["version"])
+    let remoteVersion = toInt(remote["version"])
 
     if localVersion > remoteVersion { return "local" }
     if remoteVersion > localVersion { return "remote" }
@@ -92,6 +92,14 @@ private func resolveConflict(
 
     // Tie or remote is newer — remote wins (server authority).
     return "remote"
+}
+
+/// Safely extracts an integer from Any — handles Int, Int64, NSNumber.
+private func toInt(_ value: Any?) -> Int {
+    if let i = value as? Int { return i }
+    if let i64 = value as? Int64 { return Int(i64) }
+    if let n = value as? NSNumber { return n.intValue }
+    return 0
 }
 
 // MARK: - SyncService
@@ -223,16 +231,19 @@ final class SyncService: ObservableObject {
             )
         }
 
-        // Update lastSyncedAt on the local user record.
-        let now = AppDatabase.currentTimestamp()
-        do {
-            if var user = try AppDatabase.shared.fetchUser(id: userId) {
-                user.lastSyncedAt = now
-                user.updatedAt = now
-                try AppDatabase.shared.saveUser(user)
+        // Only advance watermark if no pull errors occurred
+        let hadErrors = result.details.contains { $0.contains("Pull failed") }
+        if !hadErrors {
+            let now = AppDatabase.currentTimestamp()
+            do {
+                if var user = try AppDatabase.shared.fetchUser(id: userId) {
+                    user.lastSyncedAt = now
+                    user.updatedAt = now
+                    try AppDatabase.shared.saveUser(user)
+                }
+            } catch {
+                log("Warning: could not update lastSyncedAt for user \(userId): \(error.localizedDescription)")
             }
-        } catch {
-            log("Warning: could not update lastSyncedAt for user \(userId): \(error.localizedDescription)")
         }
 
         return result
@@ -515,6 +526,9 @@ final class SyncService: ObservableObject {
         cleaned.removeValue(forKey: "_syncedAt")
 
         guard !cleaned.isEmpty else { return }
+        guard cleaned["id"] is String else {
+            throw SyncError.invalidPayload("Document missing 'id' field for \(grdbTable) upsert")
+        }
 
         // Validate all keys are safe SQL identifiers to prevent injection
         let keys = Array(cleaned.keys).filter { key in

@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -22,7 +22,8 @@ const firebaseConfig = {
 
 // ─── Initialize Firebase ─────────────────────────────────────────────────────
 
-const app = initializeApp(firebaseConfig);
+// Idempotent init — prevents "already exists" error during Vite HMR
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 /** Firebase Auth instance — used by authService and AuthContext. */
 export const auth = getAuth(app);

@@ -182,7 +182,7 @@ struct SyncDashboardView: View {
                 let allItems: [SyncQueueItem] = try AppDatabase.shared.read { db in
                     try SyncQueueItem.fetchAll(db)
                 }
-                let pending = allItems.filter { $0.status == .pending }.count
+                let pending = allItems.filter { $0.status == .pending || $0.status == .inProgress }.count
                 let completed = allItems.filter { $0.status == .completed }.count
                 let failed = allItems.filter { $0.status == .failed }.count
                 DispatchQueue.main.async {
