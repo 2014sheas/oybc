@@ -500,13 +500,36 @@ oybc/                           # Monorepo root
 - ✅ No data loss in offline scenarios
 - ✅ Composite task trees sync correctly
 
-### Phase 4: Polish & Launch (Weeks 11-15)
-- ✅ UI polish and animations
-- ✅ Achievement squares and progress counters
-- ✅ TestFlight beta (5-10 users)
-- ✅ No sync bugs (1 week testing)
-- ✅ Performance targets met (< 10ms reads, < 50ms composite evaluation)
-- ✅ Security verified (can't access other users' data)
+### Phase 4: Production Integration — IN PROGRESS
+
+Replace the playground-only app with a real production UI. Tab-based navigation, auth-gated, web + iOS simultaneously.
+
+**Navigation**: Bottom tab bar — Boards (default), Create, Profile.
+
+- [ ] Phase 4.0: Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore)
+- [ ] Phase 4.1: Auth shell + tab bar (replace "Hello OYBC")
+- [ ] Phase 4.2: Board list (filtering, progress, navigation)
+- [ ] Phase 4.3: Board play (bingo grid, completion, flash messages)
+- [ ] Phase 4.4: Create tab (task pool + BoardCreatorPanel)
+- [ ] Phase 4.5: Profile + settings + polish
+
+**Key files**:
+- `TabBar.tsx` ↔ `MainTabView.swift` — bottom tab navigation
+- `BoardsPage.tsx` ↔ `BoardListView.swift` — board list
+- `BoardPlayPage.tsx` ↔ `BoardPlayView.swift` — board play
+- `CreatePage.tsx` ↔ `CreateView.swift` — board creation
+- `ProfilePage.tsx` ↔ `ProfileView.swift` — settings + sign out
+
+**Principle**: Extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.
+
+### Phase 5: Polish & Launch
+
+- [ ] UI polish and animations
+- [ ] Achievement squares and progress counters
+- [ ] TestFlight beta (5-10 users)
+- [ ] No sync bugs (1 week testing)
+- [ ] Performance targets met (< 10ms reads, < 50ms composite evaluation)
+- [ ] Security verified (can't access other users' data)
 
 ---
 

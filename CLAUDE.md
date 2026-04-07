@@ -346,9 +346,31 @@ Playground-tested features: unified task creator, composite tasks, board generat
 | Firestore security rules   | COMPLETE |
 | Sync playground section    | COMPLETE |
 
-**Current**: Ready for production integration (real board list, board play views, routing).
+**Current Phase**: Phase 4 — Production Integration
 
-**Approach**: Implement one feature at a time in Playground → test → get user approval → integrate.
+### Production Integration Plan
+
+Tab-based app with auth gate. Web + iOS built simultaneously.
+
+**Navigation**: Bottom tab bar — Boards (default), Create, Profile.
+
+| Phase | Feature | Status |
+| ----- | ------- | ------ |
+| 0 | Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore) | — |
+| 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | — |
+| 2 | Board list (filtering, progress indicators, tap to navigate) | — |
+| 3 | Board play (bingo grid, task completion, flash messages) | — |
+| 4 | Create tab (task pool + BoardCreatorPanel) | — |
+| 5 | Profile + settings + polish (board defaults, theme, sync status, sign out) | — |
+
+**Key principle**: Reuse playground-tested components — extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.
+
+**New files per phase**:
+- Phase 1: `TabBar.tsx` ↔ `MainTabView.swift`, `BoardsPage.tsx` ↔ `BoardListView.swift`, `CreatePage.tsx` ↔ `CreateView.swift`, `ProfilePage.tsx` ↔ `ProfileView.swift`, `useSyncLoop.ts`
+- Phase 2: `BoardListItem.tsx` ↔ `BoardListItemView.swift`, `BoardStatusBadge.tsx` ↔ `BoardStatusBadgeView.swift`
+- Phase 3: `BoardPlayPage.tsx` ↔ `BoardPlayView.swift`
+
+**Routes (web)**: `/boards`, `/boards/:id`, `/create`, `/profile`, `/playground` (dev tool)
 
 ## Branching Strategy
 
