@@ -116,11 +116,26 @@
 
 /* ─── Theme toggle ──────────────────────────────────────────── */
 
+/* Screen-reader only utility */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .toggleGroup {
   display: flex;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
+  padding: 0;
+  margin: 0;
 }
 
 .toggleBtn {

@@ -10,10 +10,11 @@ import { startSyncLoop } from '../firebase/syncService';
  */
 export function useSyncLoop(): void {
   const { user } = useAuth();
+  const userId = user?.id;
 
   useEffect(() => {
-    if (!user) return;
-    const cleanup = startSyncLoop(user.id);
+    if (!userId) return;
+    const cleanup = startSyncLoop(userId);
     return cleanup;
-  }, [user]);
+  }, [userId]);
 }

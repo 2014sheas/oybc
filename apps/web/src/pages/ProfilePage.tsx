@@ -19,9 +19,9 @@ export function ProfilePage({
 }): React.ReactElement {
   const { user, signOut } = useAuth();
 
-  const initial = user?.displayName?.charAt(0).toUpperCase()
-    ?? user?.email?.charAt(0).toUpperCase()
-    ?? '?';
+  const displayNameInitial = user?.displayName?.trim().charAt(0).toUpperCase();
+  const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
+  const initial = displayNameInitial || emailInitial || '?';
 
   // Live query for lastSyncedAt — auth context doesn't update when sync writes to DB
   const liveUser = useLiveQuery(
@@ -56,26 +56,31 @@ export function ProfilePage({
       <div className={styles.card}>
         <div className={styles.settingsRow}>
           <span className={styles.rowLabel}>Theme</span>
-          <div className={styles.toggleGroup} role="radiogroup" aria-label="Theme">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={theme === 'light'}
-              className={`${styles.toggleBtn} ${theme === 'light' ? styles.toggleBtnActive : ''}`}
-              onClick={() => theme !== 'light' && onThemeToggle()}
-            >
+          <fieldset className={styles.toggleGroup}>
+            <legend className={styles.srOnly}>Theme</legend>
+            <label className={`${styles.toggleBtn} ${theme === 'light' ? styles.toggleBtnActive : ''}`}>
+              <input
+                type="radio"
+                name="theme"
+                value="light"
+                checked={theme === 'light'}
+                onChange={() => theme !== 'light' && onThemeToggle()}
+                className={styles.srOnly}
+              />
               Light
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={theme === 'dark'}
-              className={`${styles.toggleBtn} ${theme === 'dark' ? styles.toggleBtnActive : ''}`}
-              onClick={() => theme !== 'dark' && onThemeToggle()}
-            >
+            </label>
+            <label className={`${styles.toggleBtn} ${theme === 'dark' ? styles.toggleBtnActive : ''}`}>
+              <input
+                type="radio"
+                name="theme"
+                value="dark"
+                checked={theme === 'dark'}
+                onChange={() => theme !== 'dark' && onThemeToggle()}
+                className={styles.srOnly}
+              />
               Dark
-            </button>
-          </div>
+            </label>
+          </fieldset>
         </div>
         <div className={styles.settingsRow}>
           <span className={styles.rowLabel}>Last synced</span>
@@ -85,12 +90,10 @@ export function ProfilePage({
               : 'Never'}
           </span>
         </div>
-        <div className={styles.settingsRow}>
-          <Link to="/playground" className={styles.rowLink}>
-            <span className={styles.rowLabel}>Playground</span>
-            <span className={styles.rowArrow}>&rarr;</span>
-          </Link>
-        </div>
+        <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
+          <span className={styles.rowLabel}>Playground</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
       </div>
 
       {/* Sign out */}

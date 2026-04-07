@@ -8,6 +8,7 @@ import SwiftUI
 /// - Sign-out action
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
+    @State private var signOutError: String?
 
     var body: some View {
         List {
@@ -64,8 +65,17 @@ struct ProfileView: View {
 
     private var signOutSection: some View {
         Section {
+            if let signOutError {
+                Text(signOutError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
             Button("Sign Out", role: .destructive) {
-                try? authService.signOut()
+                do {
+                    try authService.signOut()
+                } catch {
+                    signOutError = error.localizedDescription
+                }
             }
         }
     }
