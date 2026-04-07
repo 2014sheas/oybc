@@ -17,7 +17,7 @@ type AuthMode = 'signIn' | 'signUp';
  * @param props.children - Content to show when authenticated
  */
 export function AuthGate({ children }: { children: React.ReactNode }): React.ReactElement {
-  const { user, isLoading, signIn, signUp, signInWithGoogle, signInWithApple, signOut } = useAuth();
+  const { user, isLoading, signIn, signUp, signInWithGoogle, signInWithApple } = useAuth();
 
   const [mode, setMode] = useState<AuthMode>('signIn');
   const [email, setEmail] = useState('');
@@ -29,28 +29,9 @@ export function AuthGate({ children }: { children: React.ReactNode }): React.Rea
     return <div className={styles.loading}>Loading...</div>;
   }
 
-  // ── Authenticated state ─────────────────────────────────────────────────
+  // ── Authenticated state — render children directly ────────────────────
   if (user) {
-    return (
-      <div>
-        <div className={styles.userBar}>
-          <span className={styles.userInfo}>
-            {user.photoURL && (
-              <img src={user.photoURL} alt="" className={styles.avatar} />
-            )}
-            <span>{user.displayName ?? user.email}</span>
-          </span>
-          <button
-            type="button"
-            className={styles.signOutButton}
-            onClick={() => void signOut()}
-          >
-            Sign Out
-          </button>
-        </div>
-        {children}
-      </div>
-    );
+    return <>{children}</>;
   }
 
   // ── Form handlers ───────────────────────────────────────────────────────

@@ -1,0 +1,160 @@
+.container {
+  padding: 0 16px 24px;
+}
+
+.header {
+  font-size: 28px;
+  font-weight: 700;
+  padding: 20px 4px 16px;
+  color: var(--text-primary);
+}
+
+/* ─── Cards ─────────────────────────────────────────────────── */
+
+.card {
+  background: var(--card-bg, #f8f9fa);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.sectionLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  margin-bottom: 6px;
+}
+
+/* ─── Account row ───────────────────────────────────────────── */
+
+.accountRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.avatarPlaceholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--active-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.accountInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.accountName {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.accountEmail {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ─── Settings rows ─────────────────────────────────────────── */
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settingsRow:last-child {
+  border-bottom: none;
+}
+
+.rowLabel {
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.rowValue {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.rowLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-decoration: none;
+  color: inherit;
+}
+
+.rowArrow {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* ─── Theme toggle ──────────────────────────────────────────── */
+
+.toggleGroup {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.toggleBtn {
+  padding: 5px 14px;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.toggleBtnActive {
+  background: var(--active-bg);
+  color: #ffffff;
+}
+
+/* ─── Sign out ──────────────────────────────────────────────── */
+
+.signOutButton {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--card-bg, #f8f9fa);
+  color: var(--error-text, #dc3545);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s;
+}
+
+.signOutButton:hover {
+  background: rgba(220, 53, 69, 0.08);
+}

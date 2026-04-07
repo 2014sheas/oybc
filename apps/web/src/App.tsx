@@ -1,42 +1,75 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './firebase/AuthContext';
-import { Navbar } from './components/Navbar';
-import { Home } from './pages/Home';
+import { AuthGate } from './components/AuthGate';
+import { TabBar } from './components/TabBar';
+import { BoardsPage } from './pages/BoardsPage';
+import { CreatePage } from './pages/CreatePage';
+import { ProfilePage } from './pages/ProfilePage';
 import { Playground } from './pages/Playground';
+import { useSyncLoop } from './hooks';
 
-/**
- * Theme type
- */
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type Theme = 'light' | 'dark';
 
-/**
- * Local storage key for theme preference
- */
 const THEME_STORAGE_KEY = 'oybc-theme';
 
+// ─── Authenticated Layout ─────────────────────────────────────────────────────
+
 /**
- * Main App Component
+ * Layout rendered when the user is signed in.
+ * Provides tab bar navigation and starts the background sync loop.
+ */
+function AuthenticatedLayout({
+  theme,
+  onThemeToggle,
+}: {
+  theme: Theme;
+  onThemeToggle: () => void;
+}): React.ReactElement {
+  useSyncLoop();
+
+  return (
+    <>
+      <div style={{ paddingBottom: 56 }}>
+        <Routes>
+          <Route path="/boards" element={<BoardsPage />} />
+          {/* <Route path="/boards/:id" element={<BoardPlayPage />} /> -- Phase 3 */}
+          <Route path="/create" element={<CreatePage />} />
+          <Route
+            path="/profile"
+            element={<ProfilePage theme={theme} onThemeToggle={onThemeToggle} />}
+          />
+          <Route path="/" element={<Navigate to="/boards" replace />} />
+          <Route path="*" element={<Navigate to="/boards" replace />} />
+        </Routes>
+      </div>
+      <TabBar />
+    </>
+  );
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Root app component.
  *
- * Root component for the OYBC web app.
- * Manages routing, theme state, and persists theme preference to localStorage.
+ * - Playground is accessible without auth (dev tool)
+ * - All other routes require authentication via AuthGate
+ * - Tab bar provides navigation between Boards, Create, and Profile
  */
 function App() {
-  // Initialize theme from localStorage or default to 'light'
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
     return (savedTheme === 'dark' ? 'dark' : 'light') as Theme;
   });
 
-  // Apply theme to document root
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
-  /**
-   * Toggle between light and dark themes
-   */
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
@@ -44,10 +77,22 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Navbar theme={theme} onThemeToggle={toggleTheme} />
         <Routes>
-          <Route path="/" element={<Home />} />
+          {/* Public route — playground accessible without auth */}
           <Route path="/playground" element={<Playground />} />
+
+          {/* Protected routes — auth required */}
+          <Route
+            path="/*"
+            element={
+              <AuthGate>
+                <AuthenticatedLayout
+                  theme={theme}
+                  onThemeToggle={toggleTheme}
+                />
+              </AuthGate>
+            }
+          />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
