@@ -108,7 +108,19 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── CountingStepFields.tsx  ←→                  CountingStepFieldsView.swift
     ├── CountingDerivationPanel.tsx ←→               CountingDerivationPanelView.swift
     ├── ProgressDerivationPanel.tsx ←→               ProgressDerivationPanelView.swift
-    └── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
+    ├── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
+    ├── AuthGate.tsx               ←→               Views/AuthGateView.swift
+    └── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
+│
+├── firebase/                                       Services/
+│   ├── config.ts                  ←→               OYBCApp.swift (FirebaseApp.configure)
+│   ├── authService.ts             ←→               Services/AuthService.swift
+│   ├── AuthContext.tsx            ←→               (AuthService is @ObservableObject)
+│   ├── syncService.ts             ←→               Services/SyncService.swift
+│   └── conflictResolver.ts       ←→               (inline in SyncService.swift)
+│
+├── components/playground/
+│   └── SyncSimulationPlayground.tsx ←→             Views/Components/SyncDashboardView.swift
 ```
 
 **Rules**:
@@ -162,6 +174,15 @@ xcodegen generate            # Regenerate project from project.yml
 xcodebuild -scheme OYBC build  # CLI build (simulator)
 ```
 
+### Firebase
+
+```bash
+firebase login                           # Authenticate CLI (one-time)
+firebase deploy --only firestore:rules   # Deploy security rules
+```
+
+**Setup**: Firebase config is in `.env.local` (web, gitignored) and `GoogleService-Info.plist` (iOS, gitignored). Each developer must obtain these from the Firebase console.
+
 ## Architecture
 
 ### Monorepo Structure
@@ -170,9 +191,12 @@ xcodebuild -scheme OYBC build  # CLI build (simulator)
 oybc/
 ├── apps/
 │   ├── ios/           # SwiftUI + GRDB 6.24 (SQLite), iOS 17+, XcodeGen (project.yml)
+│   │                  # + Firebase Auth/Firestore (SPM)
 │   └── web/           # React 18 + Vite + Dexie (IndexedDB) + React Router
+│                      # + Firebase JS SDK (auth, firestore, sync)
 ├── packages/
 │   └── shared/        # TypeScript types, algorithms, validation
+├── firestore.rules    # Firestore security rules (deployed via firebase CLI)
 └── docs/              # Architecture documentation
 ```
 
@@ -295,23 +319,58 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 **Phase 1**: Local Database Setup — COMPLETE
 **Phase 1.5**: Working App Infrastructure — COMPLETE (web + iOS + Playground + BingoSquare)
 
-**Current Phase**: Phase 2 - Core Game Loop (Offline-Only)
+**Phase 2**: Core Game Loop — COMPLETE (all features playground-tested)
 
-| #   | Feature                               | Status                                                                                                                                                         |
-| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | 5x5 Bingo Board Grid                  | COMPLETE                                                                                                                                                       |
-| 2   | Different Board Sizes (3x3, 4x4, 5x5) | COMPLETE                                                                                                                                                       |
-| 3   | Bingo Detection Logic                 | COMPLETE                                                                                                                                                       |
-| 4   | Board Randomization                   | COMPLETE                                                                                                                                                       |
-| 5   | Center Space Logic                    | COMPLETE                                                                                                                                                       |
-| 6   | Tasks & Task Creation                 | IN PROGRESS (Playground: unified task creator, composite tasks, board generator, task square actions, subtask system SF1-SF4, board task selection, cross-board rollup) |
-| 7   | Celebrations & Polish                 | —                                                                                                                                                              |
+| #   | Feature                                | Status   |
+| --- | -------------------------------------- | -------- |
+| 1   | 5x5 Bingo Board Grid                  | COMPLETE |
+| 2   | Different Board Sizes (3x3, 4x4, 5x5) | COMPLETE |
+| 3   | Bingo Detection Logic                 | COMPLETE |
+| 4   | Board Randomization                   | COMPLETE |
+| 5   | Center Space Logic                    | COMPLETE |
+| 6   | Tasks & Task Creation                 | COMPLETE |
+| 7   | Celebrations & Polish                 | SKIPPED  |
 
-**Current**: Feature 6 - Tasks & Task Creation. Subtask system SF1-SF4 complete in Playground. Board Task Selection playground consolidates task creation, existing task selection, subtask derivation, and board browsing into a unified task pool builder. Component extraction complete — see `docs/superpowers/specs/2026-03-19-playground-component-extraction.md`.
+Playground-tested features: unified task creator, composite tasks, board generator, task square actions, subtask system (SF1-SF4), board task selection, cross-board rollup, board lifecycle (creation → activation → bingo detection → greenlog), timeboxed boards (calendar boundaries, expiry), uncomplete cascade.
 
-**Phase 3** (future): Authentication & Sync Layer (Firebase Auth, sync queue, conflict resolution)
+**Phase 3**: Authentication & Sync Layer — COMPLETE
 
-**Approach**: Implement one feature at a time in Playground → test → get user approval → integrate.
+| Feature                    | Status   |
+| -------------------------- | -------- |
+| Firebase Auth (email/pw)   | COMPLETE |
+| Google Sign-In             | COMPLETE |
+| Sign in with Apple         | COMPLETE |
+| Firestore sync (push/pull) | COMPLETE |
+| LWW conflict resolution    | COMPLETE |
+| Sync queue integration     | COMPLETE |
+| Firestore security rules   | COMPLETE |
+| Sync playground section    | COMPLETE |
+
+**Current Phase**: Phase 4 — Production Integration
+
+### Production Integration Plan
+
+Tab-based app with auth gate. Web + iOS built simultaneously.
+
+**Navigation**: Bottom tab bar — Boards (default), Create, Profile.
+
+| Phase | Feature | Status |
+| ----- | ------- | ------ |
+| 0 | Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore) | — |
+| 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | — |
+| 2 | Board list (filtering, progress indicators, tap to navigate) | — |
+| 3 | Board play (bingo grid, task completion, flash messages) | — |
+| 4 | Create tab (task pool + BoardCreatorPanel) | — |
+| 5 | Profile + settings + polish (board defaults, theme, sync status, sign out) | — |
+
+**Key principle**: Reuse playground-tested components — extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.
+
+**New files per phase**:
+- Phase 1: `TabBar.tsx` ↔ `MainTabView.swift`, `BoardsPage.tsx` ↔ `BoardListView.swift`, `CreatePage.tsx` ↔ `CreateView.swift`, `ProfilePage.tsx` ↔ `ProfileView.swift`, `useSyncLoop.ts`
+- Phase 2: `BoardListItem.tsx` ↔ `BoardListItemView.swift`, `BoardStatusBadge.tsx` ↔ `BoardStatusBadgeView.swift`
+- Phase 3: `BoardPlayPage.tsx` ↔ `BoardPlayView.swift`
+
+**Routes (web)**: `/boards`, `/boards/:id`, `/create`, `/profile`, `/playground` (dev tool)
 
 ## Branching Strategy
 

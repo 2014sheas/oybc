@@ -1307,9 +1307,46 @@ db.boards.filter(b => b.userId === userId && !b.isDeleted)
 
 ## Next Steps
 
-1. Implement sync strategies in iOS GRDB layer
-2. Implement sync strategies in web Dexie layer
+1. ~~Implement sync strategies in iOS GRDB layer~~ DONE
+2. ~~Implement sync strategies in web Dexie layer~~ DONE
 3. Add unit tests for conflict resolution logic
 4. Add integration tests for cross-board queries
 5. Performance benchmarking with realistic data volumes
 6. Add telemetry for sync conflict frequency (inform v1.1 priorities)
+
+---
+
+## Implementation Notes
+
+This section documents what was actually implemented for the sync layer (Phase 3).
+
+### Conflict Resolver
+
+- **Web**: `conflictResolver.ts` implements the LWW conflict resolution logic
+- **iOS**: Conflict resolution is inline in `SyncService.swift`
+
+### Resolution Rules
+
+1. Higher `version` wins
+2. Same `version`: newer `updatedAt` wins
+3. Tie on both: remote wins
+
+### Push Sync
+
+- Read the remote Firestore document
+- Compare local vs remote using the resolution rules above
+- Write to Firestore only if local wins
+- Sync queue items are processed sequentially (not batched yet)
+
+### Pull Sync
+
+- Query Firestore by `_syncedAt > lastSyncedAt` watermark
+- For each remote document, compare against local using the resolution rules
+- Upsert into local DB if remote wins
+- `lastSyncedAt` watermark is only advanced after an error-free pull cycle
+
+### Known Limitations
+
+- **TOCTOU race in push**: The read-then-write pattern during push is not atomic. Another device could write between the read and write. Production should use Firestore transactions to close this window.
+- **No schema validation on pulled data**: Remote documents are trusted as-is during pull. Malformed or unexpected fields are not validated before upserting into the local DB.
+- **`merge: true` can leave stale fields**: Using Firestore's `merge: true` option means deleted or renamed fields on the local side may persist in the remote document as stale data.
