@@ -22,26 +22,9 @@ struct AuthGateView<Content: View>: View {
         Group {
             if authService.isLoading {
                 loadingView
-            } else if let user = authService.currentUser {
-                VStack(spacing: 0) {
-                    HStack {
-                        Text(user.displayName ?? user.email)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        SwiftUI.Button("Sign Out") {
-                            try? authService.signOut()
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.red)
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
-
-                    content()
-                        .environmentObject(authService)
-                }
+            } else if authService.currentUser != nil {
+                content()
+                    .environmentObject(authService)
             } else {
                 LoginView(authService: authService)
             }
