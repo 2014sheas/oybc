@@ -9,14 +9,14 @@ import styles from './TabBar.module.css';
  */
 export function TabBar(): React.ReactElement {
   return (
-    <nav className={styles.tabbar}>
+    <nav className={styles.tabbar} aria-label="Main navigation">
       <NavLink
         to="/boards"
         className={({ isActive }) =>
           `${styles.tabItem} ${isActive ? styles.tabItemActive : ''}`
         }
       >
-        <span className={styles.tabIcon}>&#9638;</span>
+        <span className={styles.tabIcon} aria-hidden="true">&#9638;</span>
         <span className={styles.tabLabel}>Boards</span>
       </NavLink>
       <NavLink
@@ -25,7 +25,7 @@ export function TabBar(): React.ReactElement {
           `${styles.tabItem} ${isActive ? styles.tabItemActive : ''}`
         }
       >
-        <span className={styles.tabIcon}>&#43;</span>
+        <span className={styles.tabIcon} aria-hidden="true">&#43;</span>
         <span className={styles.tabLabel}>Create</span>
       </NavLink>
       <NavLink
@@ -34,7 +34,7 @@ export function TabBar(): React.ReactElement {
           `${styles.tabItem} ${isActive ? styles.tabItemActive : ''}`
         }
       >
-        <span className={styles.tabIcon}>&#9679;</span>
+        <span className={styles.tabIcon} aria-hidden="true">&#9679;</span>
         <span className={styles.tabLabel}>Profile</span>
       </NavLink>
     </nav>

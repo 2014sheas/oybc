@@ -1,4 +1,6 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../firebase/AuthContext';
+import { db } from '../db/database';
 import { Link } from 'react-router-dom';
 import styles from './ProfilePage.module.css';
 
@@ -20,6 +22,13 @@ export function ProfilePage({
   const initial = user?.displayName?.charAt(0).toUpperCase()
     ?? user?.email?.charAt(0).toUpperCase()
     ?? '?';
+
+  // Live query for lastSyncedAt — auth context doesn't update when sync writes to DB
+  const liveUser = useLiveQuery(
+    () => user ? db.users.get(user.id) : undefined,
+    [user?.id]
+  );
+  const lastSyncedAt = liveUser?.lastSyncedAt;
 
   return (
     <div className={styles.container}>
@@ -47,9 +56,11 @@ export function ProfilePage({
       <div className={styles.card}>
         <div className={styles.settingsRow}>
           <span className={styles.rowLabel}>Theme</span>
-          <div className={styles.toggleGroup}>
+          <div className={styles.toggleGroup} role="radiogroup" aria-label="Theme">
             <button
               type="button"
+              role="radio"
+              aria-checked={theme === 'light'}
               className={`${styles.toggleBtn} ${theme === 'light' ? styles.toggleBtnActive : ''}`}
               onClick={() => theme !== 'light' && onThemeToggle()}
             >
@@ -57,6 +68,8 @@ export function ProfilePage({
             </button>
             <button
               type="button"
+              role="radio"
+              aria-checked={theme === 'dark'}
               className={`${styles.toggleBtn} ${theme === 'dark' ? styles.toggleBtnActive : ''}`}
               onClick={() => theme !== 'dark' && onThemeToggle()}
             >
@@ -67,8 +80,8 @@ export function ProfilePage({
         <div className={styles.settingsRow}>
           <span className={styles.rowLabel}>Last synced</span>
           <span className={styles.rowValue}>
-            {user?.lastSyncedAt
-              ? new Date(user.lastSyncedAt).toLocaleTimeString()
+            {lastSyncedAt
+              ? new Date(lastSyncedAt).toLocaleTimeString()
               : 'Never'}
           </span>
         </div>

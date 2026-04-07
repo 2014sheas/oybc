@@ -32,7 +32,7 @@ function AuthenticatedLayout({
 
   return (
     <>
-      <div style={{ paddingBottom: 56 }}>
+      <div style={{ paddingBottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}>
         <Routes>
           <Route path="/boards" element={<BoardsPage />} />
           {/* <Route path="/boards/:id" element={<BoardPlayPage />} /> -- Phase 3 */}
