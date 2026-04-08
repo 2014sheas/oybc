@@ -11,12 +11,14 @@
 		159D16051FA8E2923FE9CC84 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343B20563EE55E5FA28C5DC2 /* MainTabView.swift */; };
 		1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149C3CA55D0467096B13D935 /* Task.swift */; };
 		27AB929BF4B52E411F6EFA6C /* BoardListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A9B48D659A3517CCA341637 /* BoardListView.swift */; };
+		2C57FCF2046E9E59665819C0 /* BoardListItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA434E50844910E99B885B94 /* BoardListItemView.swift */; };
 		2EF19E402C1B931693900274 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = FB60A2471061045431151B6B /* GRDB */; };
 		2FAB51431A166B7B1C77EB21 /* BoardLifecyclePlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08DB8020760BCFB03F39C5AD /* BoardLifecyclePlayground.swift */; };
 		37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */; };
 		385DD3AF707F8A87CB285762 /* BingoBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */; };
 		3C42ABF9B38079BEB9105DC2 /* UnifiedTaskCreatorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD08A8AFE2E5BD265E813DC4 /* UnifiedTaskCreatorPlayground.swift */; };
 		3D1E96D35DF0BF6B1DE02EB4 /* Schema.sql in Resources */ = {isa = PBXBuildFile; fileRef = B70713D5FB25DE3392CD3CEE /* Schema.sql */; };
+		3EC35293B2C1A69FB060892D /* BoardPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DEA8E9D24B3205D81595221 /* BoardPlayView.swift */; };
 		40223EBA0D9B7B25CCB1931A /* PlaygroundUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */; };
 		4B2B6ED94B59B66095A2A7F4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADD7157FF545AFEC6EF9588 /* ContentView.swift */; };
 		4C1404F4AF8D7B699FF5DC50 /* BoardGeneratorPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A4A008E558F76153F461B0B /* BoardGeneratorPlayground.swift */; };
@@ -53,6 +55,7 @@
 		C0A46EFF73CDF0023708C549 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F0A3E6144798AD80EB9DAF /* SyncService.swift */; };
 		C2C8D744E19FC1CC95F72D96 /* SelectableTaskItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397644A1686EEC49F1E7C294 /* SelectableTaskItemView.swift */; };
 		C3B8B4FD9C30EBC428EC52E6 /* CountingStepFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */; };
+		C5DAC2DD6C247A8B43C043F5 /* BoardStatusBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7F89E61CAB57BA23FDB94E /* BoardStatusBadgeView.swift */; };
 		CD9EF03D19BE77339DC9E521 /* CompositeDerivationPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089DC720A8203E55B60E786A /* CompositeDerivationPanelView.swift */; };
 		D924E811AABFF1C4067A12CD /* SyncDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C726409E076553C475236DC2 /* SyncDashboardView.swift */; };
 		D9E60AC9E8B8D249C0AABFC9 /* BoardCreatorPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D1C385E6406EC3C9A4BEE8 /* BoardCreatorPanelView.swift */; };
@@ -104,6 +107,7 @@
 		49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoBoard.swift; sourceTree = "<group>"; };
 		4ADD7157FF545AFEC6EF9588 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B55F24D17BE0A2E4D024288 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
+		4B7F89E61CAB57BA23FDB94E /* BoardStatusBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatusBadgeView.swift; sourceTree = "<group>"; };
 		4C85054E57A078D4AAEC7EB6 /* OYBC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OYBC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F879A103A0FE383E497F464 /* CenterSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenterSquare.swift; sourceTree = "<group>"; };
 		52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundUtils.swift; sourceTree = "<group>"; };
@@ -116,6 +120,7 @@
 		5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
 		6AAEEFFDD3526743C95A13D7 /* SubtaskChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtaskChipView.swift; sourceTree = "<group>"; };
 		6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
+		6DEA8E9D24B3205D81595221 /* BoardPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardPlayView.swift; sourceTree = "<group>"; };
 		73F91261A5D2B914C87A9E59 /* Board.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Board.swift; sourceTree = "<group>"; };
 		759C64DAC632DDA057A45E5F /* BoardTaskSelectionPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardTaskSelectionPlayground.swift; sourceTree = "<group>"; };
 		7C17DCB793B0A1C7A6A2519C /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
@@ -133,6 +138,7 @@
 		F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountingStepFieldsView.swift; sourceTree = "<group>"; };
 		F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTaskSquareView.swift; sourceTree = "<group>"; };
 		FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
+		FA434E50844910E99B885B94 /* BoardListItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardListItemView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -173,6 +179,8 @@
 				49E7346F9B1FE13C5A6C2E1E /* BingoBoard.swift */,
 				34742747DBBD390A07DC633A /* BingoSquare.swift */,
 				09D1C385E6406EC3C9A4BEE8 /* BoardCreatorPanelView.swift */,
+				FA434E50844910E99B885B94 /* BoardListItemView.swift */,
+				4B7F89E61CAB57BA23FDB94E /* BoardStatusBadgeView.swift */,
 				089DC720A8203E55B60E786A /* CompositeDerivationPanelView.swift */,
 				5E3E716EE694B3552051ECF6 /* CounterStepperView.swift */,
 				1EAF1C5E760E18038C6E53F6 /* CountingDerivationPanelView.swift */,
@@ -305,6 +313,7 @@
 			isa = PBXGroup;
 			children = (
 				5A9B48D659A3517CCA341637 /* BoardListView.swift */,
+				6DEA8E9D24B3205D81595221 /* BoardPlayView.swift */,
 			);
 			path = BoardsTab;
 			sourceTree = "<group>";
@@ -446,7 +455,10 @@
 				D9E60AC9E8B8D249C0AABFC9 /* BoardCreatorPanelView.swift in Sources */,
 				4C1404F4AF8D7B699FF5DC50 /* BoardGeneratorPlayground.swift in Sources */,
 				2FAB51431A166B7B1C77EB21 /* BoardLifecyclePlayground.swift in Sources */,
+				2C57FCF2046E9E59665819C0 /* BoardListItemView.swift in Sources */,
 				27AB929BF4B52E411F6EFA6C /* BoardListView.swift in Sources */,
+				3EC35293B2C1A69FB060892D /* BoardPlayView.swift in Sources */,
+				C5DAC2DD6C247A8B43C043F5 /* BoardStatusBadgeView.swift in Sources */,
 				A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */,
 				F184BF3F494D793485812D9C /* BoardTaskSelectionPlayground.swift in Sources */,
 				5BBF160330B3C5EBABCE096B /* CenterSquare.swift in Sources */,
@@ -515,7 +527,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 5RMV2ZMUHV;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = OYBC/Info.plist;
@@ -612,7 +624,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 5RMV2ZMUHV;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = OYBC/Info.plist;

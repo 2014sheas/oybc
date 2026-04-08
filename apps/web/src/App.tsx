@@ -4,6 +4,7 @@ import { AuthProvider } from './firebase/AuthContext';
 import { AuthGate } from './components/AuthGate';
 import { TabBar } from './components/TabBar';
 import { BoardsPage } from './pages/BoardsPage';
+import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreatePage } from './pages/CreatePage';
 import { ProfilePage } from './pages/ProfilePage';
 import { Playground } from './pages/Playground';
@@ -35,7 +36,7 @@ function AuthenticatedLayout({
       <div className="tabbar-content">
         <Routes>
           <Route path="/boards" element={<BoardsPage />} />
-          {/* <Route path="/boards/:id" element={<BoardPlayPage />} /> -- Phase 3 */}
+          <Route path="/boards/:id" element={<BoardPlayPage />} />
           <Route path="/create" element={<CreatePage />} />
           <Route
             path="/profile"
