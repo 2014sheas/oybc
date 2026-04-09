@@ -10,7 +10,8 @@ export function statusLabel(status: BoardStatus | string): string {
   if (status === BoardStatus.ACTIVE) return 'ACTIVE';
   if (status === BoardStatus.COMPLETED) return 'COMPLETED';
   if (status === BoardStatus.ARCHIVED) return 'ARCHIVED';
-  return 'DRAFT';
+  if (status === BoardStatus.DRAFT) return 'DRAFT';
+  return String(status).toUpperCase();
 }
 
 /**
@@ -35,7 +36,9 @@ export function getExpiryLabel(board: { timeframe: string; endDate?: string }): 
   if (board.timeframe === Timeframe.CUSTOM) return 'No deadline';
   if (!board.endDate) return 'No deadline';
   if (isTimeframeExpired(board.endDate)) return 'Expired';
-  const msLeft = new Date(board.endDate).getTime() - Date.now();
+  const endTime = new Date(board.endDate).getTime();
+  if (!Number.isFinite(endTime)) return 'No deadline';
+  const msLeft = endTime - Date.now();
   const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
   if (daysLeft <= 0) return 'Expires today';
   if (daysLeft === 1) return '1 day left';

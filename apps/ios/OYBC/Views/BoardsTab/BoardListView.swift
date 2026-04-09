@@ -116,7 +116,10 @@ struct BoardListView: View {
         _Concurrency.Task {
             do {
                 let result = try AppDatabase.shared.fetchBoards(userId: userId)
-                await MainActor.run { boards = result }
+                await MainActor.run {
+                    boards = result
+                    loadError = nil
+                }
             } catch {
                 await MainActor.run { loadError = error.localizedDescription }
             }
