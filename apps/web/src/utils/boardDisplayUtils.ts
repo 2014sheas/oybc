@@ -4,7 +4,7 @@ import { BoardStatus, Timeframe, isTimeframeExpired } from '@oybc/shared';
  * Returns a human-readable label for a board status.
  *
  * @param status - The BoardStatus value
- * @returns "ACTIVE", "COMPLETED", or "DRAFT"
+ * @returns "ACTIVE", "COMPLETED", "ARCHIVED", or "DRAFT"; unknown values are uppercased
  */
 export function statusLabel(status: BoardStatus | string): string {
   if (status === BoardStatus.ACTIVE) return 'ACTIVE';
@@ -15,7 +15,10 @@ export function statusLabel(status: BoardStatus | string): string {
 }
 
 /**
- * Returns whether a board is expired (past its end date and not Custom timeframe).
+ * Returns whether a board is expired (past its end date).
+ *
+ * Custom timeframe boards are never considered expired — they have user-specified
+ * dates but no enforced deadline (by design, per SYNC_STRATEGY.md).
  *
  * @param board - Object with timeframe and endDate fields
  * @returns true if the board's deadline has passed

@@ -133,8 +133,9 @@ struct BoardListView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let now = AppDatabase.currentTimestamp()
+                // 8 tasks for a 3x3 board with FREE center (9 - 1 = 8 slots)
                 let taskTitles = ["Meditate", "Call a friend", "Cook dinner", "Write in journal",
-                                  "Read a chapter", "Go for a walk", "Try a new recipe", "Clean up", "Stretch"]
+                                  "Read a chapter", "Go for a walk", "Try a new recipe", "Clean up"]
                 var taskIds: [String] = []
                 try AppDatabase.shared.write { db in
                     for title in taskTitles {
@@ -155,9 +156,10 @@ struct BoardListView: View {
                     let boardName = "Demo Board \(Int.random(in: 1...999))"
                     let boardDict: [String: Any] = [
                         "id": boardId, "userId": userId, "name": boardName, "status": "draft",
-                        "boardSize": 3, "timeframe": "custom", "startDate": now, "endDate": now,
+                        "boardSize": 3, "timeframe": "custom", "startDate": now,
+                        "endDate": ISO8601DateFormatter().string(from: Date().addingTimeInterval(30 * 24 * 60 * 60)),
                         "centerSquareType": "free", "isRandomized": true,
-                        "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+                        "totalTasks": 8, "completedTasks": 0, "linesCompleted": 0,
                         "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false
                     ]
                     let boardData = try JSONSerialization.data(withJSONObject: boardDict)

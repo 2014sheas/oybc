@@ -9,7 +9,8 @@ interface BoardStatusBadgeProps {
 /**
  * BoardStatusBadge — Small colored pill showing board status.
  *
- * DRAFT (gray dashed border), ACTIVE (blue filled), COMPLETED (green filled).
+ * DRAFT (gray dashed border), ACTIVE (blue filled), COMPLETED (green filled),
+ * ARCHIVED (gray filled).
  */
 export function BoardStatusBadge({ status }: BoardStatusBadgeProps): React.ReactElement {
   let variant = styles.badgeDraft;

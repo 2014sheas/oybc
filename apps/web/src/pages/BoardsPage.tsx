@@ -40,6 +40,7 @@ export function BoardsPage(): React.ReactElement {
     if (!user || isCreatingDemo) return;
     setIsCreatingDemo(true);
     try {
+      // 8 tasks for a 3x3 board with FREE center (9 - 1 = 8 slots)
       const taskDefs = [
         { type: TaskType.NORMAL, title: 'Meditate' },
         { type: TaskType.NORMAL, title: 'Call a friend' },
@@ -49,7 +50,6 @@ export function BoardsPage(): React.ReactElement {
         { type: TaskType.COUNTING, title: 'Read 50 pages', action: 'Read', unit: 'pages', maxCount: 50 },
         { type: TaskType.COUNTING, title: 'Walk 10 km', action: 'Walk', unit: 'km', maxCount: 10 },
         { type: TaskType.NORMAL, title: 'Go for a walk' },
-        { type: TaskType.NORMAL, title: 'Try a new recipe' },
       ];
       const tasks = [];
       for (const def of taskDefs) {
