@@ -1,0 +1,35 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.badgeDraft {
+  background: var(--bg-secondary, #f8f9fa);
+  color: var(--text-secondary);
+  border: 1px dashed var(--border-color);
+}
+
+.badgeActive {
+  background: var(--active-bg, #0d6efd);
+  color: #ffffff;
+  border: 1px solid transparent;
+}
+
+.badgeCompleted {
+  background: var(--success-bg, #d1e7dd);
+  color: var(--success-text, #198754);
+  border: 1px solid var(--success-border, #a3cfbb);
+}
+
+.badgeArchived {
+  background: var(--bg-secondary, #f8f9fa);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}

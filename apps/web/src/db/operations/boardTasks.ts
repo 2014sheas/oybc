@@ -1,6 +1,8 @@
 import { db } from '../database';
 import type { BoardTask, CreateBoardTaskInput } from '@oybc/shared';
+import { SyncOperationType } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 
 /**
  * BoardTask CRUD Operations
@@ -44,6 +46,7 @@ export async function createBoardTask(
   };
 
   await db.boardTasks.add(boardTask);
+  void addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
   return boardTask;
 }
 

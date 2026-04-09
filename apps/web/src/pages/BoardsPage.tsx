@@ -1,22 +1,141 @@
+import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  TaskType,
+  Timeframe,
+  CenterSquareType,
+  fisherYatesShuffle,
+} from '@oybc/shared';
+import { useAuth } from '../firebase/AuthContext';
+import { useBoards } from '../hooks';
+import { createTask } from '../db/operations/tasks';
+import { createBoard } from '../db/operations/boards';
+import { createBoardTask } from '../db/operations/boardTasks';
+import { FilterTabs } from '../components/FilterTabs';
+import { BoardListItem } from '../components/BoardListItem';
 import styles from './BoardsPage.module.css';
 
+const FILTER_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'draft', label: 'Draft' },
+];
+
 /**
- * BoardsPage — Shows the user's boards.
+ * BoardsPage — Shows the user's boards with status filtering.
  *
- * Phase 1: Empty placeholder. Phase 2 will add the full board list
- * with filtering, progress indicators, and navigation to board play.
+ * Each board row shows name, progress, bingo count, timeframe, expiry, and status.
+ * Tapping a board navigates to the board play view.
  */
 export function BoardsPage(): React.ReactElement {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const allBoards = useBoards(user?.id) ?? [];
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [isCreatingDemo, setIsCreatingDemo] = useState(false);
+
+  // Temporary demo board creator — will be removed when Create tab is built (Phase 4)
+  const handleCreateDemo = useCallback(async () => {
+    if (!user || isCreatingDemo) return;
+    setIsCreatingDemo(true);
+    try {
+      // 8 tasks for a 3x3 board with FREE center (9 - 1 = 8 slots)
+      const taskDefs = [
+        { type: TaskType.NORMAL, title: 'Meditate' },
+        { type: TaskType.NORMAL, title: 'Call a friend' },
+        { type: TaskType.NORMAL, title: 'Cook dinner' },
+        { type: TaskType.NORMAL, title: 'Write in journal' },
+        { type: TaskType.NORMAL, title: 'Read a chapter' },
+        { type: TaskType.COUNTING, title: 'Read 50 pages', action: 'Read', unit: 'pages', maxCount: 50 },
+        { type: TaskType.COUNTING, title: 'Walk 10 km', action: 'Walk', unit: 'km', maxCount: 10 },
+        { type: TaskType.NORMAL, title: 'Go for a walk' },
+      ];
+      const tasks = [];
+      for (const def of taskDefs) {
+        tasks.push(await createTask(user.id, def));
+      }
+      const shuffled = fisherYatesShuffle([...tasks]);
+      const board = await createBoard(user.id, {
+        name: `Demo Board ${allBoards.length + 1}`,
+        boardSize: 3,
+        timeframe: Timeframe.CUSTOM,
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        centerSquareType: CenterSquareType.FREE,
+        isRandomized: true,
+      });
+      let idx = 0;
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 3; col++) {
+          if (row === 1 && col === 1) continue;
+          if (idx >= shuffled.length) break;
+          await createBoardTask({ boardId: board.id, taskId: shuffled[idx].id, row, col, isCenter: false });
+          idx++;
+        }
+      }
+      navigate(`/boards/${board.id}`);
+    } catch (err) {
+      console.error('Demo board creation failed:', err);
+    } finally {
+      setIsCreatingDemo(false);
+    }
+  }, [user, isCreatingDemo, allBoards.length, navigate]);
+
+  const filteredBoards = allBoards.filter((b) => {
+    if (activeFilter === 'all') return true;
+    return b.status === activeFilter;
+  });
+
   return (
     <div className={styles.container}>
-      <h1 className={styles.header}>Boards</h1>
-      <div className={styles.emptyState}>
-        <div className={styles.emptyIcon}>&#9776;</div>
-        <p>
-          No boards yet.<br />
-          Head to the <strong>Create</strong> tab to build your first board!
-        </p>
+      <div className={styles.headerRow}>
+        <h1 className={styles.header}>Boards</h1>
+        <button
+          type="button"
+          className={styles.demoButton}
+          onClick={() => void handleCreateDemo()}
+          disabled={isCreatingDemo}
+        >
+          {isCreatingDemo ? 'Creating...' : '+ Demo Board'}
+        </button>
       </div>
+
+      {allBoards.length > 0 && (
+        <div className={styles.filterRow}>
+          <FilterTabs
+            tabs={FILTER_TABS}
+            activeTab={activeFilter}
+            onTabChange={setActiveFilter}
+          />
+        </div>
+      )}
+
+      {filteredBoards.length === 0 ? (
+        <div className={styles.emptyState}>
+          <div className={styles.emptyIcon}>&#9776;</div>
+          <p>
+            {allBoards.length === 0 ? (
+              <>
+                No boards yet.<br />
+                Head to the <strong>Create</strong> tab to build your first board!
+              </>
+            ) : (
+              <>No {activeFilter} boards found.</>
+            )}
+          </p>
+        </div>
+      ) : (
+        <div className={styles.boardList}>
+          {filteredBoards.map((board) => (
+            <BoardListItem
+              key={board.id}
+              board={board}
+              onClick={() => navigate(`/boards/${board.id}`)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
