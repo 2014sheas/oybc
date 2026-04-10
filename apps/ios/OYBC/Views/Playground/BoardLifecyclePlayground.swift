@@ -811,12 +811,21 @@ struct BoardLifecyclePlayground: View {
                         .filter(Column("boardId") == board.id)
                         .fetchAll(db)
 
-                    // 4. Build flat boolean grid (row-major, FREE center = always true).
+                    // 4. Build flat boolean grid (row-major).
                     var grid = [Bool](repeating: false, count: size * size)
                     for bt in allBoardTasks {
                         let idx = bt.row * size + bt.col
                         guard idx >= 0, idx < grid.count else { continue }
                         grid[idx] = bt.isCenter ? true : bt.isCompleted
+                    }
+
+                    // Handle FREE/CUSTOM_FREE center auto-completion (no BoardTask at center)
+                    if size % 2 == 1 {
+                        let centerIdx = size * size / 2
+                        let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
+                        if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
+                            grid[centerIdx] = true
+                        }
                     }
 
                     // 5. Detect bingos.
@@ -827,9 +836,15 @@ struct BoardLifecyclePlayground: View {
                     let brandNewLines = newLineIds.subtracting(previousLineIds)
                     let lostBingos = previousLineIds.filter { !newLineIds.contains($0) }
 
-                    // Count non-center completed tasks.
-                    let completedCount = allBoardTasks.filter { !$0.isCenter && $0.isCompleted }.count
+                    // Count completed tasks + add center square if auto-completed.
+                    var completedCount = allBoardTasks.filter { !$0.isCenter && $0.isCompleted }.count
                     let totalCount = allBoardTasks.filter { !$0.isCenter }.count
+                    if size % 2 == 1 {
+                        let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
+                        if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
+                            completedCount += 1
+                        }
+                    }
 
                     // 6. Update board stats.
                     var updatedBoard: Board
