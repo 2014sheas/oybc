@@ -223,7 +223,7 @@ export function BoardPlayPage(): React.ReactElement {
                     );
                   } else {
                     cells.push(
-                      <div key={`empty-${row}-${col}`} className={styles.freeSquare} />
+                      <div key={`empty-${row}-${col}`} className={styles.emptySquare} />
                     );
                   }
                   continue;
@@ -232,7 +232,7 @@ export function BoardPlayPage(): React.ReactElement {
                 const task = taskMap[bt.taskId];
                 if (!task) {
                   cells.push(
-                    <div key={`missing-${row}-${col}`} className={styles.freeSquare}>?</div>
+                    <div key={`missing-${row}-${col}`} className={styles.emptySquare}>?</div>
                   );
                   continue;
                 }

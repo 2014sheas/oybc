@@ -838,7 +838,7 @@ struct BoardLifecyclePlayground: View {
 
                     // Count all completed BoardTasks + add FREE center if auto-completed (no BoardTask).
                     var completedCount = allBoardTasks.filter { $0.isCompleted }.count
-                    let totalCount = allBoardTasks.count
+                    let totalCount = size * size
                     if size % 2 == 1 {
                         let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
                         if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {

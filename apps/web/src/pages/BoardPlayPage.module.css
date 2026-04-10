@@ -116,6 +116,20 @@
   letter-spacing: 0.06em;
 }
 
+/* Empty grid slot (no BoardTask) — neutral, not completed-looking */
+.emptySquare {
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-secondary, #f8f9fa);
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
 /* ─── Stats bar ─────────────────────────────────────────────────────────────── */
 
 .statsBar {

@@ -696,13 +696,8 @@ struct BoardPlayView: View {
                         activated.updatedAt = now
                         activated.version += 1
                         try activated.save(db)
-                        try bpvMakeSyncItem(
-                            entityType: "boards",
-                            entityId: activated.id,
-                            operationType: .update,
-                            payload: activated,
-                            now: now
-                        ).save(db)
+                        // No separate sync item here — the final board save below
+                        // includes the activated status and avoids redundant queue entries.
                     }
 
                     // 2. Persist the updated board task.
@@ -746,7 +741,7 @@ struct BoardPlayView: View {
 
                     // Count all completed BoardTasks + add FREE center if auto-completed (no BoardTask).
                     var completedCount = allBoardTasks.filter { $0.isCompleted }.count
-                    let totalCount = allBoardTasks.count
+                    let totalCount = size * size
                     if size % 2 == 1 {
                         let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
                         if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
