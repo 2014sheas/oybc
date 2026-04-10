@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -62,6 +62,12 @@ export function BoardPlayPage(): React.ReactElement {
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up flash timer on unmount
+  useEffect(() => {
+    return () => { if (flashTimerRef.current) clearTimeout(flashTimerRef.current); };
+  }, []);
 
   // ── Derived data ───────────────────────────────────────────────────────
 
@@ -84,8 +90,12 @@ export function BoardPlayPage(): React.ReactElement {
   // ── Flash message helper ───────────────────────────────────────────────
 
   function showFlash(text: string, variant: FlashMessage['variant']): void {
-    setFlashMessage({ text, variant });
-    setTimeout(() => setFlashMessage(null), FLASH_MS);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    const msg = { text, variant };
+    setFlashMessage(msg);
+    flashTimerRef.current = setTimeout(() => {
+      setFlashMessage((current) => current === msg ? null : current);
+    }, FLASH_MS);
   }
 
   // ── Completion handler ─────────────────────────────────────────────────
@@ -104,16 +114,22 @@ export function BoardPlayPage(): React.ReactElement {
       }
     ): Promise<void> => {
       if (!id) return;
-      const result = await handleTaskCompletion(id, boardTaskId, updates);
-      // Priority: reactivated > lostBingos > greenlog > newBingos
-      if (result.boardReactivated) {
-        showFlash('Board reactivated — no longer complete', 'bingo');
-      } else if (result.lostBingos.length > 0) {
-        showFlash(`Bingo lost: ${result.lostBingos.join(', ')}`, 'bingo');
-      } else if (result.isGreenlog) {
-        showFlash('GREENLOG! Board complete!', 'greenlog');
-      } else if (result.newBingos.length > 0) {
-        showFlash(`Bingo! ${result.newBingos.join(', ')}`, 'bingo');
+      try {
+        const result = await handleTaskCompletion(id, boardTaskId, updates);
+        // Priority: reactivated > lostBingos > greenlog > newBingos
+        if (result.boardReactivated) {
+          showFlash('Board reactivated — no longer complete', 'bingo');
+        } else if (result.lostBingos.length > 0) {
+          showFlash(`Bingo lost: ${result.lostBingos.join(', ')}`, 'bingo');
+        } else if (result.isGreenlog) {
+          showFlash('GREENLOG! Board complete!', 'greenlog');
+        } else if (result.newBingos.length > 0) {
+          showFlash(`Bingo! ${result.newBingos.join(', ')}`, 'bingo');
+        }
+      } catch (err) {
+        console.error('Task completion failed:', err);
+        showFlash('Something went wrong', 'bingo');
+        setContextMenu(null);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -203,7 +219,12 @@ export function BoardPlayPage(): React.ReactElement {
                 }
 
                 const task = taskMap[bt.taskId];
-                if (!task) continue;
+                if (!task) {
+                  cells.push(
+                    <div key={`missing-${row}-${col}`} className={styles.freeSquare}>?</div>
+                  );
+                  continue;
+                }
 
                 const squareData = taskToSquareData(task, allTaskSteps);
                 const squareState = boardTaskToSquareState(bt);
@@ -218,9 +239,9 @@ export function BoardPlayPage(): React.ReactElement {
                       if (squareData.type === 'progress') {
                         setSelectedSquareId(bt.id);
                       } else if (squareData.type === 'counting') {
-                        void handleComplete(bt.id, {
-                          currentCount: (bt.currentCount ?? 0) + 1,
-                        });
+                        const next = (bt.currentCount ?? 0) + 1;
+                        if (squareData.maxCount && next > squareData.maxCount) return;
+                        void handleComplete(bt.id, { currentCount: next });
                       } else {
                         void handleComplete(bt.id, {
                           isCompleted: !bt.isCompleted,

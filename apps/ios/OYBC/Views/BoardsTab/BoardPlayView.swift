@@ -809,9 +809,13 @@ struct BoardPlayView: View {
                     loadBoardTasks()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
+                        let dismissAfter: Double = 3.0
                         _Concurrency.Task.detached { @MainActor in
-                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(successDismissSeconds * 1_000_000_000))
-                            bingoMessage = nil
+                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
+                            // Only dismiss if this is still the same message
+                            if bingoMessage == msg {
+                                bingoMessage = nil
+                            }
                         }
                     }
                 }
