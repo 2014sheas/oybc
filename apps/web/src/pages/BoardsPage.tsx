@@ -40,16 +40,29 @@ export function BoardsPage(): React.ReactElement {
     if (!user || isCreatingDemo) return;
     setIsCreatingDemo(true);
     try {
-      // 8 tasks for a 3x3 board with FREE center (9 - 1 = 8 slots)
+      // 8 tasks for a 3x3 board with FREE center — mix of all types for testing
       const taskDefs = [
         { type: TaskType.NORMAL, title: 'Meditate' },
         { type: TaskType.NORMAL, title: 'Call a friend' },
         { type: TaskType.NORMAL, title: 'Cook dinner' },
         { type: TaskType.NORMAL, title: 'Write in journal' },
-        { type: TaskType.NORMAL, title: 'Read a chapter' },
-        { type: TaskType.COUNTING, title: 'Read 50 pages', action: 'Read', unit: 'pages', maxCount: 50 },
-        { type: TaskType.COUNTING, title: 'Walk 10 km', action: 'Walk', unit: 'km', maxCount: 10 },
-        { type: TaskType.NORMAL, title: 'Go for a walk' },
+        { type: TaskType.COUNTING, title: 'Read 10 pages', action: 'Read', unit: 'pages', maxCount: 10 },
+        { type: TaskType.COUNTING, title: 'Walk 3 km', action: 'Walk', unit: 'km', maxCount: 3 },
+        {
+          type: TaskType.PROGRESS, title: 'Morning Routine',
+          steps: [
+            { title: 'Brush teeth', type: TaskType.NORMAL },
+            { title: 'Stretch', type: TaskType.NORMAL },
+            { title: 'Breakfast', type: TaskType.NORMAL },
+          ],
+        },
+        {
+          type: TaskType.PROGRESS, title: 'Clean House',
+          steps: [
+            { title: 'Vacuum', type: TaskType.NORMAL },
+            { title: 'Dishes', type: TaskType.NORMAL },
+          ],
+        },
       ];
       const tasks = [];
       for (const def of taskDefs) {

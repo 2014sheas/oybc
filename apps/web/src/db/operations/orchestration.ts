@@ -57,8 +57,19 @@ export async function handleTaskCompletion(
 
   await db.transaction('rw', [db.boards, db.boardTasks, db.tasks, db.taskSteps], async () => {
     // 1. Fetch the board
-    const board = await db.boards.get(boardId);
+    let board = await db.boards.get(boardId);
     if (!board) throw new Error(`Board ${boardId} not found`);
+
+    // 1.5. Auto-activate DRAFT boards on first interaction
+    if (board.status === BoardStatus.DRAFT) {
+      await db.boards.update(boardId, {
+        status: BoardStatus.ACTIVE,
+        updatedAt: currentTimestamp(),
+        version: (board.version ?? 1) + 1,
+      });
+      // Re-fetch to get updated version for subsequent writes
+      board = (await db.boards.get(boardId))!;
+    }
 
     // 2. Validate the boardTask exists and belongs to this board
     const targetBt = await db.boardTasks.get(boardTaskId);

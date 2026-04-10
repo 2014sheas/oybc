@@ -133,22 +133,73 @@ struct BoardListView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let now = AppDatabase.currentTimestamp()
-                // 8 tasks for a 3x3 board with FREE center (9 - 1 = 8 slots)
-                let taskTitles = ["Meditate", "Call a friend", "Cook dinner", "Write in journal",
-                                  "Read a chapter", "Go for a walk", "Try a new recipe", "Clean up"]
+                // 8 tasks for a 3x3 board with FREE center — mix of all types
                 var taskIds: [String] = []
                 try AppDatabase.shared.write { db in
-                    for title in taskTitles {
+                    // Helper to create and insert a task, returning its ID
+                    func makeTask(id: String, _ dict: [String: Any]) throws -> String {
+                        let data = try JSONSerialization.data(withJSONObject: dict)
+                        var task = try JSONDecoder().decode(Task.self, from: data)
+                        try task.insert(db)
+                        return id
+                    }
+
+                    // 4 normal tasks
+                    for title in ["Meditate", "Call a friend", "Cook dinner", "Write in journal"] {
                         let id = AppDatabase.generateUUID()
-                        let taskDict: [String: Any] = [
+                        taskIds.append(try makeTask(id: id, [
                             "id": id, "userId": userId, "title": title, "type": "normal",
                             "totalCompletions": 0, "totalInstances": 0,
                             "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false
-                        ]
-                        let data = try JSONSerialization.data(withJSONObject: taskDict)
-                        var task = try JSONDecoder().decode(Task.self, from: data)
-                        try task.save(db)
-                        taskIds.append(id)
+                        ]))
+                    }
+
+                    // 2 counting tasks
+                    for (title, action, unit, maxCount) in [
+                        ("Read 10 pages", "Read", "pages", 10),
+                        ("Walk 3 km", "Walk", "km", 3),
+                    ] as [(String, String, String, Int)] {
+                        let id = AppDatabase.generateUUID()
+                        taskIds.append(try makeTask(id: id, [
+                            "id": id, "userId": userId, "title": title, "type": "counting",
+                            "action": action, "unit": unit, "maxCount": maxCount,
+                            "totalCompletions": 0, "totalInstances": 0,
+                            "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false
+                        ]))
+                    }
+
+                    // 2 progress tasks with steps
+                    for (title, stepTitles) in [
+                        ("Morning Routine", ["Brush teeth", "Stretch", "Breakfast"]),
+                        ("Clean House", ["Vacuum", "Dishes"]),
+                    ] as [(String, [String])] {
+                        let taskId = AppDatabase.generateUUID()
+                        taskIds.append(try makeTask(id: taskId, [
+                            "id": taskId, "userId": userId, "title": title, "type": "progress",
+                            "totalCompletions": 0, "totalInstances": 0,
+                            "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false
+                        ]))
+                        for (i, stepTitle) in stepTitles.enumerated() {
+                            let stepId = AppDatabase.generateUUID()
+                            // Create standalone task for the step first (FK: linkedTaskId → tasks.id)
+                            let linkedTaskId = AppDatabase.generateUUID()
+                            let linkedData = try JSONSerialization.data(withJSONObject: [
+                                "id": linkedTaskId, "userId": userId, "title": stepTitle, "type": "normal",
+                                "totalCompletions": 0, "totalInstances": 0,
+                                "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false
+                            ] as [String: Any])
+                            var linkedTask = try JSONDecoder().decode(Task.self, from: linkedData)
+                            try linkedTask.insert(db)
+
+                            let stepData = try JSONSerialization.data(withJSONObject: [
+                                "id": stepId, "taskId": taskId, "stepIndex": i,
+                                "title": stepTitle, "type": "normal",
+                                "linkedTaskId": linkedTaskId,
+                                "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false
+                            ] as [String: Any])
+                            var step = try JSONDecoder().decode(TaskStep.self, from: stepData)
+                            try step.insert(db)
+                        }
                     }
 
                     let shuffled = taskIds.shuffled()
@@ -190,9 +241,10 @@ struct BoardListView: View {
                     loadBoards()
                 }
             } catch {
+                print("❌ Demo board creation failed: \(error)")
                 DispatchQueue.main.async {
                     isCreatingDemo = false
-                    loadError = error.localizedDescription
+                    loadError = String(describing: error)
                 }
             }
         }
