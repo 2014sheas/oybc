@@ -48,7 +48,9 @@ export function BoardPlayPage(): React.ReactElement {
 
   // ── Reactive data ──────────────────────────────────────────────────────
 
-  const board = useBoard(id);
+  // undefined = still loading, null = resolved but not found, Board = found
+  const boardQuery = useBoard(id);
+  const board = boardQuery === undefined ? undefined : (boardQuery ?? null);
   const boardTasks = useBoardTasks(id) ?? [];
   const allTasks = useTasks(user?.id) ?? [];
   const allTaskSteps: TaskStep[] =
@@ -138,7 +140,16 @@ export function BoardPlayPage(): React.ReactElement {
 
   // ── Board not found ────────────────────────────────────────────────────
 
-  if (!board) {
+  // undefined = still loading (Dexie resolving), null = not found
+  if (board === undefined) {
+    return (
+      <div className={styles.container}>
+        <p className={styles.emptyState}>Loading...</p>
+      </div>
+    );
+  }
+
+  if (board === null) {
     return (
       <div className={styles.container}>
         <Link to="/boards" className={styles.backLink}>&larr; Back to boards</Link>
@@ -295,18 +306,22 @@ export function BoardPlayPage(): React.ReactElement {
             state={squareState}
             onClose={() => setSelectedSquareId(null)}
             onToggleComplete={() => {
+              if (isExpired) return;
               void handleComplete(bt.id, { isCompleted: !bt.isCompleted });
             }}
             onIncrementCount={() => {
+              if (isExpired) return;
               void handleComplete(bt.id, { currentCount: (bt.currentCount ?? 0) + 1 });
             }}
             onDecrementCount={() => {
+              if (isExpired) return;
               const prev = bt.currentCount ?? 0;
               if (prev > 0) {
                 void handleComplete(bt.id, { currentCount: prev - 1 });
               }
             }}
             onToggleStep={(stepId: string) => {
+              if (isExpired) return;
               const current = new Set(bt.completedStepIds ?? []);
               if (current.has(stepId)) {
                 current.delete(stepId);

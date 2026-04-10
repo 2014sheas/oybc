@@ -136,18 +136,18 @@ struct BoardListView: View {
                 // 8 tasks for a 3x3 board with FREE center — mix of all types
                 var taskIds: [String] = []
                 try AppDatabase.shared.write { db in
-                    // Helper to create and insert a task
-                    func makeTask(_ dict: [String: Any]) throws -> String {
+                    // Helper to create and insert a task, returning its ID
+                    func makeTask(id: String, _ dict: [String: Any]) throws -> String {
                         let data = try JSONSerialization.data(withJSONObject: dict)
                         var task = try JSONDecoder().decode(Task.self, from: data)
                         try task.insert(db)
-                        return dict["id"] as! String
+                        return id
                     }
 
                     // 4 normal tasks
                     for title in ["Meditate", "Call a friend", "Cook dinner", "Write in journal"] {
                         let id = AppDatabase.generateUUID()
-                        taskIds.append(try makeTask([
+                        taskIds.append(try makeTask(id: id, [
                             "id": id, "userId": userId, "title": title, "type": "normal",
                             "totalCompletions": 0, "totalInstances": 0,
                             "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false
@@ -160,7 +160,7 @@ struct BoardListView: View {
                         ("Walk 3 km", "Walk", "km", 3),
                     ] as [(String, String, String, Int)] {
                         let id = AppDatabase.generateUUID()
-                        taskIds.append(try makeTask([
+                        taskIds.append(try makeTask(id: id, [
                             "id": id, "userId": userId, "title": title, "type": "counting",
                             "action": action, "unit": unit, "maxCount": maxCount,
                             "totalCompletions": 0, "totalInstances": 0,
@@ -174,7 +174,7 @@ struct BoardListView: View {
                         ("Clean House", ["Vacuum", "Dishes"]),
                     ] as [(String, [String])] {
                         let taskId = AppDatabase.generateUUID()
-                        taskIds.append(try makeTask([
+                        taskIds.append(try makeTask(id: taskId, [
                             "id": taskId, "userId": userId, "title": title, "type": "progress",
                             "totalCompletions": 0, "totalInstances": 0,
                             "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false

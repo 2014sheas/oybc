@@ -725,7 +725,7 @@ struct BoardPlayView: View {
                     for bt in allBoardTasks {
                         let idx = bt.row * size + bt.col
                         guard idx >= 0, idx < grid.count else { continue }
-                        grid[idx] = bt.isCenter ? true : bt.isCompleted
+                        grid[idx] = bt.isCompleted
                     }
 
                     // Handle FREE/CUSTOM_FREE center auto-completion (no BoardTask at center)
@@ -744,9 +744,9 @@ struct BoardPlayView: View {
                     let brandNewLines = newLineIds.subtracting(previousLineIds)
                     let lostBingos = previousLineIds.filter { !newLineIds.contains($0) }
 
-                    // Count completed tasks + add center square if auto-completed.
-                    var completedCount = allBoardTasks.filter { !$0.isCenter && $0.isCompleted }.count
-                    let totalCount = allBoardTasks.filter { !$0.isCenter }.count
+                    // Count all completed BoardTasks + add FREE center if auto-completed (no BoardTask).
+                    var completedCount = allBoardTasks.filter { $0.isCompleted }.count
+                    let totalCount = allBoardTasks.count
                     if size % 2 == 1 {
                         let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
                         if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
