@@ -98,11 +98,14 @@ function createEmptyInlineSubtask(): InlineSubtaskItem {
  * a new task inline (normal, counting, or progress).
  */
 interface CompositeTaskFormProps {
+  /** User ID for task ownership. Defaults to playground user when omitted. */
+  userId?: string;
   /** Optional callback invoked with the newly created CompositeTask after successful creation */
   onCreated?: (compositeTask: CompositeTask) => void;
 }
 
-export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): React.ReactElement {
+export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps = {}): React.ReactElement {
+  const resolvedUserId = userId ?? PLAYGROUND_USER_ID;
   const [title, setTitle] = useState('');
   const [operator, setOperator] = useState<OperatorType>(OperatorType.AND);
   const [threshold, setThreshold] = useState(2);
@@ -113,11 +116,11 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
 
   // Reactive live queries
   const allTasks = useLiveQuery(
-    () => db.tasks.filter((t) => t.userId === PLAYGROUND_USER_ID && !t.isDeleted).toArray()
+    () => db.tasks.filter((t) => t.userId === resolvedUserId && !t.isDeleted).toArray()
   ) ?? [];
 
   const allCompositeTasks = useLiveQuery(
-    () => db.compositeTasks.filter((ct) => ct.userId === PLAYGROUND_USER_ID && !ct.isDeleted).toArray()
+    () => db.compositeTasks.filter((ct) => ct.userId === resolvedUserId && !ct.isDeleted).toArray()
   ) ?? [];
 
 
@@ -326,7 +329,7 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
             if (subtask.inlineType === 'normal') {
               await db.tasks.add({
                 id: newTaskId,
-                userId: PLAYGROUND_USER_ID,
+                userId: resolvedUserId,
                 title: subtask.title.trim(),
                 type: TaskType.NORMAL,
                 totalCompletions: 0,
@@ -339,7 +342,7 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
             } else if (subtask.inlineType === 'counting') {
               await db.tasks.add({
                 id: newTaskId,
-                userId: PLAYGROUND_USER_ID,
+                userId: resolvedUserId,
                 title: subtask.title.trim() || `${subtask.action.trim()} ${parseInt(subtask.maxCountStr, 10)} ${subtask.unit.trim()}`,
                 type: TaskType.COUNTING,
                 action: subtask.action.trim(),
@@ -356,7 +359,7 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
               // progress
               await db.tasks.add({
                 id: newTaskId,
-                userId: PLAYGROUND_USER_ID,
+                userId: resolvedUserId,
                 title: subtask.title.trim(),
                 type: TaskType.PROGRESS,
                 totalCompletions: 0,
@@ -381,7 +384,7 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
                 const stepTaskId = crypto.randomUUID();
                 await db.tasks.add({
                   id: stepTaskId,
-                  userId: PLAYGROUND_USER_ID,
+                  userId: resolvedUserId,
                   title: resolvedStepTitle,
                   type: stepType,
                   action: step.type === 'counting' ? step.action.trim() || undefined : undefined,
@@ -419,7 +422,7 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
         // 2. Composite task record first (nodes FK to this)
         await db.compositeTasks.add({
           id: compositeTaskId,
-          userId: PLAYGROUND_USER_ID,
+          userId: resolvedUserId,
           title: title.trim(),
           description: undefined,
           rootNodeId,
@@ -469,7 +472,7 @@ export function CompositeTaskForm({ onCreated }: CompositeTaskFormProps = {}): R
       setSuccessMessage('Composite task created!');
       onCreated?.({
         id: compositeTaskId,
-        userId: PLAYGROUND_USER_ID,
+        userId: resolvedUserId,
         title: title.trim(),
         description: undefined,
         rootNodeId,

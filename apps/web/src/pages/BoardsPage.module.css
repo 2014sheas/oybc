@@ -2,33 +2,11 @@
   padding: 0;
 }
 
-.headerRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 20px 12px;
-}
-
 .header {
   font-size: 28px;
   font-weight: 700;
+  padding: 20px 20px 12px;
   color: var(--text-primary);
-}
-
-.demoButton {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 8px;
-  background-color: var(--active-bg);
-  color: #ffffff;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.demoButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .filterRow {

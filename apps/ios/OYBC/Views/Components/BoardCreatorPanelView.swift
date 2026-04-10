@@ -19,6 +19,8 @@ struct BoardCreatorPanelView: View {
     let boardPool: [(taskId: String, title: String, type: String)]
     let libraryTasks: [Task]
     var allTaskSteps: [TaskStep] = []
+    /// User ID for board ownership. Defaults to playground user when omitted.
+    var userId: String = playgroundUserId
     var onBoardCreated: ((String) -> Void)? = nil
 
     // MARK: - State
@@ -521,7 +523,7 @@ struct BoardCreatorPanelView: View {
                 let boardDict: [String: Any] = {
                     var d: [String: Any] = [
                         "id": boardId,
-                        "userId": playgroundUserId,
+                        "userId": userId,
                         "name": trimmedName,
                         "status": "active",
                         "boardSize": size,

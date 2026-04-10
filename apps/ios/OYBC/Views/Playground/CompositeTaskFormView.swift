@@ -65,6 +65,11 @@ class SubtaskItem: ObservableObject, Identifiable {
 /// - Parameter onCreated: Optional callback invoked after a composite task is successfully
 ///   persisted. Receives the newly created `CompositeTask` value. Defaults to `nil`.
 struct CompositeTaskFormView: View {
+    // MARK: - Parameters
+
+    /// User ID for task ownership. Defaults to playground user when omitted.
+    var userId: String = playgroundUserId
+
     // MARK: - Callback
 
     var onCreated: ((CompositeTask) -> Void)? = nil
@@ -378,7 +383,7 @@ struct CompositeTaskFormView: View {
                             }
                             let newTask = OYBC.Task(
                                 id: newTaskId,
-                                userId: playgroundUserId,
+                                userId: userId,
                                 title: trimmedTitle.isEmpty ? "Untitled" : trimmedTitle,
                                 description: nil,
                                 type: taskType,
@@ -429,7 +434,7 @@ struct CompositeTaskFormView: View {
                     //    before the root node exists is safe.)
                     let compositeTask = CompositeTask(
                         id: compositeTaskId,
-                        userId: playgroundUserId,
+                        userId: userId,
                         title: capturedTitle,
                         description: nil,
                         rootNodeId: rootNodeId,
@@ -493,7 +498,7 @@ struct CompositeTaskFormView: View {
                     if let callback = onCreated {
                         let createdComposite = CompositeTask(
                             id: compositeTaskId,
-                            userId: playgroundUserId,
+                            userId: userId,
                             title: capturedTitle,
                             description: nil,
                             rootNodeId: rootNodeId,
@@ -538,10 +543,10 @@ struct CompositeTaskFormView: View {
     private func loadLibrary() {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let tasks = try AppDatabase.shared.fetchTasks(userId: playgroundUserId)
+                let tasks = try AppDatabase.shared.fetchTasks(userId: userId)
                 let composites = try AppDatabase.shared.read { db in
                     try CompositeTask
-                        .filter(Column("userId") == playgroundUserId && Column("isDeleted") == false)
+                        .filter(Column("userId") == userId && Column("isDeleted") == false)
                         .order(Column("updatedAt").desc)
                         .fetchAll(db)
                 }
