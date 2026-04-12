@@ -1,0 +1,13 @@
+// Committed base signing config.
+//
+// Per-developer overrides go in `Signing.local.xcconfig` (gitignored).
+// Copy a value like `DEVELOPMENT_TEAM = ABCDE12345` into that file to sign
+// builds with your Apple Developer Team ID.
+//
+// The `#include?` form tolerates the file being absent (CI / fresh clones).
+
+// Empty default first so clean checkouts build without an undefined symbol…
+DEVELOPMENT_TEAM =
+
+// …then the local override (if present) wins.
+#include? "Signing.local.xcconfig"

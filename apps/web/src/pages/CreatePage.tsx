@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -13,7 +13,7 @@ import { useAuth } from '../firebase/AuthContext';
 import { useTasks } from '../hooks';
 import { useCompositeTasks } from '../hooks/useCompositeTasks';
 import { db } from '../db/database';
-import { createTask } from '../db/operations/tasks';
+import { createTask, linkTaskStep } from '../db/operations/tasks';
 import { FilterTabs } from '../components/FilterTabs';
 import { TaskTypeSelector } from '../components/TaskTypeSelector';
 import { TypeBadge } from '../components/TypeBadge';
@@ -282,9 +282,24 @@ export function CreatePage(): React.ReactElement {
 
   // ── Pool helpers ────────────────────────────────────────────────────────
 
+  // Track the pending success-dismiss timer so a rapid sequence of success
+  // messages doesn't let an earlier timer clear a newer message, and so we
+  // can clean up on unmount.
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
   function showSuccess(message: string): void {
     setCreationSuccess(message);
-    setTimeout(() => setCreationSuccess(null), SUCCESS_DISMISS_MS);
+    if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    successTimerRef.current = setTimeout(() => {
+      setCreationSuccess(null);
+      successTimerRef.current = null;
+    }, SUCCESS_DISMISS_MS);
   }
 
   function addToPool(entry: PoolEntry): void {
@@ -523,10 +538,9 @@ export function CreatePage(): React.ReactElement {
         maxCount: isCountingStep ? step.maxCount! : undefined,
       });
 
-      await db.taskSteps.update(step.id, {
-        linkedTaskId: newTask.id,
-        updatedAt: new Date().toISOString(),
-      });
+      // Link the step → new task atomically (transaction + sync queue) so
+      // the linkedTaskId change is durable and replicates to other devices.
+      await linkTaskStep(step.id, newTask.id);
 
       addToPool({ taskId: newTask.id, title: newTask.title, type: newTask.type });
       showSuccess(`Added to board pool: "${newTask.title}"`);
@@ -847,7 +861,8 @@ export function CreatePage(): React.ReactElement {
                           type="button"
                           className={`${styles.deriveButton} ${expandedTaskId === task.id ? styles.deriveButtonActive : ''}`}
                           onClick={() => toggleExpand(task.id)}
-                          title="Derive subtasks"
+                          aria-label={expandedTaskId === task.id ? `Collapse ${task.title} derivation` : `Derive subtasks from ${task.title}`}
+                          aria-expanded={expandedTaskId === task.id}
                         >
                           {expandedTaskId === task.id ? '\u25BC' : '\u25B6'}
                         </button>
@@ -884,7 +899,8 @@ export function CreatePage(): React.ReactElement {
                         type="button"
                         className={`${styles.deriveButton} ${expandedTaskId === ct.id ? styles.deriveButtonActive : ''}`}
                         onClick={() => toggleExpand(ct.id)}
-                        title="Add subtasks to pool"
+                        aria-label={expandedTaskId === ct.id ? `Collapse ${ct.title} subtasks` : `Show subtasks of ${ct.title}`}
+                        aria-expanded={expandedTaskId === ct.id}
                       >
                         {expandedTaskId === ct.id ? '\u25BC' : '\u25B6'}
                       </button>

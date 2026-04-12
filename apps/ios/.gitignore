@@ -38,5 +38,6 @@ fastlane/test_output
 *.gcda
 *.gcno
 
-# Per-developer signing settings (copy Signing.xcconfig.example to Signing.xcconfig)
-Signing.xcconfig
+# Per-developer signing override (create this file and set DEVELOPMENT_TEAM).
+# The committed `Signing.xcconfig` uses `#include?` to pick this up when present.
+Signing.local.xcconfig
