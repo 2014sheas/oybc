@@ -19,6 +19,8 @@ struct BoardCreatorPanelView: View {
     let boardPool: [(taskId: String, title: String, type: String)]
     let libraryTasks: [Task]
     var allTaskSteps: [TaskStep] = []
+    /// User ID for board ownership. Defaults to playground user when omitted.
+    var userId: String = playgroundUserId
     var onBoardCreated: ((String) -> Void)? = nil
 
     // MARK: - State
@@ -154,20 +156,7 @@ struct BoardCreatorPanelView: View {
                     .onChange(of: timeframe) { resetOutcome() }
                 }
 
-                // ── Week start (only when Weekly) ──
-                if timeframe == .weekly {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Week Starts On")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Picker("Week Start", selection: $weekStartDay) {
-                            Text("Monday").tag("monday")
-                            Text("Sunday").tag("sunday")
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: weekStartDay) { resetOutcome() }
-                    }
-                }
+                // Week start day is read from @AppStorage (user preference in Profile → Settings)
 
                 // ── Auto-calculated date display (non-Custom) ──
                 if let boundaries = computedBoundaries {
@@ -521,7 +510,7 @@ struct BoardCreatorPanelView: View {
                 let boardDict: [String: Any] = {
                     var d: [String: Any] = [
                         "id": boardId,
-                        "userId": playgroundUserId,
+                        "userId": userId,
                         "name": trimmedName,
                         "status": "active",
                         "boardSize": size,

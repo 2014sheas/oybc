@@ -196,6 +196,29 @@ export async function addTaskStep(
 }
 
 /**
+ * Atomically link a TaskStep to a standalone Task (via `linkedTaskId`),
+ * bumping version + updatedAt and enqueueing the sync update. Runs in a
+ * single transaction so the link and the sync-queue entry are consistent.
+ *
+ * @param stepId - ID of the TaskStep to update
+ * @param linkedTaskId - ID of the standalone Task to link
+ */
+export async function linkTaskStep(stepId: string, linkedTaskId: string): Promise<void> {
+  await db.transaction('rw', [db.taskSteps, db.syncQueue], async () => {
+    const existing = await db.taskSteps.get(stepId);
+    if (!existing) return;
+    const updated = {
+      ...existing,
+      linkedTaskId,
+      version: (existing.version ?? 0) + 1,
+      updatedAt: currentTimestamp(),
+    };
+    await db.taskSteps.put(updated);
+    await addToSyncQueue('taskSteps', stepId, SyncOperationType.UPDATE, updated);
+  });
+}
+
+/**
  * Soft delete a task step
  */
 export async function deleteTaskStep(id: string): Promise<void> {
