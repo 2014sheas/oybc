@@ -496,39 +496,42 @@ struct CreateView: View {
 
     // MARK: - Derive Panel
 
+    @ViewBuilder
     private func derivePanel(for task: Task) -> some View {
-        switch task.type {
-        case .normal:
-            EmptyView()
+        Group {
+            switch task.type {
+            case .normal:
+                EmptyView()
 
-        case .counting:
-            CountingDerivationPanelView(
-                task: task,
-                partialCountStr: $derivePartialCountStr,
-                isCreating: deriveIsCreating,
-                onCreateSubtask: { parentTask, count in
-                    createCountingSubtask(from: parentTask, count: count)
-                }
-            )
+            case .counting:
+                CountingDerivationPanelView(
+                    task: task,
+                    partialCountStr: $derivePartialCountStr,
+                    isCreating: deriveIsCreating,
+                    onCreateSubtask: { parentTask, count in
+                        createCountingSubtask(from: parentTask, count: count)
+                    }
+                )
 
-        case .progress:
-            ProgressDerivationPanelView(
-                task: task,
-                taskSteps: deriveTaskSteps,
-                allTasks: libraryTasks,
-                boardPool: boardPool,
-                isCreating: deriveIsCreating,
-                onExtractStep: { step, parentTask in
-                    extractStepAsTask(step: step, parentTask: parentTask)
-                },
-                onAddStepToPool: { linkedTask in
-                    addToPool(
-                        taskId: linkedTask.id,
-                        title: linkedTask.title,
-                        type: linkedTask.type.rawValue
-                    )
-                }
-            )
+            case .progress:
+                ProgressDerivationPanelView(
+                    task: task,
+                    taskSteps: deriveTaskSteps,
+                    allTasks: libraryTasks,
+                    boardPool: boardPool,
+                    isCreating: deriveIsCreating,
+                    onExtractStep: { step, parentTask in
+                        extractStepAsTask(step: step, parentTask: parentTask)
+                    },
+                    onAddStepToPool: { linkedTask in
+                        addToPool(
+                            taskId: linkedTask.id,
+                            title: linkedTask.title,
+                            type: linkedTask.type.rawValue
+                        )
+                    }
+                )
+            }
         }
     }
 

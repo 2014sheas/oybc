@@ -156,20 +156,7 @@ struct BoardCreatorPanelView: View {
                     .onChange(of: timeframe) { resetOutcome() }
                 }
 
-                // ── Week start (only when Weekly) ──
-                if timeframe == .weekly {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Week Starts On")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Picker("Week Start", selection: $weekStartDay) {
-                            Text("Monday").tag("monday")
-                            Text("Sunday").tag("sunday")
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: weekStartDay) { resetOutcome() }
-                    }
-                }
+                // Week start day is read from @AppStorage (user preference in Profile → Settings)
 
                 // ── Auto-calculated date display (non-Custom) ──
                 if let boundaries = computedBoundaries {

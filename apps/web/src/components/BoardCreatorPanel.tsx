@@ -9,7 +9,6 @@ import {
   type Task,
   type TaskStep,
   type BoardTask,
-  type WeekStartDay,
 } from '@oybc/shared';
 import { useBoardTasks, usePreferences } from '../hooks';
 import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
@@ -79,9 +78,8 @@ export function BoardCreatorPanel({
   const [centerTaskId, setCenterTaskId] = useState<string | null>(null);
   const [isRandomized, setIsRandomized] = useState(true);
   const [timeframe, setTimeframe] = useState<Timeframe>(Timeframe.CUSTOM);
-  const [preferences, updatePreferences] = usePreferences();
+  const [preferences] = usePreferences();
   const weekStartDay = preferences.weekStartDay;
-  const setWeekStartDay = (day: WeekStartDay) => updatePreferences({ weekStartDay: day });
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
@@ -419,27 +417,7 @@ export function BoardCreatorPanel({
             </div>
           </div>
 
-          {/* Week start — only when Weekly is selected */}
-          {timeframe === Timeframe.WEEKLY && (
-            <div className={styles.fieldGroup}>
-              <span className={styles.label}>Week Starts On</span>
-              <div className={styles.sizeSelector}>
-                {([
-                  { value: 'monday' as WeekStartDay, label: 'Monday' },
-                  { value: 'sunday' as WeekStartDay, label: 'Sunday' },
-                ]).map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`${styles.sizeButton} ${weekStartDay === opt.value ? styles.sizeButtonActive : ''}`}
-                    onClick={() => setWeekStartDay(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Week start day is read from user preferences (Profile → Settings) */}
 
           {/* Date display — auto-calculated or editable for Custom */}
           {timeframe !== Timeframe.CUSTOM && computedBoundaries && (
