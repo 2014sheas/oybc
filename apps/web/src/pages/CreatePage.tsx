@@ -11,6 +11,7 @@ import {
 } from '@oybc/shared';
 import { useAuth } from '../firebase/AuthContext';
 import { useTasks } from '../hooks';
+import { useCompositeTasks } from '../hooks/useCompositeTasks';
 import { db } from '../db/database';
 import { createTask } from '../db/operations/tasks';
 import { FilterTabs } from '../components/FilterTabs';
@@ -225,28 +226,38 @@ export function CreatePage(): React.ReactElement {
   // ── Reactive data ───────────────────────────────────────────────────────
 
   const allTasks = useTasks(userId) ?? [];
+  const allCompositeTasks = useCompositeTasks(userId) ?? [];
 
-  const allCompositeTasks =
-    useLiveQuery(
-      () =>
-        userId
-          ? db.compositeTasks
-              .filter((ct: CompositeTask) => ct.userId === userId && !ct.isDeleted)
-              .toArray()
-          : [],
-      [userId]
-    ) ?? [];
-
+  // Scope composite nodes to the current user's composite tasks. CompositeNode
+  // has no userId of its own, so we restrict by compositeTaskId set.
+  const compositeIds = allCompositeTasks.map((ct) => ct.id);
   const allCompositeNodes =
     useLiveQuery(
-      () => db.compositeNodes.filter((n: CompositeNode) => !n.isDeleted).toArray(),
-      []
+      async () => {
+        if (compositeIds.length === 0) return [] as CompositeNode[];
+        return db.compositeNodes
+          .where('compositeTaskId')
+          .anyOf(compositeIds)
+          .and((n: CompositeNode) => !n.isDeleted)
+          .toArray();
+      },
+      [compositeIds.join(',')]
     ) ?? [];
 
+  // Scope task steps to the current user's tasks. TaskStep has no userId, so we
+  // restrict by taskId set.
+  const userTaskIds = allTasks.map((t) => t.id);
   const allTaskSteps: TaskStep[] =
     useLiveQuery(
-      () => db.taskSteps.filter((s: TaskStep) => !s.isDeleted).toArray(),
-      []
+      async () => {
+        if (userTaskIds.length === 0) return [] as TaskStep[];
+        return db.taskSteps
+          .where('taskId')
+          .anyOf(userTaskIds)
+          .and((s: TaskStep) => !s.isDeleted)
+          .toArray();
+      },
+      [userTaskIds.join(',')]
     ) ?? [];
 
   // ── Lookup maps ─────────────────────────────────────────────────────────
@@ -590,26 +601,7 @@ export function CreatePage(): React.ReactElement {
   function renderInlineCompositePanel(ct: CompositeTask): React.ReactElement {
     return (
       <div className={styles.inlinePanel}>
-        <div className={styles.panelAddRow}>
-          <span className={styles.panelAddLabel}>{ct.title}</span>
-          {isInPool(ct.id) ? (
-            <span className={styles.inPoolBadge}>In Pool</span>
-          ) : (
-            <button
-              type="button"
-              className={styles.addButton}
-              onClick={() => {
-                addToPool({ taskId: ct.id, title: ct.title, type: 'composite' });
-                showSuccess(`Added to board pool: "${ct.title}"`);
-              }}
-            >
-              Add to Pool
-            </button>
-          )}
-        </div>
-
-        <div className={styles.panelDivider} />
-        <span className={styles.panelSectionLabel}>Or add individual subtasks:</span>
+        <span className={styles.panelSectionLabel}>Add individual subtasks to the pool:</span>
         <CompositeDerivationPanel
           compositeTask={ct}
           allNodes={allCompositeNodes}
@@ -671,9 +663,12 @@ export function CreatePage(): React.ReactElement {
           {taskType === COMPOSITE_TYPE ? (
             <CompositeTaskForm
               userId={userId}
-              onCreated={(ct: CompositeTask) =>
-                addToPool({ taskId: ct.id, title: ct.title, type: 'composite' })
-              }
+              onCreated={(ct: CompositeTask) => {
+                // Composites aren't added directly to the board pool — BoardTask.taskId
+                // references the tasks table, not compositeTasks. Users add the
+                // composite's individual leaf/subtasks via the Existing Tasks tab.
+                showSuccess(`Created composite "${ct.title}". Add its subtasks from Existing Tasks.`);
+              }}
             />
           ) : (
             <form className={styles.form} onSubmit={handleSubmit}>
@@ -889,24 +884,10 @@ export function CreatePage(): React.ReactElement {
                         type="button"
                         className={`${styles.deriveButton} ${expandedTaskId === ct.id ? styles.deriveButtonActive : ''}`}
                         onClick={() => toggleExpand(ct.id)}
-                        title="Derive subtasks"
+                        title="Add subtasks to pool"
                       >
                         {expandedTaskId === ct.id ? '\u25BC' : '\u25B6'}
                       </button>
-                      {isInPool(ct.id) ? (
-                        <span className={styles.inPoolBadge}>In Pool</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className={styles.addButton}
-                          onClick={() => {
-                            addToPool({ taskId: ct.id, title: ct.title, type: 'composite' });
-                            showSuccess(`Added to board pool: "${ct.title}"`);
-                          }}
-                        >
-                          Add
-                        </button>
-                      )}
                     </div>
                   </div>
                   {expandedTaskId === ct.id && renderInlineCompositePanel(ct)}

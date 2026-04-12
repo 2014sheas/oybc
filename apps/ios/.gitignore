@@ -37,3 +37,6 @@ fastlane/test_output
 # Code coverage
 *.gcda
 *.gcno
+
+# Per-developer signing settings (copy Signing.xcconfig.example to Signing.xcconfig)
+Signing.xcconfig

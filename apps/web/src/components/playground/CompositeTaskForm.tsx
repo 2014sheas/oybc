@@ -114,13 +114,24 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Reactive live queries
+  // Reactive live queries — deps on resolvedUserId so queries refetch when
+  // auth loads after initial render.
   const allTasks = useLiveQuery(
-    () => db.tasks.filter((t) => t.userId === resolvedUserId && !t.isDeleted).toArray()
+    () =>
+      db.tasks
+        .where('[userId+isDeleted]')
+        .equals([resolvedUserId, 0])
+        .toArray(),
+    [resolvedUserId]
   ) ?? [];
 
   const allCompositeTasks = useLiveQuery(
-    () => db.compositeTasks.filter((ct) => ct.userId === resolvedUserId && !ct.isDeleted).toArray()
+    () =>
+      db.compositeTasks
+        .where('[userId+isDeleted]')
+        .equals([resolvedUserId, 0])
+        .toArray(),
+    [resolvedUserId]
   ) ?? [];
 
 

@@ -46,7 +46,7 @@ struct CreateView: View {
 
     // MARK: - Navigation
 
-    @State private var navigateToBoardId: String?
+    @State private var navigateToBoardId: BoardNavID?
 
     // MARK: - Mode State
 
@@ -167,7 +167,7 @@ struct CreateView: View {
                         allTaskSteps: allLibraryTaskSteps,
                         userId: userId,
                         onBoardCreated: { boardId in
-                            navigateToBoardId = boardId
+                            navigateToBoardId = BoardNavID(id: boardId)
                         }
                     )
                 }
@@ -175,8 +175,8 @@ struct CreateView: View {
             .padding(.horizontal)
         }
         .navigationTitle("Create")
-        .navigationDestination(item: $navigateToBoardId) { boardId in
-            BoardPlayView(boardId: boardId)
+        .navigationDestination(item: $navigateToBoardId) { nav in
+            BoardPlayView(boardId: nav.id)
         }
         .onAppear {
             loadLibrary()
@@ -205,11 +205,11 @@ struct CreateView: View {
             if createTaskType == .composite {
                 if let userId = authService.currentUser?.id {
                     CompositeTaskFormView(userId: userId, onCreated: { compositeTask in
-                        addToPool(
-                            taskId: compositeTask.id,
-                            title: compositeTask.title,
-                            type: "composite"
-                        )
+                        // Composites aren't added directly to the board pool —
+                        // BoardTask.taskId references the tasks table, not
+                        // compositeTasks. Users add the composite's individual
+                        // leaf/subtasks from Existing Tasks.
+                        createSuccessMessage = "Created composite \"\(compositeTask.title)\". Add its subtasks from Existing Tasks."
                         loadLibrary()
                     })
                 }
@@ -283,7 +283,10 @@ struct CreateView: View {
                                 step: $createProgressSteps[i],
                                 stepCount: createProgressSteps.count,
                                 errors: createProgressStepErrors[createProgressSteps[i].id],
-                                onRemove: { createProgressSteps.remove(at: i) }
+                                onRemove: {
+                                    guard createProgressSteps.count > 1 else { return }
+                                    createProgressSteps.remove(at: i)
+                                }
                             )
                         }
 
@@ -443,7 +446,6 @@ struct CreateView: View {
     /// A single composite task row in the Existing Tasks tab.
     @ViewBuilder
     private func existingCompositeRow(_ ct: CompositeTask) -> some View {
-        let inPool = boardPool.contains(where: { $0.taskId == ct.id })
         let isExpanded = expandedCompositeTaskId == ct.id
 
         HStack(spacing: 8) {
@@ -472,22 +474,9 @@ struct CreateView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isExpanded ? "Collapse derivation" : "Derive subtasks")
 
-            if inPool {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.green)
-                    .accessibilityLabel("In pool")
-            } else {
-                Button {
-                    addToPool(taskId: ct.id, title: ct.title, type: "composite")
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(.accentColor)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add \(ct.title) to pool")
-            }
+            // Composites can't be added directly to the pool — BoardTask.taskId
+            // references the tasks table, not compositeTasks. Users expand the
+            // composite and add its individual leaf/subtasks instead.
         }
         .padding(10)
         .background(Color(.systemGray6))
@@ -630,6 +619,10 @@ struct CreateView: View {
             }
 
         case .progress:
+            if createProgressSteps.isEmpty {
+                createErrorMessage = "Progress tasks require at least one step"
+                return
+            }
             var stepErrors: [UUID: ProgressStepFormErrors] = [:]
             for step in createProgressSteps {
                 var err = ProgressStepFormErrors()
@@ -1020,9 +1013,10 @@ struct CreateView: View {
 
 // MARK: - Helpers
 
-/// Makes String conform to Identifiable for use with `.navigationDestination(item:)`.
-extension String: @retroactive Identifiable {
-    public var id: String { self }
+/// Local navigation wrapper — avoids adding a global `Identifiable`
+/// conformance to `String`, which would affect the entire module.
+private struct BoardNavID: Identifiable, Hashable {
+    let id: String
 }
 
 #Preview {

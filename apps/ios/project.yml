@@ -29,6 +29,9 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    configFiles:
+      Debug: Signing.xcconfig
+      Release: Signing.xcconfig
     sources:
       - path: OYBC
         excludes:
@@ -78,7 +81,7 @@ targets:
         DEVELOPMENT_ASSET_PATHS: ""
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
-        DEVELOPMENT_TEAM: ""
+        # DEVELOPMENT_TEAM comes from Signing.xcconfig (gitignored, per-developer)
     preBuildScripts:
       - script: |
           # Create database directory if it doesn't exist
