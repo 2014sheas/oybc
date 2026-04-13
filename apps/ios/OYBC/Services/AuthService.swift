@@ -3,6 +3,7 @@ import FirebaseAuth
 import GoogleSignIn
 import AuthenticationServices
 import UIKit
+@preconcurrency import GRDB
 
 /// AuthService - Firebase authentication and local user record management
 ///
@@ -27,6 +28,11 @@ final class AuthService: ObservableObject {
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
 
+    /// GRDB observation of the signed-in user's row. Keeps `currentUser`
+    /// in sync with local writes (preference changes) and sync-pulled
+    /// remote changes without requiring callers to manually refresh.
+    private var userRowObservation: DatabaseCancellable?
+
     // MARK: - Initialization
 
     init() {
@@ -38,9 +44,15 @@ final class AuthService: ObservableObject {
                 if let firebaseUser {
                     await MainActor.run { self.currentUser = nil } // clear stale state
                     let user = await self.upsertLocalUser(firebaseUser)
-                    await MainActor.run { self.currentUser = user }
+                    await MainActor.run {
+                        self.currentUser = user
+                        self.startUserRowObservation(userId: user.id)
+                    }
                 } else {
-                    await MainActor.run { self.currentUser = nil }
+                    await MainActor.run {
+                        self.currentUser = nil
+                        self.stopUserRowObservation()
+                    }
                 }
                 await MainActor.run { self.isLoading = false }
             }
@@ -51,32 +63,48 @@ final class AuthService: ObservableObject {
         if let handle = authStateHandle {
             Auth.auth().removeStateDidChangeListener(handle)
         }
+        userRowObservation?.cancel()
+    }
+
+    // MARK: - User row observation
+
+    /// Starts a `ValueObservation` on the signed-in user's row so that any
+    /// mutation (local preference write, sync-pulled remote update) flows
+    /// into the published `currentUser` automatically.
+    private func startUserRowObservation(userId: String) {
+        userRowObservation?.cancel()
+        let observation = ValueObservation.tracking { db in
+            try User.fetchOne(db, key: userId)
+        }
+        userRowObservation = observation.start(
+            in: AppDatabase.shared.dbQueue,
+            onError: { error in
+                print("⚠️ user row observation failed: \(error)")
+            },
+            onChange: { [weak self] refreshed in
+                guard let refreshed, let self else { return }
+                _Concurrency.Task { @MainActor in
+                    self.currentUser = refreshed
+                }
+            }
+        )
+    }
+
+    private func stopUserRowObservation() {
+        userRowObservation?.cancel()
+        userRowObservation = nil
     }
 
     // MARK: - Preferences
 
     /// Current synced user preferences, or `.defaults` when signed out.
     ///
-    /// Reactively updates whenever `currentUser` changes. Callers that write
-    /// to `preferences` via `AppDatabase.updateUserPreferences(...)` (or
-    /// receive a sync-pulled update) should call `refreshCurrentUser()` to
-    /// publish the new value into the UI.
+    /// Backed by `currentUser`, which is itself kept in sync via the GRDB
+    /// `ValueObservation` started in the auth state handler — so local
+    /// preference writes and sync-pulled remote updates both flow through
+    /// without any manual refresh step.
     var userPreferences: UserPreferences {
         currentUser?.decodedPreferences ?? .defaults
-    }
-
-    /// Re-reads `currentUser` from the local database and re-publishes it so
-    /// observers see the latest synced fields (including `preferences`).
-    /// Safe to call from any thread; DB reads happen off-main.
-    func refreshCurrentUser() {
-        guard let userId = currentUser?.id else { return }
-        _Concurrency.Task.detached { [weak self] in
-            guard let self else { return }
-            let refreshed = try? AppDatabase.shared.fetchUser(id: userId)
-            if let refreshed {
-                await MainActor.run { self.currentUser = refreshed }
-            }
-        }
     }
 
     // MARK: - Email / Password

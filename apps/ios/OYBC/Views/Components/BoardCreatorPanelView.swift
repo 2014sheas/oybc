@@ -25,21 +25,20 @@ struct BoardCreatorPanelView: View {
 
     // MARK: - State
 
-    @State private var boardName: String = ""
-    @State private var boardSize: Int = 3
-    @State private var centerType: CenterSquareType = .free
-    @State private var centerCustomName: String = ""
-    @State private var centerTaskId: String? = nil
-    @State private var isRandomized: Bool = true
-    @State private var timeframe: Timeframe = .custom
+    /// Snapshot of synced preferences at mount time. Taken in `init` rather
+    /// than read live so that a later preference change on another device
+    /// doesn't stomp a user's in-progress board configuration. Callers can
+    /// pass `.defaults` (playground / previews) or `authService.userPreferences`.
+    private let initialPreferences: UserPreferences
+    private var weekStartDay: String { initialPreferences.weekStartDay.rawValue }
 
-    /// Resolved from the signed-in user's synced preferences; falls back to
-    /// the `UserPreferences.defaults` week-start when no auth context is
-    /// present (e.g. playground / SwiftUI previews).
-    @EnvironmentObject private var authService: AuthService
-    private var weekStartDay: String {
-        authService.userPreferences.weekStartDay.rawValue
-    }
+    @State private var boardName: String
+    @State private var boardSize: Int
+    @State private var centerType: CenterSquareType
+    @State private var centerCustomName: String
+    @State private var centerTaskId: String? = nil
+    @State private var isRandomized: Bool
+    @State private var timeframe: Timeframe
     @State private var customStartDate: Date = Date()
     @State private var customEndDate: Date = Date().addingTimeInterval(30 * 24 * 60 * 60)
     @State private var isCreating: Bool = false
@@ -47,6 +46,55 @@ struct BoardCreatorPanelView: View {
     @State private var previewBoardTasks: [BoardTask] = []
     @State private var successMessage: String? = nil
     @State private var errorMessage: String? = nil
+
+    // MARK: - Initialiser
+
+    /// Designated initialiser. Captures `initialPreferences` for `@State`
+    /// seed values — mirrors the web `BoardCreatorPanel.initialPreferences`
+    /// prop so the two platforms configure new boards identically.
+    init(
+        boardPool: [(taskId: String, title: String, type: String)],
+        libraryTasks: [Task],
+        allTaskSteps: [TaskStep] = [],
+        userId: String = playgroundUserId,
+        initialPreferences: UserPreferences = .defaults,
+        onBoardCreated: ((String) -> Void)? = nil
+    ) {
+        self.boardPool = boardPool
+        self.libraryTasks = libraryTasks
+        self.allTaskSteps = allTaskSteps
+        self.userId = userId
+        self.initialPreferences = initialPreferences
+        self.onBoardCreated = onBoardCreated
+
+        _boardName = State(initialValue: "")
+        _boardSize = State(initialValue: initialPreferences.defaultBoardSize.rawValue)
+        _centerType = State(initialValue: Self.resolveCenterType(initialPreferences.defaultCenterType))
+        _centerCustomName = State(initialValue: initialPreferences.defaultCenterCustomName)
+        _isRandomized = State(initialValue: initialPreferences.defaultRandomize)
+        _timeframe = State(initialValue: Self.resolveTimeframe(initialPreferences.defaultTimeframe))
+    }
+
+    /// Map the narrower `DefaultCenterSquareType` (free/none) onto the full
+    /// `CenterSquareType` space the board creator model uses.
+    private static func resolveCenterType(_ value: DefaultCenterSquareType) -> CenterSquareType {
+        switch value {
+        case .free: return .free
+        case .none: return .none
+        }
+    }
+
+    /// Map the preference-side `DefaultTimeframe` onto the board-side
+    /// `Timeframe` enum.
+    private static func resolveTimeframe(_ value: DefaultTimeframe) -> Timeframe {
+        switch value {
+        case .daily: return .daily
+        case .weekly: return .weekly
+        case .monthly: return .monthly
+        case .yearly: return .yearly
+        case .custom: return .custom
+        }
+    }
 
     // MARK: - Derived Properties
 

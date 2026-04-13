@@ -130,6 +130,7 @@ apps/web/src/                                        apps/ios/OYBC/
 3. Web: `[Name].tsx`. iOS: `[Name]View.swift` (views) or `[Name]Playground.swift` (features).
 4. iOS: After adding new Swift files, run `xcodegen generate` to regenerate the Xcode project.
 5. Verify both platforms have matching files before claiming completion.
+6. **No single-platform commits for shared features.** Every commit that changes user-visible behaviour, shared types, hooks, or services must either (a) land the paired change on both platforms in the same commit, or (b) explicitly justify the gap in the commit message and record the platform-parity follow-up in `CLAUDE.md` (or a tracked note). "I'll do the other platform next" is exactly the drift mode to avoid — during back-to-back UI iterations it is easy to rack up web-only changes and discover hours later that iOS is several commits behind. If you catch yourself doing this, stop and mirror before continuing.
 
 ## Commands
 
