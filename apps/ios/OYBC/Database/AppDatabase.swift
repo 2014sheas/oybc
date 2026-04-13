@@ -155,6 +155,14 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN centerTaskId TEXT REFERENCES tasks(id)")
         }
 
+        // v5: Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType).
+        // Stored as a JSON string to mirror how other nested/array fields are
+        // persisted on iOS, and so the record can round-trip through Firestore
+        // with the same shape the web app writes.
+        migrator.registerMigration("v5") { db in
+            try db.execute(sql: "ALTER TABLE users ADD COLUMN preferences TEXT")
+        }
+
         return migrator
     }
 
@@ -317,6 +325,61 @@ extension AppDatabase {
     func saveUser(_ user: User) throws {
         try write { db in
             try user.save(db)
+        }
+    }
+
+    /// Atomically merges a partial preferences update into the authenticated
+    /// user's row, bumps `version` + `updatedAt`, and enqueues a sync queue
+    /// UPDATE item for the `users` entity. The write and its sync-queue entry
+    /// share a single GRDB transaction so they can't drift out of step.
+    ///
+    /// - Parameters:
+    ///   - userId: The User row to update.
+    ///   - transform: Receives the current `UserPreferences` and returns the
+    ///     new value. Using a closure (rather than a partial struct) keeps the
+    ///     merge logic at the call site explicit.
+    /// - Returns: The updated User row, or `nil` if no such row exists.
+    @discardableResult
+    func updateUserPreferences(
+        userId: String,
+        transform: (UserPreferences) -> UserPreferences
+    ) throws -> User? {
+        return try write { db -> User? in
+            guard var user = try User.fetchOne(db, key: userId) else { return nil }
+
+            let current = user.decodedPreferences
+            let next = transform(current)
+
+            user.preferences = User.encodePreferences(next)
+            user.version += 1
+            user.updatedAt = ISO8601DateFormatter().string(from: Date())
+            try user.save(db)
+
+            let payload: String
+            if let data = try? JSONEncoder().encode(user),
+               let str = String(data: data, encoding: .utf8) {
+                payload = str
+            } else {
+                payload = "{}"
+            }
+
+            let syncItem = SyncQueueItem(
+                id: Self.generateUUID(),
+                entityType: "users",
+                entityId: userId,
+                operationType: .update,
+                payload: payload,
+                status: .pending,
+                retryCount: 0,
+                lastError: nil,
+                createdAt: user.updatedAt,
+                lastAttemptAt: nil,
+                completedAt: nil,
+                priority: 1
+            )
+            try syncItem.save(db)
+
+            return user
         }
     }
 

@@ -32,7 +32,14 @@ struct BoardCreatorPanelView: View {
     @State private var centerTaskId: String? = nil
     @State private var isRandomized: Bool = true
     @State private var timeframe: Timeframe = .custom
-    @AppStorage("oybc-weekStartDay") private var weekStartDay: String = "monday"
+
+    /// Resolved from the signed-in user's synced preferences; falls back to
+    /// the `UserPreferences.defaults` week-start when no auth context is
+    /// present (e.g. playground / SwiftUI previews).
+    @EnvironmentObject private var authService: AuthService
+    private var weekStartDay: String {
+        authService.userPreferences.weekStartDay.rawValue
+    }
     @State private var customStartDate: Date = Date()
     @State private var customEndDate: Date = Date().addingTimeInterval(30 * 24 * 60 * 60)
     @State private var isCreating: Bool = false

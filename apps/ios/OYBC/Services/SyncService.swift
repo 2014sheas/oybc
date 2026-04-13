@@ -13,6 +13,10 @@ private let syncableCollections: [(firestoreName: String, grdbTable: String)] = 
     ("boardTasks", "board_tasks"),
     ("compositeTasks", "composite_tasks"),
     ("compositeNodes", "composite_nodes"),
+    // `users` is handled as the parent doc at `users/{userId}` (not a
+    // subcollection child), but the GRDB table it writes back into is still
+    // `users`, so it participates in the allowedGRDBTables whitelist.
+    ("users", "users"),
 ]
 
 /// Whitelist of allowed GRDB table names — used to prevent SQL injection.
@@ -222,7 +226,12 @@ final class SyncService: ObservableObject {
     func pullSync(userId: String, lastSyncedAt: String?) async -> PullResult {
         var result = PullResult()
 
-        for collection in syncableCollections {
+        // Pull the parent user doc (`users/{userId}`) so synced profile fields
+        // like `preferences` replicate back to this device. Handled outside
+        // the subcollection loop because it lives at a different path.
+        await processPullUserDocument(userId: userId, result: &result)
+
+        for collection in syncableCollections where collection.firestoreName != "users" {
             await processPullCollection(
                 collection: collection,
                 userId: userId,
@@ -273,10 +282,24 @@ final class SyncService: ObservableObject {
                 throw SyncError.invalidPayload("Could not parse payload for \(item.entityType)/\(item.entityId)")
             }
 
-            let docRef = db.collection("users")
-                .document(userId)
-                .collection(item.entityType)
-                .document(item.entityId)
+            // The `users` entity is stored at `users/{userId}` (the scope root),
+            // not in a subcollection, and it must never be DELETE-synced — that
+            // would wipe the scope for every other collection.
+            let isUserEntity = item.entityType == "users"
+            let docRef: DocumentReference = isUserEntity
+                ? db.collection("users").document(item.entityId)
+                : db.collection("users")
+                    .document(userId)
+                    .collection(item.entityType)
+                    .document(item.entityId)
+
+            if isUserEntity && item.operationType == .delete {
+                try markCompleted(item)
+                let msg = "Skipped delete for users/\(item.entityId)"
+                result.details.append(msg)
+                log(msg)
+                return
+            }
 
             // DELETE operations: check conflict before overwriting.
             if item.operationType == .delete {
@@ -368,6 +391,60 @@ final class SyncService: ObservableObject {
     }
 
     // MARK: - Pull Helpers
+
+    /// Pulls the parent user document at `users/{userId}` and merges any
+    /// remote-wins changes back into the local `users` row. This is the
+    /// replication path for synced profile fields such as `preferences`.
+    private func processPullUserDocument(
+        userId: String,
+        result: inout PullResult
+    ) async {
+        do {
+            let docRef = db.collection("users").document(userId)
+            let snapshot = try await docRef.getDocument()
+            guard snapshot.exists, let remoteData = snapshot.data() else { return }
+
+            let localData = try fetchLocalRecord(grdbTable: "users", id: userId)
+
+            if localData == nil {
+                try upsertLocalRecord(grdbTable: "users", data: remoteData)
+                result.pulled += 1
+                let msg = "Pulled users/\(userId) (new)"
+                result.details.append(msg)
+                log(msg)
+                return
+            }
+
+            let winner = resolveConflict(local: localData!, remote: remoteData)
+            if winner == "remote" {
+                // Preserve the local `lastSyncedAt` watermark through a pull —
+                // it's managed at the end of `pullSync` and shouldn't be
+                // clobbered by a stale remote value.
+                var merged = remoteData
+                if let preservedWatermark = localData!["lastSyncedAt"] {
+                    merged["lastSyncedAt"] = preservedWatermark
+                }
+                try upsertLocalRecord(grdbTable: "users", data: merged)
+                result.pulled += 1
+                let remoteV = remoteData["version"] as? Int ?? 0
+                let localV = localData!["version"] as? Int ?? 0
+                let msg = "Pulled users/\(userId) (remote v\(remoteV) > local v\(localV))"
+                result.details.append(msg)
+                log(msg)
+            } else {
+                result.conflicts += 1
+                let localV = localData!["version"] as? Int ?? 0
+                let remoteV = remoteData["version"] as? Int ?? 0
+                let msg = "Kept local users/\(userId) (local v\(localV) >= remote v\(remoteV))"
+                result.details.append(msg)
+                log(msg)
+            }
+        } catch {
+            let msg = "Pull failed for users/\(userId): \(error.localizedDescription)"
+            result.details.append(msg)
+            log(msg)
+        }
+    }
 
     /// Processes all documents in a single Firestore collection during pull.
     ///

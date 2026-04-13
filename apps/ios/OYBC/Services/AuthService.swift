@@ -53,6 +53,32 @@ final class AuthService: ObservableObject {
         }
     }
 
+    // MARK: - Preferences
+
+    /// Current synced user preferences, or `.defaults` when signed out.
+    ///
+    /// Reactively updates whenever `currentUser` changes. Callers that write
+    /// to `preferences` via `AppDatabase.updateUserPreferences(...)` (or
+    /// receive a sync-pulled update) should call `refreshCurrentUser()` to
+    /// publish the new value into the UI.
+    var userPreferences: UserPreferences {
+        currentUser?.decodedPreferences ?? .defaults
+    }
+
+    /// Re-reads `currentUser` from the local database and re-publishes it so
+    /// observers see the latest synced fields (including `preferences`).
+    /// Safe to call from any thread; DB reads happen off-main.
+    func refreshCurrentUser() {
+        guard let userId = currentUser?.id else { return }
+        _Concurrency.Task.detached { [weak self] in
+            guard let self else { return }
+            let refreshed = try? AppDatabase.shared.fetchUser(id: userId)
+            if let refreshed {
+                await MainActor.run { self.currentUser = refreshed }
+            }
+        }
+    }
+
     // MARK: - Email / Password
 
     /// Creates a new Firebase account and upserts a local GRDB `User` record.
@@ -183,12 +209,14 @@ final class AuthService: ObservableObject {
                 try AppDatabase.shared.saveUser(existing)
                 return existing
             } else {
-                // First sign-in: create the local user record.
+                // First sign-in: create the local user record seeded with
+                // default synced preferences.
                 let newUser = User(
                     id: firebaseUser.uid,
                     email: firebaseUser.email ?? "",
                     displayName: firebaseUser.displayName,
                     photoURL: firebaseUser.photoURL?.absoluteString,
+                    preferences: User.encodePreferences(.defaults),
                     createdAt: now,
                     updatedAt: now,
                     lastSyncedAt: nil,
@@ -206,6 +234,7 @@ final class AuthService: ObservableObject {
                 email: firebaseUser.email ?? "",
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL?.absoluteString,
+                preferences: User.encodePreferences(.defaults),
                 createdAt: now,
                 updatedAt: now,
                 lastSyncedAt: nil,

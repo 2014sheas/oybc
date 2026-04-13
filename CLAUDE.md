@@ -356,11 +356,11 @@ Tab-based app with auth gate. Web + iOS built simultaneously.
 
 | Phase | Feature | Status |
 | ----- | ------- | ------ |
-| 0 | Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore) | — |
-| 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | — |
-| 2 | Board list (filtering, progress indicators, tap to navigate) | — |
-| 3 | Board play (bingo grid, task completion, flash messages) | — |
-| 4 | Create tab (task pool + BoardCreatorPanel) | — |
+| 0 | Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore) | COMPLETE |
+| 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | COMPLETE |
+| 2 | Board list (filtering, progress indicators, tap to navigate) | COMPLETE |
+| 3 | Board play (bingo grid, task completion, flash messages) | COMPLETE |
+| 4 | Create tab (task pool + BoardCreatorPanel) | COMPLETE |
 | 5 | Profile + settings + polish (board defaults, theme, sync status, sign out) | — |
 
 **Key principle**: Reuse playground-tested components — extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.

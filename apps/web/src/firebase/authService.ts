@@ -11,7 +11,7 @@ import {
 } from 'firebase/auth';
 import { auth } from './config';
 import { db } from '../db/database';
-import type { User } from '@oybc/shared';
+import { DEFAULT_USER_PREFERENCES, mergeUserPreferences, type User } from '@oybc/shared';
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 
@@ -35,11 +35,18 @@ async function upsertLocalUser(firebaseUser: FirebaseUser): Promise<User> {
   const now = new Date().toISOString();
   const existing = await db.users.get(firebaseUser.uid);
 
+  // Seed defaults on first sign-in; preserve any existing synced preferences
+  // on subsequent sign-ins (mergeUserPreferences fills in missing fields).
+  const preferences = existing?.preferences
+    ? mergeUserPreferences(existing.preferences)
+    : { ...DEFAULT_USER_PREFERENCES };
+
   const user: User = {
     id: firebaseUser.uid,
     email: firebaseUser.email ?? '',
     displayName: firebaseUser.displayName ?? undefined,
     photoURL: firebaseUser.photoURL ?? undefined,
+    preferences,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     lastSyncedAt: existing?.lastSyncedAt,

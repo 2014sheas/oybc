@@ -69,7 +69,12 @@ struct BoardLifecyclePlayground: View {
 
     // MARK: - State
 
-    @AppStorage("oybc-weekStartDay") private var weekStartDay: String = "monday"
+    /// Read from the signed-in user's synced preferences when available;
+    /// falls back to the default week-start otherwise (playground / previews).
+    @EnvironmentObject private var authService: AuthService
+    private var weekStartDay: String {
+        authService.userPreferences.weekStartDay.rawValue
+    }
 
     @State private var boards: [Board] = []
     @State private var selectedBoardId: String? = nil

@@ -1,6 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Parent user document: holds the authenticated user's profile + synced
+    // preferences. Acts as scope root for the entity subcollections below.
+    match /users/{userId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId
+                            && request.resource.data.keys().hasAll(['id', 'version'])
+                            && request.resource.data.version is number
+                            && request.resource.data.id == userId
+                            && request.resource.size() < 10000;
+
+      // Parent user doc is never client-deleted — the user is the scope root.
+      allow delete: if false;
+    }
+
     match /users/{userId}/{collection}/{docId} {
       // Only allow known collections
       function isKnownCollection() {
