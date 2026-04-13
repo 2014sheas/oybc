@@ -8,7 +8,7 @@ import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreatePage } from './pages/CreatePage';
 import { ProfilePage } from './pages/ProfilePage';
 import { Playground } from './pages/Playground';
-import { useSyncLoop } from './hooks';
+import { useSyncLoop, useLegacyPreferencesMigration } from './hooks';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +30,7 @@ function AuthenticatedLayout({
   onThemeToggle: () => void;
 }): React.ReactElement {
   useSyncLoop();
+  useLegacyPreferencesMigration();
 
   return (
     <>

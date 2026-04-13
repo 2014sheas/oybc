@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { mergeUserPreferences, type UserPreferences } from '@oybc/shared';
 import { db } from '../db/database';
@@ -32,7 +32,7 @@ function clearLocalStorage(key: string): void {
  * user's synced preferences record, then removes the localStorage keys. Safe
  * to call repeatedly — once the keys are cleared the function no-ops.
  */
-async function migrateLegacyLocalStoragePreferences(userId: string): Promise<void> {
+export async function migrateLegacyLocalStoragePreferences(userId: string): Promise<void> {
   const partial: Partial<UserPreferences> = {};
 
   const storedPrefs = readLocalStorage(LEGACY_PREFS_KEY);
@@ -91,16 +91,6 @@ export function usePreferences(): [
   );
 
   const prefs = mergeUserPreferences(liveUser?.preferences);
-
-  // Run the legacy localStorage migration once per signed-in user. The
-  // ref guards against re-running in React strict-mode double-effects or on
-  // subsequent renders within the same session.
-  const migratedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!userId || migratedFor.current === userId) return;
-    migratedFor.current = userId;
-    void migrateLegacyLocalStoragePreferences(userId);
-  }, [userId]);
 
   const update = useCallback(
     (updates: Partial<UserPreferences>) => {
