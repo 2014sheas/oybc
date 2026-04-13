@@ -17,7 +17,13 @@ import {
   markSyncItemCompleted,
   markSyncItemFailed,
 } from '../db/operations/syncQueue';
-import { SyncOperationType, SyncStatus } from '@oybc/shared';
+import {
+  SyncOperationType,
+  SyncStatus,
+  UserSchema,
+  mergeUserPreferences,
+  type User,
+} from '@oybc/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -89,9 +95,24 @@ export async function pushSync(userId: string): Promise<PushResult> {
     try {
       await markSyncItemInProgress(item.id);
 
-      const entityType = item.entityType as SyncCollection;
+      const entityType = item.entityType as SyncCollection | 'users';
       const payload = JSON.parse(item.payload) as SyncableEntity;
-      const docRef = doc(firestore, 'users', userId, entityType, item.entityId);
+
+      // The `users` entity lives at `users/{userId}` (the parent scope doc),
+      // not in a `users/{userId}/users` subcollection, so it has a dedicated
+      // docRef. Every other entity is a subcollection child under the user.
+      const docRef =
+        entityType === 'users'
+          ? doc(firestore, 'users', item.entityId)
+          : doc(firestore, 'users', userId, entityType, item.entityId);
+
+      // User entities are never DELETE-synced; clearing the user doc would
+      // remove the scope root for every other collection.
+      if (entityType === 'users' && item.operationType === SyncOperationType.DELETE) {
+        await markSyncItemCompleted(item.id);
+        result.details.push(`Skipped delete for users/${item.entityId}`);
+        continue;
+      }
 
       if (item.operationType === SyncOperationType.DELETE) {
         // Deletes still check conflict resolution — don't overwrite a newer remote version
@@ -183,6 +204,76 @@ export async function pullSync(
 ): Promise<PullResult> {
   const result: PullResult = { pulled: 0, conflicts: 0, details: [] };
   let hadPullError = false;
+
+  // Pull the user doc (lives at `users/{userId}`, not a subcollection) so
+  // synced profile fields like `preferences` replicate back to this device.
+  try {
+    const userDocRef = doc(firestore, 'users', userId);
+    const userSnap = await getDoc(userDocRef);
+    if (userSnap.exists()) {
+      const remoteUserData = userSnap.data();
+
+      // Validate the parent-doc payload before trusting it. A malformed /
+      // legacy user doc (missing id/version, wrong types, etc.) would
+      // otherwise slip straight into `db.users.put` and corrupt the local
+      // user row. `UserSchema.safeParse` enforces id + version + timestamp
+      // invariants; enforce the id-equals-userId check separately because
+      // the schema only asserts "some non-empty string".
+      //
+      // A validation failure is logged and the user doc is skipped, but we
+      // deliberately do NOT flip `hadPullError`: the watermark should still
+      // advance so the rest of the collection pulls aren't forced to
+      // re-scan from scratch every loop. `UserSchema` is also strict about
+      // `email` (RFC-valid), and `authService.upsertLocalUser` writes
+      // `firebaseUser.email ?? ''` — an empty string on the remote would
+      // otherwise deadlock the entire pull loop.
+      const parsed = UserSchema.safeParse(remoteUserData);
+      if (!parsed.success || parsed.data.id !== userId) {
+        const reason = !parsed.success
+          ? parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+          : `id ${String((remoteUserData as { id?: unknown }).id)} ≠ userId ${userId}`;
+        result.details.push(`Skipped malformed users/${userId}: ${reason}`);
+      } else {
+        // Re-run preferences through the quarantine merge so any out-of-range
+        // field values produced by a misbehaving peer are substituted with
+        // defaults before they reach Dexie.
+        const remoteUser: User = {
+          ...parsed.data,
+          preferences: mergeUserPreferences(parsed.data.preferences),
+        };
+        const remoteSyncable = remoteUser as unknown as SyncableEntity;
+        const localUser = await db.users.get(userId);
+        const localSyncable = localUser as SyncableEntity | undefined;
+        if (!localUser) {
+          await db.users.put(remoteUser);
+          result.pulled++;
+          result.details.push(`Pulled users/${userId} (new)`);
+        } else {
+          const resolution = resolveConflict(localSyncable!, remoteSyncable);
+          if (resolution.winner === 'remote') {
+            // Preserve the local `lastSyncedAt` watermark through a pull.
+            await db.users.put({
+              ...remoteUser,
+              lastSyncedAt: localUser.lastSyncedAt ?? remoteUser.lastSyncedAt,
+            });
+            result.pulled++;
+            result.details.push(
+              `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`
+            );
+          } else {
+            result.conflicts++;
+            result.details.push(
+              `Kept local users/${userId} (local v${localSyncable!.version} >= remote v${remoteSyncable.version})`
+            );
+          }
+        }
+      }
+    }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    result.details.push(`Pull failed for users/${userId}: ${errorMsg}`);
+    hadPullError = true;
+  }
 
   for (const collectionName of SYNCABLE_COLLECTIONS) {
     try {

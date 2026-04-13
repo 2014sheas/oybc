@@ -166,6 +166,7 @@ struct CreateView: View {
                         libraryTasks: libraryTasks,
                         allTaskSteps: allLibraryTaskSteps,
                         userId: userId,
+                        initialPreferences: authService.userPreferences,
                         onBoardCreated: { boardId in
                             navigateToBoardId = BoardNavID(id: boardId)
                         }

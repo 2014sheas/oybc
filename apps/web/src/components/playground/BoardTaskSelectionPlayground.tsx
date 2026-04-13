@@ -6,6 +6,7 @@ import {
   CenterSquareType,
   fisherYatesShuffle,
   generateCounterTaskTitle,
+  DEFAULT_USER_PREFERENCES,
   type Task,
   type TaskStep,
   type CompositeTask,
@@ -1542,6 +1543,7 @@ export function BoardTaskSelectionPlayground(): React.ReactElement {
           taskMap={taskMap}
           allTaskSteps={allTaskSteps}
           userId={PLAYGROUND_USER_ID}
+          initialPreferences={DEFAULT_USER_PREFERENCES}
         />
       )}
 

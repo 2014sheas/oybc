@@ -1,31 +1,30 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { Link } from 'react-router-dom';
+import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/AuthContext';
 import { db } from '../db/database';
-import { Link } from 'react-router-dom';
+import { usePreferences } from '../hooks';
 import styles from './ProfilePage.module.css';
 
 /**
- * ProfilePage — User info, app settings, and sign out.
+ * ProfilePage — Account info, app-level settings, and sign out.
  *
- * Grouped card layout matching iOS Settings pattern.
- * Theme toggle, sync status, playground link, sign out.
+ * Board-creation defaults (timeframe, size, center type, randomize, custom
+ * center name, week-start) live in a dedicated sub-page at
+ * `/profile/board-preferences` — they're a related cluster that governs the
+ * new-board form and don't belong on the top-level settings surface.
  */
-export function ProfilePage({
-  theme,
-  onThemeToggle,
-}: {
-  theme: 'light' | 'dark';
-  onThemeToggle: () => void;
-}): React.ReactElement {
+export function ProfilePage(): React.ReactElement {
   const { user, signOut } = useAuth();
+  const [prefs, updatePrefs] = usePreferences();
 
   const displayNameInitial = user?.displayName?.trim().charAt(0).toUpperCase();
   const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
   const initial = displayNameInitial || emailInitial || '?';
 
-  // Live query for lastSyncedAt — auth context doesn't update when sync writes to DB
+  // Live query for lastSyncedAt — auth context doesn't update when sync writes to DB.
   const liveUser = useLiveQuery(
-    () => user ? db.users.get(user.id) : undefined,
+    () => (user ? db.users.get(user.id) : undefined),
     [user?.id]
   );
   const lastSyncedAt = liveUser?.lastSyncedAt;
@@ -51,45 +50,49 @@ export function ProfilePage({
         </div>
       </div>
 
-      {/* App settings card */}
+      {/* App-level settings */}
       <div className={styles.sectionLabel}>App</div>
       <div className={styles.card}>
         <div className={styles.settingsRow}>
-          <span className={styles.rowLabel}>Theme</span>
-          <fieldset className={styles.toggleGroup}>
-            <legend className={styles.srOnly}>Theme</legend>
-            <label className={`${styles.toggleBtn} ${theme === 'light' ? styles.toggleBtnActive : ''}`}>
-              <input
-                type="radio"
-                name="theme"
-                value="light"
-                checked={theme === 'light'}
-                onChange={() => theme !== 'light' && onThemeToggle()}
-                className={styles.srOnly}
-              />
-              Light
-            </label>
-            <label className={`${styles.toggleBtn} ${theme === 'dark' ? styles.toggleBtnActive : ''}`}>
-              <input
-                type="radio"
-                name="theme"
-                value="dark"
-                checked={theme === 'dark'}
-                onChange={() => theme !== 'dark' && onThemeToggle()}
-                className={styles.srOnly}
-              />
-              Dark
-            </label>
-          </fieldset>
+          <label className={styles.rowLabel} htmlFor="pref-theme">
+            Theme
+          </label>
+          <select
+            id="pref-theme"
+            className={styles.select}
+            value={prefs.theme}
+            onChange={(e) =>
+              updatePrefs({ theme: e.target.value as UserPreferences['theme'] })
+            }
+          >
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
         </div>
         <div className={styles.settingsRow}>
           <span className={styles.rowLabel}>Last synced</span>
           <span className={styles.rowValue}>
-            {lastSyncedAt
-              ? new Date(lastSyncedAt).toLocaleTimeString()
-              : 'Never'}
+            {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Never'}
           </span>
         </div>
+      </div>
+
+      {/* Preferences sub-pages */}
+      <div className={styles.sectionLabel}>Preferences</div>
+      <div className={styles.card}>
+        <Link
+          to="/profile/board-preferences"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Board preferences</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
+      </div>
+
+      {/* Developer tools */}
+      <div className={styles.sectionLabel}>Developer</div>
+      <div className={styles.card}>
         <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
           <span className={styles.rowLabel}>Playground</span>
           <span className={styles.rowArrow}>&rarr;</span>

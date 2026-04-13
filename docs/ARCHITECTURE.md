@@ -506,12 +506,12 @@ Replace the playground-only app with a real production UI. Tab-based navigation,
 
 **Navigation**: Bottom tab bar — Boards (default), Create, Profile.
 
-- [ ] Phase 4.0: Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore)
-- [ ] Phase 4.1: Auth shell + tab bar (replace "Hello OYBC")
-- [ ] Phase 4.2: Board list (filtering, progress, navigation)
-- [ ] Phase 4.3: Board play (bingo grid, completion, flash messages)
-- [ ] Phase 4.4: Create tab (task pool + BoardCreatorPanel)
-- [ ] Phase 4.5: Profile + settings + polish
+- [x] Phase 4.0: Synced user preferences (7 fields → Firestore, Profile + Board Preferences UI)
+- [x] Phase 4.1: Auth shell + tab bar (replace "Hello OYBC")
+- [x] Phase 4.2: Board list (filtering, progress, navigation)
+- [x] Phase 4.3: Board play (bingo grid, completion, flash messages)
+- [x] Phase 4.4: Create tab (task pool + BoardCreatorPanel)
+- [ ] Phase 4.5: Profile + settings + polish (design pass, display-name edit, sign-in polish)
 
 **Key files**:
 - `TabBar.tsx` ↔ `MainTabView.swift` — bottom tab navigation

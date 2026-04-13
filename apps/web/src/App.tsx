@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './firebase/AuthContext';
 import { AuthGate } from './components/AuthGate';
@@ -7,29 +6,28 @@ import { BoardsPage } from './pages/BoardsPage';
 import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreatePage } from './pages/CreatePage';
 import { ProfilePage } from './pages/ProfilePage';
+import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { Playground } from './pages/Playground';
-import { useSyncLoop } from './hooks';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Theme = 'light' | 'dark';
-
-const THEME_STORAGE_KEY = 'oybc-theme';
+import {
+  useSyncLoop,
+  useLegacyPreferencesMigration,
+  useAppliedTheme,
+} from './hooks';
 
 // ─── Authenticated Layout ─────────────────────────────────────────────────────
 
 /**
  * Layout rendered when the user is signed in.
- * Provides tab bar navigation and starts the background sync loop.
+ *
+ * Hosts the cross-cutting hooks that need an authenticated user:
+ * - `useSyncLoop` — background push/pull of the local queue
+ * - `useLegacyPreferencesMigration` — one-shot lift of pre-Phase-0 localStorage
+ * - `useAppliedTheme` — resolves the user's theme preference to the DOM
  */
-function AuthenticatedLayout({
-  theme,
-  onThemeToggle,
-}: {
-  theme: Theme;
-  onThemeToggle: () => void;
-}): React.ReactElement {
+function AuthenticatedLayout(): React.ReactElement {
   useSyncLoop();
+  useLegacyPreferencesMigration();
+  useAppliedTheme();
 
   return (
     <>
@@ -38,9 +36,10 @@ function AuthenticatedLayout({
           <Route path="/boards" element={<BoardsPage />} />
           <Route path="/boards/:id" element={<BoardPlayPage />} />
           <Route path="/create" element={<CreatePage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route
-            path="/profile"
-            element={<ProfilePage theme={theme} onThemeToggle={onThemeToggle} />}
+            path="/profile/board-preferences"
+            element={<BoardPreferencesPage />}
           />
           <Route path="/" element={<Navigate to="/boards" replace />} />
           <Route path="*" element={<Navigate to="/boards" replace />} />
@@ -61,20 +60,6 @@ function AuthenticatedLayout({
  * - Tab bar provides navigation between Boards, Create, and Profile
  */
 function App() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-    return (savedTheme === 'dark' ? 'dark' : 'light') as Theme;
-  });
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-  };
-
   return (
     <AuthProvider>
       <BrowserRouter>
@@ -87,10 +72,7 @@ function App() {
             path="/*"
             element={
               <AuthGate>
-                <AuthenticatedLayout
-                  theme={theme}
-                  onThemeToggle={toggleTheme}
-                />
+                <AuthenticatedLayout />
               </AuthGate>
             }
           />

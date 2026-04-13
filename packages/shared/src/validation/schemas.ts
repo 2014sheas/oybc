@@ -395,11 +395,35 @@ export const CompositeNodeSchema = z.object({
 
 // ===== User Schema =====
 
+export const WeekStartDaySchema = z.union([z.literal('monday'), z.literal('sunday')]);
+
+export const DefaultCenterSquareTypeSchema = z.union([
+  z.literal(CenterSquareType.FREE),
+  z.literal(CenterSquareType.NONE),
+]);
+
+export const ThemePreferenceSchema = z.union([
+  z.literal('light'),
+  z.literal('dark'),
+  z.literal('system'),
+]);
+
+export const UserPreferencesSchema = z.object({
+  weekStartDay: WeekStartDaySchema,
+  defaultBoardSize: BoardSizeSchema,
+  defaultCenterType: DefaultCenterSquareTypeSchema,
+  defaultTimeframe: z.nativeEnum(Timeframe),
+  defaultRandomize: z.boolean(),
+  defaultCenterCustomName: z.string().max(100),
+  theme: ThemePreferenceSchema,
+});
+
 export const UserSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   displayName: z.string().optional(),
   photoURL: z.string().url().optional(),
+  preferences: UserPreferencesSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),

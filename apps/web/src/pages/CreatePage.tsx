@@ -10,7 +10,7 @@ import {
   type CompositeNode,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/AuthContext';
-import { useTasks } from '../hooks';
+import { useTasks, usePreferences } from '../hooks';
 import { useCompositeTasks } from '../hooks/useCompositeTasks';
 import { db } from '../db/database';
 import { createTask, linkTaskStep } from '../db/operations/tasks';
@@ -198,6 +198,11 @@ export function CreatePage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
   const userId = user?.id;
+
+  // Gate `BoardCreatorPanel` mounting on this so its `useState` lazy
+  // initialisers snapshot real preferences instead of placeholder defaults
+  // returned while the live-query is still hydrating.
+  const [preferences, , preferencesReady] = usePreferences();
 
   // ── Mode state ──────────────────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>('create');
@@ -948,12 +953,13 @@ export function CreatePage(): React.ReactElement {
       </div>
 
       {/* ── Board Creator — shown when pool has tasks ── */}
-      {boardPool.length > 0 && userId && (
+      {boardPool.length > 0 && userId && preferencesReady && (
         <BoardCreatorPanel
           pool={boardPool}
           taskMap={taskMap}
           allTaskSteps={allTaskSteps}
           userId={userId}
+          initialPreferences={preferences}
           onBoardCreated={(boardId: string) => {
             navigate(`/boards/${boardId}`);
           }}

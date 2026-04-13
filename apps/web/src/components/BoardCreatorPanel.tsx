@@ -9,8 +9,9 @@ import {
   type Task,
   type TaskStep,
   type BoardTask,
+  type UserPreferences,
 } from '@oybc/shared';
-import { useBoardTasks, usePreferences } from '../hooks';
+import { useBoardTasks } from '../hooks';
 import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
 import { createBoard } from '../db/operations/boards';
 import { createBoardTask } from '../db/operations/boardTasks';
@@ -35,6 +36,13 @@ export interface BoardCreatorPanelProps {
   allTaskSteps: TaskStep[];
   /** User ID to associate with the created board */
   userId: string;
+  /**
+   * Fully-resolved synced preferences from the parent. Passed as a prop so
+   * the form's `useState` lazy initialisers capture the real values on
+   * mount — a local `usePreferences()` call would return defaults during
+   * the first render while the live query hydrates.
+   */
+  initialPreferences: UserPreferences;
   /** Called with the new board's ID after successful creation */
   onBoardCreated?: (boardId: string) => void;
 }
@@ -68,18 +76,32 @@ export function BoardCreatorPanel({
   taskMap,
   allTaskSteps,
   userId,
+  initialPreferences,
   onBoardCreated,
 }: BoardCreatorPanelProps): React.ReactElement {
+  // `weekStartDay` is only used for timeframe boundary math below; once the
+  // form mounts, we don't need it to live-update (the user can pick the
+  // timeframe manually anyway), so reading from the prop snapshot is fine.
+  const weekStartDay = initialPreferences.weekStartDay;
+
   // ── Form state ─────────────────────────────────────────────────────────────
   const [boardName, setBoardName] = useState('');
-  const [boardSize, setBoardSize] = useState<3 | 4 | 5>(3);
-  const [centerType, setCenterType] = useState<CenterSquareType>(CenterSquareType.FREE);
-  const [centerCustomName, setCenterCustomName] = useState('');
+  const [boardSize, setBoardSize] = useState<3 | 4 | 5>(
+    () => initialPreferences.defaultBoardSize
+  );
+  const [centerType, setCenterType] = useState<CenterSquareType>(
+    () => initialPreferences.defaultCenterType
+  );
+  const [centerCustomName, setCenterCustomName] = useState(
+    () => initialPreferences.defaultCenterCustomName
+  );
   const [centerTaskId, setCenterTaskId] = useState<string | null>(null);
-  const [isRandomized, setIsRandomized] = useState(true);
-  const [timeframe, setTimeframe] = useState<Timeframe>(Timeframe.CUSTOM);
-  const [preferences] = usePreferences();
-  const weekStartDay = preferences.weekStartDay;
+  const [isRandomized, setIsRandomized] = useState(
+    () => initialPreferences.defaultRandomize
+  );
+  const [timeframe, setTimeframe] = useState<Timeframe>(
+    () => initialPreferences.defaultTimeframe
+  );
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 

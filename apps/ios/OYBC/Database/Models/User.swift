@@ -1,6 +1,122 @@
 import Foundation
 import GRDB
 
+// MARK: - UserPreferences
+
+/// Subset of `CenterSquareType` values allowed as a global default.
+/// CHOSEN / CUSTOM_FREE require per-board context and aren't sensible defaults
+/// (the CUSTOM_FREE display text is captured by `defaultCenterCustomName`).
+enum DefaultCenterSquareType: String, Codable {
+    case free
+    case none
+}
+
+enum WeekStartDay: String, Codable {
+    case monday
+    case sunday
+}
+
+enum DefaultBoardSize: Int, Codable {
+    case three = 3
+    case four = 4
+    case five = 5
+}
+
+/// Board timeframe default. Mirrors the `Timeframe` enum in @oybc/shared
+/// (`daily | weekly | monthly | yearly | custom`) — kept separate from the
+/// existing per-board `Timeframe` enum to avoid coupling the preference
+/// schema to any future additions.
+enum DefaultTimeframe: String, Codable {
+    case daily
+    case weekly
+    case monthly
+    case yearly
+    case custom
+}
+
+/// App appearance override. `system` follows the OS appearance; `light`/`dark`
+/// force a specific theme across devices.
+enum ThemePreference: String, Codable {
+    case light
+    case dark
+    case system
+}
+
+/// Synced per-user preferences. Round-trips through Firestore as JSON and
+/// mirrors the TypeScript `UserPreferences` interface in `@oybc/shared`.
+struct UserPreferences: Codable, Equatable {
+    var weekStartDay: WeekStartDay
+    var defaultBoardSize: DefaultBoardSize
+    var defaultCenterType: DefaultCenterSquareType
+    var defaultTimeframe: DefaultTimeframe
+    var defaultRandomize: Bool
+    var defaultCenterCustomName: String
+    var theme: ThemePreference
+
+    static let defaults = UserPreferences(
+        weekStartDay: .monday,
+        defaultBoardSize: .five,
+        defaultCenterType: .free,
+        defaultTimeframe: .custom,
+        defaultRandomize: true,
+        defaultCenterCustomName: "",
+        theme: .system
+    )
+
+    /// Returns a complete preferences object by filling missing fields from
+    /// `defaults`. Used when decoding records that pre-date the `preferences`
+    /// column or that come from a misbehaving peer.
+    static func merge(_ partial: UserPreferences?) -> UserPreferences {
+        partial ?? .defaults
+    }
+
+    // MARK: - Codable (forward-compatible decode)
+
+    /// Custom decoder that falls back to `.defaults` for any missing or
+    /// malformed field, so a user row written by an older client (with fewer
+    /// preference keys) decodes cleanly without clobbering the values that
+    /// are present.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.weekStartDay = (try? c.decode(WeekStartDay.self, forKey: .weekStartDay))
+            ?? Self.defaults.weekStartDay
+        self.defaultBoardSize = (try? c.decode(DefaultBoardSize.self, forKey: .defaultBoardSize))
+            ?? Self.defaults.defaultBoardSize
+        self.defaultCenterType = (try? c.decode(DefaultCenterSquareType.self, forKey: .defaultCenterType))
+            ?? Self.defaults.defaultCenterType
+        self.defaultTimeframe = (try? c.decode(DefaultTimeframe.self, forKey: .defaultTimeframe))
+            ?? Self.defaults.defaultTimeframe
+        self.defaultRandomize = (try? c.decode(Bool.self, forKey: .defaultRandomize))
+            ?? Self.defaults.defaultRandomize
+        self.defaultCenterCustomName = (try? c.decode(String.self, forKey: .defaultCenterCustomName))
+            ?? Self.defaults.defaultCenterCustomName
+        self.theme = (try? c.decode(ThemePreference.self, forKey: .theme))
+            ?? Self.defaults.theme
+    }
+
+    /// Memberwise initialiser preserved explicitly because adding a custom
+    /// `init(from:)` suppresses the compiler-synthesised one.
+    init(
+        weekStartDay: WeekStartDay,
+        defaultBoardSize: DefaultBoardSize,
+        defaultCenterType: DefaultCenterSquareType,
+        defaultTimeframe: DefaultTimeframe,
+        defaultRandomize: Bool,
+        defaultCenterCustomName: String,
+        theme: ThemePreference
+    ) {
+        self.weekStartDay = weekStartDay
+        self.defaultBoardSize = defaultBoardSize
+        self.defaultCenterType = defaultCenterType
+        self.defaultTimeframe = defaultTimeframe
+        self.defaultRandomize = defaultRandomize
+        self.defaultCenterCustomName = defaultCenterCustomName
+        self.theme = theme
+    }
+}
+
+// MARK: - User
+
 /// User - User profile and authentication
 ///
 /// Matches TypeScript User interface from @oybc/shared
@@ -10,6 +126,9 @@ struct User: Codable, FetchableRecord, PersistableRecord {
     var email: String
     var displayName: String?
     var photoURL: String?
+
+    // Synced preferences (JSON-encoded column; nil on pre-v5 rows).
+    var preferences: String?
 
     // Timestamps
     var createdAt: String // ISO8601
@@ -26,4 +145,23 @@ struct User: Codable, FetchableRecord, PersistableRecord {
     static let boards = hasMany(Board.self)
     static let tasks = hasMany(Task.self)
     static let progressCounters = hasMany(ProgressCounter.self)
+
+    // MARK: - Preferences accessors
+
+    /// Decoded `UserPreferences`, with defaults filled in for missing /
+    /// malformed / legacy (`nil`) values. Never throws.
+    var decodedPreferences: UserPreferences {
+        guard let json = preferences, let data = json.data(using: .utf8) else {
+            return .defaults
+        }
+        return (try? JSONDecoder().decode(UserPreferences.self, from: data)) ?? .defaults
+    }
+
+    /// Encodes `UserPreferences` back into the JSON string column. Returns
+    /// `nil` only on an unrecoverable encode failure (shouldn't happen for
+    /// this shape, but keeps the call sites safe).
+    static func encodePreferences(_ prefs: UserPreferences) -> String? {
+        guard let data = try? JSONEncoder().encode(prefs) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
 }

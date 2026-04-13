@@ -14,7 +14,8 @@ This document details the synchronization strategies for complex features in OYB
 4. [Task Step Linking Sync](#task-step-linking-sync)
 5. [Bingo Line Detection Sync](#bingo-line-detection-sync)
 6. [Composite Task Sync](#composite-task-sync)
-7. [Performance Considerations](#performance-considerations)
+7. [User Preferences Sync](#user-preferences-sync)
+8. [Performance Considerations](#performance-considerations)
 
 ---
 
@@ -1199,6 +1200,47 @@ async function checkNodeForCircularReferences(
 - [ ] Auto-created tasks sync independently of composite task
 - [ ] Deleted task reference → evaluation handles gracefully
 - [ ] Circular reference → validation prevents creation
+
+---
+
+## User Preferences Sync
+
+### Overview
+
+Synced user preferences live on the `User` record itself as a nested `preferences` object, so they replicate under the same last-write-wins resolver as every other synced entity — the last device to update a preference wins. The object currently carries seven fields:
+
+- `weekStartDay` — `'monday' | 'sunday'`
+- `defaultBoardSize` — `3 | 4 | 5`
+- `defaultCenterType` — `FREE | NONE` (narrowed from `CenterSquareType`; CHOSEN / CUSTOM_FREE require per-board context)
+- `defaultTimeframe` — `daily | weekly | monthly | yearly | custom`
+- `defaultRandomize` — `boolean`
+- `defaultCenterCustomName` — `string` (≤ 100 chars)
+- `theme` — `'light' | 'dark' | 'system'`
+
+### Firestore Layout
+
+Unlike other syncable entities which live in `users/{userId}/<collection>/{id}` subcollections, the `User` document is the scope root at `users/{userId}` and holds the synced preferences directly:
+
+```
+users/{userId}                              ← User doc (profile + preferences)
+users/{userId}/boards/{boardId}             ← subcollection entities
+users/{userId}/tasks/{taskId}
+…
+```
+
+### Sync Path
+
+1. **Write**: `updateUserPreferences(...)` (web: `db/operations/users.ts`, iOS: `AppDatabase.updateUserPreferences`) merges the partial update, bumps `version` + `updatedAt`, and enqueues a `users` sync-queue UPDATE inside a single transaction.
+2. **Push**: `pushSync` special-cases `entityType === 'users'` to write to `users/{userId}` directly (not a subcollection child). `DELETE` ops for `users` are a no-op — the scope root must never be removed.
+3. **Pull**: `pullSync` fetches `users/{userId}` first, LWW-merges against the local row, then iterates the subcollections as before. The local `lastSyncedAt` watermark is preserved through a remote-wins pull.
+4. **Conflict resolution**: identical to every other entity — higher `version` wins, ties break on `updatedAt`.
+
+### Checklist
+
+- [ ] Preference change on Device A reaches Device B after a sync loop round-trip.
+- [ ] Concurrent change on both devices within one window → higher-version side wins on both devices.
+- [ ] Records predating the `preferences` field decode cleanly (defaults fill missing keys on read).
+- [ ] `users` entity is never DELETE-synced (scope root safety).
 
 ---
 

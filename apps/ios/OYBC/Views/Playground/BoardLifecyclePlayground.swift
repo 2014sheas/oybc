@@ -67,9 +67,16 @@ private func makeSyncItem<T: Codable>(
 /// - ACTIVE → COMPLETED on full-board greenlog.
 struct BoardLifecyclePlayground: View {
 
-    // MARK: - State
+    // MARK: - Parameters
 
-    @AppStorage("oybc-weekStartDay") private var weekStartDay: String = "monday"
+    /// Week-start value used for timeframe boundary math. Defaults to
+    /// `.defaults.weekStartDay.rawValue` so this view works in previews and
+    /// playground surfaces that aren't behind the auth shell. Production
+    /// callers (e.g. `PlaygroundView` rendered inside the signed-in
+    /// `ProfileView`) pass `authService.userPreferences.weekStartDay.rawValue`.
+    var weekStartDay: String = UserPreferences.defaults.weekStartDay.rawValue
+
+    // MARK: - State
 
     @State private var boards: [Board] = []
     @State private var selectedBoardId: String? = nil

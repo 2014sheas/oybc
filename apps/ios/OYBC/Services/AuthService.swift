@@ -3,6 +3,7 @@ import FirebaseAuth
 import GoogleSignIn
 import AuthenticationServices
 import UIKit
+@preconcurrency import GRDB
 
 /// AuthService - Firebase authentication and local user record management
 ///
@@ -27,6 +28,11 @@ final class AuthService: ObservableObject {
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
 
+    /// GRDB observation of the signed-in user's row. Keeps `currentUser`
+    /// in sync with local writes (preference changes) and sync-pulled
+    /// remote changes without requiring callers to manually refresh.
+    private var userRowObservation: DatabaseCancellable?
+
     // MARK: - Initialization
 
     init() {
@@ -38,9 +44,15 @@ final class AuthService: ObservableObject {
                 if let firebaseUser {
                     await MainActor.run { self.currentUser = nil } // clear stale state
                     let user = await self.upsertLocalUser(firebaseUser)
-                    await MainActor.run { self.currentUser = user }
+                    await MainActor.run {
+                        self.currentUser = user
+                        self.startUserRowObservation(userId: user.id)
+                    }
                 } else {
-                    await MainActor.run { self.currentUser = nil }
+                    await MainActor.run {
+                        self.currentUser = nil
+                        self.stopUserRowObservation()
+                    }
                 }
                 await MainActor.run { self.isLoading = false }
             }
@@ -51,6 +63,48 @@ final class AuthService: ObservableObject {
         if let handle = authStateHandle {
             Auth.auth().removeStateDidChangeListener(handle)
         }
+        userRowObservation?.cancel()
+    }
+
+    // MARK: - User row observation
+
+    /// Starts a `ValueObservation` on the signed-in user's row so that any
+    /// mutation (local preference write, sync-pulled remote update) flows
+    /// into the published `currentUser` automatically.
+    private func startUserRowObservation(userId: String) {
+        userRowObservation?.cancel()
+        let observation = ValueObservation.tracking { db in
+            try User.fetchOne(db, key: userId)
+        }
+        userRowObservation = observation.start(
+            in: AppDatabase.shared.dbQueue,
+            onError: { error in
+                print("⚠️ user row observation failed: \(error)")
+            },
+            onChange: { [weak self] refreshed in
+                guard let refreshed, let self else { return }
+                _Concurrency.Task { @MainActor in
+                    self.currentUser = refreshed
+                }
+            }
+        )
+    }
+
+    private func stopUserRowObservation() {
+        userRowObservation?.cancel()
+        userRowObservation = nil
+    }
+
+    // MARK: - Preferences
+
+    /// Current synced user preferences, or `.defaults` when signed out.
+    ///
+    /// Backed by `currentUser`, which is itself kept in sync via the GRDB
+    /// `ValueObservation` started in the auth state handler — so local
+    /// preference writes and sync-pulled remote updates both flow through
+    /// without any manual refresh step.
+    var userPreferences: UserPreferences {
+        currentUser?.decodedPreferences ?? .defaults
     }
 
     // MARK: - Email / Password
@@ -161,6 +215,33 @@ final class AuthService: ObservableObject {
         currentUser = nil
     }
 
+    // MARK: - Legacy @AppStorage migration
+
+    /// Key used by pre-Phase-0 `@AppStorage("oybc-weekStartDay")` bindings.
+    private static let legacyWeekStartDayKey = "oybc-weekStartDay"
+
+    /// If the legacy UserDefaults `oybc-weekStartDay` key is present and
+    /// holds a recognised value, returns an updated `UserPreferences` with
+    /// `weekStartDay` migrated and removes the key. Returns `nil` if the
+    /// key is absent or already migrated, so the caller can skip a write.
+    private static func migrateLegacyWeekStartDay(
+        from current: UserPreferences
+    ) -> UserPreferences? {
+        let defaults = UserDefaults.standard
+        guard let raw = defaults.string(forKey: legacyWeekStartDayKey) else {
+            return nil
+        }
+        defaults.removeObject(forKey: legacyWeekStartDayKey)
+
+        guard let value = WeekStartDay(rawValue: raw),
+              value != current.weekStartDay else {
+            return nil
+        }
+        var next = current
+        next.weekStartDay = value
+        return next
+    }
+
     // MARK: - Local User Upsert
 
     /// Creates or updates the GRDB `User` record for the given Firebase user.
@@ -180,15 +261,32 @@ final class AuthService: ObservableObject {
                 existing.photoURL = firebaseUser.photoURL?.absoluteString
                 existing.updatedAt = now
                 existing.version += 1
+
+                // Backfill missing preference fields and apply the one-shot
+                // legacy @AppStorage migration. `decodedPreferences` fills
+                // any keys absent in the stored JSON (pre-Phase-0 rows or
+                // rows written by an older client) with defaults via the
+                // custom init(from:); we then give the legacy migration a
+                // chance to override `weekStartDay` before re-encoding.
+                // Mirrors web's `mergeUserPreferences(existing.preferences)`
+                // + `migrateLegacyLocalStoragePreferences` on every upsert.
+                var mergedPrefs = existing.decodedPreferences
+                if let migrated = Self.migrateLegacyWeekStartDay(from: mergedPrefs) {
+                    mergedPrefs = migrated
+                }
+                existing.preferences = User.encodePreferences(mergedPrefs)
+
                 try AppDatabase.shared.saveUser(existing)
                 return existing
             } else {
-                // First sign-in: create the local user record.
+                // First sign-in: create the local user record seeded with
+                // default synced preferences.
                 let newUser = User(
                     id: firebaseUser.uid,
                     email: firebaseUser.email ?? "",
                     displayName: firebaseUser.displayName,
                     photoURL: firebaseUser.photoURL?.absoluteString,
+                    preferences: User.encodePreferences(.defaults),
                     createdAt: now,
                     updatedAt: now,
                     lastSyncedAt: nil,
@@ -206,6 +304,7 @@ final class AuthService: ObservableObject {
                 email: firebaseUser.email ?? "",
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL?.absoluteString,
+                preferences: User.encodePreferences(.defaults),
                 createdAt: now,
                 updatedAt: now,
                 lastSyncedAt: nil,

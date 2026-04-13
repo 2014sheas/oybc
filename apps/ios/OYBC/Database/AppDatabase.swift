@@ -11,7 +11,10 @@ final class AppDatabase {
 
     // MARK: - Database
 
-    private let dbQueue: DatabaseQueue
+    /// Exposed to the module (not public) so `AuthService` can attach a
+    /// `ValueObservation` to the users row without needing a wrapper for
+    /// every observable column.
+    let dbQueue: DatabaseQueue
 
     // MARK: - Initialization
 
@@ -153,6 +156,20 @@ final class AppDatabase {
         migrator.registerMigration("v4") { db in
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN centerSquareCustomName TEXT")
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN centerTaskId TEXT REFERENCES tasks(id)")
+        }
+
+        // v5: Synced user preferences JSON column. The current schema holds
+        // `weekStartDay`, `defaultBoardSize`, `defaultCenterType`,
+        // `defaultTimeframe`, `defaultRandomize`, `defaultCenterCustomName`,
+        // and `theme` — but the migration itself only adds the column;
+        // future field additions don't need a migration because the JSON
+        // is decoded by `UserPreferences.init(from:)` which tolerates
+        // missing keys. Stored as a JSON string to mirror how other
+        // nested/array fields are persisted on iOS, and so the record can
+        // round-trip through Firestore with the same shape the web app
+        // writes.
+        migrator.registerMigration("v5") { db in
+            try db.execute(sql: "ALTER TABLE users ADD COLUMN preferences TEXT")
         }
 
         return migrator
@@ -320,6 +337,87 @@ extension AppDatabase {
         }
     }
 
+    /// Observes the `lastSyncedAt` column for a given user, invoking the
+    /// handler on every value change. Returns a `DatabaseCancellable` the
+    /// caller should retain for the lifetime of the observation. Used by
+    /// the Profile view so the "Last Synced" label live-updates when the
+    /// sync loop writes the watermark.
+    func observeLastSynced(
+        userId: String,
+        onChange: @escaping (String?) -> Void
+    ) -> DatabaseCancellable {
+        let observation = ValueObservation.tracking { db in
+            try User.fetchOne(db, key: userId)?.lastSyncedAt
+        }
+        return observation.start(
+            in: dbQueue,
+            onError: { error in
+                print("⚠️ lastSyncedAt observation failed: \(error)")
+            },
+            onChange: onChange
+        )
+    }
+
+    /// Atomically merges a partial preferences update into the authenticated
+    /// user's row, bumps `version` + `updatedAt`, and enqueues a sync queue
+    /// UPDATE item for the `users` entity. The write and its sync-queue entry
+    /// share a single GRDB transaction so they can't drift out of step.
+    ///
+    /// - Parameters:
+    ///   - userId: The User row to update.
+    ///   - transform: Receives the current `UserPreferences` and returns the
+    ///     new value. Using a closure (rather than a partial struct) keeps the
+    ///     merge logic at the call site explicit.
+    /// - Returns: The updated User row, or `nil` if no such row exists.
+    @discardableResult
+    func updateUserPreferences(
+        userId: String,
+        transform: (UserPreferences) -> UserPreferences
+    ) throws -> User? {
+        return try write { db -> User? in
+            guard var user = try User.fetchOne(db, key: userId) else { return nil }
+
+            let current = user.decodedPreferences
+            let next = transform(current)
+
+            user.preferences = User.encodePreferences(next)
+            user.version += 1
+            user.updatedAt = ISO8601DateFormatter().string(from: Date())
+            try user.save(db)
+
+            // Encode the full user record as the sync payload. Propagating
+            // any encoding error (rather than falling back to an empty "{}"
+            // blob) keeps a malformed push from silently enqueuing and
+            // pushing an invalid document — the caller sees the real
+            // failure and the transaction rolls back, preserving local
+            // state.
+            let data = try JSONEncoder().encode(user)
+            guard let payload = String(data: data, encoding: .utf8) else {
+                throw AppDatabaseError.payloadEncoding(
+                    "Failed to convert encoded user payload to UTF-8 for sync queue item"
+                )
+            }
+
+            let syncItem = SyncQueueItem(
+                id: Self.generateUUID(),
+                entityType: "users",
+                entityId: userId,
+                operationType: .update,
+                payload: payload,
+                status: .pending,
+                retryCount: 0,
+                lastError: nil,
+                createdAt: user.updatedAt,
+                lastAttemptAt: nil,
+                completedAt: nil,
+                priority: 1
+            )
+            try syncItem.save(db)
+
+            return user
+        }
+    }
+
     // MARK: - SyncQueue
 
     func fetchPendingSyncItems() throws -> [SyncQueueItem] {
@@ -422,6 +520,19 @@ extension AppDatabase {
     /// Get current ISO8601 timestamp
     static func currentTimestamp() -> String {
         return ISO8601DateFormatter().string(from: Date())
+    }
+
+    /// Errors raised by `AppDatabase` operations.
+    enum AppDatabaseError: LocalizedError {
+        /// A payload that was encoded by `JSONEncoder` couldn't be converted
+        /// to a UTF-8 string for storage as a sync-queue item.
+        case payloadEncoding(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .payloadEncoding(let msg): return msg
+            }
+        }
     }
 
     /// Delete all rows from every table — used by the Playground to reset test data

@@ -130,6 +130,7 @@ apps/web/src/                                        apps/ios/OYBC/
 3. Web: `[Name].tsx`. iOS: `[Name]View.swift` (views) or `[Name]Playground.swift` (features).
 4. iOS: After adding new Swift files, run `xcodegen generate` to regenerate the Xcode project.
 5. Verify both platforms have matching files before claiming completion.
+6. **No single-platform commits for shared features.** Every commit that changes user-visible behaviour, shared types, hooks, or services must either (a) land the paired change on both platforms in the same commit, or (b) explicitly justify the gap in the commit message and record the platform-parity follow-up in `CLAUDE.md` (or a tracked note). "I'll do the other platform next" is exactly the drift mode to avoid — during back-to-back UI iterations it is easy to rack up web-only changes and discover hours later that iOS is several commits behind. If you catch yourself doing this, stop and mirror before continuing.
 
 ## Commands
 
@@ -356,11 +357,11 @@ Tab-based app with auth gate. Web + iOS built simultaneously.
 
 | Phase | Feature | Status |
 | ----- | ------- | ------ |
-| 0 | Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore) | — |
-| 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | — |
-| 2 | Board list (filtering, progress indicators, tap to navigate) | — |
-| 3 | Board play (bingo grid, task completion, flash messages) | — |
-| 4 | Create tab (task pool + BoardCreatorPanel) | — |
+| 0 | Synced user preferences (7 preference fields → Firestore) | COMPLETE |
+| 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | COMPLETE |
+| 2 | Board list (filtering, progress indicators, tap to navigate) | COMPLETE |
+| 3 | Board play (bingo grid, task completion, flash messages) | COMPLETE |
+| 4 | Create tab (task pool + BoardCreatorPanel) | COMPLETE |
 | 5 | Profile + settings + polish (board defaults, theme, sync status, sign out) | — |
 
 **Key principle**: Reuse playground-tested components — extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.
