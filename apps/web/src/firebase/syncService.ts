@@ -8,6 +8,7 @@ import {
   where,
   serverTimestamp,
 } from 'firebase/firestore';
+import { liveQuery } from 'dexie';
 import { firestore, auth } from './config';
 import { resolveConflict, type SyncableEntity } from './conflictResolver';
 import { db } from '../db/database';
@@ -374,14 +375,31 @@ export async function fullSync(userId: string): Promise<SyncResult> {
  * @param intervalMs - Sync interval in milliseconds (default 30s)
  * @returns Cleanup function that stops the loop
  */
+/**
+ * Safety-net interval for the periodic full sync. With push-on-enqueue
+ * handling normal local-write replication, this only needs to fire
+ * occasionally to:
+ *   - retry items stuck in FAILED that didn't trigger fresh enqueues
+ *   - reset stale IN_PROGRESS items left over from a crashed tab
+ *   - back-stop missed Firestore snapshot deliveries (rare)
+ * 5 minutes is well below typical user dwell time and keeps Firestore
+ * read load minimal.
+ */
+export const SYNC_SAFETY_NET_MS = 5 * 60 * 1000;
+
+/** Debounce window before a queue-driven push fires. Coalesces bursts of
+ *  rapid local writes (e.g. a slider that emits per-tick) into one push. */
+const PUSH_DEBOUNCE_MS = 500;
+
 export function startSyncLoop(
   userId: string,
-  intervalMs: number = 30_000,
+  intervalMs: number = SYNC_SAFETY_NET_MS,
 ): () => void {
   let timer: ReturnType<typeof setInterval> | null = null;
+  let pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isSyncing = false;
 
-  async function tick(): Promise<void> {
+  async function fullTick(): Promise<void> {
     if (isSyncing || !navigator.onLine) return;
     isSyncing = true;
     try {
@@ -393,21 +411,63 @@ export function startSyncLoop(
     }
   }
 
-  // Start interval
-  timer = setInterval(() => void tick(), intervalMs);
+  async function pushTick(): Promise<void> {
+    if (isSyncing || !navigator.onLine) return;
+    isSyncing = true;
+    try {
+      await pushSync(userId);
+    } catch (err) {
+      console.error('Sync push error:', err);
+    } finally {
+      isSyncing = false;
+    }
+  }
 
-  // Also sync immediately when coming back online
+  /** Schedule a debounced push. Repeated calls within the window collapse
+   *  into one. If a push is already running, the trailing-edge fire still
+   *  schedules — the queue observation will re-fire when state changes. */
+  function scheduleFlush(): void {
+    if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
+    pushDebounceTimer = setTimeout(() => {
+      pushDebounceTimer = null;
+      void pushTick();
+    }, PUSH_DEBOUNCE_MS);
+  }
+
+  // Push-on-enqueue: react to any change in the pending sync queue. When
+  // an op enqueues a new item (or a previously-failed item re-becomes
+  // pending after retry), the count rises and we schedule a debounced
+  // push. This collapses the up-to-30s wait the polling model imposed
+  // down to ~PUSH_DEBOUNCE_MS + Firestore RTT.
+  const pendingObservation = liveQuery(() =>
+    db.syncQueue.where('status').equals(SyncStatus.PENDING).count()
+  );
+  const pendingSubscription = pendingObservation.subscribe({
+    next: (count) => {
+      if (count > 0) scheduleFlush();
+    },
+    error: (err) => console.error('Sync queue observation error:', err),
+  });
+
+  // Safety-net interval: full pull + retry-eligible push.
+  timer = setInterval(() => void fullTick(), intervalMs);
+
+  // Also sync immediately when coming back online — recovers anything
+  // that piled up during the offline window.
   function handleOnline(): void {
-    void tick();
+    void fullTick();
   }
   window.addEventListener('online', handleOnline);
 
-  // Run an initial sync immediately
-  void tick();
+  // Run an initial sync immediately (covers first sign-in + reload while
+  // the queue observation warms up).
+  void fullTick();
 
   // Cleanup
   return () => {
     if (timer) clearInterval(timer);
+    if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
+    pendingSubscription.unsubscribe();
     window.removeEventListener('online', handleOnline);
   };
 }
