@@ -402,10 +402,20 @@ export const DefaultCenterSquareTypeSchema = z.union([
   z.literal(CenterSquareType.NONE),
 ]);
 
+export const ThemePreferenceSchema = z.union([
+  z.literal('light'),
+  z.literal('dark'),
+  z.literal('system'),
+]);
+
 export const UserPreferencesSchema = z.object({
   weekStartDay: WeekStartDaySchema,
   defaultBoardSize: BoardSizeSchema,
   defaultCenterType: DefaultCenterSquareTypeSchema,
+  defaultTimeframe: z.nativeEnum(Timeframe),
+  defaultRandomize: z.boolean(),
+  defaultCenterCustomName: z.string().max(100),
+  theme: ThemePreferenceSchema,
 });
 
 export const UserSchema = z.object({

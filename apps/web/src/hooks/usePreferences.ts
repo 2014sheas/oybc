@@ -8,36 +8,57 @@ import { useAuth } from '../firebase/AuthContext';
 // ─── Legacy localStorage migration ───────────────────────────────────────────
 
 const LEGACY_PREFS_KEY = 'oybc-preferences';
+const LEGACY_THEME_KEY = 'oybc-theme';
+
+function readLocalStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null; // storage disabled / private mode
+  }
+}
+
+function clearLocalStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
 
 /**
- * One-shot migration: if the legacy localStorage preferences blob exists,
- * copy its `weekStartDay` into the authenticated user's synced preferences
- * and remove the key. Safe to call repeatedly — the key is removed on first
- * successful migration and the function no-ops thereafter.
+ * One-shot migration: lifts any legacy device-local preference values
+ * (`oybc-preferences` JSON blob, `oybc-theme` scalar) into the authenticated
+ * user's synced preferences record, then removes the localStorage keys. Safe
+ * to call repeatedly — once the keys are cleared the function no-ops.
  */
 async function migrateLegacyLocalStoragePreferences(userId: string): Promise<void> {
-  let stored: string | null;
-  try {
-    stored = localStorage.getItem(LEGACY_PREFS_KEY);
-  } catch {
-    return; // storage disabled / private mode
-  }
-  if (!stored) return;
+  const partial: Partial<UserPreferences> = {};
 
-  try {
-    const parsed = JSON.parse(stored) as Partial<UserPreferences>;
-    if (parsed.weekStartDay === 'monday' || parsed.weekStartDay === 'sunday') {
-      await updateUserPreferences(userId, { weekStartDay: parsed.weekStartDay });
-    }
-  } catch {
-    // Invalid JSON — just drop it.
-  } finally {
+  const storedPrefs = readLocalStorage(LEGACY_PREFS_KEY);
+  if (storedPrefs) {
     try {
-      localStorage.removeItem(LEGACY_PREFS_KEY);
+      const parsed = JSON.parse(storedPrefs) as Partial<UserPreferences>;
+      if (parsed.weekStartDay === 'monday' || parsed.weekStartDay === 'sunday') {
+        partial.weekStartDay = parsed.weekStartDay;
+      }
     } catch {
-      /* ignore */
+      // Invalid JSON — drop it along with the key below.
     }
   }
+
+  const storedTheme = readLocalStorage(LEGACY_THEME_KEY);
+  if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
+    partial.theme = storedTheme;
+  }
+
+  if (Object.keys(partial).length > 0) {
+    await updateUserPreferences(userId, partial);
+  }
+
+  // Clear both keys either way — an unrecognised legacy value shouldn't linger.
+  if (storedPrefs) clearLocalStorage(LEGACY_PREFS_KEY);
+  if (storedTheme) clearLocalStorage(LEGACY_THEME_KEY);
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
