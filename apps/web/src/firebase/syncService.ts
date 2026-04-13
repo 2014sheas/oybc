@@ -3,10 +3,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   setDoc,
   query,
   where,
   serverTimestamp,
+  type Unsubscribe as FirestoreUnsubscribe,
 } from 'firebase/firestore';
 import { liveQuery } from 'dexie';
 import { firestore, auth } from './config';
@@ -199,6 +201,89 @@ export async function pushSync(userId: string): Promise<PushResult> {
  * @param lastSyncedAt - ISO8601 timestamp of the last successful sync
  * @returns Pull result summary
  */
+/**
+ * Apply a remote `users/{userId}` payload to the local Dexie row,
+ * running the same validation + LWW resolution as the polling pull
+ * path. Used by `pullSync` (safety-net path) and the snapshot
+ * listener (real-time path).
+ *
+ * @returns A short status string for logging; `null` if nothing
+ *   meaningful happened (e.g. malformed payload skipped).
+ */
+async function applyRemoteUserDoc(
+  userId: string,
+  remoteUserData: unknown
+): Promise<string | null> {
+  // Validate the parent-doc payload before trusting it. A malformed /
+  // legacy user doc (missing id/version, wrong types, etc.) would
+  // otherwise slip straight into `db.users.put` and corrupt the local
+  // user row. `UserSchema.safeParse` enforces id + version + timestamp
+  // invariants; enforce the id-equals-userId check separately because
+  // the schema only asserts "some non-empty string".
+  //
+  // A validation failure is logged and the user doc is skipped — callers
+  // should NOT flip a "pull errored" flag on this path: an empty/invalid
+  // email shouldn't deadlock the rest of the sync loop.
+  const parsed = UserSchema.safeParse(remoteUserData);
+  if (!parsed.success || parsed.data.id !== userId) {
+    const reason = !parsed.success
+      ? parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+      : `id ${String((remoteUserData as { id?: unknown }).id)} ≠ userId ${userId}`;
+    return `Skipped malformed users/${userId}: ${reason}`;
+  }
+
+  // Re-run preferences through the quarantine merge so any out-of-range
+  // field values produced by a misbehaving peer are substituted with
+  // defaults before they reach Dexie.
+  const remoteUser: User = {
+    ...parsed.data,
+    preferences: mergeUserPreferences(parsed.data.preferences),
+  };
+  const remoteSyncable = remoteUser as unknown as SyncableEntity;
+  const localUser = await db.users.get(userId);
+  const localSyncable = localUser as SyncableEntity | undefined;
+  if (!localUser) {
+    await db.users.put(remoteUser);
+    return `Pulled users/${userId} (new)`;
+  }
+  const resolution = resolveConflict(localSyncable!, remoteSyncable);
+  if (resolution.winner === 'remote') {
+    // Preserve the local `lastSyncedAt` watermark through a pull.
+    await db.users.put({
+      ...remoteUser,
+      lastSyncedAt: localUser.lastSyncedAt ?? remoteUser.lastSyncedAt,
+    });
+    return `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`;
+  }
+  return null; // local-wins → silent no-op
+}
+
+/**
+ * Apply a remote document from a syncable subcollection to the local
+ * Dexie table, running LWW conflict resolution. Used by `pullSync` and
+ * the per-collection snapshot listener.
+ *
+ * @returns A short status string for logging; `null` if local-wins.
+ */
+async function applyRemoteSubdoc(
+  collectionName: SyncCollection,
+  remoteData: SyncableEntity
+): Promise<string | null> {
+  const table = db.table(collectionName);
+  const localData = (await table.get(remoteData.id)) as SyncableEntity | undefined;
+
+  if (!localData) {
+    await table.put(remoteData);
+    return `Pulled ${collectionName}/${remoteData.id} (new)`;
+  }
+  const resolution = resolveConflict(localData, remoteData);
+  if (resolution.winner === 'remote') {
+    await table.put(remoteData);
+    return `Pulled ${collectionName}/${remoteData.id} (remote v${remoteData.version} > local v${localData.version})`;
+  }
+  return null; // local-wins → silent no-op
+}
+
 export async function pullSync(
   userId: string,
   lastSyncedAt?: string,
@@ -212,62 +297,16 @@ export async function pullSync(
     const userDocRef = doc(firestore, 'users', userId);
     const userSnap = await getDoc(userDocRef);
     if (userSnap.exists()) {
-      const remoteUserData = userSnap.data();
-
-      // Validate the parent-doc payload before trusting it. A malformed /
-      // legacy user doc (missing id/version, wrong types, etc.) would
-      // otherwise slip straight into `db.users.put` and corrupt the local
-      // user row. `UserSchema.safeParse` enforces id + version + timestamp
-      // invariants; enforce the id-equals-userId check separately because
-      // the schema only asserts "some non-empty string".
-      //
-      // A validation failure is logged and the user doc is skipped, but we
-      // deliberately do NOT flip `hadPullError`: the watermark should still
-      // advance so the rest of the collection pulls aren't forced to
-      // re-scan from scratch every loop. `UserSchema` is also strict about
-      // `email` (RFC-valid), and `authService.upsertLocalUser` writes
-      // `firebaseUser.email ?? ''` — an empty string on the remote would
-      // otherwise deadlock the entire pull loop.
-      const parsed = UserSchema.safeParse(remoteUserData);
-      if (!parsed.success || parsed.data.id !== userId) {
-        const reason = !parsed.success
-          ? parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
-          : `id ${String((remoteUserData as { id?: unknown }).id)} ≠ userId ${userId}`;
-        result.details.push(`Skipped malformed users/${userId}: ${reason}`);
-      } else {
-        // Re-run preferences through the quarantine merge so any out-of-range
-        // field values produced by a misbehaving peer are substituted with
-        // defaults before they reach Dexie.
-        const remoteUser: User = {
-          ...parsed.data,
-          preferences: mergeUserPreferences(parsed.data.preferences),
-        };
-        const remoteSyncable = remoteUser as unknown as SyncableEntity;
-        const localUser = await db.users.get(userId);
-        const localSyncable = localUser as SyncableEntity | undefined;
-        if (!localUser) {
-          await db.users.put(remoteUser);
-          result.pulled++;
-          result.details.push(`Pulled users/${userId} (new)`);
-        } else {
-          const resolution = resolveConflict(localSyncable!, remoteSyncable);
-          if (resolution.winner === 'remote') {
-            // Preserve the local `lastSyncedAt` watermark through a pull.
-            await db.users.put({
-              ...remoteUser,
-              lastSyncedAt: localUser.lastSyncedAt ?? remoteUser.lastSyncedAt,
-            });
-            result.pulled++;
-            result.details.push(
-              `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`
-            );
-          } else {
-            result.conflicts++;
-            result.details.push(
-              `Kept local users/${userId} (local v${localSyncable!.version} >= remote v${remoteSyncable.version})`
-            );
-          }
+      const status = await applyRemoteUserDoc(userId, userSnap.data());
+      if (status) {
+        if (status.startsWith('Pulled')) result.pulled++;
+        else if (status.startsWith('Skipped')) {
+          /* skipped — not an error */
         }
+        result.details.push(status);
+      } else {
+        result.conflicts++;
+        result.details.push(`Kept local users/${userId} (local-wins)`);
       }
     }
   } catch (err) {
@@ -282,7 +321,6 @@ export async function pullSync(
 
       // Query for documents updated since last sync.
       // Uses _syncedAt (server timestamp) as watermark for clock-skew safety.
-      // Falls back to updatedAt if _syncedAt is not available.
       const q = lastSyncedAt
         ? query(colRef, where('_syncedAt', '>', lastSyncedAt))
         : query(colRef); // First sync — pull everything
@@ -292,30 +330,14 @@ export async function pullSync(
 
       for (const docSnap of snapshot.docs) {
         const remoteData = docSnap.data() as SyncableEntity;
-        const table = db.table(collectionName);
-        const localData = await table.get(remoteData.id) as SyncableEntity | undefined;
-
-        if (!localData) {
-          // New remote document — insert locally
-          await table.put(remoteData);
+        const status = await applyRemoteSubdoc(collectionName, remoteData);
+        if (status) {
           result.pulled++;
-          result.details.push(`Pulled ${collectionName}/${remoteData.id} (new)`);
-          continue;
-        }
-
-        // Both exist — resolve conflict
-        const resolution = resolveConflict(localData, remoteData);
-
-        if (resolution.winner === 'remote') {
-          await table.put(remoteData);
-          result.pulled++;
-          result.details.push(
-            `Pulled ${collectionName}/${remoteData.id} (remote v${remoteData.version} > local v${localData.version})`
-          );
+          result.details.push(status);
         } else {
           result.conflicts++;
           result.details.push(
-            `Kept local ${collectionName}/${remoteData.id} (local v${localData.version} >= remote v${remoteData.version})`
+            `Kept local ${collectionName}/${remoteData.id} (local-wins)`
           );
         }
       }
@@ -337,6 +359,77 @@ export async function pullSync(
   }
 
   return result;
+}
+
+/**
+ * Attach Firestore `onSnapshot` listeners for the parent user doc and
+ * every syncable subcollection. Each listener feeds remote changes
+ * through the same `applyRemoteUserDoc` / `applyRemoteSubdoc` handlers
+ * that the safety-net `pullSync` uses, so all incoming-write logic is
+ * unified.
+ *
+ * Each per-collection listener is filtered by `_syncedAt > lastSyncedAt`
+ * so the initial attach only delivers post-watermark documents (avoids
+ * a full collection scan on every reload). The user-doc listener has no
+ * filter — it's a single document.
+ *
+ * Returns an unsubscribe function that detaches all listeners.
+ *
+ * @param userId - The authenticated user's ID
+ * @param lastSyncedAt - ISO8601 watermark; `undefined` triggers a full
+ *   first-sync delivery on attach (matches existing pull semantics)
+ */
+export function attachPullListeners(
+  userId: string,
+  lastSyncedAt: string | undefined
+): () => void {
+  const unsubs: FirestoreUnsubscribe[] = [];
+
+  // Parent user doc — single document, no watermark filter needed.
+  const userDocRef = doc(firestore, 'users', userId);
+  const userUnsub = onSnapshot(
+    userDocRef,
+    async (snap) => {
+      if (!snap.exists()) return;
+      try {
+        const status = await applyRemoteUserDoc(userId, snap.data());
+        if (status) console.debug('[sync]', status);
+      } catch (err) {
+        console.error(`[sync] users/${userId} listener failed:`, err);
+      }
+    },
+    (err) => console.error(`[sync] users/${userId} listener error:`, err)
+  );
+  unsubs.push(userUnsub);
+
+  // One listener per subcollection, filtered to deltas since the last
+  // safety-net watermark so initial attach is bounded.
+  const watermark = lastSyncedAt ?? '1970-01-01T00:00:00.000Z';
+  for (const collectionName of SYNCABLE_COLLECTIONS) {
+    const colRef = collection(firestore, 'users', userId, collectionName);
+    const q = query(colRef, where('_syncedAt', '>', watermark));
+    const unsub = onSnapshot(
+      q,
+      async (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+          if (change.type === 'removed') continue; // soft-deletes only; no real removes
+          try {
+            const remoteData = change.doc.data() as SyncableEntity;
+            const status = await applyRemoteSubdoc(collectionName, remoteData);
+            if (status) console.debug('[sync]', status);
+          } catch (err) {
+            console.error(`[sync] ${collectionName} listener apply failed:`, err);
+          }
+        }
+      },
+      (err) => console.error(`[sync] ${collectionName} listener error:`, err)
+    );
+    unsubs.push(unsub);
+  }
+
+  return () => {
+    for (const unsub of unsubs) unsub();
+  };
 }
 
 // ─── Full Sync ────────────────────────────────────────────────────────────────
@@ -449,18 +542,34 @@ export function startSyncLoop(
     error: (err) => console.error('Sync queue observation error:', err),
   });
 
+  // Real-time pull: open Firestore listeners for the parent user doc and
+  // every syncable subcollection. Initial attach delivers everything
+  // newer than the last persisted watermark, then real-time changes flow
+  // in continuously. Detached on cleanup.
+  let detachListeners: (() => void) | null = null;
+  void (async () => {
+    try {
+      const initialUser = await db.users.get(userId);
+      detachListeners = attachPullListeners(userId, initialUser?.lastSyncedAt);
+    } catch (err) {
+      console.error('Failed to attach pull listeners:', err);
+    }
+  })();
+
   // Safety-net interval: full pull + retry-eligible push.
   timer = setInterval(() => void fullTick(), intervalMs);
 
   // Also sync immediately when coming back online — recovers anything
-  // that piled up during the offline window.
+  // that piled up during the offline window. Firestore SDK auto-resumes
+  // listener subscriptions on reconnect, but a kick to fullTick covers
+  // any race + advances the safety-net watermark.
   function handleOnline(): void {
     void fullTick();
   }
   window.addEventListener('online', handleOnline);
 
   // Run an initial sync immediately (covers first sign-in + reload while
-  // the queue observation warms up).
+  // the listeners warm up).
   void fullTick();
 
   // Cleanup
@@ -468,6 +577,7 @@ export function startSyncLoop(
     if (timer) clearInterval(timer);
     if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
     pendingSubscription.unsubscribe();
+    if (detachListeners) detachListeners();
     window.removeEventListener('online', handleOnline);
   };
 }
