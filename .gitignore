@@ -66,8 +66,8 @@ SCHEMA_CHANGES.md
 
 # Archive
 oybc_v1.archive/
+
+# Claude Code / Superpowers local state — per-developer, never shared
 .claude/settings.local.json
 .superpowers/
 docs/superpowers/
-.claude/settings.local.json
-.claude/settings.local.json
