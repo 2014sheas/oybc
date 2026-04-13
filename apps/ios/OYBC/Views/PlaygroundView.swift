@@ -27,8 +27,16 @@ private enum ClearStatus: Equatable {
 /// A dedicated space for testing new features before integrating them into the main app.
 /// Features are displayed in collapsible sections using DisclosureGroup.
 struct PlaygroundView: View {
+    /// Optional — when provided, playground features that use the
+    /// week-start preference (currently `BoardLifecyclePlayground`) use
+    /// this value instead of the baked-in default. The production
+    /// entrypoint via ProfileView passes `authService.userPreferences.
+    /// weekStartDay.rawValue`; standalone previews get the default.
+    var weekStartDay: String = UserPreferences.defaults.weekStartDay.rawValue
+
     /// Features under test - new features will be added here (newest first)
-    private let features: [Feature] = [
+    private var features: [Feature] {
+        [
         Feature(
             id: "auth-test",
             title: "Authentication & Sync",
@@ -39,7 +47,7 @@ struct PlaygroundView: View {
         Feature(
             id: "board-lifecycle",
             title: "Board Lifecycle",
-            content: AnyView(BoardLifecyclePlayground())
+            content: AnyView(BoardLifecyclePlayground(weekStartDay: weekStartDay))
         ),
         Feature(
             id: "board-task-selection",
@@ -72,6 +80,7 @@ struct PlaygroundView: View {
             content: AnyView(UnifiedTaskCreatorPlayground())
         ),
     ]
+    }
 
     @State private var expandedFeatureIds: Set<String> = []
     @State private var clearStatus: ClearStatus = .idle

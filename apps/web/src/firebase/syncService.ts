@@ -219,13 +219,20 @@ export async function pullSync(
       // user row. `UserSchema.safeParse` enforces id + version + timestamp
       // invariants; enforce the id-equals-userId check separately because
       // the schema only asserts "some non-empty string".
+      //
+      // A validation failure is logged and the user doc is skipped, but we
+      // deliberately do NOT flip `hadPullError`: the watermark should still
+      // advance so the rest of the collection pulls aren't forced to
+      // re-scan from scratch every loop. `UserSchema` is also strict about
+      // `email` (RFC-valid), and `authService.upsertLocalUser` writes
+      // `firebaseUser.email ?? ''` — an empty string on the remote would
+      // otherwise deadlock the entire pull loop.
       const parsed = UserSchema.safeParse(remoteUserData);
       if (!parsed.success || parsed.data.id !== userId) {
         const reason = !parsed.success
           ? parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
           : `id ${String((remoteUserData as { id?: unknown }).id)} ≠ userId ${userId}`;
         result.details.push(`Skipped malformed users/${userId}: ${reason}`);
-        hadPullError = true;
       } else {
         // Re-run preferences through the quarantine merge so any out-of-range
         // field values produced by a misbehaving peer are substituted with

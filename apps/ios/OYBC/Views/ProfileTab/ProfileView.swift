@@ -83,7 +83,9 @@ struct ProfileView: View {
     private var developerSection: some View {
         Section("Developer") {
             NavigationLink {
-                PlaygroundView()
+                // Pass the signed-in user's week-start so playground features
+                // that do timeframe boundary math match production behaviour.
+                PlaygroundView(weekStartDay: preferences.weekStartDay.rawValue)
             } label: {
                 Label("Playground", systemImage: "hammer")
             }

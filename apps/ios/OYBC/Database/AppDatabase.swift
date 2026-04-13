@@ -158,10 +158,16 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN centerTaskId TEXT REFERENCES tasks(id)")
         }
 
-        // v5: Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType).
-        // Stored as a JSON string to mirror how other nested/array fields are
-        // persisted on iOS, and so the record can round-trip through Firestore
-        // with the same shape the web app writes.
+        // v5: Synced user preferences JSON column. The current schema holds
+        // `weekStartDay`, `defaultBoardSize`, `defaultCenterType`,
+        // `defaultTimeframe`, `defaultRandomize`, `defaultCenterCustomName`,
+        // and `theme` — but the migration itself only adds the column;
+        // future field additions don't need a migration because the JSON
+        // is decoded by `UserPreferences.init(from:)` which tolerates
+        // missing keys. Stored as a JSON string to mirror how other
+        // nested/array fields are persisted on iOS, and so the record can
+        // round-trip through Firestore with the same shape the web app
+        // writes.
         migrator.registerMigration("v5") { db in
             try db.execute(sql: "ALTER TABLE users ADD COLUMN preferences TEXT")
         }
