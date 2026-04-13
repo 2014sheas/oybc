@@ -145,7 +145,7 @@ struct BoardPlayView: View {
 
                 // ── Expiry banner ──
                 if isBoardLocked, let b = board {
-                    let expiredDate = String(b.endDate.prefix(10))
+                    let expiredDate = DateFormatting.displayDate(from: b.endDate)
                     Text("Board expired on \(expiredDate) — interactions disabled")
                         .font(.subheadline)
                         .padding(12)

@@ -46,12 +46,14 @@ export function BoardsPage(): React.ReactElement {
 
       {filteredBoards.length === 0 ? (
         <div className={styles.emptyState}>
-          <div className={styles.emptyIcon}>&#9776;</div>
+          <div className={styles.emptyIcon} aria-hidden="true">
+            &#9638;
+          </div>
           <p>
             {allBoards.length === 0 ? (
               <>
                 No boards yet.<br />
-                Head to the <strong>Create</strong> tab to build your first board!
+                Head to the <strong>Create</strong> tab to build your first board.
               </>
             ) : (
               <>No {activeFilter} boards found.</>
