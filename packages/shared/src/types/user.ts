@@ -47,20 +47,75 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
  * Merge a partial (possibly untrusted) preferences object with defaults,
  * returning a complete `UserPreferences` value. Used when decoding records
  * that pre-date the `preferences` field or come from a misbehaving peer.
+ *
+ * Every field is validated against its allowed value set before being
+ * accepted; any field whose value is missing, the wrong type, or out of
+ * range falls back to the default. This mirrors the Swift
+ * `UserPreferences.init(from:)` forward-compatible decoder so a bad
+ * remote payload can't poison the local record.
  */
 export function mergeUserPreferences(
   partial: Partial<UserPreferences> | null | undefined
 ): UserPreferences {
   if (!partial) return { ...DEFAULT_USER_PREFERENCES };
+
+  const weekStartDay: WeekStartDay =
+    partial.weekStartDay === 'monday' || partial.weekStartDay === 'sunday'
+      ? partial.weekStartDay
+      : DEFAULT_USER_PREFERENCES.weekStartDay;
+
+  const defaultBoardSize: BoardSize =
+    partial.defaultBoardSize === 3 ||
+    partial.defaultBoardSize === 4 ||
+    partial.defaultBoardSize === 5
+      ? partial.defaultBoardSize
+      : DEFAULT_USER_PREFERENCES.defaultBoardSize;
+
+  const defaultCenterType: DefaultCenterSquareType =
+    partial.defaultCenterType === CenterSquareType.FREE ||
+    partial.defaultCenterType === CenterSquareType.NONE
+      ? partial.defaultCenterType
+      : DEFAULT_USER_PREFERENCES.defaultCenterType;
+
+  const validTimeframes: Timeframe[] = [
+    Timeframe.DAILY,
+    Timeframe.WEEKLY,
+    Timeframe.MONTHLY,
+    Timeframe.YEARLY,
+    Timeframe.CUSTOM,
+  ];
+  const defaultTimeframe: Timeframe =
+    partial.defaultTimeframe !== undefined &&
+    validTimeframes.includes(partial.defaultTimeframe)
+      ? partial.defaultTimeframe
+      : DEFAULT_USER_PREFERENCES.defaultTimeframe;
+
+  const defaultRandomize: boolean =
+    typeof partial.defaultRandomize === 'boolean'
+      ? partial.defaultRandomize
+      : DEFAULT_USER_PREFERENCES.defaultRandomize;
+
+  const defaultCenterCustomName: string =
+    typeof partial.defaultCenterCustomName === 'string' &&
+    partial.defaultCenterCustomName.length <= 100
+      ? partial.defaultCenterCustomName
+      : DEFAULT_USER_PREFERENCES.defaultCenterCustomName;
+
+  const theme: ThemePreference =
+    partial.theme === 'light' ||
+    partial.theme === 'dark' ||
+    partial.theme === 'system'
+      ? partial.theme
+      : DEFAULT_USER_PREFERENCES.theme;
+
   return {
-    weekStartDay: partial.weekStartDay ?? DEFAULT_USER_PREFERENCES.weekStartDay,
-    defaultBoardSize: partial.defaultBoardSize ?? DEFAULT_USER_PREFERENCES.defaultBoardSize,
-    defaultCenterType: partial.defaultCenterType ?? DEFAULT_USER_PREFERENCES.defaultCenterType,
-    defaultTimeframe: partial.defaultTimeframe ?? DEFAULT_USER_PREFERENCES.defaultTimeframe,
-    defaultRandomize: partial.defaultRandomize ?? DEFAULT_USER_PREFERENCES.defaultRandomize,
-    defaultCenterCustomName:
-      partial.defaultCenterCustomName ?? DEFAULT_USER_PREFERENCES.defaultCenterCustomName,
-    theme: partial.theme ?? DEFAULT_USER_PREFERENCES.theme,
+    weekStartDay,
+    defaultBoardSize,
+    defaultCenterType,
+    defaultTimeframe,
+    defaultRandomize,
+    defaultCenterCustomName,
+    theme,
   };
 }
 

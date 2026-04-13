@@ -9,6 +9,12 @@ import SwiftUI
 struct BoardPreferencesView: View {
     @EnvironmentObject var authService: AuthService
 
+    /// Local draft for free-form text fields so every keystroke doesn't
+    /// bump `version` and enqueue a sync item. Commits on submit/blur via
+    /// `@FocusState`.
+    @State private var centerCustomNameDraft: String = ""
+    @FocusState private var centerCustomNameFocused: Bool
+
     private var preferences: UserPreferences { authService.userPreferences }
 
     var body: some View {
@@ -84,11 +90,48 @@ struct BoardPreferencesView: View {
     private var customCenterNameRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Default custom center name")
-            TextField("e.g., Wild Card", text: bind(\.defaultCenterCustomName))
+            TextField("e.g., Wild Card", text: $centerCustomNameDraft)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled(true)
+                .focused($centerCustomNameFocused)
+                .submitLabel(.done)
+                .onSubmit { commitCenterCustomNameDraft() }
+                .onAppear { centerCustomNameDraft = preferences.defaultCenterCustomName }
+                .onChange(of: preferences.defaultCenterCustomName) { _, newValue in
+                    // Keep the local draft in sync when the underlying
+                    // preference changes externally (e.g. pulled from
+                    // another device) but the field isn't currently being
+                    // edited.
+                    if !centerCustomNameFocused {
+                        centerCustomNameDraft = newValue
+                    }
+                }
+                .onChange(of: centerCustomNameFocused) { wasFocused, isFocused in
+                    if wasFocused && !isFocused {
+                        commitCenterCustomNameDraft()
+                    }
+                }
         }
         .padding(.vertical, 4)
+    }
+
+    /// Writes the draft through to synced preferences only if it actually
+    /// differs from the current stored value — prevents a no-op write
+    /// (and its attendant version bump + sync item) when the user tabs
+    /// through the field without changing anything.
+    private func commitCenterCustomNameDraft() {
+        let trimmed = centerCustomNameDraft
+        guard trimmed != preferences.defaultCenterCustomName,
+              let userId = authService.currentUser?.id else { return }
+        do {
+            _ = try AppDatabase.shared.updateUserPreferences(userId: userId) { current in
+                var next = current
+                next.defaultCenterCustomName = trimmed
+                return next
+            }
+        } catch {
+            print("⚠️ updateUserPreferences(defaultCenterCustomName) failed: \(error)")
+        }
     }
 
     // MARK: - Binding helper

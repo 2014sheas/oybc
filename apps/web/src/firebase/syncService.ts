@@ -17,7 +17,13 @@ import {
   markSyncItemCompleted,
   markSyncItemFailed,
 } from '../db/operations/syncQueue';
-import { SyncOperationType, SyncStatus, type User } from '@oybc/shared';
+import {
+  SyncOperationType,
+  SyncStatus,
+  UserSchema,
+  mergeUserPreferences,
+  type User,
+} from '@oybc/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -206,31 +212,53 @@ export async function pullSync(
     const userSnap = await getDoc(userDocRef);
     if (userSnap.exists()) {
       const remoteUserData = userSnap.data();
-      const remoteUser = remoteUserData as unknown as User;
-      const remoteSyncable = remoteUserData as SyncableEntity;
-      const localUser = await db.users.get(userId);
-      const localSyncable = localUser as SyncableEntity | undefined;
-      if (!localUser) {
-        await db.users.put(remoteUser);
-        result.pulled++;
-        result.details.push(`Pulled users/${userId} (new)`);
+
+      // Validate the parent-doc payload before trusting it. A malformed /
+      // legacy user doc (missing id/version, wrong types, etc.) would
+      // otherwise slip straight into `db.users.put` and corrupt the local
+      // user row. `UserSchema.safeParse` enforces id + version + timestamp
+      // invariants; enforce the id-equals-userId check separately because
+      // the schema only asserts "some non-empty string".
+      const parsed = UserSchema.safeParse(remoteUserData);
+      if (!parsed.success || parsed.data.id !== userId) {
+        const reason = !parsed.success
+          ? parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+          : `id ${String((remoteUserData as { id?: unknown }).id)} ≠ userId ${userId}`;
+        result.details.push(`Skipped malformed users/${userId}: ${reason}`);
+        hadPullError = true;
       } else {
-        const resolution = resolveConflict(localSyncable!, remoteSyncable);
-        if (resolution.winner === 'remote') {
-          // Preserve the local `lastSyncedAt` watermark through a pull.
-          await db.users.put({
-            ...remoteUser,
-            lastSyncedAt: localUser.lastSyncedAt ?? remoteUser.lastSyncedAt,
-          });
+        // Re-run preferences through the quarantine merge so any out-of-range
+        // field values produced by a misbehaving peer are substituted with
+        // defaults before they reach Dexie.
+        const remoteUser: User = {
+          ...parsed.data,
+          preferences: mergeUserPreferences(parsed.data.preferences),
+        };
+        const remoteSyncable = remoteUser as unknown as SyncableEntity;
+        const localUser = await db.users.get(userId);
+        const localSyncable = localUser as SyncableEntity | undefined;
+        if (!localUser) {
+          await db.users.put(remoteUser);
           result.pulled++;
-          result.details.push(
-            `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`
-          );
+          result.details.push(`Pulled users/${userId} (new)`);
         } else {
-          result.conflicts++;
-          result.details.push(
-            `Kept local users/${userId} (local v${localSyncable!.version} >= remote v${remoteSyncable.version})`
-          );
+          const resolution = resolveConflict(localSyncable!, remoteSyncable);
+          if (resolution.winner === 'remote') {
+            // Preserve the local `lastSyncedAt` watermark through a pull.
+            await db.users.put({
+              ...remoteUser,
+              lastSyncedAt: localUser.lastSyncedAt ?? remoteUser.lastSyncedAt,
+            });
+            result.pulled++;
+            result.details.push(
+              `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`
+            );
+          } else {
+            result.conflicts++;
+            result.details.push(
+              `Kept local users/${userId} (local v${localSyncable!.version} >= remote v${remoteSyncable.version})`
+            );
+          }
         }
       }
     }

@@ -379,12 +379,17 @@ extension AppDatabase {
             user.updatedAt = ISO8601DateFormatter().string(from: Date())
             try user.save(db)
 
-            let payload: String
-            if let data = try? JSONEncoder().encode(user),
-               let str = String(data: data, encoding: .utf8) {
-                payload = str
-            } else {
-                payload = "{}"
+            // Encode the full user record as the sync payload. Propagating
+            // any encoding error (rather than falling back to an empty "{}"
+            // blob) keeps a malformed push from silently enqueuing and
+            // pushing an invalid document — the caller sees the real
+            // failure and the transaction rolls back, preserving local
+            // state.
+            let data = try JSONEncoder().encode(user)
+            guard let payload = String(data: data, encoding: .utf8) else {
+                throw AppDatabaseError.payloadEncoding(
+                    "Failed to convert encoded user payload to UTF-8 for sync queue item"
+                )
             }
 
             let syncItem = SyncQueueItem(
@@ -509,6 +514,19 @@ extension AppDatabase {
     /// Get current ISO8601 timestamp
     static func currentTimestamp() -> String {
         return ISO8601DateFormatter().string(from: Date())
+    }
+
+    /// Errors raised by `AppDatabase` operations.
+    enum AppDatabaseError: LocalizedError {
+        /// A payload that was encoded by `JSONEncoder` couldn't be converted
+        /// to a UTF-8 string for storage as a sync-queue item.
+        case payloadEncoding(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .payloadEncoding(let msg): return msg
+            }
+        }
     }
 
     /// Delete all rows from every table — used by the Playground to reset test data

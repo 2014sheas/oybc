@@ -357,7 +357,7 @@ Tab-based app with auth gate. Web + iOS built simultaneously.
 
 | Phase | Feature | Status |
 | ----- | ------- | ------ |
-| 0 | Synced user preferences (weekStartDay, defaultBoardSize, defaultCenterType → Firestore) | COMPLETE |
+| 0 | Synced user preferences (7 preference fields → Firestore) | COMPLETE |
 | 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | COMPLETE |
 | 2 | Board list (filtering, progress indicators, tap to navigate) | COMPLETE |
 | 3 | Board play (bingo grid, task completion, flash messages) | COMPLETE |

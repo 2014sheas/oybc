@@ -1207,7 +1207,15 @@ async function checkNodeForCircularReferences(
 
 ### Overview
 
-Synced user preferences (`weekStartDay`, `defaultBoardSize`, `defaultCenterType`) live on the `User` record itself as a nested `preferences` object, so they replicate under the same last-write-wins resolver as every other synced entity — the last device to update a preference wins.
+Synced user preferences live on the `User` record itself as a nested `preferences` object, so they replicate under the same last-write-wins resolver as every other synced entity — the last device to update a preference wins. The object currently carries seven fields:
+
+- `weekStartDay` — `'monday' | 'sunday'`
+- `defaultBoardSize` — `3 | 4 | 5`
+- `defaultCenterType` — `FREE | NONE` (narrowed from `CenterSquareType`; CHOSEN / CUSTOM_FREE require per-board context)
+- `defaultTimeframe` — `daily | weekly | monthly | yearly | custom`
+- `defaultRandomize` — `boolean`
+- `defaultCenterCustomName` — `string` (≤ 100 chars)
+- `theme` — `'light' | 'dark' | 'system'`
 
 ### Firestore Layout
 
