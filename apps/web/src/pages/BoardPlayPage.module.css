@@ -23,7 +23,7 @@
 
 .flashMessage {
   padding: 0.65rem 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-weight: 600;
   border-left: 3px solid currentColor;
@@ -85,7 +85,7 @@
   background-color: var(--error-bg, #f8d7da);
   color: var(--error-text, #dc3545);
   border: 1px solid var(--error-border, #f5c6cb);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.82rem;
   font-weight: 600;
   margin-bottom: 12px;
@@ -110,7 +110,7 @@
   background-color: var(--success-bg, #d1e7dd);
   color: var(--success-text, #198754);
   border: 1px solid var(--success-border, #a3cfbb);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -125,7 +125,7 @@
   justify-content: center;
   background-color: var(--bg-secondary, #f8f9fa);
   border: 2px dashed var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 0.75rem;
   color: var(--text-secondary);
 }

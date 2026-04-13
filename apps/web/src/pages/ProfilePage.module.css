@@ -28,7 +28,7 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   text-decoration: none;
   font-size: 20px;
@@ -52,7 +52,7 @@
 .card {
   background: var(--card-bg, #f8f9fa);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   margin-bottom: 20px;
 }
@@ -170,7 +170,7 @@
 .toggleGroup {
   display: flex;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   padding: 0;
   margin: 0;
@@ -197,7 +197,7 @@
 .select {
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 14px;
   padding: 4px 8px;
@@ -207,7 +207,7 @@
 .textInput {
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 14px;
   padding: 4px 8px;
@@ -249,7 +249,7 @@
   position: absolute;
   inset: 0;
   background: var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   transition: background 0.15s;
 }
 
@@ -279,7 +279,7 @@
   width: 100%;
   padding: 13px;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--card-bg, #f8f9fa);
   color: var(--error-text, #dc3545);
   font-size: 15px;

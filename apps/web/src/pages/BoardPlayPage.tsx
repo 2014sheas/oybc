@@ -20,6 +20,7 @@ import {
 } from '../components/InteractiveTaskSquare';
 import { BoardStatusBadge } from '../components/BoardStatusBadge';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
+import { formatDisplayDate } from '../utils/dateFormat';
 import styles from './BoardPlayPage.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ export function BoardPlayPage(): React.ReactElement {
   if (board === undefined) {
     return (
       <div className={styles.container}>
-        <p className={styles.emptyState}>Loading...</p>
+        <p className={styles.emptyState}>Loading…</p>
       </div>
     );
   }
@@ -190,13 +191,13 @@ export function BoardPlayPage(): React.ReactElement {
       {/* Expired banner */}
       {isExpired && (
         <div className={styles.expiredBanner}>
-          Board expired on {board.endDate?.split('T')[0] ?? 'unknown date'}
+          Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
         </div>
       )}
 
       {/* Interactive grid */}
       {sortedBoardTasks.length === 0 ? (
-        <p className={styles.emptyState}>Loading board tasks...</p>
+        <p className={styles.emptyState}>Loading board tasks…</p>
       ) : (
         <div
           className={styles.playGrid}
