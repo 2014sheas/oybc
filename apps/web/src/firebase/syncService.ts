@@ -546,11 +546,25 @@ export function startSyncLoop(
   // every syncable subcollection. Initial attach delivers everything
   // newer than the last persisted watermark, then real-time changes flow
   // in continuously. Detached on cleanup.
+  //
+  // The watermark fetch is async, so attach happens on the next tick.
+  // Track teardown state with a flag so a cleanup that fires before the
+  // async attach resolves still tears the listeners down — otherwise an
+  // account switch could leak listeners that hold Firestore subscriptions
+  // open against the previous user's data.
   let detachListeners: (() => void) | null = null;
+  let cleanedUp = false;
   void (async () => {
     try {
       const initialUser = await db.users.get(userId);
+      if (cleanedUp) return;
       detachListeners = attachPullListeners(userId, initialUser?.lastSyncedAt);
+      if (cleanedUp) {
+        // Cleanup raced in between the await and the assignment. Detach
+        // immediately so the listeners we just created don't leak.
+        detachListeners();
+        detachListeners = null;
+      }
     } catch (err) {
       console.error('Failed to attach pull listeners:', err);
     }
@@ -574,10 +588,14 @@ export function startSyncLoop(
 
   // Cleanup
   return () => {
+    cleanedUp = true;
     if (timer) clearInterval(timer);
     if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
     pendingSubscription.unsubscribe();
-    if (detachListeners) detachListeners();
+    if (detachListeners) {
+      detachListeners();
+      detachListeners = null;
+    }
     window.removeEventListener('online', handleOnline);
   };
 }
