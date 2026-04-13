@@ -48,6 +48,19 @@
   --danger-bg: #dc3545;
   --danger-hover: #c82333;
   --disabled-bg: #6c757d;
+
+  /* Spacing scale — keep these stable across themes */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+
+  /* Radius scale */
+  --radius-sm: 6px;        /* inputs, small buttons */
+  --radius-md: 8px;        /* toggles, chips, list rows */
+  --radius-card: 12px;     /* cards, modals, top-level containers */
 }
 
 /* Dark theme */
