@@ -211,7 +211,8 @@ struct BoardCreatorPanelView: View {
                     .onChange(of: timeframe) { resetOutcome() }
                 }
 
-                // Week start day is read from @AppStorage (user preference in Profile → Settings)
+                // Week start day is read from `initialPreferences.weekStartDay`
+                // (set in Profile → Board Preferences; syncs across devices).
 
                 // ── Auto-calculated date display (non-Custom) ──
                 if let boundaries = computedBoundaries {
