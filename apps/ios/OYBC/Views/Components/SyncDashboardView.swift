@@ -14,7 +14,14 @@ struct SyncDashboardView: View {
     // MARK: - Dependencies
 
     @EnvironmentObject private var authService: AuthService
-    @StateObject private var syncService = SyncService()
+
+    /// The production SyncService instance owned by AuthService and
+    /// injected as an @EnvironmentObject by AuthGateView. Using the
+    /// shared instance means the dashboard observes the same
+    /// `isSyncing` / `lastSyncResult` / `syncEvents` state as the
+    /// live orchestrator — no second instance fighting for queue
+    /// ownership.
+    @EnvironmentObject private var syncService: SyncService
 
     // MARK: - State
 
@@ -203,7 +210,9 @@ struct SyncDashboardView: View {
 // MARK: - Preview
 
 #Preview {
-    SyncDashboardView()
-        .environmentObject(AuthService())
+    let authService = AuthService()
+    return SyncDashboardView()
+        .environmentObject(authService)
+        .environmentObject(authService.syncService)
         .padding()
 }

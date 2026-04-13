@@ -33,6 +33,12 @@ final class AuthService: ObservableObject {
     /// remote changes without requiring callers to manually refresh.
     private var userRowObservation: DatabaseCancellable?
 
+    /// Real-time sync orchestrator. Started when the user signs in,
+    /// stopped on sign-out. Drives push-on-enqueue + Firestore snapshot
+    /// listeners so local writes and cross-device updates replicate
+    /// in roughly a second instead of waiting up to 30s for a tick.
+    let syncService = SyncService()
+
     // MARK: - Initialization
 
     init() {
@@ -47,11 +53,13 @@ final class AuthService: ObservableObject {
                     await MainActor.run {
                         self.currentUser = user
                         self.startUserRowObservation(userId: user.id)
+                        self.syncService.start(userId: user.id)
                     }
                 } else {
                     await MainActor.run {
                         self.currentUser = nil
                         self.stopUserRowObservation()
+                        self.syncService.stop()
                     }
                 }
                 await MainActor.run { self.isLoading = false }
