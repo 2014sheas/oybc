@@ -6,6 +6,7 @@ import { BoardsPage } from './pages/BoardsPage';
 import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreatePage } from './pages/CreatePage';
 import { ProfilePage } from './pages/ProfilePage';
+import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { Playground } from './pages/Playground';
 import {
   useSyncLoop,
@@ -36,6 +37,10 @@ function AuthenticatedLayout(): React.ReactElement {
           <Route path="/boards/:id" element={<BoardPlayPage />} />
           <Route path="/create" element={<CreatePage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route
+            path="/profile/board-preferences"
+            element={<BoardPreferencesPage />}
+          />
           <Route path="/" element={<Navigate to="/boards" replace />} />
           <Route path="*" element={<Navigate to="/boards" replace />} />
         </Routes>

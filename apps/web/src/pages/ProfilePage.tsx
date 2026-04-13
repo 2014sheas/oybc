@@ -1,21 +1,18 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
-import {
-  CenterSquareType,
-  Timeframe,
-  type UserPreferences,
-} from '@oybc/shared';
+import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/AuthContext';
 import { db } from '../db/database';
 import { usePreferences } from '../hooks';
 import styles from './ProfilePage.module.css';
 
 /**
- * ProfilePage — Account info, synced preferences, and sign out.
+ * ProfilePage — Account info, app-level settings, and sign out.
  *
- * Every control here reads from and writes to the user's synced
- * `preferences` object via `usePreferences()`, so changes replicate to
- * other devices through the standard sync queue.
+ * Board-creation defaults (timeframe, size, center type, randomize, custom
+ * center name, week-start) live in a dedicated sub-page at
+ * `/profile/board-preferences` — they're a related cluster that governs the
+ * new-board form and don't belong on the top-level settings surface.
  */
 export function ProfilePage(): React.ReactElement {
   const { user, signOut } = useAuth();
@@ -31,16 +28,6 @@ export function ProfilePage(): React.ReactElement {
     [user?.id]
   );
   const lastSyncedAt = liveUser?.lastSyncedAt;
-
-  // ── Typed setters per preference field ─────────────────────────────────
-  // Wrapping `updatePrefs` lets TS narrow the value type at each call site
-  // and keeps the JSX below compact.
-  const set = <K extends keyof UserPreferences>(
-    key: K,
-    value: UserPreferences[K]
-  ): void => {
-    updatePrefs({ [key]: value } as Partial<UserPreferences>);
-  };
 
   return (
     <div className={styles.container}>
@@ -63,7 +50,7 @@ export function ProfilePage(): React.ReactElement {
         </div>
       </div>
 
-      {/* App card */}
+      {/* App-level settings */}
       <div className={styles.sectionLabel}>App</div>
       <div className={styles.card}>
         <div className={styles.settingsRow}>
@@ -74,7 +61,9 @@ export function ProfilePage(): React.ReactElement {
             id="pref-theme"
             className={styles.select}
             value={prefs.theme}
-            onChange={(e) => set('theme', e.target.value as UserPreferences['theme'])}
+            onChange={(e) =>
+              updatePrefs({ theme: e.target.value as UserPreferences['theme'] })
+            }
           >
             <option value="system">System</option>
             <option value="light">Light</option>
@@ -87,114 +76,27 @@ export function ProfilePage(): React.ReactElement {
             {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Never'}
           </span>
         </div>
-        <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
-          <span className={styles.rowLabel}>Playground</span>
+      </div>
+
+      {/* Preferences sub-pages */}
+      <div className={styles.sectionLabel}>Preferences</div>
+      <div className={styles.card}>
+        <Link
+          to="/profile/board-preferences"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Board preferences</span>
           <span className={styles.rowArrow}>&rarr;</span>
         </Link>
       </div>
 
-      {/* Board defaults card */}
-      <div className={styles.sectionLabel}>Board Defaults</div>
+      {/* Developer tools */}
+      <div className={styles.sectionLabel}>Developer</div>
       <div className={styles.card}>
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-week-start">
-            Week starts on
-          </label>
-          <select
-            id="pref-week-start"
-            className={styles.select}
-            value={prefs.weekStartDay}
-            onChange={(e) =>
-              set('weekStartDay', e.target.value as UserPreferences['weekStartDay'])
-            }
-          >
-            <option value="monday">Monday</option>
-            <option value="sunday">Sunday</option>
-          </select>
-        </div>
-
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-board-size">
-            Default board size
-          </label>
-          <select
-            id="pref-board-size"
-            className={styles.select}
-            value={prefs.defaultBoardSize}
-            onChange={(e) =>
-              set('defaultBoardSize', Number(e.target.value) as UserPreferences['defaultBoardSize'])
-            }
-          >
-            <option value={3}>3 × 3</option>
-            <option value={4}>4 × 4</option>
-            <option value={5}>5 × 5</option>
-          </select>
-        </div>
-
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-timeframe">
-            Default timeframe
-          </label>
-          <select
-            id="pref-timeframe"
-            className={styles.select}
-            value={prefs.defaultTimeframe}
-            onChange={(e) => set('defaultTimeframe', e.target.value as Timeframe)}
-          >
-            <option value={Timeframe.CUSTOM}>Custom</option>
-            <option value={Timeframe.DAILY}>Daily</option>
-            <option value={Timeframe.WEEKLY}>Weekly</option>
-            <option value={Timeframe.MONTHLY}>Monthly</option>
-            <option value={Timeframe.YEARLY}>Yearly</option>
-          </select>
-        </div>
-
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-center-type">
-            Default center square
-          </label>
-          <select
-            id="pref-center-type"
-            className={styles.select}
-            value={prefs.defaultCenterType}
-            onChange={(e) =>
-              set('defaultCenterType', e.target.value as UserPreferences['defaultCenterType'])
-            }
-          >
-            <option value={CenterSquareType.FREE}>Free</option>
-            <option value={CenterSquareType.NONE}>None</option>
-          </select>
-        </div>
-
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-randomize">
-            Randomize tasks by default
-          </label>
-          <label className={styles.toggleSwitch}>
-            <input
-              id="pref-randomize"
-              type="checkbox"
-              checked={prefs.defaultRandomize}
-              onChange={(e) => set('defaultRandomize', e.target.checked)}
-            />
-            <span className={styles.toggleTrack} />
-          </label>
-        </div>
-
-        <div className={styles.stackedRow}>
-          <label className={styles.rowLabel} htmlFor="pref-center-custom-name">
-            Default custom center name
-          </label>
-          <input
-            id="pref-center-custom-name"
-            type="text"
-            className={styles.textInput}
-            value={prefs.defaultCenterCustomName}
-            maxLength={100}
-            placeholder='e.g., "Wild Card"'
-            onChange={(e) => set('defaultCenterCustomName', e.target.value)}
-          />
-        </div>
+        <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
+          <span className={styles.rowLabel}>Playground</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
       </div>
 
       {/* Sign out */}
