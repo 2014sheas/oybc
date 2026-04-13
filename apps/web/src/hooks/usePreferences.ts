@@ -75,12 +75,16 @@ export async function migrateLegacyLocalStoragePreferences(userId: string): Prom
  *
  * While the user row is loading (or when signed out) the returned value is
  * `DEFAULT_USER_PREFERENCES`, so callers never have to deal with undefined.
+ * Use the `isReady` flag when callers need to snapshot the real preferences
+ * (e.g. for `useState` lazy initialisers in form components) instead of the
+ * placeholder defaults.
  *
- * @returns [preferences, updatePreferences]
+ * @returns [preferences, updatePreferences, isReady]
  */
 export function usePreferences(): [
   UserPreferences,
   (updates: Partial<UserPreferences>) => void,
+  boolean,
 ] {
   const { user } = useAuth();
   const userId = user?.id;
@@ -92,6 +96,12 @@ export function usePreferences(): [
 
   const prefs = mergeUserPreferences(liveUser?.preferences);
 
+  // `useLiveQuery` returns `undefined` while the query is in flight and the
+  // actual value (possibly `undefined` if the row doesn't exist) once it
+  // settles. We treat the presence of the row as "preferences ready" —
+  // signed-out users are trivially ready (they only ever see defaults).
+  const isReady = !userId || liveUser !== undefined;
+
   const update = useCallback(
     (updates: Partial<UserPreferences>) => {
       if (!userId) return;
@@ -100,5 +110,5 @@ export function usePreferences(): [
     [userId]
   );
 
-  return [prefs, update];
+  return [prefs, update, isReady];
 }
