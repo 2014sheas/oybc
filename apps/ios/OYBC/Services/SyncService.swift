@@ -1,6 +1,6 @@
 import Foundation
 import FirebaseFirestore
-import GRDB
+@preconcurrency import GRDB
 
 // MARK: - Types
 
@@ -137,6 +137,42 @@ final class SyncService: ObservableObject {
     // MARK: - Private
 
     private let db = Firestore.firestore()
+
+    /// Safety-net interval for the periodic full sync. With push-on-enqueue
+    /// + snapshot listeners doing the real-time work, this only needs to
+    /// fire occasionally to retry FAILED items, recover stale IN_PROGRESS
+    /// rows from a force-quit, and back-stop missed snapshot deliveries.
+    static let safetyNetInterval: TimeInterval = 5 * 60
+
+    /// Debounce window before a queue-driven push fires. Coalesces bursts
+    /// of rapid local writes into a single push.
+    private static let pushDebounceMs: UInt64 = 500
+
+    /// Active GRDB observation on pending sync_queue count — drives
+    /// push-on-enqueue. Retained for the lifetime of `start(userId:)`.
+    private var pendingObservation: DatabaseCancellable?
+
+    /// Active Firestore listener registrations — one per syncable
+    /// subcollection plus the parent user doc. Detached on `stop()`.
+    private var listenerRegistrations: [ListenerRegistration] = []
+
+    /// Repeating safety-net timer.
+    private var safetyNetTask: _Concurrency.Task<Void, Never>?
+
+    /// Pending debounced-push task. Cancelled and replaced on every
+    /// queue observation emission while the debounce window is open.
+    private var pushDebounceTask: _Concurrency.Task<Void, Never>?
+
+    /// The Task spawned at the end of `start(userId:)` to run the initial
+    /// `fullSync`. Tracked so a rapid sign-out (or account switch)
+    /// during the await window can cancel it instead of letting it
+    /// continue syncing for the previous user.
+    private var initialSyncTask: _Concurrency.Task<Void, Never>?
+
+    /// The userId the orchestrator is currently bound to. `nil` means
+    /// `start(userId:)` hasn't been called or `stop()` ran. Used for
+    /// idempotency — repeat calls with the same userId are no-ops.
+    private var runningForUserId: String?
 
     // MARK: - Public API
 
@@ -466,7 +502,19 @@ final class SyncService: ObservableObject {
 
             let query: Query
             if let lastSyncedAt {
-                query = colRef.whereField("updatedAt", isGreaterThan: lastSyncedAt)
+                // `_syncedAt` is written via `FieldValue.serverTimestamp()`
+                // so it lives in Firestore as a `Timestamp`. The local
+                // `lastSyncedAt` watermark is an ISO8601 String. Firestore
+                // range queries require type-matched operands — comparing
+                // Timestamp > String never matches because String ranks
+                // above Timestamp in Firestore's canonical type ordering.
+                // Convert to `Timestamp` here (and in the listener attach
+                // below). Clock-skew between the local clock at watermark
+                // write time and the server clock at doc write time is
+                // bounded; the safety-net pull picks up anything missed.
+                let formatter = ISO8601DateFormatter()
+                let watermarkDate = formatter.date(from: lastSyncedAt) ?? Date(timeIntervalSince1970: 0)
+                query = colRef.whereField("_syncedAt", isGreaterThan: Timestamp(date: watermarkDate))
             } else {
                 query = colRef // First sync — pull everything.
             }
@@ -726,6 +774,227 @@ final class SyncService: ObservableObject {
             syncEvents = Array(syncEvents.prefix(100))
         }
         print("[SyncService] \(message)")
+    }
+}
+
+// MARK: - Real-time orchestration
+
+extension SyncService {
+
+    /// Start the real-time sync orchestrator for the signed-in user.
+    /// Idempotent — repeat calls with the same `userId` are no-ops, and a
+    /// call with a different `userId` tears the previous instance down
+    /// first (covers account-switching).
+    ///
+    /// On start:
+    /// - A GRDB `ValueObservation` watches the count of PENDING sync queue
+    ///   items and schedules a debounced push whenever it grows.
+    /// - A Firestore snapshot listener is opened on the parent
+    ///   `users/{userId}` doc and on each syncable subcollection. Each
+    ///   listener feeds remote changes through the same apply helpers
+    ///   that `pullSync` uses, so all incoming-write logic is unified.
+    /// - A safety-net timer fires `fullSync` every 5 minutes to recover
+    ///   stuck queue items and back-stop any missed snapshot delivery.
+    /// - An immediate `fullSync` runs once to handle anything queued
+    ///   before this call (e.g. writes made while signed out).
+    func start(userId: String) {
+        if runningForUserId == userId { return }
+        if runningForUserId != nil { stop() }
+        runningForUserId = userId
+
+        startQueueObservation(userId: userId)
+        attachPullListeners(userId: userId)
+        startSafetyNetTimer(userId: userId)
+
+        // Initial sync covers anything that was queued before start was
+        // called, plus first-attach delivery from the listeners. Tracked
+        // and gated on `runningForUserId == userId` so a rapid sign-out
+        // can both cancel and short-circuit it before it touches Firestore
+        // for the wrong user.
+        initialSyncTask?.cancel()
+        initialSyncTask = _Concurrency.Task { [weak self] in
+            guard let self, self.runningForUserId == userId else { return }
+            _ = await self.fullSync(userId: userId)
+        }
+    }
+
+    /// Stop the orchestrator and tear down every registered observer /
+    /// listener / timer. Safe to call when not running.
+    func stop() {
+        runningForUserId = nil
+
+        pendingObservation?.cancel()
+        pendingObservation = nil
+
+        for reg in listenerRegistrations { reg.remove() }
+        listenerRegistrations.removeAll()
+
+        safetyNetTask?.cancel()
+        safetyNetTask = nil
+
+        pushDebounceTask?.cancel()
+        pushDebounceTask = nil
+
+        initialSyncTask?.cancel()
+        initialSyncTask = nil
+    }
+
+    // MARK: - Push-on-enqueue (queue observation)
+
+    private func startQueueObservation(userId: String) {
+        let observation = ValueObservation.tracking { db in
+            try SyncQueueItem
+                .filter(Column("status") == SyncStatus.pending.rawValue)
+                .fetchCount(db)
+        }
+        pendingObservation = observation.start(
+            in: AppDatabase.shared.dbQueue,
+            onError: { [weak self] error in
+                _Concurrency.Task { @MainActor in
+                    self?.log("Queue observation error: \(error.localizedDescription)")
+                }
+            },
+            onChange: { [weak self] count in
+                guard let self else { return }
+                _Concurrency.Task { @MainActor in
+                    if count > 0 { self.scheduleDebouncedPush(userId: userId) }
+                }
+            }
+        )
+    }
+
+    /// Cancel any pending debounce, then schedule a push after the
+    /// debounce window. Repeated calls within the window collapse into a
+    /// single push.
+    private func scheduleDebouncedPush(userId: String) {
+        pushDebounceTask?.cancel()
+        pushDebounceTask = _Concurrency.Task { [weak self] in
+            try? await _Concurrency.Task.sleep(nanoseconds: Self.pushDebounceMs * 1_000_000)
+            guard !_Concurrency.Task.isCancelled, let self else { return }
+            _ = await self.pushSync(userId: userId)
+        }
+    }
+
+    // MARK: - Pull listeners
+
+    private func attachPullListeners(userId: String) {
+        // Parent user doc — single document, no watermark filter.
+        let userRef = db.collection("users").document(userId)
+        let userListener = userRef.addSnapshotListener { [weak self] snapshot, error in
+            guard let self else { return }
+            if let error {
+                _Concurrency.Task { @MainActor in
+                    self.log("users/\(userId) listener error: \(error.localizedDescription)")
+                }
+                return
+            }
+            guard let snapshot, snapshot.exists, let data = snapshot.data() else { return }
+            _Concurrency.Task { @MainActor in
+                self.applyRemoteUserDoc(userId: userId, remoteData: data)
+            }
+        }
+        listenerRegistrations.append(userListener)
+
+        // One listener per subcollection. Filter by `_syncedAt` so the
+        // initial attach is bounded to deltas since the last safety-net
+        // watermark advance. (Web mirror normalised on `_syncedAt`; iOS
+        // historically used `updatedAt` — unifying here.)
+        //
+        // `_syncedAt` is a Firestore `Timestamp`; the local watermark is
+        // an ISO8601 String. Comparing them directly in a range query
+        // never matches (canonical type ordering). Convert to Timestamp.
+        let formatter = ISO8601DateFormatter()
+        let watermarkString = (try? AppDatabase.shared.fetchUser(id: userId)?.lastSyncedAt) ?? ""
+        let watermarkDate = formatter.date(from: watermarkString) ?? Date(timeIntervalSince1970: 0)
+        let watermarkTs = Timestamp(date: watermarkDate)
+
+        for collection in syncableCollections where collection.firestoreName != "users" {
+            let colRef = db.collection("users").document(userId).collection(collection.firestoreName)
+            let q = colRef.whereField("_syncedAt", isGreaterThan: watermarkTs)
+            let listener = q.addSnapshotListener { [weak self] snapshot, error in
+                guard let self else { return }
+                if let error {
+                    _Concurrency.Task { @MainActor in
+                        self.log("\(collection.firestoreName) listener error: \(error.localizedDescription)")
+                    }
+                    return
+                }
+                guard let snapshot else { return }
+                for change in snapshot.documentChanges {
+                    if change.type == .removed { continue }
+                    let data = change.document.data()
+                    _Concurrency.Task { @MainActor in
+                        self.applyRemoteSubdoc(collection: collection, remoteData: data)
+                    }
+                }
+            }
+            listenerRegistrations.append(listener)
+        }
+    }
+
+    /// Apply a remote `users/{userId}` payload to the local row, running
+    /// the same LWW resolution as `processPullUserDocument` but invoked
+    /// from a real-time snapshot rather than a scheduled poll.
+    private func applyRemoteUserDoc(userId: String, remoteData: [String: Any]) {
+        do {
+            let localData = try fetchLocalRecord(grdbTable: "users", id: userId)
+            if localData == nil {
+                try upsertLocalRecord(grdbTable: "users", data: remoteData)
+                log("Pulled users/\(userId) (new, listener)")
+                return
+            }
+            let winner = resolveConflict(local: localData!, remote: remoteData)
+            if winner == "remote" {
+                var merged = remoteData
+                if let preservedWatermark = localData!["lastSyncedAt"] {
+                    merged["lastSyncedAt"] = preservedWatermark
+                }
+                try upsertLocalRecord(grdbTable: "users", data: merged)
+                let remoteV = remoteData["version"] as? Int ?? 0
+                let localV = localData!["version"] as? Int ?? 0
+                log("Pulled users/\(userId) (remote v\(remoteV) > local v\(localV), listener)")
+            }
+            // local-wins is a silent no-op for listener traffic — would
+            // otherwise spam the event log on every echo.
+        } catch {
+            log("Listener apply failed for users/\(userId): \(error.localizedDescription)")
+        }
+    }
+
+    private func applyRemoteSubdoc(
+        collection: (firestoreName: String, grdbTable: String),
+        remoteData: [String: Any]
+    ) {
+        guard let remoteId = remoteData["id"] as? String else { return }
+        do {
+            let localData = try fetchLocalRecord(grdbTable: collection.grdbTable, id: remoteId)
+            if localData == nil {
+                try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
+                log("Pulled \(collection.firestoreName)/\(remoteId) (new, listener)")
+                return
+            }
+            let winner = resolveConflict(local: localData!, remote: remoteData)
+            if winner == "remote" {
+                try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
+                let remoteV = remoteData["version"] as? Int ?? 0
+                let localV = localData!["version"] as? Int ?? 0
+                log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
+            }
+        } catch {
+            log("Listener apply failed for \(collection.firestoreName)/\(remoteId): \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Safety-net timer
+
+    private func startSafetyNetTimer(userId: String) {
+        safetyNetTask = _Concurrency.Task { [weak self] in
+            while !_Concurrency.Task.isCancelled {
+                try? await _Concurrency.Task.sleep(nanoseconds: UInt64(Self.safetyNetInterval) * 1_000_000_000)
+                guard !_Concurrency.Task.isCancelled, let self else { return }
+                _ = await self.fullSync(userId: userId)
+            }
+        }
     }
 }
 

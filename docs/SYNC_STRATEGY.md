@@ -15,7 +15,8 @@ This document details the synchronization strategies for complex features in OYB
 5. [Bingo Line Detection Sync](#bingo-line-detection-sync)
 6. [Composite Task Sync](#composite-task-sync)
 7. [User Preferences Sync](#user-preferences-sync)
-8. [Performance Considerations](#performance-considerations)
+8. [Real-Time Sync](#real-time-sync)
+9. [Performance Considerations](#performance-considerations)
 
 ---
 
@@ -1241,6 +1242,57 @@ users/{userId}/tasks/{taskId}
 - [ ] Concurrent change on both devices within one window → higher-version side wins on both devices.
 - [ ] Records predating the `preferences` field decode cleanly (defaults fill missing keys on read).
 - [ ] `users` entity is never DELETE-synced (scope root safety).
+
+---
+
+## Real-Time Sync
+
+### Overview
+
+The sync layer used to be polling-only: a 30-second `setInterval` drove a `fullSync` cycle (push every pending queue item, then pull every collection). That meant local writes sat for up to 30 s before reaching Firestore, and remote changes from another device sat for up to 30 s before pull.
+
+The current design is event-driven on both sides, with the polling loop kept as a slow safety net.
+
+### Push side — push-on-enqueue
+
+- `addToSyncQueue` (web: `apps/web/src/db/operations/syncQueue.ts`; iOS: `AppDatabase.saveSyncItem`) is unchanged and remains fire-and-forget.
+- The sync orchestrator subscribes to a local-DB observation of the PENDING queue count:
+  - **Web**: Dexie `liveQuery(() => db.syncQueue.where('status').equals(SyncStatus.PENDING).count())` inside `startSyncLoop`.
+  - **iOS**: GRDB `ValueObservation.tracking { db in try SyncQueueItem.filter(...).fetchCount(db) }` started in `SyncService.start(userId:)`.
+- On any non-zero emission the orchestrator schedules a debounced `pushSync` (500 ms window). Repeated enqueues coalesce.
+- The existing `isSyncing` guard is the concurrency lock; the queue observation re-fires as items drain, so nothing is lost if a push is mid-flight when debounce fires.
+
+### Pull side — Firestore `onSnapshot` listeners
+
+- One listener on the parent `users/{userId}` doc (no filter, single document).
+- One listener per syncable subcollection at `users/{userId}/<collection>`, filtered by `where('_syncedAt', '>', lastSyncedAt)` so initial attach only delivers deltas since the last safety-net watermark advance.
+- Each handler routes incoming docs through the same `applyRemoteUserDoc` / `applyRemoteSubdoc` helpers that the safety-net `pullSync` uses — all incoming-write logic is unified.
+- Echo behaviour: the device that pushed a write also receives the snapshot back. The LWW resolver picks "remote" by `updatedAt` tiebreaker but the local upsert is idempotent (same data, no real change). Listener handlers skip the log line when local-wins so the event log doesn't fill with echoes.
+
+### Safety-net interval
+
+- 5-minute `setInterval` on web (exported as `SYNC_SAFETY_NET_MS`); equivalent `_Concurrency.Task` sleep loop on iOS.
+- Three jobs:
+  1. Reset stale IN_PROGRESS rows from a crashed tab / force-quit.
+  2. Retry items left in FAILED that no fresh enqueue has bumped.
+  3. Back-stop the rare missed snapshot delivery (network flap, listener detach race).
+
+### Lifecycle
+
+- **Web**: `useSyncLoop` mounts `startSyncLoop(userId)` on sign-in; cleanup detaches all listeners + cancels the interval + unsubscribes the queue observation.
+- **iOS**: `AuthService` owns a `SyncService` instance and calls `.start(userId:)` / `.stop()` from the Firebase auth state handler. `AuthGateView` injects the same instance via `@EnvironmentObject` so the playground dashboard observes its `@Published` state.
+
+### Watermark normalization
+
+Both platforms now query Firestore by `_syncedAt` (server-assigned timestamp) instead of `updatedAt`. iOS previously used `updatedAt` which races on clock skew; the unification matches web.
+
+### Checklist
+
+- [ ] Local write reaches Firestore within ~1 s on both platforms.
+- [ ] Cross-device pull lands within ~1 s of the originating push.
+- [ ] Force-quit during push leaves IN_PROGRESS rows that the next safety-net tick (or app relaunch) recovers.
+- [ ] Sign-out detaches every listener + cancels every timer (no orphaned reads in DevTools / Xcode network panel).
+- [ ] Two devices editing the same record concurrently still resolve via the standard LWW path (no new conflict surface from the listener handlers).
 
 ---
 

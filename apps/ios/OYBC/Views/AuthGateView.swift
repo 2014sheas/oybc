@@ -25,6 +25,7 @@ struct AuthGateView<Content: View>: View {
             } else if authService.currentUser != nil {
                 content()
                     .environmentObject(authService)
+                    .environmentObject(authService.syncService)
             } else {
                 LoginView(authService: authService)
             }
