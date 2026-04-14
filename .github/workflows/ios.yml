@@ -1,0 +1,65 @@
+name: iOS
+
+# Runs `xcodebuild test` against the OYBC scheme on every PR that
+# touches iOS or shared code. Fills the gap left by the Claude
+# environment not having Xcode available — lets contributors (human
+# or otherwise) catch compile errors and regressions before a human
+# has to press ⌘B locally.
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'apps/ios/**'
+      - 'packages/shared/**'
+      - '.github/workflows/ios.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'apps/ios/**'
+      - 'packages/shared/**'
+      - '.github/workflows/ios.yml'
+
+# Cancel in-flight runs for the same PR when a newer commit is pushed —
+# saves runner minutes during rapid iteration. `github.ref` is a Git
+# ref (sanitised by GitHub), safe to interpolate into the concurrency key.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # macos-15 runners ship with Xcode 16.x pre-installed, matching the
+    # Swift 5.9 / iOS 17 deployment target defined in project.yml.
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: apps/ios
+        run: xcodegen generate
+
+      - name: Install xcpretty for readable output
+        run: gem install xcpretty
+
+      - name: Build and test (iOS Simulator)
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme OYBC \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            | xcpretty --color
