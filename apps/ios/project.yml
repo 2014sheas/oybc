@@ -14,6 +14,13 @@ settings:
   ENABLE_PREVIEWS: YES
 
 packages:
+  # Swift Package Manager dependencies are NOT auto-updated by
+  # Dependabot — the `swift` ecosystem isn't supported. Bump the
+  # `from:` versions below by hand when:
+  #   • A security advisory is published against one of these libs
+  #   • A bug fix or API we want lands in a newer minor/patch
+  # After bumping, run `xcodegen generate` and `xcodebuild` to
+  # confirm the new version still resolves and builds.
   GRDB:
     url: https://github.com/groue/GRDB.swift.git
     from: "6.24.0"

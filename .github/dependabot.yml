@@ -1,0 +1,51 @@
+# Dependabot keeps npm + GitHub Actions dependencies fresh. Each PR
+# Dependabot opens still goes through the web / iOS CI for verification,
+# so no automerge is configured — major version bumps stay reviewable.
+#
+# Swift Package Manager is intentionally NOT listed: GitHub Dependabot
+# doesn't support `swift` as an ecosystem. iOS dependencies (Firebase,
+# GRDB, GoogleSignIn) are pinned in `apps/ios/project.yml` and bumped
+# manually for now.
+
+version: 2
+
+updates:
+  # npm — root + workspaces. Dependabot follows pnpm-workspace.yaml
+  # automatically when ecosystem is npm and directory is the workspace
+  # root, so no per-package entries needed.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    groups:
+      # Group all minor + patch updates into one PR per ecosystem per
+      # week so Monday morning isn't a flood of single-line bumps.
+      # Major updates still get individual PRs because they're more
+      # likely to need scrutiny / migration notes.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # GitHub Actions versions (the `uses:` lines in our workflow files).
+  # Lower cadence — Actions ecosystem moves slowly and security
+  # advisories are rare.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(actions)"
