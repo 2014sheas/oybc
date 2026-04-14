@@ -44,6 +44,27 @@ final class AppDatabase {
         }
     }
 
+    /// Designated throwing initialiser used by `makeTestInstance()`. Keeps
+    /// the production singleton's non-throwing `init()` (with fatalError
+    /// on failure) untouched so existing call sites stay simple.
+    private init(dbQueue: DatabaseQueue) throws {
+        self.dbQueue = dbQueue
+        try migrator.migrate(dbQueue)
+    }
+
+    #if DEBUG
+    /// Returns a fresh `AppDatabase` backed by an in-memory `DatabaseQueue`.
+    /// Each call returns a completely isolated instance — safe to use in
+    /// XCTest's per-method `setUp`. Wrapped in `#if DEBUG` so it can't be
+    /// shipped into production code accidentally.
+    ///
+    /// The migrator runs identically to production, so tests exercise
+    /// the same v5 schema as the real app.
+    static func makeTestInstance() throws -> AppDatabase {
+        return try AppDatabase(dbQueue: DatabaseQueue())
+    }
+    #endif
+
     // MARK: - Database Access
 
     /// Access database for reading
