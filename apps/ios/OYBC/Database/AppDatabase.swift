@@ -24,18 +24,8 @@ final class AppDatabase {
                 .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appendingPathComponent("oybc.sqlite")
 
-            // WAL journal mode reduces write I/O significantly — especially important
-            // during first-run migration when all tables and indexes are created.
-            // Must be passed to DatabaseQueue at creation time; configuring it after
-            // the fact has no effect on the already-opened database connection.
-            var config = Configuration()
-            config.prepareDatabase { db in
-                try db.execute(sql: "PRAGMA journal_mode = WAL")
-                try db.execute(sql: "PRAGMA foreign_keys = ON")
-            }
-
             let start = Date()
-            dbQueue = try DatabaseQueue(path: databaseURL.path, configuration: config)
+            dbQueue = try DatabaseQueue(path: databaseURL.path, configuration: Self.databaseConfiguration())
             try migrator.migrate(dbQueue)
             let elapsed = Date().timeIntervalSince(start)
             print("✅ Database initialized at: \(databaseURL.path) (\(String(format: "%.2f", elapsed))s)")
@@ -43,6 +33,54 @@ final class AppDatabase {
             fatalError("Database initialization failed: \(error)")
         }
     }
+
+    /// Designated throwing initialiser used by `makeTestInstance()`. Keeps
+    /// the production singleton's non-throwing `init()` (with fatalError
+    /// on failure) untouched so existing call sites stay simple.
+    private init(dbQueue: DatabaseQueue) throws {
+        self.dbQueue = dbQueue
+        try migrator.migrate(dbQueue)
+    }
+
+    /// Shared GRDB configuration used by both the production on-disk
+    /// database and the in-memory test factory. Keeping one source of
+    /// truth means tests can't pass while production rejects the same
+    /// write for a config-dependent reason (e.g. FK enforcement).
+    ///
+    /// `prepareDatabase` runs once per connection open, before any
+    /// schema migration or query, so these pragmas take effect for
+    /// everything the app does.
+    ///
+    /// - WAL: reduces write I/O, crucial during first-run migration.
+    ///   Has no effect on an in-memory database (SQLite ignores
+    ///   journal_mode for `:memory:`) but it's harmless to set.
+    /// - foreign_keys = ON: enforces FK constraints defined in the
+    ///   schema. Required so FK violations fail the same way in both
+    ///   production and tests.
+    private static func databaseConfiguration() -> Configuration {
+        var config = Configuration()
+        config.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA foreign_keys = ON")
+        }
+        return config
+    }
+
+    #if DEBUG
+    /// Returns a fresh `AppDatabase` backed by an in-memory `DatabaseQueue`.
+    /// Each call returns a completely isolated instance — safe to use in
+    /// XCTest's per-method `setUp`. Wrapped in `#if DEBUG` so it can't be
+    /// shipped into production code accidentally.
+    ///
+    /// Uses the same `Configuration` as production (notably
+    /// `foreign_keys = ON`), so FK violations fail in tests the same
+    /// way they would in the shipping app. The migrator runs identically,
+    /// so tests exercise the v5 schema end-to-end.
+    static func makeTestInstance() throws -> AppDatabase {
+        let queue = try DatabaseQueue(configuration: databaseConfiguration())
+        return try AppDatabase(dbQueue: queue)
+    }
+    #endif
 
     // MARK: - Database Access
 
