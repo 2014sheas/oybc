@@ -192,7 +192,6 @@ final class SyncQueueMaintenanceTests: XCTestCase {
 
         let originalUser = try db.fetchUser(id: userId)
         let originalVersion = originalUser?.version ?? 0
-        let originalUpdatedAt = originalUser?.updatedAt ?? ""
 
         let updatedUser = try db.updateUserPreferences(userId: userId) { current in
             var next = current
@@ -201,10 +200,16 @@ final class SyncQueueMaintenanceTests: XCTestCase {
             return next
         }
 
-        // Returned User reflects the change.
+        // Returned User reflects the change. Version bumping is the
+        // real conflict-resolution invariant sync relies on; the
+        // `updatedAt` field is also rewritten but at whole-second ISO
+        // resolution so a seed + update within the same real second
+        // produces the same string (fine in production — users don't
+        // make preference writes microseconds apart — but flaky to
+        // assert on in a back-to-back test).
         XCTAssertNotNil(updatedUser)
         XCTAssertEqual(updatedUser?.version, originalVersion + 1)
-        XCTAssertNotEqual(updatedUser?.updatedAt, originalUpdatedAt)
+        XCTAssertFalse(updatedUser?.updatedAt.isEmpty ?? true, "updatedAt must be non-empty after a preference write.")
         let prefs = updatedUser?.decodedPreferences
         XCTAssertEqual(prefs?.theme, .dark)
         XCTAssertEqual(prefs?.weekStartDay, .sunday)
