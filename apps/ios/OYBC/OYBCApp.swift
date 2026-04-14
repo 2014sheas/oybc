@@ -4,32 +4,30 @@ import FirebaseCore
 /// Main app entry point for OYBC iOS app
 @main
 struct OYBCApp: App {
+    /// True when the XCTest framework is loaded in the current process.
+    /// iOS tests are hosted by the app target, so `OYBCApp.init` and
+    /// `OYBCApp.body` both run during test bootstrap. We need to short
+    /// out everything production does so the test bundle can launch
+    /// cleanly without `GoogleService-Info.plist` or a writable
+    /// application-support directory.
+    ///
+    /// `NSClassFromString("XCTest")` is a stricter detector than
+    /// `XCTestConfigurationFilePath` — it checks the actual framework
+    /// load, which is only true under `xcodebuild test`.
+    private static let isRunningTests = NSClassFromString("XCTest") != nil
+
     /// Initialize database and Firebase synchronously before the UI appears.
     ///
     /// Database migration runs first so the local store is ready before any
     /// Firebase auth state callbacks fire. Both complete during the launch
     /// screen before any interactive UI is shown.
+    ///
+    /// Skipped entirely under XCTest: `FirebaseApp.configure()` fatalErrors
+    /// on missing `GoogleService-Info.plist` (gitignored, absent in CI),
+    /// and the shared AppDatabase singleton isn't used by tests anyway —
+    /// they call `AppDatabase.makeTestInstance()` for isolated DBs.
     init() {
-        // Skip ALL production bootstrap (AppDatabase.shared on-disk
-        // initialisation, Firebase) when the process is a test host.
-        // The test bundle embeds this App struct, but:
-        //   • FirebaseApp.configure() fatalErrors on missing
-        //     `GoogleService-Info.plist` (gitignored, absent in CI).
-        //   • AppDatabase.shared tries to create an on-disk SQLite at
-        //     ~/Library/Application Support/, which can surface its own
-        //     sandbox / permission edge cases on the simulator.
-        // Tests construct isolated resources via
-        // `AppDatabase.makeTestInstance()` and never need the shared
-        // singleton. So the safest CI stance is: the test host runs
-        // exactly zero production-side init.
-        //
-        // Detection via `NSClassFromString("XCTest")` checks for the
-        // XCTest framework actually being loaded in the process, which
-        // is stricter than the env-var check — the framework is only
-        // present under `xcodebuild test`, never under a normal app
-        // launch (even a Debug one).
-        let isRunningTests = NSClassFromString("XCTest") != nil
-        guard !isRunningTests else { return }
+        guard !Self.isRunningTests else { return }
 
         _ = AppDatabase.shared
         FirebaseApp.configure()
@@ -37,7 +35,23 @@ struct OYBCApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            // The test host bootstraps the full App struct — that includes
+            // evaluating `body` and constructing the root view. Our
+            // `ContentView → AuthGateView → @StateObject AuthService() →
+            // SyncService` chain eagerly calls `Firestore.firestore()` as a
+            // stored-property default, which throws FIRIllegalStateException
+            // without a prior `FirebaseApp.configure()` (which `init`
+            // deliberately skips under tests).
+            //
+            // Short-circuit to an inert view under XCTest so the view tree
+            // never touches Firestore. Tests run against in-memory
+            // `AppDatabase.makeTestInstance()` instances and don't need
+            // any of the production singletons.
+            if Self.isRunningTests {
+                EmptyView()
+            } else {
+                ContentView()
+            }
         }
     }
 }
