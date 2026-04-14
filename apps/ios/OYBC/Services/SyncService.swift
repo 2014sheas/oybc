@@ -163,6 +163,12 @@ final class SyncService: ObservableObject {
     /// queue observation emission while the debounce window is open.
     private var pushDebounceTask: _Concurrency.Task<Void, Never>?
 
+    /// The Task spawned at the end of `start(userId:)` to run the initial
+    /// `fullSync`. Tracked so a rapid sign-out (or account switch)
+    /// during the await window can cancel it instead of letting it
+    /// continue syncing for the previous user.
+    private var initialSyncTask: _Concurrency.Task<Void, Never>?
+
     /// The userId the orchestrator is currently bound to. `nil` means
     /// `start(userId:)` hasn't been called or `stop()` ran. Used for
     /// idempotency — repeat calls with the same userId are no-ops.
@@ -496,10 +502,19 @@ final class SyncService: ObservableObject {
 
             let query: Query
             if let lastSyncedAt {
-                // Use server-assigned `_syncedAt` (set by writeFirestoreDoc)
-                // for clock-skew safety. Matches the web pull side and the
-                // real-time listener filters in `attachPullListeners`.
-                query = colRef.whereField("_syncedAt", isGreaterThan: lastSyncedAt)
+                // `_syncedAt` is written via `FieldValue.serverTimestamp()`
+                // so it lives in Firestore as a `Timestamp`. The local
+                // `lastSyncedAt` watermark is an ISO8601 String. Firestore
+                // range queries require type-matched operands — comparing
+                // Timestamp > String never matches because String ranks
+                // above Timestamp in Firestore's canonical type ordering.
+                // Convert to `Timestamp` here (and in the listener attach
+                // below). Clock-skew between the local clock at watermark
+                // write time and the server clock at doc write time is
+                // bounded; the safety-net pull picks up anything missed.
+                let formatter = ISO8601DateFormatter()
+                let watermarkDate = formatter.date(from: lastSyncedAt) ?? Date(timeIntervalSince1970: 0)
+                query = colRef.whereField("_syncedAt", isGreaterThan: Timestamp(date: watermarkDate))
             } else {
                 query = colRef // First sync — pull everything.
             }
@@ -792,9 +807,14 @@ extension SyncService {
         startSafetyNetTimer(userId: userId)
 
         // Initial sync covers anything that was queued before start was
-        // called, plus first-attach delivery from the listeners.
-        _Concurrency.Task { [weak self] in
-            _ = await self?.fullSync(userId: userId)
+        // called, plus first-attach delivery from the listeners. Tracked
+        // and gated on `runningForUserId == userId` so a rapid sign-out
+        // can both cancel and short-circuit it before it touches Firestore
+        // for the wrong user.
+        initialSyncTask?.cancel()
+        initialSyncTask = _Concurrency.Task { [weak self] in
+            guard let self, self.runningForUserId == userId else { return }
+            _ = await self.fullSync(userId: userId)
         }
     }
 
@@ -814,6 +834,9 @@ extension SyncService {
 
         pushDebounceTask?.cancel()
         pushDebounceTask = nil
+
+        initialSyncTask?.cancel()
+        initialSyncTask = nil
     }
 
     // MARK: - Push-on-enqueue (queue observation)
@@ -876,11 +899,18 @@ extension SyncService {
         // initial attach is bounded to deltas since the last safety-net
         // watermark advance. (Web mirror normalised on `_syncedAt`; iOS
         // historically used `updatedAt` — unifying here.)
-        let watermark = (try? AppDatabase.shared.fetchUser(id: userId)?.lastSyncedAt) ?? "1970-01-01T00:00:00.000Z"
+        //
+        // `_syncedAt` is a Firestore `Timestamp`; the local watermark is
+        // an ISO8601 String. Comparing them directly in a range query
+        // never matches (canonical type ordering). Convert to Timestamp.
+        let formatter = ISO8601DateFormatter()
+        let watermarkString = (try? AppDatabase.shared.fetchUser(id: userId)?.lastSyncedAt) ?? ""
+        let watermarkDate = formatter.date(from: watermarkString) ?? Date(timeIntervalSince1970: 0)
+        let watermarkTs = Timestamp(date: watermarkDate)
 
         for collection in syncableCollections where collection.firestoreName != "users" {
             let colRef = db.collection("users").document(userId).collection(collection.firestoreName)
-            let q = colRef.whereField("_syncedAt", isGreaterThan: watermark)
+            let q = colRef.whereField("_syncedAt", isGreaterThan: watermarkTs)
             let listener = q.addSnapshotListener { [weak self] snapshot, error in
                 guard let self else { return }
                 if let error {

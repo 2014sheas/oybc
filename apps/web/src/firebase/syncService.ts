@@ -8,6 +8,7 @@ import {
   query,
   where,
   serverTimestamp,
+  Timestamp,
   type Unsubscribe as FirestoreUnsubscribe,
 } from 'firebase/firestore';
 import { liveQuery } from 'dexie';
@@ -319,10 +320,12 @@ export async function pullSync(
     try {
       const colRef = collection(firestore, 'users', userId, collectionName);
 
-      // Query for documents updated since last sync.
-      // Uses _syncedAt (server timestamp) as watermark for clock-skew safety.
+      // Query for documents updated since last sync. `_syncedAt` is a
+      // Firestore `Timestamp`; the local watermark is an ISO string.
+      // Convert before querying — see `attachPullListeners` for the
+      // type-mismatch story.
       const q = lastSyncedAt
-        ? query(colRef, where('_syncedAt', '>', lastSyncedAt))
+        ? query(colRef, where('_syncedAt', '>', Timestamp.fromDate(new Date(lastSyncedAt))))
         : query(colRef); // First sync — pull everything
 
       const snapshot = await getDocs(q);
@@ -404,10 +407,25 @@ export function attachPullListeners(
 
   // One listener per subcollection, filtered to deltas since the last
   // safety-net watermark so initial attach is bounded.
-  const watermark = lastSyncedAt ?? '1970-01-01T00:00:00.000Z';
+  //
+  // `_syncedAt` is written via `serverTimestamp()` and stored as a
+  // Firestore `Timestamp`. `lastSyncedAt` on the local user row is an
+  // ISO8601 string (set from the local clock at the end of `pullSync`).
+  // Firestore range queries require both sides of the comparison to be
+  // the same type — comparing Timestamp > String never matches because
+  // Firestore's canonical type ordering puts every Timestamp below every
+  // String. Convert the watermark to a Timestamp here.
+  //
+  // A small clock-skew window (local clock vs server clock at write
+  // time) can leak past the watermark; the safety-net `pullSync` will
+  // pick up anything missed.
+  const watermarkDate = lastSyncedAt
+    ? new Date(lastSyncedAt)
+    : new Date(0); // Unix epoch — first-sync delivery
+  const watermarkTs = Timestamp.fromDate(watermarkDate);
   for (const collectionName of SYNCABLE_COLLECTIONS) {
     const colRef = collection(firestore, 'users', userId, collectionName);
-    const q = query(colRef, where('_syncedAt', '>', watermark));
+    const q = query(colRef, where('_syncedAt', '>', watermarkTs));
     const unsub = onSnapshot(
       q,
       async (snapshot) => {
@@ -491,6 +509,13 @@ export function startSyncLoop(
   let timer: ReturnType<typeof setInterval> | null = null;
   let pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isSyncing = false;
+  // Set when a push was requested (debounce fired) but skipped because
+  // a sync was already in-flight. The active fullTick / pushTick will
+  // schedule a follow-up push in its `finally` so the requested work
+  // doesn't sit until the safety-net interval. Without this, a queue
+  // item enqueued mid-fullTick would not re-fire the liveQuery (the
+  // count didn't change between observations) and would wait up to 5 min.
+  let needsPush = false;
 
   async function fullTick(): Promise<void> {
     if (isSyncing || !navigator.onLine) return;
@@ -501,11 +526,19 @@ export function startSyncLoop(
       console.error('Sync loop error:', err);
     } finally {
       isSyncing = false;
+      if (needsPush) {
+        needsPush = false;
+        scheduleFlush();
+      }
     }
   }
 
   async function pushTick(): Promise<void> {
-    if (isSyncing || !navigator.onLine) return;
+    if (!navigator.onLine) return;
+    if (isSyncing) {
+      needsPush = true;
+      return;
+    }
     isSyncing = true;
     try {
       await pushSync(userId);
@@ -513,6 +546,10 @@ export function startSyncLoop(
       console.error('Sync push error:', err);
     } finally {
       isSyncing = false;
+      if (needsPush) {
+        needsPush = false;
+        scheduleFlush();
+      }
     }
   }
 
