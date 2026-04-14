@@ -134,6 +134,30 @@ final class SyncService: ObservableObject {
     /// Ordered log of individual sync events, newest first.
     @Published var syncEvents: [SyncEvent] = []
 
+    // MARK: - Published Counters (cumulative since last `start(userId:)`)
+
+    /// Cumulative successful pushes.
+    @Published var totalPushed: Int = 0
+    /// Cumulative successful pulls (listener apply OR safety-net pull).
+    @Published var totalPulled: Int = 0
+    /// Cumulative LWW conflicts where remote won.
+    @Published var totalConflicts: Int = 0
+    /// Cumulative push failures.
+    @Published var totalFailed: Int = 0
+    /// Most recent successful sync activity (push or pull). `nil` until
+    /// the first event of the session. Drives the production-Profile
+    /// "Last synced" label via AuthService → @EnvironmentObject.
+    @Published var lastEventAt: Date?
+    /// Most recent error, if any. Cleared on the next successful event.
+    @Published var lastError: SyncErrorRecord?
+
+    /// `lastError` payload — message + timestamp as a value type so it
+    /// stays SwiftUI-friendly.
+    struct SyncErrorRecord: Equatable {
+        let message: String
+        let at: Date
+    }
+
     // MARK: - Private
 
     private let db = Firestore.firestore()
@@ -362,6 +386,7 @@ final class SyncService: ObservableObject {
                         try upsertLocalRecord(grdbTable: grdbTable, data: remoteData)
                         try markCompleted(item)
                         result.conflicts += 1
+                recordEvent(.conflict)
                         let msg = "Delete conflict \(item.entityType)/\(item.entityId): remote wins"
                         result.details.append(msg)
                         log(msg)
@@ -371,6 +396,7 @@ final class SyncService: ObservableObject {
                 try await writeFirestoreDoc(docRef: docRef, data: payload)
                 try markCompleted(item)
                 result.pushed += 1
+                recordEvent(.pushed)
                 let msg = "Deleted \(item.entityType)/\(item.entityId)"
                 result.details.append(msg)
                 log(msg)
@@ -385,6 +411,7 @@ final class SyncService: ObservableObject {
                 try await writeFirestoreDoc(docRef: docRef, data: payload)
                 try markCompleted(item)
                 result.pushed += 1
+                recordEvent(.pushed)
                 let msg = "Pushed \(item.entityType)/\(item.entityId) (new)"
                 result.details.append(msg)
                 log(msg)
@@ -402,6 +429,7 @@ final class SyncService: ObservableObject {
                 try await writeFirestoreDoc(docRef: docRef, data: payload)
                 try markCompleted(item)
                 result.pushed += 1
+                recordEvent(.pushed)
                 let localV = payload["version"] as? Int ?? 0
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let msg = "Pushed \(item.entityType)/\(item.entityId) (local v\(localV) > remote v\(remoteV))"
@@ -415,6 +443,7 @@ final class SyncService: ObservableObject {
                 )
                 try markCompleted(item)
                 result.conflicts += 1
+                recordEvent(.conflict)
                 let localV = payload["version"] as? Int ?? 0
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let msg = "Conflict \(item.entityType)/\(item.entityId): remote wins (v\(remoteV) >= v\(localV))"
@@ -434,6 +463,8 @@ final class SyncService: ObservableObject {
                 log("Warning: could not update failed sync item \(item.id): \(error.localizedDescription)")
             }
             result.failed += 1
+            recordEvent(.failed)
+            recordError(errorMsg)
             let msg = "Failed \(item.entityType)/\(item.entityId): \(errorMsg)"
             result.details.append(msg)
             log(msg)
@@ -459,6 +490,7 @@ final class SyncService: ObservableObject {
             if localData == nil {
                 try upsertLocalRecord(grdbTable: "users", data: remoteData)
                 result.pulled += 1
+                recordEvent(.pulled)
                 let msg = "Pulled users/\(userId) (new)"
                 result.details.append(msg)
                 log(msg)
@@ -476,6 +508,7 @@ final class SyncService: ObservableObject {
                 }
                 try upsertLocalRecord(grdbTable: "users", data: merged)
                 result.pulled += 1
+                recordEvent(.pulled)
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let localV = localData!["version"] as? Int ?? 0
                 let msg = "Pulled users/\(userId) (remote v\(remoteV) > local v\(localV))"
@@ -483,6 +516,7 @@ final class SyncService: ObservableObject {
                 log(msg)
             } else {
                 result.conflicts += 1
+                recordEvent(.conflict)
                 let localV = localData!["version"] as? Int ?? 0
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let msg = "Kept local users/\(userId) (local v\(localV) >= remote v\(remoteV))"
@@ -547,6 +581,7 @@ final class SyncService: ObservableObject {
                     // New remote document — insert locally.
                     try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
                     result.pulled += 1
+                recordEvent(.pulled)
                     let msg = "Pulled \(collection.firestoreName)/\(remoteId) (new)"
                     result.details.append(msg)
                     log(msg)
@@ -559,6 +594,7 @@ final class SyncService: ObservableObject {
                 if winner == "remote" {
                     try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
                     result.pulled += 1
+                recordEvent(.pulled)
                     let remoteV = remoteData["version"] as? Int ?? 0
                     let localV = localData!["version"] as? Int ?? 0
                     let msg = "Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV))"
@@ -566,6 +602,7 @@ final class SyncService: ObservableObject {
                     log(msg)
                 } else {
                     result.conflicts += 1
+                recordEvent(.conflict)
                     let localV = localData!["version"] as? Int ?? 0
                     let remoteV = remoteData["version"] as? Int ?? 0
                     let msg = "Kept local \(collection.firestoreName)/\(remoteId) (local v\(localV) >= remote v\(remoteV))"
@@ -851,7 +888,51 @@ extension SyncService {
 
         initialSyncTask?.cancel()
         initialSyncTask = nil
+
+        // Counters are session-scoped — drop them so the next sign-in
+        // starts from zero.
+        totalPushed = 0
+        totalPulled = 0
+        totalConflicts = 0
+        totalFailed = 0
+        lastEventAt = nil
+        lastError = nil
     }
+
+    // MARK: - Observability helpers
+
+    /// Record a successful sync event, incrementing the matching
+    /// counter and advancing `lastEventAt`. Successful events also
+    /// clear the `lastError` slot so the UI doesn't show a stale error
+    /// after recovery. Mirrors web `recordSyncEvent`.
+    fileprivate func recordEvent(_ kind: SyncEventKind, at: Date = Date()) {
+        switch kind {
+        case .pushed:   totalPushed += 1
+        case .pulled:   totalPulled += 1
+        case .conflict: totalConflicts += 1
+        case .failed:   totalFailed += 1
+        }
+        if kind != .failed {
+            lastEventAt = at
+            lastError = nil
+        }
+    }
+
+    /// Record an error message + timestamp. Doesn't increment any
+    /// counter. Mirrors web `recordSyncError`.
+    fileprivate func recordError(_ message: String, at: Date = Date()) {
+        lastError = SyncErrorRecord(message: message, at: at)
+    }
+}
+
+enum SyncEventKind {
+    case pushed
+    case pulled
+    case conflict
+    case failed
+}
+
+extension SyncService {
 
     // MARK: - Push-on-enqueue (queue observation)
 
@@ -954,6 +1035,7 @@ extension SyncService {
             let localData = try fetchLocalRecord(grdbTable: "users", id: userId)
             if localData == nil {
                 try upsertLocalRecord(grdbTable: "users", data: remoteData)
+                recordEvent(.pulled)
                 log("Pulled users/\(userId) (new, listener)")
                 return
             }
@@ -964,6 +1046,7 @@ extension SyncService {
                     merged["lastSyncedAt"] = preservedWatermark
                 }
                 try upsertLocalRecord(grdbTable: "users", data: merged)
+                recordEvent(.pulled)
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let localV = localData!["version"] as? Int ?? 0
                 log("Pulled users/\(userId) (remote v\(remoteV) > local v\(localV), listener)")
@@ -984,12 +1067,14 @@ extension SyncService {
             let localData = try fetchLocalRecord(grdbTable: collection.grdbTable, id: remoteId)
             if localData == nil {
                 try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
+                recordEvent(.pulled)
                 log("Pulled \(collection.firestoreName)/\(remoteId) (new, listener)")
                 return
             }
             let winner = resolveConflict(local: localData!, remote: remoteData)
             if winner == "remote" {
                 try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
+                recordEvent(.pulled)
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let localV = localData!["version"] as? Int ?? 0
                 log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
