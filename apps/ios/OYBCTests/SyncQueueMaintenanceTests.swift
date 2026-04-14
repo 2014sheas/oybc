@@ -222,10 +222,18 @@ final class SyncQueueMaintenanceTests: XCTestCase {
         XCTAssertEqual(queueItems.first?.status, .pending)
 
         // Payload should be parseable JSON containing the new prefs.
-        let payloadData = queueItems.first?.payload.data(using: .utf8)
-        XCTAssertNotNil(payloadData)
-        let parsed = try JSONSerialization.jsonObject(with: payloadData!) as? [String: Any]
-        XCTAssertNotNil(parsed?["preferences"], "Payload must include the preferences object so the remote write applies them.")
+        // `XCTUnwrap` produces a readable failure and skips the rest of
+        // the test body; force-unwrapping after `XCTAssertNotNil` would
+        // crash the whole test run and obscure the actual failure.
+        let payloadData = try XCTUnwrap(
+            queueItems.first?.payload.data(using: .utf8),
+            "Expected the enqueued sync item to carry a UTF-8 payload."
+        )
+        let parsed = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
+            "Payload must be a JSON object."
+        )
+        XCTAssertNotNil(parsed["preferences"], "Payload must include the preferences object so the remote write applies them.")
     }
 
     func testUpdateUserPreferencesIsNoOpForUnknownUser() throws {
