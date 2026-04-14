@@ -224,6 +224,20 @@ final class SyncService: ObservableObject {
     func pushSync(userId: String) async -> PushResult {
         var result = PushResult()
 
+        // Reset stale IN_PROGRESS items (e.g. force-quit mid-push) and
+        // promote FAILED items whose backoff window has elapsed back to
+        // PENDING so this same push picks them up. Mirrors the web
+        // `pushSync` preamble. Promotion also re-fires the GRDB
+        // ValueObservation on PENDING count, which schedules the next
+        // push-on-enqueue debounce.
+        do {
+            try AppDatabase.shared.resetStaleInProgressSyncItems()
+            try AppDatabase.shared.promoteEligibleFailedSyncItems()
+        } catch {
+            log("Push warning: queue maintenance failed: \(error.localizedDescription)")
+            // Non-fatal — fall through and try to push whatever's already pending.
+        }
+
         let pendingItems: [SyncQueueItem]
         do {
             pendingItems = try AppDatabase.shared.fetchPendingSyncItems()

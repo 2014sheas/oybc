@@ -1,6 +1,11 @@
 import { db } from '../database';
 import type { SyncQueueItem } from '@oybc/shared';
-import { SyncOperationType, SyncStatus } from '@oybc/shared';
+import {
+  MAX_SYNC_RETRIES,
+  SyncOperationType,
+  SyncStatus,
+  isFailedItemEligibleForRetry,
+} from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 
 /**
@@ -103,19 +108,42 @@ export async function clearCompletedSyncItems(): Promise<void> {
 }
 
 /**
- * Retry failed sync items
+ * Promote FAILED sync queue items back to PENDING when their backoff
+ * window has elapsed and they're under the retry cap.
+ *
+ * Called at the top of `pushSync`. The Dexie `liveQuery` on the PENDING
+ * count re-fires when items are promoted, which in turn triggers the
+ * push-on-enqueue debounce — so promotion implicitly schedules a fresh
+ * push attempt without needing an explicit kick.
+ *
+ * Items at or above `MAX_SYNC_RETRIES` are left FAILED indefinitely;
+ * they require a fresh enqueue or a manual retry from the playground
+ * dashboard. (Tracked separately if real users hit this in the wild.)
+ *
+ * @returns The number of items promoted.
  */
-export async function retryFailedSyncItems(): Promise<void> {
+export async function promoteEligibleFailedItems(): Promise<number> {
   const failedItems = await db.syncQueue
     .where('status')
     .equals(SyncStatus.FAILED)
-    .filter((item) => item.retryCount < 3)
     .toArray();
 
+  const now = Date.now();
+  let promoted = 0;
+
   for (const item of failedItems) {
+    if (item.retryCount >= MAX_SYNC_RETRIES) continue;
+    const lastAttemptAtMs = item.lastAttemptAt
+      ? new Date(item.lastAttemptAt).getTime()
+      : null;
+    if (!isFailedItemEligibleForRetry(item.retryCount, lastAttemptAtMs, now)) continue;
+
     await db.syncQueue.update(item.id, {
       status: SyncStatus.PENDING,
       lastError: undefined,
     });
+    promoted++;
   }
+
+  return promoted;
 }

@@ -47,14 +47,44 @@ enum SyncStatus: String, Codable, DatabaseValueConvertible {
     case failed
 }
 
+// MARK: - Retry Backoff
+
+/// Mirror of `packages/shared/src/constants/syncRetry.ts`. Swift can't
+/// import the TypeScript module, so the schedule is duplicated here —
+/// keep the two in lockstep when changing.
+enum SyncRetry {
+    /// Maximum retry attempts for a sync operation (mirrors
+    /// `MAX_SYNC_RETRIES` in @oybc/shared).
+    static let maxRetries: Int = 5
+
+    /// Exponential backoff schedule (milliseconds) indexed by
+    /// retryCount - 1.
+    static let backoffMs: [Int] = [
+        30 * 1_000,         // first retry: 30s after failure
+        2 * 60 * 1_000,     // second:      2 min
+        10 * 60 * 1_000,    // third:       10 min
+        30 * 60 * 1_000,    // fourth:      30 min
+        60 * 60 * 1_000,    // fifth:       1 hour (cap)
+    ]
+
+    /// Returns true when a FAILED sync queue item has waited long
+    /// enough since its last attempt to be re-promoted to PENDING.
+    /// Mirrors `isFailedItemEligibleForRetry` in @oybc/shared.
+    static func isFailedItemEligibleForRetry(
+        retryCount: Int,
+        lastAttemptAtMs: Int?,
+        nowMs: Int
+    ) -> Bool {
+        let idx = max(0, min(retryCount - 1, backoffMs.count - 1))
+        let backoff = backoffMs[idx]
+        guard let lastAttemptAtMs else { return true }
+        return nowMs - lastAttemptAtMs >= backoff
+    }
+}
+
 // MARK: - Helpers
 
 extension SyncQueueItem {
-    /// Check if item should be retried
-    var shouldRetry: Bool {
-        return status == .failed && retryCount < 3
-    }
-
     /// Check if item is stale (created more than 24 hours ago)
     var isStale: Bool {
         guard let createdDate = ISO8601DateFormatter().date(from: createdAt) else {

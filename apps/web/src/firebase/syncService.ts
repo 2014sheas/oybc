@@ -20,6 +20,7 @@ import {
   markSyncItemInProgress,
   markSyncItemCompleted,
   markSyncItemFailed,
+  promoteEligibleFailedItems,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
@@ -91,6 +92,12 @@ export async function pushSync(userId: string): Promise<PushResult> {
   for (const stale of staleItems) {
     await db.syncQueue.update(stale.id, { status: SyncStatus.PENDING });
   }
+
+  // Promote FAILED items whose backoff window has elapsed back to PENDING
+  // so the same loop picks them up. Promotion also re-fires the Dexie
+  // liveQuery on PENDING count, so even if this push doesn't drain them
+  // (rare), the next debounce will.
+  await promoteEligibleFailedItems();
 
   const pendingItems = await fetchPendingSyncItems();
   if (pendingItems.length === 0) return result;

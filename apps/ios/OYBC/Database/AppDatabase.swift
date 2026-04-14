@@ -440,6 +440,64 @@ extension AppDatabase {
             try SyncQueueItem.deleteOne(db, key: id)
         }
     }
+
+    /// Reset any sync queue items left in `inProgress` (e.g. from a
+    /// force-quit mid-push) back to `pending` so the next push picks
+    /// them up. Mirrors the equivalent reset at the top of the web
+    /// `pushSync`.
+    @discardableResult
+    func resetStaleInProgressSyncItems() throws -> Int {
+        return try write { db in
+            let stale = try SyncQueueItem
+                .filter(Column("status") == SyncStatus.inProgress.rawValue)
+                .fetchAll(db)
+            for var item in stale {
+                item.status = .pending
+                try item.save(db)
+            }
+            return stale.count
+        }
+    }
+
+    /// Promote FAILED sync queue items back to `pending` when their
+    /// exponential-backoff window has elapsed and they're under the
+    /// retry cap. Items at or above `MAX_SYNC_RETRIES` are left FAILED
+    /// indefinitely; they require a fresh enqueue or a manual retry
+    /// from the playground SyncDashboard.
+    ///
+    /// Called at the top of `SyncService.pushSync`. The GRDB
+    /// `ValueObservation` on PENDING count re-fires when items are
+    /// promoted, which triggers the push-on-enqueue debounce — so
+    /// promotion implicitly schedules a fresh push without an explicit
+    /// kick.
+    @discardableResult
+    func promoteEligibleFailedSyncItems() throws -> Int {
+        let nowMs = Int(Date().timeIntervalSince1970 * 1000)
+        return try write { db in
+            let failed = try SyncQueueItem
+                .filter(Column("status") == SyncStatus.failed.rawValue)
+                .fetchAll(db)
+
+            var promoted = 0
+            for var item in failed {
+                if item.retryCount >= SyncRetry.maxRetries { continue }
+                let lastAttemptAtMs: Int? = item.lastAttemptAt
+                    .flatMap { ISO8601DateFormatter().date(from: $0) }
+                    .map { Int($0.timeIntervalSince1970 * 1000) }
+                guard SyncRetry.isFailedItemEligibleForRetry(
+                    retryCount: item.retryCount,
+                    lastAttemptAtMs: lastAttemptAtMs,
+                    nowMs: nowMs
+                ) else { continue }
+
+                item.status = .pending
+                item.lastError = nil
+                try item.save(db)
+                promoted += 1
+            }
+            return promoted
+        }
+    }
 }
 
 // MARK: - Sync Queries
