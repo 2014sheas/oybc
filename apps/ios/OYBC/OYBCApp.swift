@@ -10,18 +10,29 @@ struct OYBCApp: App {
     /// Firebase auth state callbacks fire. Both complete during the launch
     /// screen before any interactive UI is shown.
     init() {
-        _ = AppDatabase.shared
+        // Skip ALL production bootstrap (AppDatabase.shared on-disk
+        // initialisation, Firebase) when the process is a test host.
+        // The test bundle embeds this App struct, but:
+        //   • FirebaseApp.configure() fatalErrors on missing
+        //     `GoogleService-Info.plist` (gitignored, absent in CI).
+        //   • AppDatabase.shared tries to create an on-disk SQLite at
+        //     ~/Library/Application Support/, which can surface its own
+        //     sandbox / permission edge cases on the simulator.
+        // Tests construct isolated resources via
+        // `AppDatabase.makeTestInstance()` and never need the shared
+        // singleton. So the safest CI stance is: the test host runs
+        // exactly zero production-side init.
+        //
+        // Detection via `NSClassFromString("XCTest")` checks for the
+        // XCTest framework actually being loaded in the process, which
+        // is stricter than the env-var check — the framework is only
+        // present under `xcodebuild test`, never under a normal app
+        // launch (even a Debug one).
+        let isRunningTests = NSClassFromString("XCTest") != nil
+        guard !isRunningTests else { return }
 
-        // Skip Firebase bootstrap under XCTest. The test host embeds this
-        // App struct, but `FirebaseApp.configure()` fatals-out on missing
-        // `GoogleService-Info.plist` — which is gitignored and absent in
-        // CI. Production and local simulator runs still configure
-        // normally. Detected via XCTest's own env var rather than a
-        // `#if TEST` build flag so test targets don't need a custom
-        // configuration.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
-            FirebaseApp.configure()
-        }
+        _ = AppDatabase.shared
+        FirebaseApp.configure()
     }
 
     var body: some Scene {
