@@ -1,0 +1,69 @@
+name: Firestore rules
+
+# Deploy `firestore.rules` and `firestore.indexes.json` to the live
+# Firebase project on merge to dev. Closes the manual-deploy step that
+# bit us during Phase 0 — preferences pushes failed for two days
+# because the new `users/{userId}` matcher hadn't been deployed.
+#
+# Note: this only runs on direct pushes to `dev` (i.e. after merge),
+# never on PRs. Untrusted fork code never gets a chance to push rules
+# to the production project. The `${{ runner.temp }}` and
+# `${{ secrets.* }}` interpolations are GitHub-controlled values, not
+# user-provided data, so no command-injection surface here.
+#
+# Setup (one-time):
+#   1. Firebase console → Project settings → Service accounts →
+#      Generate new private key. Save the JSON.
+#   2. GitHub repo → Settings → Secrets and variables → Actions →
+#      New repository secret named `FIREBASE_SERVICE_ACCOUNT`. Paste
+#      the JSON contents.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'firestore.rules'
+      - 'firebase.json'
+      - 'firestore.indexes.json'
+      - '.github/workflows/firestore-rules.yml'
+
+# Cancel any in-flight deploy when a newer commit lands; only the most
+# recent rules state matters.
+concurrency:
+  group: firestore-rules-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Deploy rules + indexes
+        env:
+          # firebase-tools picks up the SA JSON via the standard env var.
+          # Writing to a temp file avoids passing the secret on a command
+          # line where it could leak into a run log.
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT: oybc-dev-e2668
+        run: |
+          if [ -z "$FIREBASE_SA_JSON" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT secret is not set."
+            echo "See .github/workflows/firestore-rules.yml header for setup steps."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SA_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          firebase deploy \
+            --only firestore:rules,firestore:indexes \
+            --project "$FIREBASE_PROJECT" \
+            --non-interactive
