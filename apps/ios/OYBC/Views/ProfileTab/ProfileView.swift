@@ -168,8 +168,10 @@ struct ProfileView: View {
 }
 
 #Preview {
-    NavigationStack {
+    let authService = AuthService()
+    return NavigationStack {
         ProfileView()
-            .environmentObject(AuthService())
+            .environmentObject(authService)
+            .environmentObject(authService.syncService)
     }
 }

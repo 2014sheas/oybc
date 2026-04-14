@@ -39,10 +39,10 @@ const initialState: SyncStatus = {
 };
 
 let state: SyncStatus = { ...initialState };
-const subscribers = new Set<(s: SyncStatus) => void>();
+const subscribers = new Set<() => void>();
 
 function notify(): void {
-  for (const fn of subscribers) fn(state);
+  for (const fn of subscribers) fn();
 }
 
 /** Snapshot of the current state. */
@@ -53,10 +53,14 @@ export function getSyncStatus(): SyncStatus {
 /**
  * Subscribe to state changes. Returns an unsubscribe function.
  *
+ * The callback signature matches React's `useSyncExternalStore`
+ * `subscribe` contract — `() => void`. Subscribers read the current
+ * value via `getSyncStatus()` after being notified.
+ *
  * Subscribers are notified after every `recordSyncEvent` /
  * `recordSyncError` / `resetSyncStatus` call.
  */
-export function subscribeSyncStatus(fn: (s: SyncStatus) => void): () => void {
+export function subscribeSyncStatus(fn: () => void): () => void {
   subscribers.add(fn);
   return () => {
     subscribers.delete(fn);

@@ -222,7 +222,10 @@ final class SyncService: ObservableObject {
         // that arrive during the push window.
         let lastSyncedAt = await fetchLastSyncedAt(userId: userId)
 
-        let push = await pushSync(userId: userId)
+        // Use the core (unguarded) push since fullSync already owns the
+        // isSyncing flag — calling the public pushSync here would deadlock
+        // on the guard.
+        let push = await pushSyncCore(userId: userId)
         let pull = await pullSync(userId: userId, lastSyncedAt: lastSyncedAt)
 
         let result = SyncResult(push: push, pull: pull)
@@ -245,7 +248,28 @@ final class SyncService: ObservableObject {
     ///
     /// - Parameter userId: The authenticated user's Firestore UID.
     /// - Returns: Push result summary.
+    /// Public push entry point — guarded by `isSyncing` so a debounced
+    /// second push can't start mid-flight. Mirrors the web sync loop's
+    /// guard. `fullSync` (which already owns `isSyncing`) calls
+    /// `pushSyncCore` directly to avoid double-locking the flag.
+    ///
+    /// Without this guard the queue maintenance below could re-queue
+    /// items an in-flight push has already marked IN_PROGRESS, causing
+    /// duplicate Firestore writes and conflict-handling churn.
     func pushSync(userId: String) async -> PushResult {
+        guard !isSyncing else {
+            log("Push skipped — another push is in flight")
+            return PushResult()
+        }
+        isSyncing = true
+        defer { isSyncing = false }
+        return await pushSyncCore(userId: userId)
+    }
+
+    /// Inner push implementation. Runs queue maintenance + drains
+    /// PENDING items. Caller is responsible for owning the `isSyncing`
+    /// flag — both `pushSync` and `fullSync` do.
+    private func pushSyncCore(userId: String) async -> PushResult {
         var result = PushResult()
 
         // Reset stale IN_PROGRESS items (e.g. force-quit mid-push) and
@@ -386,7 +410,7 @@ final class SyncService: ObservableObject {
                         try upsertLocalRecord(grdbTable: grdbTable, data: remoteData)
                         try markCompleted(item)
                         result.conflicts += 1
-                recordEvent(.conflict)
+                        recordEvent(.conflict)
                         let msg = "Delete conflict \(item.entityType)/\(item.entityId): remote wins"
                         result.details.append(msg)
                         log(msg)
@@ -515,8 +539,12 @@ final class SyncService: ObservableObject {
                 result.details.append(msg)
                 log(msg)
             } else {
+                // Local-wins pull: no remote data was applied, so don't
+                // record an observability event. `result.conflicts` still
+                // tracks the for-the-cycle-summary count for log parity
+                // with the web side; the cumulative counter only ticks
+                // when a remote write actually lands.
                 result.conflicts += 1
-                recordEvent(.conflict)
                 let localV = localData!["version"] as? Int ?? 0
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let msg = "Kept local users/\(userId) (local v\(localV) >= remote v\(remoteV))"
@@ -581,7 +609,7 @@ final class SyncService: ObservableObject {
                     // New remote document — insert locally.
                     try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
                     result.pulled += 1
-                recordEvent(.pulled)
+                    recordEvent(.pulled)
                     let msg = "Pulled \(collection.firestoreName)/\(remoteId) (new)"
                     result.details.append(msg)
                     log(msg)
@@ -594,15 +622,16 @@ final class SyncService: ObservableObject {
                 if winner == "remote" {
                     try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
                     result.pulled += 1
-                recordEvent(.pulled)
+                    recordEvent(.pulled)
                     let remoteV = remoteData["version"] as? Int ?? 0
                     let localV = localData!["version"] as? Int ?? 0
                     let msg = "Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV))"
                     result.details.append(msg)
                     log(msg)
                 } else {
+                    // Local-wins: no remote write applied; don't tick the
+                    // observability counter (matches web behaviour).
                     result.conflicts += 1
-                recordEvent(.conflict)
                     let localV = localData!["version"] as? Int ?? 0
                     let remoteV = remoteData["version"] as? Int ?? 0
                     let msg = "Kept local \(collection.firestoreName)/\(remoteId) (local v\(localV) >= remote v\(remoteV))"

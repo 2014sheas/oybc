@@ -420,21 +420,48 @@ extension AppDatabase {
         }
     }
 
-    /// Reset any sync queue items left in `inProgress` (e.g. from a
-    /// force-quit mid-push) back to `pending` so the next push picks
-    /// them up. Mirrors the equivalent reset at the top of the web
-    /// `pushSync`.
+    /// Reset sync queue items left in `inProgress` from a force-quit
+    /// or crashed push back to `pending`. Mirrors the equivalent reset
+    /// at the top of the web `pushSync`.
+    ///
+    /// Only items whose `lastAttemptAt` is older than `staleAfter`
+    /// (default 60 s) are reset, so a concurrent push currently
+    /// processing an item won't have its row yanked out from under it.
+    /// 60 s is a generous upper bound on how long a single Firestore
+    /// write should take; anything older is genuinely stuck.
+    ///
+    /// `SyncService.pushSync` also has an `isSyncing` guard preventing
+    /// concurrent pushes, but this staleness check is belt-and-
+    /// suspenders for the case where `pushSync` is called from
+    /// `fullSync` while another caller is mid-flight (rare, but the
+    /// MainActor reentrancy model allows it via async suspension).
     @discardableResult
-    func resetStaleInProgressSyncItems() throws -> Int {
+    func resetStaleInProgressSyncItems(staleAfter: TimeInterval = 60) throws -> Int {
+        let cutoff = Date().addingTimeInterval(-staleAfter)
+        let cutoffISO = ISO8601DateFormatter().string(from: cutoff)
+
         return try write { db in
-            let stale = try SyncQueueItem
+            let inProgress = try SyncQueueItem
                 .filter(Column("status") == SyncStatus.inProgress.rawValue)
                 .fetchAll(db)
-            for var item in stale {
+
+            var resetCount = 0
+            for var item in inProgress {
+                // No lastAttemptAt = item entered IN_PROGRESS before that
+                // field was tracked (or via direct write); treat as stale.
+                let isStale: Bool
+                if let lastAttemptAt = item.lastAttemptAt {
+                    isStale = lastAttemptAt < cutoffISO
+                } else {
+                    isStale = true
+                }
+                guard isStale else { continue }
+
                 item.status = .pending
                 try item.save(db)
+                resetCount += 1
             }
-            return stale.count
+            return resetCount
         }
     }
 
