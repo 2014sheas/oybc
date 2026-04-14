@@ -1,9 +1,7 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/AuthContext';
-import { db } from '../db/database';
-import { usePreferences } from '../hooks';
+import { usePreferences, useSyncStatus } from '../hooks';
 import styles from './ProfilePage.module.css';
 
 /**
@@ -22,12 +20,12 @@ export function ProfilePage(): React.ReactElement {
   const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
   const initial = displayNameInitial || emailInitial || '?';
 
-  // Live query for lastSyncedAt — auth context doesn't update when sync writes to DB.
-  const liveUser = useLiveQuery(
-    () => (user ? db.users.get(user.id) : undefined),
-    [user?.id]
-  );
-  const lastSyncedAt = liveUser?.lastSyncedAt;
+  // The "Last synced" label tracks the last successful push or listener
+  // delivery, not the safety-net pull watermark on `users.lastSyncedAt`.
+  // Backed by the in-memory `syncStatus` module so every preference write
+  // / cross-device pull updates the label immediately instead of waiting
+  // for the 5-minute safety-net tick.
+  const { lastEventAt } = useSyncStatus();
 
   return (
     <div className={styles.container}>
@@ -73,7 +71,7 @@ export function ProfilePage(): React.ReactElement {
         <div className={styles.settingsRow}>
           <span className={styles.rowLabel}>Last synced</span>
           <span className={styles.rowValue}>
-            {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Never'}
+            {lastEventAt ? lastEventAt.toLocaleTimeString() : 'Syncing…'}
           </span>
         </div>
       </div>

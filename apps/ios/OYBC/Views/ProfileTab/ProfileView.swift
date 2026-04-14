@@ -1,5 +1,4 @@
 import SwiftUI
-@preconcurrency import GRDB
 
 /// ProfileView - Account info, app-level settings, and sign out.
 ///
@@ -9,9 +8,8 @@ import SwiftUI
 /// new-board form and don't belong on the top-level settings surface.
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var syncService: SyncService
     @State private var signOutError: String?
-    @State private var lastSyncedAt: String?
-    @State private var lastSyncedObservation: DatabaseCancellable?
 
     private var preferences: UserPreferences { authService.userPreferences }
 
@@ -24,11 +22,6 @@ struct ProfileView: View {
             signOutSection
         }
         .navigationTitle("Profile")
-        .onAppear { startLastSyncedObservation() }
-        .onDisappear {
-            lastSyncedObservation?.cancel()
-            lastSyncedObservation = nil
-        }
     }
 
     // MARK: - Sections
@@ -135,28 +128,17 @@ struct ProfileView: View {
 
     // MARK: - Last-synced display
 
+    /// Reads the last successful push or listener-apply timestamp from
+    /// the SyncService's `@Published lastEventAt`. Updates immediately
+    /// on every preference write / cross-device pull instead of waiting
+    /// for the 5-minute safety-net pull to advance the watermark on
+    /// `users.lastSyncedAt`.
     private var formattedLastSynced: String {
-        guard let iso = lastSyncedAt,
-              let date = ISO8601DateFormatter().date(from: iso) else {
-            return "Never"
-        }
+        guard let date = syncService.lastEventAt else { return "Syncing…" }
         let formatter = DateFormatter()
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter.string(from: date)
-    }
-
-    /// Subscribes to GRDB `ValueObservation` on the signed-in user's row so
-    /// the Last-Synced label reflects sync writes without requiring a
-    /// refresh. The cancellable is retained in `@State` and torn down in
-    /// `.onDisappear`.
-    private func startLastSyncedObservation() {
-        guard let userId = authService.currentUser?.id else { return }
-        lastSyncedObservation = AppDatabase.shared.observeLastSynced(userId: userId) { value in
-            _Concurrency.Task { @MainActor in
-                self.lastSyncedAt = value
-            }
-        }
     }
 
     // MARK: - Subviews

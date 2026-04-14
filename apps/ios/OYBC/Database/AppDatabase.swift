@@ -337,27 +337,6 @@ extension AppDatabase {
         }
     }
 
-    /// Observes the `lastSyncedAt` column for a given user, invoking the
-    /// handler on every value change. Returns a `DatabaseCancellable` the
-    /// caller should retain for the lifetime of the observation. Used by
-    /// the Profile view so the "Last Synced" label live-updates when the
-    /// sync loop writes the watermark.
-    func observeLastSynced(
-        userId: String,
-        onChange: @escaping (String?) -> Void
-    ) -> DatabaseCancellable {
-        let observation = ValueObservation.tracking { db in
-            try User.fetchOne(db, key: userId)?.lastSyncedAt
-        }
-        return observation.start(
-            in: dbQueue,
-            onError: { error in
-                print("⚠️ lastSyncedAt observation failed: \(error)")
-            },
-            onChange: onChange
-        )
-    }
-
     /// Atomically merges a partial preferences update into the authenticated
     /// user's row, bumps `version` + `updatedAt`, and enqueues a sync queue
     /// UPDATE item for the `users` entity. The write and its sync-queue entry
