@@ -1,4 +1,5 @@
 export * from './enums';
+export * from './syncRetry';
 
 /**
  * Board size options

@@ -337,27 +337,6 @@ extension AppDatabase {
         }
     }
 
-    /// Observes the `lastSyncedAt` column for a given user, invoking the
-    /// handler on every value change. Returns a `DatabaseCancellable` the
-    /// caller should retain for the lifetime of the observation. Used by
-    /// the Profile view so the "Last Synced" label live-updates when the
-    /// sync loop writes the watermark.
-    func observeLastSynced(
-        userId: String,
-        onChange: @escaping (String?) -> Void
-    ) -> DatabaseCancellable {
-        let observation = ValueObservation.tracking { db in
-            try User.fetchOne(db, key: userId)?.lastSyncedAt
-        }
-        return observation.start(
-            in: dbQueue,
-            onError: { error in
-                print("⚠️ lastSyncedAt observation failed: \(error)")
-            },
-            onChange: onChange
-        )
-    }
-
     /// Atomically merges a partial preferences update into the authenticated
     /// user's row, bumps `version` + `updatedAt`, and enqueues a sync queue
     /// UPDATE item for the `users` entity. The write and its sync-queue entry
@@ -438,6 +417,91 @@ extension AppDatabase {
     func deleteSyncItem(id: String) throws {
         try write { db in
             try SyncQueueItem.deleteOne(db, key: id)
+        }
+    }
+
+    /// Reset sync queue items left in `inProgress` from a force-quit
+    /// or crashed push back to `pending`. Mirrors the equivalent reset
+    /// at the top of the web `pushSync`.
+    ///
+    /// Only items whose `lastAttemptAt` is older than `staleAfter`
+    /// (default 60 s) are reset, so a concurrent push currently
+    /// processing an item won't have its row yanked out from under it.
+    /// 60 s is a generous upper bound on how long a single Firestore
+    /// write should take; anything older is genuinely stuck.
+    ///
+    /// `SyncService.pushSync` also has an `isSyncing` guard preventing
+    /// concurrent pushes, but this staleness check is belt-and-
+    /// suspenders for the case where `pushSync` is called from
+    /// `fullSync` while another caller is mid-flight (rare, but the
+    /// MainActor reentrancy model allows it via async suspension).
+    @discardableResult
+    func resetStaleInProgressSyncItems(staleAfter: TimeInterval = 60) throws -> Int {
+        let cutoff = Date().addingTimeInterval(-staleAfter)
+        let cutoffISO = ISO8601DateFormatter().string(from: cutoff)
+
+        return try write { db in
+            let inProgress = try SyncQueueItem
+                .filter(Column("status") == SyncStatus.inProgress.rawValue)
+                .fetchAll(db)
+
+            var resetCount = 0
+            for var item in inProgress {
+                // No lastAttemptAt = item entered IN_PROGRESS before that
+                // field was tracked (or via direct write); treat as stale.
+                let isStale: Bool
+                if let lastAttemptAt = item.lastAttemptAt {
+                    isStale = lastAttemptAt < cutoffISO
+                } else {
+                    isStale = true
+                }
+                guard isStale else { continue }
+
+                item.status = .pending
+                try item.save(db)
+                resetCount += 1
+            }
+            return resetCount
+        }
+    }
+
+    /// Promote FAILED sync queue items back to `pending` when their
+    /// exponential-backoff window has elapsed and they're under the
+    /// retry cap. Items at or above `MAX_SYNC_RETRIES` are left FAILED
+    /// indefinitely; they require a fresh enqueue or a manual retry
+    /// from the playground SyncDashboard.
+    ///
+    /// Called at the top of `SyncService.pushSync`. The GRDB
+    /// `ValueObservation` on PENDING count re-fires when items are
+    /// promoted, which triggers the push-on-enqueue debounce — so
+    /// promotion implicitly schedules a fresh push without an explicit
+    /// kick.
+    @discardableResult
+    func promoteEligibleFailedSyncItems() throws -> Int {
+        let nowMs = Int(Date().timeIntervalSince1970 * 1000)
+        return try write { db in
+            let failed = try SyncQueueItem
+                .filter(Column("status") == SyncStatus.failed.rawValue)
+                .fetchAll(db)
+
+            var promoted = 0
+            for var item in failed {
+                if item.retryCount >= SyncRetry.maxRetries { continue }
+                let lastAttemptAtMs: Int? = item.lastAttemptAt
+                    .flatMap { ISO8601DateFormatter().date(from: $0) }
+                    .map { Int($0.timeIntervalSince1970 * 1000) }
+                guard SyncRetry.isFailedItemEligibleForRetry(
+                    retryCount: item.retryCount,
+                    lastAttemptAtMs: lastAttemptAtMs,
+                    nowMs: nowMs
+                ) else { continue }
+
+                item.status = .pending
+                item.lastError = nil
+                try item.save(db)
+                promoted += 1
+            }
+            return promoted
         }
     }
 }

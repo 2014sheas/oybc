@@ -14,12 +14,14 @@ import {
 import { liveQuery } from 'dexie';
 import { firestore, auth } from './config';
 import { resolveConflict, type SyncableEntity } from './conflictResolver';
+import { recordSyncEvent, recordSyncError, resetSyncStatus } from './syncStatus';
 import { db } from '../db/database';
 import {
   fetchPendingSyncItems,
   markSyncItemInProgress,
   markSyncItemCompleted,
   markSyncItemFailed,
+  promoteEligibleFailedItems,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
@@ -92,6 +94,12 @@ export async function pushSync(userId: string): Promise<PushResult> {
     await db.syncQueue.update(stale.id, { status: SyncStatus.PENDING });
   }
 
+  // Promote FAILED items whose backoff window has elapsed back to PENDING
+  // so the same loop picks them up. Promotion also re-fires the Dexie
+  // liveQuery on PENDING count, so even if this push doesn't drain them
+  // (rare), the next debounce will.
+  await promoteEligibleFailedItems();
+
   const pendingItems = await fetchPendingSyncItems();
   if (pendingItems.length === 0) return result;
 
@@ -130,6 +138,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
             await table.put(remoteData);
             await markSyncItemCompleted(item.id);
             result.conflicts++;
+            recordSyncEvent('conflict');
             result.details.push(`Delete conflict ${entityType}/${item.entityId}: remote wins (v${remoteData.version})`);
             continue;
           }
@@ -137,6 +146,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
         await writeSingleDoc(docRef, payload);
         await markSyncItemCompleted(item.id);
         result.pushed++;
+        recordSyncEvent('pushed');
         result.details.push(`Deleted ${entityType}/${item.entityId}`);
         continue;
       }
@@ -149,6 +159,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
         await writeSingleDoc(docRef, payload);
         await markSyncItemCompleted(item.id);
         result.pushed++;
+        recordSyncEvent('pushed');
         result.details.push(`Pushed ${entityType}/${item.entityId} (new)`);
         continue;
       }
@@ -162,6 +173,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
         await writeSingleDoc(docRef, payload);
         await markSyncItemCompleted(item.id);
         result.pushed++;
+        recordSyncEvent('pushed');
         result.details.push(
           `Pushed ${entityType}/${item.entityId} (local v${payload.version} > remote v${remoteData.version})`
         );
@@ -171,6 +183,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
         await table.put(remoteData);
         await markSyncItemCompleted(item.id);
         result.conflicts++;
+        recordSyncEvent('conflict');
         result.details.push(
           `Conflict ${entityType}/${item.entityId}: remote wins (v${remoteData.version} >= v${payload.version})`
         );
@@ -180,6 +193,8 @@ export async function pushSync(userId: string): Promise<PushResult> {
       console.error(`Sync push failed for ${item.entityType}/${item.entityId}:`, err);
       await markSyncItemFailed(item.id, errorMsg);
       result.failed++;
+      recordSyncEvent('failed');
+      recordSyncError(errorMsg);
       result.details.push(`Failed ${item.entityType}/${item.entityId}: ${errorMsg}`);
     }
   }
@@ -245,6 +260,7 @@ async function applyRemoteUserDoc(
   const localSyncable = localUser as SyncableEntity | undefined;
   if (!localUser) {
     await db.users.put(remoteUser);
+    recordSyncEvent('pulled');
     return `Pulled users/${userId} (new)`;
   }
   const resolution = resolveConflict(localSyncable!, remoteSyncable);
@@ -254,6 +270,7 @@ async function applyRemoteUserDoc(
       ...remoteUser,
       lastSyncedAt: localUser.lastSyncedAt ?? remoteUser.lastSyncedAt,
     });
+    recordSyncEvent('pulled');
     return `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`;
   }
   return null; // local-wins → silent no-op
@@ -275,11 +292,13 @@ async function applyRemoteSubdoc(
 
   if (!localData) {
     await table.put(remoteData);
+    recordSyncEvent('pulled');
     return `Pulled ${collectionName}/${remoteData.id} (new)`;
   }
   const resolution = resolveConflict(localData, remoteData);
   if (resolution.winner === 'remote') {
     await table.put(remoteData);
+    recordSyncEvent('pulled');
     return `Pulled ${collectionName}/${remoteData.id} (remote v${remoteData.version} > local v${localData.version})`;
   }
   return null; // local-wins → silent no-op
@@ -634,6 +653,9 @@ export function startSyncLoop(
       detachListeners = null;
     }
     window.removeEventListener('online', handleOnline);
+    // Counters are session-scoped — drop them when the loop tears down
+    // so the next sign-in starts from zero.
+    resetSyncStatus();
   };
 }
 
