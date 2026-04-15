@@ -1,13 +1,11 @@
 import { useState, useCallback } from 'react';
+import { InteractiveTaskSquare, DetailModal, FloatingContextMenu } from '../InteractiveTaskSquare';
 import {
-  InteractiveTaskSquare,
-  DetailModal,
-  FloatingContextMenu,
   applyAction,
   type TaskSquareData,
   type SquareState,
   type ContextMenuState,
-} from '../InteractiveTaskSquare';
+} from '../interactiveTaskSquareUtils';
 import styles from './TaskSquareActionsPlayground.module.css';
 
 // ─── Demo data ────────────────────────────────────────────────────────────────

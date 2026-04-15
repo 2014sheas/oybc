@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../firebase/AuthContext';
+import { useAuth } from '../firebase/useAuth';
 import { useBoards } from '../hooks';
 import { FilterTabs } from '../components/FilterTabs';
 import { BoardListItem } from '../components/BoardListItem';

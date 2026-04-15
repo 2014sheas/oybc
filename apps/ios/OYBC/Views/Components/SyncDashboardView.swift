@@ -36,6 +36,10 @@ struct SyncDashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             headerRow
             queueCountsRow
+            sessionActivityRow
+            if let lastError = syncService.lastError {
+                lastErrorRow(lastError)
+            }
             syncNowButton
             if let result = syncService.lastSyncResult {
                 lastResultSummary(result)
@@ -73,6 +77,58 @@ struct SyncDashboardView: View {
             countBadge(label: "Done", count: completedCount, color: .green)
             countBadge(label: "Failed", count: failedCount, color: .red)
         }
+    }
+
+    /// Session-scoped cumulative counters from the new observability
+    /// state (added in PR #20). Complements `queueCountsRow` — those
+    /// are "what's in the pipeline right now", these are "what's
+    /// happened since the sync loop started."
+    private var sessionActivityRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Session activity")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(formattedLastEventAt)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 16) {
+                countBadge(label: "Pushed", count: syncService.totalPushed, color: .blue)
+                countBadge(label: "Pulled", count: syncService.totalPulled, color: .teal)
+                countBadge(label: "Conflicts", count: syncService.totalConflicts, color: .orange)
+                countBadge(label: "Failed", count: syncService.totalFailed, color: .red)
+            }
+        }
+    }
+
+    private var formattedLastEventAt: String {
+        guard let date = syncService.lastEventAt else { return "No activity yet" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .medium
+        return "Last: \(formatter.string(from: date))"
+    }
+
+    private func lastErrorRow(_ error: SyncService.SyncErrorRecord) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text("Last error")
+                    .font(.caption.bold())
+                    .foregroundStyle(.red)
+            }
+            Text(error.message)
+                .font(.caption2)
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func countBadge(label: String, count: Int, color: Color) -> some View {

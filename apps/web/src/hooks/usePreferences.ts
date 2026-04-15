@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { mergeUserPreferences, type UserPreferences } from '@oybc/shared';
 import { db } from '../db/database';
 import { updateUserPreferences } from '../db/operations/users';
-import { useAuth } from '../firebase/AuthContext';
+import { useAuth } from '../firebase/useAuth';
 
 // ─── Legacy localStorage migration ───────────────────────────────────────────
 

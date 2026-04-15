@@ -7,7 +7,7 @@ import {
   type Task,
   type BoardTask,
 } from '@oybc/shared';
-import { useAuth } from '../firebase/AuthContext';
+import { useAuth } from '../firebase/useAuth';
 import { useBoard, useBoardTasks, useTasks } from '../hooks';
 import { db } from '../db/database';
 import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
@@ -16,8 +16,8 @@ import {
   InteractiveTaskSquare,
   DetailModal,
   FloatingContextMenu,
-  type ContextMenuState,
 } from '../components/InteractiveTaskSquare';
+import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { BoardStatusBadge } from '../components/BoardStatusBadge';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';

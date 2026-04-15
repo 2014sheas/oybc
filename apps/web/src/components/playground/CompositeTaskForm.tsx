@@ -7,7 +7,8 @@ import { CounterStepper } from '../CounterStepper';
 import { SubtaskChip } from '../SubtaskChip';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS, getCharCountClass } from './playgroundUtils';
 import { CountingStepFields } from '../CountingStepFields';
-import { ProgressStepRow, type StepFormState, createEmptyStep } from '../ProgressStepRow';
+import { ProgressStepRow } from '../ProgressStepRow';
+import { type StepFormState, createEmptyStep } from '../progressStepUtils';
 import styles from './CompositeTaskForm.module.css';
 
 /** Maximum character length for composite task title */

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useAuth } from '../firebase/AuthContext';
+import { useAuth } from '../firebase/useAuth';
 import { startSyncLoop } from '../firebase/syncService';
 
 /**
