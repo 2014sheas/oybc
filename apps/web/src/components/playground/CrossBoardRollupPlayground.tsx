@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   TaskType,
@@ -118,46 +118,60 @@ export function CrossBoardRollupPlayground(): React.ReactElement {
   // ── Reactive data ──────────────────────────────────────────────────────────
 
   /** All BoardTasks for Board A, reactively updated */
-  const boardABoardTasks: BoardTask[] =
-    useLiveQuery<BoardTask[]>(
-      () =>
-        demoState
-          ? db.boardTasks.where('boardId').equals(demoState.boardAId).toArray()
-          : Promise.resolve([] as BoardTask[]),
-      [demoState?.boardAId]
-    ) ?? [];
+  const boardABoardTasksRaw = useLiveQuery<BoardTask[]>(
+    () =>
+      demoState
+        ? db.boardTasks.where('boardId').equals(demoState.boardAId).toArray()
+        : Promise.resolve([] as BoardTask[]),
+    [demoState?.boardAId]
+  );
+  // Memoize the fallback so dep arrays that include `boardABoardTasks`
+  // see a stable identity instead of a fresh `[]` each render.
+  const boardABoardTasks: BoardTask[] = useMemo(
+    () => boardABoardTasksRaw ?? [],
+    [boardABoardTasksRaw]
+  );
 
   /** All BoardTasks for Board B, reactively updated */
-  const boardBBoardTasks: BoardTask[] =
-    useLiveQuery<BoardTask[]>(
-      () =>
-        demoState
-          ? db.boardTasks.where('boardId').equals(demoState.boardBId).toArray()
-          : Promise.resolve([] as BoardTask[]),
-      [demoState?.boardBId]
-    ) ?? [];
+  const boardBBoardTasksRaw = useLiveQuery<BoardTask[]>(
+    () =>
+      demoState
+        ? db.boardTasks.where('boardId').equals(demoState.boardBId).toArray()
+        : Promise.resolve([] as BoardTask[]),
+    [demoState?.boardBId]
+  );
+  const boardBBoardTasks: BoardTask[] = useMemo(
+    () => boardBBoardTasksRaw ?? [],
+    [boardBBoardTasksRaw]
+  );
 
   /** All tasks for the playground user, for resolving task metadata */
-  const allTasks: Task[] =
-    useLiveQuery(
-      () =>
-        db.tasks
-          .filter((t: Task) => t.userId === PLAYGROUND_USER_ID && !t.isDeleted)
-          .toArray(),
-      []
-    ) ?? [];
+  const allTasksRaw = useLiveQuery(
+    () =>
+      db.tasks
+        .filter((t: Task) => t.userId === PLAYGROUND_USER_ID && !t.isDeleted)
+        .toArray(),
+    []
+  );
+  const allTasks: Task[] = useMemo(() => allTasksRaw ?? [], [allTasksRaw]);
 
   /** All task steps for the playground user (to resolve step IDs) */
-  const allTaskSteps: TaskStep[] =
-    useLiveQuery(
-      () =>
-        db.taskSteps.filter((s: TaskStep) => !s.isDeleted).toArray(),
-      []
-    ) ?? [];
+  const allTaskStepsRaw = useLiveQuery(
+    () => db.taskSteps.filter((s: TaskStep) => !s.isDeleted).toArray(),
+    []
+  );
+  const allTaskSteps: TaskStep[] = useMemo(
+    () => allTaskStepsRaw ?? [],
+    [allTaskStepsRaw]
+  );
 
-  // Build task lookup map
-  const taskMap: Record<string, Task> = {};
-  for (const t of allTasks) taskMap[t.id] = t;
+  // Build task lookup map (memoized so callbacks that depend on `taskMap`
+  // aren't reconstructed every render).
+  const taskMap: Record<string, Task> = useMemo(() => {
+    const m: Record<string, Task> = {};
+    for (const t of allTasks) m[t.id] = t;
+    return m;
+  }, [allTasks]);
 
   // ── Demo setup ─────────────────────────────────────────────────────────────
 

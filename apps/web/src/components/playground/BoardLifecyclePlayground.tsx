@@ -105,6 +105,24 @@ export function BoardLifecyclePlayground(): React.ReactElement {
     setTimeout(() => setFlashMessage(null), BINGO_FLASH_MS);
   }
 
+  // ── Board play interactions ──────────────────────────────────────────────
+  // `handleSelectBoard` is declared first so it's captured cleanly in
+  // `handleCreateDemoBoard`'s dep array without TDZ issues.
+
+  /**
+   * Selects a board for play. If the board is in DRAFT status it is
+   * automatically transitioned to ACTIVE.
+   *
+   * @param boardId - The board to select
+   */
+  const handleSelectBoard = useCallback(async (boardId: string): Promise<void> => {
+    setSelectedBoardId(boardId);
+    setSelectedSquareId(null);
+    setContextMenu(null);
+    // Auto-activate DRAFT boards the moment the player selects them
+    await activateBoard(boardId);
+  }, []);
+
   // ── Demo board creation ──────────────────────────────────────────────────
 
   /**
@@ -191,23 +209,7 @@ export function BoardLifecyclePlayground(): React.ReactElement {
     } finally {
       setIsSettingUp(false);
     }
-  }, [allBoards.length]);
-
-  // ── Board play interactions ──────────────────────────────────────────────
-
-  /**
-   * Selects a board for play. If the board is in DRAFT status it is
-   * automatically transitioned to ACTIVE.
-   *
-   * @param boardId - The board to select
-   */
-  const handleSelectBoard = useCallback(async (boardId: string): Promise<void> => {
-    setSelectedBoardId(boardId);
-    setSelectedSquareId(null);
-    setContextMenu(null);
-    // Auto-activate DRAFT boards the moment the player selects them
-    await activateBoard(boardId);
-  }, []);
+  }, [allBoards.length, handleSelectBoard]);
 
   /**
    * Fires a task completion through the orchestration layer, then inspects
