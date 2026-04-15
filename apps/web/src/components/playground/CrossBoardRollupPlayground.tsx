@@ -19,8 +19,8 @@ import {
   InteractiveTaskSquare,
   DetailModal,
   FloatingContextMenu,
-  type ContextMenuState,
 } from '../InteractiveTaskSquare';
+import type { ContextMenuState } from '../interactiveTaskSquareUtils';
 import styles from './CrossBoardRollupPlayground.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

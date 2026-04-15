@@ -24,8 +24,8 @@ import {
   InteractiveTaskSquare,
   DetailModal,
   FloatingContextMenu,
-  type ContextMenuState,
 } from '../InteractiveTaskSquare';
+import type { ContextMenuState } from '../interactiveTaskSquareUtils';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from './playgroundUtils';
 import styles from './BoardLifecyclePlayground.module.css';
 

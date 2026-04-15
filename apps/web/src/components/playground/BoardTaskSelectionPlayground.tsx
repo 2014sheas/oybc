@@ -20,19 +20,19 @@ import { createBoard } from '../../db/operations/boards';
 import { createBoardTask } from '../../db/operations/boardTasks';
 import { useBoards, useBoardTasks, useTasks } from '../../hooks';
 import { taskToSquareData, boardTaskToSquareState } from '../../db/adapters';
+import { InteractiveTaskSquare, FloatingContextMenu } from '../InteractiveTaskSquare';
 import {
-  InteractiveTaskSquare,
-  FloatingContextMenu,
   type TaskSquareData,
   type SquareState,
   type ContextMenuState,
   interactiveTaskSquareStyles as sqStyles,
-} from '../InteractiveTaskSquare';
+} from '../interactiveTaskSquareUtils';
 import { FilterTabs } from '../FilterTabs';
 import { TaskTypeSelector } from '../TaskTypeSelector';
 import { TypeBadge } from '../TypeBadge';
 import { PoolItem } from '../PoolItem';
-import { ProgressStepRow, type StepFormState, createEmptyStep } from '../ProgressStepRow';
+import { ProgressStepRow } from '../ProgressStepRow';
+import { type StepFormState, createEmptyStep } from '../progressStepUtils';
 import { CountingDerivationPanel } from '../CountingDerivationPanel';
 import { ProgressDerivationPanel } from '../ProgressDerivationPanel';
 import { CompositeDerivationPanel } from '../CompositeDerivationPanel';

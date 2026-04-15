@@ -9,7 +9,7 @@ import {
   type CompositeTask,
   type CompositeNode,
 } from '@oybc/shared';
-import { useAuth } from '../firebase/AuthContext';
+import { useAuth } from '../firebase/useAuth';
 import { useTasks, usePreferences } from '../hooks';
 import { useCompositeTasks } from '../hooks/useCompositeTasks';
 import { db } from '../db/database';
@@ -18,7 +18,8 @@ import { FilterTabs } from '../components/FilterTabs';
 import { TaskTypeSelector } from '../components/TaskTypeSelector';
 import { TypeBadge } from '../components/TypeBadge';
 import { PoolItem } from '../components/PoolItem';
-import { ProgressStepRow, type StepFormState, createEmptyStep } from '../components/ProgressStepRow';
+import { ProgressStepRow } from '../components/ProgressStepRow';
+import { type StepFormState, createEmptyStep } from '../components/progressStepUtils';
 import { CountingDerivationPanel } from '../components/CountingDerivationPanel';
 import { ProgressDerivationPanel } from '../components/ProgressDerivationPanel';
 import { CompositeDerivationPanel } from '../components/CompositeDerivationPanel';

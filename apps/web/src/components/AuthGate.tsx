@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../firebase/AuthContext';
+import { useAuth } from '../firebase/useAuth';
 import styles from './AuthGate.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

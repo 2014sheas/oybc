@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { User } from '@oybc/shared';
 import {
   signUp as authSignUp,
@@ -8,29 +8,7 @@ import {
   signOut as authSignOut,
   onAuthStateChanged,
 } from './authService';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface AuthContextValue {
-  /** The authenticated user, or null if signed out */
-  user: User | null;
-  /** True while the initial auth state is being resolved */
-  isLoading: boolean;
-  /** Sign up with email/password */
-  signUp: (email: string, password: string) => Promise<User>;
-  /** Sign in with email/password */
-  signIn: (email: string, password: string) => Promise<User>;
-  /** Sign in with Google popup */
-  signInWithGoogle: () => Promise<User>;
-  /** Sign in with Apple popup */
-  signInWithApple: () => Promise<User>;
-  /** Sign out */
-  signOut: () => Promise<void>;
-}
-
-// ─── Context ──────────────────────────────────────────────────────────────────
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+import { AuthContext, type AuthContextValue } from './authContextValue';
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
@@ -67,18 +45,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
-/**
- * Access the auth context. Must be used within an AuthProvider.
- *
- * @returns Auth state and actions
- * @throws If used outside of AuthProvider
- */
-export function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}
+// `useAuth` lives in `./useAuth` so this file only exports components
+// (required for Fast Refresh). Consumers should import from there:
+//   import { useAuth } from '../firebase/useAuth';

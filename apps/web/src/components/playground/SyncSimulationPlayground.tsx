@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useAuth } from '../../firebase/AuthContext';
+import { useAuth } from '../../firebase/useAuth';
 import { fullSync } from '../../firebase/syncService';
 import { clearCompletedSyncItems } from '../../db/operations/syncQueue';
 import { db } from '../../db/database';

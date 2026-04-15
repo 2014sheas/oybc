@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { UserPreferences } from '@oybc/shared';
-import { useAuth } from '../firebase/AuthContext';
+import { useAuth } from '../firebase/useAuth';
 import { usePreferences, useSyncStatus } from '../hooks';
 import styles from './ProfilePage.module.css';
 

@@ -1,5 +1,5 @@
 import { TaskType, type Task, type TaskStep, type BoardTask } from '@oybc/shared';
-import type { TaskSquareData, SquareState } from '../components/InteractiveTaskSquare';
+import type { TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
 
 /**
  * Converts a Task record (and its associated TaskStep records) to the
