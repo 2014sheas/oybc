@@ -44,7 +44,13 @@ export function useBoardsWithBingos(userId: string | undefined, timeframe: strin
 
       return db.boards
         .where('[userId+timeframe+linesCompleted]')
-        .between([userId, timeframe, 1] as any, [userId, timeframe, Infinity] as any)
+        // Dexie's compound-index range types are under-specified; the
+        // tuple shape is correct but the library's typing wants a
+        // `readonly unknown[]` here.
+        .between(
+          [userId, timeframe, 1] as readonly unknown[],
+          [userId, timeframe, Infinity] as readonly unknown[]
+        )
         .toArray();
     },
     [userId, timeframe],

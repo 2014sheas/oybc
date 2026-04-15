@@ -1,6 +1,6 @@
 import { db } from '../database';
 import type { Task, TaskStep, CreateTaskInput } from '@oybc/shared';
-import { SyncOperationType } from '@oybc/shared';
+import { SyncOperationType, TaskType } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -180,7 +180,9 @@ export async function addTaskStep(
     taskId,
     stepIndex: maxIndex + 1,
     title: stepInput.title,
-    type: stepInput.type as any,
+    // `stepInput.type` is the narrower `'normal' | 'counting'` literal
+    // union; cast through `TaskType` since TaskStep accepts the full enum.
+    type: stepInput.type as TaskType,
     action: stepInput.action,
     unit: stepInput.unit,
     maxCount: stepInput.maxCount,

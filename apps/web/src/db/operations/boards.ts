@@ -154,6 +154,10 @@ export async function fetchBoardsByTimeframe(
 ): Promise<Board[]> {
   return db.boards
     .where('[userId+timeframe+status]')
+    // Dexie's `.equals()` signature takes `IndexableType` and doesn't
+    // model compound-index tuples; `any` is the project convention for
+    // this specific library-typing quirk.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .equals([userId, timeframe, BoardStatus.COMPLETED] as any)
     .toArray();
 }
@@ -168,8 +172,8 @@ export async function countBingos(
   return db.boards
     .where('[userId+timeframe+linesCompleted]')
     .between(
-      [userId, timeframe, 1] as any,
-      [userId, timeframe, Infinity] as any
+      [userId, timeframe, 1] as readonly unknown[],
+      [userId, timeframe, Infinity] as readonly unknown[]
     )
     .count();
 }
