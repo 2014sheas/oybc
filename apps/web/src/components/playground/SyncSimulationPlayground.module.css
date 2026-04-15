@@ -121,6 +121,73 @@
   color: var(--error-text, #dc3545);
 }
 
+.summaryPushed {
+  border-color: #0d6efd;
+}
+
+.summaryPushed .summaryCount {
+  color: #0d6efd;
+}
+
+.summaryPulled {
+  border-color: #14b8a6;
+}
+
+.summaryPulled .summaryCount {
+  color: #14b8a6;
+}
+
+/* ─── Session Activity ──────────────────────────────────────────────────────── */
+
+.sessionActivity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sessionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.sessionTitle {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.sessionTimestamp {
+  font-family: monospace;
+  font-size: 0.72rem;
+}
+
+.lastErrorCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(220, 53, 69, 0.08);
+  border: 1px solid var(--error-border, #f5c6cb);
+  border-radius: 8px;
+}
+
+.lastErrorLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--error-text, #dc3545);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lastErrorMessage {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
 /* ─── Section ───────────────────────────────────────────────────────────────── */
 
 .section {

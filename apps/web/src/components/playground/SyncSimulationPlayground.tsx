@@ -6,6 +6,7 @@ import { clearCompletedSyncItems } from '../../db/operations/syncQueue';
 import { db } from '../../db/database';
 import { SyncStatus, type SyncQueueItem } from '@oybc/shared';
 import { AuthGate } from '../AuthGate';
+import { useSyncStatus } from '../../hooks/useSyncStatus';
 import styles from './SyncSimulationPlayground.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ function SyncDashboard(): React.ReactElement {
   const { user } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [events, setEvents] = useState<SyncEvent[]>([]);
+  const syncStatus = useSyncStatus();
 
   // ── Reactive sync queue data ──────────────────────────────────────────
 
@@ -160,6 +162,42 @@ function SyncDashboard(): React.ReactElement {
           <span className={styles.summaryCount}>{allQueueItems.length}</span>
           <span className={styles.summaryLabel}>Total</span>
         </div>
+      </div>
+
+      {/* ── Session activity (cumulative since app start) ── */}
+      <div className={styles.sessionActivity}>
+        <div className={styles.sessionHeader}>
+          <span className={styles.sessionTitle}>Session activity</span>
+          <span className={styles.sessionTimestamp}>
+            {syncStatus.lastEventAt
+              ? `Last: ${syncStatus.lastEventAt.toLocaleTimeString()}`
+              : 'No activity yet'}
+          </span>
+        </div>
+        <div className={styles.queueSummary}>
+          <div className={`${styles.summaryItem} ${styles.summaryPushed}`}>
+            <span className={styles.summaryCount}>{syncStatus.totalPushed}</span>
+            <span className={styles.summaryLabel}>Pushed</span>
+          </div>
+          <div className={`${styles.summaryItem} ${styles.summaryPulled}`}>
+            <span className={styles.summaryCount}>{syncStatus.totalPulled}</span>
+            <span className={styles.summaryLabel}>Pulled</span>
+          </div>
+          <div className={`${styles.summaryItem} ${styles.summaryPending}`}>
+            <span className={styles.summaryCount}>{syncStatus.totalConflicts}</span>
+            <span className={styles.summaryLabel}>Conflicts</span>
+          </div>
+          <div className={`${styles.summaryItem} ${styles.summaryFailed}`}>
+            <span className={styles.summaryCount}>{syncStatus.totalFailed}</span>
+            <span className={styles.summaryLabel}>Failed</span>
+          </div>
+        </div>
+        {syncStatus.lastError && (
+          <div className={styles.lastErrorCard}>
+            <span className={styles.lastErrorLabel}>⚠ Last error</span>
+            <span className={styles.lastErrorMessage}>{syncStatus.lastError.message}</span>
+          </div>
+        )}
       </div>
 
       {/* ── Sync Queue Table ── */}
