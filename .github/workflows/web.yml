@@ -43,7 +43,7 @@ jobs:
       - name: Setup pnpm
         # Pin to the version declared in root package.json#packageManager
         # so CI's resolver behaves identically to local development.
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 8.15.0
 
