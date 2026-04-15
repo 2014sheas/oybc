@@ -155,7 +155,9 @@ export async function updateAchievementProgress(
  * Find all achievement squares across all boards
  */
 export async function fetchAchievementSquares(): Promise<BoardTask[]> {
-  return db.boardTasks.where('isAchievementSquare').equals(true as any).toArray();
+  // Dexie types `.equals()` against `IndexableType` which excludes
+  // booleans, but IndexedDB coerces booleans to 1/0 at runtime.
+  return db.boardTasks.where('isAchievementSquare').equals(true as unknown as string).toArray();
 }
 
 /**
@@ -166,6 +168,9 @@ export async function fetchAchievementSquaresByTimeframe(
 ): Promise<BoardTask[]> {
   return db.boardTasks
     .where('[isAchievementSquare+achievementTimeframe]')
+    // Dexie's `.equals()` doesn't model compound-index tuples in its
+    // type signature (only scalar IndexableType).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .equals([true, timeframe] as any)
     .toArray();
 }

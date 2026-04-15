@@ -435,7 +435,7 @@ export function CrossBoardRollupPlayground(): React.ReactElement {
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [demoState, taskMap, boardABoardTasks]
   );
 
@@ -507,7 +507,7 @@ export function CrossBoardRollupPlayground(): React.ReactElement {
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [demoState, taskMap, boardABoardTasks]
   );
 
@@ -576,7 +576,7 @@ export function CrossBoardRollupPlayground(): React.ReactElement {
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [demoState, taskMap, boardABoardTasks]
   );
 

@@ -41,7 +41,10 @@ export function useTaskSteps(taskId: string | undefined) {
 
       return db.taskSteps
         .where('[taskId+stepIndex]')
-        .between([taskId, 0] as any, [taskId, Infinity] as any)
+        // Dexie's compound-index range types are under-specified; the
+        // tuple shape is correct but the library's typing wants a
+        // `readonly unknown[]` here.
+        .between([taskId, 0] as readonly unknown[], [taskId, Infinity] as readonly unknown[])
         .filter((s) => !s.isDeleted)
         .toArray();
     },

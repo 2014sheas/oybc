@@ -239,7 +239,7 @@ export function BoardLifecyclePlayground(): React.ReactElement {
         showFlash(`Bingo! ${result.newBingos.join(', ')}`, 'bingo');
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     []
   );
 

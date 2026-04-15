@@ -34,7 +34,12 @@ export function useBoardTask(boardTaskId: string | undefined) {
 export function useAchievementSquares() {
   return useLiveQuery(
     async () => {
-      return db.boardTasks.where('isAchievementSquare').equals(true as any).toArray();
+      // Dexie types `.equals()` against `IndexableType` (string | number |
+      // Date | ...) which excludes booleans, but IndexedDB coerces stored
+      // booleans to 1/0 and the runtime query works fine. Cast through
+      // `unknown` so the linter can see this is a deliberate escape hatch
+      // rather than an accidental `any`.
+      return db.boardTasks.where('isAchievementSquare').equals(true as unknown as string).toArray();
     },
     [],
     []

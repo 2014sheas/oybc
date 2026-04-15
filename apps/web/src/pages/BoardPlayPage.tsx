@@ -135,7 +135,7 @@ export function BoardPlayPage(): React.ReactElement {
         setContextMenu(null);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [id]
   );
 

@@ -1,0 +1,72 @@
+name: Web
+
+# Build, test, and lint the web app + shared package on every PR that
+# touches them. Mirrors the iOS workflow's shape so contributors get
+# consistent CI signal across the monorepo. Closes the gap that
+# previously meant only iOS PRs got an automated check.
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'apps/web/**'
+      - 'packages/shared/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'turbo.json'
+      - '.github/workflows/web.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'apps/web/**'
+      - 'packages/shared/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'turbo.json'
+      - '.github/workflows/web.yml'
+
+# Cancel in-flight runs for the same PR when a newer commit is pushed.
+# `github.ref` is a Git ref (sanitised by GitHub), safe to interpolate
+# into the concurrency key — not user-controllable input.
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        # Pin to the version declared in root package.json#packageManager
+        # so CI's resolver behaves identically to local development.
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20  # current LTS, satisfies engines: >=18
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        # `tsc && vite build` for web (catches type errors via tsc),
+        # `tsc` for shared. No separate typecheck step needed.
+        run: pnpm -w build
+
+      - name: Test
+        # Turbo runs the `test` task in any package that defines one.
+        # Today: shared (Jest, 297 tests). Web has no `test` script
+        # and is silently skipped — that's the right behaviour.
+        run: pnpm -w test
+
+      - name: Lint
+        # ESLint on web + shared via Turbo's `lint` task.
+        run: pnpm -w lint
