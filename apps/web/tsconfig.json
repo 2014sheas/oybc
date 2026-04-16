@@ -14,6 +14,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* TS 6 deprecations — keep current behavior until we do the v7 migration */
+    "ignoreDeprecations": "6.0",
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
