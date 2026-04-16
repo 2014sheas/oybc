@@ -500,9 +500,9 @@ oybc/                           # Monorepo root
 - ✅ No data loss in offline scenarios
 - ✅ Composite task trees sync correctly
 
-### Phase 4: Production Integration — IN PROGRESS
+### Phase 4: Production Integration — COMPLETE
 
-Replace the playground-only app with a real production UI. Tab-based navigation, auth-gated, web + iOS simultaneously.
+Replaced the playground-only app with a real production UI. Tab-based navigation, auth-gated, web + iOS simultaneously.
 
 **Navigation**: Bottom tab bar — Boards (default), Create, Profile.
 
@@ -511,7 +511,7 @@ Replace the playground-only app with a real production UI. Tab-based navigation,
 - [x] Phase 4.2: Board list (filtering, progress, navigation)
 - [x] Phase 4.3: Board play (bingo grid, completion, flash messages)
 - [x] Phase 4.4: Create tab (task pool + BoardCreatorPanel)
-- [ ] Phase 4.5: Profile + settings + polish (design pass, display-name edit, sign-in polish)
+- [x] Phase 4.5: Profile + settings + polish (display-name edit, sync indicator, sign-out confirm, empty states)
 
 **Key files**:
 - `TabBar.tsx` ↔ `MainTabView.swift` — bottom tab navigation
@@ -519,12 +519,26 @@ Replace the playground-only app with a real production UI. Tab-based navigation,
 - `BoardPlayPage.tsx` ↔ `BoardPlayView.swift` — board play
 - `CreatePage.tsx` ↔ `CreateView.swift` — board creation
 - `ProfilePage.tsx` ↔ `ProfileView.swift` — settings + sign out
+- `SyncStatusIndicator.tsx` ↔ `SyncStatusIndicatorView.swift` — online/offline + sync controls
+- `NetworkMonitor.swift` — iOS NWPathMonitor wrapper (no web equivalent; uses `navigator.onLine`)
 
 **Principle**: Extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.
 
-### Phase 5: Polish & Launch
+### Phase 5: Polish & Launch — IN PROGRESS
 
-- [ ] UI polish and animations
+**CI/CD & repo automation** (complete):
+- [x] Web CI workflow (build + test + lint on PRs to dev)
+- [x] iOS CI workflow (build + test on PRs to dev)
+- [x] Firestore rules auto-deploy on merge to dev
+- [x] Dependabot (npm weekly, GitHub Actions monthly)
+- [x] PR template with test plan + parity checklist
+- [x] Copilot code review on all PRs
+- [x] ESLint 10 flat config migration
+- [x] TypeScript 6 upgrade
+- [x] pnpm 9 upgrade (8.15 deprecated)
+
+**Remaining**:
+- [ ] Cross-platform parity audit (manual side-by-side review)
 - [ ] Achievement squares and progress counters
 - [ ] TestFlight beta (5-10 users)
 - [ ] No sync bugs (1 week testing)

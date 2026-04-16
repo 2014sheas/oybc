@@ -110,14 +110,17 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── ProgressDerivationPanel.tsx ←→               ProgressDerivationPanelView.swift
     ├── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
     ├── AuthGate.tsx               ←→               Views/AuthGateView.swift
-    └── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
+    ├── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
+    └── SyncStatusIndicator.tsx    ←→               Views/Components/SyncStatusIndicatorView.swift
 │
 ├── firebase/                                       Services/
 │   ├── config.ts                  ←→               OYBCApp.swift (FirebaseApp.configure)
 │   ├── authService.ts             ←→               Services/AuthService.swift
 │   ├── AuthContext.tsx            ←→               (AuthService is @ObservableObject)
 │   ├── syncService.ts             ←→               Services/SyncService.swift
+│   ├── syncStatus.ts             ←→               (inline @Published on SyncService.swift)
 │   └── conflictResolver.ts       ←→               (inline in SyncService.swift)
+│                                                   Services/NetworkMonitor.swift (iOS only, NWPathMonitor)
 │
 ├── components/playground/
 │   └── SyncSimulationPlayground.tsx ←→             Views/Components/SyncDashboardView.swift
@@ -313,7 +316,23 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - `docs/TASK_SYSTEM.md` — Comprehensive task system documentation
 - `docs/COMPOSITE_TASKS.md` — Composite/progress task system details
 
-**Not yet configured**: CI/CD, Prettier, SwiftLint. Linting is ESLint only (web).
+**Not yet configured**: Prettier, SwiftLint.
+
+## CI/CD
+
+Three GitHub Actions workflows run on PRs to `dev` and on merge:
+
+| Workflow | File | Trigger |
+| --- | --- | --- |
+| **Web** | `.github/workflows/web.yml` | PRs/pushes touching `apps/web/`, `packages/shared/`, lockfile, turbo config |
+| **iOS** | `.github/workflows/ios.yml` | PRs/pushes touching `apps/ios/` |
+| **Firestore rules** | `.github/workflows/firestore-rules.yml` | Push to `dev` touching `firestore.rules` / `firestore.indexes.json` (deploy only, no PR trigger) |
+
+**Dependabot** (`.github/dependabot.yml`): npm weekly (minor/patch grouped, majors separate), GitHub Actions monthly. SPM not supported — iOS deps bumped manually.
+
+**Copilot code review**: request on PRs via `gh api --method POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers --input - <<< '{"reviewers":["Copilot"]}'`. Address review comments before merging.
+
+**pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v4` with explicit `version: 9.15.4` (v6 of the action ignores the version input).
 
 ## Development Status
 
@@ -347,9 +366,7 @@ Playground-tested features: unified task creator, composite tasks, board generat
 | Firestore security rules   | COMPLETE |
 | Sync playground section    | COMPLETE |
 
-**Current Phase**: Phase 4 — Production Integration
-
-### Production Integration Plan
+**Phase 4**: Production Integration — COMPLETE
 
 Tab-based app with auth gate. Web + iOS built simultaneously.
 
@@ -362,19 +379,25 @@ Tab-based app with auth gate. Web + iOS built simultaneously.
 | 2 | Board list (filtering, progress indicators, tap to navigate) | COMPLETE |
 | 3 | Board play (bingo grid, task completion, flash messages) | COMPLETE |
 | 4 | Create tab (task pool + BoardCreatorPanel) | COMPLETE |
-| 5 | Profile + settings + polish (board defaults, theme, sync status, sign out) | — |
+| 5 | Profile + settings + polish | COMPLETE |
 
-**Key principle**: Reuse playground-tested components — extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.
+**Routes (web)**: `/boards`, `/boards/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/playground` (dev tool)
 
-**New files per phase**:
-- Phase 1: `TabBar.tsx` ↔ `MainTabView.swift`, `BoardsPage.tsx` ↔ `BoardListView.swift`, `CreatePage.tsx` ↔ `CreateView.swift`, `ProfilePage.tsx` ↔ `ProfileView.swift`, `useSyncLoop.ts`
-- Phase 2: `BoardListItem.tsx` ↔ `BoardListItemView.swift`, `BoardStatusBadge.tsx` ↔ `BoardStatusBadgeView.swift`
-- Phase 3: `BoardPlayPage.tsx` ↔ `BoardPlayView.swift`
+**Current Phase**: Phase 5 — Polish & Launch
 
-**Routes (web)**: `/boards`, `/boards/:id`, `/create`, `/profile`, `/playground` (dev tool)
+| Feature | Status |
+| --- | --- |
+| Sign-out confirmation dialog (web + iOS) | COMPLETE |
+| Empty states on Create tab | COMPLETE |
+| Display name edit (Firebase Auth + local DB + sync) | COMPLETE |
+| Sync status indicator (online/offline, error, Sync Now) | COMPLETE |
+| iOS NetworkMonitor (NWPathMonitor) | COMPLETE |
+| Parity audit (manual cross-platform review) | — |
 
 ## Branching Strategy
 
 - Feature branches: `feature/feature-name`
 - Bugfix branches: `bugfix/bug-description`
-- Merge to `dev` only after code review and passing all tests.
+- Merge to `dev` only after CI passes (web + iOS workflows) and Copilot review is addressed.
+- Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
+- When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
