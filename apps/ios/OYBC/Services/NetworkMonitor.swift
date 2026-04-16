@@ -15,7 +15,10 @@ final class NetworkMonitor: ObservableObject {
 
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
-            Task { @MainActor in
+            // `_Concurrency.Task` to disambiguate from the OYBC `Task`
+            // data model (Database/Models/Task.swift) — Swift picks the
+            // local type by default in this file and fails compilation.
+            _Concurrency.Task { @MainActor in
                 self?.isConnected = path.status == .satisfied
             }
         }
