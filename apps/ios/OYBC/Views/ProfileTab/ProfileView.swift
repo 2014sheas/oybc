@@ -75,12 +75,7 @@ struct ProfileView: View {
                 Label("Theme", systemImage: "paintpalette")
             }
 
-            HStack {
-                Label("Last Synced", systemImage: "arrow.triangle.2.circlepath")
-                Spacer()
-                Text(formattedLastSynced)
-                    .foregroundStyle(.secondary)
-            }
+            SyncStatusIndicatorView()
         }
     }
 
@@ -153,21 +148,6 @@ struct ProfileView: View {
                 }
             }
         )
-    }
-
-    // MARK: - Last-synced display
-
-    /// Reads the last successful push or listener-apply timestamp from
-    /// the SyncService's `@Published lastEventAt`. Updates immediately
-    /// on every preference write / cross-device pull instead of waiting
-    /// for the 5-minute safety-net pull to advance the watermark on
-    /// `users.lastSyncedAt`.
-    private var formattedLastSynced: String {
-        guard let date = syncService.lastEventAt else { return "Syncing…" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
     }
 
     // MARK: - Subviews

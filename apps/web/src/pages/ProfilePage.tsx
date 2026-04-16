@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { updateDisplayName } from '../firebase/authService';
-import { usePreferences, useSyncStatus } from '../hooks';
+import { usePreferences } from '../hooks';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import styles from './ProfilePage.module.css';
 
 /**
@@ -25,13 +26,6 @@ export function ProfilePage(): React.ReactElement {
   const displayNameInitial = user?.displayName?.trim().charAt(0).toUpperCase();
   const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
   const initial = displayNameInitial || emailInitial || '?';
-
-  // The "Last synced" label tracks the last successful push or listener
-  // delivery, not the safety-net pull watermark on `users.lastSyncedAt`.
-  // Backed by the in-memory `syncStatus` module so every preference write
-  // / cross-device pull updates the label immediately instead of waiting
-  // for the 5-minute safety-net tick.
-  const { lastEventAt } = useSyncStatus();
 
   return (
     <div className={styles.container}>
@@ -111,12 +105,7 @@ export function ProfilePage(): React.ReactElement {
             <option value="dark">Dark</option>
           </select>
         </div>
-        <div className={styles.settingsRow}>
-          <span className={styles.rowLabel}>Last synced</span>
-          <span className={styles.rowValue}>
-            {lastEventAt ? lastEventAt.toLocaleTimeString() : 'Syncing…'}
-          </span>
-        </div>
+        <SyncStatusIndicator />
       </div>
 
       {/* Preferences sub-pages */}
