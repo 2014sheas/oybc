@@ -55,3 +55,39 @@ export async function updateUserPreferences(
 
   return result;
 }
+
+/**
+ * Update the user's display name in the local DB and enqueue a sync.
+ *
+ * This is the local-DB half of a display-name change. The caller is
+ * responsible for updating the Firebase Auth profile first (via
+ * `updateProfile`) so that the new name shows up on re-authentication.
+ *
+ * @param userId - ID of the User row
+ * @param displayName - New display name, or undefined to clear
+ * @returns The updated User row, or undefined if not found
+ */
+export async function updateUserDisplayName(
+  userId: string,
+  displayName: string | undefined
+): Promise<User | undefined> {
+  let result: User | undefined;
+
+  await db.transaction('rw', [db.users, db.syncQueue], async () => {
+    const existing = await db.users.get(userId);
+    if (!existing) return;
+
+    const updated: User = {
+      ...existing,
+      displayName,
+      version: (existing.version ?? 0) + 1,
+      updatedAt: currentTimestamp(),
+    };
+
+    await db.users.put(updated);
+    await addToSyncQueue('users', userId, SyncOperationType.UPDATE, updated);
+    result = updated;
+  });
+
+  return result;
+}

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
+import { updateDisplayName } from '../firebase/authService';
 import { usePreferences, useSyncStatus } from '../hooks';
 import styles from './ProfilePage.module.css';
 
@@ -17,6 +18,9 @@ export function ProfilePage(): React.ReactElement {
   const { user, signOut } = useAuth();
   const [prefs, updatePrefs] = usePreferences();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const displayNameInitial = user?.displayName?.trim().charAt(0).toUpperCase();
   const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
@@ -42,9 +46,46 @@ export function ProfilePage(): React.ReactElement {
             <div className={styles.avatarPlaceholder}>{initial}</div>
           )}
           <div className={styles.accountInfo}>
-            <span className={styles.accountName}>
-              {user?.displayName ?? 'OYBC User'}
-            </span>
+            {isEditingName ? (
+              <input
+                ref={nameInputRef}
+                type="text"
+                className={styles.editNameInput}
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onBlur={() => {
+                  void updateDisplayName(editNameValue);
+                  setIsEditingName(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    void updateDisplayName(editNameValue);
+                    setIsEditingName(false);
+                  } else if (e.key === 'Escape') {
+                    setIsEditingName(false);
+                  }
+                }}
+                autoFocus
+                maxLength={100}
+              />
+            ) : (
+              <button
+                type="button"
+                className={styles.accountNameButton}
+                onClick={() => {
+                  setEditNameValue(user?.displayName ?? '');
+                  setIsEditingName(true);
+                }}
+                title="Edit display name"
+              >
+                <span className={styles.accountName}>
+                  {user?.displayName ?? 'OYBC User'}
+                </span>
+                <span className={styles.editIcon} aria-hidden="true">
+                  &#9998;
+                </span>
+              </button>
+            )}
             <span className={styles.accountEmail}>{user?.email}</span>
           </div>
         </div>

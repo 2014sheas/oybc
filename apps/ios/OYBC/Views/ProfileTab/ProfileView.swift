@@ -11,6 +11,8 @@ struct ProfileView: View {
     @EnvironmentObject var syncService: SyncService
     @State private var signOutError: String?
     @State private var showSignOutConfirm = false
+    @State private var showNameEdit = false
+    @State private var editNameValue = ""
 
     private var preferences: UserPreferences { authService.userPreferences }
 
@@ -32,8 +34,17 @@ struct ProfileView: View {
             HStack(spacing: 14) {
                 avatarCircle
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(authService.currentUser?.displayName ?? "OYBC User")
-                        .font(.headline)
+                    HStack(spacing: 4) {
+                        Text(authService.currentUser?.displayName ?? "OYBC User")
+                            .font(.headline)
+                        Image(systemName: "pencil")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .onTapGesture {
+                        editNameValue = authService.currentUser?.displayName ?? ""
+                        showNameEdit = true
+                    }
                     if let email = authService.currentUser?.email {
                         Text(email)
                             .font(.subheadline)
@@ -42,6 +53,15 @@ struct ProfileView: View {
                 }
             }
             .padding(.vertical, 4)
+            .alert("Edit Display Name", isPresented: $showNameEdit) {
+                TextField("Display name", text: $editNameValue)
+                Button("Cancel", role: .cancel) { }
+                Button("Save") {
+                    _Concurrency.Task {
+                        try? await authService.updateDisplayName(editNameValue)
+                    }
+                }
+            }
         }
     }
 
