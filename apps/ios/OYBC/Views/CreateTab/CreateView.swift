@@ -354,9 +354,11 @@ struct CreateView: View {
             }
 
             if existingFilteredTasks.isEmpty && existingFilteredComposites.isEmpty {
-                Text("No tasks found — create some first.")
-                    .foregroundColor(.secondary)
-                    .font(.subheadline)
+                ContentUnavailableView(
+                    "No Tasks Yet",
+                    systemImage: "plus.square",
+                    description: Text("Create your first task above!")
+                )
             } else {
                 ForEach(existingFilteredTasks, id: \.id) { task in
                     existingTaskRow(task)

@@ -849,9 +849,10 @@ export function CreatePage(): React.ReactElement {
           />
 
           {filteredTasks.length === 0 && filteredCompositeTasks.length === 0 ? (
-            <p className={styles.emptyState}>
-              No tasks found. Create tasks using the Create New tab.
-            </p>
+            <div className={styles.emptyState}>
+              <div className={styles.emptyIcon}>+</div>
+              <p>No tasks yet. Create your first task above!</p>
+            </div>
           ) : (
             <div className={styles.taskList}>
               {filteredTasks.map((task: Task) => (
@@ -929,7 +930,7 @@ export function CreatePage(): React.ReactElement {
           )}
         </h4>
         {boardPool.length === 0 ? (
-          <p className={styles.emptyState}>
+          <p className={styles.emptyStateInline}>
             No tasks in the pool yet. Use the tabs above to add tasks.
           </p>
         ) : (
