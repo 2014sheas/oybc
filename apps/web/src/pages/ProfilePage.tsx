@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
@@ -15,6 +16,7 @@ import styles from './ProfilePage.module.css';
 export function ProfilePage(): React.ReactElement {
   const { user, signOut } = useAuth();
   const [prefs, updatePrefs] = usePreferences();
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const displayNameInitial = user?.displayName?.trim().charAt(0).toUpperCase();
   const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
@@ -101,10 +103,49 @@ export function ProfilePage(): React.ReactElement {
       <button
         type="button"
         className={styles.signOutButton}
-        onClick={() => void signOut()}
+        onClick={() => setShowSignOutConfirm(true)}
       >
         Sign Out
       </button>
+
+      {/* Sign-out confirmation modal */}
+      {showSignOutConfirm && (
+        <div
+          className={styles.confirmBackdrop}
+          onClick={() => setShowSignOutConfirm(false)}
+        >
+          <div
+            className={styles.confirmModal}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sign-out-title"
+          >
+            <h2 id="sign-out-title" className={styles.confirmTitle}>
+              Sign out?
+            </h2>
+            <p className={styles.confirmBody}>
+              Are you sure you want to sign out?
+            </p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                className={styles.confirmCancel}
+                onClick={() => setShowSignOutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.confirmDestructive}
+                onClick={() => void signOut()}
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

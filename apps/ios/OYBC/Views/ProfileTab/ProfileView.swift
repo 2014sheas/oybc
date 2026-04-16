@@ -10,6 +10,7 @@ struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var syncService: SyncService
     @State private var signOutError: String?
+    @State private var showSignOutConfirm = false
 
     private var preferences: UserPreferences { authService.userPreferences }
 
@@ -93,11 +94,19 @@ struct ProfileView: View {
                     .foregroundStyle(.red)
             }
             Button("Sign Out", role: .destructive) {
-                do {
-                    try authService.signOut()
-                } catch {
-                    signOutError = error.localizedDescription
+                showSignOutConfirm = true
+            }
+            .alert("Sign out?", isPresented: $showSignOutConfirm) {
+                Button("Cancel", role: .cancel) { }
+                Button("Sign Out", role: .destructive) {
+                    do {
+                        try authService.signOut()
+                    } catch {
+                        signOutError = error.localizedDescription
+                    }
                 }
+            } message: {
+                Text("Are you sure you want to sign out?")
             }
         }
     }
