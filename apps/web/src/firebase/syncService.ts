@@ -27,6 +27,12 @@ import {
   SyncOperationType,
   SyncStatus,
   UserSchema,
+  BoardSchema,
+  TaskSchema,
+  TaskStepSchema,
+  BoardTaskSchema,
+  CompositeTaskSchema,
+  CompositeNodeSchema,
   mergeUserPreferences,
   type User,
 } from '@oybc/shared';
@@ -47,6 +53,49 @@ const SYNCABLE_COLLECTIONS = [
 ] as const;
 
 type SyncCollection = (typeof SYNCABLE_COLLECTIONS)[number];
+
+/**
+ * Zod schema per syncable subcollection. Remote documents pulled from
+ * Firestore are validated against these before being applied to the
+ * local Dexie row. A failure is logged and the document is skipped —
+ * the safety-net pull will retry on the next cycle.
+ *
+ * Defense-in-depth: Firestore rules already gate write shape, but a
+ * compromised client, SDK bug, or future schema change could emit a
+ * malformed document. Validating on read prevents corrupted rows from
+ * slipping into the local source-of-truth database.
+ */
+// Each schema's `safeParse` returns a discriminated union — narrowing to
+// the common shape gives us a single callable type to map across
+// collections without pulling zod itself into web's dependency graph.
+type RemoteSchema = {
+  safeParse: (input: unknown) =>
+    | { success: true; data: unknown }
+    | { success: false; error: { issues: Array<{ path: (string | number)[]; message: string }> } };
+};
+
+const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
+  boards: BoardSchema,
+  tasks: TaskSchema,
+  taskSteps: TaskStepSchema,
+  boardTasks: BoardTaskSchema,
+  compositeTasks: CompositeTaskSchema,
+  compositeNodes: CompositeNodeSchema,
+};
+
+/**
+ * Subset of syncable collections whose documents carry a top-level
+ * `userId` field. For these, the pull path must reject any document
+ * whose `userId` doesn't match the authenticated user — a defense
+ * against a compromised peer that writes into its own path with a
+ * spoofed `userId` and hopes that a future cross-user share path
+ * surfaces it.
+ */
+const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
+  'boards',
+  'tasks',
+  'compositeTasks',
+]);
 
 export interface PushResult {
   pushed: number;
@@ -85,13 +134,28 @@ export interface SyncResult {
 export async function pushSync(userId: string): Promise<PushResult> {
   const result: PushResult = { pushed: 0, conflicts: 0, failed: 0, details: [] };
 
-  // Reset stale IN_PROGRESS items (e.g., from a crash/reload mid-sync)
-  const staleItems = await db.syncQueue
-    .where('status')
-    .equals(SyncStatus.IN_PROGRESS)
-    .toArray();
-  for (const stale of staleItems) {
-    await db.syncQueue.update(stale.id, { status: SyncStatus.PENDING });
+  // Reset stale IN_PROGRESS items (e.g., from a crash/reload mid-sync).
+  // Wrapped in try/catch so a Dexie failure here doesn't silently abort
+  // the push loop — a wedged reset would otherwise leave queue items
+  // stuck in IN_PROGRESS forever, invisible to the UI.
+  try {
+    const staleItems = await db.syncQueue
+      .where('status')
+      .equals(SyncStatus.IN_PROGRESS)
+      .toArray();
+    for (const stale of staleItems) {
+      try {
+        await db.syncQueue.update(stale.id, { status: SyncStatus.PENDING });
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[sync] Failed to reset stale queue item ${stale.id}:`, err);
+        recordSyncError(errorMsg);
+      }
+    }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('[sync] Failed to query stale queue items:', err);
+    recordSyncError(errorMsg);
   }
 
   // Promote FAILED items whose backoff window has elapsed back to PENDING
@@ -281,25 +345,61 @@ async function applyRemoteUserDoc(
  * Dexie table, running LWW conflict resolution. Used by `pullSync` and
  * the per-collection snapshot listener.
  *
+ * Validates the payload against the Zod schema for the collection
+ * before touching Dexie. A failed parse (missing fields, wrong types,
+ * version < 1, userId mismatch for user-scoped collections) logs a
+ * `Skipped` status and returns without writing — corrupted remote data
+ * must never reach the local source-of-truth DB.
+ *
+ * @param collectionName The Firestore subcollection being pulled.
+ * @param remoteData The raw document data from Firestore (untrusted).
+ * @param authenticatedUserId The current user's uid, for userId scope
+ *   checks on user-scoped collections.
  * @returns A short status string for logging; `null` if local-wins.
  */
 async function applyRemoteSubdoc(
   collectionName: SyncCollection,
-  remoteData: SyncableEntity
+  remoteData: unknown,
+  authenticatedUserId: string
 ): Promise<string | null> {
+  const schema = COLLECTION_SCHEMAS[collectionName];
+  const parsed = schema.safeParse(remoteData);
+  if (!parsed.success) {
+    const reason = parsed.error.issues
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join(', ');
+    const id =
+      typeof (remoteData as { id?: unknown })?.id === 'string'
+        ? (remoteData as { id: string }).id
+        : '?';
+    return `Skipped malformed ${collectionName}/${id}: ${reason}`;
+  }
+
+  const validated = parsed.data as SyncableEntity;
+
+  // Guard against a peer writing a document with a spoofed `userId`
+  // into its own path — reject anything that doesn't match the
+  // authenticated user on user-scoped collections.
+  if (USER_SCOPED_COLLECTIONS.has(collectionName)) {
+    const payloadUserId = (validated as { userId?: unknown }).userId;
+    if (payloadUserId !== authenticatedUserId) {
+      return `Skipped ${collectionName}/${validated.id}: userId ${String(payloadUserId)} ≠ authenticated ${authenticatedUserId}`;
+    }
+  }
+
   const table = db.table(collectionName);
-  const localData = (await table.get(remoteData.id)) as SyncableEntity | undefined;
+  const localData = (await table.get(validated.id)) as SyncableEntity | undefined;
 
   if (!localData) {
-    await table.put(remoteData);
+    await table.put(validated);
     recordSyncEvent('pulled');
-    return `Pulled ${collectionName}/${remoteData.id} (new)`;
+    return `Pulled ${collectionName}/${validated.id} (new)`;
   }
-  const resolution = resolveConflict(localData, remoteData);
+  const resolution = resolveConflict(localData, validated);
   if (resolution.winner === 'remote') {
-    await table.put(remoteData);
+    await table.put(validated);
     recordSyncEvent('pulled');
-    return `Pulled ${collectionName}/${remoteData.id} (remote v${remoteData.version} > local v${localData.version})`;
+    return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${localData.version})`;
   }
   return null; // local-wins → silent no-op
 }
@@ -351,15 +451,21 @@ export async function pullSync(
       if (snapshot.empty) continue;
 
       for (const docSnap of snapshot.docs) {
-        const remoteData = docSnap.data() as SyncableEntity;
-        const status = await applyRemoteSubdoc(collectionName, remoteData);
+        const remoteData = docSnap.data();
+        const status = await applyRemoteSubdoc(collectionName, remoteData, userId);
         if (status) {
-          result.pulled++;
+          if (status.startsWith('Pulled')) result.pulled++;
+          // Skipped-malformed / userId-mismatch statuses are not conflicts;
+          // just log them and move on so the pull loop isn't wedged.
           result.details.push(status);
         } else {
           result.conflicts++;
+          const remoteId =
+            typeof (remoteData as { id?: unknown })?.id === 'string'
+              ? (remoteData as { id: string }).id
+              : '?';
           result.details.push(
-            `Kept local ${collectionName}/${remoteData.id} (local-wins)`
+            `Kept local ${collectionName}/${remoteId} (local-wins)`
           );
         }
       }
@@ -451,8 +557,8 @@ export function attachPullListeners(
         for (const change of snapshot.docChanges()) {
           if (change.type === 'removed') continue; // soft-deletes only; no real removes
           try {
-            const remoteData = change.doc.data() as SyncableEntity;
-            const status = await applyRemoteSubdoc(collectionName, remoteData);
+            const remoteData = change.doc.data();
+            const status = await applyRemoteSubdoc(collectionName, remoteData, userId);
             if (status) console.debug('[sync]', status);
           } catch (err) {
             console.error(`[sync] ${collectionName} listener apply failed:`, err);

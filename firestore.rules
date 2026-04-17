@@ -27,18 +27,37 @@ service cloud.firestore {
         ];
       }
 
+      // Top-level entities (Board, Task, CompositeTask) carry a `userId`
+      // field in their payload. Child entities (TaskStep, BoardTask,
+      // CompositeNode) are scoped via their parent and do not.
+      function requiresUserIdField() {
+        return collection in ['boards', 'tasks', 'compositeTasks'];
+      }
+
+      // Enforces that a user-scoped entity's payload userId matches the
+      // path userId. Without this, a buggy or compromised client could
+      // write a document under its own path with a spoofed `userId`,
+      // which would corrupt the owner's local DB on re-pull and widens
+      // the blast radius of any future cross-user share feature.
+      function userIdMatchesPath() {
+        return !requiresUserIdField()
+               || request.resource.data.userId == userId;
+      }
+
       // Reads: auth + collection check only (no request.resource for reads)
       allow read: if request.auth != null
                   && request.auth.uid == userId
                   && isKnownCollection();
 
       // Writes: auth + collection + field validation + id consistency
+      // + (for user-scoped collections) payload.userId === path userId.
       allow create, update: if request.auth != null
                             && request.auth.uid == userId
                             && isKnownCollection()
                             && request.resource.data.keys().hasAll(['id', 'version'])
                             && request.resource.data.version is number
                             && request.resource.data.id == docId
+                            && userIdMatchesPath()
                             && request.resource.size() < 10000;
 
       // Deletes: auth + collection only (no resource validation needed)
