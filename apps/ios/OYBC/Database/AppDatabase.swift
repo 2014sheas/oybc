@@ -250,12 +250,21 @@ extension AppDatabase {
         }
     }
 
+    /// Soft-delete a board.
+    ///
+    /// Increments `version` so LWW treats the deletion as later-wins
+    /// against a concurrent update on another device. A soft delete
+    /// without a version bump can be overwritten by a stale edit whose
+    /// `updatedAt` happens to be newer.
     func deleteBoard(id: String) throws {
         try write { db in
-            var board = try Board.fetchOne(db, key: id)
-            board?.isDeleted = true
-            board?.deletedAt = ISO8601DateFormatter().string(from: Date())
-            try board?.update(db)
+            guard var board = try Board.fetchOne(db, key: id) else { return }
+            let now = ISO8601DateFormatter().string(from: Date())
+            board.isDeleted = true
+            board.deletedAt = now
+            board.updatedAt = now
+            board.version += 1
+            try board.update(db)
         }
     }
 
@@ -282,12 +291,16 @@ extension AppDatabase {
         }
     }
 
+    /// Soft-delete a task. See `deleteBoard` for the version-bump rationale.
     func deleteTask(id: String) throws {
         try write { db in
-            var task = try Task.fetchOne(db, key: id)
-            task?.isDeleted = true
-            task?.deletedAt = ISO8601DateFormatter().string(from: Date())
-            try task?.update(db)
+            guard var task = try Task.fetchOne(db, key: id) else { return }
+            let now = ISO8601DateFormatter().string(from: Date())
+            task.isDeleted = true
+            task.deletedAt = now
+            task.updatedAt = now
+            task.version += 1
+            try task.update(db)
         }
     }
 

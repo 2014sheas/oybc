@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// SyncDashboardView — playground sync control panel.
+/// SyncDashboardPlayground — playground sync control panel.
 ///
 /// Displays the sync status for the currently authenticated user:
 /// - Pending / Completed / Failed queue counts.
@@ -9,7 +9,7 @@ import SwiftUI
 ///
 /// Requires `AuthService` to be present in the SwiftUI environment
 /// (injected automatically by `AuthGateView`).
-struct SyncDashboardView: View {
+struct SyncDashboardPlayground: View {
 
     // MARK: - Dependencies
 
@@ -267,7 +267,7 @@ struct SyncDashboardView: View {
 
 #Preview {
     let authService = AuthService()
-    return SyncDashboardView()
+    return SyncDashboardPlayground()
         .environmentObject(authService)
         .environmentObject(authService.syncService)
         .padding()

@@ -22,6 +22,73 @@ private let syncableCollections: [(firestoreName: String, grdbTable: String)] = 
 /// Whitelist of allowed GRDB table names — used to prevent SQL injection.
 private let allowedGRDBTables: Set<String> = Set(syncableCollections.map(\.grdbTable))
 
+/// Firestore subcollections whose documents carry a `userId` field.
+/// The pull path rejects any document whose `userId` doesn't match the
+/// authenticated user for these collections — defense-in-depth against
+/// a compromised peer that spoofs `userId` in its own writes.
+private let userScopedCollections: Set<String> = [
+    "boards", "tasks", "compositeTasks",
+]
+
+/// Validates the baseline sync-safety invariants that every pulled
+/// document must satisfy before reaching GRDB. This helper enforces
+/// the narrow subset it actually checks: a UUID `id`, `version >= 1`,
+/// and (for user-scoped collections) `userId` equality. It does NOT
+/// attempt to fully mirror the web Zod entity schemas — that would
+/// require per-collection Codable decoding of every field; future
+/// work if divergence becomes a problem.
+///
+/// - Parameters:
+///   - collection: The Firestore subcollection name.
+///   - data: The raw document data from Firestore.
+///   - authenticatedUserId: The current user's uid.
+/// - Returns: An error string if the document is invalid, or `nil` to
+///   proceed with upsert. A returned string is logged and the document
+///   is skipped.
+private func validateRemotePullDocument(
+    collection: String,
+    data: [String: Any],
+    authenticatedUserId: String
+) -> String? {
+    // Require an id string.
+    guard let id = data["id"] as? String, !id.isEmpty else {
+        return "missing or empty id"
+    }
+
+    // Require a UUID-format id to match the shared schemas. Prevents a
+    // malformed identifier from entering GRDB as a string primary key
+    // that later joins/queries against UUID-shaped ids won't match.
+    guard UUID(uuidString: id) != nil else {
+        return "invalid id format for \(collection)/\(id)"
+    }
+
+    // Require a positive integer version — a zero/negative version would
+    // always lose LWW, but a non-numeric one could crash the resolver.
+    // Reason strings omit the raw version value to stay consistent with
+    // the userId-redaction rule below; collection + doc id is enough to
+    // triage, and the raw value is one Firestore lookup away if needed.
+    let version = toInt(data["version"])
+    guard version >= 1 else {
+        return "invalid version for \(collection)/\(id)"
+    }
+
+    // On user-scoped collections, the userId field must match the
+    // authenticated user. Rejecting mismatches keeps a spoofed peer
+    // write from corrupting our local row. Reason strings don't include
+    // either uid — these messages flow into `syncEvents` (displayed in
+    // the playground dashboard) and `log()` (printed to Xcode console),
+    // so interpolating the authenticated uid here would leak a stable
+    // identifier through any log-collection path.
+    if userScopedCollections.contains(collection) {
+        let userId = data["userId"] as? String ?? ""
+        guard userId == authenticatedUserId else {
+            return "userId mismatch for \(collection)/\(id)"
+        }
+    }
+
+    return nil
+}
+
 /// Summary of a push sync operation.
 public struct PushResult {
     /// Number of documents successfully pushed to Firestore.
@@ -600,6 +667,21 @@ final class SyncService: ObservableObject {
 
             for docSnap in snapshot.documents {
                 let remoteData = docSnap.data()
+
+                // Validate before touching GRDB. A malformed payload (bad
+                // version, mismatched userId, missing id) is logged and
+                // skipped — the safety-net pull retries next cycle.
+                if let reason = validateRemotePullDocument(
+                    collection: collection.firestoreName,
+                    data: remoteData,
+                    authenticatedUserId: userId
+                ) {
+                    let msg = "Skipped \(collection.firestoreName): \(reason)"
+                    result.details.append(msg)
+                    log(msg)
+                    continue
+                }
+
                 guard let remoteId = remoteData["id"] as? String else { continue }
 
                 // Look up the local record for conflict resolution.
@@ -1048,7 +1130,11 @@ extension SyncService {
                     if change.type == .removed { continue }
                     let data = change.document.data()
                     _Concurrency.Task { @MainActor in
-                        self.applyRemoteSubdoc(collection: collection, remoteData: data)
+                        self.applyRemoteSubdoc(
+                            collection: collection,
+                            remoteData: data,
+                            authenticatedUserId: userId
+                        )
                     }
                 }
             }
@@ -1089,8 +1175,21 @@ extension SyncService {
 
     private func applyRemoteSubdoc(
         collection: (firestoreName: String, grdbTable: String),
-        remoteData: [String: Any]
+        remoteData: [String: Any],
+        authenticatedUserId: String
     ) {
+        // Validate before touching GRDB. A malformed payload (bad version,
+        // mismatched userId, missing id) is logged and dropped — the
+        // safety-net pull will retry from Firestore on the next cycle.
+        if let reason = validateRemotePullDocument(
+            collection: collection.firestoreName,
+            data: remoteData,
+            authenticatedUserId: authenticatedUserId
+        ) {
+            log("Listener skipped \(collection.firestoreName): \(reason)")
+            return
+        }
+
         guard let remoteId = remoteData["id"] as? String else { return }
         do {
             let localData = try fetchLocalRecord(grdbTable: collection.grdbTable, id: remoteId)

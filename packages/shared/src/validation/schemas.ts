@@ -12,13 +12,24 @@ import { BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, 
 
 export const BoardSizeSchema = z.union([z.literal(3), z.literal(4), z.literal(5)]);
 
+/**
+ * Accepts ISO8601 with UTC (`Z`), offset (`+02:00`), or local (no suffix).
+ *
+ * Boards' `startDate`/`endDate` are written by `toLocalISO()` for calendar-
+ * bound boards (no timezone suffix), but Firestore round-trips of `Timestamp`
+ * values produce full UTC with `Z`. Both must parse or the pull path rejects
+ * every real board. Creation/update timestamps always use `new Date()
+ * .toISOString()` and stay on the stricter `.datetime()` default.
+ */
+const FlexibleDateTime = z.string().datetime({ local: true, offset: true });
+
 export const CreateBoardInputSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
   boardSize: BoardSizeSchema,
   timeframe: z.nativeEnum(Timeframe),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
+  startDate: FlexibleDateTime,
+  endDate: FlexibleDateTime,
   centerSquareType: z.nativeEnum(CenterSquareType),
   centerSquareCustomName: z.string().max(100).optional(),
   centerTaskId: z.string().uuid().optional(),
@@ -58,8 +69,8 @@ export const BoardSchema = z.object({
   status: z.nativeEnum(BoardStatus),
   boardSize: BoardSizeSchema,
   timeframe: z.nativeEnum(Timeframe),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
+  startDate: FlexibleDateTime,
+  endDate: FlexibleDateTime,
   centerSquareType: z.nativeEnum(CenterSquareType),
   centerSquareCustomName: z.string().max(100).optional(),
   centerTaskId: z.string().uuid().optional(),

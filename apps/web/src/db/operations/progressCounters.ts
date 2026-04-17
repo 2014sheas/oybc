@@ -55,10 +55,12 @@ export async function updateProgressCounter(
   id: string,
   updates: Partial<ProgressCounter>
 ): Promise<void> {
+  const existing = await db.progressCounters.get(id);
+  if (!existing) return;
   await db.progressCounters.update(id, {
     ...updates,
     updatedAt: currentTimestamp(),
-    version: db.progressCounters.get(id).then((c) => (c?.version ?? 0) + 1),
+    version: (existing.version ?? 0) + 1,
   });
 }
 
@@ -80,13 +82,20 @@ export async function incrementProgressCounter(
 }
 
 /**
- * Soft delete a progress counter
+ * Soft delete a progress counter.
+ *
+ * Increments `version` for LWW consistency. ProgressCounter is not
+ * currently in `SYNCABLE_COLLECTIONS`, so no sync enqueue — but the
+ * version bump keeps behavior correct if that changes.
  */
 export async function deleteProgressCounter(id: string): Promise<void> {
+  const existing = await db.progressCounters.get(id);
+  if (!existing) return;
   await db.progressCounters.update(id, {
     isDeleted: true,
     deletedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
+    version: (existing.version ?? 0) + 1,
   });
 }
 
@@ -94,9 +103,11 @@ export async function deleteProgressCounter(id: string): Promise<void> {
  * Reset a progress counter to zero
  */
 export async function resetProgressCounter(id: string): Promise<void> {
+  const existing = await db.progressCounters.get(id);
+  if (!existing) return;
   await db.progressCounters.update(id, {
     currentValue: 0,
     updatedAt: currentTimestamp(),
-    version: db.progressCounters.get(id).then((c) => (c?.version ?? 0) + 1),
+    version: (existing.version ?? 0) + 1,
   });
 }

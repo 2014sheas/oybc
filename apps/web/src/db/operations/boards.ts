@@ -80,13 +80,20 @@ export async function updateBoard(
 }
 
 /**
- * Soft delete a board
+ * Soft delete a board.
+ *
+ * Increments `version` so LWW conflict resolution treats the deletion
+ * as a later-wins operation against any concurrent update on another
+ * device. See `deleteTask` for the same rationale.
  */
 export async function deleteBoard(id: string): Promise<void> {
+  const existing = await db.boards.get(id);
+  if (!existing) return;
   await db.boards.update(id, {
     isDeleted: true,
     deletedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
+    version: (existing.version ?? 0) + 1,
   });
   const board = await db.boards.get(id);
   if (board) void addToSyncQueue('boards', id, SyncOperationType.DELETE, board);

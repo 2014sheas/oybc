@@ -134,13 +134,21 @@ export async function updateTask(
 }
 
 /**
- * Soft delete a task
+ * Soft delete a task.
+ *
+ * Increments `version` so LWW conflict resolution treats the deletion as
+ * a later-wins operation against any concurrent update on another device.
+ * A soft delete without a version bump could be overwritten by a stale
+ * edit that happens to have a newer `updatedAt` timestamp.
  */
 export async function deleteTask(id: string): Promise<void> {
+  const existing = await db.tasks.get(id);
+  if (!existing) return;
   await db.tasks.update(id, {
     isDeleted: true,
     deletedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
+    version: (existing.version ?? 0) + 1,
   });
   const task = await db.tasks.get(id);
   if (task) void addToSyncQueue('tasks', id, SyncOperationType.DELETE, task);
@@ -221,14 +229,23 @@ export async function linkTaskStep(stepId: string, linkedTaskId: string): Promis
 }
 
 /**
- * Soft delete a task step
+ * Soft delete a task step.
+ *
+ * Increments `version` for LWW correctness and enqueues the delete so
+ * peers learn about it. Previously neither was done, meaning a
+ * concurrent edit on another device would silently resurrect the step.
  */
 export async function deleteTaskStep(id: string): Promise<void> {
+  const existing = await db.taskSteps.get(id);
+  if (!existing) return;
   await db.taskSteps.update(id, {
     isDeleted: true,
     deletedAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
+    version: (existing.version ?? 0) + 1,
   });
+  const step = await db.taskSteps.get(id);
+  if (step) void addToSyncQueue('taskSteps', id, SyncOperationType.DELETE, step);
 }
 
 /**
