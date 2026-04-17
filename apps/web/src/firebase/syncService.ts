@@ -380,10 +380,17 @@ async function applyRemoteSubdoc(
   // Guard against a peer writing a document with a spoofed `userId`
   // into its own path — reject anything that doesn't match the
   // authenticated user on user-scoped collections.
+  //
+  // The status string omits both the payload and authenticated uids
+  // because it flows through `console.debug('[sync]', status)` in the
+  // snapshot listener; log collection or a screenshot would otherwise
+  // leak stable identifiers. The collection + doc id is enough to
+  // triage in practice; the full uids are already one query away in
+  // Dexie if needed.
   if (USER_SCOPED_COLLECTIONS.has(collectionName)) {
     const payloadUserId = (validated as { userId?: unknown }).userId;
     if (payloadUserId !== authenticatedUserId) {
-      return `Skipped ${collectionName}/${validated.id}: userId ${String(payloadUserId)} ≠ authenticated ${authenticatedUserId}`;
+      return `Skipped ${collectionName}/${validated.id}: userId mismatch`;
     }
   }
 

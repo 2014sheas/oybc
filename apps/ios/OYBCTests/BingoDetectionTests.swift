@@ -134,12 +134,14 @@ final class BingoDetectionTests: XCTestCase {
 
     // MARK: - Precondition
 
-    func testDetectBingosPreconditionFailsOnMismatchedGridLength() {
-        // Swift's `precondition` traps in debug builds; tested via an
-        // XCTest expectation on the failure. We can't easily catch
-        // preconditionFailure without crash-boxing, so document the
-        // invariant by asserting a valid grid works and not adding a
-        // false negative here. Kept as a named test for discoverability.
+    func testDetectBingosAcceptsGridMatchingExpectedLength() {
+        // Swift's `precondition` traps in debug builds, and we do not
+        // currently crash-box that behavior in this suite. Instead,
+        // document the invariant the API requires: `completionGrid.count`
+        // must equal `gridSize * gridSize`, and a correctly sized grid
+        // should execute without trapping. A dedicated crash-boxed test
+        // is the right place to assert the trap — tracked for a future
+        // testing pass.
         let goodGrid = Array(repeating: false, count: 9)
         _ = BingoDetection.detectBingos(completionGrid: goodGrid, gridSize: 3) // no crash
     }

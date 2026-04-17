@@ -53,18 +53,25 @@ private func validateRemotePullDocument(
 
     // Require a positive integer version — a zero/negative version would
     // always lose LWW, but a non-numeric one could crash the resolver.
+    // Reason strings omit the raw version value to stay consistent with
+    // the userId-redaction rule below; collection + doc id is enough to
+    // triage, and the raw value is one Firestore lookup away if needed.
     let version = toInt(data["version"])
     guard version >= 1 else {
-        return "invalid version \(data["version"] ?? "nil") for \(collection)/\(id)"
+        return "invalid version for \(collection)/\(id)"
     }
 
     // On user-scoped collections, the userId field must match the
     // authenticated user. Rejecting mismatches keeps a spoofed peer
-    // write from corrupting our local row.
+    // write from corrupting our local row. Reason strings don't include
+    // either uid — these messages flow into `syncEvents` (displayed in
+    // the playground dashboard) and `log()` (printed to Xcode console),
+    // so interpolating the authenticated uid here would leak a stable
+    // identifier through any log-collection path.
     if userScopedCollections.contains(collection) {
         let userId = data["userId"] as? String ?? ""
         guard userId == authenticatedUserId else {
-            return "userId \(userId) ≠ authenticated \(authenticatedUserId) for \(collection)/\(id)"
+            return "userId mismatch for \(collection)/\(id)"
         }
     }
 

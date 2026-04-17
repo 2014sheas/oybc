@@ -105,10 +105,12 @@ describe('BoardSchema pull validation', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects a board whose endDate precedes startDate (not a refine, but type-shape)', () => {
+  it('accepts a board whose endDate precedes startDate (entity schema does not refine date ordering)', () => {
     // The create-input schema refines this; the entity schema doesn't,
     // so both orderings parse. This test pins that behavior so we
-    // notice if it changes.
+    // notice if it changes. Misordered persisted rows aren't valuable
+    // in practice, but reject-on-read here would block legitimate sync
+    // of historical data written under an older schema.
     const result = BoardSchema.safeParse(
       validBoard({
         startDate: '2026-04-18T00:00:00.000Z',
