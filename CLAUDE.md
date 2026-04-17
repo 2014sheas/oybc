@@ -92,7 +92,7 @@ apps/web/src/                                        apps/ios/OYBC/
 │       └── CompositeTaskForm.tsx ←→                 Views/Playground/CompositeTaskFormView.swift
 │
 └── components/                                     Views/Components/
-    ├── Navbar.tsx
+    ├── Navbar.tsx                 (dev-only)       (no iOS counterpart — iOS launches straight into tabs)
     ├── BingoBoard.tsx          ←→                  BingoBoard.swift
     ├── BingoSquare.tsx         ←→                  BingoSquare.swift
     ├── InteractiveTaskSquare.tsx ←→                 InteractiveTaskSquareView.swift
@@ -111,20 +111,45 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
     ├── AuthGate.tsx               ←→               Views/AuthGateView.swift
     ├── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
+    ├── BoardStatusBadge.tsx       ←→               Views/Components/BoardStatusBadgeView.swift
+    ├── BoardListItem.tsx          ←→               Views/Components/BoardListItemView.swift
+    ├── TabBar.tsx                 ←→               Views/MainTabView.swift (SwiftUI TabView — intentionally platform-idiomatic)
     └── SyncStatusIndicator.tsx    ←→               Views/Components/SyncStatusIndicatorView.swift
 │
 ├── firebase/                                       Services/
 │   ├── config.ts                  ←→               OYBCApp.swift (FirebaseApp.configure)
-│   ├── authService.ts             ←→               Services/AuthService.swift
+│   ├── authService.ts (pure fns)  ←→               Services/AuthService.swift (ObservableObject — platform-idiomatic)
 │   ├── AuthContext.tsx            ←→               (AuthService is @ObservableObject)
-│   ├── syncService.ts             ←→               Services/SyncService.swift
-│   ├── syncStatus.ts             ←→               (inline @Published on SyncService.swift)
-│   └── conflictResolver.ts       ←→               (inline in SyncService.swift)
+│   ├── syncService.ts (fns)       ←→               Services/SyncService.swift (ObservableObject — platform-idiomatic)
+│   ├── syncStatus.ts             ←→                (inline @Published on SyncService.swift)
+│   └── conflictResolver.ts       ←→                (inline in SyncService.swift)
 │                                                   Services/NetworkMonitor.swift (iOS only, NWPathMonitor)
 │
-├── components/playground/
-│   └── SyncSimulationPlayground.tsx ←→             Views/Components/SyncDashboardView.swift
+└── components/playground/
+    └── SyncSimulationPlayground.tsx ←→             Views/Playground/SyncDashboardPlayground.swift
 ```
+
+### Pages ↔ Root Views
+
+Top-level React-Router pages and their iOS root-view counterparts.
+
+```
+apps/web/src/pages/                               apps/ios/OYBC/Views/
+├── Home.tsx                      (dev-only)     (no iOS counterpart — auth-gate → MainTabView)
+├── BoardsPage.tsx             ←→                Views/BoardsTab/BoardListView.swift
+├── BoardPlayPage.tsx          ←→                Views/BoardsTab/BoardPlayView.swift
+├── CreatePage.tsx             ←→                Views/CreateTab/CreateView.swift
+├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
+├── BoardPreferencesPage.tsx   ←→                Views/ProfileTab/BoardPreferencesView.swift
+└── Playground.tsx             ←→                Views/PlaygroundView.swift
+```
+
+### Intentional platform divergences (don't treat as parity bugs)
+
+- `Navbar.tsx` / `Home.tsx` are web-only: React Router boots to `/home`, while iOS launches `AuthGateView` → `MainTabView` directly.
+- `TabBar.tsx` is an HTML `<nav>` + NavLinks; `MainTabView.swift` uses SwiftUI `TabView`. Same UX, platform-native implementation.
+- `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
+- `syncService.ts` uses module-level functions + a React hook for orchestration; iOS embeds orchestration in a `@MainActor ObservableObject` bound to `AuthService`'s lifecycle. Same push/pull/LWW rules, same collection list — when you change one, mirror the other in the same PR.
 
 **Rules**:
 

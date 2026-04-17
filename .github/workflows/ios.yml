@@ -50,6 +50,10 @@ jobs:
         working-directory: apps/ios
         run: xcodegen generate
 
+      - name: Guard against _Concurrency.Task shadow
+        working-directory: apps/ios
+        run: bash scripts/check-task-shadow.sh
+
       - name: Build and test (iOS Simulator)
         working-directory: apps/ios
         run: |
