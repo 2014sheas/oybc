@@ -41,7 +41,7 @@ struct PlaygroundView: View {
             id: "auth-test",
             title: "Authentication & Sync",
             content: AnyView(AuthGateView {
-                SyncDashboardView()
+                SyncDashboardPlayground()
             })
         ),
         Feature(

@@ -22,9 +22,13 @@ export async function addToSyncQueue(
   payload: unknown,
   priority: number = 0
 ): Promise<void> {
-  // Skip sync queue for playground data — prevents cross-user pollution
-  const payloadObj = payload as Record<string, unknown> | null;
-  if (payloadObj?.userId === 'playground-user-1') return;
+  // Skip sync queue for playground data — prevents cross-user pollution.
+  // Gated behind DEV so a production build can never silently swallow a
+  // legitimate sync because a user happens to match the sentinel string.
+  if (import.meta.env.DEV) {
+    const payloadObj = payload as Record<string, unknown> | null;
+    if (payloadObj?.userId === 'playground-user-1') return;
+  }
 
   const item: SyncQueueItem = {
     id: generateUUID(),
@@ -132,7 +136,16 @@ export async function promoteEligibleFailedItems(): Promise<number> {
   let promoted = 0;
 
   for (const item of failedItems) {
-    if (item.retryCount >= MAX_SYNC_RETRIES) continue;
+    if (item.retryCount >= MAX_SYNC_RETRIES) {
+      // Item has exhausted retries — warn once per promote cycle so a
+      // wedged queue is visible in devtools rather than silently
+      // abandoned. `result.details` downstream still surfaces the
+      // FAILED state in the playground dashboard.
+      console.warn(
+        `[sync] ${item.entityType}/${item.entityId} abandoned after ${item.retryCount} retries; last error: ${item.lastError ?? 'unknown'}`
+      );
+      continue;
+    }
     const lastAttemptAtMs = item.lastAttemptAt
       ? new Date(item.lastAttemptAt).getTime()
       : null;

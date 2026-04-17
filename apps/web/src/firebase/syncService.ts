@@ -514,6 +514,11 @@ export function attachPullListeners(
   const unsubs: FirestoreUnsubscribe[] = [];
 
   // Parent user doc — single document, no watermark filter needed.
+  //
+  // Error messages avoid interpolating `userId`: a dev-tools-open user
+  // or a future error-reporting integration shouldn't learn the
+  // authenticated uid from a routine listener failure. The `[sync]`
+  // tag plus the error content is enough to triage.
   const userDocRef = doc(firestore, 'users', userId);
   const userUnsub = onSnapshot(
     userDocRef,
@@ -523,10 +528,10 @@ export function attachPullListeners(
         const status = await applyRemoteUserDoc(userId, snap.data());
         if (status) console.debug('[sync]', status);
       } catch (err) {
-        console.error(`[sync] users/${userId} listener failed:`, err);
+        console.error('[sync] user-doc listener failed:', err);
       }
     },
-    (err) => console.error(`[sync] users/${userId} listener error:`, err)
+    (err) => console.error('[sync] user-doc listener error:', err)
   );
   unsubs.push(userUnsub);
 
