@@ -1,0 +1,77 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.value {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.dotOnline {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #198754;
+  flex-shrink: 0;
+}
+
+.dotOffline {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ed6c02;
+  flex-shrink: 0;
+}
+
+.errorValue {
+  font-size: 13px;
+  color: var(--error-text, #dc3545);
+  text-align: right;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.syncButton {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--active-bg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.syncButton:hover:not(:disabled) {
+  background: rgba(13, 110, 253, 0.06);
+}
+
+.syncButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

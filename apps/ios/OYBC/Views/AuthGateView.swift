@@ -16,6 +16,7 @@ import CryptoKit
 /// ```
 struct AuthGateView<Content: View>: View {
     @StateObject private var authService = AuthService()
+    @StateObject private var networkMonitor = NetworkMonitor()
     let content: () -> Content
 
     var body: some View {
@@ -26,6 +27,7 @@ struct AuthGateView<Content: View>: View {
                 content()
                     .environmentObject(authService)
                     .environmentObject(authService.syncService)
+                    .environmentObject(networkMonitor)
             } else {
                 LoginView(authService: authService)
             }

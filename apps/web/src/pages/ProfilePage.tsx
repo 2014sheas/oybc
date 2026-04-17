@@ -1,7 +1,12 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
-import { usePreferences, useSyncStatus } from '../hooks';
+import { updateDisplayName } from '../firebase/authService';
+import { db } from '../db/database';
+import { usePreferences } from '../hooks';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import styles from './ProfilePage.module.css';
 
 /**
@@ -15,17 +20,53 @@ import styles from './ProfilePage.module.css';
 export function ProfilePage(): React.ReactElement {
   const { user, signOut } = useAuth();
   const [prefs, updatePrefs] = usePreferences();
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  // Track whether the edit was cancelled so onBlur doesn't save
+  const cancelledRef = useRef(false);
 
-  const displayNameInitial = user?.displayName?.trim().charAt(0).toUpperCase();
+  const saveName = useCallback(async (value: string) => {
+    setNameError(null);
+    try {
+      await updateDisplayName(value);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : 'Failed to update name');
+    }
+  }, []);
+
+  // Escape-to-close for sign-out modal
+  useEffect(() => {
+    if (!showSignOutConfirm) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowSignOutConfirm(false);
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [showSignOutConfirm]);
+
+  // Read displayName reactively from the Dexie user row so edits show
+  // immediately. `useAuth().user` only updates on sign-in/sign-out, not
+  // on profile field writes — useLiveQuery fills that gap.
+  //
+  // When `liveUser` exists, always prefer its displayName (even if
+  // undefined = cleared). Only fall back to the auth-context user while
+  // the live query is still loading.
+  const liveUser = useLiveQuery(
+    () => (user?.id ? db.users.get(user.id) : undefined),
+    [user?.id]
+  );
+  // Treat empty string as "no name" — we store '' in Dexie/Firestore
+  // for cleared names (undefined gets silently dropped by both).
+  const displayName = liveUser
+    ? (liveUser.displayName || undefined)
+    : (user?.displayName || undefined);
+
+  const displayNameInitial = displayName?.trim().charAt(0).toUpperCase();
   const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
   const initial = displayNameInitial || emailInitial || '?';
-
-  // The "Last synced" label tracks the last successful push or listener
-  // delivery, not the safety-net pull watermark on `users.lastSyncedAt`.
-  // Backed by the in-memory `syncStatus` module so every preference write
-  // / cross-device pull updates the label immediately instead of waiting
-  // for the 5-minute safety-net tick.
-  const { lastEventAt } = useSyncStatus();
 
   return (
     <div className={styles.container}>
@@ -40,10 +81,57 @@ export function ProfilePage(): React.ReactElement {
             <div className={styles.avatarPlaceholder}>{initial}</div>
           )}
           <div className={styles.accountInfo}>
-            <span className={styles.accountName}>
-              {user?.displayName ?? 'OYBC User'}
-            </span>
+            {isEditingName ? (
+              <input
+                ref={nameInputRef}
+                type="text"
+                className={styles.editNameInput}
+                aria-label="Display name"
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onBlur={() => {
+                  if (cancelledRef.current) {
+                    cancelledRef.current = false;
+                    return;
+                  }
+                  void saveName(editNameValue);
+                  setIsEditingName(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    cancelledRef.current = true;
+                    void saveName(editNameValue);
+                    setIsEditingName(false);
+                  } else if (e.key === 'Escape') {
+                    cancelledRef.current = true;
+                    setIsEditingName(false);
+                  }
+                }}
+                autoFocus
+                maxLength={100}
+              />
+            ) : (
+              <button
+                type="button"
+                className={styles.accountNameButton}
+                onClick={() => {
+                  setEditNameValue(displayName ?? '');
+                  setIsEditingName(true);
+                }}
+                title="Edit display name"
+              >
+                <span className={styles.accountName}>
+                  {displayName ?? 'OYBC User'}
+                </span>
+                <span className={styles.editIcon} aria-hidden="true">
+                  &#9998;
+                </span>
+              </button>
+            )}
             <span className={styles.accountEmail}>{user?.email}</span>
+            {nameError && (
+              <span className={styles.nameError}>{nameError}</span>
+            )}
           </div>
         </div>
       </div>
@@ -68,12 +156,7 @@ export function ProfilePage(): React.ReactElement {
             <option value="dark">Dark</option>
           </select>
         </div>
-        <div className={styles.settingsRow}>
-          <span className={styles.rowLabel}>Last synced</span>
-          <span className={styles.rowValue}>
-            {lastEventAt ? lastEventAt.toLocaleTimeString() : 'Syncing…'}
-          </span>
-        </div>
+        <SyncStatusIndicator />
       </div>
 
       {/* Preferences sub-pages */}
@@ -101,10 +184,49 @@ export function ProfilePage(): React.ReactElement {
       <button
         type="button"
         className={styles.signOutButton}
-        onClick={() => void signOut()}
+        onClick={() => setShowSignOutConfirm(true)}
       >
         Sign Out
       </button>
+
+      {/* Sign-out confirmation modal */}
+      {showSignOutConfirm && (
+        <div
+          className={styles.confirmBackdrop}
+          onClick={() => setShowSignOutConfirm(false)}
+        >
+          <div
+            className={styles.confirmModal}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sign-out-title"
+          >
+            <h2 id="sign-out-title" className={styles.confirmTitle}>
+              Sign out?
+            </h2>
+            <p className={styles.confirmBody}>
+              Are you sure you want to sign out?
+            </p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                className={styles.confirmCancel}
+                onClick={() => setShowSignOutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.confirmDestructive}
+                onClick={() => void signOut()}
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

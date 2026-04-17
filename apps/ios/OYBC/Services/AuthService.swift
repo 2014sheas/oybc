@@ -209,6 +209,59 @@ final class AuthService: ObservableObject {
         return user
     }
 
+    // MARK: - Display Name
+
+    /// Update the user's display name in Firebase Auth and the local DB.
+    ///
+    /// 1. Updates the Firebase Auth profile so the name persists on re-auth.
+    /// 2. Updates the GRDB User row (version bump + updatedAt) and enqueues
+    ///    a sync-queue item — all in a single transaction.
+    ///
+    /// - Parameter newName: The new display name; empty/whitespace clears it.
+    func updateDisplayName(_ newName: String) async throws {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName: String? = trimmed.isEmpty ? nil : trimmed
+
+        // 1. Firebase Auth profile
+        let changeRequest = Auth.auth().currentUser?.createProfileChangeRequest()
+        changeRequest?.displayName = displayName
+        try await changeRequest?.commitChanges()
+
+        // 2. Local GRDB row + sync queue
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        try AppDatabase.shared.write { db in
+            guard var user = try User.fetchOne(db, key: userId) else { return }
+            user.displayName = displayName
+            user.updatedAt = AppDatabase.currentTimestamp()
+            user.version += 1
+            try user.save(db)
+
+            let payload: String
+            do {
+                let data = try JSONEncoder().encode(user)
+                payload = String(data: data, encoding: .utf8) ?? "{}"
+            } catch {
+                payload = "{}"
+            }
+
+            let syncItem = SyncQueueItem(
+                id: AppDatabase.generateUUID(),
+                entityType: "users",
+                entityId: userId,
+                operationType: .update,
+                payload: payload,
+                status: .pending,
+                retryCount: 0,
+                lastError: nil,
+                createdAt: user.updatedAt,
+                lastAttemptAt: nil,
+                completedAt: nil,
+                priority: 1
+            )
+            try syncItem.save(db)
+        }
+    }
+
     // MARK: - Sign Out
 
     /// Signs out of Firebase and clears the local current user.

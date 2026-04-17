@@ -10,6 +10,9 @@ struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var syncService: SyncService
     @State private var signOutError: String?
+    @State private var showSignOutConfirm = false
+    @State private var showNameEdit = false
+    @State private var editNameValue = ""
 
     private var preferences: UserPreferences { authService.userPreferences }
 
@@ -31,8 +34,17 @@ struct ProfileView: View {
             HStack(spacing: 14) {
                 avatarCircle
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(authService.currentUser?.displayName ?? "OYBC User")
-                        .font(.headline)
+                    HStack(spacing: 4) {
+                        Text(authService.currentUser?.displayName ?? "OYBC User")
+                            .font(.headline)
+                        Image(systemName: "pencil")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .onTapGesture {
+                        editNameValue = authService.currentUser?.displayName ?? ""
+                        showNameEdit = true
+                    }
                     if let email = authService.currentUser?.email {
                         Text(email)
                             .font(.subheadline)
@@ -41,6 +53,15 @@ struct ProfileView: View {
                 }
             }
             .padding(.vertical, 4)
+            .alert("Edit Display Name", isPresented: $showNameEdit) {
+                TextField("Display name", text: $editNameValue)
+                Button("Cancel", role: .cancel) { }
+                Button("Save") {
+                    _Concurrency.Task {
+                        try? await authService.updateDisplayName(editNameValue)
+                    }
+                }
+            }
         }
     }
 
@@ -54,12 +75,7 @@ struct ProfileView: View {
                 Label("Theme", systemImage: "paintpalette")
             }
 
-            HStack {
-                Label("Last Synced", systemImage: "arrow.triangle.2.circlepath")
-                Spacer()
-                Text(formattedLastSynced)
-                    .foregroundStyle(.secondary)
-            }
+            SyncStatusIndicatorView()
         }
     }
 
@@ -93,11 +109,19 @@ struct ProfileView: View {
                     .foregroundStyle(.red)
             }
             Button("Sign Out", role: .destructive) {
-                do {
-                    try authService.signOut()
-                } catch {
-                    signOutError = error.localizedDescription
+                showSignOutConfirm = true
+            }
+            .alert("Sign out?", isPresented: $showSignOutConfirm) {
+                Button("Cancel", role: .cancel) { }
+                Button("Sign Out", role: .destructive) {
+                    do {
+                        try authService.signOut()
+                    } catch {
+                        signOutError = error.localizedDescription
+                    }
                 }
+            } message: {
+                Text("Are you sure you want to sign out?")
             }
         }
     }
@@ -124,21 +148,6 @@ struct ProfileView: View {
                 }
             }
         )
-    }
-
-    // MARK: - Last-synced display
-
-    /// Reads the last successful push or listener-apply timestamp from
-    /// the SyncService's `@Published lastEventAt`. Updates immediately
-    /// on every preference write / cross-device pull instead of waiting
-    /// for the 5-minute safety-net pull to advance the watermark on
-    /// `users.lastSyncedAt`.
-    private var formattedLastSynced: String {
-        guard let date = syncService.lastEventAt else { return "Syncing…" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
     }
 
     // MARK: - Subviews
@@ -173,5 +182,6 @@ struct ProfileView: View {
         ProfileView()
             .environmentObject(authService)
             .environmentObject(authService.syncService)
+            .environmentObject(NetworkMonitor())
     }
 }

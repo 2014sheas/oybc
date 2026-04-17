@@ -4,6 +4,7 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
   onAuthStateChanged as firebaseOnAuthStateChanged,
+  updateProfile,
   GoogleAuthProvider,
   OAuthProvider,
   type User as FirebaseUser,
@@ -11,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { auth } from './config';
 import { db } from '../db/database';
+import { updateUserDisplayName } from '../db/operations/users';
 import { DEFAULT_USER_PREFERENCES, mergeUserPreferences, type User } from '@oybc/shared';
 
 // ─── Providers ────────────────────────────────────────────────────────────────
@@ -110,6 +112,32 @@ export async function signInWithApple(): Promise<User> {
  *
  * Clears the sync queue to prevent cross-user data leakage if another
  * user signs in on the same device.
+ */
+/**
+ * Update the user's display name in Firebase Auth and the local DB.
+ *
+ * @param newName - New display name; empty/whitespace-only clears it
+ */
+export async function updateDisplayName(newName: string): Promise<void> {
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) return;
+
+  const trimmed = newName.trim();
+
+  // 1. Update Firebase Auth profile so the name persists on re-auth.
+  // Firebase wants `null` to clear, not undefined or empty string.
+  await updateProfile(firebaseUser, { displayName: trimmed || null });
+
+  // 2. Update local Dexie User row + enqueue sync.
+  // Use empty string (not undefined) for "cleared" — Firestore silently
+  // drops undefined fields during writes, so the old value persists and
+  // the onSnapshot listener overwrites the local clear. An explicit ''
+  // is stored by both IndexedDB and Firestore.
+  await updateUserDisplayName(firebaseUser.uid, trimmed);
+}
+
+/**
+ * Sign out the current user and clear the sync queue.
  */
 export async function signOut(): Promise<void> {
   // Clear sync queue before signing out to prevent cross-user pollution

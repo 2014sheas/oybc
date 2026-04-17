@@ -11,9 +11,10 @@
 
 ## Test plan
 
-- [ ] Web: `pnpm -w build && pnpm -w test` clean
+- [ ] Web: `pnpm -w build && pnpm -w test && pnpm -w lint` clean
 - [ ] iOS: ⌘B in Xcode + relevant simulator smoke
 - [ ] Cross-platform parity per CLAUDE.md rule 6 — both platforms updated, OR the gap is explicitly justified in the Notes section below
+- [ ] Copilot review requested and comments addressed
 - [ ] Manual / Playwright steps if applicable
 
 ## Notes
