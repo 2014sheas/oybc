@@ -418,7 +418,22 @@ Tab-based app with auth gate. Web + iOS built simultaneously.
 | Display name edit (Firebase Auth + local DB + sync) | COMPLETE |
 | Sync status indicator (online/offline, error, Sync Now) | COMPLETE |
 | iOS NetworkMonitor (NWPathMonitor) | COMPLETE |
-| Parity audit (manual cross-platform review) | — |
+| Pre-phase6 audit (architecture + security + parity) | COMPLETE |
+
+### Pre-phase6 audit outcome
+
+Three parallel audits (architecture/code-quality, security, cross-platform parity) ran before starting Phase 6. Critical findings were fixed in branch `fix/pre-phase6-audit` across four commits:
+
+- **A — LWW delete integrity + Zod pull validation + rules userId pin.** Soft deletes on both platforms now increment `version`. Web pull validates every remote doc via its Zod schema; iOS pull validates version + userId scope. Firestore rules require `payload.userId == path.userId` on user-scoped subcollection writes.
+- **B — log userId scrub, dev-gated playground short-circuit, sync abandonment warnings, SyncDashboard relocation.**
+- **C — CLAUDE.md parity map updated + `_Concurrency.Task` shadow CI guard.**
+- **D3 — iOS `BingoDetection` unit tests** (parity with shared TS coverage).
+
+### Known follow-ups (not blockers for Phase 6)
+
+- `CreatePage.tsx` (972 LOC) and `CreateView.swift` (1030 LOC) violate the "containers stay thin" rule. Tracked as future `refactor/create-page-hooks` + `refactor/create-view-viewmodels` branches — no sync/correctness impact, just makes adding form fields easier.
+- Web has no Jest/Vitest harness yet; `packages/shared` covers cross-platform logic. Adding web-layer tests is tracked for the next tooling pass.
+- CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
 
 ## Branching Strategy
 
