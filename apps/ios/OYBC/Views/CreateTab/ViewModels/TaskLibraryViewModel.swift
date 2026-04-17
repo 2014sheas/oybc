@@ -50,6 +50,16 @@ final class TaskLibraryViewModel {
     /// Nodes for the currently-expanded composite's derive panel.
     var deriveCompositeNodes: [CompositeNode] = []
 
+    /// Most-recent `taskId` requested via `loadDeriveSteps`. Guards
+    /// against a slower earlier fetch landing after a faster later
+    /// one and overwriting state for the currently-expanded row —
+    /// easy to hit by rapidly tapping between two progress tasks.
+    private var activeDeriveStepsTaskId: String?
+
+    /// Most-recent `compositeTaskId` requested via
+    /// `loadDeriveNodes`. Same race guard as above for composites.
+    private var activeDeriveNodesCompositeTaskId: String?
+
     // MARK: - Filters
 
     /// Applies the Existing-Tasks filter to `libraryTasks`. Composites
@@ -105,17 +115,25 @@ final class TaskLibraryViewModel {
     /// Loads the step list for a single progress task into
     /// `deriveTaskSteps`. Called when the user expands a progress
     /// task's derive panel.
+    ///
+    /// Results are only committed if the in-flight request is still
+    /// the most recent one — an older fetch landing late (because
+    /// the user rapidly switched to a different progress task) is
+    /// discarded so it can't overwrite the currently-expanded state.
     func loadDeriveSteps(for taskId: String) {
+        activeDeriveStepsTaskId = taskId
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
                 let steps = try AppDatabase.shared.fetchTaskSteps(taskId: taskId)
                 DispatchQueue.main.async {
+                    guard self.activeDeriveStepsTaskId == taskId else { return }
                     self.deriveTaskSteps = steps
                     self.loadError = nil
                 }
             } catch {
                 DispatchQueue.main.async {
+                    guard self.activeDeriveStepsTaskId == taskId else { return }
                     self.loadError = "Failed to load steps: \(error.localizedDescription)"
                 }
             }
@@ -125,7 +143,13 @@ final class TaskLibraryViewModel {
     /// Loads composite nodes for a single composite into
     /// `deriveCompositeNodes`. Called when the user expands a
     /// composite's derive panel.
+    ///
+    /// Same stale-result guard as `loadDeriveSteps`: rapid expand/
+    /// collapse across different composites can cause an earlier
+    /// fetch to land after a later one; the guard drops results that
+    /// no longer match the currently-expanded id.
     func loadDeriveNodes(for compositeTaskId: String) {
+        activeDeriveNodesCompositeTaskId = compositeTaskId
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
@@ -138,11 +162,13 @@ final class TaskLibraryViewModel {
                         .fetchAll(db)
                 }
                 DispatchQueue.main.async {
+                    guard self.activeDeriveNodesCompositeTaskId == compositeTaskId else { return }
                     self.deriveCompositeNodes = nodes
                     self.loadError = nil
                 }
             } catch {
                 DispatchQueue.main.async {
+                    guard self.activeDeriveNodesCompositeTaskId == compositeTaskId else { return }
                     self.loadError = "Failed to load composite nodes: \(error.localizedDescription)"
                 }
             }
@@ -152,6 +178,8 @@ final class TaskLibraryViewModel {
     /// Clears the derive-panel working state. Called on filter change
     /// or when collapsing all rows.
     func clearDeriveState() {
+        activeDeriveStepsTaskId = nil
+        activeDeriveNodesCompositeTaskId = nil
         deriveTaskSteps = []
         deriveCompositeNodes = []
     }

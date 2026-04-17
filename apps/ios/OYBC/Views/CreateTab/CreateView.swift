@@ -53,6 +53,18 @@ struct CreateView: View {
     @State private var derivePartialCountStr: String = ""
     @State private var deriveIsCreating: Bool = false
 
+    // MARK: - Derived
+
+    /// Tuple-shaped projection of the pool used by shared panels
+    /// (`BoardCreatorPanelView`, `CompositeDerivationPanelView`,
+    /// `ProgressDerivationPanelView`) whose APIs predate
+    /// `BoardPoolEntry`. Computed once per body evaluation so we
+    /// don't re-allocate identical tuple arrays three times in the
+    /// same render.
+    private var poolAsTuples: [(taskId: String, title: String, type: String)] {
+        pool.pool.map { (taskId: $0.taskId, title: $0.title, type: $0.type) }
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -71,7 +83,7 @@ struct CreateView: View {
                 if !pool.pool.isEmpty, let userId = authService.currentUser?.id {
                     Divider()
                     BoardCreatorPanelView(
-                        boardPool: pool.pool.map { (taskId: $0.taskId, title: $0.title, type: $0.type) },
+                        boardPool: poolAsTuples,
                         libraryTasks: library.libraryTasks,
                         allTaskSteps: library.allLibraryTaskSteps,
                         userId: userId,
@@ -214,7 +226,7 @@ struct CreateView: View {
                             compositeNodes: library.deriveCompositeNodes,
                             tasks: library.libraryTasks,
                             compositeTasks: library.libraryCompositeTasks,
-                            boardPool: pool.pool.map { (taskId: $0.taskId, title: $0.title, type: $0.type) },
+                            boardPool: poolAsTuples,
                             onAddLeafToPool: { taskId, title, type in
                                 pool.addToPool(taskId: taskId, title: title, type: type)
                             }
@@ -349,7 +361,7 @@ struct CreateView: View {
                     task: task,
                     taskSteps: library.deriveTaskSteps,
                     allTasks: library.libraryTasks,
-                    boardPool: pool.pool.map { (taskId: $0.taskId, title: $0.title, type: $0.type) },
+                    boardPool: poolAsTuples,
                     isCreating: deriveIsCreating,
                     onExtractStep: { step, parentTask in
                         extractStepAsTask(step: step, parentTask: parentTask)
