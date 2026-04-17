@@ -105,6 +105,21 @@ describe('BoardSchema pull validation', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts a board with local-ISO startDate/endDate (no Z/offset suffix)', () => {
+    // Real clients write `startDate`/`endDate` via `toLocalISO()` for
+    // calendar-bound boards, which omits the timezone suffix. The
+    // default `z.string().datetime()` rejects those; we use a permissive
+    // form on the timeframe bounds so pull validation doesn't drop
+    // every real board on arrival.
+    const result = BoardSchema.safeParse(
+      validBoard({
+        startDate: '2026-04-17T00:00:00.000',
+        endDate: '2026-04-17T23:59:59.999',
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
   it('accepts a board whose endDate precedes startDate (entity schema does not refine date ordering)', () => {
     // The create-input schema refines this; the entity schema doesn't,
     // so both orderings parse. This test pins that behavior so we

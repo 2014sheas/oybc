@@ -30,9 +30,13 @@ private let userScopedCollections: Set<String> = [
     "boards", "tasks", "compositeTasks",
 ]
 
-/// Validates the baseline invariants that every pulled document must
-/// satisfy before reaching GRDB. Mirrors the Zod schemas used on web
-/// for the same pull path.
+/// Validates the baseline sync-safety invariants that every pulled
+/// document must satisfy before reaching GRDB. This helper enforces
+/// the narrow subset it actually checks: a UUID `id`, `version >= 1`,
+/// and (for user-scoped collections) `userId` equality. It does NOT
+/// attempt to fully mirror the web Zod entity schemas — that would
+/// require per-collection Codable decoding of every field; future
+/// work if divergence becomes a problem.
 ///
 /// - Parameters:
 ///   - collection: The Firestore subcollection name.
@@ -49,6 +53,13 @@ private func validateRemotePullDocument(
     // Require an id string.
     guard let id = data["id"] as? String, !id.isEmpty else {
         return "missing or empty id"
+    }
+
+    // Require a UUID-format id to match the shared schemas. Prevents a
+    // malformed identifier from entering GRDB as a string primary key
+    // that later joins/queries against UUID-shaped ids won't match.
+    guard UUID(uuidString: id) != nil else {
+        return "invalid id format for \(collection)/\(id)"
     }
 
     // Require a positive integer version — a zero/negative version would
