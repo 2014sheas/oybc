@@ -41,6 +41,15 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
   const allTasks = useTasks(userId) ?? [];
   const allCompositeTasks = useCompositeTasks(userId) ?? [];
 
+  // NOTE: the `[compositeTaskId+isDeleted]` and `[isDeleted+taskId]`
+  // compound indexes are defined on these tables, but Dexie/IndexedDB
+  // rejects JavaScript booleans as key values ("Invalid key provided.
+  // Keys must be of type string, number, Date or Array"). Using those
+  // indexes would require coercing `isDeleted` to `0`/`1` on every
+  // write throughout the codebase, which is out of scope here. The
+  // single-field `compositeTaskId` / `taskId` lookup plus a JS-side
+  // `.and(!isDeleted)` filter is fast enough at realistic list sizes
+  // (tens to hundreds of rows per user).
   const compositeIds = allCompositeTasks.map((ct) => ct.id);
   const allCompositeNodes =
     useLiveQuery(

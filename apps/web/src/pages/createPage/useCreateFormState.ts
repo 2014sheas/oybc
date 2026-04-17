@@ -192,30 +192,36 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
    * matches the pattern the original CreatePage used inline for every
    * input. Keeps the UX invariant that typing resolves the red state.
    */
-  function clearFieldError<K extends keyof FormErrors>(field: K): void {
+  /**
+   * Memoised with empty deps so the setter `useCallback`s below can
+   * depend on it without being re-created every render. `setErrors`
+   * from `useState` is already referentially stable, so this closure
+   * is stable too.
+   */
+  const clearFieldError = useCallback(<K extends keyof FormErrors>(field: K): void => {
     setErrors((prev) => (prev[field] === undefined ? prev : { ...prev, [field]: undefined }));
-  }
+  }, []);
 
   const setTitleClearingError = useCallback((v: string) => {
     setTitle(v);
     clearFieldError('title');
-  }, []);
+  }, [clearFieldError]);
   const setDescriptionClearingError = useCallback((v: string) => {
     setDescription(v);
     clearFieldError('description');
-  }, []);
+  }, [clearFieldError]);
   const setActionClearingError = useCallback((v: string) => {
     setAction(v);
     clearFieldError('action');
-  }, []);
+  }, [clearFieldError]);
   const setUnitClearingError = useCallback((v: string) => {
     setUnit(v);
     clearFieldError('unit');
-  }, []);
+  }, [clearFieldError]);
   const setMaxCountStrClearingError = useCallback((v: string) => {
     setMaxCountStr(v);
     clearFieldError('maxCount');
-  }, []);
+  }, [clearFieldError]);
 
   const handleTypeChange = useCallback((newType: TaskTypeOrComposite) => {
     setTaskType(newType);
