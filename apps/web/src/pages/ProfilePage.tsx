@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { updateDisplayName } from '../firebase/authService';
+import { db } from '../db/database';
 import { usePreferences } from '../hooks';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import styles from './ProfilePage.module.css';
@@ -23,7 +25,24 @@ export function ProfilePage(): React.ReactElement {
   const [editNameValue, setEditNameValue] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  const displayNameInitial = user?.displayName?.trim().charAt(0).toUpperCase();
+  // Read displayName reactively from the Dexie user row so edits show
+  // immediately. `useAuth().user` only updates on sign-in/sign-out, not
+  // on profile field writes — useLiveQuery fills that gap.
+  //
+  // When `liveUser` exists, always prefer its displayName (even if
+  // undefined = cleared). Only fall back to the auth-context user while
+  // the live query is still loading.
+  const liveUser = useLiveQuery(
+    () => (user?.id ? db.users.get(user.id) : undefined),
+    [user?.id]
+  );
+  // Treat empty string as "no name" — we store '' in Dexie/Firestore
+  // for cleared names (undefined gets silently dropped by both).
+  const displayName = liveUser
+    ? (liveUser.displayName || undefined)
+    : (user?.displayName || undefined);
+
+  const displayNameInitial = displayName?.trim().charAt(0).toUpperCase();
   const emailInitial = user?.email?.trim().charAt(0).toUpperCase();
   const initial = displayNameInitial || emailInitial || '?';
 
@@ -67,13 +86,13 @@ export function ProfilePage(): React.ReactElement {
                 type="button"
                 className={styles.accountNameButton}
                 onClick={() => {
-                  setEditNameValue(user?.displayName ?? '');
+                  setEditNameValue(displayName ?? '');
                   setIsEditingName(true);
                 }}
                 title="Edit display name"
               >
                 <span className={styles.accountName}>
-                  {user?.displayName ?? 'OYBC User'}
+                  {displayName ?? 'OYBC User'}
                 </span>
                 <span className={styles.editIcon} aria-hidden="true">
                   &#9998;

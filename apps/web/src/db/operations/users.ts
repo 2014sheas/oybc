@@ -64,12 +64,12 @@ export async function updateUserPreferences(
  * `updateProfile`) so that the new name shows up on re-authentication.
  *
  * @param userId - ID of the User row
- * @param displayName - New display name, or undefined to clear
+ * @param displayName - New display name; empty string clears it
  * @returns The updated User row, or undefined if not found
  */
 export async function updateUserDisplayName(
   userId: string,
-  displayName: string | undefined
+  displayName: string
 ): Promise<User | undefined> {
   let result: User | undefined;
 
@@ -77,6 +77,11 @@ export async function updateUserDisplayName(
     const existing = await db.users.get(userId);
     if (!existing) return;
 
+    // Store the trimmed value (possibly empty string). Using '' instead
+    // of `undefined` because: (a) IndexedDB drops undefined properties,
+    // (b) Firestore ignores undefined fields in writes — both would
+    // silently retain the old value and the onSnapshot listener would
+    // overwrite the local clear.
     const updated: User = {
       ...existing,
       displayName,

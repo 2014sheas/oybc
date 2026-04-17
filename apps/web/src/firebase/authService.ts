@@ -123,13 +123,17 @@ export async function updateDisplayName(newName: string): Promise<void> {
   if (!firebaseUser) return;
 
   const trimmed = newName.trim();
-  const displayName = trimmed || undefined;
 
-  // 1. Update Firebase Auth profile so the name persists on re-auth
-  await updateProfile(firebaseUser, { displayName: displayName ?? null });
+  // 1. Update Firebase Auth profile so the name persists on re-auth.
+  // Firebase wants `null` to clear, not undefined or empty string.
+  await updateProfile(firebaseUser, { displayName: trimmed || null });
 
-  // 2. Update local Dexie User row + enqueue sync
-  await updateUserDisplayName(firebaseUser.uid, displayName);
+  // 2. Update local Dexie User row + enqueue sync.
+  // Use empty string (not undefined) for "cleared" — Firestore silently
+  // drops undefined fields during writes, so the old value persists and
+  // the onSnapshot listener overwrites the local clear. An explicit ''
+  // is stored by both IndexedDB and Firestore.
+  await updateUserDisplayName(firebaseUser.uid, trimmed);
 }
 
 export async function signOut(): Promise<void> {
