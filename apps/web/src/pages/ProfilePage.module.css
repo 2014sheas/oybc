@@ -132,6 +132,11 @@
   opacity: 1;
 }
 
+.nameError {
+  font-size: 12px;
+  color: var(--error-text, #dc3545);
+}
+
 .editNameInput {
   font-size: 16px;
   font-weight: 600;

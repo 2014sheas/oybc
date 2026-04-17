@@ -850,7 +850,7 @@ export function CreatePage(): React.ReactElement {
 
           {filteredTasks.length === 0 && filteredCompositeTasks.length === 0 ? (
             <div className={styles.emptyState}>
-              <div className={styles.emptyIcon}>+</div>
+              <div className={styles.emptyIcon} aria-hidden="true">+</div>
               <p>No tasks yet. Create your first task above!</p>
             </div>
           ) : (

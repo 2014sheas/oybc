@@ -136,6 +136,9 @@ export async function updateDisplayName(newName: string): Promise<void> {
   await updateUserDisplayName(firebaseUser.uid, trimmed);
 }
 
+/**
+ * Sign out the current user and clear the sync queue.
+ */
 export async function signOut(): Promise<void> {
   // Clear sync queue before signing out to prevent cross-user pollution
   await db.syncQueue.clear();

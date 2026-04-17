@@ -182,5 +182,6 @@ struct ProfileView: View {
         ProfileView()
             .environmentObject(authService)
             .environmentObject(authService.syncService)
+            .environmentObject(NetworkMonitor())
     }
 }

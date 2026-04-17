@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { UserPreferences } from '@oybc/shared';
@@ -23,7 +23,29 @@ export function ProfilePage(): React.ReactElement {
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  // Track whether the edit was cancelled so onBlur doesn't save
+  const cancelledRef = useRef(false);
+
+  const saveName = useCallback(async (value: string) => {
+    setNameError(null);
+    try {
+      await updateDisplayName(value);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : 'Failed to update name');
+    }
+  }, []);
+
+  // Escape-to-close for sign-out modal
+  useEffect(() => {
+    if (!showSignOutConfirm) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowSignOutConfirm(false);
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [showSignOutConfirm]);
 
   // Read displayName reactively from the Dexie user row so edits show
   // immediately. `useAuth().user` only updates on sign-in/sign-out, not
@@ -64,17 +86,24 @@ export function ProfilePage(): React.ReactElement {
                 ref={nameInputRef}
                 type="text"
                 className={styles.editNameInput}
+                aria-label="Display name"
                 value={editNameValue}
                 onChange={(e) => setEditNameValue(e.target.value)}
                 onBlur={() => {
-                  void updateDisplayName(editNameValue);
+                  if (cancelledRef.current) {
+                    cancelledRef.current = false;
+                    return;
+                  }
+                  void saveName(editNameValue);
                   setIsEditingName(false);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    void updateDisplayName(editNameValue);
+                    cancelledRef.current = true;
+                    void saveName(editNameValue);
                     setIsEditingName(false);
                   } else if (e.key === 'Escape') {
+                    cancelledRef.current = true;
                     setIsEditingName(false);
                   }
                 }}
@@ -100,6 +129,9 @@ export function ProfilePage(): React.ReactElement {
               </button>
             )}
             <span className={styles.accountEmail}>{user?.email}</span>
+            {nameError && (
+              <span className={styles.nameError}>{nameError}</span>
+            )}
           </div>
         </div>
       </div>
