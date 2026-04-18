@@ -38,9 +38,9 @@ struct PlaygroundView: View {
     private var features: [Feature] {
         [
         Feature(
-            id: "board-wizard-shell",
-            title: "Board Wizard — Shell + Setup (full flow)",
-            content: AnyView(BoardWizardShellPlayground())
+            id: "create-hub",
+            title: "Create Hub — full flow (hub + wizard)",
+            content: AnyView(CreateHubPlayground())
         ),
         Feature(
             id: "board-wizard-tasks",
