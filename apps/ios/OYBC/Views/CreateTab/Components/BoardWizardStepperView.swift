@@ -57,6 +57,8 @@ struct BoardWizardStepperView: View {
                         Text(step.label)
                             .font(.system(size: 13, weight: isActive ? .bold : .medium))
                             .foregroundColor(chipForeground(isActive: isActive, isComplete: isComplete))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
