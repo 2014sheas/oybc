@@ -99,6 +99,8 @@ struct CompositeTaskWizardView: View {
                     operatorType: operatorType,
                     threshold: threshold,
                     subtasks: subtasks,
+                    libraryTasks: libraryTasks,
+                    libraryCompositeTasks: libraryCompositeTasks,
                     isSubmitting: isSubmitting,
                     errorMessage: errorMessage,
                     onBack: { currentStep = 2 },

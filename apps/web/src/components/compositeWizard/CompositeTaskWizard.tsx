@@ -420,6 +420,8 @@ export function CompositeTaskWizard({
           operator={operator}
           threshold={threshold}
           subtasks={subtasks}
+          allTasks={allTasks}
+          allCompositeTasks={allCompositeTasks}
           isSubmitting={isSubmitting}
           errorMessage={errorMessage}
           onBack={() => setCurrentStep(2)}
