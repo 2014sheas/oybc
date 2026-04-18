@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   CenterSquareType,
   Timeframe,
+  type Board,
+  type BoardTask,
   type UserPreferences,
   type WeekStartDay,
 } from '@oybc/shared';
@@ -46,6 +48,11 @@ export interface BoardWizardState {
 
   // Wizard navigation
   currentStep: WizardStep;
+
+  /** Set when the wizard was hydrated from an existing draft board.
+   *  Non-null means Save / Activate will update this record rather
+   *  than create a new one. */
+  draftBoardId: string | null;
 }
 
 /** Mutators for each piece of state. */
@@ -80,17 +87,35 @@ export interface BoardWizardDerived {
   step1ValidationMessage: string | null;
   /** Optional inline validation message for Step 2. */
   step2ValidationMessage: string | null;
+  /** True when no meaningful edit has been made — the wizard can be
+   *  dismissed without prompting. When a draft is being resumed this
+   *  is always `false`: closing a resumed draft is always a decision
+   *  worth confirming. */
+  isPristine: boolean;
 }
 
 export type BoardWizardController = BoardWizardState &
   BoardWizardActions &
   BoardWizardDerived;
 
+/** Payload supplied when resuming an existing draft board. The wizard
+ *  hydrates every field from the Board record and rebuilds
+ *  `selectedTaskIds` from the BoardTask rows. */
+export interface BoardWizardDraft {
+  board: Board;
+  boardTasks: BoardTask[];
+}
+
 export interface UseBoardWizardArgs {
-  /** Synced user preferences — used to seed defaults at mount time. */
+  /** Synced user preferences — used to seed defaults when no draft
+   *  is supplied, or as a fallback for fields missing on a draft. */
   preferences: UserPreferences;
   /** Optional starting step (defaults to 1). Useful for tests / drafts. */
   initialStep?: WizardStep;
+  /** If provided, the wizard hydrates every field from this draft and
+   *  subsequent Save / Activate actions update this record rather than
+   *  creating a new one. */
+  draft?: BoardWizardDraft;
 }
 
 /**
@@ -109,25 +134,46 @@ export interface UseBoardWizardArgs {
 export function useBoardWizard({
   preferences,
   initialStep = 1,
+  draft,
 }: UseBoardWizardArgs): BoardWizardController {
-  const [name, setName] = useState('');
-  const [size, setSizeRaw] = useState<3 | 4 | 5>(preferences.defaultBoardSize);
-  const [timeframe, setTimeframe] = useState<Timeframe>(preferences.defaultTimeframe);
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
+  const draftBoard = draft?.board;
+  const [name, setName] = useState(() => draftBoard?.name ?? '');
+  const [size, setSizeRaw] = useState<3 | 4 | 5>(
+    () => (draftBoard?.boardSize as 3 | 4 | 5 | undefined) ?? preferences.defaultBoardSize,
+  );
+  const [timeframe, setTimeframe] = useState<Timeframe>(
+    () => draftBoard?.timeframe ?? preferences.defaultTimeframe,
+  );
+  const [customStartDate, setCustomStartDate] = useState(() =>
+    draftBoard?.timeframe === Timeframe.CUSTOM && draftBoard.startDate
+      ? draftBoard.startDate.slice(0, 10)
+      : '',
+  );
+  const [customEndDate, setCustomEndDate] = useState(() =>
+    draftBoard?.timeframe === Timeframe.CUSTOM && draftBoard.endDate
+      ? draftBoard.endDate.slice(0, 10)
+      : '',
+  );
   const [centerType, setCenterTypeRaw] = useState<CenterSquareType>(
-    preferences.defaultCenterType,
+    () => draftBoard?.centerSquareType ?? preferences.defaultCenterType,
   );
   const [centerCustomName, setCenterCustomName] = useState(
-    preferences.defaultCenterCustomName,
+    () => draftBoard?.centerSquareCustomName ?? preferences.defaultCenterCustomName,
   );
-  const [isRandomized, setIsRandomized] = useState(preferences.defaultRandomize);
+  const [isRandomized, setIsRandomized] = useState(
+    () => draftBoard?.isRandomized ?? preferences.defaultRandomize,
+  );
   const weekStartDay = preferences.weekStartDay;
 
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
-  const [centerTaskId, setCenterTaskIdRaw] = useState<string | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
+    () => (draft ? new Set(draft.boardTasks.map((bt) => bt.taskId)) : new Set()),
+  );
+  const [centerTaskId, setCenterTaskIdRaw] = useState<string | null>(
+    () => draftBoard?.centerTaskId ?? null,
+  );
 
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
+  const draftBoardId = draftBoard?.id ?? null;
 
   // ── Coupled setters ───────────────────────────────────────────────────
   // Changing size or center type can invalidate downstream selections;
@@ -249,6 +295,14 @@ export function useBoardWizard({
     return null;
   }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
 
+  const isPristine = useMemo<boolean>(() => {
+    if (draftBoardId !== null) return false;
+    if (trimmedName.length > 0) return false;
+    if (selectedTaskIds.size > 0) return false;
+    if (currentStep > 1) return false;
+    return true;
+  }, [draftBoardId, trimmedName, selectedTaskIds, currentStep]);
+
   return {
     // State
     name,
@@ -263,6 +317,7 @@ export function useBoardWizard({
     selectedTaskIds,
     centerTaskId,
     currentStep,
+    draftBoardId,
 
     // Actions
     setName,
@@ -287,5 +342,6 @@ export function useBoardWizard({
     isStep2Valid,
     step1ValidationMessage,
     step2ValidationMessage,
+    isPristine,
   };
 }

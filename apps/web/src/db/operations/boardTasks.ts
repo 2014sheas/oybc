@@ -23,6 +23,24 @@ export async function fetchBoardTask(id: string): Promise<BoardTask | undefined>
 }
 
 /**
+ * Hard-deletes every `BoardTask` row for the given board and queues
+ * each removal for sync. Used when re-saving a draft whose task
+ * placement has changed — simpler than diffing the old layout
+ * against the new one, and tolerable at scale (at most 25 cells).
+ *
+ * `BoardTask` has no `isDeleted` flag, so the deletion is literal;
+ * the sync queue `DELETE` operation propagates removal to Firestore
+ * and other devices apply the delete on their next pull.
+ */
+export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
+  const tasks = await db.boardTasks.where('boardId').equals(boardId).toArray();
+  for (const bt of tasks) {
+    await db.boardTasks.delete(bt.id);
+    void addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+  }
+}
+
+/**
  * Create a board task (add task to board)
  */
 export async function createBoardTask(

@@ -351,6 +351,21 @@ extension AppDatabase {
         }
     }
 
+    /// Hard-deletes every `BoardTask` row for the given board. Used
+    /// when re-saving a draft whose task placement has changed —
+    /// simpler than diffing old vs new layout, and tolerable at scale
+    /// (boards have at most 25 cells).
+    ///
+    /// `BoardTask` has no `isDeleted` flag, so the deletion is literal;
+    /// the web twin uses the same pattern.
+    func deleteBoardTasksForBoard(boardId: String) throws {
+        try write { db in
+            _ = try BoardTask
+                .filter(Column("boardId") == boardId)
+                .deleteAll(db)
+        }
+    }
+
     func saveBoardTask(_ boardTask: BoardTask) throws {
         try write { db in
             try boardTask.save(db)

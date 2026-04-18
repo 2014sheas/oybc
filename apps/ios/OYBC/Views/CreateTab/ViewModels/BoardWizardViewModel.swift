@@ -54,19 +54,45 @@ final class BoardWizardViewModel {
 
     var currentStep: WizardStep = 1
 
+    /// Set when the wizard was hydrated from an existing draft board.
+    /// Non-nil means Save / Activate will update this record rather
+    /// than create a new one.
+    let draftBoardId: String?
+
     // MARK: - Init
 
     private let initialPreferences: UserPreferences
 
-    init(preferences: UserPreferences, initialStep: WizardStep = 1) {
+    init(
+        preferences: UserPreferences,
+        initialStep: WizardStep = 1,
+        draft: (board: Board, boardTasks: [BoardTask])? = nil
+    ) {
         self.initialPreferences = preferences
-        self.size = preferences.defaultBoardSize.rawValue
-        self.timeframe = Self.resolveTimeframe(preferences.defaultTimeframe)
-        self.centerType = Self.resolveCenterType(preferences.defaultCenterType)
-        self.centerCustomName = preferences.defaultCenterCustomName
-        self.isRandomized = preferences.defaultRandomize
         self.weekStartDay = preferences.weekStartDay.rawValue
         self.currentStep = initialStep
+        self.draftBoardId = draft?.board.id
+
+        if let d = draft {
+            self.name = d.board.name
+            self.size = d.board.boardSize
+            self.timeframe = d.board.timeframe
+            self.centerType = d.board.centerSquareType
+            self.centerCustomName = d.board.centerSquareCustomName ?? ""
+            self.centerTaskId = d.board.centerTaskId
+            self.isRandomized = d.board.isRandomized
+            self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
+            if d.board.timeframe == .custom {
+                self.customStartDate = String(d.board.startDate.prefix(10))
+                self.customEndDate = String(d.board.endDate.prefix(10))
+            }
+        } else {
+            self.size = preferences.defaultBoardSize.rawValue
+            self.timeframe = Self.resolveTimeframe(preferences.defaultTimeframe)
+            self.centerType = Self.resolveCenterType(preferences.defaultCenterType)
+            self.centerCustomName = preferences.defaultCenterCustomName
+            self.isRandomized = preferences.defaultRandomize
+        }
     }
 
     private static func resolveCenterType(_ value: DefaultCenterSquareType) -> CenterSquareType {
@@ -213,5 +239,17 @@ final class BoardWizardViewModel {
             }
         }
         return nil
+    }
+
+    /// True when no meaningful edit has been made — the wizard can be
+    /// dismissed without prompting. When a draft is being resumed this
+    /// is always `false`: closing a resumed draft is always a decision
+    /// worth confirming.
+    var isPristine: Bool {
+        if draftBoardId != nil { return false }
+        if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
+        if !selectedTaskIds.isEmpty { return false }
+        if currentStep > 1 { return false }
+        return true
     }
 }

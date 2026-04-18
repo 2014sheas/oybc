@@ -1,90 +1,38 @@
 import SwiftUI
 
-/// Status the wizard's `onComplete` callback fires with, mirroring the
-/// web `CompletionStatus` union.
-enum WizardCompletionStatus: String {
-    case active
-    case draft
-}
-
 /// BoardWizardPreviewStepView — Step 3 of the wizard. iOS twin of
 /// web's `BoardWizardPreviewStep`.
 ///
 /// Renders a read-only `BingoBoard` preview, a summary card with
-/// edit-jumps, and Activate / Save Draft buttons. Activation writes
-/// a new `Board` (status `.active`) plus per-cell `BoardTask`
-/// records to GRDB in a single transaction. "Save as Draft" writes
-/// the same records but with `status: .draft` and skips the activate
-/// flip; either path then fires `onComplete(boardId, status)`.
+/// edit-jumps, and Activate / Save Draft buttons. The actual DB
+/// writes delegate to `persistWizardBoard` in `BoardWizardPersist.swift`
+/// so the same logic can be reused by the cancel dialog's Save-Draft
+/// path.
 ///
-/// The placement (which task goes where) is built once via the
-/// computed `placement` property, keyed off the wizard's selection
-/// signature so the visual preview and the persisted records are
-/// guaranteed to match.
+/// The placement (which task goes where) is computed once via the
+/// `placement` computed property, keyed off the wizard's selection
+/// signature so the visual preview and the persisted records stay in
+/// sync.
 struct BoardWizardPreviewStepView: View {
     @Bindable var controller: BoardWizardViewModel
     let library: TaskLibraryViewModel
     let userId: String
     let onBack: () -> Void
-    let onComplete: (_ boardId: String, _ status: WizardCompletionStatus) -> Void
+    let onComplete: (_ boardId: String, _ status: WizardStatus) -> Void
 
     @State private var isCreating: Bool = false
     @State private var errorMessage: String? = nil
 
-    /// Stable signature for the current selection — drives `.id(...)`
-    /// re-mounts on the preview grid so a fresh shuffle happens only
-    /// when something layout-affecting actually changes.
     private var selectionKey: String {
         Array(controller.selectedTaskIds).sorted().joined(separator: "|")
     }
 
-    /// All selected tasks resolved to `Task` records.
     private var selectedTasks: [Task] {
         library.libraryTasks.filter { controller.selectedTaskIds.contains($0.id) }
     }
 
-    /// Per-cell placement of size² entries. `nil` slots only appear at
-    /// the reserved center for FREE / CUSTOM_FREE; every other slot is
-    /// a real Task. Same algorithm as the web side.
-    private var placement: [Task?] {
-        let size = controller.size
-        let total = size * size
-        let isOdd = size % 2 != 0
-        let centerIdx = (size / 2) * size + (size / 2)
-
-        let chosenCenter: Task? = {
-            guard isOdd, controller.centerType == .chosen, let id = controller.centerTaskId else {
-                return nil
-            }
-            return selectedTasks.first(where: { $0.id == id })
-        }()
-        let others: [Task] = chosenCenter != nil
-            ? selectedTasks.filter { $0.id != chosenCenter!.id }
-            : selectedTasks
-        let ordered = controller.isRandomized
-            ? Shuffle.fisherYatesShuffle(others)
-            : others
-
-        var grid: [Task?] = Array(repeating: nil, count: total)
-        var oi = 0
-        for i in 0..<total {
-            if i == centerIdx && isOdd {
-                if let center = chosenCenter {
-                    grid[i] = center
-                    continue
-                }
-                if controller.centerType == .free || controller.centerType == .customFree {
-                    // Reserved cell — leave nil; BingoBoard renders FREE label.
-                    continue
-                }
-                // NONE on odd: fall through and place a regular task.
-            }
-            if oi < ordered.count {
-                grid[i] = ordered[oi]
-                oi += 1
-            }
-        }
-        return grid
+    private var placement: WizardPlacement {
+        buildWizardPlacement(controller: controller, library: library)
     }
 
     private var taskNames: [String] {
@@ -215,123 +163,36 @@ struct BoardWizardPreviewStepView: View {
         }
     }
 
-    // MARK: - Persistence
-
-    /// Resolves the local-ISO start/end strings for the new Board. Mirrors
-    /// the existing `BoardCreatorPanelView` behaviour so the wizard
-    /// produces dates indistinguishable from the legacy panel's output.
-    private func resolveDates() -> (start: String, end: String)? {
-        if controller.timeframe != .custom {
-            guard let b = controller.computedBoundaries else { return nil }
-            return (wizardLocalISOString(b.start), wizardLocalISOString(b.end))
-        }
-        guard !controller.customStartDate.isEmpty, !controller.customEndDate.isEmpty,
-              let s = parseWizardCalendarDate(controller.customStartDate),
-              let e = parseWizardCalendarDate(controller.customEndDate)
-        else { return nil }
-        let cal = Calendar.current
-        let dayStart = cal.startOfDay(for: s)
-        let nextDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: e))!
-        let dayEnd = nextDay.addingTimeInterval(-0.001)
-        return (wizardLocalISOString(dayStart), wizardLocalISOString(dayEnd))
-    }
-
-    private func performCreation(status: WizardCompletionStatus) {
+    private func performCreation(status: WizardStatus) {
         errorMessage = nil
-        guard let dates = resolveDates() else {
-            errorMessage = controller.timeframe == .custom
-                ? "Pick a start and end date."
-                : "Could not resolve timeframe boundaries."
+        let resolved = resolveWizardDates(controller: controller)
+        let dates: (start: String, end: String)
+        switch resolved {
+        case .ok(let start, let end):
+            dates = (start, end)
+        case .error(let msg):
+            errorMessage = msg
             return
         }
 
-        let trimmedName = controller.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let placementSnapshot = placement
-        let size = controller.size
-        let isOdd = size % 2 != 0
-        let centerRow = size / 2
-        let centerCol = size / 2
-
-        let now = AppDatabase.currentTimestamp()
-        let boardId = AppDatabase.generateUUID()
-
-        let customCenterName: String? = controller.centerType == .customFree
-            ? controller.centerCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
-            : nil
-        let chosenCenterId: String? = controller.centerType == .chosen
-            ? controller.centerTaskId
-            : nil
-
         isCreating = true
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let boardDict: [String: Any] = {
-                    var d: [String: Any] = [
-                        "id": boardId,
-                        "userId": userId,
-                        "name": trimmedName,
-                        "status": status.rawValue,
-                        "boardSize": size,
-                        "timeframe": controller.timeframe.rawValue,
-                        "startDate": dates.start,
-                        "endDate": dates.end,
-                        "centerSquareType": controller.centerType.rawValue,
-                        "isRandomized": controller.isRandomized,
-                        "totalTasks": size * size,
-                        "completedTasks": 0,
-                        "linesCompleted": 0,
-                        "createdAt": now,
-                        "updatedAt": now,
-                        "version": 1,
-                        "isDeleted": false
-                    ]
-                    if let name = customCenterName, !name.isEmpty {
-                        d["centerSquareCustomName"] = name
-                    }
-                    if let id = chosenCenterId {
-                        d["centerTaskId"] = id
-                    }
-                    return d
-                }()
-                let boardData = try JSONSerialization.data(withJSONObject: boardDict)
-                let board = try JSONDecoder().decode(Board.self, from: boardData)
-
-                var boardTasks: [BoardTask] = []
-                for (i, slot) in placementSnapshot.enumerated() {
-                    guard let task = slot else { continue }
-                    let row = i / size
-                    let col = i % size
-                    let isCenterPos = isOdd && row == centerRow && col == centerCol
-                    let bt = BoardTask.makePlayground(
-                        boardId: boardId,
-                        taskId: task.id,
-                        row: row,
-                        col: col,
-                        now: now,
-                        isCenter: isCenterPos
-                            && (controller.centerType == .chosen || controller.centerType == .none)
-                    )
-                    boardTasks.append(bt)
-                }
-
-                try AppDatabase.shared.write { db in
-                    try board.save(db)
-                    for bt in boardTasks {
-                        try bt.save(db)
-                    }
-                }
-
-                DispatchQueue.main.async {
-                    isCreating = false
-                    onComplete(boardId, status)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    isCreating = false
-                    errorMessage = "Failed to create board: \(error.localizedDescription)"
-                }
+        let snapshot = placement
+        persistWizardBoard(
+            controller: controller,
+            userId: userId,
+            placement: snapshot,
+            dates: dates,
+            status: status,
+            onSuccess: { boardId in
+                isCreating = false
+                onComplete(boardId, status)
+            },
+            onError: { message in
+                isCreating = false
+                errorMessage = controller.draftBoardId == nil
+                    ? "Failed to create board: \(message)"
+                    : "Failed to update draft: \(message)"
             }
-        }
+        )
     }
 }
