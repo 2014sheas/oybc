@@ -141,7 +141,7 @@ struct BoardWizardTasksStepView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Selected: ")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
@@ -150,8 +150,6 @@ struct BoardWizardTasksStepView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(isCountSatisfied ? .green : .orange)
-
-                Spacer()
 
                 if centerTaskMode {
                     let satisfied = isCenterSatisfied
@@ -164,6 +162,21 @@ struct BoardWizardTasksStepView: View {
                         .foregroundColor(satisfied ? .green : .orange)
                         .clipShape(Capsule())
                 }
+
+                Spacer()
+
+                Button {
+                    isSheetPresented = true
+                } label: {
+                    Label("New task", systemImage: "plus")
+                        .font(.subheadline)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Create a new task")
             }
 
             HStack(spacing: 6) {
@@ -350,17 +363,6 @@ struct BoardWizardTasksStepView: View {
 
     private var footer: some View {
         HStack {
-            Button {
-                isSheetPresented = true
-            } label: {
-                Label("New task", systemImage: "plus")
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-            }
-            .buttonStyle(.plain)
-
             Spacer()
 
             Button("‹ Back") { onBack() }

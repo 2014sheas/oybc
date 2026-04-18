@@ -140,25 +140,34 @@ export function BoardWizardTasksStep({
       {/* Header — selection count, search, filter */}
       <div className={styles.header}>
         <div className={styles.countRow}>
-          <span className={styles.countLabel}>
-            Selected:{' '}
-            <span className={isCountSatisfied ? styles.countOk : styles.countShort}>
-              {selectedCount} / {tasksRequired}
+          <div className={styles.countGroup}>
+            <span className={styles.countLabel}>
+              Selected:{' '}
+              <span className={isCountSatisfied ? styles.countOk : styles.countShort}>
+                {selectedCount} / {tasksRequired}
+              </span>
             </span>
-          </span>
-          {centerTaskMode && (
-            <span
-              className={
-                centerTaskId !== null && selectedTaskIds.has(centerTaskId)
-                  ? styles.centerBadgeOk
-                  : styles.centerBadgeWarn
-              }
-            >
-              {centerTaskId !== null && selectedTaskIds.has(centerTaskId)
-                ? '★ Center picked'
-                : '★ Center required'}
-            </span>
-          )}
+            {centerTaskMode && (
+              <span
+                className={
+                  centerTaskId !== null && selectedTaskIds.has(centerTaskId)
+                    ? styles.centerBadgeOk
+                    : styles.centerBadgeWarn
+                }
+              >
+                {centerTaskId !== null && selectedTaskIds.has(centerTaskId)
+                  ? '★ Center picked'
+                  : '★ Center required'}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            className={styles.newTaskButton}
+            onClick={() => setIsSheetOpen(true)}
+          >
+            + New task
+          </button>
         </div>
 
         <input
@@ -274,33 +283,24 @@ export function BoardWizardTasksStep({
 
       {/* Footer — actions */}
       <div className={styles.footer}>
+        <button type="button" className={styles.backButton} onClick={onBack}>
+          ‹ Back
+        </button>
         <button
           type="button"
-          className={styles.newTaskButton}
-          onClick={() => setIsSheetOpen(true)}
+          className={styles.nextButton}
+          onClick={onNext}
+          disabled={!canAdvance}
+          title={
+            !isCountSatisfied
+              ? `Pick ${tasksRequired - selectedCount} more task(s)`
+              : !isCenterSatisfied
+                ? 'Mark one selected task as the center'
+                : undefined
+          }
         >
-          + New task
+          Next ›
         </button>
-        <div className={styles.footerNav}>
-          <button type="button" className={styles.backButton} onClick={onBack}>
-            ‹ Back
-          </button>
-          <button
-            type="button"
-            className={styles.nextButton}
-            onClick={onNext}
-            disabled={!canAdvance}
-            title={
-              !isCountSatisfied
-                ? `Pick ${tasksRequired - selectedCount} more task(s)`
-                : !isCenterSatisfied
-                  ? 'Mark one selected task as the center'
-                  : undefined
-            }
-          >
-            Next ›
-          </button>
-        </div>
       </div>
 
       <NewTaskSheet
