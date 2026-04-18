@@ -28,6 +28,11 @@ struct CompositeTaskWizardView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
+    /// Transient banner shown when a threshold is clamped downward by
+    /// subtask removal. Replaces the legacy silent clamp. Auto-dismisses
+    /// after 4s via `clampToastToken`.
+    @State private var clampToast: String?
+    @State private var clampToastToken: Int = 0
 
     // MARK: - Library state
 
@@ -44,6 +49,28 @@ struct CompositeTaskWizardView: View {
                     if step < currentStep { currentStep = step }
                 }
             )
+
+            if let toast = clampToast {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(toast)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.orange.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.orange.opacity(0.4), lineWidth: 1)
+                )
+                .transition(.opacity)
+            }
 
             switch currentStep {
             case 1:
@@ -98,20 +125,21 @@ struct CompositeTaskWizardView: View {
     // MARK: - Subtask mutators
 
     private func addExistingSubtask() {
+        // Adding can only grow the subtask count, so any previously
+        // valid threshold stays valid. Clamping here would silently
+        // reduce the user's threshold choice (legacy-monolith bug).
         subtasks.append(SubtaskItem(mode: .existing))
-        clampThreshold()
     }
 
     private func addInlineSubtask() {
         let item = SubtaskItem(mode: .inline_)
         item.inlineSteps = [ProgressStepFormState()]
         subtasks.append(item)
-        clampThreshold()
     }
 
     private func removeSubtask(_ item: SubtaskItem) {
         subtasks.removeAll { $0.id == item.id }
-        clampThreshold()
+        clampThresholdAndMaybeToast()
     }
 
     private func clampThreshold() {
@@ -119,6 +147,28 @@ struct CompositeTaskWizardView: View {
             let count = subtasks.count
             if count == 0 { threshold = 1; return }
             threshold = min(max(1, threshold), count)
+        }
+    }
+
+    /// Variant of `clampThreshold` that surfaces a transient toast when
+    /// the threshold actually moved. Only relevant for the removal path
+    /// — adding a subtask can't reduce the threshold.
+    private func clampThresholdAndMaybeToast() {
+        let before = threshold
+        clampThreshold()
+        if threshold != before && operatorType == .mOfN {
+            let count = subtasks.count
+            let noun = count == 1 ? "subtask" : "subtasks"
+            showClampToast("Threshold lowered to \(threshold) (you only have \(count) \(noun)).")
+        }
+    }
+
+    private func showClampToast(_ message: String) {
+        clampToast = message
+        clampToastToken += 1
+        let token = clampToastToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            if clampToastToken == token { clampToast = nil }
         }
     }
 

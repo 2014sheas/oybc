@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
@@ -80,6 +80,17 @@ export function CompositeTaskWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  /** Transient banner surfaced when a threshold gets clamped downward
+   *  by subtask removal. Replaces today's silent mutation so users can
+   *  see why the M_OF_N stepper changed. Auto-dismisses after 4s. */
+  const [clampToast, setClampToast] = useState<string | null>(null);
+  const clampTimerRef = useRef<number | null>(null);
+
+  function showClampToast(message: string): void {
+    setClampToast(message);
+    if (clampTimerRef.current !== null) window.clearTimeout(clampTimerRef.current);
+    clampTimerRef.current = window.setTimeout(() => setClampToast(null), 4000);
+  }
 
   // Library feeds — live so a composite created elsewhere shows up here.
   const allTasks = useLiveQuery(
@@ -100,21 +111,26 @@ export function CompositeTaskWizard({
   }
 
   function addExistingSubtask(): void {
-    const next = [...subtasks, createEmptyExistingSubtask()];
-    setSubtasks(next);
-    setThreshold(clampThreshold(next, threshold));
+    // Adding subtasks can only increase the count, so threshold stays
+    // valid — no clamp needed. Clamping here would silently reduce the
+    // user's threshold choice (bug in the legacy monolith).
+    setSubtasks((prev) => [...prev, createEmptyExistingSubtask()]);
   }
 
   function addInlineSubtask(): void {
-    const next = [...subtasks, createEmptyInlineSubtask()];
-    setSubtasks(next);
-    setThreshold(clampThreshold(next, threshold));
+    setSubtasks((prev) => [...prev, createEmptyInlineSubtask()]);
   }
 
   function removeSubtask(id: string): void {
     const next = subtasks.filter((s) => s.id !== id);
     setSubtasks(next);
-    setThreshold(clampThreshold(next, threshold));
+    const clamped = clampThreshold(next, threshold);
+    if (clamped !== threshold && operator === OperatorType.M_OF_N) {
+      showClampToast(
+        `Threshold lowered to ${clamped} (you only have ${next.length} subtask${next.length === 1 ? '' : 's'}).`,
+      );
+    }
+    setThreshold(clamped);
   }
 
   function updateSubtask(id: string, updates: Partial<SubtaskDraft>): void {
@@ -359,6 +375,13 @@ export function CompositeTaskWizard({
           if (step < currentStep) setCurrentStep(step);
         }}
       />
+
+      {clampToast !== null && (
+        <div className={styles.clampToast} role="status">
+          <span className={styles.clampToastIcon} aria-hidden="true">⚠</span>
+          <span>{clampToast}</span>
+        </div>
+      )}
 
       {currentStep === 1 && (
         <SetupStep
