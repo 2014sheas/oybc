@@ -1,47 +1,21 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { OperatorType, TaskType, generateCounterTaskTitle, type CompositeTask, type Task } from '@oybc/shared';
+import { OperatorType, TaskType, generateCounterTaskTitle, type CompositeTask } from '@oybc/shared';
 import { db } from '../../db/database';
 import { OperatorSelector } from '../OperatorSelector';
 import { CounterStepper } from '../CounterStepper';
-import { SubtaskChip } from '../SubtaskChip';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS, getCharCountClass } from './playgroundUtils';
-import { CountingStepFields } from '../CountingStepFields';
-import { ProgressStepRow } from '../ProgressStepRow';
 import { type StepFormState, createEmptyStep } from '../progressStepUtils';
+import { SubtaskCard } from '../compositeWizard/SubtaskCard';
+import {
+  type SubtaskDraft,
+  type ExistingSubtaskDraft,
+  type InlineSubtaskDraft,
+} from '../compositeWizard/compositeSubtaskDraft';
 import styles from './CompositeTaskForm.module.css';
 
 /** Maximum character length for composite task title */
 const TITLE_MAX_LENGTH = 200;
-
-// ─── Local form types ─────────────────────────────────────────────────────────
-
-type InlineTaskType = 'normal' | 'counting' | 'progress';
-
-interface ExistingSubtaskItem {
-  id: string;
-  mode: 'existing';
-  selectionType: 'task' | 'composite';
-  selectedId: string;
-  confirmed: boolean;
-}
-
-interface InlineSubtaskItem {
-  id: string;
-  mode: 'inline';
-  inlineType: InlineTaskType;
-  title: string;
-  // counting fields
-  action: string;
-  unit: string;
-  maxCountStr: string;
-  // progress fields
-  steps: StepFormState[];
-  confirmed: boolean;
-  confirmError?: string;
-}
-
-type SubtaskItem = ExistingSubtaskItem | InlineSubtaskItem;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,27 +29,18 @@ function currentTimestamp(): string {
 }
 
 
-/**
- * Creates a new empty ExistingSubtaskItem with a stable form key.
- *
- * @returns A new ExistingSubtaskItem
- */
-function createEmptyExistingSubtask(): ExistingSubtaskItem {
+/** Creates a new empty existing-mode subtask draft. */
+function createEmptyExistingSubtask(): ExistingSubtaskDraft {
   return {
     id: crypto.randomUUID(),
     mode: 'existing',
     selectionType: 'task',
     selectedId: '',
-    confirmed: false,
   };
 }
 
-/**
- * Creates a new InlineSubtaskItem with a stable form key and default inline type.
- *
- * @returns A new InlineSubtaskItem
- */
-function createEmptyInlineSubtask(): InlineSubtaskItem {
+/** Creates a new inline-mode subtask draft, defaulted to a Normal task. */
+function createEmptyInlineSubtask(): InlineSubtaskDraft {
   return {
     id: crypto.randomUUID(),
     mode: 'inline',
@@ -85,7 +50,6 @@ function createEmptyInlineSubtask(): InlineSubtaskItem {
     unit: '',
     maxCountStr: '',
     steps: [createEmptyStep()],
-    confirmed: false,
   };
 }
 
@@ -110,7 +74,7 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
   const [title, setTitle] = useState('');
   const [operator, setOperator] = useState<OperatorType>(OperatorType.AND);
   const [threshold, setThreshold] = useState(2);
-  const [subtasks, setSubtasks] = useState<SubtaskItem[]>([]);
+  const [subtasks, setSubtasks] = useState<SubtaskDraft[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -156,7 +120,7 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
    * @param currentThreshold - The current threshold value
    * @returns The clamped threshold
    */
-  function clampThreshold(nextSubtasks: SubtaskItem[], currentThreshold: number): number {
+  function clampThreshold(nextSubtasks: SubtaskDraft[], currentThreshold: number): number {
     const len = nextSubtasks.length;
     if (len === 0) return 1;
     return Math.min(Math.max(1, currentThreshold), len);
@@ -182,9 +146,9 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
     setThreshold(clampThreshold(next, threshold));
   }
 
-  function updateSubtask(id: string, updates: Partial<ExistingSubtaskItem> | Partial<InlineSubtaskItem>): void {
+  function updateSubtask(id: string, updates: Partial<SubtaskDraft>): void {
     setSubtasks((prev) =>
-      prev.map((s) => (s.id === id ? ({ ...s, ...updates } as SubtaskItem) : s))
+      prev.map((s) => (s.id === id ? ({ ...s, ...updates } as SubtaskDraft) : s))
     );
   }
 
@@ -222,32 +186,32 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
 
   // ─── Selection helpers ──────────────────────────────────────────────────────
 
-  /**
-   * Returns already-selected IDs (task or composite) to exclude from dropdowns.
-   *
-   * @param currentId - The ID of the current subtask (excluded from its own dedup check)
-   * @returns Set of already-selected IDs
-   */
-  function getSelectedIds(currentId: string): Set<string> {
+  /** Ids picked by any existing-mode card, memoised for cheap filtering in
+   *  every card's dropdown. Only non-empty selections contribute. */
+  const allSelectedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const s of subtasks) {
-      if (s.id !== currentId && s.mode === 'existing' && s.selectedId) {
+      if (s.mode === 'existing' && s.selectedId) ids.add(s.selectedId);
+    }
+    return ids;
+  }, [subtasks]);
+
+  /** Ids OTHER than the current card — the card excludes its own selected
+   *  id so the chosen option doesn't vanish from its own dropdown. */
+  function excludedIdsForCard(cardId: string): Set<string> {
+    const ids = new Set<string>();
+    for (const s of subtasks) {
+      if (s.id !== cardId && s.mode === 'existing' && s.selectedId) {
         ids.add(s.selectedId);
       }
     }
     return ids;
   }
 
-  /**
-   * Determines selection type (task vs composite) from a selected ID.
-   *
-   * @param selectedId - The ID to look up
-   * @returns 'task' | 'composite'
-   */
-  function inferSelectionType(selectedId: string): 'task' | 'composite' {
-    if (allCompositeTasks.some((ct) => ct.id === selectedId)) return 'composite';
-    return 'task';
-  }
+  // `allSelectedIds` is kept available for future duplicate-detection UX
+  // (e.g. banner messaging); the card-level filter already blocks dup
+  // selections at source.
+  void allSelectedIds;
 
   // ─── Validation ─────────────────────────────────────────────────────────────
 
@@ -264,7 +228,7 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
 
     // Dedup check for existing subtasks
     const existingIds = subtasks
-      .filter((s): s is ExistingSubtaskItem => s.mode === 'existing')
+      .filter((s): s is ExistingSubtaskDraft => s.mode === 'existing')
       .map((s) => s.selectedId);
     const uniqueIds = new Set(existingIds);
     if (uniqueIds.size < existingIds.length) return 'Duplicate selections are not allowed';
@@ -502,265 +466,6 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
     }
   }
 
-  // ─── Render helpers ─────────────────────────────────────────────────────────
-
-  /**
-   * Resolves the display title and badge label for a confirmed subtask chip.
-   *
-   * @param subtask - The confirmed subtask item
-   * @returns title and badge strings
-   */
-  function getSubtaskDisplayInfo(subtask: SubtaskItem): { title: string; badge: string } {
-    if (subtask.mode === 'existing') {
-      if (subtask.selectionType === 'task') {
-        const task = allTasks.find((t) => t.id === subtask.selectedId);
-        return { title: task?.title ?? '?', badge: (task?.type ?? 'task').toUpperCase() };
-      }
-      const ct = allCompositeTasks.find((c) => c.id === subtask.selectedId);
-      return { title: ct?.title ?? '?', badge: 'COMPOSITE' };
-    }
-    // inline
-    const badge = subtask.inlineType.toUpperCase();
-    let title: string;
-    if (subtask.inlineType === 'counting') {
-      title =
-        subtask.title.trim() ||
-        `${subtask.action.trim()} ${subtask.maxCountStr.trim()} ${subtask.unit.trim()}`.trim();
-    } else {
-      title = subtask.title.trim();
-    }
-    return { title: title || 'Untitled', badge };
-  }
-
-  /**
-   * Attempts to confirm an inline subtask after validating required fields.
-   * Sets confirmError on the subtask if validation fails.
-   *
-   * @param id - Subtask ID to confirm
-   */
-  function confirmSubtask(id: string): void {
-    const subtask = subtasks.find((s) => s.id === id);
-    if (!subtask || subtask.mode !== 'inline') return;
-
-    let error: string | undefined;
-    if (subtask.inlineType === 'counting') {
-      if (
-        !subtask.action.trim() ||
-        !subtask.unit.trim() ||
-        !(parseInt(subtask.maxCountStr, 10) > 0)
-      ) {
-        error = 'Action, max count, and unit are required';
-      }
-    } else {
-      if (!subtask.title.trim()) {
-        error = 'Title is required';
-      }
-    }
-
-    if (error) {
-      updateSubtask(id, { confirmError: error } as Partial<InlineSubtaskItem>);
-      return;
-    }
-    updateSubtask(id, { confirmed: true, confirmError: undefined } as Partial<InlineSubtaskItem>);
-  }
-
-  /**
-   * Sets a subtask back to unconfirmed (editing) state, clearing any confirm error.
-   *
-   * @param id - Subtask ID to un-confirm
-   */
-  function editSubtask(id: string): void {
-    setSubtasks((prev) =>
-      prev.map((s): SubtaskItem => {
-        if (s.id !== id) return s;
-        if (s.mode === 'inline') return { ...s, confirmed: false, confirmError: undefined };
-        return { ...s, confirmed: false };
-      })
-    );
-  }
-
-  /**
-   * Renders a single subtask as either a compact chip (confirmed) or the full edit form.
-   *
-   * @param subtask - The subtask item to render
-   * @returns JSX element for the subtask card
-   */
-  function renderSubtask(subtask: SubtaskItem): React.ReactElement {
-    // Confirmed state: compact chip
-    if (subtask.confirmed) {
-      const { title, badge } = getSubtaskDisplayInfo(subtask);
-      return (
-        <SubtaskChip
-          key={subtask.id}
-          title={title}
-          type={badge.toLowerCase()}
-          onEdit={() => editSubtask(subtask.id)}
-          onRemove={() => removeSubtask(subtask.id)}
-        />
-      );
-    }
-
-    // Editing state: full form
-    const selectedIds = getSelectedIds(subtask.id);
-
-    return (
-      <div key={subtask.id} className={styles.subtaskCard}>
-        <div className={styles.subtaskCardHeader}>
-          <span className={styles.subtaskCardLabel}>
-            {subtask.mode === 'existing' ? 'Existing' : 'New Inline Task'}
-          </span>
-          <button
-            type="button"
-            className={styles.removeSubtaskButton}
-            onClick={() => removeSubtask(subtask.id)}
-          >
-            Remove
-          </button>
-        </div>
-
-        {subtask.mode === 'existing' ? (
-          <div className={styles.fieldGroup}>
-            <label className={styles.label} htmlFor={`subtask-select-${subtask.id}`}>
-              Select task or composite task<span className={styles.required}>*</span>
-            </label>
-            <select
-              id={`subtask-select-${subtask.id}`}
-              className={styles.selectInput}
-              value={subtask.selectedId}
-              onChange={(e) => {
-                const selectedId = e.target.value;
-                updateSubtask(subtask.id, {
-                  selectedId,
-                  selectionType: inferSelectionType(selectedId),
-                  confirmed: selectedId !== '',
-                });
-              }}
-            >
-              <option value="">— Select —</option>
-              {allTasks.filter((t: Task) => !selectedIds.has(t.id)).length > 0 && (
-                <optgroup label="Tasks">
-                  {allTasks
-                    .filter((t: Task) => !selectedIds.has(t.id))
-                    .map((t: Task) => (
-                      <option key={t.id} value={t.id}>
-                        {t.title} ({t.type})
-                      </option>
-                    ))}
-                </optgroup>
-              )}
-              {allCompositeTasks.filter((ct: CompositeTask) => !selectedIds.has(ct.id)).length > 0 && (
-                <optgroup label="Composite Tasks">
-                  {allCompositeTasks
-                    .filter((ct: CompositeTask) => !selectedIds.has(ct.id))
-                    .map((ct: CompositeTask) => (
-                      <option key={ct.id} value={ct.id}>
-                        {ct.title}
-                      </option>
-                    ))}
-                </optgroup>
-              )}
-            </select>
-            {subtask.selectedId && (
-              <span className={styles.selectionBadge}>
-                {subtask.selectionType === 'composite' ? 'Composite Task' : 'Task'}
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className={styles.inlineTaskFields}>
-            {/* Inline type picker */}
-            <div className={styles.inlineTypePicker}>
-              {(['normal', 'counting', 'progress'] as InlineTaskType[]).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className={`${styles.inlineTypeButton} ${subtask.inlineType === type ? styles.inlineTypeButtonActive : ''}`}
-                  onClick={() => updateSubtask(subtask.id, { inlineType: type })}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            {/* Title (required for normal + progress; optional auto-label for counting) */}
-            <div className={styles.fieldGroup}>
-              <label className={styles.label} htmlFor={`subtask-title-${subtask.id}`}>
-                Title
-                {subtask.inlineType !== 'counting' && <span className={styles.required}>*</span>}
-                {subtask.inlineType === 'counting' && (
-                  <span className={styles.optionalHint}> (auto-generated if blank)</span>
-                )}
-              </label>
-              <input
-                id={`subtask-title-${subtask.id}`}
-                type="text"
-                className={styles.titleInput}
-                value={subtask.title}
-                onChange={(e) => updateSubtask(subtask.id, { title: e.target.value })}
-                placeholder="Enter task title"
-                maxLength={TITLE_MAX_LENGTH + 1}
-              />
-            </div>
-
-            {/* Counting fields */}
-            {subtask.inlineType === 'counting' && (
-              <CountingStepFields
-                idPrefix={`subtask-${subtask.id}`}
-                action={subtask.action}
-                maxCount={subtask.maxCountStr}
-                unit={subtask.unit}
-                onChange={(field, value) => {
-                  if (field === 'action') updateSubtask(subtask.id, { action: value });
-                  else if (field === 'unit') updateSubtask(subtask.id, { unit: value });
-                  else if (field === 'maxCount') updateSubtask(subtask.id, { maxCountStr: value });
-                }}
-              />
-            )}
-
-            {/* Progress step rows */}
-            {subtask.inlineType === 'progress' && (
-              <div className={styles.stepsContainer}>
-                <span className={styles.stepsLabel}>Steps</span>
-                {subtask.steps.map((step, idx) => (
-                  <ProgressStepRow
-                    key={step.id}
-                    index={idx}
-                    idPrefix={`subtask-${subtask.id}-step-${step.id}`}
-                    step={step}
-                    canRemove={subtask.steps.length > 1}
-                    onFieldChange={(field, value) => updateInlineStep(subtask.id, step.id, field, value)}
-                    onRemove={() => removeStep(subtask.id, step.id)}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className={styles.addStepButton}
-                  onClick={() => addStep(subtask.id)}
-                >
-                  + Add step
-                </button>
-              </div>
-            )}
-
-            {/* Confirm error */}
-            {subtask.confirmError && (
-              <span className={styles.fieldError}>{subtask.confirmError}</span>
-            )}
-
-            {/* Done button */}
-            <button
-              type="button"
-              className={styles.doneButton}
-              onClick={() => confirmSubtask(subtask.id)}
-            >
-              ✓ Done
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   // ─── JSX ────────────────────────────────────────────────────────────────────
 
   return (
@@ -806,7 +511,20 @@ export function CompositeTaskForm({ userId, onCreated }: CompositeTaskFormProps 
 
         {/* Subtask list */}
         <div className={styles.subtaskList}>
-          {subtasks.map(renderSubtask)}
+          {subtasks.map((s) => (
+            <SubtaskCard
+              key={s.id}
+              draft={s}
+              allTasks={allTasks}
+              allCompositeTasks={allCompositeTasks}
+              excludedIds={excludedIdsForCard(s.id)}
+              onUpdate={(updates) => updateSubtask(s.id, updates)}
+              onRemove={() => removeSubtask(s.id)}
+              onStepFieldChange={(stepId, field, value) => updateInlineStep(s.id, stepId, field, value)}
+              onAddStep={() => addStep(s.id)}
+              onRemoveStep={(stepId) => removeStep(s.id, stepId)}
+            />
+          ))}
         </div>
 
         {/* Add buttons */}

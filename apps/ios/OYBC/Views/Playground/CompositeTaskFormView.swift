@@ -40,6 +40,10 @@ class SubtaskItem: ObservableObject, Identifiable {
     @Published var inlineSteps: [ProgressStepFormState] = []
     @Published var isConfirmed: Bool = false
     @Published var confirmError: String?   // inline only — validation message
+    /// When set, the card is showing the type-switch confirmation panel
+    /// (user tried to change inline type while fields were dirty). `nil`
+    /// means no pending switch. See `CompositeSubtaskCardView`.
+    @Published var pendingTypeSwitch: InlineSubtaskType?
 
     enum SelectionType {
         case task
@@ -129,6 +133,27 @@ struct CompositeTaskFormView: View {
         })
     }
 
+    /// Task IDs picked by cards OTHER than `item`, so the card's own
+    /// picker doesn't hide its own selection.
+    private func otherTaskIds(excluding item: SubtaskItem) -> Set<String> {
+        Set(subtasks.compactMap { other in
+            guard other.id != item.id,
+                  other.mode == .existing, other.selectionType == .task,
+                  !other.selectedTaskId.isEmpty else { return nil }
+            return other.selectedTaskId
+        })
+    }
+
+    /// Composite IDs picked by cards OTHER than `item`.
+    private func otherCompositeIds(excluding item: SubtaskItem) -> Set<String> {
+        Set(subtasks.compactMap { other in
+            guard other.id != item.id,
+                  other.mode == .existing, other.selectionType == .composite,
+                  !other.selectedCompositeId.isEmpty else { return nil }
+            return other.selectedCompositeId
+        })
+    }
+
     // MARK: - Creation Form
 
     private var creationForm: some View {
@@ -192,12 +217,12 @@ struct CompositeTaskFormView: View {
                     .fontWeight(.semibold)
 
                 ForEach(subtasks) { item in
-                    SubtaskRowView(
+                    CompositeSubtaskCardView(
                         item: item,
                         libraryTasks: libraryTasks,
                         libraryCompositeTasks: libraryCompositeTasks,
-                        usedTaskIds: usedTaskIds,
-                        usedCompositeIds: usedCompositeIds,
+                        excludedTaskIds: otherTaskIds(excluding: item),
+                        excludedCompositeIds: otherCompositeIds(excluding: item),
                         onRemove: { removeSubtask(item) }
                     )
                 }

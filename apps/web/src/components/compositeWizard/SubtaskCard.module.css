@@ -1,0 +1,269 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem;
+  background-color: var(--bg-primary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  transition: border-color 0.18s, box-shadow 0.18s, background-color 0.18s;
+}
+
+.cardReady {
+  border-color: var(--success-border, #22c55e);
+  background-color: var(--success-bg, rgba(34, 197, 94, 0.06));
+  box-shadow: 0 0 0 1px var(--success-border, rgba(34, 197, 94, 0.35));
+}
+
+.cardIncomplete {
+  border-color: var(--border-color);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.modeLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.removeButton {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.removeButton:hover {
+  background-color: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+  color: var(--text-primary);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.optionalHint {
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.titleInput {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.18s, box-shadow 0.18s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.titleInput:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.selectInput {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.selectInput:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* ── Inline-type picker ── */
+
+.inlineFields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.typePicker {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.typeButton,
+.typeButtonActive {
+  padding: 0.4rem 0.95rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.typeButton:hover {
+  background-color: var(--button-hover-bg);
+  color: var(--text-primary);
+}
+
+.typeButtonActive {
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  font-weight: 600;
+}
+
+/* ── Type-switch confirm panel ── */
+
+.switchConfirmPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem 0.95rem;
+  background-color: var(--warning-bg, rgba(251, 191, 36, 0.1));
+  border: 1px solid var(--warning-border, rgba(251, 191, 36, 0.4));
+  border-radius: 8px;
+}
+
+.switchConfirmText {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.switchConfirmActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.switchCancelButton,
+.switchConfirmButton {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.88rem;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: filter 0.15s, background-color 0.15s;
+}
+
+.switchCancelButton {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.switchCancelButton:hover {
+  background-color: var(--button-hover-bg);
+}
+
+.switchConfirmButton {
+  background-color: var(--warning-text, #92400e);
+  border-color: var(--warning-text, #92400e);
+  color: #fff;
+  font-weight: 600;
+}
+
+.switchConfirmButton:hover {
+  filter: brightness(0.92);
+}
+
+/* ── Progress-subtask step rows ── */
+
+.stepsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.stepsLabel {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.addStepButton {
+  align-self: flex-start;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  background-color: var(--bg-primary);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.addStepButton:hover {
+  background-color: var(--button-hover-bg);
+  border-color: var(--active-bg);
+  border-style: solid;
+}
+
+/* ── Readiness footer ── */
+
+.readinessReady,
+.readinessIncomplete {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+}
+
+.readinessReady {
+  color: var(--success-text, #166534);
+  background-color: rgba(34, 197, 94, 0.1);
+}
+
+.readinessIncomplete {
+  color: var(--text-secondary);
+  background-color: var(--bg-secondary);
+}
+
+.readinessIcon {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.readinessReady .readinessIcon {
+  color: var(--success-text, #16a34a);
+}
