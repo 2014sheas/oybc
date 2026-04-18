@@ -11,6 +11,7 @@
 		0D093F4BF4758E670D2B3DEF /* SyncStatusIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D72F0CD1196886BF1206F94 /* SyncStatusIndicatorView.swift */; };
 		159D16051FA8E2923FE9CC84 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343B20563EE55E5FA28C5DC2 /* MainTabView.swift */; };
 		1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149C3CA55D0467096B13D935 /* Task.swift */; };
+		20303A5F782938E9478A07B5 /* TaskLibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */; };
 		27AB929BF4B52E411F6EFA6C /* BoardListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A9B48D659A3517CCA341637 /* BoardListView.swift */; };
 		2C57FCF2046E9E59665819C0 /* BoardListItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA434E50844910E99B885B94 /* BoardListItemView.swift */; };
 		2EF19E402C1B931693900274 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = FB60A2471061045431151B6B /* GRDB */; };
@@ -54,12 +55,15 @@
 		A4D761B3D3CB7A3326F7B11F /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */; };
 		A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854FEF8734BD37239F0A8462 /* BoardTask.swift */; };
 		A6F3DCD9274923158442DA36 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476EB8034735B0ACC9032FA9 /* BingoDetection.swift */; };
+		A8934C61D4312ACF5B66DAF6 /* BoardPoolViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AAEF9ED607F8ED909FA3B77 /* BoardPoolViewModel.swift */; };
 		AD7B6745F16D74F4733FF545 /* TypeBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37AE86E7BE2C5A2C66BEB50A /* TypeBadgeView.swift */; };
 		B2FCC0C6923A5FD1DD19A429 /* BingoSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34742747DBBD390A07DC633A /* BingoSquare.swift */; };
+		B4A0265ED693ACB1A8B81E95 /* CreateNewTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1FF0E9814EFB0A5528E12B /* CreateNewTaskFormView.swift */; };
 		B602C002BA5E808B589A6CAD /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BFCB077AA954687C6EFED5 /* AuthGateView.swift */; };
 		B92DF575684C12C09A6778F0 /* CompositeTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C131BB0EE70184E5551EB30 /* CompositeTaskFormView.swift */; };
 		BCF35E5F81FB0CBF7E44960F /* UserPreferencesCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0B38321FC596D67DEBCAAB /* UserPreferencesCodableTests.swift */; };
 		BD7E816390E48BAA75582B89 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */; };
+		BF25DF0D1007E0448FC56801 /* CreateFormViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DCC1B869DCD626A926C690 /* CreateFormViewModel.swift */; };
 		C0A46EFF73CDF0023708C549 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F0A3E6144798AD80EB9DAF /* SyncService.swift */; };
 		C2C8D744E19FC1CC95F72D96 /* SelectableTaskItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397644A1686EEC49F1E7C294 /* SelectableTaskItemView.swift */; };
 		C3B8B4FD9C30EBC428EC52E6 /* CountingStepFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */; };
@@ -88,6 +92,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		01DCC1B869DCD626A926C690 /* CreateFormViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateFormViewModel.swift; sourceTree = "<group>"; };
 		032F40E3064154C5E3108AB4 /* PlaygroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundView.swift; sourceTree = "<group>"; };
 		0436CC51A477FF70932A9546 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		089DC720A8203E55B60E786A /* CompositeDerivationPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeDerivationPanelView.swift; sourceTree = "<group>"; };
@@ -106,6 +111,7 @@
 		1EAF1C5E760E18038C6E53F6 /* CountingDerivationPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountingDerivationPanelView.swift; sourceTree = "<group>"; };
 		2822E1DBF15699974C2F70C5 /* OYBCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCTests.swift; sourceTree = "<group>"; };
 		28F87B121453F93D1A9C8372 /* CrossBoardRollupPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossBoardRollupPlayground.swift; sourceTree = "<group>"; };
+		2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskLibraryViewModel.swift; sourceTree = "<group>"; };
 		324A3D1A89D8FA53C3B37969 /* CreateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateView.swift; sourceTree = "<group>"; };
 		343B20563EE55E5FA28C5DC2 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		34742747DBBD390A07DC633A /* BingoSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoSquare.swift; sourceTree = "<group>"; };
@@ -126,9 +132,11 @@
 		5A4A008E558F76153F461B0B /* BoardGeneratorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardGeneratorPlayground.swift; sourceTree = "<group>"; };
 		5A9B48D659A3517CCA341637 /* BoardListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardListView.swift; sourceTree = "<group>"; };
 		5D6F0E5CF170B026EF76D520 /* FilterTabsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterTabsView.swift; sourceTree = "<group>"; };
+		5E1FF0E9814EFB0A5528E12B /* CreateNewTaskFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateNewTaskFormView.swift; sourceTree = "<group>"; };
 		5E3E716EE694B3552051ECF6 /* CounterStepperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterStepperView.swift; sourceTree = "<group>"; };
 		5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
 		6AAEEFFDD3526743C95A13D7 /* SubtaskChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtaskChipView.swift; sourceTree = "<group>"; };
+		6AAEF9ED607F8ED909FA3B77 /* BoardPoolViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardPoolViewModel.swift; sourceTree = "<group>"; };
 		6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
 		6DEA8E9D24B3205D81595221 /* BoardPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardPlayView.swift; sourceTree = "<group>"; };
 		6FD904B6FD6BEEB84E59BB51 /* SyncQueueMaintenanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueueMaintenanceTests.swift; sourceTree = "<group>"; };
@@ -155,7 +163,7 @@
 		F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTaskSquareView.swift; sourceTree = "<group>"; };
 		FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 		FA434E50844910E99B885B94 /* BoardListItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardListItemView.swift; sourceTree = "<group>"; };
-		"TEMP_7F79F184-7205-4C60-953B-BFE97D31734C" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_35220E4C-CB48-424A-9B1F-91A0D8E1A79D" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -279,6 +287,16 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		7538C39CB55CE0565035BE29 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				6AAEF9ED607F8ED909FA3B77 /* BoardPoolViewModel.swift */,
+				01DCC1B869DCD626A926C690 /* CreateFormViewModel.swift */,
+				2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
 		A287D5A503950699FE53C6E9 /* OYBCTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -321,7 +339,9 @@
 		E03FBA3FFEAF88A7D8609EBA /* CreateTab */ = {
 			isa = PBXGroup;
 			children = (
+				5E1FF0E9814EFB0A5528E12B /* CreateNewTaskFormView.swift */,
 				324A3D1A89D8FA53C3B37969 /* CreateView.swift */,
+				7538C39CB55CE0565035BE29 /* ViewModels */,
 			);
 			path = CreateTab;
 			sourceTree = "<group>";
@@ -351,10 +371,10 @@
 			path = BoardsTab;
 			sourceTree = "<group>";
 		};
-		"TEMP_C535A9C4-F964-44FA-B6A5-0AB621462755" /* ios */ = {
+		"TEMP_EA2695DB-2290-4801-B219-4656EBEE0D86" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_7F79F184-7205-4C60-953B-BFE97D31734C" /* Signing.xcconfig */,
+				"TEMP_35220E4C-CB48-424A-9B1F-91A0D8E1A79D" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -500,6 +520,7 @@
 				2C57FCF2046E9E59665819C0 /* BoardListItemView.swift in Sources */,
 				27AB929BF4B52E411F6EFA6C /* BoardListView.swift in Sources */,
 				3EC35293B2C1A69FB060892D /* BoardPlayView.swift in Sources */,
+				A8934C61D4312ACF5B66DAF6 /* BoardPoolViewModel.swift in Sources */,
 				50CA8B52D842362E4702E526 /* BoardPreferencesView.swift in Sources */,
 				C5DAC2DD6C247A8B43C043F5 /* BoardStatusBadgeView.swift in Sources */,
 				A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */,
@@ -512,6 +533,8 @@
 				5980D09CC9D150A4D3BF0CD1 /* CounterStepperView.swift in Sources */,
 				02D2A87C1E28F78EECABD222 /* CountingDerivationPanelView.swift in Sources */,
 				C3B8B4FD9C30EBC428EC52E6 /* CountingStepFieldsView.swift in Sources */,
+				BF25DF0D1007E0448FC56801 /* CreateFormViewModel.swift in Sources */,
+				B4A0265ED693ACB1A8B81E95 /* CreateNewTaskFormView.swift in Sources */,
 				5B042ED7D73C5722CE174C3E /* CreateView.swift in Sources */,
 				8C0AC5F740FA4EEADB74E2FF /* CrossBoardRollupPlayground.swift in Sources */,
 				98FC1FC89C04B110DE933FFF /* DateFormatting.swift in Sources */,
@@ -537,6 +560,7 @@
 				C0A46EFF73CDF0023708C549 /* SyncService.swift in Sources */,
 				0D093F4BF4758E670D2B3DEF /* SyncStatusIndicatorView.swift in Sources */,
 				1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */,
+				20303A5F782938E9478A07B5 /* TaskLibraryViewModel.swift in Sources */,
 				A4D761B3D3CB7A3326F7B11F /* TaskSquareActionsPlayground.swift in Sources */,
 				FE2AA97E854569BAF2DFAE62 /* TaskTypeSelectorView.swift in Sources */,
 				AD7B6745F16D74F4733FF545 /* TypeBadgeView.swift in Sources */,
@@ -571,7 +595,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_7F79F184-7205-4C60-953B-BFE97D31734C" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_35220E4C-CB48-424A-9B1F-91A0D8E1A79D" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -668,7 +692,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_7F79F184-7205-4C60-953B-BFE97D31734C" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_35220E4C-CB48-424A-9B1F-91A0D8E1A79D" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

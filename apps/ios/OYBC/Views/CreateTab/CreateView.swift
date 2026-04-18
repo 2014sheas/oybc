@@ -9,111 +9,60 @@ private enum CreateMode: String, CaseIterable {
     case existing = "Existing Tasks"
 }
 
-/// Task type picker that includes Composite alongside the three TaskType cases.
-private enum CreateTaskType: String, CaseIterable {
-    case normal = "Normal"
-    case counting = "Counting"
-    case progress = "Progress"
-    case composite = "Composite"
-}
-
-/// Filter options for the Existing Tasks tab.
-private enum ExistingFilter: String, CaseIterable {
-    case all = "All"
-    case normal = "Normal"
-    case counting = "Counting"
-    case progress = "Progress"
-    case composite = "Composite"
-}
-
 // MARK: - CreateView
 
 /// CreateView — Production task pool builder + board creation.
 ///
 /// Two-tab interface:
-/// - **Create New**: form for Normal/Counting/Progress tasks, plus `CompositeTaskFormView`.
-///   Newly created tasks are added directly to the pool.
-/// - **Existing Tasks**: filterable task library with expand/collapse derivation panels.
+/// - **Create New**: form for Normal/Counting/Progress tasks, plus
+///   `CompositeTaskFormView`. Newly created tasks are added directly
+///   to the pool.
+/// - **Existing Tasks**: filterable task library with expand/collapse
+///   derivation panels.
 ///
-/// The Board Task Pool section is always visible at the bottom. When the pool has enough
-/// tasks, `BoardCreatorPanelView` lets the user configure and create a board, then
-/// navigates to `BoardPlayView`.
+/// The Board Task Pool section is always visible at the bottom. When
+/// the pool has enough tasks, `BoardCreatorPanelView` lets the user
+/// configure and create a board, then navigates to `BoardPlayView`.
+///
+/// State owners:
+/// - `BoardPoolViewModel`    — pool entries + add/remove/clear.
+/// - `TaskLibraryViewModel`  — user's library + derive-panel state.
+/// - `CreateFormViewModel`   — Create-New form: fields, validation,
+///   submit, reset.
+/// - `@State` (inline)       — UI-only: mode, expand, filter,
+///   partial-count, derive-in-flight.
 struct CreateView: View {
 
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
 
-    // MARK: - Navigation
+    // MARK: - View models
+
+    @State private var pool = BoardPoolViewModel()
+    @State private var library = TaskLibraryViewModel()
+    @State private var form = CreateFormViewModel()
+
+    // MARK: - Navigation + UI-only state
 
     @State private var navigateToBoardId: BoardNavID?
-
-    // MARK: - Mode State
-
     @State private var mode: CreateMode = .create
-
-    // MARK: - Create Tab State
-
-    @State private var createTaskType: CreateTaskType = .normal
-    @State private var createTitle = ""
-    @State private var createDescription = ""
-    @State private var createCountingAction = ""
-    @State private var createCountingUnit = ""
-    @State private var createCountingMaxCount = ""
-    @State private var createProgressSteps: [ProgressStepFormState] = [ProgressStepFormState()]
-    @State private var createProgressStepErrors: [UUID: ProgressStepFormErrors] = [:]
-    @State private var createIsSubmitting = false
-    @State private var createErrorMessage: String?
-    @State private var createSuccessMessage: String?
-
-    /// Maps `createTaskType` to a concrete `TaskType`. Returns `nil` for `.composite`.
-    private var createSelectedType: TaskType? {
-        switch createTaskType {
-        case .normal:    return .normal
-        case .counting:  return .counting
-        case .progress:  return .progress
-        case .composite: return nil
-        }
-    }
-
-    // MARK: - Existing Tab State
-
-    @State private var existingFilter: ExistingFilter = .all
+    @State private var existingFilter: LibraryFilter = .all
     @State private var expandedTaskId: String?
     @State private var expandedCompositeTaskId: String?
-    @State private var deriveTaskSteps: [TaskStep] = []
-    @State private var deriveCompositeNodes: [CompositeNode] = []
     @State private var derivePartialCountStr: String = ""
     @State private var deriveIsCreating: Bool = false
 
-    // MARK: - Library State
+    // MARK: - Derived
 
-    @State private var libraryTasks: [Task] = []
-    @State private var libraryCompositeTasks: [CompositeTask] = []
-    @State private var allLibraryTaskSteps: [TaskStep] = []
-    @State private var loadError: String?
-
-    // MARK: - Pool State
-
-    @State private var boardPool: [(taskId: String, title: String, type: String)] = []
-
-    // MARK: - Computed
-
-    private var existingFilteredTasks: [Task] {
-        switch existingFilter {
-        case .all:       return libraryTasks
-        case .normal:    return libraryTasks.filter { $0.type == .normal }
-        case .counting:  return libraryTasks.filter { $0.type == .counting }
-        case .progress:  return libraryTasks.filter { $0.type == .progress }
-        case .composite: return []
-        }
-    }
-
-    private var existingFilteredComposites: [CompositeTask] {
-        switch existingFilter {
-        case .all, .composite: return libraryCompositeTasks
-        default:               return []
-        }
+    /// Tuple-shaped projection of the pool used by shared panels
+    /// (`BoardCreatorPanelView`, `CompositeDerivationPanelView`,
+    /// `ProgressDerivationPanelView`) whose APIs predate
+    /// `BoardPoolEntry`. Computed once per body evaluation so we
+    /// don't re-allocate identical tuple arrays three times in the
+    /// same render.
+    private var poolAsTuples: [(taskId: String, title: String, type: String)] {
+        pool.pool.map { (taskId: $0.taskId, title: $0.title, type: $0.type) }
     }
 
     // MARK: - Body
@@ -121,50 +70,22 @@ struct CreateView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                modePicker
 
-                // Mode picker
-                HStack {
-                    Picker("Mode", selection: $mode) {
-                        ForEach(CreateMode.allCases, id: \.self) { m in
-                            Text(m.rawValue).tag(m)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: mode) {
-                        clearCreateFeedback()
-                    }
-
-                    if !boardPool.isEmpty {
-                        Text("Pool: \(boardPool.count)")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.accentColor)
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
-                    }
-                }
-
-                // Tab content
                 switch mode {
-                case .create:
-                    createTab
-                case .existing:
-                    existingTab
+                case .create:   createTab
+                case .existing: existingTab
                 }
 
-                // Pool section
                 Divider()
                 poolSection
 
-                // Board Creator
-                if !boardPool.isEmpty, let userId = authService.currentUser?.id {
+                if !pool.pool.isEmpty, let userId = authService.currentUser?.id {
                     Divider()
                     BoardCreatorPanelView(
-                        boardPool: boardPool,
-                        libraryTasks: libraryTasks,
-                        allTaskSteps: allLibraryTaskSteps,
+                        boardPool: poolAsTuples,
+                        libraryTasks: library.libraryTasks,
+                        allTaskSteps: library.allLibraryTaskSteps,
                         userId: userId,
                         initialPreferences: authService.userPreferences,
                         onBoardCreated: { boardId in
@@ -180,7 +101,37 @@ struct CreateView: View {
             BoardPlayView(boardId: nav.id)
         }
         .onAppear {
-            loadLibrary()
+            if let userId = authService.currentUser?.id {
+                library.loadLibrary(userId: userId)
+            }
+        }
+    }
+
+    // MARK: - Mode picker
+
+    @ViewBuilder
+    private var modePicker: some View {
+        HStack {
+            Picker("Mode", selection: $mode) {
+                ForEach(CreateMode.allCases, id: \.self) { m in
+                    Text(m.rawValue).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: mode) {
+                form.clearFeedback()
+            }
+
+            if !pool.pool.isEmpty {
+                Text("Pool: \(pool.pool.count)")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(Capsule())
+            }
         }
     }
 
@@ -188,136 +139,32 @@ struct CreateView: View {
 
     @ViewBuilder
     private var createTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Create Task")
-                .font(.headline)
-
-            // Type picker
-            Picker("Task Type", selection: $createTaskType) {
-                ForEach(CreateTaskType.allCases, id: \.self) { pt in
-                    Text(pt.rawValue).tag(pt)
-                }
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: createTaskType) {
-                clearCreateFeedback()
-            }
-
-            if createTaskType == .composite {
+        CreateNewTaskFormView(
+            form: form,
+            userId: authService.currentUser?.id,
+            onSubmit: {
+                guard let userId = authService.currentUser?.id else { return }
+                form.handleCreateAndAddToPool(
+                    userId: userId,
+                    onTaskCreated: { taskId, title, type in
+                        pool.addToPool(taskId: taskId, title: title, type: type)
+                    },
+                    onLibraryReloadRequested: {
+                        library.loadLibrary(userId: userId)
+                    }
+                )
+            },
+            onCompositeCreated: { compositeTask in
+                // Composites aren't added directly to the board pool —
+                // BoardTask.taskId references the tasks table, not
+                // compositeTasks. Users add the composite's individual
+                // leaf/subtasks from Existing Tasks.
+                form.successMessage = "Created composite \"\(compositeTask.title)\". Add its subtasks from Existing Tasks."
                 if let userId = authService.currentUser?.id {
-                    CompositeTaskFormView(userId: userId, onCreated: { compositeTask in
-                        // Composites aren't added directly to the board pool —
-                        // BoardTask.taskId references the tasks table, not
-                        // compositeTasks. Users add the composite's individual
-                        // leaf/subtasks from Existing Tasks.
-                        createSuccessMessage = "Created composite \"\(compositeTask.title)\". Add its subtasks from Existing Tasks."
-                        loadLibrary()
-                    })
+                    library.loadLibrary(userId: userId)
                 }
-            } else {
-                // Shared title field
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField(
-                        createSelectedType == .counting
-                            ? "Title (auto-generated if blank)"
-                            : "Title (required)",
-                        text: $createTitle
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    Text("\(createTitle.count)/200")
-                        .font(.caption)
-                        .foregroundColor(createTitle.count > 200 ? .red : .secondary)
-                }
-
-                // Shared description field
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("Description (optional)", text: $createDescription, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(3...)
-                    Text("\(createDescription.count)/1000")
-                        .font(.caption)
-                        .foregroundColor(createDescription.count > 1000 ? .red : .secondary)
-                }
-
-                // Counting-specific fields
-                if createSelectedType == .counting {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Counting Details")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            TextField("Action (e.g. Run, Read)", text: $createCountingAction)
-                                .textFieldStyle(.roundedBorder)
-                            Text("\(createCountingAction.count)/50")
-                                .font(.caption)
-                                .foregroundColor(createCountingAction.count > 50 ? .red : .secondary)
-                        }
-
-                        TextField("Max Count (positive integer)", text: $createCountingMaxCount)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.numberPad)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            TextField("Unit (e.g. miles, pages)", text: $createCountingUnit)
-                                .textFieldStyle(.roundedBorder)
-                            Text("\(createCountingUnit.count)/50")
-                                .font(.caption)
-                                .foregroundColor(createCountingUnit.count > 50 ? .red : .secondary)
-                        }
-                    }
-                    .padding(8)
-                    .background(Color(.systemGray5))
-                    .cornerRadius(6)
-                }
-
-                // Progress-specific fields
-                if createSelectedType == .progress {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Steps")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-
-                        ForEach(createProgressSteps.indices, id: \.self) { i in
-                            ProgressStepRowView(
-                                index: i,
-                                step: $createProgressSteps[i],
-                                stepCount: createProgressSteps.count,
-                                errors: createProgressStepErrors[createProgressSteps[i].id],
-                                onRemove: {
-                                    guard createProgressSteps.count > 1 else { return }
-                                    createProgressSteps.remove(at: i)
-                                }
-                            )
-                        }
-
-                        Button("Add Step") {
-                            createProgressSteps.append(ProgressStepFormState())
-                        }
-                        .font(.subheadline)
-                    }
-                }
-
-                // Feedback
-                if let error = createErrorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                }
-                if let success = createSuccessMessage {
-                    Text(success)
-                        .foregroundColor(.green)
-                        .font(.caption)
-                }
-
-                // Submit
-                Button("Create & Add to Pool") {
-                    handleCreateAndAddToPool()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(createIsSubmitting)
             }
-        }
+        )
     }
 
     // MARK: - Existing Tasks Tab
@@ -331,7 +178,7 @@ struct CreateView: View {
             // Type filter pills
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(ExistingFilter.allCases, id: \.self) { f in
+                    ForEach(LibraryFilter.allCases, id: \.self) { f in
                         Button(f.rawValue) {
                             existingFilter = f
                             clearExpandedState()
@@ -347,20 +194,23 @@ struct CreateView: View {
                 }
             }
 
-            if let error = loadError {
+            if let error = library.loadError {
                 Text(error)
                     .foregroundColor(.red)
                     .font(.caption)
             }
 
-            if existingFilteredTasks.isEmpty && existingFilteredComposites.isEmpty {
+            let filteredTasks = library.filteredTasks(filter: existingFilter)
+            let filteredComposites = library.filteredComposites(filter: existingFilter)
+
+            if filteredTasks.isEmpty && filteredComposites.isEmpty {
                 ContentUnavailableView(
                     "No Tasks Yet",
                     systemImage: "plus.square",
                     description: Text("Create your first task above!")
                 )
             } else {
-                ForEach(existingFilteredTasks, id: \.id) { task in
+                ForEach(filteredTasks, id: \.id) { task in
                     existingTaskRow(task)
                     if expandedTaskId == task.id {
                         derivePanel(for: task)
@@ -368,17 +218,17 @@ struct CreateView: View {
                             .transition(.opacity)
                     }
                 }
-                ForEach(existingFilteredComposites, id: \.id) { ct in
+                ForEach(filteredComposites, id: \.id) { ct in
                     existingCompositeRow(ct)
                     if expandedCompositeTaskId == ct.id {
                         CompositeDerivationPanelView(
                             compositeTask: ct,
-                            compositeNodes: deriveCompositeNodes,
-                            tasks: libraryTasks,
-                            compositeTasks: libraryCompositeTasks,
-                            boardPool: boardPool,
+                            compositeNodes: library.deriveCompositeNodes,
+                            tasks: library.libraryTasks,
+                            compositeTasks: library.libraryCompositeTasks,
+                            boardPool: poolAsTuples,
                             onAddLeafToPool: { taskId, title, type in
-                                addToPool(taskId: taskId, title: title, type: type)
+                                pool.addToPool(taskId: taskId, title: title, type: type)
                             }
                         )
                         .padding(.leading, 8)
@@ -389,10 +239,11 @@ struct CreateView: View {
         }
     }
 
-    /// A single task row in the Existing Tasks tab.
+    // MARK: - Existing rows
+
     @ViewBuilder
     private func existingTaskRow(_ task: Task) -> some View {
-        let inPool = boardPool.contains(where: { $0.taskId == task.id })
+        let inPool = pool.isInPool(taskId: task.id)
         let isExpanded = expandedTaskId == task.id
         let supportsDerivation = task.type != .normal
 
@@ -431,7 +282,7 @@ struct CreateView: View {
                     .accessibilityLabel("In pool")
             } else {
                 Button {
-                    addToPool(taskId: task.id, title: task.title, type: task.type.rawValue)
+                    pool.addToPool(taskId: task.id, title: task.title, type: task.type.rawValue)
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 24))
@@ -446,7 +297,6 @@ struct CreateView: View {
         .cornerRadius(8)
     }
 
-    /// A single composite task row in the Existing Tasks tab.
     @ViewBuilder
     private func existingCompositeRow(_ ct: CompositeTask) -> some View {
         let isExpanded = expandedCompositeTaskId == ct.id
@@ -477,16 +327,17 @@ struct CreateView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isExpanded ? "Collapse derivation" : "Derive subtasks")
 
-            // Composites can't be added directly to the pool — BoardTask.taskId
-            // references the tasks table, not compositeTasks. Users expand the
-            // composite and add its individual leaf/subtasks instead.
+            // Composites can't be added directly to the pool —
+            // BoardTask.taskId references the tasks table, not
+            // compositeTasks. Users expand the composite and add its
+            // individual leaf/subtasks instead.
         }
         .padding(10)
         .background(Color(.systemGray6))
         .cornerRadius(8)
     }
 
-    // MARK: - Derive Panel
+    // MARK: - Derive panel
 
     @ViewBuilder
     private func derivePanel(for task: Task) -> some View {
@@ -508,15 +359,15 @@ struct CreateView: View {
             case .progress:
                 ProgressDerivationPanelView(
                     task: task,
-                    taskSteps: deriveTaskSteps,
-                    allTasks: libraryTasks,
-                    boardPool: boardPool,
+                    taskSteps: library.deriveTaskSteps,
+                    allTasks: library.libraryTasks,
+                    boardPool: poolAsTuples,
                     isCreating: deriveIsCreating,
                     onExtractStep: { step, parentTask in
                         extractStepAsTask(step: step, parentTask: parentTask)
                     },
                     onAddStepToPool: { linkedTask in
-                        addToPool(
+                        pool.addToPool(
                             taskId: linkedTask.id,
                             title: linkedTask.title,
                             type: linkedTask.type.rawValue
@@ -527,7 +378,7 @@ struct CreateView: View {
         }
     }
 
-    // MARK: - Pool Section
+    // MARK: - Pool section
 
     @ViewBuilder
     private var poolSection: some View {
@@ -535,8 +386,8 @@ struct CreateView: View {
             HStack {
                 Text("Board Task Pool")
                     .font(.headline)
-                if !boardPool.isEmpty {
-                    Text("\(boardPool.count)")
+                if !pool.pool.isEmpty {
+                    Text("\(pool.pool.count)")
                         .font(.caption)
                         .fontWeight(.bold)
                         .padding(.horizontal, 6)
@@ -547,19 +398,19 @@ struct CreateView: View {
                 }
             }
 
-            if boardPool.isEmpty {
+            if pool.pool.isEmpty {
                 Text("No tasks in the pool yet. Use the tabs above to add tasks.")
                     .foregroundColor(.secondary)
                     .font(.subheadline)
             } else {
-                ForEach(boardPool, id: \.taskId) { entry in
+                ForEach(pool.pool, id: \.taskId) { entry in
                     PoolItemView(title: entry.title, type: entry.type) {
-                        boardPool.removeAll { $0.taskId == entry.taskId }
+                        pool.removeFromPool(taskId: entry.taskId)
                     }
                 }
 
                 Button("Clear Pool") {
-                    boardPool.removeAll()
+                    pool.clearPool()
                 }
                 .font(.caption)
                 .foregroundColor(.red)
@@ -567,244 +418,20 @@ struct CreateView: View {
         }
     }
 
-    // MARK: - Create Tab Actions
-
-    /// Validates the Create tab form, persists the task, and adds it to the pool.
-    private func handleCreateAndAddToPool() {
-        guard let userId = authService.currentUser?.id else { return }
-        let trimmedTitle = createTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedDesc = createDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard let resolvedType = createSelectedType else { return }
-
-        if resolvedType != .counting {
-            guard !trimmedTitle.isEmpty else {
-                createErrorMessage = "Title is required"
-                return
-            }
-        }
-        guard trimmedTitle.count <= 200 else {
-            createErrorMessage = "Title must be 200 characters or less"
-            return
-        }
-        guard trimmedDesc.count <= 1000 else {
-            createErrorMessage = "Description must be 1000 characters or less"
-            return
-        }
-
-        switch resolvedType {
-        case .normal:
-            break
-
-        case .counting:
-            let a = createCountingAction.trimmingCharacters(in: .whitespacesAndNewlines)
-            let u = createCountingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = createCountingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !a.isEmpty else {
-                createErrorMessage = "Action is required for Counting tasks"
-                return
-            }
-            guard a.count <= 50 else {
-                createErrorMessage = "Action must be 50 characters or less"
-                return
-            }
-            guard !u.isEmpty else {
-                createErrorMessage = "Unit is required for Counting tasks"
-                return
-            }
-            guard u.count <= 50 else {
-                createErrorMessage = "Unit must be 50 characters or less"
-                return
-            }
-            guard let v = Int(m), v > 0 else {
-                createErrorMessage = "Max Count must be a positive integer"
-                return
-            }
-
-        case .progress:
-            if createProgressSteps.isEmpty {
-                createErrorMessage = "Progress tasks require at least one step"
-                return
-            }
-            var stepErrors: [UUID: ProgressStepFormErrors] = [:]
-            for step in createProgressSteps {
-                var err = ProgressStepFormErrors()
-                if step.type != .counting && step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    err.title = "Step title is required"
-                }
-                if step.type == .counting {
-                    if step.action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        err.action = "Action is required"
-                    }
-                    if step.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        err.unit = "Unit is required"
-                    }
-                    if (Int(step.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) <= 0 {
-                        err.maxCount = "Must be a positive number"
-                    }
-                }
-                if err.hasErrors { stepErrors[step.id] = err }
-            }
-            createProgressStepErrors = stepErrors
-            if !stepErrors.isEmpty {
-                createErrorMessage = "Please fix the errors below"
-                return
-            }
-        }
-
-        createIsSubmitting = true
-        createErrorMessage = nil
-
-        let now = AppDatabase.currentTimestamp()
-        let taskId = AppDatabase.generateUUID()
-
-        let resolvedTitle: String
-        if resolvedType == .counting && trimmedTitle.isEmpty {
-            let a = createCountingAction.trimmingCharacters(in: .whitespacesAndNewlines)
-            let u = createCountingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = Int(createCountingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-            resolvedTitle = "\(a) \(m) \(u)"
-        } else {
-            resolvedTitle = trimmedTitle
-        }
-
-        let newTask = buildCreateTask(
-            id: taskId,
-            userId: userId,
-            type: resolvedType,
-            title: resolvedTitle,
-            desc: trimmedDesc.isEmpty ? nil : trimmedDesc,
-            now: now
-        )
-        let newSteps: [TaskStep] = resolvedType == .progress
-            ? buildCreateSteps(taskId: taskId, userId: userId, now: now)
-            : []
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                if newSteps.isEmpty {
-                    try AppDatabase.shared.saveTask(newTask)
-                } else {
-                    try AppDatabase.shared.write { db in
-                        try newTask.save(db)
-                        for var step in newSteps {
-                            // Create standalone task for each step
-                            let stepTaskId = AppDatabase.generateUUID()
-                            let stepTask = Task(
-                                id: stepTaskId,
-                                userId: userId,
-                                title: step.title,
-                                type: step.type,
-                                action: step.action,
-                                unit: step.unit,
-                                maxCount: step.maxCount,
-                                totalCompletions: 0,
-                                totalInstances: 0,
-                                createdAt: now,
-                                updatedAt: now,
-                                version: 1,
-                                isDeleted: false
-                            )
-                            try stepTask.save(db)
-                            step.linkedTaskId = stepTaskId
-                            try step.save(db)
-                        }
-                    }
-                }
-                DispatchQueue.main.async {
-                    self.createIsSubmitting = false
-                    self.addToPool(taskId: taskId, title: resolvedTitle, type: resolvedType.rawValue)
-                    self.createSuccessMessage = "Created & added to pool: \"\(resolvedTitle)\""
-                    self.resetCreateForm()
-                    self.loadLibrary()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        if self.createSuccessMessage == "Created & added to pool: \"\(resolvedTitle)\"" {
-                            self.createSuccessMessage = nil
-                        }
-                    }
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.createIsSubmitting = false
-                    self.createErrorMessage = "Failed: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    /// Builds a Task value for the create form.
-    private func buildCreateTask(id: String, userId: String, type: TaskType, title: String, desc: String?, now: String) -> Task {
-        switch type {
-        case .normal:
-            return Task(
-                id: id, userId: userId, title: title, description: desc,
-                type: .normal, totalCompletions: 0, totalInstances: 0,
-                createdAt: now, updatedAt: now, version: 1, isDeleted: false
-            )
-        case .counting:
-            let a = createCountingAction.trimmingCharacters(in: .whitespacesAndNewlines)
-            let u = createCountingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = Int(createCountingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-            return Task(
-                id: id, userId: userId, title: title, description: desc,
-                type: .counting, action: a, unit: u, maxCount: m,
-                totalCompletions: 0, totalInstances: 0,
-                createdAt: now, updatedAt: now, version: 1, isDeleted: false
-            )
-        case .progress:
-            return Task(
-                id: id, userId: userId, title: title, description: desc,
-                type: .progress, totalCompletions: 0, totalInstances: 0,
-                createdAt: now, updatedAt: now, version: 1, isDeleted: false
-            )
-        }
-    }
-
-    /// Builds TaskStep values from the Create tab progress step form state.
-    private func buildCreateSteps(taskId: String, userId: String, now: String) -> [TaskStep] {
-        createProgressSteps.enumerated().map { index, stepForm in
-            let trimmedAction = stepForm.action.trimmingCharacters(in: .whitespacesAndNewlines)
-            let trimmedUnit = stepForm.unit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let trimmedTitle = stepForm.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let resolvedStepTitle: String
-            if stepForm.type == .counting && trimmedTitle.isEmpty {
-                let m = Int(stepForm.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                resolvedStepTitle = "\(trimmedAction) \(m) \(trimmedUnit)"
-            } else {
-                resolvedStepTitle = trimmedTitle
-            }
-            return TaskStep(
-                id: AppDatabase.generateUUID(),
-                taskId: taskId,
-                stepIndex: index,
-                title: resolvedStepTitle,
-                type: stepForm.type == .counting ? .counting : .normal,
-                action: stepForm.type == .counting ? trimmedAction : nil,
-                unit: stepForm.type == .counting ? trimmedUnit : nil,
-                maxCount: stepForm.type == .counting ? Int(stepForm.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)) : nil,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false
-            )
-        }
-    }
-
-    // MARK: - Existing Tab Actions
+    // MARK: - Existing-tab actions
 
     private func toggleExpandTask(_ task: Task) {
         if expandedTaskId == task.id {
             expandedTaskId = nil
-            deriveTaskSteps = []
+            library.clearDeriveState()
             derivePartialCountStr = ""
         } else {
             expandedTaskId = task.id
             expandedCompositeTaskId = nil
-            deriveCompositeNodes = []
+            library.clearDeriveState()
             derivePartialCountStr = ""
-            deriveTaskSteps = []
             if task.type == .progress {
-                loadDeriveSteps(for: task.id)
+                library.loadDeriveSteps(for: task.id)
             }
         }
     }
@@ -812,14 +439,13 @@ struct CreateView: View {
     private func toggleExpandComposite(_ ct: CompositeTask) {
         if expandedCompositeTaskId == ct.id {
             expandedCompositeTaskId = nil
-            deriveCompositeNodes = []
+            library.clearDeriveState()
         } else {
             expandedCompositeTaskId = ct.id
             expandedTaskId = nil
-            deriveTaskSteps = []
+            library.clearDeriveState()
             derivePartialCountStr = ""
-            deriveCompositeNodes = []
-            loadDeriveNodes(for: ct.id)
+            library.loadDeriveNodes(for: ct.id)
         }
     }
 
@@ -827,10 +453,11 @@ struct CreateView: View {
         expandedTaskId = nil
         expandedCompositeTaskId = nil
         derivePartialCountStr = ""
-        deriveTaskSteps = []
-        deriveCompositeNodes = []
+        library.clearDeriveState()
     }
 
+    /// Creates a counting subtask from an existing counting parent
+    /// (e.g. a "partial" of "Run 26 miles" → "Run 5 miles").
     private func createCountingSubtask(from parentTask: Task, count: Int) {
         guard let userId = authService.currentUser?.id,
               let action = parentTask.action, let unit = parentTask.unit else { return }
@@ -858,25 +485,28 @@ struct CreateView: View {
                 try AppDatabase.shared.saveTask(newTask)
                 DispatchQueue.main.async {
                     self.deriveIsCreating = false
-                    self.addToPool(taskId: newTask.id, title: title, type: TaskType.counting.rawValue)
+                    self.pool.addToPool(taskId: newTask.id, title: title, type: TaskType.counting.rawValue)
                     self.derivePartialCountStr = ""
-                    self.loadLibrary()
+                    self.library.loadLibrary(userId: userId)
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.deriveIsCreating = false
-                    self.loadError = "Failed to create subtask: \(error.localizedDescription)"
+                    self.library.loadError = "Failed to create subtask: \(error.localizedDescription)"
                 }
             }
         }
     }
 
+    /// Extracts a progress step into a standalone task and links the
+    /// step's `linkedTaskId` to it. If the step is already linked,
+    /// just adds the linked task to the pool.
     private func extractStepAsTask(step: TaskStep, parentTask: Task) {
         guard let userId = authService.currentUser?.id else { return }
 
         if let linkedId = step.linkedTaskId,
-           let linkedTask = libraryTasks.first(where: { $0.id == linkedId }) {
-            addToPool(taskId: linkedTask.id, title: linkedTask.title, type: linkedTask.type.rawValue)
+           let linkedTask = library.libraryTasks.first(where: { $0.id == linkedId }) {
+            pool.addToPool(taskId: linkedTask.id, title: linkedTask.title, type: linkedTask.type.rawValue)
             return
         }
 
@@ -909,105 +539,14 @@ struct CreateView: View {
                 }
                 DispatchQueue.main.async {
                     self.deriveIsCreating = false
-                    self.addToPool(taskId: newTask.id, title: newTask.title, type: newTask.type.rawValue)
-                    self.loadLibrary()
-                    self.loadDeriveSteps(for: parentTask.id)
+                    self.pool.addToPool(taskId: newTask.id, title: newTask.title, type: newTask.type.rawValue)
+                    self.library.loadLibrary(userId: userId)
+                    self.library.loadDeriveSteps(for: parentTask.id)
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.deriveIsCreating = false
-                    self.loadError = "Failed to extract step: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    // MARK: - Pool Helpers
-
-    private func addToPool(taskId: String, title: String, type: String) {
-        guard !boardPool.contains(where: { $0.taskId == taskId }) else { return }
-        boardPool.append((taskId: taskId, title: title, type: type))
-    }
-
-    // MARK: - Form Helpers
-
-    private func resetCreateForm() {
-        createTitle = ""
-        createDescription = ""
-        createCountingAction = ""
-        createCountingUnit = ""
-        createCountingMaxCount = ""
-        createProgressSteps = [ProgressStepFormState()]
-        createProgressStepErrors = [:]
-    }
-
-    private func clearCreateFeedback() {
-        createErrorMessage = nil
-        createSuccessMessage = nil
-    }
-
-    // MARK: - Data Loading
-
-    private func loadLibrary() {
-        guard let userId = authService.currentUser?.id else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let fetched = try AppDatabase.shared.fetchTasks(userId: userId)
-                let composites = try AppDatabase.shared.read { db in
-                    try CompositeTask
-                        .filter(Column("userId") == userId && Column("isDeleted") == false)
-                        .order(Column("title"))
-                        .fetchAll(db)
-                }
-                let fetchedSteps = try AppDatabase.shared.fetchAllTaskSteps(userId: userId)
-                DispatchQueue.main.async {
-                    self.libraryTasks = fetched
-                    self.libraryCompositeTasks = composites
-                    self.allLibraryTaskSteps = fetchedSteps
-                    self.loadError = nil
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.loadError = "Failed to load tasks: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    private func loadDeriveSteps(for taskId: String) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let steps = try AppDatabase.shared.fetchTaskSteps(taskId: taskId)
-                DispatchQueue.main.async {
-                    self.deriveTaskSteps = steps
-                    self.loadError = nil
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.loadError = "Failed to load steps: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    private func loadDeriveNodes(for compositeTaskId: String) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let nodes = try AppDatabase.shared.read { db in
-                    try CompositeNode
-                        .filter(
-                            Column("compositeTaskId") == compositeTaskId
-                            && Column("isDeleted") == false
-                        )
-                        .fetchAll(db)
-                }
-                DispatchQueue.main.async {
-                    self.deriveCompositeNodes = nodes
-                    self.loadError = nil
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.loadError = "Failed to load composite nodes: \(error.localizedDescription)"
+                    self.library.loadError = "Failed to extract step: \(error.localizedDescription)"
                 }
             }
         }
