@@ -169,13 +169,10 @@ struct BoardWizardTasksStepView: View {
                     isSheetPresented = true
                 } label: {
                     Label("New task", systemImage: "plus")
-                        .font(.subheadline)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(8)
+                        .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .accessibilityLabel("Create a new task")
             }
 

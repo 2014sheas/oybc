@@ -226,21 +226,26 @@
 }
 
 .newTaskButton {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border: 1px solid var(--active-bg);
   border-radius: var(--radius-md);
-  padding: 0.45rem 0.9rem;
-  font-size: 0.9rem;
-  font-weight: 500;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s;
+  transition: filter 0.15s, box-shadow 0.15s, transform 0.05s;
   white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.25);
 }
 
 .newTaskButton:hover {
-  background-color: var(--button-hover-bg);
-  border-color: var(--button-hover-border);
+  filter: brightness(0.94);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+}
+
+.newTaskButton:active {
+  transform: translateY(1px);
 }
 
 /* ── Footer ── */
