@@ -20,6 +20,8 @@ struct CreateNewTaskFormView: View {
     /// Parent uses this to flash "Created composite ... add subtasks
     /// from Existing Tasks" and reload the library.
     var onCompositeCreated: (CompositeTask) -> Void
+    /// Label for the submit button. Defaults to the legacy pool-flow wording.
+    var submitLabel: String = "Create & Add to Pool"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -89,7 +91,7 @@ struct CreateNewTaskFormView: View {
                 }
 
                 // Submit
-                Button("Create & Add to Pool") {
+                Button(submitLabel) {
                     onSubmit()
                 }
                 .buttonStyle(.borderedProminent)

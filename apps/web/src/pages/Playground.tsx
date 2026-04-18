@@ -6,6 +6,7 @@ import { TaskSquareActionsPlayground } from '../components/playground/TaskSquare
 import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
 import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
 import { BoardTaskSelectionPlayground } from '../components/playground/BoardTaskSelectionPlayground';
+import { BoardWizardTasksPlayground } from '../components/playground/BoardWizardTasksPlayground';
 import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import styles from './Playground.module.css';
@@ -35,6 +36,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'board-wizard-tasks',
+      title: 'Board Wizard — Tasks Step (spike)',
+      content: <BoardWizardTasksPlayground />,
+    },
     {
       id: 'sync-simulation',
       title: 'Sync & Authentication',

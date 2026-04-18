@@ -36,12 +36,15 @@ export interface CreateNewTaskFormProps {
   form: UseCreateFormState;
   userId: string | undefined;
   onCompositeCreated: (ct: CompositeTask) => void;
+  /** Label for the submit button. Defaults to the legacy pool-flow wording. */
+  submitLabel?: string;
 }
 
 export function CreateNewTaskForm({
   form,
   userId,
   onCompositeCreated,
+  submitLabel = 'Create & Add to Pool',
 }: CreateNewTaskFormProps): React.ReactElement {
   return (
     <div className={styles.modeSection}>
@@ -185,7 +188,7 @@ export function CreateNewTaskForm({
           {form.errors.general && <div className={styles.errorMessage}>{form.errors.general}</div>}
 
           <button type="submit" className={styles.submitButton} disabled={form.isSubmitting}>
-            {form.isSubmitting ? 'Creating...' : 'Create & Add to Pool'}
+            {form.isSubmitting ? 'Creating...' : submitLabel}
           </button>
         </form>
       )}

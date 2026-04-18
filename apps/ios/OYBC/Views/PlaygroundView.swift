@@ -38,6 +38,11 @@ struct PlaygroundView: View {
     private var features: [Feature] {
         [
         Feature(
+            id: "board-wizard-tasks",
+            title: "Board Wizard — Tasks Step (spike)",
+            content: AnyView(BoardWizardTasksPlayground())
+        ),
+        Feature(
             id: "auth-test",
             title: "Authentication & Sync",
             content: AnyView(AuthGateView {
