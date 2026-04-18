@@ -1,7 +1,7 @@
 import { TaskType, type CompositeTask } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
-import { CompositeTaskForm } from '../../components/playground/CompositeTaskForm';
+import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
 import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
 import {
@@ -57,7 +57,7 @@ export function CreateNewTaskForm({
       </div>
 
       {form.taskType === COMPOSITE_TYPE ? (
-        <CompositeTaskForm userId={userId} onCreated={onCompositeCreated} />
+        <CompositeTaskWizard userId={userId} onCreated={onCompositeCreated} />
       ) : (
         <form className={styles.form} onSubmit={form.handleSubmit}>
           {/* Title */}

@@ -39,7 +39,7 @@ struct CreateNewTaskFormView: View {
 
             if form.taskType == .composite {
                 if let userId = userId {
-                    CompositeTaskFormView(userId: userId, onCreated: onCompositeCreated)
+                    CompositeTaskWizardView(userId: userId, onCreated: onCompositeCreated)
                 }
             } else {
                 // Shared title field

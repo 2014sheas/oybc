@@ -1,0 +1,102 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: var(--card-bg, var(--bg-primary));
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.row dt {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.row dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.placeholder {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.errorBanner {
+  padding: 0.6rem 0.8rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: var(--error-text);
+  font-size: 0.9rem;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.backButton,
+.createButton {
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.15s, opacity 0.15s, filter 0.15s;
+}
+
+.backButton {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.backButton:hover:not(:disabled) {
+  background-color: var(--button-hover-bg);
+}
+
+.createButton {
+  background-color: var(--success-text, #16a34a);
+  border-color: var(--success-text, #16a34a);
+  color: #fff;
+  font-weight: 600;
+}
+
+.createButton:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.createButton:disabled,
+.backButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
