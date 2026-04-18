@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
@@ -101,6 +101,87 @@ export function CompositeTaskWizard({
     () => db.compositeTasks.where('[userId+isDeleted]').equals([resolvedUserId, 0]).toArray(),
     [resolvedUserId],
   ) ?? [];
+
+  // Usage hints for the existing-task picker — "on N boards" for tasks
+  // and "N subtasks" for composites. Queried here so the cards stay pure.
+  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? [];
+  const allCompositeNodes = useLiveQuery(() => db.compositeNodes.toArray(), []) ?? [];
+  const allTaskSteps = useLiveQuery(() => db.taskSteps.toArray(), []) ?? [];
+
+  /** taskId → count of distinct board IDs it's placed on. */
+  const taskBoardCounts = useMemo(() => {
+    const buckets = new Map<string, Set<string>>();
+    for (const bt of allBoardTasks) {
+      let set = buckets.get(bt.taskId);
+      if (!set) {
+        set = new Set<string>();
+        buckets.set(bt.taskId, set);
+      }
+      set.add(bt.boardId);
+    }
+    const counts: Record<string, number> = {};
+    for (const [taskId, set] of buckets) counts[taskId] = set.size;
+    return counts;
+  }, [allBoardTasks]);
+
+  /** compositeTaskId → count of non-deleted leaf nodes (how many
+   *  subtasks the composite has). */
+  const compositeSubtaskCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const node of allCompositeNodes) {
+      if (node.isDeleted) continue;
+      if (node.nodeType !== 'leaf') continue;
+      counts[node.compositeTaskId] = (counts[node.compositeTaskId] ?? 0) + 1;
+    }
+    return counts;
+  }, [allCompositeNodes]);
+
+  /** taskId → number of non-deleted steps (progress tasks only). */
+  const taskStepCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const step of allTaskSteps) {
+      if (step.isDeleted) continue;
+      counts[step.taskId] = (counts[step.taskId] ?? 0) + 1;
+    }
+    return counts;
+  }, [allTaskSteps]);
+
+  /** compositeTaskId → first few leaf titles + total leaf count. Drives
+   *  the "Run 5km, Meditate, +2 more" subtitle in the picker so users
+   *  can preview a composite's contents without expanding it. */
+  const compositeLeafPreviews = useMemo(() => {
+    const previews: Record<string, { titles: string[]; totalLeaves: number }> = {};
+    const taskTitleById = new Map<string, string>();
+    for (const t of allTasks) taskTitleById.set(t.id, t.title);
+    const compositeTitleById = new Map<string, string>();
+    for (const ct of allCompositeTasks) compositeTitleById.set(ct.id, ct.title);
+
+    // Group leaf nodes by composite; preserve nodeIndex ordering.
+    const leavesByComposite = new Map<string, typeof allCompositeNodes>();
+    for (const node of allCompositeNodes) {
+      if (node.isDeleted) continue;
+      if (node.nodeType !== 'leaf') continue;
+      const arr = leavesByComposite.get(node.compositeTaskId) ?? [];
+      arr.push(node);
+      leavesByComposite.set(node.compositeTaskId, arr);
+    }
+
+    for (const [compositeId, leaves] of leavesByComposite) {
+      leaves.sort((a, b) => a.nodeIndex - b.nodeIndex);
+      const titles: string[] = [];
+      for (const leaf of leaves.slice(0, 3)) {
+        if (leaf.taskId) {
+          const t = taskTitleById.get(leaf.taskId);
+          if (t) titles.push(t);
+        } else if (leaf.childCompositeTaskId) {
+          const t = compositeTitleById.get(leaf.childCompositeTaskId);
+          if (t) titles.push(t);
+        }
+      }
+      previews[compositeId] = { titles, totalLeaves: leaves.length };
+    }
+    return previews;
+  }, [allCompositeNodes, allTasks, allCompositeTasks]);
 
   // ─── State helpers ────────────────────────────────────────────────────────
 
@@ -402,6 +483,10 @@ export function CompositeTaskWizard({
           subtasks={subtasks}
           allTasks={allTasks}
           allCompositeTasks={allCompositeTasks}
+          taskBoardCounts={taskBoardCounts}
+          taskStepCounts={taskStepCounts}
+          compositeSubtaskCounts={compositeSubtaskCounts}
+          compositeLeafPreviews={compositeLeafPreviews}
           onUpdateSubtask={updateSubtask}
           onRemoveSubtask={removeSubtask}
           onStepFieldChange={updateInlineStep}

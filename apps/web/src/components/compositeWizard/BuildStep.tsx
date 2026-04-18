@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { CompositeTask, Task } from '@oybc/shared';
 import { SubtaskCard } from './SubtaskCard';
+import type { CompositeLeafPreview } from './ExistingTaskPicker';
 import {
   type SubtaskDraft,
   evaluateSubtaskReadiness,
@@ -12,6 +13,16 @@ export interface BuildStepProps {
   subtasks: SubtaskDraft[];
   allTasks: Task[];
   allCompositeTasks: CompositeTask[];
+  /** taskId → count of distinct boards the task is placed on. Surfaces
+   *  in the existing-task picker as "on N boards" so users can spot
+   *  high-usage tasks without leaving the wizard. */
+  taskBoardCounts: Record<string, number>;
+  /** taskId → number of non-deleted steps (progress tasks only). */
+  taskStepCounts: Record<string, number>;
+  /** compositeTaskId → number of leaf subtasks. */
+  compositeSubtaskCounts: Record<string, number>;
+  /** compositeTaskId → first few leaf titles for the picker subtitle. */
+  compositeLeafPreviews: Record<string, CompositeLeafPreview>;
   onUpdateSubtask: (id: string, updates: Partial<SubtaskDraft>) => void;
   onRemoveSubtask: (id: string) => void;
   onStepFieldChange: (subtaskId: string, stepId: string, field: keyof StepFormState, value: string) => void;
@@ -32,6 +43,10 @@ export function BuildStep({
   subtasks,
   allTasks,
   allCompositeTasks,
+  taskBoardCounts,
+  taskStepCounts,
+  compositeSubtaskCounts,
+  compositeLeafPreviews,
   onUpdateSubtask,
   onRemoveSubtask,
   onStepFieldChange,
@@ -99,6 +114,10 @@ export function BuildStep({
               draft={s}
               allTasks={allTasks}
               allCompositeTasks={allCompositeTasks}
+              taskBoardCounts={taskBoardCounts}
+              taskStepCounts={taskStepCounts}
+              compositeSubtaskCounts={compositeSubtaskCounts}
+              compositeLeafPreviews={compositeLeafPreviews}
               excludedIds={excluded}
               onUpdate={(updates) => onUpdateSubtask(s.id, updates)}
               onRemove={() => onRemoveSubtask(s.id)}

@@ -8,6 +8,10 @@ struct CompositeWizardBuildStepView: View {
     @Binding var subtasks: [SubtaskItem]
     let libraryTasks: [OYBC.Task]
     let libraryCompositeTasks: [CompositeTask]
+    let taskBoardCounts: [String: Int]
+    let taskStepCounts: [String: Int]
+    let compositeSubtaskCounts: [String: Int]
+    let compositeLeafPreviews: [String: CompositeLeafPreview]
     let onRemove: (SubtaskItem) -> Void
     let onAddExisting: () -> Void
     let onAddInline: () -> Void
@@ -131,6 +135,10 @@ struct CompositeWizardBuildStepView: View {
                             item: item,
                             libraryTasks: libraryTasks,
                             libraryCompositeTasks: libraryCompositeTasks,
+                            taskBoardCounts: taskBoardCounts,
+                            taskStepCounts: taskStepCounts,
+                            compositeSubtaskCounts: compositeSubtaskCounts,
+                            compositeLeafPreviews: compositeLeafPreviews,
                             excludedTaskIds: otherTaskIds(excluding: item),
                             excludedCompositeIds: otherCompositeIds(excluding: item),
                             onRemove: { onRemove(item) }

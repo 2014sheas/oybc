@@ -3,6 +3,7 @@ import type { CompositeTask, Task } from '@oybc/shared';
 import { CountingStepFields } from '../CountingStepFields';
 import { ProgressStepRow } from '../ProgressStepRow';
 import { type StepFormState, createEmptyStep } from '../progressStepUtils';
+import { ExistingTaskPicker, type CompositeLeafPreview } from './ExistingTaskPicker';
 import {
   type SubtaskDraft,
   type InlineSubtaskDraft,
@@ -24,6 +25,14 @@ export interface SubtaskCardProps {
   /** Full library — filtered at render time to exclude already-picked ids. */
   allTasks: Task[];
   allCompositeTasks: CompositeTask[];
+  /** taskId → count of distinct boards the task is placed on. */
+  taskBoardCounts: Record<string, number>;
+  /** taskId → number of non-deleted steps (progress tasks only). */
+  taskStepCounts: Record<string, number>;
+  /** compositeTaskId → leaf (subtask) count. */
+  compositeSubtaskCounts: Record<string, number>;
+  /** compositeTaskId → first few leaf titles for the picker subtitle. */
+  compositeLeafPreviews: Record<string, CompositeLeafPreview>;
   /** Ids already picked by OTHER cards in the same composite. Used to
    *  filter this card's existing-mode dropdown so duplicates are blocked
    *  at selection time, not at submit time. */
@@ -57,6 +66,10 @@ export function SubtaskCard({
   draft,
   allTasks,
   allCompositeTasks,
+  taskBoardCounts,
+  taskStepCounts,
+  compositeSubtaskCounts,
+  compositeLeafPreviews,
   excludedIds,
   onUpdate,
   onRemove,
@@ -86,12 +99,21 @@ export function SubtaskCard({
       </div>
 
       {draft.mode === 'existing' ? (
-        <ExistingFields
-          draft={draft}
+        <ExistingTaskPicker
+          selectedId={draft.selectedId}
           allTasks={allTasks}
           allCompositeTasks={allCompositeTasks}
           excludedIds={excludedIds}
-          onUpdate={onUpdate}
+          taskBoardCounts={taskBoardCounts}
+          taskStepCounts={taskStepCounts}
+          compositeSubtaskCounts={compositeSubtaskCounts}
+          compositeLeafPreviews={compositeLeafPreviews}
+          onSelect={(selectedId, kind) => {
+            onUpdate({
+              selectedId,
+              selectionType: kind === 'composite' ? 'composite' : 'task',
+            });
+          }}
         />
       ) : (
         <InlineFields
@@ -113,70 +135,6 @@ export function SubtaskCard({
         </span>
         <span>{readiness.ready ? 'Ready' : readiness.message}</span>
       </div>
-    </div>
-  );
-}
-
-// ─── Existing-mode fields ────────────────────────────────────────────────────
-
-interface ExistingFieldsProps {
-  draft: Extract<SubtaskDraft, { mode: 'existing' }>;
-  allTasks: Task[];
-  allCompositeTasks: CompositeTask[];
-  excludedIds: Set<string>;
-  onUpdate: (updates: Partial<SubtaskDraft>) => void;
-}
-
-function ExistingFields({
-  draft,
-  allTasks,
-  allCompositeTasks,
-  excludedIds,
-  onUpdate,
-}: ExistingFieldsProps): React.ReactElement {
-  const availableTasks = allTasks.filter((t) => !excludedIds.has(t.id) || t.id === draft.selectedId);
-  const availableComposites = allCompositeTasks.filter(
-    (ct) => !excludedIds.has(ct.id) || ct.id === draft.selectedId,
-  );
-
-  return (
-    <div className={styles.fieldGroup}>
-      <label className={styles.label} htmlFor={`subtask-select-${draft.id}`}>
-        Select a task or composite
-      </label>
-      <select
-        id={`subtask-select-${draft.id}`}
-        className={styles.selectInput}
-        value={draft.selectedId}
-        onChange={(e) => {
-          const selectedId = e.target.value;
-          const isComposite = allCompositeTasks.some((ct) => ct.id === selectedId);
-          onUpdate({
-            selectedId,
-            selectionType: isComposite ? 'composite' : 'task',
-          });
-        }}
-      >
-        <option value="">— Select —</option>
-        {availableTasks.length > 0 && (
-          <optgroup label="Tasks">
-            {availableTasks.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title} ({t.type})
-              </option>
-            ))}
-          </optgroup>
-        )}
-        {availableComposites.length > 0 && (
-          <optgroup label="Composite tasks">
-            {availableComposites.map((ct) => (
-              <option key={ct.id} value={ct.id}>
-                {ct.title}
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
     </div>
   );
 }

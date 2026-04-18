@@ -38,6 +38,16 @@ struct CompositeTaskWizardView: View {
 
     @State private var libraryTasks: [OYBC.Task] = []
     @State private var libraryCompositeTasks: [CompositeTask] = []
+    /// taskId → count of distinct boards the task is placed on. Drives
+    /// the "on N boards" hint in the existing-task picker. iOS twin of
+    /// `taskBoardCounts` on web.
+    @State private var taskBoardCounts: [String: Int] = [:]
+    /// taskId → number of non-deleted steps (progress tasks only).
+    @State private var taskStepCounts: [String: Int] = [:]
+    /// compositeTaskId → number of leaf subtasks.
+    @State private var compositeSubtaskCounts: [String: Int] = [:]
+    /// compositeTaskId → first few leaf titles for the picker subtitle.
+    @State private var compositeLeafPreviews: [String: CompositeLeafPreview] = [:]
 
     // MARK: - Body
 
@@ -87,6 +97,10 @@ struct CompositeTaskWizardView: View {
                     subtasks: $subtasks,
                     libraryTasks: libraryTasks,
                     libraryCompositeTasks: libraryCompositeTasks,
+                    taskBoardCounts: taskBoardCounts,
+                    taskStepCounts: taskStepCounts,
+                    compositeSubtaskCounts: compositeSubtaskCounts,
+                    compositeLeafPreviews: compositeLeafPreviews,
                     onRemove: { item in removeSubtask(item) },
                     onAddExisting: addExistingSubtask,
                     onAddInline: addInlineSubtask,
@@ -198,9 +212,66 @@ struct CompositeTaskWizardView: View {
                         .order(Column("updatedAt").desc)
                         .fetchAll(db)
                 }
+                // Usage hints for the picker.
+                let boardTasks: [BoardTask] = try AppDatabase.shared.read { db in
+                    try BoardTask.fetchAll(db)
+                }
+                let nodes: [CompositeNode] = try AppDatabase.shared.read { db in
+                    try CompositeNode
+                        .filter(Column("isDeleted") == false)
+                        .fetchAll(db)
+                }
+                let steps: [TaskStep] = try AppDatabase.shared.read { db in
+                    try TaskStep
+                        .filter(Column("isDeleted") == false)
+                        .fetchAll(db)
+                }
+
+                var boardsByTask: [String: Set<String>] = [:]
+                for bt in boardTasks {
+                    boardsByTask[bt.taskId, default: []].insert(bt.boardId)
+                }
+                let taskCounts: [String: Int] = boardsByTask.mapValues { $0.count }
+
+                var stepCounts: [String: Int] = [:]
+                for step in steps {
+                    stepCounts[step.taskId, default: 0] += 1
+                }
+
+                var leafCounts: [String: Int] = [:]
+                var leavesByComposite: [String: [CompositeNode]] = [:]
+                for node in nodes where node.nodeType == .leaf {
+                    leafCounts[node.compositeTaskId, default: 0] += 1
+                    leavesByComposite[node.compositeTaskId, default: []].append(node)
+                }
+
+                // Build composite leaf previews (first 3 leaf titles).
+                let taskTitleById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
+                let compositeTitleById = Dictionary(uniqueKeysWithValues: composites.map { ($0.id, $0.title) })
+                var previews: [String: CompositeLeafPreview] = [:]
+                for (compositeId, leaves) in leavesByComposite {
+                    let sortedLeaves = leaves.sorted { $0.nodeIndex < $1.nodeIndex }
+                    var titles: [String] = []
+                    for leaf in sortedLeaves.prefix(3) {
+                        if let tid = leaf.taskId, let t = taskTitleById[tid] {
+                            titles.append(t)
+                        } else if let cid = leaf.childCompositeTaskId, let t = compositeTitleById[cid] {
+                            titles.append(t)
+                        }
+                    }
+                    previews[compositeId] = CompositeLeafPreview(
+                        titles: titles,
+                        totalLeaves: sortedLeaves.count
+                    )
+                }
+
                 DispatchQueue.main.async {
                     self.libraryTasks = tasks
                     self.libraryCompositeTasks = composites
+                    self.taskBoardCounts = taskCounts
+                    self.taskStepCounts = stepCounts
+                    self.compositeSubtaskCounts = leafCounts
+                    self.compositeLeafPreviews = previews
                 }
             } catch {
                 DispatchQueue.main.async {

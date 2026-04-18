@@ -20,6 +20,14 @@ struct CompositeSubtaskCardView: View {
     /// its own dropdown so duplicate selections are impossible at source.
     let libraryTasks: [OYBC.Task]
     let libraryCompositeTasks: [CompositeTask]
+    /// taskId → number of boards the task is currently on.
+    let taskBoardCounts: [String: Int]
+    /// taskId → number of non-deleted steps (progress tasks only).
+    let taskStepCounts: [String: Int]
+    /// compositeTaskId → leaf (subtask) count.
+    let compositeSubtaskCounts: [String: Int]
+    /// compositeTaskId → first few leaf titles for the picker subtitle.
+    let compositeLeafPreviews: [String: CompositeLeafPreview]
     let excludedTaskIds: Set<String>
     let excludedCompositeIds: Set<String>
 
@@ -167,63 +175,29 @@ struct CompositeSubtaskCardView: View {
 
     @ViewBuilder
     private var existingContent: some View {
-        // Unified picker: tasks + composites in one list (grouped by
-        // section), matching the web version's optgroup-based select.
-        // The Task/Composite segmented picker this replaced was adding
-        // a friction step without pulling its weight.
-        let availableTasks = libraryTasks
-            .filter { !excludedTaskIds.contains($0.id) || $0.id == item.selectedTaskId }
-        let availableComposites = libraryCompositeTasks
-            .filter { !excludedCompositeIds.contains($0.id) || $0.id == item.selectedCompositeId }
-
-        if availableTasks.isEmpty && availableComposites.isEmpty {
-            Text("No tasks or composites available — create one first, or add inline instead.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        } else {
-            Picker("Select a task or composite", selection: unifiedSelectionBinding) {
-                Text("Select a task or composite").tag("")
-                if !availableTasks.isEmpty {
-                    Section("Tasks") {
-                        ForEach(availableTasks, id: \.id) { task in
-                            Text(task.title).tag(task.id)
-                        }
-                    }
-                }
-                if !availableComposites.isEmpty {
-                    Section("Composite tasks") {
-                        ForEach(availableComposites, id: \.id) { ct in
-                            Text(ct.title).tag(ct.id)
-                        }
-                    }
-                }
-            }
-            .pickerStyle(.menu)
-        }
-    }
-
-    /// Custom binding for the unified existing-task picker. Reads the
-    /// currently-selected id (task OR composite), and on write inspects
-    /// the library to decide which field + which `selectionType` the id
-    /// belongs to. Empty string clears both.
-    private var unifiedSelectionBinding: Binding<String> {
-        Binding(
-            get: {
-                item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
-            },
-            set: { newId in
-                if newId.isEmpty {
-                    item.selectedTaskId = ""
-                    item.selectedCompositeId = ""
-                    return
-                }
-                if libraryCompositeTasks.contains(where: { $0.id == newId }) {
+        // Rich inline picker: expands to a searchable / filterable list
+        // with typed rows, collapses to a summary after selection.
+        // Mirrors web's `ExistingTaskPicker`.
+        let currentSelectedId: String =
+            item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
+        ExistingTaskPickerView(
+            selectedId: currentSelectedId,
+            libraryTasks: libraryTasks,
+            libraryCompositeTasks: libraryCompositeTasks,
+            excludedTaskIds: excludedTaskIds,
+            excludedCompositeIds: excludedCompositeIds,
+            taskBoardCounts: taskBoardCounts,
+            taskStepCounts: taskStepCounts,
+            compositeSubtaskCounts: compositeSubtaskCounts,
+            compositeLeafPreviews: compositeLeafPreviews,
+            onSelect: { id, kind in
+                if kind == .composite {
                     item.selectionType = .composite
-                    item.selectedCompositeId = newId
+                    item.selectedCompositeId = id
                     item.selectedTaskId = ""
                 } else {
                     item.selectionType = .task
-                    item.selectedTaskId = newId
+                    item.selectedTaskId = id
                     item.selectedCompositeId = ""
                 }
             }
