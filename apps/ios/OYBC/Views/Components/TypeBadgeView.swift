@@ -21,6 +21,12 @@ struct TypeBadgeView: View {
 
     let type: String
     var size: TypeBadgeSize = .default
+    /// When true, renders a single uniformly-sized letter inside a
+    /// circle instead of the full type name. Used by list layouts
+    /// (e.g. the composite-task picker) so rows stack without badge
+    /// width varying per type. The color + accessibility label carry
+    /// the disambiguation.
+    var letterOnly: Bool = false
 
     // MARK: - Derived Properties
 
@@ -35,24 +41,54 @@ struct TypeBadgeView: View {
         }
     }
 
-    /// Label text — the type string in all caps.
+    /// Label text — either the single-letter abbreviation or the full
+    /// uppercase type name. `M` stands in for COMPOSITE to avoid a
+    /// collision with COUNTING.
     private var label: String {
-        type.uppercased()
+        if letterOnly {
+            switch type.lowercased() {
+            case "normal":    return "N"
+            case "counting":  return "C"
+            case "progress":  return "P"
+            case "composite": return "M"
+            default:
+                return String(type.prefix(1)).uppercased()
+            }
+        }
+        return type.uppercased()
+    }
+
+    /// Circle diameter when rendering letter-only. Kept uniform across
+    /// task types so stacked rows align exactly.
+    private var letterDiameter: CGFloat {
+        size == .small ? 20 : 22
     }
 
     // MARK: - Body
 
     var body: some View {
-        Text(label)
-            .font(size == .small
-                  ? .system(size: 9, weight: .semibold)
-                  : .system(size: 11, weight: .semibold))
-            .foregroundColor(.white)
-            .padding(.horizontal, size == .small ? 5 : 7)
-            .padding(.vertical, size == .small ? 2 : 3)
-            .background(badgeColor)
-            .clipShape(Capsule())
-            .accessibilityLabel("\(type) task type")
+        if letterOnly {
+            Text(label)
+                .font(size == .small
+                      ? .system(size: 10, weight: .bold)
+                      : .system(size: 12, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: letterDiameter, height: letterDiameter)
+                .background(badgeColor)
+                .clipShape(Circle())
+                .accessibilityLabel("\(type) task type")
+        } else {
+            Text(label)
+                .font(size == .small
+                      ? .system(size: 9, weight: .semibold)
+                      : .system(size: 11, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, size == .small ? 5 : 7)
+                .padding(.vertical, size == .small ? 2 : 3)
+                .background(badgeColor)
+                .clipShape(Capsule())
+                .accessibilityLabel("\(type) task type")
+        }
     }
 }
 

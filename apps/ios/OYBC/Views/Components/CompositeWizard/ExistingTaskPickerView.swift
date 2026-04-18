@@ -165,7 +165,7 @@ struct ExistingTaskPickerView: View {
 
     private func collapsedSummary(row: PickerRow) -> some View {
         HStack(spacing: 10) {
-            TypeBadgeView(type: row.typeLabel, size: .small)
+            TypeBadgeView(type: row.typeLabel, size: .small, letterOnly: true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title)
                     .font(.system(size: 15, weight: .semibold))
@@ -308,7 +308,7 @@ struct ExistingTaskPickerView: View {
             isOpen = false
         } label: {
             HStack(spacing: 10) {
-                TypeBadgeView(type: row.typeLabel, size: .small)
+                TypeBadgeView(type: row.typeLabel, size: .small, letterOnly: true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.title)
                         .font(.system(size: 15, weight: .semibold))

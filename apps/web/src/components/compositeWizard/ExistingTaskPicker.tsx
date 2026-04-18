@@ -141,7 +141,7 @@ export function ExistingTaskPicker({
   if (!isOpen && selectedRow) {
     return (
       <div className={styles.collapsedSummary}>
-        <TypeBadge type={selectedRow.type} size="small" />
+        <TypeBadge type={selectedRow.type} size="small" letterOnly />
         <div className={styles.collapsedCenter}>
           <span className={styles.collapsedTitle}>{selectedRow.title}</span>
           {selectedRow.subtitle && (
@@ -216,7 +216,7 @@ export function ExistingTaskPicker({
                     }}
                     aria-pressed={isSelected}
                   >
-                    <TypeBadge type={row.type} size="small" />
+                    <TypeBadge type={row.type} size="small" letterOnly />
                     <div className={styles.rowCenter}>
                       <span className={styles.rowTitle}>{row.title}</span>
                       {row.subtitle && (
