@@ -13,7 +13,7 @@ import { createTask } from '../../db/operations/tasks';
 import { useTasks } from '../../hooks';
 import { FilterTabs } from '../FilterTabs';
 import { SelectableTaskItem } from '../SelectableTaskItem';
-import { PoolItem } from '../PoolItem';
+import { TypeBadge } from '../TypeBadge';
 import { CountingDerivationPanel } from '../CountingDerivationPanel';
 import { ProgressDerivationPanel } from '../ProgressDerivationPanel';
 import { CompositeDerivationPanel } from '../CompositeDerivationPanel';
@@ -403,12 +403,19 @@ export function SubtaskDerivationPlayground(): React.ReactElement {
         ) : (
           <div className={styles.poolList}>
             {boardPool.map((entry) => (
-              <PoolItem
-                key={entry.taskId}
-                title={entry.title}
-                type={entry.type}
-                onRemove={() => removeFromPool(entry.taskId)}
-              />
+              <div key={entry.taskId} className={styles.poolRow}>
+                <span className={styles.poolRowTitle}>{entry.title}</span>
+                <TypeBadge type={entry.type} size="small" />
+                <button
+                  type="button"
+                  className={styles.poolRowRemove}
+                  onClick={() => removeFromPool(entry.taskId)}
+                  title="Remove from pool"
+                  aria-label="Remove from pool"
+                >
+                  ×
+                </button>
+              </div>
             ))}
             <button
               type="button"

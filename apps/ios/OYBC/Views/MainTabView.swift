@@ -33,7 +33,15 @@ struct MainTabView: View {
             }
 
             NavigationStack {
-                CreateView()
+                ScrollView {
+                    if let userId = authService.currentUser?.id {
+                        CreateHubView(
+                            userId: userId,
+                            preferences: authService.userPreferences
+                        )
+                        .padding(16)
+                    }
+                }
             }
             .tabItem {
                 Label("Create", systemImage: "plus.circle")

@@ -9,7 +9,7 @@ import { migrateLegacyLocalStoragePreferences } from './usePreferences';
  *
  * Mounted once at the app shell level (alongside `useSyncLoop`) rather than
  * inside `usePreferences` itself, because the preferences hook is only
- * rendered by views that need to read the values (e.g. `BoardCreatorPanel`).
+ * rendered by views that need to read the values (e.g. the Create Hub's wizard).
  * A user who never opens those views would otherwise never have their
  * legacy settings migrated.
  *

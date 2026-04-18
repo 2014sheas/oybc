@@ -921,9 +921,9 @@ struct BoardLifecyclePlayground: View {
 
     /// Creates a fully populated 3×3 demo board with a FREE center and 8 tasks.
     ///
-    /// Uses the same task mix as BoardTaskSelectionPlayground's `createDemoBoard`:
-    /// counting, progress (with linked steps), and normal tasks. The board starts
-    /// in DRAFT status and auto-activates on first interaction.
+    /// Uses a canonical task mix: counting, progress (with linked steps),
+    /// and normal tasks. The board starts in DRAFT status and
+    /// auto-activates on first interaction.
     private func createDemoBoard() {
         isCreatingDemo = true
 

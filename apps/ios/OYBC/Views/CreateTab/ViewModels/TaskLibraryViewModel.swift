@@ -34,8 +34,8 @@ final class TaskLibraryViewModel {
     var libraryCompositeTasks: [CompositeTask] = []
 
     /// All non-deleted task steps belonging to progress tasks owned by
-    /// the authenticated user. Used by `BoardCreatorPanelView` for
-    /// step-aware board layouts.
+    /// the authenticated user. Consumed by preview components that
+    /// need per-step progress fractions.
     var allLibraryTaskSteps: [TaskStep] = []
 
     /// Most recent load error, surfaced to the user as a caption.

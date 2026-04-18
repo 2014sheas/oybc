@@ -82,7 +82,7 @@ export type ResolvedDates =
 
 /**
  * Resolves start/end ISO timestamps for the new/updated board record.
- * Mirrors the existing `BoardCreatorPanel` behaviour so the wizard
+ * Matches the semantics the legacy Create tab's `BoardCreatorPanel` used so the wizard
  * produces dates indistinguishable from the legacy panel's output.
  */
 export function resolveWizardDates(controller: BoardWizardController): ResolvedDates {

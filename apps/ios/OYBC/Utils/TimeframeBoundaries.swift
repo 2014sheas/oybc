@@ -4,9 +4,8 @@ import Foundation
 //
 // Top-level Swift equivalents of `getTimeframeBoundaries` /
 // `formatTimeframeLabel` / `toLocalISO` in `packages/shared`. Used by
-// the board-creation wizard. `BoardCreatorPanelView` ships its own
-// private extension copies that will be removed when the legacy panel
-// is deleted in build-sequence step 6.
+// the board-creation wizard and any other future view that needs to
+// compute start/end boundaries for a chosen timeframe.
 
 /// Returns the (start, end) `Date` boundaries for the given timeframe
 /// relative to `referenceDate`. Returns `nil` for `.custom`.

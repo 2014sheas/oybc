@@ -4,7 +4,7 @@ import { createTask } from '../../db/operations/tasks';
 import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
 import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
 
-// ─── Constants (shared with CreatePage UI) ────────────────────────────────────
+// ─── Constants (shared with the Create-tab UIs that consume this hook) ──────
 
 export const TITLE_MAX_LENGTH = 200;
 export const DESCRIPTION_MAX_LENGTH = 1000;
@@ -189,7 +189,7 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
 
   /**
    * Wrap a plain setter so editing a field also clears its own error —
-   * matches the pattern the original CreatePage used inline for every
+   * matches the pattern the legacy Create tab used inline for every
    * input. Keeps the UX invariant that typing resolves the red state.
    */
   /**

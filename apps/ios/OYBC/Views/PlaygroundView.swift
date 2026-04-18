@@ -7,15 +7,6 @@ struct Feature: Identifiable {
     let content: AnyView
 }
 
-/// PreferenceKey for communicating pool count from a child playground up to PlaygroundView.
-/// Used by BoardTaskSelectionPlayground to float a persistent pool indicator outside the ScrollView.
-struct PoolCountPreferenceKey: PreferenceKey {
-    static var defaultValue: Int = 0
-    static func reduce(value: inout Int, nextValue: () -> Int) {
-        value = nextValue()
-    }
-}
-
 private enum ClearStatus: Equatable {
     case idle
     case success
@@ -60,11 +51,6 @@ struct PlaygroundView: View {
             content: AnyView(BoardLifecyclePlayground(weekStartDay: weekStartDay))
         ),
         Feature(
-            id: "board-task-selection",
-            title: "Board Task Selection",
-            content: AnyView(BoardTaskSelectionPlayground())
-        ),
-        Feature(
             id: "cross-board-rollup",
             title: "Cross-Board Progress Rollup",
             content: AnyView(CrossBoardRollupPlayground())
@@ -94,7 +80,6 @@ struct PlaygroundView: View {
 
     @State private var expandedFeatureIds: Set<String> = []
     @State private var clearStatus: ClearStatus = .idle
-    @State private var floatingPoolCount: Int = 0
     @Environment(\.dismiss) private var dismiss
 
     private func clearTestData() {
@@ -204,23 +189,6 @@ struct PlaygroundView: View {
                 .padding(12)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onPreferenceChange(PoolCountPreferenceKey.self) { count in
-                floatingPoolCount = count
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if floatingPoolCount > 0 && expandedFeatureIds.contains("board-task-selection") {
-                    Text("Pool: \(floatingPoolCount)")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                        .padding(16)
-                }
-            }
             .navigationTitle("Playground")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

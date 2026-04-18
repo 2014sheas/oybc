@@ -12,7 +12,7 @@ import {
   UNIT_MAX_LENGTH,
   STEP_TITLE_MAX_LENGTH,
 } from './useCreateFormState';
-import styles from '../CreatePage.module.css';
+import styles from './CreateNewTaskForm.module.css';
 
 const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },

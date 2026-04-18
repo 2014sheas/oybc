@@ -5,7 +5,6 @@ import { BoardGeneratorPlayground } from '../components/playground/BoardGenerato
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
 import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
 import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
-import { BoardTaskSelectionPlayground } from '../components/playground/BoardTaskSelectionPlayground';
 import { BoardWizardTasksPlayground } from '../components/playground/BoardWizardTasksPlayground';
 import { CreateHubPlayground } from '../components/playground/CreateHubPlayground';
 import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
@@ -56,11 +55,6 @@ export function Playground() {
       id: 'board-lifecycle',
       title: 'Board Lifecycle',
       content: <BoardLifecyclePlayground />,
-    },
-    {
-      id: 'board-task-selection',
-      title: 'Board Task Selection',
-      content: <BoardTaskSelectionPlayground />,
     },
     {
       id: 'cross-board-rollup',

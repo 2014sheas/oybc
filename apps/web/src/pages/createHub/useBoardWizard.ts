@@ -122,8 +122,8 @@ export interface UseBoardWizardArgs {
  * useBoardWizard — Owns the full board-creation wizard state.
  *
  * Initializes from `UserPreferences` on mount; any later preference change
- * does NOT stomp in-progress wizard state (mirrors today's
- * `BoardCreatorPanel` snapshot semantics). All step components are fully
+ * does NOT stomp in-progress wizard state (the wizard takes a snapshot
+ * of defaults at construction). All step components are fully
  * controlled — they read from this controller's state and call the
  * exposed setters / nav actions.
  *
