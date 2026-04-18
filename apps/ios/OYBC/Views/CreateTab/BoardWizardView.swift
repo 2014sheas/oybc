@@ -91,12 +91,14 @@ struct BoardWizardView: View {
                 onNext: { wizard.goNext() }
             )
         default:
-            BoardWizardPreviewStepStubView(
+            BoardWizardPreviewStepView(
                 controller: wizard,
                 library: library,
+                userId: userId,
                 onBack: { wizard.goBack() },
-                onActivate: { onComplete("stub-board-id", "active") },
-                onSaveDraft: { onComplete("stub-board-id", "draft") }
+                onComplete: { boardId, status in
+                    onComplete(boardId, status.rawValue)
+                }
             )
         }
     }

@@ -46,7 +46,7 @@ export function BoardWizardShellPlayground(): React.ReactElement {
         onCancel={() => appendLog('Cancel tapped (would close wizard / show smart prompt in step 4).')}
         onComplete={(boardId, status) =>
           appendLog(
-            `${status === 'active' ? 'Activate' : 'Save Draft'} tapped → boardId=${boardId} (stub).`,
+            `${status === 'active' ? 'Activated' : 'Saved draft'}: boardId=${boardId.slice(0, 8)}…`,
           )
         }
       />

@@ -4,7 +4,7 @@ import { useBoardWizard } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
 import { BoardWizardSetupStep } from '../components/wizard/BoardWizardSetupStep';
 import { BoardWizardTasksStep } from '../components/wizard/BoardWizardTasksStep';
-import { BoardWizardPreviewStepStub } from '../components/wizard/BoardWizardPreviewStepStub';
+import { BoardWizardPreviewStep } from '../components/wizard/BoardWizardPreviewStep';
 import styles from './BoardWizardPage.module.css';
 
 export interface BoardWizardPageProps {
@@ -15,8 +15,10 @@ export interface BoardWizardPageProps {
   /** Called when the user dismisses the wizard before activating. The
    *  smart cancel dialog (build-sequence step 4) wraps this. */
   onCancel: () => void;
-  /** Called after a successful Activate or Save Draft (build-sequence
-   *  step 3 wires the real DB writes; for now the stub fires this). */
+  /** Called after a successful Activate or Save Draft. The wizard's
+   *  Step 3 owns the actual DB write (`createBoard` + per-cell
+   *  `createBoardTask` + optional `activateBoard`); the parent is
+   *  responsible for the post-create navigation (e.g. `/boards/:id`). */
   onComplete: (boardId: string, status: 'active' | 'draft') => void;
 }
 
@@ -25,10 +27,8 @@ export interface BoardWizardPageProps {
  *
  * Owns the wizard controller (`useBoardWizard`) and the task library
  * (`useTaskLibrary`) and routes them into the active step component.
- * Step 3's full implementation (real DB writes, navigation to the
- * created board) is split out into `BoardWizardPreviewStepStub` for
- * the wizard-shell milestone; the full version replaces it in build
- * sequence step 3.
+ * Step 3 (`BoardWizardPreviewStep`) writes the new board to the local
+ * DB on Activate / Save Draft and fires `onComplete` with the new id.
  */
 export function BoardWizardPage({
   userId,
@@ -85,12 +85,12 @@ export function BoardWizardPage({
         )}
 
         {wizard.currentStep === 3 && (
-          <BoardWizardPreviewStepStub
+          <BoardWizardPreviewStep
             controller={wizard}
             library={library}
+            userId={userId}
             onBack={wizard.goBack}
-            onActivate={() => onComplete('stub-board-id', 'active')}
-            onSaveDraft={() => onComplete('stub-board-id', 'draft')}
+            onComplete={onComplete}
           />
         )}
       </div>
