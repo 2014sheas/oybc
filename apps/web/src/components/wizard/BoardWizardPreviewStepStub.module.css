@@ -1,0 +1,111 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+  background-color: var(--card-bg);
+  border-radius: var(--radius-card);
+  padding: var(--spacing-xl);
+  border: 1px solid var(--border-color);
+}
+
+.stubBanner {
+  background-color: var(--info-bg);
+  color: var(--info-text);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.previewWrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background-color: var(--bg-secondary);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: 4px 0;
+  font-size: 0.9rem;
+}
+
+.summaryLabel {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.summaryValue {
+  color: var(--text-primary);
+}
+
+.editLink {
+  background: transparent;
+  border: none;
+  color: var(--active-bg);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.editLink:hover {
+  background-color: var(--hover-bg);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.footerActions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.backButton,
+.draftButton,
+.activateButton {
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+}
+
+.backButton,
+.draftButton {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.backButton:hover,
+.draftButton:hover {
+  background-color: var(--button-hover-bg);
+}
+
+.activateButton {
+  background-color: var(--success-text);
+  color: var(--card-bg);
+  border-color: var(--success-text);
+}
+
+.activateButton:hover {
+  filter: brightness(0.95);
+}

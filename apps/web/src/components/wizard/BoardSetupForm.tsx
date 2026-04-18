@@ -1,0 +1,253 @@
+import {
+  CenterSquareType,
+  Timeframe,
+  formatTimeframeLabel,
+  getTimeframeBoundaries,
+  type WeekStartDay,
+} from '@oybc/shared';
+import styles from './BoardSetupForm.module.css';
+
+const SIZE_OPTIONS: { value: 3 | 4 | 5; label: string }[] = [
+  { value: 3, label: '3×3' },
+  { value: 4, label: '4×4' },
+  { value: 5, label: '5×5' },
+];
+
+const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
+  { value: Timeframe.DAILY, label: 'Daily' },
+  { value: Timeframe.WEEKLY, label: 'Weekly' },
+  { value: Timeframe.MONTHLY, label: 'Monthly' },
+  { value: Timeframe.YEARLY, label: 'Yearly' },
+  { value: Timeframe.CUSTOM, label: 'Custom' },
+];
+
+const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
+  { value: CenterSquareType.FREE, label: 'Free Space' },
+  { value: CenterSquareType.CUSTOM_FREE, label: 'Custom Name' },
+  { value: CenterSquareType.CHOSEN, label: 'Pick one of my board tasks' },
+  { value: CenterSquareType.NONE, label: 'None' },
+];
+
+export interface BoardSetupFormProps {
+  // Controlled state
+  name: string;
+  onNameChange: (v: string) => void;
+
+  size: 3 | 4 | 5;
+  onSizeChange: (s: 3 | 4 | 5) => void;
+
+  timeframe: Timeframe;
+  onTimeframeChange: (t: Timeframe) => void;
+
+  customStartDate: string;
+  onCustomStartDateChange: (d: string) => void;
+  customEndDate: string;
+  onCustomEndDateChange: (d: string) => void;
+
+  centerType: CenterSquareType;
+  onCenterTypeChange: (t: CenterSquareType) => void;
+  centerCustomName: string;
+  onCenterCustomNameChange: (n: string) => void;
+
+  isRandomized: boolean;
+  onIsRandomizedChange: (b: boolean) => void;
+
+  weekStartDay: WeekStartDay;
+}
+
+/**
+ * BoardSetupForm — Pure presentational form for the wizard's Setup step.
+ *
+ * Renders all configuration controls (name, size, timeframe, custom
+ * dates, center type, custom name input, randomize toggle) without
+ * owning any state. The wizard controller drives every field via the
+ * `on*Change` callbacks.
+ *
+ * Center-type options for odd boards include the renamed
+ * "Pick one of my board tasks" (formerly "Chosen Task"); the actual
+ * task is picked in Step 2.
+ */
+export function BoardSetupForm({
+  name,
+  onNameChange,
+  size,
+  onSizeChange,
+  timeframe,
+  onTimeframeChange,
+  customStartDate,
+  onCustomStartDateChange,
+  customEndDate,
+  onCustomEndDateChange,
+  centerType,
+  onCenterTypeChange,
+  centerCustomName,
+  onCenterCustomNameChange,
+  isRandomized,
+  onIsRandomizedChange,
+  weekStartDay,
+}: BoardSetupFormProps): React.ReactElement {
+  const isOddBoard = size % 2 !== 0;
+
+  const computedBoundaries =
+    timeframe !== Timeframe.CUSTOM
+      ? getTimeframeBoundaries(timeframe, new Date(), weekStartDay)
+      : null;
+
+  const timeframeLabel = computedBoundaries
+    ? formatTimeframeLabel(timeframe, computedBoundaries.startDate)
+    : null;
+
+  return (
+    <div className={styles.form}>
+      {/* Board name */}
+      <div className={styles.fieldGroup}>
+        <label className={styles.label} htmlFor="bw-board-name">
+          Board name<span className={styles.required}>*</span>
+        </label>
+        <input
+          id="bw-board-name"
+          type="text"
+          className={styles.input}
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder='e.g., "Spring Goals"'
+          maxLength={200}
+        />
+      </div>
+
+      {/* Board size */}
+      <div className={styles.fieldGroup}>
+        <span className={styles.label}>Board size</span>
+        <div className={styles.segmented}>
+          {SIZE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`${styles.segmentedButton} ${
+                size === opt.value ? styles.segmentedButtonActive : ''
+              }`}
+              onClick={() => onSizeChange(opt.value)}
+              aria-pressed={size === opt.value}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Timeframe */}
+      <div className={styles.fieldGroup}>
+        <span className={styles.label}>Timeframe</span>
+        <div className={styles.segmented}>
+          {TIMEFRAME_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`${styles.segmentedButton} ${
+                timeframe === opt.value ? styles.segmentedButtonActive : ''
+              }`}
+              onClick={() => onTimeframeChange(opt.value)}
+              aria-pressed={timeframe === opt.value}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Date display — auto for non-Custom, pickers for Custom */}
+      {timeframe !== Timeframe.CUSTOM && computedBoundaries && (
+        <div className={styles.dateDisplay}>
+          <span className={styles.dateDisplayLabel}>{timeframeLabel}</span>
+          <span className={styles.dateDisplayRange}>
+            {computedBoundaries.startDate.split('T')[0]} to{' '}
+            {computedBoundaries.endDate.split('T')[0]}
+          </span>
+        </div>
+      )}
+
+      {timeframe === Timeframe.CUSTOM && (
+        <div className={styles.dateRow}>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label} htmlFor="bw-start-date">
+              Start date
+            </label>
+            <input
+              id="bw-start-date"
+              type="date"
+              className={styles.input}
+              value={customStartDate}
+              onChange={(e) => onCustomStartDateChange(e.target.value)}
+            />
+          </div>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label} htmlFor="bw-end-date">
+              End date
+            </label>
+            <input
+              id="bw-end-date"
+              type="date"
+              className={styles.input}
+              value={customEndDate}
+              onChange={(e) => onCustomEndDateChange(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Center square — only for odd boards */}
+      {isOddBoard && (
+        <div className={styles.fieldGroup}>
+          <label className={styles.label} htmlFor="bw-center-type">
+            Center square
+          </label>
+          <select
+            id="bw-center-type"
+            className={styles.input}
+            value={centerType}
+            onChange={(e) => onCenterTypeChange(e.target.value as CenterSquareType)}
+          >
+            {CENTER_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          {centerType === CenterSquareType.CHOSEN && (
+            <p className={styles.hint}>
+              You'll mark which selected task is the center in the next step.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Custom center name */}
+      {isOddBoard && centerType === CenterSquareType.CUSTOM_FREE && (
+        <div className={styles.fieldGroup}>
+          <label className={styles.label} htmlFor="bw-center-custom-name">
+            Custom center name
+          </label>
+          <input
+            id="bw-center-custom-name"
+            type="text"
+            className={styles.input}
+            value={centerCustomName}
+            onChange={(e) => onCenterCustomNameChange(e.target.value)}
+            placeholder='e.g., "Wild Card"'
+            maxLength={100}
+          />
+        </div>
+      )}
+
+      {/* Randomize */}
+      <label className={styles.checkboxRow}>
+        <input
+          type="checkbox"
+          checked={isRandomized}
+          onChange={(e) => onIsRandomizedChange(e.target.checked)}
+        />
+        <span>Randomize task positions on the board</span>
+      </label>
+    </div>
+  );
+}

@@ -7,6 +7,7 @@ import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDer
 import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
 import { BoardTaskSelectionPlayground } from '../components/playground/BoardTaskSelectionPlayground';
 import { BoardWizardTasksPlayground } from '../components/playground/BoardWizardTasksPlayground';
+import { BoardWizardShellPlayground } from '../components/playground/BoardWizardShellPlayground';
 import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import styles from './Playground.module.css';
@@ -36,6 +37,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'board-wizard-shell',
+      title: 'Board Wizard — Shell + Setup (full flow)',
+      content: <BoardWizardShellPlayground />,
+    },
     {
       id: 'board-wizard-tasks',
       title: 'Board Wizard — Tasks Step (spike)',
