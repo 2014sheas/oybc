@@ -7,6 +7,7 @@ import {
   toLocalISO,
   type Task,
 } from '@oybc/shared';
+import { db } from '../../db/database';
 import {
   activateBoard,
   createBoard,
@@ -165,46 +166,58 @@ export async function persistWizardBoard({
     isRandomized: controller.isRandomized,
   };
 
-  let boardId: string;
-  if (controller.draftBoardId !== null) {
-    boardId = controller.draftBoardId;
-    await updateBoard(boardId, {
-      ...sharedFields,
-      status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
-    });
-    await deleteBoardTasksForBoard(boardId);
-  } else {
-    const board = await createBoard(userId, sharedFields);
-    boardId = board.id;
-  }
-
   const size = controller.size;
   const isOddBoard = size % 2 !== 0;
   const centerRow = Math.floor(size / 2);
   const centerCol = Math.floor(size / 2);
 
-  for (let i = 0; i < placement.length; i++) {
-    const task = placement[i];
-    if (task === null) continue;
-    const row = Math.floor(i / size);
-    const col = i % size;
-    const isCenterPos = isOddBoard && row === centerRow && col === centerCol;
-    await createBoardTask({
-      boardId,
-      taskId: task.id,
-      row,
-      col,
-      // Mark centre for CHOSEN (real task at centre) and NONE.
-      isCenter:
-        isCenterPos &&
-        (controller.centerType === CenterSquareType.CHOSEN ||
-          controller.centerType === CenterSquareType.NONE),
-    });
-  }
+  // Wrap the whole write path in a single Dexie transaction so the
+  // board record + its BoardTask rows commit or roll back together.
+  // Splitting across sequential awaits would leave partially-updated
+  // boards on disk (and in the sync queue) if one step failed mid-flight.
+  // `syncQueue` is included in the scope because the inner helpers fire
+  // sync entries inline after their row writes.
+  let boardId: string = '';
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.syncQueue],
+    async () => {
+      if (controller.draftBoardId !== null) {
+        boardId = controller.draftBoardId;
+        await updateBoard(boardId, {
+          ...sharedFields,
+          status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
+        });
+        await deleteBoardTasksForBoard(boardId);
+      } else {
+        const board = await createBoard(userId, sharedFields);
+        boardId = board.id;
+      }
 
-  if (controller.draftBoardId === null && status === 'active') {
-    await activateBoard(boardId);
-  }
+      for (let i = 0; i < placement.length; i++) {
+        const task = placement[i];
+        if (task === null) continue;
+        const row = Math.floor(i / size);
+        const col = i % size;
+        const isCenterPos = isOddBoard && row === centerRow && col === centerCol;
+        await createBoardTask({
+          boardId,
+          taskId: task.id,
+          row,
+          col,
+          // Mark centre for CHOSEN (real task at centre) and NONE.
+          isCenter:
+            isCenterPos &&
+            (controller.centerType === CenterSquareType.CHOSEN ||
+              controller.centerType === CenterSquareType.NONE),
+        });
+      }
+
+      if (controller.draftBoardId === null && status === 'active') {
+        await activateBoard(boardId);
+      }
+    },
+  );
 
   return boardId;
 }

@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 /// Per-cell placement for the wizard's preview grid and the persisted
 /// `BoardTask` rows. `nil` slots only appear at the reserved centre
@@ -142,6 +143,10 @@ func persistWizardBoard(
             let isUpdate = draftBoardId != nil
             let existing: Board? = isUpdate ? try AppDatabase.shared.fetchBoard(id: boardId) : nil
 
+            // Preserve denormalised stats if updating — a draft should
+            // never overwrite `completedTasks` / `linesCompleted` /
+            // `completedLineIds` it inherited from a partially-activated
+            // parent. For new boards these default to 0 / 0 / empty.
             var boardDict: [String: Any] = [
                 "id": boardId,
                 "userId": userId,
@@ -154,8 +159,8 @@ func persistWizardBoard(
                 "centerSquareType": centerType.rawValue,
                 "isRandomized": capturedIsRandomized,
                 "totalTasks": size * size,
-                "completedTasks": 0,
-                "linesCompleted": 0,
+                "completedTasks": existing?.completedTasks ?? 0,
+                "linesCompleted": existing?.linesCompleted ?? 0,
                 "createdAt": existing?.createdAt ?? now,
                 "updatedAt": now,
                 "version": (existing?.version ?? 0) + 1,
@@ -188,11 +193,18 @@ func persistWizardBoard(
                 boardTasks.append(bt)
             }
 
-            if isUpdate {
-                try AppDatabase.shared.deleteBoardTasksForBoard(boardId: boardId)
-            }
+            // Single atomic transaction: deleting the existing
+            // BoardTask rows then writing the new board + its rows
+            // must commit or roll back together. Splitting across two
+            // transactions risks leaving a board with zero squares
+            // if the second write fails mid-flight.
             try AppDatabase.shared.write { db in
                 try board.save(db)
+                if isUpdate {
+                    _ = try BoardTask
+                        .filter(Column("boardId") == boardId)
+                        .deleteAll(db)
+                }
                 for bt in boardTasks {
                     try bt.save(db)
                 }

@@ -138,7 +138,8 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 ├── Home.tsx                      (dev-only)     (no iOS counterpart — auth-gate → MainTabView)
 ├── BoardsPage.tsx             ←→                Views/BoardsTab/BoardListView.swift
 ├── BoardPlayPage.tsx          ←→                Views/BoardsTab/BoardPlayView.swift
-├── CreatePage.tsx             ←→                Views/CreateTab/CreateView.swift
+├── CreateHubPage.tsx          ←→                Views/CreateTab/CreateHubView.swift
+├── BoardWizardPage.tsx        ←→                Views/CreateTab/BoardWizardView.swift
 ├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
 ├── BoardPreferencesPage.tsx   ←→                Views/ProfileTab/BoardPreferencesView.swift
 └── Playground.tsx             ←→                Views/PlaygroundView.swift
@@ -150,6 +151,12 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 - `TabBar.tsx` is an HTML `<nav>` + NavLinks; `MainTabView.swift` uses SwiftUI `TabView`. Same UX, platform-native implementation.
 - `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
 - `syncService.ts` uses module-level functions + a React hook for orchestration; iOS embeds orchestration in a `@MainActor ObservableObject` bound to `AuthService`'s lifecycle. Same push/pull/LWW rules, same collection list — when you change one, mirror the other in the same PR.
+- **Create Hub + board wizard** (feature):
+  - `components/wizard/{BoardSetupForm,BoardWizardStepper,BoardWizardSetupStep,BoardWizardTasksStep,BoardWizardPreviewStep,BoardWizardCancelDialog,NewTaskSheet,wizardPersist}.tsx/.ts` ←→ `Views/CreateTab/{BoardWizardPersist.swift}` + `Views/CreateTab/Components/{BoardSetupFormView,BoardWizardStepperView,BoardWizardSetupStepView,BoardWizardTasksStepView,BoardWizardPreviewStepView,BoardWizardCancelDialogView,NewTaskSheetView}.swift`.
+  - `components/createHub/{CreateHubBoardCTA,CreateHubDraftsList,CreateHubQuickAdd}.tsx` ←→ `Views/CreateTab/Components/{CreateHubBoardCTAView,CreateHubDraftsListView,CreateHubQuickAddView}.swift`.
+  - `pages/createHub/useBoardWizard.ts` ←→ `Views/CreateTab/ViewModels/BoardWizardViewModel.swift`.
+  - `pages/createHub/useDrafts.ts` has no dedicated iOS twin — iOS inlines the equivalent GRDB query in `CreateHubView.reloadDrafts()` because SwiftUI lacks a direct `useLiveQuery` analog; drafts reload explicitly on `.onAppear` and after wizard dismiss instead.
+  - `wizardPersist.ts` lives in `components/wizard/` on web (next to consumers). `BoardWizardPersist.swift` lives in `Views/CreateTab/` (not `Components/`) because it is a helper, not a view. Both export the same three helpers: `buildWizardPlacement`, `resolveWizardDates`, `persistWizardBoard`.
 
 **Rules**:
 
