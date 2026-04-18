@@ -15,23 +15,23 @@ interface TypeBadgeProps {
   type: string;
   /** Optional size variant */
   size?: 'small' | 'default';
-  /** When true, renders a single uniformly-sized letter instead of the
-   *  full type name. Lets list layouts (e.g. the composite-task picker)
-   *  stack rows without the badge width varying by type. The full type
-   *  name is surfaced as a native tooltip. */
+  /** When true, renders a uniformly-sized 4-letter abbreviation instead
+   *  of the full type name. Lets list layouts (e.g. the composite-task
+   *  picker) stack rows without the badge width varying by type. The
+   *  full type name is surfaced as a native tooltip. */
   letterOnly?: boolean;
   /** Optional extra CSS class */
   className?: string;
 }
 
-/** Single-letter abbreviation for each task type. `M` stands in for
- *  COMPOSITE to avoid colliding with COUNTING; the color + tooltip
- *  carry the disambiguation. */
-const TYPE_LETTER: Record<string, string> = {
-  normal: 'N',
-  counting: 'C',
-  progress: 'P',
-  composite: 'M',
+/** 4-letter abbreviation for each task type — first four letters of
+ *  the type name, uppercased. Kept uniform-width so stacked badges
+ *  align row-to-row in list layouts. */
+const TYPE_ABBREV: Record<string, string> = {
+  normal: 'NORM',
+  counting: 'COUN',
+  progress: 'PROG',
+  composite: 'COMP',
 };
 
 /**
@@ -54,7 +54,7 @@ export function TypeBadge({
     .join(' ');
 
   const display = letterOnly
-    ? (TYPE_LETTER[type.toLowerCase()] ?? type.charAt(0).toUpperCase())
+    ? (TYPE_ABBREV[type.toLowerCase()] ?? type.slice(0, 4).toUpperCase())
     : type.toUpperCase();
 
   return (

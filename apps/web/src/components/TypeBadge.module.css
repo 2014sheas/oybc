@@ -34,24 +34,21 @@
   color: var(--info-text, #084298);
 }
 
-/* Single-letter variant — squarish, fixed size so a vertical stack of
- * badges aligns regardless of task type. Override the pill padding to
- * produce a tight circle-equivalent box. */
+/* Abbreviated 4-letter variant — fixed width so stacked badges align
+ * regardless of task type. Still uses the pill shape of the default
+ * badge, but the width is locked via min-width/justify-content so no
+ * amount of font-width jitter shifts the adjacent column. */
 .letter {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 0.7rem;
-  letter-spacing: 0;
+  min-width: 46px;
+  padding: 0.15rem 0.4rem;
+  font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
 
 .letter.small {
-  width: 20px;
-  height: 20px;
-  font-size: 0.65rem;
+  min-width: 42px;
+  padding: 0.1rem 0.35rem;
 }

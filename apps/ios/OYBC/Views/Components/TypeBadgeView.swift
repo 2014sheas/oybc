@@ -21,11 +21,10 @@ struct TypeBadgeView: View {
 
     let type: String
     var size: TypeBadgeSize = .default
-    /// When true, renders a single uniformly-sized letter inside a
-    /// circle instead of the full type name. Used by list layouts
-    /// (e.g. the composite-task picker) so rows stack without badge
-    /// width varying per type. The color + accessibility label carry
-    /// the disambiguation.
+    /// When true, renders a fixed-width 4-letter abbreviation instead
+    /// of the full type name. Used by list layouts (e.g. the composite-
+    /// task picker) so rows stack without the badge width varying per
+    /// type.
     var letterOnly: Bool = false
 
     // MARK: - Derived Properties
@@ -41,27 +40,27 @@ struct TypeBadgeView: View {
         }
     }
 
-    /// Label text — either the single-letter abbreviation or the full
-    /// uppercase type name. `M` stands in for COMPOSITE to avoid a
-    /// collision with COUNTING.
+    /// Label text — either the 4-letter abbreviation (first 4 letters
+    /// of the type name, uppercased) or the full uppercase type name.
     private var label: String {
         if letterOnly {
             switch type.lowercased() {
-            case "normal":    return "N"
-            case "counting":  return "C"
-            case "progress":  return "P"
-            case "composite": return "M"
+            case "normal":    return "NORM"
+            case "counting":  return "COUN"
+            case "progress":  return "PROG"
+            case "composite": return "COMP"
             default:
-                return String(type.prefix(1)).uppercased()
+                return String(type.prefix(4)).uppercased()
             }
         }
         return type.uppercased()
     }
 
-    /// Circle diameter when rendering letter-only. Kept uniform across
-    /// task types so stacked rows align exactly.
-    private var letterDiameter: CGFloat {
-        size == .small ? 20 : 22
+    /// Fixed width when rendering the 4-letter variant. Sized to fit
+    /// any of the four abbreviations and kept uniform across types so
+    /// stacked rows align perfectly.
+    private var letterWidth: CGFloat {
+        size == .small ? 42 : 46
     }
 
     // MARK: - Body
@@ -70,12 +69,13 @@ struct TypeBadgeView: View {
         if letterOnly {
             Text(label)
                 .font(size == .small
-                      ? .system(size: 10, weight: .bold)
-                      : .system(size: 12, weight: .bold))
+                      ? .system(size: 9, weight: .semibold)
+                      : .system(size: 10, weight: .semibold))
                 .foregroundColor(.white)
-                .frame(width: letterDiameter, height: letterDiameter)
+                .frame(width: letterWidth)
+                .padding(.vertical, size == .small ? 2 : 3)
                 .background(badgeColor)
-                .clipShape(Circle())
+                .clipShape(Capsule())
                 .accessibilityLabel("\(type) task type")
         } else {
             Text(label)
