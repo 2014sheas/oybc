@@ -10,7 +10,7 @@ import { TaskTypeSelector } from '../TaskTypeSelector';
 import { ProgressStepRow } from '../ProgressStepRow';
 import { type StepFormState, createEmptyStep } from '../progressStepUtils';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS, getCharCountClass, formatOperatorLabel } from './playgroundUtils';
-import { CompositeTaskForm } from './CompositeTaskForm';
+import { CompositeTaskWizard } from '../compositeWizard/CompositeTaskWizard';
 import styles from './UnifiedTaskCreatorPlayground.module.css';
 
 /** Maximum character lengths matching shared validation schemas */
@@ -474,12 +474,12 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
    * Handles form submission to create a new task of the selected type.
    * Validates inputs, persists to Dexie, resets the form,
    * and shows a success message that auto-dismisses after 3s.
-   * Composite type is handled by CompositeTaskForm and should not reach here.
+   * Composite type is handled by CompositeTaskWizard and should not reach here.
    */
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
 
-    // Composite tasks are handled by the CompositeTaskForm component
+    // Composite tasks are handled by the CompositeTaskWizard component
     if (taskType === COMPOSITE_TYPE) return;
 
     const validationErrors = validateForm(
@@ -582,7 +582,7 @@ export function UnifiedTaskCreatorPlayground(): React.ReactElement {
 
         {/* Composite Task Form — shown when composite type is selected */}
         {taskType === COMPOSITE_TYPE ? (
-          <CompositeTaskForm />
+          <CompositeTaskWizard />
         ) : (
           <form className={styles.form} onSubmit={handleSubmit}>
             {/* Title */}

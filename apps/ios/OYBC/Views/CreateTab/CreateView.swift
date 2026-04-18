@@ -15,7 +15,7 @@ private enum CreateMode: String, CaseIterable {
 ///
 /// Two-tab interface:
 /// - **Create New**: form for Normal/Counting/Progress tasks, plus
-///   `CompositeTaskFormView`. Newly created tasks are added directly
+///   `CompositeTaskWizardView`. Newly created tasks are added directly
 ///   to the pool.
 /// - **Existing Tasks**: filterable task library with expand/collapse
 ///   derivation panels.

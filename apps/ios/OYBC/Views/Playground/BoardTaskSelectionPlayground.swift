@@ -49,7 +49,7 @@ private enum ExistingFilter: String, CaseIterable {
 /// Provides two tabs for populating a board task pool:
 ///
 /// - **Create New**: Inline task creation for Normal/Counting/Progress tasks, plus
-///   `CompositeTaskFormView` for Composite. Newly created tasks are added directly to the pool.
+///   `CompositeTaskWizardView` for Composite. Newly created tasks are added directly to the pool.
 /// - **Existing Tasks**: Filterable list of all tasks in the library. Each row shows title and
 ///   type badge. Normal tasks show only an "Add to Pool" button. Counting, Progress, and
 ///   Composite tasks additionally show an expand/collapse button (▶/▼) that reveals an inline
@@ -253,9 +253,9 @@ struct BoardTaskSelectionPlayground: View {
             }
 
             if createTaskType == .composite {
-                // Composite creation handled entirely by CompositeTaskFormView.
+                // Composite creation handled entirely by CompositeTaskWizardView.
                 // onCreated adds the new composite to the pool and refreshes the library.
-                CompositeTaskFormView(onCreated: { compositeTask in
+                CompositeTaskWizardView(onCreated: { compositeTask in
                     addToPool(
                         taskId: compositeTask.id,
                         title: compositeTask.title,

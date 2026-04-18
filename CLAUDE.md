@@ -88,8 +88,8 @@ apps/web/src/                                        apps/ios/OYBC/
 │       ├── UnifiedTaskCreatorPlayground.tsx ←→      Views/Playground/UnifiedTaskCreatorPlayground.swift
 │       ├── TaskSquareActionsPlayground.tsx ←→       Views/Playground/TaskSquareActionsPlayground.swift
 │       ├── CrossBoardRollupPlayground.tsx ←→        Views/Playground/CrossBoardRollupPlayground.swift
-│       ├── SubtaskDerivationPlayground.tsx ←→       Views/Playground/SubtaskDerivationPlayground.swift
-│       └── CompositeTaskForm.tsx ←→                 Views/Playground/CompositeTaskFormView.swift
+│       └── SubtaskDerivationPlayground.tsx ←→       Views/Playground/SubtaskDerivationPlayground.swift
+│       (composite-task creation lives in components/compositeWizard/ ←→ Views/Components/CompositeWizard/)
 │
 └── components/                                     Views/Components/
     ├── Navbar.tsx                 (dev-only)       (no iOS counterpart — iOS launches straight into tabs)
@@ -150,6 +150,9 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 - `TabBar.tsx` is an HTML `<nav>` + NavLinks; `MainTabView.swift` uses SwiftUI `TabView`. Same UX, platform-native implementation.
 - `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
 - `syncService.ts` uses module-level functions + a React hook for orchestration; iOS embeds orchestration in a `@MainActor ObservableObject` bound to `AuthService`'s lifecycle. Same push/pull/LWW rules, same collection list — when you change one, mirror the other in the same PR.
+- **Composite-task mini-wizard** (feature):
+  - `components/compositeWizard/{CompositeTaskWizard,CompositeWizardStepper,SetupStep,BuildStep,ReviewStep,SubtaskCard,compositeSubtaskDraft}.tsx/.ts` ←→ `Views/Components/CompositeWizard/{CompositeTaskWizardView,CompositeWizardStepperView,CompositeWizardSetupStepView,CompositeWizardBuildStepView,CompositeWizardReviewStepView,CompositeSubtaskCardView,CompositeSubtaskItem}.swift`.
+  - Replaced the legacy ~850-line `CompositeTaskForm.tsx` / `CompositeTaskFormView.swift` monoliths with a 3-step Setup → Build → Review flow. Same data model + write path, better UX (live validation, type-switch confirm, threshold clamp toast, library callout).
 
 **Rules**:
 
@@ -323,7 +326,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Don't block UI for sync**: All sync operations must be background/async.
 - **Counting task field order**: Action → Max Count → Unit (not Action → Unit → Max Count).
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
-- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskForm` inline progress subtasks.
+- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline progress subtasks.
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.
 
 ## Performance Targets

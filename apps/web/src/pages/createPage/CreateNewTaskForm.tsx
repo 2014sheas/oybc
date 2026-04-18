@@ -24,7 +24,7 @@ const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
 /**
  * Renders the "Create New" tab: the type selector, per-type form
  * fields, progress steps, and the submit button. Composite selection
- * swaps to `CompositeTaskForm` (owns its own state). All other state
+ * swaps to `CompositeTaskWizard` (owns its own state). All other state
  * comes from `useCreateFormState` via the `form` prop.
  *
  * Kept as a pure presentation component — no data-layer calls, no
