@@ -139,7 +139,7 @@ struct CompositeWizardBuildStepView: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            VStack(spacing: 8) {
                 Button("+ Add existing task", action: onAddExisting)
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)

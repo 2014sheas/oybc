@@ -167,43 +167,67 @@ struct CompositeSubtaskCardView: View {
 
     @ViewBuilder
     private var existingContent: some View {
-        Picker("Select from", selection: $item.selectionType) {
-            Text("Task").tag(SubtaskItem.SelectionType.task)
-            Text("Composite").tag(SubtaskItem.SelectionType.composite)
-        }
-        .pickerStyle(.segmented)
+        // Unified picker: tasks + composites in one list (grouped by
+        // section), matching the web version's optgroup-based select.
+        // The Task/Composite segmented picker this replaced was adding
+        // a friction step without pulling its weight.
+        let availableTasks = libraryTasks
+            .filter { !excludedTaskIds.contains($0.id) || $0.id == item.selectedTaskId }
+        let availableComposites = libraryCompositeTasks
+            .filter { !excludedCompositeIds.contains($0.id) || $0.id == item.selectedCompositeId }
 
-        if item.selectionType == .task {
-            let available = libraryTasks.filter { !excludedTaskIds.contains($0.id) || $0.id == item.selectedTaskId }
-            if available.isEmpty {
-                Text("No tasks available — create some first or add inline.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else {
-                Picker("Task", selection: $item.selectedTaskId) {
-                    Text("Select a task").tag("")
-                    ForEach(available, id: \.id) { task in
-                        Text(task.title).tag(task.id)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
+        if availableTasks.isEmpty && availableComposites.isEmpty {
+            Text("No tasks or composites available — create one first, or add inline instead.")
+                .font(.caption)
+                .foregroundColor(.secondary)
         } else {
-            let available = libraryCompositeTasks.filter { !excludedCompositeIds.contains($0.id) || $0.id == item.selectedCompositeId }
-            if available.isEmpty {
-                Text("No composites available — create one first.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else {
-                Picker("Composite", selection: $item.selectedCompositeId) {
-                    Text("Select a composite").tag("")
-                    ForEach(available, id: \.id) { ct in
-                        Text(ct.title).tag(ct.id)
+            Picker("Select a task or composite", selection: unifiedSelectionBinding) {
+                Text("Select a task or composite").tag("")
+                if !availableTasks.isEmpty {
+                    Section("Tasks") {
+                        ForEach(availableTasks, id: \.id) { task in
+                            Text(task.title).tag(task.id)
+                        }
                     }
                 }
-                .pickerStyle(.menu)
+                if !availableComposites.isEmpty {
+                    Section("Composite tasks") {
+                        ForEach(availableComposites, id: \.id) { ct in
+                            Text(ct.title).tag(ct.id)
+                        }
+                    }
+                }
             }
+            .pickerStyle(.menu)
         }
+    }
+
+    /// Custom binding for the unified existing-task picker. Reads the
+    /// currently-selected id (task OR composite), and on write inspects
+    /// the library to decide which field + which `selectionType` the id
+    /// belongs to. Empty string clears both.
+    private var unifiedSelectionBinding: Binding<String> {
+        Binding(
+            get: {
+                item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
+            },
+            set: { newId in
+                if newId.isEmpty {
+                    item.selectedTaskId = ""
+                    item.selectedCompositeId = ""
+                    return
+                }
+                if libraryCompositeTasks.contains(where: { $0.id == newId }) {
+                    item.selectionType = .composite
+                    item.selectedCompositeId = newId
+                    item.selectedTaskId = ""
+                } else {
+                    item.selectionType = .task
+                    item.selectedTaskId = newId
+                    item.selectedCompositeId = ""
+                }
+            }
+        )
     }
 
     // MARK: - Inline content
