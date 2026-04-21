@@ -1,7 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CompositeTask, Task } from '@oybc/shared';
 import { SubtaskCard } from './SubtaskCard';
-import type { CompositeLeafPreview } from './ExistingTaskPicker';
+import {
+  LibraryPickerSheet,
+  type CompositeLeafPreview,
+  type LibraryDiff,
+} from './LibraryPickerSheet';
 import {
   type SubtaskDraft,
   evaluateSubtaskReadiness,
@@ -13,31 +17,32 @@ export interface BuildStepProps {
   subtasks: SubtaskDraft[];
   allTasks: Task[];
   allCompositeTasks: CompositeTask[];
-  /** taskId → count of distinct boards the task is placed on. Surfaces
-   *  in the existing-task picker as "on N boards" so users can spot
-   *  high-usage tasks without leaving the wizard. */
+  /** taskId → count of distinct boards the task is placed on. */
   taskBoardCounts: Record<string, number>;
   /** taskId → number of non-deleted steps (progress tasks only). */
   taskStepCounts: Record<string, number>;
   /** compositeTaskId → number of leaf subtasks. */
   compositeSubtaskCounts: Record<string, number>;
-  /** compositeTaskId → first few leaf titles for the picker subtitle. */
+  /** compositeTaskId → first few leaf titles for sheet subtitles. */
   compositeLeafPreviews: Record<string, CompositeLeafPreview>;
   onUpdateSubtask: (id: string, updates: Partial<SubtaskDraft>) => void;
   onRemoveSubtask: (id: string) => void;
   onStepFieldChange: (subtaskId: string, stepId: string, field: keyof StepFormState, value: string) => void;
   onAddStep: (subtaskId: string) => void;
   onRemoveStep: (subtaskId: string, stepId: string) => void;
-  onAddExisting: () => void;
+  /** Commit a library sheet diff: add new existing-mode drafts for each
+   *  add, drop existing-mode drafts whose selectedId is in the remove set. */
+  onCommitLibraryDiff: (diff: LibraryDiff) => void;
   onAddInline: () => void;
   onBack: () => void;
   onNext: () => void;
 }
 
 /**
- * Step 2 of the composite mini-wizard. Subtask card list plus two
- * primary "add" buttons; Next is blocked until ≥2 cards are ready and
- * no dup existing-task selections are detected.
+ * Step 2 of the composite mini-wizard. Existing-task selections render
+ * as flat rows (no card frame); a single `+ Add existing tasks` button
+ * opens a sheet/modal for multi-check picking. Inline-created subtasks
+ * keep their full card frame. Next is blocked until ≥2 cards are ready.
  */
 export function BuildStep({
   subtasks,
@@ -52,14 +57,17 @@ export function BuildStep({
   onStepFieldChange,
   onAddStep,
   onRemoveStep,
-  onAddExisting,
+  onCommitLibraryDiff,
   onAddInline,
   onBack,
   onNext,
 }: BuildStepProps): React.ReactElement {
-  // Collect picked ids once; each card receives a set excluding its own
-  // selection so the picker doesn't drop the user's current choice.
-  const allSelectedIds = useMemo(() => {
+  const [libraryOpen, setLibraryOpen] = useState(false);
+
+  /** Ids already included as existing-mode subtasks. Drives the sheet's
+   *  initial checkbox state and also dedup (a library item can't appear
+   *  twice because the sheet's state is canonical). */
+  const initialCheckedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const s of subtasks) {
       if (s.mode === 'existing' && s.selectedId) ids.add(s.selectedId);
@@ -67,34 +75,27 @@ export function BuildStep({
     return ids;
   }, [subtasks]);
 
-  const { readyCount, hasDuplicate } = useMemo(() => {
+  const { readyCount } = useMemo(() => {
     let ready = 0;
-    const seen = new Set<string>();
-    let dup = false;
     for (const s of subtasks) {
-      const others = new Set(allSelectedIds);
-      if (s.mode === 'existing' && s.selectedId) others.delete(s.selectedId);
-      const r = evaluateSubtaskReadiness(s, others);
+      // Existing-mode rows are ready by construction — they can only exist
+      // when a concrete library id is attached. Inline-mode rows still use
+      // the live readiness check.
+      const r = evaluateSubtaskReadiness(s, new Set());
       if (r.ready) ready++;
-      if (s.mode === 'existing' && s.selectedId) {
-        if (seen.has(s.selectedId)) dup = true;
-        seen.add(s.selectedId);
-      }
     }
-    return { readyCount: ready, hasDuplicate: dup };
-  }, [subtasks, allSelectedIds]);
+    return { readyCount: ready };
+  }, [subtasks]);
 
   const hasMinimum = subtasks.length >= 2;
   const allReady = readyCount === subtasks.length && readyCount >= 2;
-  const canAdvance = hasMinimum && allReady && !hasDuplicate;
+  const canAdvance = hasMinimum && allReady;
 
   const statusText: string = !hasMinimum
     ? `Add at least 2 subtasks (${subtasks.length} so far).`
-    : hasDuplicate
-      ? 'Remove the duplicate selection to continue.'
-      : !allReady
-        ? `${subtasks.length - readyCount} card${subtasks.length - readyCount === 1 ? '' : 's'} still need attention.`
-        : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
+    : !allReady
+      ? `${subtasks.length - readyCount} card${subtasks.length - readyCount === 1 ? '' : 's'} still need attention.`
+      : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
 
   return (
     <div className={styles.container}>
@@ -105,28 +106,23 @@ export function BuildStep({
       </div>
 
       <div className={styles.subtaskList}>
-        {subtasks.map((s) => {
-          const excluded = new Set(allSelectedIds);
-          if (s.mode === 'existing' && s.selectedId) excluded.delete(s.selectedId);
-          return (
-            <SubtaskCard
-              key={s.id}
-              draft={s}
-              allTasks={allTasks}
-              allCompositeTasks={allCompositeTasks}
-              taskBoardCounts={taskBoardCounts}
-              taskStepCounts={taskStepCounts}
-              compositeSubtaskCounts={compositeSubtaskCounts}
-              compositeLeafPreviews={compositeLeafPreviews}
-              excludedIds={excluded}
-              onUpdate={(updates) => onUpdateSubtask(s.id, updates)}
-              onRemove={() => onRemoveSubtask(s.id)}
-              onStepFieldChange={(stepId, field, value) => onStepFieldChange(s.id, stepId, field, value)}
-              onAddStep={() => onAddStep(s.id)}
-              onRemoveStep={(stepId) => onRemoveStep(s.id, stepId)}
-            />
-          );
-        })}
+        {subtasks.map((s) => (
+          <SubtaskCard
+            key={s.id}
+            draft={s}
+            allTasks={allTasks}
+            allCompositeTasks={allCompositeTasks}
+            taskBoardCounts={taskBoardCounts}
+            taskStepCounts={taskStepCounts}
+            compositeSubtaskCounts={compositeSubtaskCounts}
+            compositeLeafPreviews={compositeLeafPreviews}
+            onUpdate={(updates) => onUpdateSubtask(s.id, updates)}
+            onRemove={() => onRemoveSubtask(s.id)}
+            onStepFieldChange={(stepId, field, value) => onStepFieldChange(s.id, stepId, field, value)}
+            onAddStep={() => onAddStep(s.id)}
+            onRemoveStep={(stepId) => onRemoveStep(s.id, stepId)}
+          />
+        ))}
 
         {subtasks.length === 0 && (
           <div className={styles.emptyState}>
@@ -136,8 +132,12 @@ export function BuildStep({
       </div>
 
       <div className={styles.addRow}>
-        <button type="button" className={styles.addButton} onClick={onAddExisting}>
-          + Add existing task
+        <button
+          type="button"
+          className={styles.addButton}
+          onClick={() => setLibraryOpen(true)}
+        >
+          + Add existing tasks
         </button>
         <button type="button" className={styles.addButtonPrimary} onClick={onAddInline}>
           + Create new task
@@ -158,6 +158,23 @@ export function BuildStep({
           Next ›
         </button>
       </div>
+
+      {libraryOpen && (
+        <LibraryPickerSheet
+          allTasks={allTasks}
+          allCompositeTasks={allCompositeTasks}
+          initialCheckedIds={initialCheckedIds}
+          taskBoardCounts={taskBoardCounts}
+          taskStepCounts={taskStepCounts}
+          compositeSubtaskCounts={compositeSubtaskCounts}
+          compositeLeafPreviews={compositeLeafPreviews}
+          onCommit={(diff) => {
+            onCommitLibraryDiff(diff);
+            setLibraryOpen(false);
+          }}
+          onCancel={() => setLibraryOpen(false)}
+        />
+      )}
     </div>
   );
 }

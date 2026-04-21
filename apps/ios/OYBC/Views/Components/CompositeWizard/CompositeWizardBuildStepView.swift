@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// CompositeWizardBuildStepView — Step 2 of the composite-task mini-wizard.
-/// iOS twin of web's `BuildStep`. Hosts the subtask-card list and the
-/// two "+ Add" buttons; Next is blocked until ≥2 cards report ready
-/// and no duplicate existing-task selections exist.
+/// iOS twin of web's `BuildStep`. Hosts the subtask list plus the two
+/// primary "add" buttons; `+ Add existing tasks` opens a sheet for
+/// multi-check picking. Next is blocked until ≥2 subtasks are ready.
 struct CompositeWizardBuildStepView: View {
     @Binding var subtasks: [SubtaskItem]
     let libraryTasks: [OYBC.Task]
@@ -13,19 +13,20 @@ struct CompositeWizardBuildStepView: View {
     let compositeSubtaskCounts: [String: Int]
     let compositeLeafPreviews: [String: CompositeLeafPreview]
     let onRemove: (SubtaskItem) -> Void
-    let onAddExisting: () -> Void
+    let onCommitLibraryDiff: (LibraryDiff) -> Void
     let onAddInline: () -> Void
     let onBack: () -> Void
     let onNext: () -> Void
 
+    @State private var libraryOpen: Bool = false
+
     // MARK: - Derived state
 
-    /// Is this subtask item fully populated enough to ship in the
-    /// composite? Mirrors `evaluateSubtaskReadiness` on the web and
-    /// the card's own readiness computation.
     private func isReady(_ item: SubtaskItem) -> Bool {
         switch item.mode {
         case .existing:
+            // Existing rows only exist when a concrete library id is
+            // attached (the sheet's commit path never adds an empty one).
             if item.selectionType == .task { return !item.selectedTaskId.isEmpty }
             return !item.selectedCompositeId.isEmpty
         case .inline_:
@@ -62,30 +63,13 @@ struct CompositeWizardBuildStepView: View {
         subtasks.filter { isReady($0) }.count
     }
 
-    private var hasDuplicate: Bool {
-        var seenTasks = Set<String>()
-        var seenComposites = Set<String>()
-        for s in subtasks where s.mode == .existing {
-            if s.selectionType == .task, !s.selectedTaskId.isEmpty {
-                if !seenTasks.insert(s.selectedTaskId).inserted { return true }
-            }
-            if s.selectionType == .composite, !s.selectedCompositeId.isEmpty {
-                if !seenComposites.insert(s.selectedCompositeId).inserted { return true }
-            }
-        }
-        return false
-    }
-
     private var canAdvance: Bool {
-        subtasks.count >= 2 && readyCount == subtasks.count && !hasDuplicate
+        subtasks.count >= 2 && readyCount == subtasks.count
     }
 
     private var statusText: String {
         if subtasks.count < 2 {
             return "Add at least 2 subtasks (\(subtasks.count) so far)."
-        }
-        if hasDuplicate {
-            return "Remove the duplicate selection to continue."
         }
         let incomplete = subtasks.count - readyCount
         if incomplete > 0 {
@@ -94,24 +78,18 @@ struct CompositeWizardBuildStepView: View {
         return "\(readyCount) subtask\(readyCount == 1 ? "" : "s") ready."
     }
 
-    // MARK: - Per-card exclusion sets
-
-    private func otherTaskIds(excluding item: SubtaskItem) -> Set<String> {
-        Set(subtasks.compactMap { other in
-            guard other.id != item.id,
-                  other.mode == .existing, other.selectionType == .task,
-                  !other.selectedTaskId.isEmpty else { return nil }
-            return other.selectedTaskId
-        })
-    }
-
-    private func otherCompositeIds(excluding item: SubtaskItem) -> Set<String> {
-        Set(subtasks.compactMap { other in
-            guard other.id != item.id,
-                  other.mode == .existing, other.selectionType == .composite,
-                  !other.selectedCompositeId.isEmpty else { return nil }
-            return other.selectedCompositeId
-        })
+    /// Ids currently included as existing-mode subtasks — drives the
+    /// sheet's initial checkbox state.
+    private var initialCheckedIds: Set<String> {
+        var ids = Set<String>()
+        for s in subtasks where s.mode == .existing {
+            if s.selectionType == .task, !s.selectedTaskId.isEmpty {
+                ids.insert(s.selectedTaskId)
+            } else if s.selectionType == .composite, !s.selectedCompositeId.isEmpty {
+                ids.insert(s.selectedCompositeId)
+            }
+        }
+        return ids
     }
 
     // MARK: - Body
@@ -139,8 +117,6 @@ struct CompositeWizardBuildStepView: View {
                             taskStepCounts: taskStepCounts,
                             compositeSubtaskCounts: compositeSubtaskCounts,
                             compositeLeafPreviews: compositeLeafPreviews,
-                            excludedTaskIds: otherTaskIds(excluding: item),
-                            excludedCompositeIds: otherCompositeIds(excluding: item),
                             onRemove: { onRemove(item) }
                         )
                     }
@@ -148,7 +124,7 @@ struct CompositeWizardBuildStepView: View {
             }
 
             VStack(spacing: 8) {
-                Button("+ Add existing task", action: onAddExisting)
+                Button("+ Add existing tasks") { libraryOpen = true }
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
                 Button("+ Create new task", action: onAddInline)
@@ -174,6 +150,22 @@ struct CompositeWizardBuildStepView: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color(.systemGray4), lineWidth: 1)
         )
+        .sheet(isPresented: $libraryOpen) {
+            LibraryPickerSheetView(
+                libraryTasks: libraryTasks,
+                libraryCompositeTasks: libraryCompositeTasks,
+                initialCheckedIds: initialCheckedIds,
+                taskBoardCounts: taskBoardCounts,
+                taskStepCounts: taskStepCounts,
+                compositeSubtaskCounts: compositeSubtaskCounts,
+                compositeLeafPreviews: compositeLeafPreviews,
+                onCommit: { diff in
+                    onCommitLibraryDiff(diff)
+                    libraryOpen = false
+                },
+                onCancel: { libraryOpen = false }
+            )
+        }
     }
 
     private var emptyState: some View {

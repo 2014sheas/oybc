@@ -102,7 +102,7 @@ struct CompositeTaskWizardView: View {
                     compositeSubtaskCounts: compositeSubtaskCounts,
                     compositeLeafPreviews: compositeLeafPreviews,
                     onRemove: { item in removeSubtask(item) },
-                    onAddExisting: addExistingSubtask,
+                    onCommitLibraryDiff: commitLibraryDiff,
                     onAddInline: addInlineSubtask,
                     onBack: { currentStep = 1 },
                     onNext: { currentStep = 3 }
@@ -140,13 +140,6 @@ struct CompositeTaskWizardView: View {
 
     // MARK: - Subtask mutators
 
-    private func addExistingSubtask() {
-        // Adding can only grow the subtask count, so any previously
-        // valid threshold stays valid. Clamping here would silently
-        // reduce the user's threshold choice (legacy-monolith bug).
-        subtasks.append(SubtaskItem(mode: .existing))
-    }
-
     private func addInlineSubtask() {
         let item = SubtaskItem(mode: .inline_)
         item.inlineSteps = [ProgressStepFormState()]
@@ -155,6 +148,31 @@ struct CompositeTaskWizardView: View {
 
     private func removeSubtask(_ item: SubtaskItem) {
         subtasks.removeAll { $0.id == item.id }
+        clampThresholdAndMaybeToast()
+    }
+
+    /// Apply a LibraryPickerSheetView commit: drop existing-mode
+    /// subtasks whose selected id is in the remove set, then append
+    /// fresh existing-mode items for each add. Inline subtasks are
+    /// untouched. Threshold may shrink if the net count drops —
+    /// surface the clamp toast so the change is visible, matching
+    /// the per-row remove path.
+    private func commitLibraryDiff(_ diff: LibraryDiff) {
+        subtasks.removeAll { item in
+            guard item.mode == .existing else { return false }
+            let id = item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
+            return diff.remove.contains(id)
+        }
+        for entry in diff.add {
+            let item = SubtaskItem(mode: .existing)
+            item.selectionType = entry.kind
+            if entry.kind == .task {
+                item.selectedTaskId = entry.id
+            } else {
+                item.selectedCompositeId = entry.id
+            }
+            subtasks.append(item)
+        }
         clampThresholdAndMaybeToast()
     }
 

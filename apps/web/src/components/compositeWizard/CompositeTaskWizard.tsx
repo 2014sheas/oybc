@@ -21,6 +21,7 @@ import {
   type ExistingSubtaskDraft,
   type InlineSubtaskDraft,
 } from './compositeSubtaskDraft';
+import type { LibraryDiff } from './LibraryPickerSheet';
 import styles from './CompositeTaskWizard.module.css';
 
 export interface CompositeTaskWizardProps {
@@ -30,12 +31,12 @@ export interface CompositeTaskWizardProps {
   onCreated?: (compositeTask: CompositeTask) => void;
 }
 
-function createEmptyExistingSubtask(): ExistingSubtaskDraft {
+function createExistingSubtask(id: string, kind: 'task' | 'composite'): ExistingSubtaskDraft {
   return {
     id: crypto.randomUUID(),
     mode: 'existing',
-    selectionType: 'task',
-    selectedId: '',
+    selectionType: kind,
+    selectedId: id,
   };
 }
 
@@ -191,15 +192,31 @@ export function CompositeTaskWizard({
     return Math.min(Math.max(1, currentThreshold), len);
   }
 
-  function addExistingSubtask(): void {
-    // Adding subtasks can only increase the count, so threshold stays
-    // valid — no clamp needed. Clamping here would silently reduce the
-    // user's threshold choice (bug in the legacy monolith).
-    setSubtasks((prev) => [...prev, createEmptyExistingSubtask()]);
-  }
-
   function addInlineSubtask(): void {
     setSubtasks((prev) => [...prev, createEmptyInlineSubtask()]);
+  }
+
+  /** Apply a LibraryPickerSheet commit: drop existing-mode drafts whose
+   *  selectedId is in the remove set, then append fresh drafts for each
+   *  new add. Inline drafts are untouched. Threshold may shrink if the
+   *  net subtask count drops — surface the clamp toast so the change is
+   *  visible, matching the per-row remove path. */
+  function commitLibraryDiff(diff: LibraryDiff): void {
+    setSubtasks((prev) => {
+      const kept = prev.filter(
+        (s) => !(s.mode === 'existing' && diff.remove.has(s.selectedId)),
+      );
+      const added = diff.add.map((a) => createExistingSubtask(a.id, a.kind));
+      const next = [...kept, ...added];
+      const clamped = clampThreshold(next, threshold);
+      if (clamped !== threshold && operator === OperatorType.M_OF_N) {
+        showClampToast(
+          `Threshold lowered to ${clamped} (you only have ${next.length} subtask${next.length === 1 ? '' : 's'}).`,
+        );
+        setThreshold(clamped);
+      }
+      return next;
+    });
   }
 
   function removeSubtask(id: string): void {
@@ -492,7 +509,7 @@ export function CompositeTaskWizard({
           onStepFieldChange={updateInlineStep}
           onAddStep={addStep}
           onRemoveStep={removeStep}
-          onAddExisting={addExistingSubtask}
+          onCommitLibraryDiff={commitLibraryDiff}
           onAddInline={addInlineSubtask}
           onBack={() => setCurrentStep(1)}
           onNext={() => setCurrentStep(3)}

@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 import type { CompositeTask, Task } from '@oybc/shared';
+import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
+import { TypeBadge } from '../TypeBadge';
 import { CountingStepFields } from '../CountingStepFields';
 import { ProgressStepRow } from '../ProgressStepRow';
 import { type StepFormState, createEmptyStep } from '../progressStepUtils';
-import { ExistingTaskPicker, type CompositeLeafPreview } from './ExistingTaskPicker';
+import type { CompositeLeafPreview } from './LibraryPickerSheet';
 import {
   type SubtaskDraft,
+  type ExistingSubtaskDraft,
   type InlineSubtaskDraft,
   type InlineSubtaskType,
   evaluateSubtaskReadiness,
@@ -22,7 +25,7 @@ const INLINE_TYPES: readonly InlineSubtaskType[] = ['normal', 'counting', 'progr
 export interface SubtaskCardProps {
   /** The draft this card displays and mutates. */
   draft: SubtaskDraft;
-  /** Full library — filtered at render time to exclude already-picked ids. */
+  /** Library feeds — needed by existing-mode rows to look up their title + meta. */
   allTasks: Task[];
   allCompositeTasks: CompositeTask[];
   /** taskId → count of distinct boards the task is placed on. */
@@ -31,38 +34,40 @@ export interface SubtaskCardProps {
   taskStepCounts: Record<string, number>;
   /** compositeTaskId → leaf (subtask) count. */
   compositeSubtaskCounts: Record<string, number>;
-  /** compositeTaskId → first few leaf titles for the picker subtitle. */
+  /** compositeTaskId → first few leaf titles for the existing-row subtitle. */
   compositeLeafPreviews: Record<string, CompositeLeafPreview>;
-  /** Ids already picked by OTHER cards in the same composite. Used to
-   *  filter this card's existing-mode dropdown so duplicates are blocked
-   *  at selection time, not at submit time. */
-  excludedIds: Set<string>;
   /** Called with a partial update to merge into the draft. */
   onUpdate: (updates: Partial<SubtaskDraft>) => void;
   /** Called when the user clicks remove. */
   onRemove: () => void;
-  /** Progress-subtask step mutators — hoisted to the parent so the
-   *  composite form's single `subtasks` state stays canonical. */
+  /** Progress-subtask step mutators — hoisted so the composite form's
+   *  single `subtasks` state stays canonical. */
   onStepFieldChange: (stepId: string, field: keyof StepFormState, value: string) => void;
   onAddStep: () => void;
   onRemoveStep: (stepId: string) => void;
 }
 
 /**
- * SubtaskCard — Persistent edit surface for one subtask of a composite.
- *
- * Replaces the legacy "fill fields → click Done → collapse to chip"
- * dance with a card that is always in its editable form. A live
- * readiness check drives both a green-border success state and a plain-
- * English "what's missing" message, so users don't need to submit to
- * discover problems.
- *
- * When a user clicks a different inline type while their current fields
- * are dirty, the card swaps into a small inline confirmation panel
- * instead of silently wiping the fields — accepting the switch clears
- * the old type's values, cancelling leaves them intact.
+ * SubtaskCard — renders a single subtask of a composite. Existing-mode
+ * selections render as a flat borderless row (no frame, no readiness
+ * footer — they're ready by construction). Inline-created subtasks keep
+ * their full card frame and the live readiness check that drives the
+ * green/red border.
  */
-export function SubtaskCard({
+export function SubtaskCard(props: SubtaskCardProps): React.ReactElement {
+  if (props.draft.mode === 'existing') {
+    return <ExistingFlatRow {...props} draft={props.draft} />;
+  }
+  return <InlineCard {...props} draft={props.draft} />;
+}
+
+// ─── Existing-mode: flat borderless row ──────────────────────────────────────
+
+interface ExistingFlatRowProps extends SubtaskCardProps {
+  draft: ExistingSubtaskDraft;
+}
+
+function ExistingFlatRow({
   draft,
   allTasks,
   allCompositeTasks,
@@ -70,16 +75,95 @@ export function SubtaskCard({
   taskStepCounts,
   compositeSubtaskCounts,
   compositeLeafPreviews,
-  excludedIds,
+  onRemove,
+}: ExistingFlatRowProps): React.ReactElement {
+  const row = useMemo(() => {
+    if (draft.selectionType === 'task') {
+      const task = allTasks.find((t) => t.id === draft.selectedId);
+      if (!task) return null;
+      const boards = taskBoardCounts[task.id] ?? 0;
+      return {
+        type: task.type as 'normal' | 'counting' | 'progress',
+        title: task.title,
+        subtitle: buildTaskSubtitle(task, taskStepCounts),
+        usageHint: boards === 0 ? 'not on any board' : `on ${boards} board${boards === 1 ? '' : 's'}`,
+      };
+    }
+    const ct = allCompositeTasks.find((c) => c.id === draft.selectedId);
+    if (!ct) return null;
+    const leaves = compositeSubtaskCounts[ct.id] ?? 0;
+    return {
+      type: 'composite' as const,
+      title: ct.title,
+      subtitle: buildCompositeSubtitle(ct.id, compositeLeafPreviews),
+      usageHint: `${leaves} subtask${leaves === 1 ? '' : 's'}`,
+    };
+  }, [
+    draft,
+    allTasks,
+    allCompositeTasks,
+    taskBoardCounts,
+    taskStepCounts,
+    compositeSubtaskCounts,
+    compositeLeafPreviews,
+  ]);
+
+  if (!row) {
+    // Library row went missing (rare — e.g. the target task was deleted
+    // from another tab while the composite wizard was open). Fall back
+    // to a minimal remove-only row so the user can clean it up.
+    return (
+      <div className={styles.flatRow}>
+        <div className={styles.flatCenter}>
+          <span className={styles.flatTitle}>Unknown task</span>
+          <span className={styles.flatSubtitle}>
+            The selected library item is no longer available. Remove this row.
+          </span>
+        </div>
+        <button type="button" className={styles.flatRemoveButton} onClick={onRemove} aria-label="Remove subtask">
+          ×
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.flatRow}>
+      <TypeBadge type={row.type} size="small" letterOnly />
+      <div className={styles.flatCenter}>
+        <span className={styles.flatTitle}>{row.title}</span>
+        {row.subtitle && <span className={styles.flatSubtitle}>{row.subtitle}</span>}
+      </div>
+      <span className={styles.flatUsage}>{row.usageHint}</span>
+      <button
+        type="button"
+        className={styles.flatRemoveButton}
+        onClick={onRemove}
+        aria-label={`Remove ${row.title}`}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// ─── Inline-mode: full card frame (unchanged) ────────────────────────────────
+
+interface InlineCardProps extends SubtaskCardProps {
+  draft: InlineSubtaskDraft;
+}
+
+function InlineCard({
+  draft,
   onUpdate,
   onRemove,
   onStepFieldChange,
   onAddStep,
   onRemoveStep,
-}: SubtaskCardProps): React.ReactElement {
+}: InlineCardProps): React.ReactElement {
   const readiness = useMemo(
-    () => evaluateSubtaskReadiness(draft, excludedIds),
-    [draft, excludedIds],
+    () => evaluateSubtaskReadiness(draft, new Set()),
+    [draft],
   );
 
   const cardClassName = [
@@ -90,40 +174,19 @@ export function SubtaskCard({
   return (
     <div className={cardClassName}>
       <div className={styles.header}>
-        <span className={styles.modeLabel}>
-          {draft.mode === 'existing' ? 'Existing task' : 'New task (inline)'}
-        </span>
+        <span className={styles.modeLabel}>New task (inline)</span>
         <button type="button" className={styles.removeButton} onClick={onRemove}>
           Remove
         </button>
       </div>
 
-      {draft.mode === 'existing' ? (
-        <ExistingTaskPicker
-          selectedId={draft.selectedId}
-          allTasks={allTasks}
-          allCompositeTasks={allCompositeTasks}
-          excludedIds={excludedIds}
-          taskBoardCounts={taskBoardCounts}
-          taskStepCounts={taskStepCounts}
-          compositeSubtaskCounts={compositeSubtaskCounts}
-          compositeLeafPreviews={compositeLeafPreviews}
-          onSelect={(selectedId, kind) => {
-            onUpdate({
-              selectedId,
-              selectionType: kind === 'composite' ? 'composite' : 'task',
-            });
-          }}
-        />
-      ) : (
-        <InlineFields
-          draft={draft}
-          onUpdate={onUpdate}
-          onStepFieldChange={onStepFieldChange}
-          onAddStep={onAddStep}
-          onRemoveStep={onRemoveStep}
-        />
-      )}
+      <InlineFields
+        draft={draft}
+        onUpdate={onUpdate}
+        onStepFieldChange={onStepFieldChange}
+        onAddStep={onAddStep}
+        onRemoveStep={onRemoveStep}
+      />
 
       <div
         className={
@@ -278,6 +341,34 @@ function InlineFields({
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function buildTaskSubtitle(task: Task, taskStepCounts: Record<string, number>): string {
+  if (task.type === TaskType.COUNTING) {
+    const { action, maxCount, unit } = task;
+    if (!action || !unit || maxCount === undefined) return '';
+    const derived = generateCounterTaskTitle(action, maxCount, unit);
+    return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
+  }
+  if (task.type === TaskType.PROGRESS) {
+    const n = taskStepCounts[task.id] ?? 0;
+    if (n === 0) return '';
+    return `${n} step${n === 1 ? '' : 's'}`;
+  }
+  return '';
+}
+
+function buildCompositeSubtitle(
+  compositeId: string,
+  previews: Record<string, CompositeLeafPreview>,
+): string {
+  const preview = previews[compositeId];
+  if (!preview) return '';
+  const { titles, totalLeaves } = preview;
+  if (titles.length === 0) return '';
+  const visible = titles.join(', ');
+  const hidden = totalLeaves - titles.length;
+  return hidden > 0 ? `${visible}, +${hidden} more` : visible;
+}
 
 function capitalize(value: string): string {
   if (value.length === 0) return value;
