@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CompositeTask, Task } from '@oybc/shared';
 import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
 import { TypeBadge } from '../TypeBadge';
@@ -81,6 +81,19 @@ export function LibraryPickerSheet({
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set(initialCheckedIds));
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<SheetFilter>('all');
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  // Captured in useLayoutEffect so we record the trigger BEFORE any
+  // descendant autoFocus can move focus into the sheet. Without this,
+  // previouslyFocused ends up pointing at the search input, and
+  // restoring on close focuses a detached node (which silently noops).
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    // Move focus into the sheet ourselves (search input first).
+    searchRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
@@ -89,6 +102,53 @@ export function LibraryPickerSheet({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onCancel]);
+
+  // Focus trap: keep Tab inside the sheet, and restore focus to the
+  // trigger on close so keyboard users don't lose their place.
+  useEffect(() => {
+    const sheet: HTMLDivElement | null = sheetRef.current;
+    if (sheet === null) return;
+
+    function getFocusable(root: HTMLElement): HTMLElement[] {
+      return Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);
+    }
+
+    function onKey(e: KeyboardEvent): void {
+      if (e.key !== 'Tab' || sheet === null) return;
+      const focusable = getFocusable(sheet);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      // Treat focus outside the sheet (e.g. browser chrome) as "send me back in".
+      if (!active || !sheet.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    sheet.addEventListener('keydown', onKey);
+    return () => {
+      sheet.removeEventListener('keydown', onKey);
+      const previouslyFocused = previouslyFocusedRef.current;
+      // Restore focus to the trigger element, if it's still in the DOM.
+      if (previouslyFocused && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
+    };
+  }, []);
 
   const rows = useMemo<SheetRow[]>(() => {
     const taskRows: SheetRow[] = allTasks.map((t) => {
@@ -171,6 +231,7 @@ export function LibraryPickerSheet({
       }}
     >
       <div
+        ref={sheetRef}
         className={styles.sheet}
         role="dialog"
         aria-modal="true"
@@ -187,13 +248,13 @@ export function LibraryPickerSheet({
 
         <div className={styles.searchRow}>
           <input
+            ref={searchRef}
             type="search"
             className={styles.searchInput}
             placeholder="Search your tasks…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search tasks"
-            autoFocus
           />
         </div>
 
