@@ -139,6 +139,11 @@ struct CompositeTaskWizardView: View {
             ensurePlaygroundUser()
             loadLibrary()
         }
+        // Keep threshold in range whenever the operator flips to M_OF_N
+        // (initial value may exceed `max(1, subtaskCount)`) or when the
+        // subtask count shifts. Web twin uses a useEffect; same shape.
+        .onChange(of: operatorType) { _ in clampThresholdAndMaybeToast() }
+        .onChange(of: subtaskList.items.count) { _ in clampThresholdAndMaybeToast() }
     }
 
     // MARK: - Subtask mutators
@@ -150,8 +155,10 @@ struct CompositeTaskWizardView: View {
     }
 
     private func removeSubtask(_ item: SubtaskItem) {
+        // Threshold clamping is handled centrally by the
+        // `.onChange(of: subtaskList.items.count)` hook on the body so
+        // this stays a pure state mutation.
         subtaskList.remove(where: { $0.id == item.id })
-        clampThresholdAndMaybeToast()
     }
 
     /// Apply a LibraryPickerSheetView commit: drop existing-mode
@@ -176,7 +183,7 @@ struct CompositeTaskWizardView: View {
             }
             subtaskList.append(item)
         }
-        clampThresholdAndMaybeToast()
+        // Count-change hook on the body calls `clampThresholdAndMaybeToast`.
     }
 
     private func clampThreshold() {

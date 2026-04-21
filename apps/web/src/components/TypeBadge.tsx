@@ -56,11 +56,18 @@ export function TypeBadge({
   const display = letterOnly
     ? (TYPE_ABBREV[type.toLowerCase()] ?? type.slice(0, 4).toUpperCase())
     : type.toUpperCase();
+  // Full-type label surfaced to assistive tech. The 4-letter abbreviation
+  // ("NORM", "COUN", …) is visual-only, so aria-label carries the
+  // meaningful name ("Normal task", "Counting task"). Sighted tooltip
+  // via `title` also carries the full type for mouse users.
+  const fullType = type.charAt(0).toUpperCase() + type.slice(1);
+  const accessibleLabel = `${fullType} task`;
 
   return (
     <span
       className={classes}
-      title={letterOnly ? type.charAt(0).toUpperCase() + type.slice(1) : undefined}
+      title={letterOnly ? fullType : undefined}
+      aria-label={letterOnly ? accessibleLabel : undefined}
     >
       {display}
     </span>

@@ -106,6 +106,25 @@ export function CompositeTaskWizard({
     };
   }, []);
 
+  // Keep threshold in range whenever the subtask count drops (removals,
+  // sheet uncheck) or the operator flips to M_OF_N from a state where
+  // the initial threshold (2) is already above the current subtask
+  // count. Side-effect kept here rather than inline in mutators so each
+  // mutator stays a pure state update — no more reading `threshold` from
+  // the closure and re-setting it in the same tick. Only the M_OF_N case
+  // surfaces the toast; other operators ignore the stored threshold so a
+  // stray value there is harmless.
+  useEffect(() => {
+    if (operator !== OperatorType.M_OF_N) return;
+    const clamped = clampThreshold(subtasks, threshold);
+    if (clamped === threshold) return;
+    showClampToast(
+      `Threshold lowered to ${clamped} (you only have ${subtasks.length} subtask${subtasks.length === 1 ? '' : 's'}).`,
+    );
+    setThreshold(clamped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtasks.length, operator]);
+
   // Library feeds — live so a composite created elsewhere shows up here.
   const allTasks = useLiveQuery(
     () => db.tasks.where('[userId+isDeleted]').equals([resolvedUserId, 0]).toArray(),
@@ -211,37 +230,20 @@ export function CompositeTaskWizard({
 
   /** Apply a LibraryPickerSheet commit: drop existing-mode drafts whose
    *  selectedId is in the remove set, then append fresh drafts for each
-   *  new add. Inline drafts are untouched. Threshold may shrink if the
-   *  net subtask count drops — surface the clamp toast so the change is
-   *  visible, matching the per-row remove path. */
+   *  new add. Inline drafts are untouched. Threshold clamping is handled
+   *  by the effect below — this stays a pure state update. */
   function commitLibraryDiff(diff: LibraryDiff): void {
     setSubtasks((prev) => {
       const kept = prev.filter(
         (s) => !(s.mode === 'existing' && diff.remove.has(s.selectedId)),
       );
       const added = diff.add.map((a) => createExistingSubtask(a.id, a.kind));
-      const next = [...kept, ...added];
-      const clamped = clampThreshold(next, threshold);
-      if (clamped !== threshold && operator === OperatorType.M_OF_N) {
-        showClampToast(
-          `Threshold lowered to ${clamped} (you only have ${next.length} subtask${next.length === 1 ? '' : 's'}).`,
-        );
-        setThreshold(clamped);
-      }
-      return next;
+      return [...kept, ...added];
     });
   }
 
   function removeSubtask(id: string): void {
-    const next = subtasks.filter((s) => s.id !== id);
-    setSubtasks(next);
-    const clamped = clampThreshold(next, threshold);
-    if (clamped !== threshold && operator === OperatorType.M_OF_N) {
-      showClampToast(
-        `Threshold lowered to ${clamped} (you only have ${next.length} subtask${next.length === 1 ? '' : 's'}).`,
-      );
-    }
-    setThreshold(clamped);
+    setSubtasks((prev) => prev.filter((s) => s.id !== id));
   }
 
   function updateSubtask(id: string, updates: Partial<SubtaskDraft>): void {
