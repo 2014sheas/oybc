@@ -59,3 +59,48 @@ class SubtaskItem: ObservableObject, Identifiable {
         self.mode = mode
     }
 }
+
+/// Observable wrapper around `[SubtaskItem]` that re-publishes whenever
+/// ANY child item's `@Published` properties change.
+///
+/// SwiftUI's default parent-child observation stops at the `@ObservedObject`
+/// boundary: if a child `SubtaskItem`'s `inlineTitle` flips from empty to
+/// non-empty, the card view re-renders, but the parent Build-step's
+/// derived state (`readyCount`, `canAdvance`, Next-button disabled) does
+/// not. We lift the array into this wrapper and subscribe to each item's
+/// `objectWillChange` so the parent re-evaluates readiness on every edit.
+final class CompositeSubtaskList: ObservableObject {
+    @Published private(set) var items: [SubtaskItem] = []
+    private var cancellables: [UUID: AnyCancellable] = [:]
+
+    func append(_ item: SubtaskItem) {
+        subscribe(item)
+        items.append(item)
+    }
+
+    func remove(where predicate: (SubtaskItem) -> Bool) {
+        for item in items where predicate(item) {
+            cancellables.removeValue(forKey: item.id)
+        }
+        items.removeAll(where: predicate)
+    }
+
+    func removeAll() {
+        cancellables.removeAll()
+        items.removeAll()
+    }
+
+    /// Replace the backing array wholesale. Used by the library sheet's
+    /// commit path which computes its own next-state array.
+    func replace(with newItems: [SubtaskItem]) {
+        cancellables.removeAll()
+        items = newItems
+        for item in newItems { subscribe(item) }
+    }
+
+    private func subscribe(_ item: SubtaskItem) {
+        cancellables[item.id] = item.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
+}

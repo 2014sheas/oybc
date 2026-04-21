@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
@@ -92,6 +92,19 @@ export function CompositeTaskWizard({
     if (clampTimerRef.current !== null) window.clearTimeout(clampTimerRef.current);
     clampTimerRef.current = window.setTimeout(() => setClampToast(null), 4000);
   }
+
+  // Cancel the clamp-toast timer on unmount so the callback never fires
+  // against a disposed component. Keeps React from warning about state
+  // updates after unmount if a user navigates away with a toast still
+  // visible.
+  useEffect(() => {
+    return () => {
+      if (clampTimerRef.current !== null) {
+        window.clearTimeout(clampTimerRef.current);
+        clampTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Library feeds — live so a composite created elsewhere shows up here.
   const allTasks = useLiveQuery(

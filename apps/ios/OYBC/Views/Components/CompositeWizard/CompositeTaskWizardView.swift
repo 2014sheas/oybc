@@ -20,7 +20,10 @@ struct CompositeTaskWizardView: View {
     @State private var compositeTitle = ""
     @State private var operatorType: OperatorType = .and
     @State private var threshold: Int = 2
-    @State private var subtasks: [SubtaskItem] = []
+    /// Wrapped observable so parent-level derived state (readiness,
+    /// threshold clamp) picks up edits inside child cards. See
+    /// `CompositeSubtaskList` for the rebroadcast wiring.
+    @StateObject private var subtaskList = CompositeSubtaskList()
 
     // MARK: - UI state
 
@@ -88,13 +91,13 @@ struct CompositeTaskWizardView: View {
                     title: $compositeTitle,
                     operatorType: $operatorType,
                     threshold: $threshold,
-                    subtaskCount: subtasks.count,
+                    subtaskCount: subtaskList.items.count,
                     onCancel: resetForm,
                     onNext: { currentStep = 2 }
                 )
             case 2:
                 CompositeWizardBuildStepView(
-                    subtasks: $subtasks,
+                    subtaskList: subtaskList,
                     libraryTasks: libraryTasks,
                     libraryCompositeTasks: libraryCompositeTasks,
                     taskBoardCounts: taskBoardCounts,
@@ -112,7 +115,7 @@ struct CompositeTaskWizardView: View {
                     title: compositeTitle,
                     operatorType: operatorType,
                     threshold: threshold,
-                    subtasks: subtasks,
+                    subtasks: subtaskList.items,
                     libraryTasks: libraryTasks,
                     libraryCompositeTasks: libraryCompositeTasks,
                     isSubmitting: isSubmitting,
@@ -143,11 +146,11 @@ struct CompositeTaskWizardView: View {
     private func addInlineSubtask() {
         let item = SubtaskItem(mode: .inline_)
         item.inlineSteps = [ProgressStepFormState()]
-        subtasks.append(item)
+        subtaskList.append(item)
     }
 
     private func removeSubtask(_ item: SubtaskItem) {
-        subtasks.removeAll { $0.id == item.id }
+        subtaskList.remove(where: { $0.id == item.id })
         clampThresholdAndMaybeToast()
     }
 
@@ -158,7 +161,7 @@ struct CompositeTaskWizardView: View {
     /// surface the clamp toast so the change is visible, matching
     /// the per-row remove path.
     private func commitLibraryDiff(_ diff: LibraryDiff) {
-        subtasks.removeAll { item in
+        subtaskList.remove { item in
             guard item.mode == .existing else { return false }
             let id = item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
             return diff.remove.contains(id)
@@ -171,14 +174,14 @@ struct CompositeTaskWizardView: View {
             } else {
                 item.selectedCompositeId = entry.id
             }
-            subtasks.append(item)
+            subtaskList.append(item)
         }
         clampThresholdAndMaybeToast()
     }
 
     private func clampThreshold() {
         if operatorType == .mOfN {
-            let count = subtasks.count
+            let count = subtaskList.items.count
             if count == 0 { threshold = 1; return }
             threshold = min(max(1, threshold), count)
         }
@@ -191,7 +194,7 @@ struct CompositeTaskWizardView: View {
         let before = threshold
         clampThreshold()
         if threshold != before && operatorType == .mOfN {
-            let count = subtasks.count
+            let count = subtaskList.items.count
             let noun = count == 1 ? "subtask" : "subtasks"
             showClampToast("Threshold lowered to \(threshold) (you only have \(count) \(noun)).")
         }
@@ -212,7 +215,7 @@ struct CompositeTaskWizardView: View {
         compositeTitle = ""
         operatorType = .and
         threshold = 2
-        subtasks = []
+        subtaskList.removeAll()
         currentStep = 1
         errorMessage = nil
         isSubmitting = false
@@ -308,7 +311,7 @@ struct CompositeTaskWizardView: View {
         let now = AppDatabase.currentTimestamp()
         let compositeTaskId = AppDatabase.generateUUID()
         let rootNodeId = AppDatabase.generateUUID()
-        let capturedSubtasks = subtasks
+        let capturedSubtasks = subtaskList.items
         let capturedTitle = compositeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let capturedOperator = operatorType
         let capturedThreshold = threshold
@@ -330,21 +333,36 @@ struct CompositeTaskWizardView: View {
                         case .inline_:
                             let newTaskId = AppDatabase.generateUUID()
                             let trimmedTitle = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let trimmedAction = item.inlineAction.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let trimmedUnit = item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let parsedMax = Int(item.inlineMaxCountStr.trimmingCharacters(in: .whitespacesAndNewlines))
                             let taskType: TaskType
                             switch item.inlineType {
                             case .normal: taskType = .normal
                             case .counting: taskType = .counting
                             case .progress: taskType = .progress
                             }
+                            // For counting tasks, mirror the shared
+                            // `generateCounterTaskTitle` fallback — if
+                            // the user left the title blank, derive it
+                            // from `action + max + unit`. Matches the
+                            // web wizard and the rest of the iOS create
+                            // flow.
+                            let resolvedTitle: String
+                            if item.inlineType == .counting && trimmedTitle.isEmpty {
+                                resolvedTitle = "\(trimmedAction) \(parsedMax ?? 0) \(trimmedUnit)"
+                            } else {
+                                resolvedTitle = trimmedTitle
+                            }
                             let newTask = OYBC.Task(
                                 id: newTaskId,
                                 userId: capturedUserId,
-                                title: trimmedTitle.isEmpty ? "Untitled" : trimmedTitle,
+                                title: resolvedTitle,
                                 description: nil,
                                 type: taskType,
-                                action: item.inlineType == .counting ? item.inlineAction : nil,
-                                unit: item.inlineType == .counting ? item.inlineUnit : nil,
-                                maxCount: item.inlineType == .counting ? Int(item.inlineMaxCountStr) : nil,
+                                action: item.inlineType == .counting ? trimmedAction : nil,
+                                unit: item.inlineType == .counting ? trimmedUnit : nil,
+                                maxCount: item.inlineType == .counting ? parsedMax : nil,
                                 totalCompletions: 0,
                                 totalInstances: 0,
                                 createdAt: now,
@@ -356,17 +374,55 @@ struct CompositeTaskWizardView: View {
 
                             if item.inlineType == .progress {
                                 for (stepIndex, step) in item.inlineSteps.enumerated() {
-                                    let stepTitleTrim = step.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let stepTrimTitle = step.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let stepTrimAction = step.action.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let stepTrimUnit = step.unit.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let stepMax = Int(step.maxCount.trimmingCharacters(in: .whitespacesAndNewlines))
+                                    let stepIsCounting = step.type == .counting
+                                    // Mirror web: counting step with a
+                                    // blank title gets the derived
+                                    // `action + max + unit` title; other
+                                    // steps keep whatever the user typed.
+                                    let resolvedStepTitle: String
+                                    if stepIsCounting && stepTrimTitle.isEmpty {
+                                        resolvedStepTitle = "\(stepTrimAction) \(stepMax ?? 0) \(stepTrimUnit)"
+                                    } else {
+                                        resolvedStepTitle = stepTrimTitle
+                                    }
+                                    // Create a standalone Task per step
+                                    // (same as the primary createTask
+                                    // flow) so the step is immediately
+                                    // pool-addable and participates in
+                                    // cross-board rollup. Link it via
+                                    // TaskStep.linkedTaskId.
+                                    let stepTaskId = AppDatabase.generateUUID()
+                                    let stepTask = OYBC.Task(
+                                        id: stepTaskId,
+                                        userId: capturedUserId,
+                                        title: resolvedStepTitle,
+                                        description: nil,
+                                        type: stepIsCounting ? .counting : .normal,
+                                        action: stepIsCounting ? stepTrimAction : nil,
+                                        unit: stepIsCounting ? stepTrimUnit : nil,
+                                        maxCount: stepIsCounting ? stepMax : nil,
+                                        totalCompletions: 0,
+                                        totalInstances: 0,
+                                        createdAt: now,
+                                        updatedAt: now,
+                                        version: 1,
+                                        isDeleted: false
+                                    )
+                                    try stepTask.save(db)
                                     let taskStep = TaskStep(
                                         id: AppDatabase.generateUUID(),
                                         taskId: newTaskId,
                                         stepIndex: stepIndex,
-                                        title: stepTitleTrim.isEmpty ? "Untitled Step" : stepTitleTrim,
-                                        type: step.type == .counting ? .counting : .normal,
-                                        action: step.type == .counting ? step.action : nil,
-                                        unit: step.type == .counting ? step.unit : nil,
-                                        maxCount: step.type == .counting ? Int(step.maxCount) : nil,
-                                        linkedTaskId: nil,
+                                        title: resolvedStepTitle,
+                                        type: stepIsCounting ? .counting : .normal,
+                                        action: stepIsCounting ? stepTrimAction : nil,
+                                        unit: stepIsCounting ? stepTrimUnit : nil,
+                                        maxCount: stepIsCounting ? stepMax : nil,
+                                        linkedTaskId: stepTaskId,
                                         createdAt: now,
                                         updatedAt: now,
                                         lastSyncedAt: nil,

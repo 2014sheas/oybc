@@ -5,7 +5,12 @@ import SwiftUI
 /// primary "add" buttons; `+ Add existing tasks` opens a sheet for
 /// multi-check picking. Next is blocked until ≥2 subtasks are ready.
 struct CompositeWizardBuildStepView: View {
-    @Binding var subtasks: [SubtaskItem]
+    /// Wrapped subtask array. Observing the wrapper (not a plain binding)
+    /// is what keeps `readyCount` / `canAdvance` / the Next-button state
+    /// in sync when any child `SubtaskItem`'s `@Published` properties
+    /// change — the wrapper re-broadcasts each child's `objectWillChange`
+    /// upward.
+    @ObservedObject var subtaskList: CompositeSubtaskList
     let libraryTasks: [OYBC.Task]
     let libraryCompositeTasks: [CompositeTask]
     let taskBoardCounts: [String: Int]
@@ -60,18 +65,18 @@ struct CompositeWizardBuildStepView: View {
     }
 
     private var readyCount: Int {
-        subtasks.filter { isReady($0) }.count
+        subtaskList.items.filter { isReady($0) }.count
     }
 
     private var canAdvance: Bool {
-        subtasks.count >= 2 && readyCount == subtasks.count
+        subtaskList.items.count >= 2 && readyCount == subtaskList.items.count
     }
 
     private var statusText: String {
-        if subtasks.count < 2 {
-            return "Add at least 2 subtasks (\(subtasks.count) so far)."
+        if subtaskList.items.count < 2 {
+            return "Add at least 2 subtasks (\(subtaskList.items.count) so far)."
         }
-        let incomplete = subtasks.count - readyCount
+        let incomplete = subtaskList.items.count - readyCount
         if incomplete > 0 {
             return "\(incomplete) card\(incomplete == 1 ? "" : "s") still need attention."
         }
@@ -82,7 +87,7 @@ struct CompositeWizardBuildStepView: View {
     /// sheet's initial checkbox state.
     private var initialCheckedIds: Set<String> {
         var ids = Set<String>()
-        for s in subtasks where s.mode == .existing {
+        for s in subtaskList.items where s.mode == .existing {
             if s.selectionType == .task, !s.selectedTaskId.isEmpty {
                 ids.insert(s.selectedTaskId)
             } else if s.selectionType == .composite, !s.selectedCompositeId.isEmpty {
@@ -104,11 +109,11 @@ struct CompositeWizardBuildStepView: View {
                     .foregroundColor(canAdvance ? .green : .secondary)
             }
 
-            if subtasks.isEmpty {
+            if subtaskList.items.isEmpty {
                 emptyState
             } else {
                 VStack(spacing: 10) {
-                    ForEach(subtasks) { item in
+                    ForEach(subtaskList.items) { item in
                         CompositeSubtaskCardView(
                             item: item,
                             libraryTasks: libraryTasks,
