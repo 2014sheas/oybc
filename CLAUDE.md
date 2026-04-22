@@ -361,13 +361,23 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 
 **Copilot code review**: request on PRs via `gh api --method POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers --input - <<< '{"reviewers":["Copilot"]}'`. Address review comments before merging.
 
-**Addressing review comments**: every round of PR review comments — from Copilot or a human reviewer — must be logged as a markdown table in the **PR Review Log** section at the bottom of this file. Never in the commit body. One row per comment, columns: `Comment`, `Severity`, `Remedy`.
+**Addressing review comments**: every time you work through a round of PR review comments — from Copilot or a human reviewer — **print a markdown table in the terminal response** showing what was flagged and what was done. This is a display-only convention: the table is for the current chat turn, not a persisted artifact. Do NOT put it in commit messages, PR descriptions, or CLAUDE.md itself.
 
-- **Comment**: short restatement (≤ 1 sentence) + file/line pointer. Enough for a future reader to find the thread without scrolling the PR.
+Table columns (one row per comment):
+
+- **Comment**: short restatement (≤ 1 sentence) + file/line pointer. Enough for the user to recognise the thread without re-reading the PR.
 - **Severity**: one of `Critical` (correctness, security, data loss), `Major` (bug in happy path, significant UX regression, a11y blocker), `Minor` (nit-level bug, stale-state edge case, code-quality smell), `Nit` (style, naming, comment wording).
-- **Remedy**: either the fix description in ≤ 1 sentence, or `Declined — <reason>` if we chose not to act. Declining is fine; silent dismissal is not.
+- **Remedy**: either the fix description in ≤ 1 sentence, or `Declined — <reason>` if you chose not to act. Declining is fine; silent dismissal is not.
 
-Rationale: keeps review outcomes greppable in-tree (CLAUDE.md is always open), makes declined comments explicit instead of invisible, and gives future reviewers a quick read on what the previous round landed on.
+Example shape (what the terminal response should include):
+
+```
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| <restatement> (<file>:<line>) | Minor | <fix summary> |
+```
+
+Rationale: the user wants the status of each comment visible inline with the work, not hidden in git history or accumulating in a doc. Fresh table per round.
 
 **pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v4` with explicit `version: 9.15.4` (v6 of the action ignores the version input).
 
@@ -454,65 +464,3 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 - Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
 - When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
 
-## PR Review Log
-
-Append tables for each PR that receives review comments. Most recent PR first; multiple review rounds on the same PR get their own table under a **Round N** heading. Leave the fix commit SHA next to the round heading so the mapping from review → code is obvious.
-
-### PR #41 — composite task wizard: 3-step flow + multi-add library sheet
-
-#### Round 1 (fix: `4b0d31c`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| `readyCount` / `canAdvance` don't recompute when a `SubtaskItem`'s `@Published` fields change — status + Next button stick (`CompositeWizardBuildStepView.swift:68`). | Major | Added `CompositeSubtaskList` `ObservableObject` wrapper that re-broadcasts each child's `objectWillChange`; wizard + BuildStep now observe it instead of `[SubtaskItem]`. |
-| Inline counting subtask with blank title saves `"Untitled"` instead of the derived `action+max+unit` (diverges from web + primary createTask) (`CompositeTaskWizardView.swift:347`). | Minor | Derive the same `action+max+unit` fallback inside the composite save path. |
-| Inline progress subtasks save steps with `linkedTaskId: nil` and `"Untitled Step"`; other create flows make a standalone `Task` per step + link it and derive counting step titles (`CompositeTaskWizardView.swift:377`). | Minor | Mirror the primary `createTask` path: per-step standalone Task, `TaskStep.linkedTaskId` wired, counting-blank titles resolved via `action+max+unit`. |
-| `showClampToast` setTimeout never cleared on unmount — setState on disposed component risk (`CompositeTaskWizard.tsx:94`). | Minor | Added `useEffect` cleanup that clears `clampTimerRef.current` on unmount. |
-
-#### Round 3 — user-reported UX (fix: `79c0362`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| Threshold stepper on Setup is capped at `max(1, subtaskCount)`, so with 0 subtasks the user is pinned at 1 and the round-2 "clamp on operator change" fires a spurious `Threshold lowered to 1` toast. Users end up bouncing back from Build to Setup just to pick N. | Major (UX) | Removed the subtask-count cap — Setup stepper now accepts any reasonable N upfront (soft cap `max(20, subtaskCount, threshold)`). Threshold becomes a pure user-intent value: no auto-clamp, no toast. Build step instead shows `Add N more subtasks — you picked "At least X of"` and blocks `Next` until the count catches up. Removes the unused clamp effect (web) / `.onChange(of: subtasks.count)` hook (iOS) and all `clampToast` plumbing on both platforms. |
-
-#### Round 4 — user-reported UX (fix: `0a512c5`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| Threshold stepper's trailing copy ("of the subtasks you'll add next" / "of 3 subtasks") reads wordy and out of place next to the number. | Nit (UX) | Dropped the trailing text on both platforms. Stepper now renders as `Required [− 2 +]` — one label, same layout whether the user has 0 or N subtasks. Build step already owns the count/progress messaging so no info is lost. |
-
-#### Round 5 — user-reported UX (fix: `dcf3fae`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| Picking the threshold on Setup still feels out of place — the user is naming a count without any subtasks in view. | Major (UX) | Relocated the stepper to the Build step (between the subtask list and the `+ Add` buttons). Setup only picks the operator now, with a one-line hint when `M_OF_N` is selected. Stepper cap is the real subtask count; threshold clamps silently when the list shrinks (both visible on the same screen, so no toast). Setup drops its `threshold` / `subtaskCount` props; wizard binds `$threshold` into Build. |
-
-#### Round 6 — user-reported UX (fix: `25ac46a`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| With the stepper on Build, it reads more naturally *above* the subtask pool than between the pool and the add buttons — the threshold sets context for the list underneath. | Nit (UX) | Moved the `thresholdRow` block to render just before the subtask list on both platforms. New reading order: status → Required-to-complete → subtask rows → add buttons → nav. |
-
-#### Round 7 — user-reported UX (fix: `6a4fa16`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| "Add existing tasks" / "Create new task" render full-width, which reads as a heavy action bar; user prefers them left-aligned at content size. | Nit (UX) | Dropped the full-width stretch — web `.addRow` gets `align-items: flex-start` and the buttons lose `width: 100%`; iOS `VStack` switches to `.leading` alignment and the `.frame(maxWidth: .infinity)` calls are removed. Buttons now sit flush-left at content width. |
-
-#### Round 8 (fix: `3c6fb55`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| Inline type picker carries `role="tablist"` / `role="tab"` without full ARIA tabs semantics (no roving tabIndex, no arrow-key navigation, no `aria-controls`) — screen readers get confused (`SubtaskCard.tsx:274`). | Minor (a11y) | Swapped to plain `<button>` elements inside `role="group"` with `aria-pressed` reflecting active state. Matches the actual interaction model (toggle group, not a tablist). |
-| Counting-task title fallback in the composite write path manually interpolates `action + max + unit` even though `generateCounterTaskTitle` is already imported (`CompositeTaskWizard.tsx:295`). | Minor | Switched to `generateCounterTaskTitle(action, max, unit)`; keeps composite inline-counting titles consistent with the primary createTask flow if the shared helper's format changes. |
-| PR description still describes a "⚠ Threshold lowered…" toast, but Round 5/6 replaced it with a silent in-place clamp (`BuildStep.tsx:123`). | Nit (docs) | Updated the PR description to describe the silent-clamp behavior and refreshed the test plan bullets accordingly. |
-
-#### Round 2 (fix: `c862663`)
-
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| Threshold stepper can render out-of-range (`2 of 1`) if user flips to `M_OF_N` before adding subtasks (`SetupStep.tsx:53`). | Minor | Added `useEffect([subtasks.length, operator])` on web that clamps + fires toast. Mutators stay pure. |
-| iOS twin of the same threshold-out-of-range bug (`CompositeWizardSetupStepView.swift:36`). | Minor | Added `.onChange(of: operatorType)` + `.onChange(of: subtaskList.items.count)` on the wizard view that call `clampThresholdAndMaybeToast`. |
-| `commitLibraryDiff` reads/writes `threshold` as a side-effect inside `setSubtasks` updater — desync risk under React batching (`CompositeTaskWizard.tsx:232`). | Minor | Pulled the clamp out into the new effect above so `commitLibraryDiff` is now a pure `setSubtasks` update. |
-| `removeSubtask` reads `subtasks` from the closure instead of functional setter — stale state risk (`CompositeTaskWizard.tsx:244`). | Minor | Switched to `setSubtasks((prev) => prev.filter(...))`. |
-| `TypeBadge` in `letterOnly` mode exposes `"NORM"/"COUN"` as the accessible name — screen readers announce the abbreviation (`TypeBadge.tsx:66`). | Major (a11y) | Added `aria-label="<Type> task"` when `letterOnly` so assistive tech hears "Normal task" etc. iOS already had `.accessibilityLabel` on both branches. |
