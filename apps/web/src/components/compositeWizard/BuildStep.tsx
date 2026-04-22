@@ -130,6 +130,19 @@ export function BuildStep({
         </span>
       </div>
 
+      {operator === OperatorType.M_OF_N && (
+        <div className={styles.thresholdRow}>
+          <span className={styles.thresholdLabel}>Required to complete:</span>
+          <CounterStepper
+            value={threshold}
+            min={1}
+            max={stepperMax}
+            onChange={onThresholdChange}
+            label={subtasks.length > 0 ? `of ${subtasks.length}` : 'of your subtasks'}
+          />
+        </div>
+      )}
+
       <div className={styles.subtaskList}>
         {subtasks.map((s) => (
           <SubtaskCard
@@ -155,19 +168,6 @@ export function BuildStep({
           </div>
         )}
       </div>
-
-      {operator === OperatorType.M_OF_N && (
-        <div className={styles.thresholdRow}>
-          <span className={styles.thresholdLabel}>Required to complete:</span>
-          <CounterStepper
-            value={threshold}
-            min={1}
-            max={stepperMax}
-            onChange={onThresholdChange}
-            label={subtasks.length > 0 ? `of ${subtasks.length}` : 'of your subtasks'}
-          />
-        </div>
-      )}
 
       <div className={styles.addRow}>
         <button

@@ -124,6 +124,10 @@ struct CompositeWizardBuildStepView: View {
                     .foregroundColor(canAdvance ? .green : .secondary)
             }
 
+            if operatorType == .mOfN {
+                thresholdStepper
+            }
+
             if subtaskList.items.isEmpty {
                 emptyState
             } else {
@@ -141,10 +145,6 @@ struct CompositeWizardBuildStepView: View {
                         )
                     }
                 }
-            }
-
-            if operatorType == .mOfN {
-                thresholdStepper
             }
 
             VStack(spacing: 8) {

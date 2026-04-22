@@ -481,11 +481,17 @@ Append tables for each PR that receives review comments. Most recent PR first; m
 | --- | --- | --- |
 | Threshold stepper's trailing copy ("of the subtasks you'll add next" / "of 3 subtasks") reads wordy and out of place next to the number. | Nit (UX) | Dropped the trailing text on both platforms. Stepper now renders as `Required [− 2 +]` — one label, same layout whether the user has 0 or N subtasks. Build step already owns the count/progress messaging so no info is lost. |
 
-#### Round 5 — user-reported UX (fix: pending)
+#### Round 5 — user-reported UX (fix: `dcf3fae`)
 
 | Comment | Severity | Remedy |
 | --- | --- | --- |
 | Picking the threshold on Setup still feels out of place — the user is naming a count without any subtasks in view. | Major (UX) | Relocated the stepper to the Build step (between the subtask list and the `+ Add` buttons). Setup only picks the operator now, with a one-line hint when `M_OF_N` is selected. Stepper cap is the real subtask count; threshold clamps silently when the list shrinks (both visible on the same screen, so no toast). Setup drops its `threshold` / `subtaskCount` props; wizard binds `$threshold` into Build. |
+
+#### Round 6 — user-reported UX (fix: pending)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| With the stepper on Build, it reads more naturally *above* the subtask pool than between the pool and the add buttons — the threshold sets context for the list underneath. | Nit (UX) | Moved the `thresholdRow` block to render just before the subtask list on both platforms. New reading order: status → Required-to-complete → subtask rows → add buttons → nav. |
 
 #### Round 2 (fix: `c862663`)
 
