@@ -147,13 +147,11 @@ struct CompositeWizardBuildStepView: View {
                 }
             }
 
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 Button("+ Add existing tasks") { libraryOpen = true }
                     .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
                 Button("+ Create new task", action: onAddInline)
                     .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
             }
 
             Divider()

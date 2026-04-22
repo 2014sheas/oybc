@@ -487,11 +487,17 @@ Append tables for each PR that receives review comments. Most recent PR first; m
 | --- | --- | --- |
 | Picking the threshold on Setup still feels out of place — the user is naming a count without any subtasks in view. | Major (UX) | Relocated the stepper to the Build step (between the subtask list and the `+ Add` buttons). Setup only picks the operator now, with a one-line hint when `M_OF_N` is selected. Stepper cap is the real subtask count; threshold clamps silently when the list shrinks (both visible on the same screen, so no toast). Setup drops its `threshold` / `subtaskCount` props; wizard binds `$threshold` into Build. |
 
-#### Round 6 — user-reported UX (fix: pending)
+#### Round 6 — user-reported UX (fix: `25ac46a`)
 
 | Comment | Severity | Remedy |
 | --- | --- | --- |
 | With the stepper on Build, it reads more naturally *above* the subtask pool than between the pool and the add buttons — the threshold sets context for the list underneath. | Nit (UX) | Moved the `thresholdRow` block to render just before the subtask list on both platforms. New reading order: status → Required-to-complete → subtask rows → add buttons → nav. |
+
+#### Round 7 — user-reported UX (fix: pending)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| "Add existing tasks" / "Create new task" render full-width, which reads as a heavy action bar; user prefers them left-aligned at content size. | Nit (UX) | Dropped the full-width stretch — web `.addRow` gets `align-items: flex-start` and the buttons lose `width: 100%`; iOS `VStack` switches to `.leading` alignment and the `.frame(maxWidth: .infinity)` calls are removed. Buttons now sit flush-left at content width. |
 
 #### Round 2 (fix: `c862663`)
 
