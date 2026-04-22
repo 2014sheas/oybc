@@ -69,6 +69,12 @@
   margin-top: 0.35rem;
 }
 
+.thresholdLabel {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
 .footer {
   display: flex;
   justify-content: flex-end;

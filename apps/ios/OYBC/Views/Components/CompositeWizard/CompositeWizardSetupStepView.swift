@@ -71,7 +71,7 @@ struct CompositeWizardSetupStepView: View {
 
                 if operatorType == .mOfN {
                     HStack(spacing: 10) {
-                        Text("Required:")
+                        Text("Required")
                         Button("−") {
                             if threshold > 1 { threshold -= 1 }
                         }
@@ -85,12 +85,6 @@ struct CompositeWizardSetupStepView: View {
                         }
                         .buttonStyle(.bordered)
                         .disabled(threshold >= thresholdMax)
-                        Text(subtaskCount > 0
-                             ? "of \(subtaskCount) subtask\(subtaskCount == 1 ? "" : "s")"
-                             : "of the subtasks you'll add next")
-                            .foregroundColor(.secondary)
-                            .font(.subheadline)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }

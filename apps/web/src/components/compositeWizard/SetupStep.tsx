@@ -80,16 +80,12 @@ export function SetupStep({
         <OperatorSelector selectedOperator={operator} onOperatorChange={onOperatorChange} />
         {operator === OperatorType.M_OF_N && (
           <div className={styles.thresholdRow}>
+            <span className={styles.thresholdLabel}>Required</span>
             <CounterStepper
               value={threshold}
               min={1}
               max={thresholdMax}
               onChange={onThresholdChange}
-              label={
-                subtaskCount > 0
-                  ? `of ${subtaskCount} subtask${subtaskCount !== 1 ? 's' : ''}`
-                  : "of the subtasks you'll add next"
-              }
             />
           </div>
         )}

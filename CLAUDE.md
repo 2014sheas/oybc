@@ -469,11 +469,17 @@ Append tables for each PR that receives review comments. Most recent PR first; m
 | Inline progress subtasks save steps with `linkedTaskId: nil` and `"Untitled Step"`; other create flows make a standalone `Task` per step + link it and derive counting step titles (`CompositeTaskWizardView.swift:377`). | Minor | Mirror the primary `createTask` path: per-step standalone Task, `TaskStep.linkedTaskId` wired, counting-blank titles resolved via `action+max+unit`. |
 | `showClampToast` setTimeout never cleared on unmount — setState on disposed component risk (`CompositeTaskWizard.tsx:94`). | Minor | Added `useEffect` cleanup that clears `clampTimerRef.current` on unmount. |
 
-#### Round 3 — user-reported UX (fix: pending)
+#### Round 3 — user-reported UX (fix: `79c0362`)
 
 | Comment | Severity | Remedy |
 | --- | --- | --- |
 | Threshold stepper on Setup is capped at `max(1, subtaskCount)`, so with 0 subtasks the user is pinned at 1 and the round-2 "clamp on operator change" fires a spurious `Threshold lowered to 1` toast. Users end up bouncing back from Build to Setup just to pick N. | Major (UX) | Removed the subtask-count cap — Setup stepper now accepts any reasonable N upfront (soft cap `max(20, subtaskCount, threshold)`). Threshold becomes a pure user-intent value: no auto-clamp, no toast. Build step instead shows `Add N more subtasks — you picked "At least X of"` and blocks `Next` until the count catches up. Removes the unused clamp effect (web) / `.onChange(of: subtasks.count)` hook (iOS) and all `clampToast` plumbing on both platforms. |
+
+#### Round 4 — user-reported UX (fix: pending)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| Threshold stepper's trailing copy ("of the subtasks you'll add next" / "of 3 subtasks") reads wordy and out of place next to the number. | Nit (UX) | Dropped the trailing text on both platforms. Stepper now renders as `Required [− 2 +]` — one label, same layout whether the user has 0 or N subtasks. Build step already owns the count/progress messaging so no info is lost. |
 
 #### Round 2 (fix: `c862663`)
 
