@@ -282,15 +282,23 @@ export function CompositeTaskWizard({
               });
             } else if (subtask.inlineType === 'counting') {
               const maxCount = parseInt(subtask.maxCountStr, 10);
+              const trimmedAction = subtask.action.trim();
+              const trimmedUnit = subtask.unit.trim();
+              const trimmedTitle = subtask.title.trim();
+              // Use the shared counter-title helper so the blank-title
+              // fallback stays in lock-step with the rest of the app if
+              // the format ever changes.
+              const resolvedTitle =
+                trimmedTitle.length > 0
+                  ? trimmedTitle
+                  : generateCounterTaskTitle(trimmedAction, maxCount, trimmedUnit);
               await db.tasks.add({
                 id: newTaskId,
                 userId: resolvedUserId,
-                title:
-                  subtask.title.trim() ||
-                  `${subtask.action.trim()} ${maxCount} ${subtask.unit.trim()}`.trim(),
+                title: resolvedTitle,
                 type: TaskType.COUNTING,
-                action: subtask.action.trim(),
-                unit: subtask.unit.trim(),
+                action: trimmedAction,
+                unit: trimmedUnit,
                 maxCount,
                 totalCompletions: 0,
                 totalInstances: 0,

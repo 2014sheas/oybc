@@ -493,11 +493,19 @@ Append tables for each PR that receives review comments. Most recent PR first; m
 | --- | --- | --- |
 | With the stepper on Build, it reads more naturally *above* the subtask pool than between the pool and the add buttons — the threshold sets context for the list underneath. | Nit (UX) | Moved the `thresholdRow` block to render just before the subtask list on both platforms. New reading order: status → Required-to-complete → subtask rows → add buttons → nav. |
 
-#### Round 7 — user-reported UX (fix: pending)
+#### Round 7 — user-reported UX (fix: `6a4fa16`)
 
 | Comment | Severity | Remedy |
 | --- | --- | --- |
 | "Add existing tasks" / "Create new task" render full-width, which reads as a heavy action bar; user prefers them left-aligned at content size. | Nit (UX) | Dropped the full-width stretch — web `.addRow` gets `align-items: flex-start` and the buttons lose `width: 100%`; iOS `VStack` switches to `.leading` alignment and the `.frame(maxWidth: .infinity)` calls are removed. Buttons now sit flush-left at content width. |
+
+#### Round 8 (fix: pending)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| Inline type picker carries `role="tablist"` / `role="tab"` without full ARIA tabs semantics (no roving tabIndex, no arrow-key navigation, no `aria-controls`) — screen readers get confused (`SubtaskCard.tsx:274`). | Minor (a11y) | Swapped to plain `<button>` elements inside `role="group"` with `aria-pressed` reflecting active state. Matches the actual interaction model (toggle group, not a tablist). |
+| Counting-task title fallback in the composite write path manually interpolates `action + max + unit` even though `generateCounterTaskTitle` is already imported (`CompositeTaskWizard.tsx:295`). | Minor | Switched to `generateCounterTaskTitle(action, max, unit)`; keeps composite inline-counting titles consistent with the primary createTask flow if the shared helper's format changes. |
+| PR description still describes a "⚠ Threshold lowered…" toast, but Round 5/6 replaced it with a silent in-place clamp (`BuildStep.tsx:123`). | Nit (docs) | Updated the PR description to describe the silent-clamp behavior and refreshed the test plan bullets accordingly. |
 
 #### Round 2 (fix: `c862663`)
 

@@ -264,13 +264,16 @@ function InlineFields({
 
   return (
     <div className={styles.inlineFields}>
-      <div className={styles.typePicker} role="tablist" aria-label="Task type">
+      <div
+        className={styles.typePicker}
+        role="group"
+        aria-label="Task type"
+      >
         {INLINE_TYPES.map((type) => (
           <button
             key={type}
             type="button"
-            role="tab"
-            aria-selected={draft.inlineType === type}
+            aria-pressed={draft.inlineType === type}
             className={
               draft.inlineType === type ? styles.typeButtonActive : styles.typeButton
             }
