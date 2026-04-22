@@ -62,7 +62,7 @@ private enum PlaygroundTaskType: String, CaseIterable {
 /// - Normal: title + optional description only.
 /// - Counting: shared fields + action, unit, maxCount.
 /// - Progress: shared fields + steps section (each step is Normal or Counting).
-/// - Composite: title + flat subtask list with operator (via CompositeTaskFormView).
+/// - Composite: title + flat subtask list with operator (via CompositeTaskWizardView).
 ///
 /// On valid submission the task (and steps for Progress) are written to the local
 /// database via AppDatabase.shared, then the library is refreshed automatically.
@@ -145,8 +145,8 @@ struct UnifiedTaskCreatorPlayground: View {
                 }
 
                 if playgroundTaskType == .composite {
-                    // Composite task creation is fully handled by CompositeTaskFormView
-                    CompositeTaskFormView()
+                    // Composite task creation is handled by CompositeTaskWizardView.
+                    CompositeTaskWizardView()
                 } else {
                     // Title (required for Normal/Progress; optional/auto-generated for Counting)
                     VStack(alignment: .leading, spacing: 4) {
@@ -474,7 +474,7 @@ struct UnifiedTaskCreatorPlayground: View {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDesc = taskDescription.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Composite tasks are handled by CompositeTaskFormView, not this method
+        // Composite tasks are handled by CompositeTaskWizardView, not this method
         guard let resolvedTaskType = selectedType else { return }
 
         // Title required for Normal and Progress; optional for Counting (auto-generated)

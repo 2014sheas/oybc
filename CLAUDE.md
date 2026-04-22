@@ -88,8 +88,8 @@ apps/web/src/                                        apps/ios/OYBC/
 │       ├── UnifiedTaskCreatorPlayground.tsx ←→      Views/Playground/UnifiedTaskCreatorPlayground.swift
 │       ├── TaskSquareActionsPlayground.tsx ←→       Views/Playground/TaskSquareActionsPlayground.swift
 │       ├── CrossBoardRollupPlayground.tsx ←→        Views/Playground/CrossBoardRollupPlayground.swift
-│       ├── SubtaskDerivationPlayground.tsx ←→       Views/Playground/SubtaskDerivationPlayground.swift
-│       └── CompositeTaskForm.tsx ←→                 Views/Playground/CompositeTaskFormView.swift
+│       └── SubtaskDerivationPlayground.tsx ←→       Views/Playground/SubtaskDerivationPlayground.swift
+│       (composite-task creation lives in components/compositeWizard/ ←→ Views/Components/CompositeWizard/)
 │
 └── components/                                     Views/Components/
     ├── Navbar.tsx                 (dev-only)       (no iOS counterpart — iOS launches straight into tabs)
@@ -157,6 +157,9 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
   - `pages/createHub/useBoardWizard.ts` ←→ `Views/CreateTab/ViewModels/BoardWizardViewModel.swift`.
   - `pages/createHub/useDrafts.ts` has no dedicated iOS twin — iOS inlines the equivalent GRDB query in `CreateHubView.reloadDrafts()` because SwiftUI lacks a direct `useLiveQuery` analog; drafts reload explicitly on `.onAppear` and after wizard dismiss instead.
   - `wizardPersist.ts` lives in `components/wizard/` on web (next to consumers). `BoardWizardPersist.swift` lives in `Views/CreateTab/` (not `Components/`) because it is a helper, not a view. Both export the same three helpers: `buildWizardPlacement`, `resolveWizardDates`, `persistWizardBoard`.
+- **Composite-task mini-wizard** (feature):
+  - `components/compositeWizard/{CompositeTaskWizard,CompositeWizardStepper,SetupStep,BuildStep,ReviewStep,SubtaskCard,LibraryPickerSheet,compositeSubtaskDraft}.tsx/.ts` ←→ `Views/Components/CompositeWizard/{CompositeTaskWizardView,CompositeWizardStepperView,CompositeWizardSetupStepView,CompositeWizardBuildStepView,CompositeWizardReviewStepView,CompositeSubtaskCardView,LibraryPickerSheetView,CompositeSubtaskItem}.swift`.
+  - Replaced the legacy ~850-line `CompositeTaskForm.tsx` / `CompositeTaskFormView.swift` monoliths with a 3-step Setup → Build → Review flow. Same data model + write path, better UX (live validation, type-switch confirm, threshold clamp toast, library callout).
 
 **Rules**:
 
@@ -330,7 +333,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Don't block UI for sync**: All sync operations must be background/async.
 - **Counting task field order**: Action → Max Count → Unit (not Action → Unit → Max Count).
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
-- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskForm` inline progress subtasks.
+- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline progress subtasks.
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.
 
 ## Performance Targets
@@ -364,6 +367,24 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 **Dependabot** (`.github/dependabot.yml`): npm weekly (minor/patch grouped, majors separate), GitHub Actions monthly. SPM not supported — iOS deps bumped manually.
 
 **Copilot code review**: request on PRs via `gh api --method POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers --input - <<< '{"reviewers":["Copilot"]}'`. Address review comments before merging.
+
+**Addressing review comments**: every time you work through a round of PR review comments — from Copilot or a human reviewer — **print a markdown table in the terminal response** showing what was flagged and what was done. This is a display-only convention: the table is for the current chat turn, not a persisted artifact. Do NOT put it in commit messages, PR descriptions, or CLAUDE.md itself.
+
+Table columns (one row per comment):
+
+- **Comment**: short restatement (≤ 1 sentence) + file/line pointer. Enough for the user to recognise the thread without re-reading the PR.
+- **Severity**: one of `Critical` (correctness, security, data loss), `Major` (bug in happy path, significant UX regression, a11y blocker), `Minor` (nit-level bug, stale-state edge case, code-quality smell), `Nit` (style, naming, comment wording).
+- **Remedy**: either the fix description in ≤ 1 sentence, or `Declined — <reason>` if you chose not to act. Declining is fine; silent dismissal is not.
+
+Example shape (what the terminal response should include):
+
+```
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| <restatement> (<file>:<line>) | Minor | <fix summary> |
+```
+
+Rationale: the user wants the status of each comment visible inline with the work, not hidden in git history or accumulating in a doc. Fresh table per round.
 
 **pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v4` with explicit `version: 9.15.4` (v6 of the action ignores the version input).
 
@@ -449,3 +470,4 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 - Merge to `dev` only after CI passes (web + iOS workflows) and Copilot review is addressed.
 - Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
 - When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
+
