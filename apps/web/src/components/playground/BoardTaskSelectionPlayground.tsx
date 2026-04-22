@@ -36,7 +36,7 @@ import { type StepFormState, createEmptyStep } from '../progressStepUtils';
 import { CountingDerivationPanel } from '../CountingDerivationPanel';
 import { ProgressDerivationPanel } from '../ProgressDerivationPanel';
 import { CompositeDerivationPanel } from '../CompositeDerivationPanel';
-import { CompositeTaskForm } from './CompositeTaskForm';
+import { CompositeTaskWizard } from '../compositeWizard/CompositeTaskWizard';
 import { BoardCreatorPanel } from '../BoardCreatorPanel';
 import {
   PLAYGROUND_USER_ID,
@@ -464,7 +464,7 @@ export function BoardTaskSelectionPlayground(): React.ReactElement {
 
   /**
    * Handles form submission to create a new task and add it to the pool.
-   * Composite type is handled by CompositeTaskForm and should not reach here.
+   * Composite type is handled by CompositeTaskWizard and should not reach here.
    *
    * @param e - The form submit event
    */
@@ -954,7 +954,7 @@ export function BoardTaskSelectionPlayground(): React.ReactElement {
 
           {/* Composite form */}
           {taskType === COMPOSITE_TYPE ? (
-            <CompositeTaskForm
+            <CompositeTaskWizard
               onCreated={(ct: CompositeTask) =>
                 addToPool({ taskId: ct.id, title: ct.title, type: 'composite' })
               }

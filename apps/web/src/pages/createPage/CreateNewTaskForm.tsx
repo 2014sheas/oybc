@@ -1,7 +1,7 @@
 import { TaskType, type CompositeTask } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
-import { CompositeTaskForm } from '../../components/playground/CompositeTaskForm';
+import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
 import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
 import {
@@ -24,7 +24,7 @@ const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
 /**
  * Renders the "Create New" tab: the type selector, per-type form
  * fields, progress steps, and the submit button. Composite selection
- * swaps to `CompositeTaskForm` (owns its own state). All other state
+ * swaps to `CompositeTaskWizard` (owns its own state). All other state
  * comes from `useCreateFormState` via the `form` prop.
  *
  * Kept as a pure presentation component — no data-layer calls, no
@@ -57,7 +57,7 @@ export function CreateNewTaskForm({
       </div>
 
       {form.taskType === COMPOSITE_TYPE ? (
-        <CompositeTaskForm userId={userId} onCreated={onCompositeCreated} />
+        <CompositeTaskWizard userId={userId} onCreated={onCompositeCreated} />
       ) : (
         <form className={styles.form} onSubmit={form.handleSubmit}>
           {/* Title */}

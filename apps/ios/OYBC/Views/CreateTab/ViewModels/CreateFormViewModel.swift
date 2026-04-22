@@ -30,7 +30,7 @@ enum CreateFormLimits {
 /// to the pool (via `onTaskCreated`) → reset the form → ask the
 /// library to reload so the new task appears under Existing Tasks.
 ///
-/// Composite tasks are handled by `CompositeTaskFormView`; this view
+/// Composite tasks are handled by `CompositeTaskWizardView`; this view
 /// model only covers NORMAL / COUNTING / PROGRESS.
 @Observable
 final class CreateFormViewModel {

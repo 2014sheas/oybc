@@ -3,7 +3,7 @@ import SwiftUI
 /// Presentational view for the Create-New tab — type picker,
 /// per-type fields, progress-step rows, feedback banners, and the
 /// submit button. Composite selection falls through to
-/// `CompositeTaskFormView` which owns its own state.
+/// `CompositeTaskWizardView` which owns its own state.
 ///
 /// Mirrors the web `CreateNewTaskForm.tsx` component. No data-layer
 /// calls live here; the `form` / `userId` / callbacks the parent
@@ -16,7 +16,7 @@ struct CreateNewTaskFormView: View {
     /// `form.handleCreateAndAddToPool(userId:...)` with the right
     /// onTaskCreated + onLibraryReloadRequested callbacks.
     var onSubmit: () -> Void
-    /// Called when `CompositeTaskFormView` reports a successful save.
+    /// Called when `CompositeTaskWizardView` reports a successful save.
     /// Parent uses this to flash "Created composite ... add subtasks
     /// from Existing Tasks" and reload the library.
     var onCompositeCreated: (CompositeTask) -> Void
@@ -39,7 +39,7 @@ struct CreateNewTaskFormView: View {
 
             if form.taskType == .composite {
                 if let userId = userId {
-                    CompositeTaskFormView(userId: userId, onCreated: onCompositeCreated)
+                    CompositeTaskWizardView(userId: userId, onCreated: onCompositeCreated)
                 }
             } else {
                 // Shared title field
