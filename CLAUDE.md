@@ -499,7 +499,7 @@ Append tables for each PR that receives review comments. Most recent PR first; m
 | --- | --- | --- |
 | "Add existing tasks" / "Create new task" render full-width, which reads as a heavy action bar; user prefers them left-aligned at content size. | Nit (UX) | Dropped the full-width stretch — web `.addRow` gets `align-items: flex-start` and the buttons lose `width: 100%`; iOS `VStack` switches to `.leading` alignment and the `.frame(maxWidth: .infinity)` calls are removed. Buttons now sit flush-left at content width. |
 
-#### Round 8 (fix: pending)
+#### Round 8 (fix: `3c6fb55`)
 
 | Comment | Severity | Remedy |
 | --- | --- | --- |
