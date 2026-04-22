@@ -445,9 +445,6 @@ export function CompositeTaskWizard({
           onTitleChange={setTitle}
           operator={operator}
           onOperatorChange={setOperator}
-          threshold={threshold}
-          onThresholdChange={setThreshold}
-          subtaskCount={subtasks.length}
           onCancel={resetForm}
           onNext={() => setCurrentStep(2)}
         />
@@ -458,6 +455,7 @@ export function CompositeTaskWizard({
           subtasks={subtasks}
           operator={operator}
           threshold={threshold}
+          onThresholdChange={setThreshold}
           allTasks={allTasks}
           allCompositeTasks={allCompositeTasks}
           taskBoardCounts={taskBoardCounts}

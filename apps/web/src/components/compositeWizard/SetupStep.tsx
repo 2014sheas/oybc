@@ -1,6 +1,5 @@
 import { OperatorType } from '@oybc/shared';
 import { OperatorSelector } from '../OperatorSelector';
-import { CounterStepper } from '../CounterStepper';
 import { getCharCountClass } from '../playground/playgroundUtils';
 import styles from './SetupStep.module.css';
 
@@ -11,13 +10,6 @@ export interface SetupStepProps {
   onTitleChange: (next: string) => void;
   operator: OperatorType;
   onOperatorChange: (next: OperatorType) => void;
-  threshold: number;
-  onThresholdChange: (next: number) => void;
-  /** Only used to tune the hint text ("of 3 subtasks" vs "of the subtasks
-   *  you'll add next"). The stepper is no longer capped to this value —
-   *  users can freely pick any N ≥ 1 while still on Setup, and the Build
-   *  step blocks Next until enough subtasks exist to satisfy it. */
-  subtaskCount: number;
   onCancel: () => void;
   onNext: () => void;
 }
@@ -32,9 +24,6 @@ export function SetupStep({
   onTitleChange,
   operator,
   onOperatorChange,
-  threshold,
-  onThresholdChange,
-  subtaskCount,
   onCancel,
   onNext,
 }: SetupStepProps): React.ReactElement {
@@ -47,12 +36,6 @@ export function SetupStep({
         : null;
 
   const canAdvance = trimmedTitle.length > 0 && titleError === null;
-
-  // Soft cap only — users can pick any reasonable N upfront (Build step
-  // validates). The cap stays ahead of both the current count and the
-  // current threshold so the + button never disables in normal use, and
-  // lifts with the library as the user adds subtasks.
-  const thresholdMax = Math.max(20, subtaskCount, threshold);
 
   return (
     <div className={styles.container}>
@@ -79,15 +62,9 @@ export function SetupStep({
         <span className={styles.label}>Completion rule</span>
         <OperatorSelector selectedOperator={operator} onOperatorChange={onOperatorChange} />
         {operator === OperatorType.M_OF_N && (
-          <div className={styles.thresholdRow}>
-            <span className={styles.thresholdLabel}>Required</span>
-            <CounterStepper
-              value={threshold}
-              min={1}
-              max={thresholdMax}
-              onChange={onThresholdChange}
-            />
-          </div>
+          <span className={styles.operatorHint}>
+            You'll pick the required count on the next step, alongside your subtasks.
+          </span>
         )}
       </div>
 

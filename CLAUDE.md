@@ -475,11 +475,17 @@ Append tables for each PR that receives review comments. Most recent PR first; m
 | --- | --- | --- |
 | Threshold stepper on Setup is capped at `max(1, subtaskCount)`, so with 0 subtasks the user is pinned at 1 and the round-2 "clamp on operator change" fires a spurious `Threshold lowered to 1` toast. Users end up bouncing back from Build to Setup just to pick N. | Major (UX) | Removed the subtask-count cap — Setup stepper now accepts any reasonable N upfront (soft cap `max(20, subtaskCount, threshold)`). Threshold becomes a pure user-intent value: no auto-clamp, no toast. Build step instead shows `Add N more subtasks — you picked "At least X of"` and blocks `Next` until the count catches up. Removes the unused clamp effect (web) / `.onChange(of: subtasks.count)` hook (iOS) and all `clampToast` plumbing on both platforms. |
 
-#### Round 4 — user-reported UX (fix: pending)
+#### Round 4 — user-reported UX (fix: `0a512c5`)
 
 | Comment | Severity | Remedy |
 | --- | --- | --- |
 | Threshold stepper's trailing copy ("of the subtasks you'll add next" / "of 3 subtasks") reads wordy and out of place next to the number. | Nit (UX) | Dropped the trailing text on both platforms. Stepper now renders as `Required [− 2 +]` — one label, same layout whether the user has 0 or N subtasks. Build step already owns the count/progress messaging so no info is lost. |
+
+#### Round 5 — user-reported UX (fix: pending)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| Picking the threshold on Setup still feels out of place — the user is naming a count without any subtasks in view. | Major (UX) | Relocated the stepper to the Build step (between the subtask list and the `+ Add` buttons). Setup only picks the operator now, with a one-line hint when `M_OF_N` is selected. Stepper cap is the real subtask count; threshold clamps silently when the list shrinks (both visible on the same screen, so no toast). Setup drops its `threshold` / `subtaskCount` props; wizard binds `$threshold` into Build. |
 
 #### Round 2 (fix: `c862663`)
 

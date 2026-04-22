@@ -1,18 +1,13 @@
 import SwiftUI
 
 /// CompositeWizardSetupStepView — Step 1 of the composite-task mini-wizard.
-/// iOS twin of web's `SetupStep`. Title + operator + conditional
-/// threshold. Next is blocked until the title is non-empty.
+/// iOS twin of web's `SetupStep`. Title + operator selection. The
+/// required-N stepper for `M_OF_N` lives on the Build step so the user
+/// can pick the number with the full subtask list visible — picking it
+/// here without any subtasks yet was out of place.
 struct CompositeWizardSetupStepView: View {
     @Binding var title: String
     @Binding var operatorType: OperatorType
-    @Binding var threshold: Int
-
-    /// Only used to tune the hint text ("of 3 subtasks" vs "of the
-    /// subtasks you'll add next"). The stepper is no longer capped to
-    /// this value — users can pick any N ≥ 1 upfront, and the Build
-    /// step blocks Next until enough subtasks exist to satisfy it.
-    let subtaskCount: Int
     let onCancel: () -> Void
     let onNext: () -> Void
 
@@ -30,13 +25,6 @@ struct CompositeWizardSetupStepView: View {
 
     private var canAdvance: Bool {
         !trimmedTitle.isEmpty && titleError == nil
-    }
-
-    private var thresholdMax: Int {
-        // Soft cap — users can pick any reasonable N upfront, Build
-        // validates. Stays ahead of both current count and current
-        // threshold so the + button never disables in normal use.
-        max(20, subtaskCount, threshold)
     }
 
     var body: some View {
@@ -70,22 +58,10 @@ struct CompositeWizardSetupStepView: View {
                 .pickerStyle(.segmented)
 
                 if operatorType == .mOfN {
-                    HStack(spacing: 10) {
-                        Text("Required")
-                        Button("−") {
-                            if threshold > 1 { threshold -= 1 }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(threshold <= 1)
-                        Text("\(threshold)")
-                            .frame(minWidth: 30)
-                            .fontWeight(.semibold)
-                        Button("+") {
-                            if threshold < thresholdMax { threshold += 1 }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(threshold >= thresholdMax)
-                    }
+                    Text("You'll pick the required count on the next step, alongside your subtasks.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 

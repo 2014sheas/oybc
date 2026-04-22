@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CompositeTask, Task } from '@oybc/shared';
 import { OperatorType } from '@oybc/shared';
+import { CounterStepper } from '../CounterStepper';
 import { SubtaskCard } from './SubtaskCard';
 import {
   LibraryPickerSheet,
@@ -18,9 +19,12 @@ export interface BuildStepProps {
   subtasks: SubtaskDraft[];
   /** Operator chosen on Setup. Threshold is only meaningful for M_OF_N. */
   operator: OperatorType;
-  /** Required-N target from Setup. Build gates `Next` until the subtask
-   *  count is at least this big when the operator is M_OF_N. */
+  /** Required-N target. Now picked ON this step (not Setup) so the user
+   *  can see the subtask list while choosing. */
   threshold: number;
+  /** Threshold setter (lifted to the wizard so it persists across steps
+   *  and survives operator toggles). */
+  onThresholdChange: (next: number) => void;
   allTasks: Task[];
   allCompositeTasks: CompositeTask[];
   /** taskId → count of distinct boards the task is placed on. */
@@ -54,6 +58,7 @@ export function BuildStep({
   subtasks,
   operator,
   threshold,
+  onThresholdChange,
   allTasks,
   allCompositeTasks,
   taskBoardCounts,
@@ -97,19 +102,25 @@ export function BuildStep({
 
   const hasMinimum = subtasks.length >= 2;
   const allReady = readyCount === subtasks.length && readyCount >= 2;
-  // For M_OF_N, Setup may have picked a threshold ahead of the subtask
-  // list. Block Next until the list is at least that big, so the user
-  // can't land on Review with an unsatisfiable rule.
-  const meetsThreshold = operator !== OperatorType.M_OF_N || subtasks.length >= threshold;
-  const canAdvance = hasMinimum && allReady && meetsThreshold;
+  const canAdvance = hasMinimum && allReady;
 
   const statusText: string = !hasMinimum
     ? `Add at least 2 subtasks (${subtasks.length} so far).`
     : !allReady
       ? `${subtasks.length - readyCount} card${subtasks.length - readyCount === 1 ? '' : 's'} still need attention.`
-      : !meetsThreshold
-        ? `Add ${threshold - subtasks.length} more subtask${threshold - subtasks.length === 1 ? '' : 's'} — you picked “At least ${threshold} of”.`
-        : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
+      : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
+
+  // Stepper bounds track the actual subtask count. When the list
+  // shrinks below the current threshold (e.g. user removes a subtask),
+  // clamp silently — the stepper and the list are both visible on the
+  // same screen so no toast is needed. Min of 1 keeps the stepper
+  // renderable even with a single subtask.
+  const stepperMax = Math.max(1, subtasks.length);
+  useEffect(() => {
+    if (operator !== OperatorType.M_OF_N) return;
+    const target = Math.min(Math.max(1, threshold), stepperMax);
+    if (target !== threshold) onThresholdChange(target);
+  }, [operator, threshold, stepperMax, onThresholdChange]);
 
   return (
     <div className={styles.container}>
@@ -144,6 +155,19 @@ export function BuildStep({
           </div>
         )}
       </div>
+
+      {operator === OperatorType.M_OF_N && (
+        <div className={styles.thresholdRow}>
+          <span className={styles.thresholdLabel}>Required to complete:</span>
+          <CounterStepper
+            value={threshold}
+            min={1}
+            max={stepperMax}
+            onChange={onThresholdChange}
+            label={subtasks.length > 0 ? `of ${subtasks.length}` : 'of your subtasks'}
+          />
+        </div>
+      )}
 
       <div className={styles.addRow}>
         <button

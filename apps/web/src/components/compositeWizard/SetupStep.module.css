@@ -62,17 +62,10 @@
   color: var(--error-text);
 }
 
-.thresholdRow {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.operatorHint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
   margin-top: 0.35rem;
-}
-
-.thresholdLabel {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-primary);
 }
 
 .footer {

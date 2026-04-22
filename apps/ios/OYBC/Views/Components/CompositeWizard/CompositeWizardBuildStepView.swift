@@ -11,12 +11,12 @@ struct CompositeWizardBuildStepView: View {
     /// change — the wrapper re-broadcasts each child's `objectWillChange`
     /// upward.
     @ObservedObject var subtaskList: CompositeSubtaskList
-    /// Operator chosen on Setup. Threshold only gates when M_OF_N.
+    /// Operator chosen on Setup. Threshold only surfaces when M_OF_N.
     let operatorType: OperatorType
-    /// Required-N from Setup. Build blocks `Next` until the subtask
-    /// count reaches this when the operator is M_OF_N, so users can't
-    /// land on Review with an unsatisfiable rule.
-    let threshold: Int
+    /// Required-N — picked on this step (not Setup) so the user sees
+    /// the subtask list while choosing. Clamped down silently when the
+    /// list shrinks below it; both are on-screen so no toast needed.
+    @Binding var threshold: Int
     let libraryTasks: [OYBC.Task]
     let libraryCompositeTasks: [CompositeTask]
     let taskBoardCounts: [String: Int]
@@ -74,17 +74,9 @@ struct CompositeWizardBuildStepView: View {
         subtaskList.items.filter { isReady($0) }.count
     }
 
-    /// M_OF_N composites require at least `threshold` subtasks — Setup
-    /// may have picked an aspirational value. Block `Next` until the
-    /// list catches up.
-    private var meetsThreshold: Bool {
-        operatorType != .mOfN || subtaskList.items.count >= threshold
-    }
-
     private var canAdvance: Bool {
         subtaskList.items.count >= 2
             && readyCount == subtaskList.items.count
-            && meetsThreshold
     }
 
     private var statusText: String {
@@ -96,12 +88,14 @@ struct CompositeWizardBuildStepView: View {
         if incomplete > 0 {
             return "\(incomplete) card\(incomplete == 1 ? "" : "s") still need attention."
         }
-        if !meetsThreshold {
-            let needed = threshold - count
-            let noun = needed == 1 ? "subtask" : "subtasks"
-            return "Add \(needed) more \(noun) — you picked “At least \(threshold) of”."
-        }
         return "\(readyCount) subtask\(readyCount == 1 ? "" : "s") ready."
+    }
+
+    /// Stepper upper bound tracks the actual subtask count; we fall
+    /// back to 1 so the display never collapses when the list is
+    /// empty. The stepper is disabled at count == 0.
+    private var stepperMax: Int {
+        max(1, subtaskList.items.count)
     }
 
     /// Ids currently included as existing-mode subtasks — drives the
@@ -149,6 +143,10 @@ struct CompositeWizardBuildStepView: View {
                 }
             }
 
+            if operatorType == .mOfN {
+                thresholdStepper
+            }
+
             VStack(spacing: 8) {
                 Button("+ Add existing tasks") { libraryOpen = true }
                     .buttonStyle(.bordered)
@@ -176,6 +174,13 @@ struct CompositeWizardBuildStepView: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color(.systemGray4), lineWidth: 1)
         )
+        // Clamp threshold silently when the list shrinks below it —
+        // both stepper and list are on-screen so no toast needed.
+        .onChange(of: subtaskList.items.count) { newCount in
+            if operatorType == .mOfN && threshold > max(1, newCount) {
+                threshold = max(1, newCount)
+            }
+        }
         .sheet(isPresented: $libraryOpen) {
             LibraryPickerSheetView(
                 libraryTasks: libraryTasks,
@@ -192,6 +197,39 @@ struct CompositeWizardBuildStepView: View {
                 onCancel: { libraryOpen = false }
             )
         }
+    }
+
+    @ViewBuilder
+    private var thresholdStepper: some View {
+        let count = subtaskList.items.count
+        HStack(spacing: 10) {
+            Text("Required to complete:")
+                .font(.subheadline)
+                .fontWeight(.medium)
+            Button("−") {
+                if threshold > 1 { threshold -= 1 }
+            }
+            .buttonStyle(.bordered)
+            .disabled(threshold <= 1 || count == 0)
+            Text("\(threshold)")
+                .frame(minWidth: 30)
+                .fontWeight(.semibold)
+            Button("+") {
+                if threshold < stepperMax { threshold += 1 }
+            }
+            .buttonStyle(.bordered)
+            .disabled(threshold >= stepperMax || count == 0)
+            Text(count > 0 ? "of \(count)" : "of your subtasks")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.systemGray6))
+        )
     }
 
     private var emptyState: some View {

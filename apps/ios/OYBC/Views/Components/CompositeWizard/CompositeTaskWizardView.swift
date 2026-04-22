@@ -63,8 +63,6 @@ struct CompositeTaskWizardView: View {
                 CompositeWizardSetupStepView(
                     title: $compositeTitle,
                     operatorType: $operatorType,
-                    threshold: $threshold,
-                    subtaskCount: subtaskList.items.count,
                     onCancel: resetForm,
                     onNext: { currentStep = 2 }
                 )
@@ -72,7 +70,7 @@ struct CompositeTaskWizardView: View {
                 CompositeWizardBuildStepView(
                     subtaskList: subtaskList,
                     operatorType: operatorType,
-                    threshold: threshold,
+                    threshold: $threshold,
                     libraryTasks: libraryTasks,
                     libraryCompositeTasks: libraryCompositeTasks,
                     taskBoardCounts: taskBoardCounts,
