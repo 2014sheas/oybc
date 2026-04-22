@@ -8,9 +8,10 @@ struct CompositeWizardSetupStepView: View {
     @Binding var operatorType: OperatorType
     @Binding var threshold: Int
 
-    /// Subtask count drives the threshold stepper's upper bound. 0 is
-    /// acceptable on first render (user hasn't moved to Build yet) —
-    /// we clamp the max to at least 1 so the stepper renders.
+    /// Only used to tune the hint text ("of 3 subtasks" vs "of the
+    /// subtasks you'll add next"). The stepper is no longer capped to
+    /// this value — users can pick any N ≥ 1 upfront, and the Build
+    /// step blocks Next until enough subtasks exist to satisfy it.
     let subtaskCount: Int
     let onCancel: () -> Void
     let onNext: () -> Void
@@ -32,7 +33,10 @@ struct CompositeWizardSetupStepView: View {
     }
 
     private var thresholdMax: Int {
-        max(1, subtaskCount)
+        // Soft cap — users can pick any reasonable N upfront, Build
+        // validates. Stays ahead of both current count and current
+        // threshold so the + button never disables in normal use.
+        max(20, subtaskCount, threshold)
     }
 
     var body: some View {
@@ -83,7 +87,7 @@ struct CompositeWizardSetupStepView: View {
                         .disabled(threshold >= thresholdMax)
                         Text(subtaskCount > 0
                              ? "of \(subtaskCount) subtask\(subtaskCount == 1 ? "" : "s")"
-                             : "of your subtasks (add them in the next step)")
+                             : "of the subtasks you'll add next")
                             .foregroundColor(.secondary)
                             .font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)

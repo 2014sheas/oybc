@@ -13,9 +13,10 @@ export interface SetupStepProps {
   onOperatorChange: (next: OperatorType) => void;
   threshold: number;
   onThresholdChange: (next: number) => void;
-  /** Needed to scope the threshold stepper's max. Zero during setup is
-   *  fine — the stepper falls back to 1 to avoid a disabled min == max
-   *  trap when the user hasn't built any subtasks yet. */
+  /** Only used to tune the hint text ("of 3 subtasks" vs "of the subtasks
+   *  you'll add next"). The stepper is no longer capped to this value —
+   *  users can freely pick any N ≥ 1 while still on Setup, and the Build
+   *  step blocks Next until enough subtasks exist to satisfy it. */
   subtaskCount: number;
   onCancel: () => void;
   onNext: () => void;
@@ -47,9 +48,11 @@ export function SetupStep({
 
   const canAdvance = trimmedTitle.length > 0 && titleError === null;
 
-  // Stepper max: subtask count, falling back to 1 so the stepper
-  // renders meaningfully even when the user hasn't built the list yet.
-  const thresholdMax = Math.max(1, subtaskCount);
+  // Soft cap only — users can pick any reasonable N upfront (Build step
+  // validates). The cap stays ahead of both the current count and the
+  // current threshold so the + button never disables in normal use, and
+  // lifts with the library as the user adds subtasks.
+  const thresholdMax = Math.max(20, subtaskCount, threshold);
 
   return (
     <div className={styles.container}>
@@ -85,7 +88,7 @@ export function SetupStep({
               label={
                 subtaskCount > 0
                   ? `of ${subtaskCount} subtask${subtaskCount !== 1 ? 's' : ''}`
-                  : 'of your subtasks (add them in the next step)'
+                  : "of the subtasks you'll add next"
               }
             />
           </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
@@ -81,50 +81,6 @@ export function CompositeTaskWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  /** Transient banner surfaced when a threshold gets clamped downward
-   *  by subtask removal. Replaces today's silent mutation so users can
-   *  see why the M_OF_N stepper changed. Auto-dismisses after 4s. */
-  const [clampToast, setClampToast] = useState<string | null>(null);
-  const clampTimerRef = useRef<number | null>(null);
-
-  function showClampToast(message: string): void {
-    setClampToast(message);
-    if (clampTimerRef.current !== null) window.clearTimeout(clampTimerRef.current);
-    clampTimerRef.current = window.setTimeout(() => setClampToast(null), 4000);
-  }
-
-  // Cancel the clamp-toast timer on unmount so the callback never fires
-  // against a disposed component. Keeps React from warning about state
-  // updates after unmount if a user navigates away with a toast still
-  // visible.
-  useEffect(() => {
-    return () => {
-      if (clampTimerRef.current !== null) {
-        window.clearTimeout(clampTimerRef.current);
-        clampTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  // Keep threshold in range whenever the subtask count drops (removals,
-  // sheet uncheck) or the operator flips to M_OF_N from a state where
-  // the initial threshold (2) is already above the current subtask
-  // count. Side-effect kept here rather than inline in mutators so each
-  // mutator stays a pure state update — no more reading `threshold` from
-  // the closure and re-setting it in the same tick. Only the M_OF_N case
-  // surfaces the toast; other operators ignore the stored threshold so a
-  // stray value there is harmless.
-  useEffect(() => {
-    if (operator !== OperatorType.M_OF_N) return;
-    const clamped = clampThreshold(subtasks, threshold);
-    if (clamped === threshold) return;
-    showClampToast(
-      `Threshold lowered to ${clamped} (you only have ${subtasks.length} subtask${subtasks.length === 1 ? '' : 's'}).`,
-    );
-    setThreshold(clamped);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subtasks.length, operator]);
-
   // Library feeds — live so a composite created elsewhere shows up here.
   const allTasks = useLiveQuery(
     () => db.tasks.where('[userId+isDeleted]').equals([resolvedUserId, 0]).toArray(),
@@ -217,12 +173,6 @@ export function CompositeTaskWizard({
   }, [allCompositeNodes, allTasks, allCompositeTasks]);
 
   // ─── State helpers ────────────────────────────────────────────────────────
-
-  function clampThreshold(nextSubtasks: SubtaskDraft[], currentThreshold: number): number {
-    const len = nextSubtasks.length;
-    if (len === 0) return 1;
-    return Math.min(Math.max(1, currentThreshold), len);
-  }
 
   function addInlineSubtask(): void {
     setSubtasks((prev) => [...prev, createEmptyInlineSubtask()]);
@@ -489,13 +439,6 @@ export function CompositeTaskWizard({
         }}
       />
 
-      {clampToast !== null && (
-        <div className={styles.clampToast} role="status">
-          <span className={styles.clampToastIcon} aria-hidden="true">⚠</span>
-          <span>{clampToast}</span>
-        </div>
-      )}
-
       {currentStep === 1 && (
         <SetupStep
           title={title}
@@ -513,6 +456,8 @@ export function CompositeTaskWizard({
       {currentStep === 2 && (
         <BuildStep
           subtasks={subtasks}
+          operator={operator}
+          threshold={threshold}
           allTasks={allTasks}
           allCompositeTasks={allCompositeTasks}
           taskBoardCounts={taskBoardCounts}

@@ -11,6 +11,12 @@ struct CompositeWizardBuildStepView: View {
     /// change — the wrapper re-broadcasts each child's `objectWillChange`
     /// upward.
     @ObservedObject var subtaskList: CompositeSubtaskList
+    /// Operator chosen on Setup. Threshold only gates when M_OF_N.
+    let operatorType: OperatorType
+    /// Required-N from Setup. Build blocks `Next` until the subtask
+    /// count reaches this when the operator is M_OF_N, so users can't
+    /// land on Review with an unsatisfiable rule.
+    let threshold: Int
     let libraryTasks: [OYBC.Task]
     let libraryCompositeTasks: [CompositeTask]
     let taskBoardCounts: [String: Int]
@@ -68,17 +74,32 @@ struct CompositeWizardBuildStepView: View {
         subtaskList.items.filter { isReady($0) }.count
     }
 
+    /// M_OF_N composites require at least `threshold` subtasks — Setup
+    /// may have picked an aspirational value. Block `Next` until the
+    /// list catches up.
+    private var meetsThreshold: Bool {
+        operatorType != .mOfN || subtaskList.items.count >= threshold
+    }
+
     private var canAdvance: Bool {
-        subtaskList.items.count >= 2 && readyCount == subtaskList.items.count
+        subtaskList.items.count >= 2
+            && readyCount == subtaskList.items.count
+            && meetsThreshold
     }
 
     private var statusText: String {
-        if subtaskList.items.count < 2 {
-            return "Add at least 2 subtasks (\(subtaskList.items.count) so far)."
+        let count = subtaskList.items.count
+        if count < 2 {
+            return "Add at least 2 subtasks (\(count) so far)."
         }
-        let incomplete = subtaskList.items.count - readyCount
+        let incomplete = count - readyCount
         if incomplete > 0 {
             return "\(incomplete) card\(incomplete == 1 ? "" : "s") still need attention."
+        }
+        if !meetsThreshold {
+            let needed = threshold - count
+            let noun = needed == 1 ? "subtask" : "subtasks"
+            return "Add \(needed) more \(noun) — you picked “At least \(threshold) of”."
         }
         return "\(readyCount) subtask\(readyCount == 1 ? "" : "s") ready."
     }

@@ -31,11 +31,6 @@ struct CompositeTaskWizardView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
-    /// Transient banner shown when a threshold is clamped downward by
-    /// subtask removal. Replaces the legacy silent clamp. Auto-dismisses
-    /// after 4s via `clampToastToken`.
-    @State private var clampToast: String?
-    @State private var clampToastToken: Int = 0
 
     // MARK: - Library state
 
@@ -63,28 +58,6 @@ struct CompositeTaskWizardView: View {
                 }
             )
 
-            if let toast = clampToast {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                    Text(toast)
-                        .font(.caption)
-                        .foregroundColor(.primary)
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.orange.opacity(0.12))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.orange.opacity(0.4), lineWidth: 1)
-                )
-                .transition(.opacity)
-            }
-
             switch currentStep {
             case 1:
                 CompositeWizardSetupStepView(
@@ -98,6 +71,8 @@ struct CompositeTaskWizardView: View {
             case 2:
                 CompositeWizardBuildStepView(
                     subtaskList: subtaskList,
+                    operatorType: operatorType,
+                    threshold: threshold,
                     libraryTasks: libraryTasks,
                     libraryCompositeTasks: libraryCompositeTasks,
                     taskBoardCounts: taskBoardCounts,
@@ -139,11 +114,6 @@ struct CompositeTaskWizardView: View {
             ensurePlaygroundUser()
             loadLibrary()
         }
-        // Keep threshold in range whenever the operator flips to M_OF_N
-        // (initial value may exceed `max(1, subtaskCount)`) or when the
-        // subtask count shifts. Web twin uses a useEffect; same shape.
-        .onChange(of: operatorType) { _ in clampThresholdAndMaybeToast() }
-        .onChange(of: subtaskList.items.count) { _ in clampThresholdAndMaybeToast() }
     }
 
     // MARK: - Subtask mutators
@@ -182,37 +152,6 @@ struct CompositeTaskWizardView: View {
                 item.selectedCompositeId = entry.id
             }
             subtaskList.append(item)
-        }
-        // Count-change hook on the body calls `clampThresholdAndMaybeToast`.
-    }
-
-    private func clampThreshold() {
-        if operatorType == .mOfN {
-            let count = subtaskList.items.count
-            if count == 0 { threshold = 1; return }
-            threshold = min(max(1, threshold), count)
-        }
-    }
-
-    /// Variant of `clampThreshold` that surfaces a transient toast when
-    /// the threshold actually moved. Only relevant for the removal path
-    /// — adding a subtask can't reduce the threshold.
-    private func clampThresholdAndMaybeToast() {
-        let before = threshold
-        clampThreshold()
-        if threshold != before && operatorType == .mOfN {
-            let count = subtaskList.items.count
-            let noun = count == 1 ? "subtask" : "subtasks"
-            showClampToast("Threshold lowered to \(threshold) (you only have \(count) \(noun)).")
-        }
-    }
-
-    private func showClampToast(_ message: String) {
-        clampToast = message
-        clampToastToken += 1
-        let token = clampToastToken
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-            if clampToastToken == token { clampToast = nil }
         }
     }
 

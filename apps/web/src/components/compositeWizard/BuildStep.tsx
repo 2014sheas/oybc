@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CompositeTask, Task } from '@oybc/shared';
+import { OperatorType } from '@oybc/shared';
 import { SubtaskCard } from './SubtaskCard';
 import {
   LibraryPickerSheet,
@@ -15,6 +16,11 @@ import styles from './BuildStep.module.css';
 
 export interface BuildStepProps {
   subtasks: SubtaskDraft[];
+  /** Operator chosen on Setup. Threshold is only meaningful for M_OF_N. */
+  operator: OperatorType;
+  /** Required-N target from Setup. Build gates `Next` until the subtask
+   *  count is at least this big when the operator is M_OF_N. */
+  threshold: number;
   allTasks: Task[];
   allCompositeTasks: CompositeTask[];
   /** taskId → count of distinct boards the task is placed on. */
@@ -46,6 +52,8 @@ export interface BuildStepProps {
  */
 export function BuildStep({
   subtasks,
+  operator,
+  threshold,
   allTasks,
   allCompositeTasks,
   taskBoardCounts,
@@ -89,13 +97,19 @@ export function BuildStep({
 
   const hasMinimum = subtasks.length >= 2;
   const allReady = readyCount === subtasks.length && readyCount >= 2;
-  const canAdvance = hasMinimum && allReady;
+  // For M_OF_N, Setup may have picked a threshold ahead of the subtask
+  // list. Block Next until the list is at least that big, so the user
+  // can't land on Review with an unsatisfiable rule.
+  const meetsThreshold = operator !== OperatorType.M_OF_N || subtasks.length >= threshold;
+  const canAdvance = hasMinimum && allReady && meetsThreshold;
 
   const statusText: string = !hasMinimum
     ? `Add at least 2 subtasks (${subtasks.length} so far).`
     : !allReady
       ? `${subtasks.length - readyCount} card${subtasks.length - readyCount === 1 ? '' : 's'} still need attention.`
-      : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
+      : !meetsThreshold
+        ? `Add ${threshold - subtasks.length} more subtask${threshold - subtasks.length === 1 ? '' : 's'} — you picked “At least ${threshold} of”.`
+        : `${readyCount} subtask${readyCount === 1 ? '' : 's'} ready.`;
 
   return (
     <div className={styles.container}>

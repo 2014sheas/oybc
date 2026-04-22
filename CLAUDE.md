@@ -361,6 +361,14 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 
 **Copilot code review**: request on PRs via `gh api --method POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers --input - <<< '{"reviewers":["Copilot"]}'`. Address review comments before merging.
 
+**Addressing review comments**: every round of PR review comments — from Copilot or a human reviewer — must be logged as a markdown table in the **PR Review Log** section at the bottom of this file. Never in the commit body. One row per comment, columns: `Comment`, `Severity`, `Remedy`.
+
+- **Comment**: short restatement (≤ 1 sentence) + file/line pointer. Enough for a future reader to find the thread without scrolling the PR.
+- **Severity**: one of `Critical` (correctness, security, data loss), `Major` (bug in happy path, significant UX regression, a11y blocker), `Minor` (nit-level bug, stale-state edge case, code-quality smell), `Nit` (style, naming, comment wording).
+- **Remedy**: either the fix description in ≤ 1 sentence, or `Declined — <reason>` if we chose not to act. Declining is fine; silent dismissal is not.
+
+Rationale: keeps review outcomes greppable in-tree (CLAUDE.md is always open), makes declined comments explicit instead of invisible, and gives future reviewers a quick read on what the previous round landed on.
+
 **pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v4` with explicit `version: 9.15.4` (v6 of the action ignores the version input).
 
 ## Development Status
@@ -445,3 +453,34 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 - Merge to `dev` only after CI passes (web + iOS workflows) and Copilot review is addressed.
 - Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
 - When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
+
+## PR Review Log
+
+Append tables for each PR that receives review comments. Most recent PR first; multiple review rounds on the same PR get their own table under a **Round N** heading. Leave the fix commit SHA next to the round heading so the mapping from review → code is obvious.
+
+### PR #41 — composite task wizard: 3-step flow + multi-add library sheet
+
+#### Round 1 (fix: `4b0d31c`)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| `readyCount` / `canAdvance` don't recompute when a `SubtaskItem`'s `@Published` fields change — status + Next button stick (`CompositeWizardBuildStepView.swift:68`). | Major | Added `CompositeSubtaskList` `ObservableObject` wrapper that re-broadcasts each child's `objectWillChange`; wizard + BuildStep now observe it instead of `[SubtaskItem]`. |
+| Inline counting subtask with blank title saves `"Untitled"` instead of the derived `action+max+unit` (diverges from web + primary createTask) (`CompositeTaskWizardView.swift:347`). | Minor | Derive the same `action+max+unit` fallback inside the composite save path. |
+| Inline progress subtasks save steps with `linkedTaskId: nil` and `"Untitled Step"`; other create flows make a standalone `Task` per step + link it and derive counting step titles (`CompositeTaskWizardView.swift:377`). | Minor | Mirror the primary `createTask` path: per-step standalone Task, `TaskStep.linkedTaskId` wired, counting-blank titles resolved via `action+max+unit`. |
+| `showClampToast` setTimeout never cleared on unmount — setState on disposed component risk (`CompositeTaskWizard.tsx:94`). | Minor | Added `useEffect` cleanup that clears `clampTimerRef.current` on unmount. |
+
+#### Round 3 — user-reported UX (fix: pending)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| Threshold stepper on Setup is capped at `max(1, subtaskCount)`, so with 0 subtasks the user is pinned at 1 and the round-2 "clamp on operator change" fires a spurious `Threshold lowered to 1` toast. Users end up bouncing back from Build to Setup just to pick N. | Major (UX) | Removed the subtask-count cap — Setup stepper now accepts any reasonable N upfront (soft cap `max(20, subtaskCount, threshold)`). Threshold becomes a pure user-intent value: no auto-clamp, no toast. Build step instead shows `Add N more subtasks — you picked "At least X of"` and blocks `Next` until the count catches up. Removes the unused clamp effect (web) / `.onChange(of: subtasks.count)` hook (iOS) and all `clampToast` plumbing on both platforms. |
+
+#### Round 2 (fix: `c862663`)
+
+| Comment | Severity | Remedy |
+| --- | --- | --- |
+| Threshold stepper can render out-of-range (`2 of 1`) if user flips to `M_OF_N` before adding subtasks (`SetupStep.tsx:53`). | Minor | Added `useEffect([subtasks.length, operator])` on web that clamps + fires toast. Mutators stay pure. |
+| iOS twin of the same threshold-out-of-range bug (`CompositeWizardSetupStepView.swift:36`). | Minor | Added `.onChange(of: operatorType)` + `.onChange(of: subtaskList.items.count)` on the wizard view that call `clampThresholdAndMaybeToast`. |
+| `commitLibraryDiff` reads/writes `threshold` as a side-effect inside `setSubtasks` updater — desync risk under React batching (`CompositeTaskWizard.tsx:232`). | Minor | Pulled the clamp out into the new effect above so `commitLibraryDiff` is now a pure `setSubtasks` update. |
+| `removeSubtask` reads `subtasks` from the closure instead of functional setter — stale state risk (`CompositeTaskWizard.tsx:244`). | Minor | Switched to `setSubtasks((prev) => prev.filter(...))`. |
+| `TypeBadge` in `letterOnly` mode exposes `"NORM"/"COUN"` as the accessible name — screen readers announce the abbreviation (`TypeBadge.tsx:66`). | Major (a11y) | Added `aria-label="<Type> task"` when `letterOnly` so assistive tech hears "Normal task" etc. iOS already had `.accessibilityLabel` on both branches. |
