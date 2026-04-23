@@ -204,41 +204,16 @@ struct CompositeWizardBuildStepView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Spacer()
-                Text(statusText)
-                    .font(.caption)
-                    .fontWeight(canAdvance ? .semibold : .regular)
-                    .foregroundColor(canAdvance ? .green : .secondary)
-            }
+            statusBanner
 
             if operatorType == .mOfN {
                 thresholdStepper
             }
 
-            if subtaskList.items.isEmpty {
-                emptyState
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(subtaskList.items) { item in
-                        CompositeSubtaskCardView(
-                            item: item,
-                            libraryTasks: libraryTasks,
-                            libraryCompositeTasks: libraryCompositeTasks,
-                            taskBoardCounts: taskBoardCounts,
-                            taskStepCounts: taskStepCounts,
-                            compositeSubtaskCounts: compositeSubtaskCounts,
-                            compositeLeafPreviews: compositeLeafPreviews,
-                            onRemove: { onRemove(item) }
-                        )
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Button("+ Create new task", action: onAddInline)
-                    .buttonStyle(.borderedProminent)
-            }
+            // Top section — what the user has committed to. Labelled
+            // to match the library section below so the two lists
+            // feel balanced, even when there's nothing selected yet.
+            selectionsSection
 
             librarySection
 
@@ -265,6 +240,64 @@ struct CompositeWizardBuildStepView: View {
         .onChange(of: subtaskList.items.count) { newCount in
             if operatorType == .mOfN && threshold > max(1, newCount) {
                 threshold = max(1, newCount)
+            }
+        }
+    }
+
+    // MARK: - Status banner
+    // Prominent strip at the top so the gate message (`Add at least 2…`,
+    // `X cards still need attention`) can't be missed — previous caption
+    // in the top-right corner was easy to overlook on narrow screens.
+
+    @ViewBuilder
+    private var statusBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: canAdvance ? "checkmark.circle.fill" : "info.circle")
+                .foregroundColor(canAdvance ? .green : .orange)
+            Text(statusText)
+                .font(.subheadline)
+                .fontWeight(canAdvance ? .semibold : .regular)
+                .foregroundColor(canAdvance ? .green : .primary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(canAdvance
+                      ? Color.green.opacity(0.12)
+                      : Color.orange.opacity(0.08))
+        )
+    }
+
+    // MARK: - Selections section
+
+    @ViewBuilder
+    private var selectionsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("IN THIS COMPOSITE")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.secondary)
+                .tracking(0.5)
+
+            if subtaskList.items.isEmpty {
+                emptyState
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(subtaskList.items) { item in
+                        CompositeSubtaskCardView(
+                            item: item,
+                            libraryTasks: libraryTasks,
+                            libraryCompositeTasks: libraryCompositeTasks,
+                            taskBoardCounts: taskBoardCounts,
+                            taskStepCounts: taskStepCounts,
+                            compositeSubtaskCounts: compositeSubtaskCounts,
+                            compositeLeafPreviews: compositeLeafPreviews,
+                            onRemove: { onRemove(item) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -311,15 +344,25 @@ struct CompositeWizardBuildStepView: View {
     @ViewBuilder
     private var librarySection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("PICK FROM YOUR LIBRARY")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.secondary)
-                    .tracking(0.5)
-                Text("Tap a task to add or remove it from this composite.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
+            // Heading row with inline "+ Create new task" CTA on the
+            // right — mirrors the board wizard's Tasks step so the
+            // "or make your own" affordance lives with the library,
+            // not floating between selections and the library.
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PICK FROM YOUR LIBRARY")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                        .tracking(0.5)
+                    Text("Tap a task to add or remove it.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button("+ New task", action: onAddInline)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
 
             searchField
@@ -349,12 +392,25 @@ struct CompositeWizardBuildStepView: View {
     }
 
     private var filterTabs: some View {
-        Picker("Filter", selection: $filter) {
-            ForEach(CompositeLibraryFilter.allCases) { f in
-                Text(f.displayName).tag(f)
-            }
-        }
-        .pickerStyle(.segmented)
+        // Scrollable pill row instead of a segmented Picker — on iPhone
+        // the segmented style was truncating "Composite" to "Compos…"
+        // because five even-width segments don't fit the phone's width.
+        // `FilterTabsView` scrolls horizontally and matches the web
+        // FilterTabs affordance exactly.
+        FilterTabsView(
+            tabs: CompositeLibraryFilter.allCases.map { f in
+                FilterTab(value: f.rawValue, label: f.displayName)
+            },
+            activeTab: Binding(
+                get: { filter.rawValue },
+                set: { newValue in
+                    if let next = CompositeLibraryFilter(rawValue: newValue) {
+                        filter = next
+                    }
+                }
+            ),
+            onTabChange: { _ in }
+        )
     }
 
     @ViewBuilder

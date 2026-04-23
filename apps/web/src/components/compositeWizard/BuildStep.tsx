@@ -194,10 +194,18 @@ export function BuildStep({
 
   return (
     <div className={styles.container}>
-      <div className={styles.statusRow}>
-        <span className={canAdvance ? styles.statusReady : styles.statusWait}>
-          {statusText}
+      {/* Prominent status banner — was a small top-right caption before,
+       *  easy to miss. Now tied to canAdvance with a tinted background
+       *  + icon so the gate message ("Add at least 2 subtasks") is
+       *  impossible to overlook. */}
+      <div
+        className={canAdvance ? styles.statusBannerReady : styles.statusBannerWait}
+        role="status"
+      >
+        <span className={styles.statusBannerIcon} aria-hidden="true">
+          {canAdvance ? '✓' : 'ⓘ'}
         </span>
+        <span>{statusText}</span>
       </div>
 
       {operator === OperatorType.M_OF_N && (
@@ -213,45 +221,58 @@ export function BuildStep({
         </div>
       )}
 
-      <div className={styles.subtaskList}>
-        {subtasks.map((s) => (
-          <SubtaskCard
-            key={s.id}
-            draft={s}
-            allTasks={allTasks}
-            allCompositeTasks={allCompositeTasks}
-            taskBoardCounts={taskBoardCounts}
-            taskStepCounts={taskStepCounts}
-            compositeSubtaskCounts={compositeSubtaskCounts}
-            compositeLeafPreviews={compositeLeafPreviews}
-            onUpdate={(updates) => onUpdateSubtask(s.id, updates)}
-            onRemove={() => onRemoveSubtask(s.id)}
-            onStepFieldChange={(stepId, field, value) => onStepFieldChange(s.id, stepId, field, value)}
-            onAddStep={() => onAddStep(s.id)}
-            onRemoveStep={(stepId) => onRemoveStep(s.id, stepId)}
-          />
-        ))}
+      {/* Selections — labelled to match "PICK FROM YOUR LIBRARY" below
+       *  so the two lists feel like paired zones rather than a floating
+       *  row above the library. */}
+      <div className={styles.selectionsSection}>
+        <h3 className={styles.sectionHeading}>In this composite</h3>
 
-        {subtasks.length === 0 && (
-          <div className={styles.emptyState}>
-            No subtasks yet. Tap a row from your library below, or create one inline.
-          </div>
-        )}
-      </div>
+        <div className={styles.subtaskList}>
+          {subtasks.map((s) => (
+            <SubtaskCard
+              key={s.id}
+              draft={s}
+              allTasks={allTasks}
+              allCompositeTasks={allCompositeTasks}
+              taskBoardCounts={taskBoardCounts}
+              taskStepCounts={taskStepCounts}
+              compositeSubtaskCounts={compositeSubtaskCounts}
+              compositeLeafPreviews={compositeLeafPreviews}
+              onUpdate={(updates) => onUpdateSubtask(s.id, updates)}
+              onRemove={() => onRemoveSubtask(s.id)}
+              onStepFieldChange={(stepId, field, value) => onStepFieldChange(s.id, stepId, field, value)}
+              onAddStep={() => onAddStep(s.id)}
+              onRemoveStep={(stepId) => onRemoveStep(s.id, stepId)}
+            />
+          ))}
 
-      <div className={styles.addRow}>
-        <button type="button" className={styles.addButtonPrimary} onClick={onAddInline}>
-          + Create new task
-        </button>
+          {subtasks.length === 0 && (
+            <div className={styles.emptyState}>
+              No subtasks yet. Tap a row from your library below, or use <strong>+ New task</strong>.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── Always-visible library ─── */}
       <div className={styles.librarySection}>
-        <div className={styles.libraryHeader}>
-          <h3 className={styles.libraryHeading}>Pick from your library</h3>
-          <p className={styles.librarySubheading}>
-            Tap a task to add or remove it from this composite.
-          </p>
+        {/* Heading row with inline "+ New task" CTA on the right —
+         *  mirrors the board wizard so "or create your own" lives
+         *  with the library instead of floating between sections. */}
+        <div className={styles.libraryHeaderRow}>
+          <div className={styles.libraryHeader}>
+            <h3 className={styles.sectionHeading}>Pick from your library</h3>
+            <p className={styles.librarySubheading}>
+              Tap a task to add or remove it.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={styles.newTaskButton}
+            onClick={onAddInline}
+          >
+            + New task
+          </button>
         </div>
 
         <div className={styles.searchRow}>
@@ -274,7 +295,7 @@ export function BuildStep({
         <div className={styles.libraryList}>
           {showEmptyLibrary && (
             <div className={styles.libraryEmptyState}>
-              Your library is empty — tap <strong>+ Create new task</strong> above to make one.
+              Your library is empty — tap <strong>+ New task</strong> above to make one.
             </div>
           )}
           {showNoMatches && (
