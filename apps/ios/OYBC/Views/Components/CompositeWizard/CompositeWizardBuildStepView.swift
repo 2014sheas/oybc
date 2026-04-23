@@ -159,9 +159,12 @@ struct CompositeWizardBuildStepView: View {
     private var libraryRows: [CompositeLibraryRow] {
         let taskRows: [CompositeLibraryRow] = libraryTasks.map { task in
             let boards = taskBoardCounts[task.id] ?? 0
+            // Short hint — long forms ("not on any board", "on 3 boards")
+            // eat enough horizontal space on iPhone to truncate the
+            // title and subtitle. Keep it concise.
             let usage = boards == 0
-                ? "not on any board"
-                : "on \(boards) board\(boards == 1 ? "" : "s")"
+                ? "unused"
+                : "\(boards) board\(boards == 1 ? "" : "s")"
             return CompositeLibraryRow(
                 id: task.id,
                 title: task.title,

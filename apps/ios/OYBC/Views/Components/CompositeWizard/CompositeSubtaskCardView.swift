@@ -359,9 +359,12 @@ struct CompositeSubtaskCardView: View {
                 return nil
             }
             let boards = taskBoardCounts[task.id] ?? 0
+            // Short form — matches the library-row copy on the same
+            // screen. Long versions were pushing titles to truncate on
+            // iPhone.
             let usage = boards == 0
-                ? "not on any board"
-                : "on \(boards) board\(boards == 1 ? "" : "s")"
+                ? "unused"
+                : "\(boards) board\(boards == 1 ? "" : "s")"
             return ExistingRow(
                 title: task.title,
                 typeLabel: task.type.rawValue,

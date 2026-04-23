@@ -148,12 +148,16 @@ export function BuildStep({
   const libraryRows = useMemo<LibraryRow[]>(() => {
     const taskRows: LibraryRow[] = allTasks.map((t) => {
       const boards = taskBoardCounts[t.id] ?? 0;
+      // Short usage hint — long forms ("not on any board", "on 3 boards")
+      // were eating enough horizontal space on iPhone to truncate the
+      // title; keep parity by trimming on web too.
+      const usageHint = boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`;
       return {
         id: t.id,
         title: t.title,
         type: t.type as 'normal' | 'counting' | 'progress',
         subtitle: buildTaskSubtitle(t, taskStepCounts),
-        usageHint: boards === 0 ? 'not on any board' : `on ${boards} board${boards === 1 ? '' : 's'}`,
+        usageHint,
         kind: 'task',
       };
     });

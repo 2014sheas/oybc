@@ -86,7 +86,7 @@ function ExistingFlatRow({
         type: task.type as 'normal' | 'counting' | 'progress',
         title: task.title,
         subtitle: buildTaskSubtitle(task, taskStepCounts),
-        usageHint: boards === 0 ? 'not on any board' : `on ${boards} board${boards === 1 ? '' : 's'}`,
+        usageHint: boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`,
       };
     }
     const ct = allCompositeTasks.find((c) => c.id === draft.selectedId);
