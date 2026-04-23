@@ -300,16 +300,22 @@ struct CompositeWizardBuildStepView: View {
     }
 
     // MARK: - Library section
+    // Flat — no outer box. The step container already frames this
+    // area; stacking another background + stroke turned the library
+    // into a box-in-a-box that felt cramped on iPhone. Separated now
+    // by whitespace + an all-caps section label (matches iOS norms).
 
     @ViewBuilder
     private var librarySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Pick from your library")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                Text("Tap a task to add or remove it from this composite.")
+                Text("PICK FROM YOUR LIBRARY")
                     .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                    .tracking(0.5)
+                Text("Tap a task to add or remove it from this composite.")
+                    .font(.footnote)
                     .foregroundColor(.secondary)
             }
 
@@ -317,15 +323,10 @@ struct CompositeWizardBuildStepView: View {
             filterTabs
             libraryListContainer
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(.systemGray6))
-        )
     }
 
     private var searchField: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
             TextField("Search your tasks…", text: $query)
@@ -338,9 +339,9 @@ struct CompositeWizardBuildStepView: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color(.systemBackground))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.systemGray6))
         .cornerRadius(8)
     }
 
@@ -400,31 +401,31 @@ struct CompositeWizardBuildStepView: View {
         Button {
             onToggleLibraryItem(row.id, row.kind)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(checked ? .blue : .secondary)
                 TypeBadgeView(type: row.typeLabel, size: .small, letterOnly: true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(row.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     if !row.subtitle.isEmpty {
                         Text(row.subtitle)
-                            .font(.caption)
+                            .font(.footnote)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
                 }
                 Spacer()
                 Text(row.usageHint)
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(checked
