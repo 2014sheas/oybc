@@ -20,6 +20,14 @@ struct ContentView: View {
             // Launch:
             //   xcrun simctl launch <device> com.oybc.OYBC -previewCompositeBuild YES
             CompositeBuildPreviewHarness()
+        } else if ProcessInfo.processInfo.arguments.contains("-previewBoardTasks") {
+            // Same pattern for the board wizard's Tasks step so we can
+            // verify row layout / usage hints / composite expansion
+            // without driving the full board flow.
+            //
+            // Launch:
+            //   xcrun simctl launch <device> com.oybc.OYBC -previewBoardTasks YES
+            BoardWizardTasksPreviewHarness()
         } else {
             AuthGateView {
                 MainTabView()

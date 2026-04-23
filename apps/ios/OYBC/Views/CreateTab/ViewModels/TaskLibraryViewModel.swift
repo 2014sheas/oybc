@@ -38,6 +38,18 @@ final class TaskLibraryViewModel {
     /// need per-step progress fractions.
     var allLibraryTaskSteps: [TaskStep] = []
 
+    /// All non-deleted BoardTasks across every board (any user). Used
+    /// by `BoardWizardTasksStepView` to compute the "N boards" usage
+    /// hint per task — parity with the composite wizard's library rows.
+    var allLibraryBoardTasks: [BoardTask] = []
+
+    /// All non-deleted CompositeNodes for the authenticated user's
+    /// composites. Used to resolve leaf previews + leaf task lists
+    /// inline on the board-wizard Tasks step, replacing the heavier
+    /// per-composite `deriveCompositeNodes` load that only covered
+    /// the currently-expanded row.
+    var allLibraryCompositeNodes: [CompositeNode] = []
+
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
@@ -98,10 +110,29 @@ final class TaskLibraryViewModel {
                         .fetchAll(db)
                 }
                 let fetchedSteps = try AppDatabase.shared.fetchAllTaskSteps(userId: userId)
+                // Scoped fetches for the new usage-hint + leaf-preview
+                // work. BoardTasks have no `userId` column, but we only
+                // count boardIds per task, so the full table is fine.
+                // CompositeNodes filter by the user's composite ids.
+                let boardTasks: [BoardTask] = try AppDatabase.shared.read { db in
+                    try BoardTask
+                        .filter(Column("isDeleted") == false)
+                        .fetchAll(db)
+                }
+                let compositeIds = composites.map { $0.id }
+                let compositeNodes: [CompositeNode] = compositeIds.isEmpty
+                    ? []
+                    : try AppDatabase.shared.read { db in
+                        try CompositeNode
+                            .filter(compositeIds.contains(Column("compositeTaskId")) && Column("isDeleted") == false)
+                            .fetchAll(db)
+                    }
                 DispatchQueue.main.async {
                     self.libraryTasks = fetched
                     self.libraryCompositeTasks = composites
                     self.allLibraryTaskSteps = fetchedSteps
+                    self.allLibraryBoardTasks = boardTasks
+                    self.allLibraryCompositeNodes = compositeNodes
                     self.loadError = nil
                 }
             } catch {

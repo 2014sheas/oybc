@@ -4,16 +4,17 @@ import SwiftUI
 /// (iOS twin of web `BoardWizardTasksStep`).
 ///
 /// Renders the user's task library with multi-select, a search input,
-/// a type filter, and a `.sheet`-presented "+ New task" form.
-/// Composite tasks expand to their leaf nodes via the existing
-/// `CompositeDerivationPanelView` so leaves can be selected
-/// individually.
+/// a type filter, and a `.sheet`-presented "+ New task" form. Row
+/// layout matches the composite wizard's Build step exactly:
+/// `[toggle] [BADGE letterOnly] title + subtitle | usage hint`, with
+/// a 3pt leading blue bar + tinted background for the selected state.
+/// Hairline dividers between rows — no per-row boxes.
 ///
-/// The view is fully controlled — `selectedTaskIds`, `centerTaskId`,
-/// and the navigation callbacks are owned by the wizard's state
-/// controller. Internal `@State` is limited to UI-only concerns
-/// (search query, active filter, expanded composite, sheet open
-/// state).
+/// Composites can't be added to a board directly. The composite row
+/// uses a chevron instead of a checkbox and expands inline to show
+/// its leaf tasks; each leaf is rendered with the same task-row
+/// layout, indented. Replaces the older `CompositeDerivationPanelView`
+/// + "+ Add to pool" treatment which read as a different UI language.
 struct BoardWizardTasksStepView: View {
 
     // MARK: - Parameters
@@ -103,14 +104,73 @@ struct BoardWizardTasksStepView: View {
     }
     private var canAdvance: Bool { isCountSatisfied && isCenterSatisfied }
 
-    /// Synthetic pool tuple list used to plug into
-    /// `CompositeDerivationPanelView`'s pool-aware leaf-state logic.
-    /// The panel only checks `taskId` membership, so the title/type
-    /// fields can be empty without affecting behavior.
-    private var pseudoPool: [(taskId: String, title: String, type: String)] {
-        library.libraryTasks
-            .filter { selectedTaskIds.contains($0.id) }
-            .map { (taskId: $0.id, title: $0.title, type: $0.type.rawValue) }
+    // ── Usage-hint + leaf-preview data ───────────────────────────────
+    // Ported from the composite wizard so both surfaces agree.
+
+    private var taskBoardCounts: [String: Int] {
+        var buckets: [String: Set<String>] = [:]
+        for bt in library.allLibraryBoardTasks {
+            buckets[bt.taskId, default: []].insert(bt.boardId)
+        }
+        return buckets.mapValues { $0.count }
+    }
+
+    private var taskStepCounts: [String: Int] {
+        var counts: [String: Int] = [:]
+        for step in library.allLibraryTaskSteps {
+            counts[step.taskId, default: 0] += 1
+        }
+        return counts
+    }
+
+    private var compositeSubtaskCounts: [String: Int] {
+        var counts: [String: Int] = [:]
+        for node in library.allLibraryCompositeNodes where node.nodeType == .leaf {
+            counts[node.compositeTaskId, default: 0] += 1
+        }
+        return counts
+    }
+
+    private struct LeafPreview: Equatable {
+        let titles: [String]
+        let totalLeaves: Int
+    }
+
+    private var compositeLeafPreviews: [String: LeafPreview] {
+        var byComposite: [String: [CompositeNode]] = [:]
+        for n in library.allLibraryCompositeNodes where n.nodeType == .leaf {
+            byComposite[n.compositeTaskId, default: []].append(n)
+        }
+        let taskTitleById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0.title) })
+        let compositeTitleById = Dictionary(uniqueKeysWithValues: library.libraryCompositeTasks.map { ($0.id, $0.title) })
+        var out: [String: LeafPreview] = [:]
+        for (cid, nodes) in byComposite {
+            let sorted = nodes.sorted { $0.nodeIndex < $1.nodeIndex }
+            var titles: [String] = []
+            for leaf in sorted.prefix(3) {
+                if let tid = leaf.taskId, let t = taskTitleById[tid] {
+                    titles.append(t)
+                } else if let cid2 = leaf.childCompositeTaskId, let c = compositeTitleById[cid2] {
+                    titles.append(c)
+                }
+            }
+            out[cid] = LeafPreview(titles: titles, totalLeaves: sorted.count)
+        }
+        return out
+    }
+
+    /// Flat task leaves per composite — composites can't be boarded
+    /// directly, only their flat task leaves can. Nested composite
+    /// leaves are intentionally skipped (boards don't accept them).
+    private func leafTasks(for compositeId: String) -> [Task] {
+        let leaves = library.allLibraryCompositeNodes
+            .filter { $0.compositeTaskId == compositeId && $0.nodeType == .leaf }
+            .sorted { $0.nodeIndex < $1.nodeIndex }
+        let taskById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
+        return leaves.compactMap { leaf -> Task? in
+            guard let tid = leaf.taskId else { return nil }
+            return taskById[tid]
+        }
     }
 
     // MARK: - Body
@@ -176,7 +236,7 @@ struct BoardWizardTasksStepView: View {
                 .accessibilityLabel("Create a new task")
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
                 TextField("Search your tasks…", text: $searchQuery)
@@ -191,20 +251,27 @@ struct BoardWizardTasksStepView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(Color(.systemGray6))
             .cornerRadius(8)
 
-            Picker("Filter", selection: $activeFilter) {
-                ForEach(LibraryFilter.allCases, id: \.self) { f in
-                    Text(f.rawValue).tag(f)
-                }
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: activeFilter) {
-                expandedCompositeId = nil
-            }
+            // Scrollable pill row instead of .segmented — matches the
+            // composite wizard; avoids the "Composite" truncation on
+            // narrow iPhones.
+            FilterTabsView(
+                tabs: LibraryFilter.allCases.map { FilterTab(value: $0.rawValue, label: $0.rawValue) },
+                activeTab: Binding(
+                    get: { activeFilter.rawValue },
+                    set: { newValue in
+                        if let f = LibraryFilter(rawValue: newValue) {
+                            activeFilter = f
+                            expandedCompositeId = nil
+                        }
+                    }
+                ),
+                onTabChange: { _ in }
+            )
         }
     }
 
@@ -216,17 +283,22 @@ struct BoardWizardTasksStepView: View {
             emptyState
         } else {
             ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(visibleTasks, id: \.id) { task in
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(visibleTasks.enumerated()), id: \.element.id) { index, task in
                         taskRow(task)
+                        if index < visibleTasks.count - 1 || !visibleComposites.isEmpty {
+                            Divider().padding(.leading, 52)
+                        }
                     }
-                    ForEach(visibleComposites, id: \.id) { ct in
+                    ForEach(Array(visibleComposites.enumerated()), id: \.element.id) { index, ct in
                         compositeRow(ct)
+                        if index < visibleComposites.count - 1 {
+                            Divider().padding(.leading, 52)
+                        }
                     }
                 }
-                .padding(.vertical, 2)
             }
-            .frame(maxHeight: 480)
+            .frame(maxHeight: 520)
         }
     }
 
@@ -244,7 +316,7 @@ struct BoardWizardTasksStepView: View {
         .foregroundColor(.secondary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .background(
+        .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(Color(.systemGray4), style: StrokeStyle(lineWidth: 1, dash: [4]))
         )
@@ -252,32 +324,49 @@ struct BoardWizardTasksStepView: View {
 
     // MARK: - Rows
 
+    @ViewBuilder
     private func taskRow(_ task: Task) -> some View {
         let isSelected = selectedTaskIds.contains(task.id)
         let isCenter = centerTaskId == task.id
-        return HStack(spacing: 8) {
+        let subtitle = buildTaskSubtitle(task: task)
+        let boards = taskBoardCounts[task.id] ?? 0
+        let usage = boards == 0 ? "unused" : "\(boards) board\(boards == 1 ? "" : "s")"
+        HStack(spacing: 0) {
             Button {
                 toggleSelection(task.id)
             } label: {
-                HStack(spacing: 8) {
-                    checkbox(checked: isSelected)
-                    Text(task.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    TypeBadgeView(type: task.type.rawValue, size: .small)
+                HStack(spacing: 0) {
+                    // Leading accent bar — visible only when selected.
+                    Rectangle()
+                        .fill(isSelected ? Color.blue : Color.clear)
+                        .frame(width: 3)
+                    HStack(spacing: 12) {
+                        Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isSelected ? .blue : .secondary)
+                        TypeBadgeView(type: task.type.rawValue, size: .small, letterOnly: true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(task.title)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            if !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer()
+                        Text(usage)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? Color.blue.opacity(0.08) : Color(.systemGray6))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1.5)
-                )
+                .background(isSelected ? Color.blue.opacity(0.10) : Color(.systemBackground))
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -289,7 +378,8 @@ struct BoardWizardTasksStepView: View {
                     Image(systemName: isCenter ? "star.fill" : "star")
                         .foregroundColor(isCenter ? .orange : .secondary)
                         .font(.title3)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 14)
+                        .frame(height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(isCenter ? "Center task" : "Mark as center task")
@@ -297,61 +387,84 @@ struct BoardWizardTasksStepView: View {
         }
     }
 
+    @ViewBuilder
     private func compositeRow(_ ct: CompositeTask) -> some View {
         let isExpanded = expandedCompositeId == ct.id
-        return VStack(alignment: .leading, spacing: 0) {
+        let leafCount = compositeSubtaskCounts[ct.id] ?? 0
+        let preview = compositeLeafPreviews[ct.id]
+        let previewSubtitle: String = {
+            guard let p = preview, !p.titles.isEmpty else { return "" }
+            let hidden = p.totalLeaves - p.titles.count
+            let joined = p.titles.joined(separator: ", ")
+            return hidden > 0 ? "\(joined), +\(hidden) more" : joined
+        }()
+        let leaves = leafTasks(for: ct.id)
+
+        VStack(alignment: .leading, spacing: 0) {
             Button {
                 expandedCompositeId = isExpanded ? nil : ct.id
-                if !isExpanded {
-                    library.loadDeriveNodes(for: ct.id)
-                }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                        .frame(width: 22, height: 22)
-                    Text(ct.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    TypeBadgeView(type: "composite", size: .small)
+                HStack(spacing: 0) {
+                    // No leading bar on composite rows — chevron is the
+                    // affordance; composites aren't themselves selected.
+                    Rectangle().fill(Color.clear).frame(width: 3)
+                    HStack(spacing: 12) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .foregroundColor(.secondary)
+                            .font(.caption.bold())
+                            .frame(width: 20)
+                        TypeBadgeView(type: "composite", size: .small, letterOnly: true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(ct.title)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            if !previewSubtitle.isEmpty {
+                                Text(previewSubtitle)
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer()
+                        Text("\(leafCount) subtask\(leafCount == 1 ? "" : "s")")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.systemGray6))
-                )
+                .background(Color(.systemBackground))
             }
             .buttonStyle(.plain)
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Composites can't be boarded directly. Pick the individual subtasks you want to include.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .italic()
-
-                    CompositeDerivationPanelView(
-                        compositeTask: ct,
-                        compositeNodes: library.deriveCompositeNodes,
-                        tasks: library.libraryTasks,
-                        compositeTasks: library.libraryCompositeTasks,
-                        boardPool: pseudoPool,
-                        onAddLeafToPool: { taskId, _, _ in
-                            toggleSelection(taskId)
+                // Indented leaf list. Leaves use the same row layout as
+                // top-level tasks so the expand feels like a natural
+                // indent, not a different UI. Drops the old "Operator:
+                // AND" header + "+ Add to pool" buttons which were
+                // irrelevant when picking leaves for a board.
+                VStack(spacing: 0) {
+                    if leaves.isEmpty {
+                        Text("This composite has no task leaves — nothing boardable here.")
+                            .font(.footnote)
+                            .italic()
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ForEach(Array(leaves.enumerated()), id: \.element.id) { index, leaf in
+                            taskRow(leaf)
+                                .padding(.leading, 24)
+                            if index < leaves.count - 1 {
+                                Divider().padding(.leading, 76)
+                            }
                         }
-                    )
+                    }
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.systemGray5))
-                )
-                .padding(.horizontal, 16)
-                .padding(.top, -2)
+                .background(Color(.systemGray6))
             }
         }
     }
@@ -378,7 +491,6 @@ struct BoardWizardTasksStepView: View {
         let wasSelected = selectedTaskIds.contains(taskId)
         if wasSelected {
             selectedTaskIds.remove(taskId)
-            // If user is deselecting the current center task, clear the center mark.
             if centerTaskId == taskId {
                 centerTaskId = nil
             }
@@ -387,20 +499,27 @@ struct BoardWizardTasksStepView: View {
         }
     }
 
-    private func checkbox(checked: Bool) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(checked ? Color.blue : Color(.systemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(checked ? Color.blue : Color(.systemGray3), lineWidth: 1.5)
-                )
-                .frame(width: 22, height: 22)
-            if checked {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
+    private func buildTaskSubtitle(task: Task) -> String {
+        switch task.type {
+        case .counting:
+            guard let action = task.action,
+                  let unit = task.unit,
+                  let max = task.maxCount,
+                  !action.isEmpty,
+                  !unit.isEmpty else {
+                return ""
             }
+            let derived = "\(action) \(max) \(unit)"
+            if derived.lowercased() == task.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                return ""
+            }
+            return derived
+        case .progress:
+            let n = taskStepCounts[task.id] ?? 0
+            if n == 0 { return "" }
+            return "\(n) step\(n == 1 ? "" : "s")"
+        default:
+            return ""
         }
     }
 }

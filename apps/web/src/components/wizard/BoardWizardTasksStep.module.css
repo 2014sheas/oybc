@@ -5,7 +5,8 @@
   background-color: var(--card-bg);
   border-radius: var(--radius-card);
   padding: var(--spacing-xl);
-  border: 1px solid var(--border-color);
+  /* No outer border — card-bg against page background already delimits
+   * the step. Matches the composite wizard's Build step. */
 }
 
 /* ── Header ── */
@@ -82,38 +83,50 @@
   border-color: var(--active-bg);
 }
 
-/* ── List ── */
+/* ── List ──
+ *
+ * Rows used to be individually boxed (per-row border + rounded
+ * corners). Matches the composite wizard now: a flat list inside the
+ * step body, hairline dividers between rows, leading 3pt blue bar
+ * + tinted fill for the selected state. No scroll container border. */
 
 .list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 480px;
+  max-height: 520px;
   overflow-y: auto;
-  padding: 2px;
+}
+
+.list > li {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.list > li:last-child {
+  border-bottom: none;
+}
+
+.rowWrap,
+.rowSelectedWrap {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  background-color: var(--bg-primary);
+  transition: background-color 0.15s;
+}
+
+.rowSelectedWrap {
+  background-color: var(--active-bg-subtle, rgba(59, 130, 246, 0.12));
 }
 
 .row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  background-color: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: border-color 0.15s, background-color 0.15s;
-}
-
-.rowSelected {
-  border-color: var(--active-bg);
-  background-color: var(--active-bg-subtle, rgba(59, 130, 246, 0.08));
-}
-
-.rowMain {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 0.6rem 0.75rem;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -121,97 +134,166 @@
   font-size: 0.95rem;
   color: var(--text-primary);
   min-width: 0;
+  transition: background-color 0.15s;
 }
 
-.checkbox {
+.row:hover {
+  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
+}
+
+/* Leading bar — visible only on selected rows (via the sibling
+ * .rowSelectedWrap background + the bar's conditional color). Matches
+ * the composite wizard's selection cue. */
+.leadingBar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background-color: transparent;
+}
+
+.rowSelectedWrap .leadingBar {
+  background-color: var(--active-bg);
+}
+
+/* The row is a flex button; we use its ::before to draw the leading bar
+ * without altering the inner geometry. */
+.row {
+  position: relative;
+}
+
+.row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: transparent;
+  transition: background-color 0.15s;
+}
+
+.rowSelectedWrap .row::before {
+  background-color: var(--active-bg);
+}
+
+.checkbox,
+.checkboxOn {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: 1.5px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
+  font-size: 13px;
   font-weight: 700;
   color: transparent;
   background-color: var(--bg-primary);
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .checkboxOn {
   background-color: var(--active-bg);
   border-color: var(--active-bg);
-  color: var(--active-text);
+  color: var(--active-text, #fff);
 }
 
-.rowTitle {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-.expandToggle {
+.chevron,
+.chevronOpen {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   transition: transform 0.15s;
 }
 
-.expandToggleOpen {
+.chevronOpen {
   transform: rotate(90deg);
 }
 
+.rowCenter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rowTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowSubtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowUsage {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .centerRadio {
+  flex: 0 0 auto;
   background: transparent;
   border: none;
   cursor: pointer;
-  font-size: 1.4rem;
-  padding: 6px 12px;
+  font-size: 1.3rem;
+  padding: 0 12px;
   color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  transition: color 0.15s, background-color 0.15s;
+  transition: color 0.15s;
 }
 
 .centerRadio:hover {
-  background-color: var(--hover-bg);
+  color: var(--warning-text);
 }
 
 .centerRadioOn {
   color: var(--warning-text);
 }
 
-/* ── Composite expansion panel ── */
+/* ── Composite expansion — leaves rendered as indented task rows ──
+ *
+ * Replaces the old CompositeDerivationPanel (which had its own mini
+ * UI with an Operator row + per-leaf "+ Add" buttons). Leaves now
+ * use the same task-row rendering as top-level tasks, indented so
+ * hierarchy is clear. Keeps the visual language consistent. */
 
-.compositeWrapper {
-  display: flex;
-  flex-direction: column;
-}
-
-.compositePanel {
+.leafList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-top: none;
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
-  padding: var(--spacing-md);
-  margin-top: -2px;
-  margin-left: var(--spacing-lg);
-  margin-right: var(--spacing-lg);
 }
 
-.compositeHint {
-  margin: 0 0 var(--spacing-sm) 0;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+.leafItem {
+  border-top: 1px solid var(--border-color);
+  /* Indent via padding on the wrap so the leading bar + checkbox line
+   * up inside the child row. */
+  padding-left: 2rem;
+}
+
+.leafEmpty {
+  padding: 0.75rem 1rem 0.75rem 2rem;
+  font-size: 0.88rem;
   font-style: italic;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-color);
 }
 
 /* ── Empty state ── */

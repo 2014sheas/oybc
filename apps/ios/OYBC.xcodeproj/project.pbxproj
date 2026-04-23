@@ -13,6 +13,7 @@
 		159D16051FA8E2923FE9CC84 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343B20563EE55E5FA28C5DC2 /* MainTabView.swift */; };
 		1881054E172F5BD0B8A4C0EA /* BoardWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECCBF1C8380F30B8C320AABD /* BoardWizardView.swift */; };
 		1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149C3CA55D0467096B13D935 /* Task.swift */; };
+		1F88CE4F98B26A7BB9ED627B /* BoardWizardTasksPreviewHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFBFD876E78BC1C03473AC21 /* BoardWizardTasksPreviewHarness.swift */; };
 		2015EA2FCCA896B9F131C1E7 /* SyncQueueBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8909013EF9D9767B1F494EAF /* SyncQueueBuilder.swift */; };
 		20303A5F782938E9478A07B5 /* TaskLibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */; };
 		245DF0CB2BEDA8BEFBC35F4B /* CompositeBuildPreviewHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E52706946C5084286F8E673 /* CompositeBuildPreviewHarness.swift */; };
@@ -191,6 +192,7 @@
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
 		DCE6F8AAD4860D11D04DF12E /* TaskTypeSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTypeSelectorView.swift; sourceTree = "<group>"; };
 		DD08A8AFE2E5BD265E813DC4 /* UnifiedTaskCreatorPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTaskCreatorPlayground.swift; sourceTree = "<group>"; };
+		DFBFD876E78BC1C03473AC21 /* BoardWizardTasksPreviewHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardTasksPreviewHarness.swift; sourceTree = "<group>"; };
 		E2CF3253817A74C5644618E0 /* TimeframeBoundaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeframeBoundaries.swift; sourceTree = "<group>"; };
 		EA07280EAE71A1F3F97DFC4D /* SubtaskDerivationPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtaskDerivationPlayground.swift; sourceTree = "<group>"; };
 		EA86B8DF5509A4724E214EEF /* CompositeWizardReviewStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeWizardReviewStepView.swift; sourceTree = "<group>"; };
@@ -203,7 +205,7 @@
 		F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTaskSquareView.swift; sourceTree = "<group>"; };
 		FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 		FA434E50844910E99B885B94 /* BoardListItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardListItemView.swift; sourceTree = "<group>"; };
-		"TEMP_56E5A153-79B2-4CA8-A955-019E65C02CEC" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_B3DE03A3-4B61-4C03-9192-63FF53A22D76" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -294,6 +296,7 @@
 		401984151B12B85D834C7296 /* Debug */ = {
 			isa = PBXGroup;
 			children = (
+				DFBFD876E78BC1C03473AC21 /* BoardWizardTasksPreviewHarness.swift */,
 				4E52706946C5084286F8E673 /* CompositeBuildPreviewHarness.swift */,
 			);
 			path = Debug;
@@ -463,10 +466,10 @@
 			path = BoardsTab;
 			sourceTree = "<group>";
 		};
-		"TEMP_FA9DDD42-2FE9-42CB-8C78-B7F2DF38EADB" /* ios */ = {
+		"TEMP_A922C793-0BA8-427D-9071-DB3624DBB123" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_56E5A153-79B2-4CA8-A955-019E65C02CEC" /* Signing.xcconfig */,
+				"TEMP_B3DE03A3-4B61-4C03-9192-63FF53A22D76" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -621,6 +624,7 @@
 				7BC1B934789723C65B0C1AC7 /* BoardWizardSetupStepView.swift in Sources */,
 				6B2D64AB8A156C3B1F51E5E7 /* BoardWizardStepperView.swift in Sources */,
 				91DCD3D2A6FE6E3DBF3DFAA7 /* BoardWizardTasksPlayground.swift in Sources */,
+				1F88CE4F98B26A7BB9ED627B /* BoardWizardTasksPreviewHarness.swift in Sources */,
 				2B72E3B6BD5BBFE30D47FAD6 /* BoardWizardTasksStepView.swift in Sources */,
 				1881054E172F5BD0B8A4C0EA /* BoardWizardView.swift in Sources */,
 				3A567A23BA7F02A074F94926 /* BoardWizardViewModel.swift in Sources */,
@@ -707,7 +711,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_56E5A153-79B2-4CA8-A955-019E65C02CEC" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_B3DE03A3-4B61-4C03-9192-63FF53A22D76" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -804,7 +808,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_56E5A153-79B2-4CA8-A955-019E65C02CEC" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_B3DE03A3-4B61-4C03-9192-63FF53A22D76" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
