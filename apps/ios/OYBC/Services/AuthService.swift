@@ -42,6 +42,24 @@ final class AuthService: ObservableObject {
     // MARK: - Initialization
 
     init() {
+        #if DEBUG
+        // Debug-only local bypass: when the process is launched with
+        // `-bypassAuth YES`, skip Firebase entirely and drop straight
+        // into the signed-in UI with a synthetic playground user. Used
+        // to screenshot / interact with auth-gated views on the
+        // simulator without real credentials. SyncService is NOT
+        // started — bypass runs fully offline and never pushes to
+        // Firestore.
+        //
+        // Launch from CLI:
+        //   xcrun simctl launch <device> com.oybc.OYBC -bypassAuth YES
+        // Or add `-bypassAuth YES` under Run → Arguments in Xcode.
+        if ProcessInfo.processInfo.arguments.contains("-bypassAuth") {
+            setupDebugBypass()
+            return
+        }
+        #endif
+
         // Firebase delivers the initial auth state asynchronously on a
         // background thread. We bridge it to the main actor here.
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, firebaseUser in
@@ -66,6 +84,50 @@ final class AuthService: ObservableObject {
             }
         }
     }
+
+    #if DEBUG
+    /// Ensures a local playground `User` row exists and surfaces it as
+    /// the signed-in user. Observed by GRDB so preference edits work
+    /// the same way they would under a real sign-in. No Firestore
+    /// push side — `syncService.start` is intentionally skipped.
+    private func setupDebugBypass() {
+        _Concurrency.Task { @MainActor in
+            let userId = "playground-user-1"
+            do {
+                let now = AppDatabase.currentTimestamp()
+                try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try AppDatabase.shared.write { db in
+                        if try User.fetchOne(db, key: userId) == nil {
+                            let user = User(
+                                id: userId,
+                                email: "debug-bypass@oybc.local",
+                                displayName: "Debug Bypass",
+                                photoURL: nil,
+                                preferences: User.encodePreferences(.defaults),
+                                createdAt: now,
+                                updatedAt: now,
+                                lastSyncedAt: nil,
+                                version: 1
+                            )
+                            try user.save(db)
+                        }
+                    }
+                }.value
+
+                let user = try AppDatabase.shared.read { db in
+                    try User.fetchOne(db, key: userId)
+                }
+                if let user {
+                    self.currentUser = user
+                    self.startUserRowObservation(userId: user.id)
+                }
+            } catch {
+                print("⚠️ Debug auth bypass failed: \(error)")
+            }
+            self.isLoading = false
+        }
+    }
+    #endif
 
     deinit {
         if let handle = authStateHandle {
