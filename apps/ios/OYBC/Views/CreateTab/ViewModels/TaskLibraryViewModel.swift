@@ -111,13 +111,12 @@ final class TaskLibraryViewModel {
                 }
                 let fetchedSteps = try AppDatabase.shared.fetchAllTaskSteps(userId: userId)
                 // Scoped fetches for the new usage-hint + leaf-preview
-                // work. BoardTasks have no `userId` column, but we only
-                // count boardIds per task, so the full table is fine.
+                // work. BoardTasks have no `userId` or `isDeleted`
+                // column; we only count boardIds per task, so fetching
+                // the full table and tallying in-memory is fine.
                 // CompositeNodes filter by the user's composite ids.
                 let boardTasks: [BoardTask] = try AppDatabase.shared.read { db in
-                    try BoardTask
-                        .filter(Column("isDeleted") == false)
-                        .fetchAll(db)
+                    try BoardTask.fetchAll(db)
                 }
                 let compositeIds = composites.map { $0.id }
                 let compositeNodes: [CompositeNode] = compositeIds.isEmpty
