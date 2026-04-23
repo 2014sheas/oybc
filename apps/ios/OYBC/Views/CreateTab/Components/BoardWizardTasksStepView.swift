@@ -237,7 +237,7 @@ struct BoardWizardTasksStepView: View {
             } else {
                 Text("Your task library is empty.")
                     .fontWeight(.medium)
-                Text("Tap \"New task\" below to create your first one.")
+                Text("Tap \"New task\" above to create your first one.")
                     .font(.caption)
             }
         }

@@ -193,7 +193,7 @@ export function BoardWizardTasksStep({
         <div className={styles.emptyState}>
           {searchQuery.trim().length > 0
             ? `No tasks match "${searchQuery}".`
-            : 'Your task library is empty. Tap "New task" below to create your first one.'}
+            : 'Your task library is empty. Tap "New task" above to create your first one.'}
         </div>
       ) : (
         <div className={styles.list}>
@@ -293,7 +293,10 @@ export function BoardWizardTasksStep({
           disabled={!canAdvance}
           title={
             !isCountSatisfied
-              ? `Pick ${tasksRequired - selectedCount} more task(s)`
+              ? (() => {
+                  const n = tasksRequired - selectedCount;
+                  return `Pick ${n} more task${n === 1 ? '' : 's'}`;
+                })()
               : !isCenterSatisfied
                 ? 'Mark one selected task as the center'
                 : undefined
