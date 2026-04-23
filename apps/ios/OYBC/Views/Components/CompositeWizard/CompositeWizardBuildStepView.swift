@@ -231,10 +231,10 @@ struct CompositeWizardBuildStepView: View {
         .padding(14)
         .background(Color(.systemBackground))
         .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(.systemGray4), lineWidth: 1)
-        )
+        // Background-color contrast against the parent ScrollView's
+        // systemGroupedBackground already delimits the step; an explicit
+        // stroke on top was the outermost of three stacked rectangles
+        // boxing in the library picker.
         // Clamp threshold silently when the list shrinks below it —
         // both stepper and list are on-screen so no toast needed.
         .onChange(of: subtaskList.items.count) { newCount in
@@ -425,19 +425,22 @@ struct CompositeWizardBuildStepView: View {
                 : "No \(filter.rawValue) tasks in your library — try a different filter."
             emptyMessage(msg)
         } else {
+            // No container stroke — rows are delimited by hairline
+            // dividers, matching the native iOS list pattern (Mail,
+            // Reminders, Shortcuts). Dividers sit between rows, never
+            // before the first or after the last.
             ScrollView {
-                LazyVStack(spacing: 4) {
-                    ForEach(rows) { row in
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         rowButton(row: row)
+                        if index < rows.count - 1 {
+                            Divider()
+                                .padding(.leading, 56)
+                        }
                     }
                 }
-                .padding(2)
             }
             .frame(maxHeight: 280)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color(.systemGray4), lineWidth: 1)
-            )
         }
     }
 
@@ -460,41 +463,44 @@ struct CompositeWizardBuildStepView: View {
         Button {
             onToggleLibraryItem(row.id, row.kind)
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(checked ? .blue : .secondary)
-                TypeBadgeView(type: row.typeLabel, size: .small, letterOnly: true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(row.title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    if !row.subtitle.isEmpty {
-                        Text(row.subtitle)
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
+            HStack(spacing: 0) {
+                // Leading accent bar — visible only when checked.
+                // Replaces the previous full-border stroke: the bar
+                // reads as a single "selected" cue without adding
+                // a third nested rectangle to the picker.
+                Rectangle()
+                    .fill(checked ? Color.blue : Color.clear)
+                    .frame(width: 3)
+
+                HStack(spacing: 12) {
+                    Image(systemName: checked ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(checked ? .blue : .secondary)
+                    TypeBadgeView(type: row.typeLabel, size: .small, letterOnly: true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(row.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
                             .lineLimit(1)
+                        if !row.subtitle.isEmpty {
+                            Text(row.subtitle)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
                     }
+                    Spacer()
+                    Text(row.usageHint)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                Spacer()
-                Text(row.usageHint)
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(checked
-                          ? Color.blue.opacity(0.12)
-                          : Color(.systemBackground))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(checked ? Color.blue : Color.clear, lineWidth: 1.5)
-            )
+            .background(checked
+                        ? Color.blue.opacity(0.10)
+                        : Color(.systemBackground))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(checked ? [.isSelected] : [])
