@@ -1,15 +1,53 @@
 import SwiftUI
 
+/// Preview payload for a composite: first few leaf titles + total.
+/// Mirrors web's `CompositeLeafPreview`. Lifted here from the
+/// retired `LibraryPickerSheetView.swift` so the row subtitle helper
+/// has a stable home.
+struct CompositeLeafPreview: Equatable {
+    let titles: [String]
+    let totalLeaves: Int
+}
+
+/// Library row model — internal to the inline picker section.
+private struct CompositeLibraryRow: Identifiable {
+    let id: String
+    let title: String
+    /// "normal" / "counting" / "progress" / "composite" — matches
+    /// `TypeBadgeView` input.
+    let typeLabel: String
+    let subtitle: String
+    let usageHint: String
+    let kind: SubtaskItem.SelectionType
+}
+
+private enum CompositeLibraryFilter: String, CaseIterable, Identifiable {
+    case all, normal, counting, progress, composite
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .all: return "All"
+        case .normal: return "Normal"
+        case .counting: return "Counting"
+        case .progress: return "Progress"
+        case .composite: return "Composite"
+        }
+    }
+}
+
 /// CompositeWizardBuildStepView — Step 2 of the composite-task mini-wizard.
-/// iOS twin of web's `BuildStep`. Hosts the subtask list plus the two
-/// primary "add" buttons; `+ Add existing tasks` opens a sheet for
-/// multi-check picking. Next is blocked until ≥2 subtasks are ready.
+/// iOS twin of web's `BuildStep`. Hosts the subtask list (selected
+/// subtasks render as flat rows; inline-created ones keep their card
+/// frame), the M_OF_N threshold stepper, the `+ Create new task`
+/// button, and an always-visible library section. Tapping a library
+/// row toggles membership immediately — no modal sheet, matching the
+/// board wizard's Tasks-step pattern.
 struct CompositeWizardBuildStepView: View {
-    /// Wrapped subtask array. Observing the wrapper (not a plain binding)
-    /// is what keeps `readyCount` / `canAdvance` / the Next-button state
-    /// in sync when any child `SubtaskItem`'s `@Published` properties
-    /// change — the wrapper re-broadcasts each child's `objectWillChange`
-    /// upward.
+    /// Wrapped subtask array. Observing the wrapper (not a plain
+    /// binding) is what keeps `readyCount` / `canAdvance` / the
+    /// Next-button state in sync when any child `SubtaskItem`'s
+    /// `@Published` properties change — the wrapper re-broadcasts
+    /// each child's `objectWillChange` upward.
     @ObservedObject var subtaskList: CompositeSubtaskList
     /// Operator chosen on Setup. Threshold only surfaces when M_OF_N.
     let operatorType: OperatorType
@@ -24,12 +62,16 @@ struct CompositeWizardBuildStepView: View {
     let compositeSubtaskCounts: [String: Int]
     let compositeLeafPreviews: [String: CompositeLeafPreview]
     let onRemove: (SubtaskItem) -> Void
-    let onCommitLibraryDiff: (LibraryDiff) -> Void
+    /// Toggle a library item in/out of the composite. Add (not
+    /// already a subtask) or remove (already an existing-mode subtask)
+    /// is decided by the parent.
+    let onToggleLibraryItem: (_ id: String, _ kind: SubtaskItem.SelectionType) -> Void
     let onAddInline: () -> Void
     let onBack: () -> Void
     let onNext: () -> Void
 
-    @State private var libraryOpen: Bool = false
+    @State private var query: String = ""
+    @State private var filter: CompositeLibraryFilter = .all
 
     // MARK: - Derived state
 
@@ -37,7 +79,7 @@ struct CompositeWizardBuildStepView: View {
         switch item.mode {
         case .existing:
             // Existing rows only exist when a concrete library id is
-            // attached (the sheet's commit path never adds an empty one).
+            // attached.
             if item.selectionType == .task { return !item.selectedTaskId.isEmpty }
             return !item.selectedCompositeId.isEmpty
         case .inline_:
@@ -99,8 +141,8 @@ struct CompositeWizardBuildStepView: View {
     }
 
     /// Ids currently included as existing-mode subtasks — drives the
-    /// sheet's initial checkbox state.
-    private var initialCheckedIds: Set<String> {
+    /// library row's checked state and the toggle semantics.
+    private var checkedIds: Set<String> {
         var ids = Set<String>()
         for s in subtaskList.items where s.mode == .existing {
             if s.selectionType == .task, !s.selectedTaskId.isEmpty {
@@ -110,6 +152,49 @@ struct CompositeWizardBuildStepView: View {
             }
         }
         return ids
+    }
+
+    // MARK: - Library rows
+
+    private var libraryRows: [CompositeLibraryRow] {
+        let taskRows: [CompositeLibraryRow] = libraryTasks.map { task in
+            let boards = taskBoardCounts[task.id] ?? 0
+            let usage = boards == 0
+                ? "not on any board"
+                : "on \(boards) board\(boards == 1 ? "" : "s")"
+            return CompositeLibraryRow(
+                id: task.id,
+                title: task.title,
+                typeLabel: task.type.rawValue,
+                subtitle: Self.buildTaskSubtitle(for: task, stepCounts: taskStepCounts),
+                usageHint: usage,
+                kind: .task
+            )
+        }
+        let compositeRows: [CompositeLibraryRow] = libraryCompositeTasks.map { ct in
+            let leaves = compositeSubtaskCounts[ct.id] ?? 0
+            return CompositeLibraryRow(
+                id: ct.id,
+                title: ct.title,
+                typeLabel: "composite",
+                subtitle: Self.buildCompositeSubtitle(for: ct.id, previews: compositeLeafPreviews),
+                usageHint: "\(leaves) subtask\(leaves == 1 ? "" : "s")",
+                kind: .composite
+            )
+        }
+        return (taskRows + compositeRows).sorted {
+            $0.title.localizedCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private var visibleRows: [CompositeLibraryRow] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return libraryRows.filter { row in
+            if filter != .all && row.typeLabel != filter.rawValue { return false }
+            if q.isEmpty { return true }
+            return row.title.lowercased().contains(q)
+                || row.subtitle.lowercased().contains(q)
+        }
     }
 
     // MARK: - Body
@@ -148,11 +233,11 @@ struct CompositeWizardBuildStepView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Button("+ Add existing tasks") { libraryOpen = true }
-                    .buttonStyle(.bordered)
                 Button("+ Create new task", action: onAddInline)
                     .buttonStyle(.borderedProminent)
             }
+
+            librarySection
 
             Divider()
 
@@ -178,22 +263,6 @@ struct CompositeWizardBuildStepView: View {
             if operatorType == .mOfN && threshold > max(1, newCount) {
                 threshold = max(1, newCount)
             }
-        }
-        .sheet(isPresented: $libraryOpen) {
-            LibraryPickerSheetView(
-                libraryTasks: libraryTasks,
-                libraryCompositeTasks: libraryCompositeTasks,
-                initialCheckedIds: initialCheckedIds,
-                taskBoardCounts: taskBoardCounts,
-                taskStepCounts: taskStepCounts,
-                compositeSubtaskCounts: compositeSubtaskCounts,
-                compositeLeafPreviews: compositeLeafPreviews,
-                onCommit: { diff in
-                    onCommitLibraryDiff(diff)
-                    libraryOpen = false
-                },
-                onCancel: { libraryOpen = false }
-            )
         }
     }
 
@@ -230,8 +299,149 @@ struct CompositeWizardBuildStepView: View {
         )
     }
 
+    // MARK: - Library section
+
+    @ViewBuilder
+    private var librarySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Pick from your library")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text("Tap a task to add or remove it from this composite.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            searchField
+            filterTabs
+            libraryListContainer
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(.systemGray6))
+        )
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+            TextField("Search your tasks…", text: $query)
+                .textFieldStyle(.plain)
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground))
+        .cornerRadius(8)
+    }
+
+    private var filterTabs: some View {
+        Picker("Filter", selection: $filter) {
+            ForEach(CompositeLibraryFilter.allCases) { f in
+                Text(f.displayName).tag(f)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    @ViewBuilder
+    private var libraryListContainer: some View {
+        let rows = visibleRows
+        if libraryRows.isEmpty {
+            emptyMessage("Your library is empty — tap + Create new task above to make one.")
+        } else if rows.isEmpty {
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            let msg = !q.isEmpty
+                ? "No matches for \"\(q)\" in \(filter.displayName)."
+                : "No \(filter.rawValue) tasks in your library — try a different filter."
+            emptyMessage(msg)
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 4) {
+                    ForEach(rows) { row in
+                        rowButton(row: row)
+                    }
+                }
+                .padding(2)
+            }
+            .frame(maxHeight: 280)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(.systemGray4), lineWidth: 1)
+            )
+        }
+    }
+
+    private func emptyMessage(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .italic()
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color(.systemGray4), style: StrokeStyle(lineWidth: 1, dash: [4]))
+            )
+    }
+
+    @ViewBuilder
+    private func rowButton(row: CompositeLibraryRow) -> some View {
+        let checked = checkedIds.contains(row.id)
+        Button {
+            onToggleLibraryItem(row.id, row.kind)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: checked ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(checked ? .blue : .secondary)
+                TypeBadgeView(type: row.typeLabel, size: .small, letterOnly: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    if !row.subtitle.isEmpty {
+                        Text(row.subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                Text(row.usageHint)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(checked
+                          ? Color.blue.opacity(0.12)
+                          : Color(.systemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(checked ? Color.blue : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(checked ? [.isSelected] : [])
+    }
+
     private var emptyState: some View {
-        Text("No subtasks yet. Add at least two from your library or create them inline below.")
+        Text("No subtasks yet. Tap a row from your library below, or create one inline.")
             .font(.subheadline)
             .italic()
             .foregroundColor(.secondary)
@@ -242,5 +452,46 @@ struct CompositeWizardBuildStepView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color(.systemGray4), style: StrokeStyle(lineWidth: 1, dash: [4]))
             )
+    }
+
+    // MARK: - Subtitle helpers (mirror web)
+
+    private static func buildTaskSubtitle(
+        for task: OYBC.Task,
+        stepCounts: [String: Int]
+    ) -> String {
+        switch task.type {
+        case .counting:
+            guard let action = task.action,
+                  let unit = task.unit,
+                  let max = task.maxCount,
+                  !action.isEmpty,
+                  !unit.isEmpty else {
+                return ""
+            }
+            let derived = "\(action) \(max) \(unit)"
+            if derived.lowercased() == task.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                return ""
+            }
+            return derived
+        case .progress:
+            let n = stepCounts[task.id] ?? 0
+            if n == 0 { return "" }
+            return "\(n) step\(n == 1 ? "" : "s")"
+        default:
+            return ""
+        }
+    }
+
+    private static func buildCompositeSubtitle(
+        for compositeId: String,
+        previews: [String: CompositeLeafPreview]
+    ) -> String {
+        guard let preview = previews[compositeId], !preview.titles.isEmpty else {
+            return ""
+        }
+        let visible = preview.titles.joined(separator: ", ")
+        let hidden = preview.totalLeaves - preview.titles.count
+        return hidden > 0 ? "\(visible), +\(hidden) more" : visible
     }
 }

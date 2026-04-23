@@ -5,7 +5,7 @@ import { TypeBadge } from '../TypeBadge';
 import { CountingStepFields } from '../CountingStepFields';
 import { ProgressStepRow } from '../ProgressStepRow';
 import { type StepFormState, createEmptyStep } from '../progressStepUtils';
-import type { CompositeLeafPreview } from './LibraryPickerSheet';
+import type { CompositeLeafPreview } from './BuildStep';
 import {
   type SubtaskDraft,
   type ExistingSubtaskDraft,

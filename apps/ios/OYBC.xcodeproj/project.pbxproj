@@ -96,7 +96,6 @@
 		F520EAF2A234007AFB744072 /* InteractiveTaskSquareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */; };
 		F5E2465F70AE719F0B3757D6 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57E4812F35B465F49A15FFAB /* NetworkMonitor.swift */; };
 		F9FB7176671700EFA81BA5F7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 09679BD66A6C0F577D3B4EDD /* GoogleService-Info.plist */; };
-		FCBCA2A468E713772DE725C1 /* LibraryPickerSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5220CC543974BD9A202FF860 /* LibraryPickerSheetView.swift */; };
 		FDD899F966D69F4B39AFE8AD /* SubtaskChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AAEEFFDD3526743C95A13D7 /* SubtaskChipView.swift */; };
 		FE2AA97E854569BAF2DFAE62 /* TaskTypeSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCE6F8AAD4860D11D04DF12E /* TaskTypeSelectorView.swift */; };
 /* End PBXBuildFile section */
@@ -147,7 +146,6 @@
 		4F5CE3737436A2FDB380CACA /* BoardWizardCancelDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardCancelDialogView.swift; sourceTree = "<group>"; };
 		4F879A103A0FE383E497F464 /* CenterSquare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenterSquare.swift; sourceTree = "<group>"; };
 		4F9A279CE019AF205A34B7CE /* CreateHubBoardCTAView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateHubBoardCTAView.swift; sourceTree = "<group>"; };
-		5220CC543974BD9A202FF860 /* LibraryPickerSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryPickerSheetView.swift; sourceTree = "<group>"; };
 		52DCD0346F7F3A37DB243153 /* PlaygroundUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundUtils.swift; sourceTree = "<group>"; };
 		57E4812F35B465F49A15FFAB /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		593980F6290AA1EFAC50F51F /* BoardWizardTasksStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardTasksStepView.swift; sourceTree = "<group>"; };
@@ -203,7 +201,7 @@
 		F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTaskSquareView.swift; sourceTree = "<group>"; };
 		FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 		FA434E50844910E99B885B94 /* BoardListItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardListItemView.swift; sourceTree = "<group>"; };
-		"TEMP_825EE071-F2AE-49F7-A54F-96DE328D8420" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_EC25EF13-02C6-44AE-A951-79418B5B4173" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -403,7 +401,6 @@
 				EA86B8DF5509A4724E214EEF /* CompositeWizardReviewStepView.swift */,
 				D5F9D8CAE934036DAC767707 /* CompositeWizardSetupStepView.swift */,
 				CF6C5CF30F9EEAB97A38E460 /* CompositeWizardStepperView.swift */,
-				5220CC543974BD9A202FF860 /* LibraryPickerSheetView.swift */,
 			);
 			path = CompositeWizard;
 			sourceTree = "<group>";
@@ -455,10 +452,10 @@
 			path = BoardsTab;
 			sourceTree = "<group>";
 		};
-		"TEMP_760CB83D-C16A-4773-B8E6-2EB2ADE3EA6F" /* ios */ = {
+		"TEMP_2EA171ED-A6A3-48A6-B4C7-9144EBBC0F90" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_825EE071-F2AE-49F7-A54F-96DE328D8420" /* Signing.xcconfig */,
+				"TEMP_EC25EF13-02C6-44AE-A951-79418B5B4173" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -641,7 +638,6 @@
 				98FC1FC89C04B110DE933FFF /* DateFormatting.swift in Sources */,
 				4CE4469DBCB98384521C8165 /* FilterTabsView.swift in Sources */,
 				F520EAF2A234007AFB744072 /* InteractiveTaskSquareView.swift in Sources */,
-				FCBCA2A468E713772DE725C1 /* LibraryPickerSheetView.swift in Sources */,
 				159D16051FA8E2923FE9CC84 /* MainTabView.swift in Sources */,
 				F5E2465F70AE719F0B3757D6 /* NetworkMonitor.swift in Sources */,
 				40892F014248FEB42D61A04F /* NewTaskSheetView.swift in Sources */,
@@ -699,7 +695,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_825EE071-F2AE-49F7-A54F-96DE328D8420" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_EC25EF13-02C6-44AE-A951-79418B5B4173" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -796,7 +792,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_825EE071-F2AE-49F7-A54F-96DE328D8420" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_EC25EF13-02C6-44AE-A951-79418B5B4173" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
