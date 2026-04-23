@@ -1,52 +1,6 @@
 import SwiftUI
 import GRDB
 
-// MARK: - Sync Queue Helpers (private to this file)
-
-/// Encodes a `Codable` value to a JSON string for storage in the sync queue payload.
-///
-/// - Parameter value: The value to encode.
-/// - Returns: A JSON string, or an empty JSON object string `"{}"` on failure.
-private func bpvEncodeSyncPayload<T: Codable>(_ value: T) -> String {
-    guard
-        let data = try? JSONEncoder().encode(value),
-        let string = String(data: data, encoding: .utf8)
-    else { return "{}" }
-    return string
-}
-
-/// Builds a `SyncQueueItem` for a local write that should be synced to Firestore.
-///
-/// - Parameters:
-///   - entityType: The Firestore collection name (e.g. `"boards"`, `"boardTasks"`).
-///   - entityId: The primary key of the entity.
-///   - operationType: `.create`, `.update`, or `.delete`.
-///   - payload: A `Codable` value whose JSON representation is stored as the payload.
-///   - now: The current ISO8601 timestamp.
-/// - Returns: A new `SyncQueueItem` with `status = .pending`.
-private func bpvMakeSyncItem<T: Codable>(
-    entityType: String,
-    entityId: String,
-    operationType: SyncOperationType,
-    payload: T,
-    now: String
-) -> SyncQueueItem {
-    SyncQueueItem(
-        id: AppDatabase.generateUUID(),
-        entityType: entityType,
-        entityId: entityId,
-        operationType: operationType,
-        payload: bpvEncodeSyncPayload(payload),
-        status: .pending,
-        retryCount: 0,
-        lastError: nil,
-        createdAt: now,
-        lastAttemptAt: nil,
-        completedAt: nil,
-        priority: 1
-    )
-}
-
 // MARK: - BoardPlayView
 
 /// Full interactive bingo board play screen.
@@ -702,7 +656,7 @@ struct BoardPlayView: View {
 
                     // 2. Persist the updated board task.
                     try updatedBoardTask.save(db)
-                    try bpvMakeSyncItem(
+                    try SyncQueueBuilder.makeItem(
                         entityType: "boardTasks",
                         entityId: updatedBoardTask.id,
                         operationType: .update,
@@ -788,7 +742,7 @@ struct BoardPlayView: View {
 
                     // 8. Persist board and queue sync.
                     try updatedBoard.save(db)
-                    try bpvMakeSyncItem(
+                    try SyncQueueBuilder.makeItem(
                         entityType: "boards",
                         entityId: updatedBoard.id,
                         operationType: .update,

@@ -194,19 +194,53 @@ func persistWizardBoard(
             }
 
             // Single atomic transaction: deleting the existing
-            // BoardTask rows then writing the new board + its rows
-            // must commit or roll back together. Splitting across two
-            // transactions risks leaving a board with zero squares
-            // if the second write fails mid-flight.
+            // BoardTask rows then writing the new board + its rows —
+            // plus their matching SyncQueueItem records — must commit
+            // or roll back together. Without the sync items the board
+            // stays local-only (SyncService.pushSync reads exclusively
+            // from sync_queue), so every write path below enqueues one.
             try AppDatabase.shared.write { db in
                 try board.save(db)
+
+                let boardSyncOp: SyncOperationType = isUpdate ? .update : .create
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: boardId,
+                    operationType: boardSyncOp,
+                    payload: board,
+                    now: now
+                ).save(db)
+
                 if isUpdate {
+                    // Snapshot the existing BoardTasks before deleting
+                    // so each gets a matching DELETE sync item whose
+                    // payload reflects the row that actually existed.
+                    let oldBoardTasks = try BoardTask
+                        .filter(Column("boardId") == boardId)
+                        .fetchAll(db)
                     _ = try BoardTask
                         .filter(Column("boardId") == boardId)
                         .deleteAll(db)
+                    for old in oldBoardTasks {
+                        try SyncQueueBuilder.makeItem(
+                            entityType: "boardTasks",
+                            entityId: old.id,
+                            operationType: .delete,
+                            payload: old,
+                            now: now
+                        ).save(db)
+                    }
                 }
+
                 for bt in boardTasks {
                     try bt.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "boardTasks",
+                        entityId: bt.id,
+                        operationType: .create,
+                        payload: bt,
+                        now: now
+                    ).save(db)
                 }
             }
 

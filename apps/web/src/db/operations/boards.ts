@@ -150,6 +150,12 @@ export async function activateBoard(boardId: string): Promise<void> {
     updatedAt: currentTimestamp(),
     version: (board.version ?? 0) + 1,
   });
+  // Re-fetch so the enqueued payload captures the post-activate status
+  // and bumped version — otherwise Firestore would only ever see the
+  // original DRAFT snapshot from the paired create, and the ACTIVE
+  // transition wouldn't reach other devices until an unrelated update.
+  const activated = await db.boards.get(boardId);
+  if (activated) void addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, activated);
 }
 
 /**
