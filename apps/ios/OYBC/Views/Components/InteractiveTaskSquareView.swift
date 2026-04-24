@@ -69,6 +69,11 @@ struct InteractiveTaskSquareView: View {
         case .progress:
             guard totalSteps > 0 else { return 0 }
             return min(Double(completedSteps) / Double(totalSteps), 1.0)
+        case .compound:
+            // Compound squares are handled by Phase 5 UI work (dedicated compound
+            // rendering + read-only detail sheet). This view predates that work;
+            // calls with type=.compound shouldn't reach it. Treat as incomplete.
+            return 0
         }
     }
 
@@ -78,6 +83,7 @@ struct InteractiveTaskSquareView: View {
         case .normal:   return .green
         case .counting: return .orange
         case .progress: return .purple
+        case .compound: return .indigo  // Placeholder; dedicated compound UI in Phase 5.
         }
     }
 
@@ -91,6 +97,8 @@ struct InteractiveTaskSquareView: View {
             return "\(currentCount)/\(maxCount)\(unitText)"
         case .progress:
             return "\(completedSteps)/\(totalSteps) steps"
+        case .compound:
+            return ""  // Dedicated compound rendering in Phase 5.
         }
     }
 
@@ -219,6 +227,8 @@ struct InteractiveTaskSquareView: View {
             return "\(title) — \(currentCount) of \(maxCount)\(unitText)"
         case .progress:
             return "\(title) — \(completedSteps) of \(totalSteps) steps completed"
+        case .compound:
+            return "\(title) — compound task"  // Phase 5 adds detail-sheet-driven rendering.
         }
     }
 

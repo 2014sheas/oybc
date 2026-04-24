@@ -312,6 +312,14 @@ struct SubtaskDerivationPlayground: View {
                             showSuccess("Added to board pool: \"\(linkedTask.title)\"")
                         }
                     )
+                case .compound:
+                    // Compound task derivation lives in a dedicated Phase 5
+                    // playground (CompoundTaskPlayground). This legacy
+                    // playground predates the unification — stays focused on
+                    // primitives.
+                    Text("Compound tasks aren't handled by this playground — use CompoundTaskPlayground.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
                 }
             }
         }
