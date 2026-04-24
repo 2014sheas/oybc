@@ -210,20 +210,18 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE users ADD COLUMN preferences TEXT")
         }
 
-        // v6: Compound tasks unification.
+        // v6: Compound tasks unification — schema changes only.
         //   - Create compound_children table (replaces the role of task_steps +
         //     composite_nodes leaves under the unified model).
         //   - Widen tasks with compound fields (operator, threshold, isOrdered)
         //     and global completion fields (isCompleted, completedAt, currentCount).
-        //   - Rebuild board_tasks to drop the per-board completion columns
-        //     (isCompleted, completedAt, currentCount, completedStepIds) —
-        //     completion is global per Task under the new model.
         //
-        // Data migration (convert progress Tasks → compound, task_steps →
-        // compound_children, composite_tasks → tasks, etc.) runs in a SEPARATE
-        // migration step (Task 3.5 — MigrationV6Helpers.swift) registered as v7.
-        // That split keeps the schema change itself reviewable without mixing
-        // in the data transform logic.
+        // The board_tasks completion-column rebuild that was originally here has
+        // been moved to v7 (MigrationV7Helpers.swift). It must run AFTER the data
+        // migration so that steps 5 (Task completion backfill), 6 (step completion
+        // backfill), and 8 (board stats recompute) can still read the legacy
+        // board_tasks.isCompleted / completedAt / currentCount / completedStepIds
+        // columns before they are dropped.
         migrator.registerMigration("v6") { db in
             // (a) compound_children
             try db.execute(sql: """
@@ -250,64 +248,21 @@ final class AppDatabase {
 
             // (b) Widen tasks with compound + global completion columns.
             // isCompleted is NOT NULL DEFAULT 0 so existing rows get a value.
-            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN operator TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN \"operator\" TEXT")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN threshold INTEGER")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isOrdered INTEGER")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isCompleted INTEGER NOT NULL DEFAULT 0")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN completedAt TEXT")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN currentCount INTEGER")
+        }
 
-            // (c) Rebuild board_tasks to drop completion columns.
-            // SQLite can't drop columns pre-3.35 (and the mass drop is safer via rebuild).
-            try db.execute(sql: """
-                CREATE TABLE board_tasks_new (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    boardId TEXT NOT NULL,
-                    taskId TEXT NOT NULL,
-                    row INTEGER NOT NULL,
-                    col INTEGER NOT NULL,
-                    isCenter INTEGER NOT NULL DEFAULT 0,
-                    isAchievementSquare INTEGER DEFAULT 0,
-                    achievementType TEXT,
-                    achievementCount INTEGER,
-                    achievementTimeframe TEXT,
-                    achievementProgress INTEGER,
-                    createdAt TEXT NOT NULL,
-                    updatedAt TEXT NOT NULL,
-                    lastSyncedAt TEXT,
-                    version INTEGER NOT NULL DEFAULT 1,
-                    FOREIGN KEY (boardId) REFERENCES boards(id) ON DELETE CASCADE,
-                    FOREIGN KEY (taskId) REFERENCES tasks(id)
-                )
-                """)
-
-            try db.execute(sql: """
-                INSERT INTO board_tasks_new (
-                    id, boardId, taskId, row, col, isCenter,
-                    isAchievementSquare, achievementType, achievementCount,
-                    achievementTimeframe, achievementProgress,
-                    createdAt, updatedAt, lastSyncedAt, version
-                )
-                SELECT
-                    id, boardId, taskId, row, col, isCenter,
-                    isAchievementSquare, achievementType, achievementCount,
-                    achievementTimeframe, achievementProgress,
-                    createdAt, updatedAt, lastSyncedAt, version
-                FROM board_tasks
-                """)
-
-            try db.execute(sql: "DROP TABLE board_tasks")
-            try db.execute(sql: "ALTER TABLE board_tasks_new RENAME TO board_tasks")
-
-            // Recreate indexes (the rebuild drops them with the old table).
-            // NOTE: the old idx_board_tasks_board_completed included isCompleted.
-            // After the rebuild that column is gone, so skip it — queries using it
-            // are updated in Phase 2/3 code (e.g., the wizard + orchestration no
-            // longer query on board_tasks.isCompleted).
-            try db.execute(sql: "CREATE INDEX idx_board_tasks_board ON board_tasks(boardId)")
-            try db.execute(sql: "CREATE INDEX idx_board_tasks_task ON board_tasks(taskId)")
-            try db.execute(sql: "CREATE INDEX idx_board_tasks_achievement ON board_tasks(isAchievementSquare)")
-            try db.execute(sql: "CREATE INDEX idx_board_tasks_achievement_timeframe ON board_tasks(isAchievementSquare, achievementTimeframe)")
+        // v7: Data migration for the compound unification. Transforms legacy
+        // progress + composite rows into the unified compound shape, backfills
+        // global Task completion, enqueues legacy doc deletes, recomputes board
+        // stats via DerivationPass, and finally rebuilds board_tasks to drop
+        // the per-board completion columns (moved here from v6).
+        migrator.registerMigration("v7") { db in
+            try MigrationV7Helpers.run(db)
         }
 
         return migrator
