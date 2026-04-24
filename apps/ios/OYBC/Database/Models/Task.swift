@@ -3,7 +3,18 @@ import GRDB
 
 /// Task - Reusable task definition
 ///
-/// Matches TypeScript Task interface from @oybc/shared
+/// Matches TypeScript Task interface from @oybc/shared.
+///
+/// Design principles:
+///   - Tasks are reusable across multiple boards.
+///   - Global completion state lives on Task itself (`isCompleted`,
+///     `completedAt`, `currentCount`). Completing a task on any board
+///     reflects on every board it appears on. BoardTask is a pure
+///     placement record.
+///   - For compound Tasks (`type=.compound`), `isCompleted` is structurally
+///     present but never written or read — derive completion via
+///     CompoundEvaluation.evaluate (added in Task 3.6).
+///   - UUID primary key (offline creation).
 struct Task: Codable, FetchableRecord, PersistableRecord {
     // Identity
     var id: String
@@ -19,6 +30,11 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
     var unit: String?
     var maxCount: Int?
 
+    // Compound-specific (when type=.compound)
+    var operatorType: OperatorType?
+    var threshold: Int?
+    var isOrdered: Bool?
+
     // Task linking (for tasks used as progress steps)
     var parentStepId: String?
     var parentStepIndex: Int?
@@ -29,6 +45,11 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
     // Aggregate stats
     var totalCompletions: Int
     var totalInstances: Int
+
+    // Global completion state
+    var isCompleted: Bool
+    var completedAt: String? // ISO8601
+    var currentCount: Int?
 
     // Timestamps
     var createdAt: String // ISO8601
@@ -59,11 +80,17 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         action: String? = nil,
         unit: String? = nil,
         maxCount: Int? = nil,
+        operatorType: OperatorType? = nil,
+        threshold: Int? = nil,
+        isOrdered: Bool? = nil,
         parentStepId: String? = nil,
         parentStepIndex: Int? = nil,
         progressCounters: [TaskProgressCounter]? = nil,
         totalCompletions: Int,
         totalInstances: Int,
+        isCompleted: Bool = false,
+        completedAt: String? = nil,
+        currentCount: Int? = nil,
         createdAt: String,
         updatedAt: String,
         lastSyncedAt: String? = nil,
@@ -79,11 +106,17 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         self.action = action
         self.unit = unit
         self.maxCount = maxCount
+        self.operatorType = operatorType
+        self.threshold = threshold
+        self.isOrdered = isOrdered
         self.parentStepId = parentStepId
         self.parentStepIndex = parentStepIndex
         self.progressCounters = progressCounters
         self.totalCompletions = totalCompletions
         self.totalInstances = totalInstances
+        self.isCompleted = isCompleted
+        self.completedAt = completedAt
+        self.currentCount = currentCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastSyncedAt = lastSyncedAt
@@ -97,8 +130,11 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
     enum CodingKeys: String, CodingKey {
         case id, userId, title, description, type
         case action, unit, maxCount
+        case operatorType = "operator"
+        case threshold, isOrdered
         case parentStepId, parentStepIndex, progressCounters
         case totalCompletions, totalInstances
+        case isCompleted, completedAt, currentCount
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
     }
@@ -115,6 +151,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         action = try container.decodeIfPresent(String.self, forKey: .action)
         unit = try container.decodeIfPresent(String.self, forKey: .unit)
         maxCount = try container.decodeIfPresent(Int.self, forKey: .maxCount)
+        operatorType = try container.decodeIfPresent(OperatorType.self, forKey: .operatorType)
+        threshold = try container.decodeIfPresent(Int.self, forKey: .threshold)
+        isOrdered = try container.decodeIfPresent(Bool.self, forKey: .isOrdered)
         parentStepId = try container.decodeIfPresent(String.self, forKey: .parentStepId)
         parentStepIndex = try container.decodeIfPresent(Int.self, forKey: .parentStepIndex)
 
@@ -128,6 +167,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
 
         totalCompletions = try container.decode(Int.self, forKey: .totalCompletions)
         totalInstances = try container.decode(Int.self, forKey: .totalInstances)
+        isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+        completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
+        currentCount = try container.decodeIfPresent(Int.self, forKey: .currentCount)
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         lastSyncedAt = try container.decodeIfPresent(String.self, forKey: .lastSyncedAt)
@@ -148,6 +190,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         try container.encodeIfPresent(action, forKey: .action)
         try container.encodeIfPresent(unit, forKey: .unit)
         try container.encodeIfPresent(maxCount, forKey: .maxCount)
+        try container.encodeIfPresent(operatorType, forKey: .operatorType)
+        try container.encodeIfPresent(threshold, forKey: .threshold)
+        try container.encodeIfPresent(isOrdered, forKey: .isOrdered)
         try container.encodeIfPresent(parentStepId, forKey: .parentStepId)
         try container.encodeIfPresent(parentStepIndex, forKey: .parentStepIndex)
 
@@ -160,6 +205,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
 
         try container.encode(totalCompletions, forKey: .totalCompletions)
         try container.encode(totalInstances, forKey: .totalInstances)
+        try container.encode(isCompleted, forKey: .isCompleted)
+        try container.encodeIfPresent(completedAt, forKey: .completedAt)
+        try container.encodeIfPresent(currentCount, forKey: .currentCount)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)
@@ -217,7 +265,13 @@ struct TaskStep: Codable, FetchableRecord, PersistableRecord {
 enum TaskType: String, Codable, DatabaseValueConvertible {
     case normal
     case counting
+
+    /// Transitional: legacy progress type. Use `compound` with `isOrdered=true`
+    /// under the unified model. Kept so existing rows still parse; removed in
+    /// Phase 8 cleanup once all callers migrate.
     case progress
+
+    case compound
 }
 
 struct TaskProgressCounter: Codable {
