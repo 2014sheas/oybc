@@ -237,14 +237,18 @@ export const BoardTaskSchema = z.object({
 
 // ===== CompoundChild Schemas =====
 
+const compoundChildNoSelfReference = (data: { compoundTaskId: string; childTaskId: string }) =>
+  data.compoundTaskId !== data.childTaskId;
+
+const compoundChildSelfReferenceMessage = {
+  message: 'CompoundChild must not self-reference (compoundTaskId == childTaskId)',
+};
+
 export const CreateCompoundChildInputSchema = z.object({
   compoundTaskId: z.string().uuid(),
   childTaskId: z.string().uuid(),
   childIndex: z.number().int().nonnegative(),
-}).refine(
-  (data) => data.compoundTaskId !== data.childTaskId,
-  { message: 'CompoundChild must not self-reference (compoundTaskId == childTaskId)' },
-);
+}).refine(compoundChildNoSelfReference, compoundChildSelfReferenceMessage);
 
 export const CompoundChildSchema = z.object({
   id: z.string().uuid(),
@@ -254,13 +258,10 @@ export const CompoundChildSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
-  version: z.number().int().positive(),
+  version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
-}).refine(
-  (data) => data.compoundTaskId !== data.childTaskId,
-  { message: 'CompoundChild must not self-reference (compoundTaskId == childTaskId)' },
-);
+}).refine(compoundChildNoSelfReference, compoundChildSelfReferenceMessage);
 
 // ===== ProgressCounter Schemas =====
 
