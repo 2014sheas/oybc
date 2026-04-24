@@ -143,6 +143,17 @@ export class AppDatabase extends Dexie {
           mod.runMigrationV4(tx)
         );
       });
+
+    // v5: Drop legacy stores. The v4 upgrade callback already migrated their
+    // rows into `tasks` + `compoundChildren`. Class field declarations for
+    // `taskSteps`, `compositeTasks`, `compositeNodes` remain so migrationV4.ts
+    // still compiles — Phase 8 cleanup removes them along with the migration
+    // code itself once we're past the transition window.
+    this.version(5).stores({
+      taskSteps: null,
+      compositeTasks: null,
+      compositeNodes: null,
+    });
   }
 }
 
