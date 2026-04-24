@@ -1,4 +1,4 @@
-import { TaskType } from '../constants/enums';
+import { OperatorType, TaskType } from '../constants/enums';
 
 /**
  * Task - Reusable task definition
@@ -17,12 +17,17 @@ export interface Task {
   // Core fields
   title: string;                 // Task title (e.g., "Read a book")
   description?: string;          // Optional detailed description
-  type: TaskType;                // normal, counting, or progress
+  type: TaskType;                // normal, counting, progress, or compound
 
   // Counting task fields (only for type='counting')
   action?: string;               // Action verb (e.g., "Read", "Run")
   unit?: string;                 // Unit of measurement (e.g., "pages", "miles")
   maxCount?: number;             // Target count (e.g., 100)
+
+  // Compound-specific fields (only meaningful when type === TaskType.COMPOUND)
+  operator?: OperatorType;       // AND | OR | M_OF_N
+  threshold?: number;            // Required when operator === 'M_OF_N'
+  isOrdered?: boolean;           // Display hint: true → progress-style ordered step list
 
   // Task linking (for tasks used as progress steps)
   parentStepId?: string;         // References TaskStep.id in parent task
@@ -30,6 +35,16 @@ export interface Task {
 
   // Progress counters (for tasks that contribute to shared counters)
   progressCounters?: TaskProgressCounter[];
+
+  // Global completion state
+  //   - STORED for primitives (NORMAL / COUNTING): the actual value
+  //   - PRESENT on compound rows for column uniformity, but NEVER WRITTEN and
+  //     NEVER READ. Consumers must resolve compound completion via
+  //     evaluateCompound() (added in a later task). Reading isCompleted on
+  //     a compound Task is a bug.
+  isCompleted: boolean;          // Default false
+  completedAt?: string;          // ISO8601
+  currentCount?: number;         // For counting tasks (NOTE: moved here from BoardTask)
 
   // Aggregate stats (denormalized for performance)
   totalCompletions: number;      // How many times completed across all boards
