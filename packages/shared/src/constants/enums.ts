@@ -19,8 +19,14 @@ export enum BoardStatus {
 export enum TaskType {
   NORMAL = 'normal',         // Simple completion task
   COUNTING = 'counting',     // Tasks with counts (e.g., "Read 100 pages")
-  PROGRESS = 'progress',     // @deprecated Multi-step tasks with sub-steps (transitional alias, Phase 8 cleanup)
-  COMPOUND = 'compound'      // Composite task: multi-child with operator (AND/OR/M_OF_N) and ordering
+  /**
+   * @deprecated Transitional alias kept for the duration of the compound-tasks
+   * unification refactor; downstream callers in apps/web and apps/ios still
+   * reference TaskType.PROGRESS. Removed in Phase 8 once all callers migrate
+   * to TaskType.COMPOUND with isOrdered=true.
+   */
+  PROGRESS = 'progress',
+  COMPOUND = 'compound'      // Compound task: multi-child with operator (AND/OR/M_OF_N) and ordering
 }
 
 /**
