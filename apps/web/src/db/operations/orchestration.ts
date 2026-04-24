@@ -37,6 +37,127 @@ export interface TaskCompletionResult {
   collateralBingosByBoard: Record<string, string[]>;
 }
 
+/** Extended board stats including transition signals from a cascade pass. */
+export interface BoardCascadeEntry extends BoardStatsUpdate {
+  boardCompleted: boolean;
+  boardReactivated: boolean;
+}
+
+// ─── Shared cascade helper ────────────────────────────────────────────────────
+
+/**
+ * Run the derivation pass for a Task that just changed (locally OR via pull).
+ *
+ * Recomputes board stats + status transitions + sync entries for every board
+ * affected by `changedTaskId` directly or via a containing compound.
+ *
+ * Pure cascade — does NOT write the Task itself. Caller owns that write.
+ *
+ * Pulls do NOT bump Task version (pulled value is authoritative); calling
+ * this helper from a pull handler handles the cascade without re-firing
+ * the write-path Task update.
+ *
+ * IMPORTANT: Must be called inside an active Dexie transaction covering
+ * `boards`, `boardTasks`, `tasks`, `compoundChildren`, and `syncQueue`.
+ * Dexie's auto-batching joins the caller's transaction automatically when
+ * invoked within `db.transaction('rw', [...], async () => { ... })`.
+ *
+ * @param changedTaskId The Task whose state just changed.
+ * @returns A map of boardId → BoardCascadeEntry for every recomputed board,
+ *   so callers can extract collateral signals (e.g., new bingos).
+ */
+export async function runBoardCascadeForTask(
+  changedTaskId: string,
+): Promise<Map<string, BoardCascadeEntry>> {
+  const now = currentTimestamp();
+
+  // Build the lookups for the derivation pass.
+  const allChildren = await fetchAllCompoundChildren();
+  const allBoardTasks = await fetchAllBoardTasks();
+  const allTasks = await db.tasks.toArray();
+
+  const taskById: Record<string, Task> = {};
+  for (const t of allTasks) taskById[t.id] = t;
+
+  const childrenByCompound: Record<string, CompoundChild[]> = {};
+  for (const c of allChildren) {
+    (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+  }
+
+  // Resolve affected boards via the shared derivation helpers.
+  const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
+  const affectedBoardIds = findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks);
+
+  const resultMap = new Map<string, BoardCascadeEntry>();
+
+  for (const affectedBoardId of affectedBoardIds) {
+    const affectedBoard = await db.boards.get(affectedBoardId);
+    if (!affectedBoard || affectedBoard.isDeleted) continue;
+
+    const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
+    const stats: BoardStatsUpdate = computeBoardStatsUpdate(
+      affectedBoard,
+      boardTasksOnBoard,
+      childrenByCompound,
+      taskById,
+    );
+
+    const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
+    const isGreenlog = stats.completedTasks >= totalSquares;
+
+    let boardCompleted = false;
+    let boardReactivated = false;
+
+    const boardUpdate: Record<string, unknown> = {
+      completedTasks: stats.completedTasks,
+      linesCompleted: stats.linesCompleted,
+      completedLineIds: stats.completedLineIds,
+      updatedAt: now,
+      version: (affectedBoard.version ?? 1) + 1,
+    };
+
+    // Auto-complete board on greenlog.
+    if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
+      boardUpdate.status = BoardStatus.COMPLETED;
+      boardUpdate.completedAt = now;
+      boardCompleted = true;
+    }
+
+    // Revert COMPLETED → ACTIVE if board is no longer fully complete.
+    if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
+      boardUpdate.status = BoardStatus.ACTIVE;
+      boardUpdate.completedAt = undefined;
+      boardReactivated = true;
+    }
+
+    await db.boards.update(affectedBoardId, boardUpdate);
+
+    // Enqueue sync for this board (inside the transaction for all-or-nothing semantics).
+    const updatedBoard = await db.boards.get(affectedBoardId);
+    if (updatedBoard) {
+      await db.syncQueue.add({
+        id: generateUUID(),
+        entityType: 'boards',
+        entityId: affectedBoardId,
+        operationType: SyncOperationType.UPDATE,
+        payload: JSON.stringify(updatedBoard),
+        status: SyncStatus.PENDING,
+        retryCount: 0,
+        createdAt: currentTimestamp(),
+        priority: 0,
+      });
+    }
+
+    resultMap.set(affectedBoardId, {
+      ...stats,
+      boardCompleted,
+      boardReactivated,
+    });
+  }
+
+  return resultMap;
+}
+
 // ─── Orchestration ───────────────────────────────────────────────────────────
 
 /**
@@ -124,7 +245,7 @@ export async function handleTaskCompletion(
         );
       }
 
-      // 3. Compute the new global Task state.
+      // 3. Compute the new global Task state and write it (bumps version — write-path only).
       const taskUpdate: Partial<Task> = {
         updatedAt: now,
         version: (targetTask.version ?? 1) + 1,
@@ -147,99 +268,28 @@ export async function handleTaskCompletion(
 
       await db.tasks.update(targetTask.id, taskUpdate);
 
-      // 4. Build the lookups for the derivation pass.
-      const allChildren = await fetchAllCompoundChildren();
-      const allBoardTasks = await fetchAllBoardTasks();
-      const allTasks = await db.tasks.toArray();
+      // 4. Run the shared derivation pass — cascade to every affected board.
+      const cascadeMap = await runBoardCascadeForTask(targetTask.id);
 
-      const taskById: Record<string, Task> = {};
-      for (const t of allTasks) taskById[t.id] = t;
-
-      const childrenByCompound: Record<string, CompoundChild[]> = {};
-      for (const c of allChildren) {
-        (childrenByCompound[c.compoundTaskId] ??= []).push(c);
-      }
-
-      // 5. Resolve affected boards via the shared derivation helpers.
-      const parentCompounds = findTransitiveParentCompounds(targetTask.id, allChildren);
-      const affectedBoardIds = findAffectedBoardIds(targetTask.id, parentCompounds, allBoardTasks);
-
-      // 6. For each affected board: recompute stats + status transitions + enqueue sync.
+      // 5. Build TaskCompletionResult from the cascade map.
       const collateralBingosByBoard: Record<string, string[]> = {};
-
-      for (const affectedBoardId of affectedBoardIds) {
-        const affectedBoard = await db.boards.get(affectedBoardId);
-        if (!affectedBoard || affectedBoard.isDeleted) continue;
-
-        const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
-        const stats: BoardStatsUpdate = computeBoardStatsUpdate(
-          affectedBoard,
-          boardTasksOnBoard,
-          childrenByCompound,
-          taskById,
-        );
-
-        const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
-        const isGreenlog = stats.completedTasks >= totalSquares;
-
-        let primaryBoardCompletedThisRun = false;
-        let primaryBoardReactivatedThisRun = false;
-
-        const boardUpdate: Record<string, unknown> = {
-          completedTasks: stats.completedTasks,
-          linesCompleted: stats.linesCompleted,
-          completedLineIds: stats.completedLineIds,
-          updatedAt: now,
-          version: (affectedBoard.version ?? 1) + 1,
-        };
-
-        // Auto-complete board on greenlog.
-        if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
-          boardUpdate.status = BoardStatus.COMPLETED;
-          boardUpdate.completedAt = now;
-          if (affectedBoardId === boardId) primaryBoardCompletedThisRun = true;
-        }
-
-        // Revert COMPLETED → ACTIVE if board is no longer fully complete.
-        if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
-          boardUpdate.status = BoardStatus.ACTIVE;
-          boardUpdate.completedAt = undefined;
-          if (affectedBoardId === boardId) primaryBoardReactivatedThisRun = true;
-        }
-
-        await db.boards.update(affectedBoardId, boardUpdate);
-
-        // Enqueue sync for this board (inside the transaction for all-or-nothing semantics).
-        const updatedBoard = await db.boards.get(affectedBoardId);
-        if (updatedBoard) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'boards',
-            entityId: affectedBoardId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(updatedBoard),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: currentTimestamp(),
-            priority: 0,
-          });
-        }
-
+      for (const [affectedBoardId, entry] of cascadeMap) {
         if (affectedBoardId === boardId) {
+          const totalSquares = primaryBoard.boardSize * primaryBoard.boardSize;
           result = {
-            newBingos: stats.newBingos,
-            lostBingos: stats.lostBingos,
-            isGreenlog,
-            boardCompleted: primaryBoardCompletedThisRun,
-            boardReactivated: primaryBoardReactivatedThisRun,
+            newBingos: entry.newBingos,
+            lostBingos: entry.lostBingos,
+            isGreenlog: entry.completedTasks >= totalSquares,
+            boardCompleted: entry.boardCompleted,
+            boardReactivated: entry.boardReactivated,
             collateralBingosByBoard, // re-attached below after the loop
           };
-        } else if (stats.newBingos.length > 0) {
-          collateralBingosByBoard[affectedBoardId] = stats.newBingos;
+        } else if (entry.newBingos.length > 0) {
+          collateralBingosByBoard[affectedBoardId] = entry.newBingos;
         }
       }
 
-      // Enqueue sync for the target Task (inside the transaction).
+      // 6. Enqueue sync for the target Task (inside the transaction).
       const updatedTask = await db.tasks.get(targetTask.id);
       if (updatedTask) {
         await db.syncQueue.add({
