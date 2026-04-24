@@ -125,14 +125,24 @@ export class AppDatabase extends Dexie {
     // v4: Add compoundChildren table for the unified compound model.
     // Replaces task_steps + composite_nodes (legacy stores remain in place
     // until v5 — Task 2.6 — drops them after Task 2.5's data migration).
-    this.version(4).stores({
-      compoundChildren: `
-        id,
-        compoundTaskId,
-        childTaskId,
-        [compoundTaskId+childIndex]
-      `,
-    });
+    this.version(4)
+      .stores({
+        compoundChildren: `
+          id,
+          compoundTaskId,
+          childTaskId,
+          [compoundTaskId+childIndex]
+        `,
+      })
+      .upgrade((tx) => {
+        // Dynamic import avoids a top-of-file circular reference:
+        // migrationV4.ts imports `db` from this file, so a static import here
+        // would create a cycle. Dexie resolves the Promise before the upgrade
+        // transaction commits, so atomicity is preserved.
+        return import('./operations/migrationV4').then((mod) =>
+          mod.runMigrationV4(tx)
+        );
+      });
   }
 }
 
