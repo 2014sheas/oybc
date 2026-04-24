@@ -5,7 +5,12 @@ import { OperatorType, TaskType } from '../constants/enums';
  *
  * Design principles:
  * - Tasks are reusable across multiple boards
- * - Task completion state is stored in BoardTask (junction table)
+ * - Global completion state lives on Task itself (`isCompleted`, `currentCount`,
+ *   `completedAt`). Completing a task on any board reflects on every board it
+ *   appears on. BoardTask is now a pure placement record.
+ * - For compound Tasks (`type='compound'`), `isCompleted` is structurally
+ *   present but never written or read — derive completion via the evaluator
+ *   (see `compoundEvaluation.ts`).
  * - UUID primary key (offline creation)
  * - Aggregate stats track usage across boards
  */
