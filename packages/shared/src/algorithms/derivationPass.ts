@@ -90,15 +90,20 @@ export interface BoardStatsUpdate {
  *
  * @param board              The board whose stats need recomputing.
  * @param boardTasksOnBoard  All BoardTask rows for this specific board.
- * @param taskById           Map of taskId → Task (all tasks in the workspace).
  * @param childrenByCompound Map of compoundTaskId → list of CompoundChild rows.
- * @returns Stats payload to write to the board row, plus new/lost-bingo signals.
+ * @param taskById           Map of taskId → Task (all tasks in the workspace).
+ * @returns A payload to MERGE into the board row. The caller is responsible
+ *          for ALSO setting `board.updatedAt` (current timestamp) and
+ *          incrementing `board.version` before persisting — those are
+ *          deliberately omitted here because shared has no clock access.
+ *          Skipping them silently breaks LWW sync; both platforms' write
+ *          path code must remember to apply them.
  */
 export function computeBoardStatsUpdate(
   board: Board,
   boardTasksOnBoard: BoardTask[],
-  taskById: Record<string, Task>,
   childrenByCompound: Record<string, CompoundChild[]>,
+  taskById: Record<string, Task>,
 ): BoardStatsUpdate {
   const size = board.boardSize as BoardSize;
   const totalSquares = size * size;

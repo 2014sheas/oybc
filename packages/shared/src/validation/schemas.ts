@@ -131,6 +131,57 @@ export const UpdateTaskInputSchema = z.object({
   description: z.string().max(1000).optional(),
 });
 
+// ===== Compound creation input =====
+
+export const AutoCreateCompoundChildTaskSchema = z.object({
+  type: z.enum([TaskType.NORMAL, TaskType.COUNTING]),
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  action: z.string().min(1).max(50).optional(),
+  unit: z.string().min(1).max(50).optional(),
+  maxCount: z.number().int().positive().optional(),
+}).refine(
+  (data) => {
+    if (data.type === TaskType.COUNTING) {
+      return data.action !== undefined && data.unit !== undefined && data.maxCount !== undefined;
+    }
+    return true;
+  },
+  { message: 'Counting child tasks require action, unit, and maxCount' },
+);
+
+export const CreateCompoundChildEntrySchema = z.object({
+  childTaskId: z.string().uuid().optional(),
+  autoCreate: AutoCreateCompoundChildTaskSchema.optional(),
+}).refine(
+  (data) => (data.childTaskId !== undefined) !== (data.autoCreate !== undefined),
+  { message: 'CreateCompoundChildEntry must specify exactly one of childTaskId or autoCreate' },
+);
+
+export const CreateCompoundTaskInputSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  operator: z.nativeEnum(OperatorType),
+  threshold: z.number().int().positive().optional(),
+  isOrdered: z.boolean(),
+  children: z.array(CreateCompoundChildEntrySchema).min(2),
+}).refine(
+  (data) => {
+    if (data.operator === OperatorType.M_OF_N) {
+      return data.threshold !== undefined && data.threshold >= 1 && data.threshold <= data.children.length;
+    }
+    return true;
+  },
+  { message: "operator='M_OF_N' requires threshold in [1, children.length]" },
+).refine(
+  (data) => {
+    // No duplicate childTaskIds.
+    const ids = data.children.map((c) => c.childTaskId).filter((id): id is string => id !== undefined);
+    return new Set(ids).size === ids.length;
+  },
+  { message: 'Compound children must not contain duplicate childTaskId references' },
+);
+
 export const TaskProgressCounterSchema = z.object({
   counterId: z.string().uuid(),
   targetValue: z.number().positive(),

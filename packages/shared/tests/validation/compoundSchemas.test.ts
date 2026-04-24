@@ -3,6 +3,7 @@ import {
   BoardTaskSchema,
   CompoundChildSchema,
   CreateCompoundChildInputSchema,
+  CreateCompoundTaskInputSchema,
 } from '../../src/validation/schemas';
 import { TaskType, OperatorType } from '../../src/constants/enums';
 
@@ -324,5 +325,174 @@ describe('CreateCompoundChildInputSchema', () => {
       validCreateCompoundChild({ childIndex: 0 })
     );
     expect(result.success).toBe(true);
+  });
+});
+
+// ── CreateCompoundTaskInputSchema ─────────────────────────────────────────────
+
+/** Minimal valid AND compound with two existing child references. */
+function validCreateCompoundTaskInput(overrides: Record<string, unknown> = {}) {
+  return {
+    title: 'Read two books',
+    operator: OperatorType.AND,
+    isOrdered: false,
+    children: [
+      { childTaskId: '00000000-0000-0000-0000-000000000001' },
+      { childTaskId: '00000000-0000-0000-0000-000000000002' },
+    ],
+    ...overrides,
+  };
+}
+
+describe('CreateCompoundTaskInputSchema', () => {
+  it('valid AND compound with two existing children → passes', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(validCreateCompoundTaskInput());
+    expect(result.success).toBe(true);
+  });
+
+  it('valid M_OF_N compound (threshold=2, three children) → passes', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        operator: OperatorType.M_OF_N,
+        threshold: 2,
+        children: [
+          { childTaskId: '00000000-0000-0000-0000-000000000001' },
+          { childTaskId: '00000000-0000-0000-0000-000000000002' },
+          { childTaskId: '00000000-0000-0000-0000-000000000003' },
+        ],
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('invalid: M_OF_N without threshold → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        operator: OperatorType.M_OF_N,
+        children: [
+          { childTaskId: '00000000-0000-0000-0000-000000000001' },
+          { childTaskId: '00000000-0000-0000-0000-000000000002' },
+        ],
+      })
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.errors.map((e) => e.message);
+      expect(messages.some((m) => m.includes('M_OF_N'))).toBe(true);
+    }
+  });
+
+  it('invalid: M_OF_N with threshold > children.length → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        operator: OperatorType.M_OF_N,
+        threshold: 5,
+        children: [
+          { childTaskId: '00000000-0000-0000-0000-000000000001' },
+          { childTaskId: '00000000-0000-0000-0000-000000000002' },
+        ],
+      })
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('invalid: only 1 child → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [{ childTaskId: '00000000-0000-0000-0000-000000000001' }],
+      })
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('invalid: child entry with both childTaskId AND autoCreate → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [
+          {
+            childTaskId: '00000000-0000-0000-0000-000000000001',
+            autoCreate: { type: TaskType.NORMAL, title: 'Walk the dog' },
+          },
+          { childTaskId: '00000000-0000-0000-0000-000000000002' },
+        ],
+      })
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.errors.map((e) => e.message);
+      expect(messages.some((m) => m.includes('exactly one'))).toBe(true);
+    }
+  });
+
+  it('invalid: child entry with neither childTaskId nor autoCreate → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [
+          {},
+          { childTaskId: '00000000-0000-0000-0000-000000000002' },
+        ],
+      })
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('invalid: duplicate childTaskIds → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [
+          { childTaskId: '00000000-0000-0000-0000-000000000001' },
+          { childTaskId: '00000000-0000-0000-0000-000000000001' }, // duplicate
+        ],
+      })
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.errors.map((e) => e.message);
+      expect(messages.some((m) => m.includes('duplicate'))).toBe(true);
+    }
+  });
+
+  it('valid: child entry with autoCreate.type=counting carrying action/unit/maxCount → passes', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [
+          {
+            autoCreate: {
+              type: TaskType.COUNTING,
+              title: 'Read 100 pages',
+              action: 'Read',
+              unit: 'pages',
+              maxCount: 100,
+            },
+          },
+          { childTaskId: '00000000-0000-0000-0000-000000000002' },
+        ],
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('invalid: counting autoCreate missing maxCount → fails', () => {
+    const result = CreateCompoundTaskInputSchema.safeParse(
+      validCreateCompoundTaskInput({
+        children: [
+          {
+            autoCreate: {
+              type: TaskType.COUNTING,
+              title: 'Read 100 pages',
+              action: 'Read',
+              unit: 'pages',
+              // maxCount intentionally omitted
+            },
+          },
+          { childTaskId: '00000000-0000-0000-0000-000000000002' },
+        ],
+      })
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.errors.map((e) => e.message);
+      expect(messages.some((m) => m.includes('action, unit, and maxCount'))).toBe(true);
+    }
   });
 });

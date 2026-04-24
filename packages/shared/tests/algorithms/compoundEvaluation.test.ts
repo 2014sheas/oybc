@@ -213,4 +213,13 @@ describe('evaluateCompound — edge cases', () => {
     const taskById = { malformed };
     expect(evaluateCompound(malformed, childrenByCompound, taskById)).toBe(false);
   });
+
+  it('handles compound id missing entirely from childrenByCompound (defensive)', () => {
+    // 'parent' key is absent from childrenByCompound — treated as empty children list
+    const compound = compoundTask('parent', OperatorType.AND);
+    const childrenByCompound: Record<string, CompoundChild[]> = {}; // 'parent' key absent
+    const taskById = { parent: compound };
+    // AND of zero non-deleted children → vacuous truth
+    expect(evaluateCompound(compound, childrenByCompound, taskById)).toBe(true);
+  });
 });

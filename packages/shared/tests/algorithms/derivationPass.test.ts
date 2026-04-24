@@ -206,7 +206,7 @@ describe('computeBoardStatsUpdate', () => {
     const bts = [boardTask('b1', 't1', 0, 0), boardTask('b1', 't2', 0, 1)];
     const taskById = { t1: tDone, t2: tPending };
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, {});
+    const result = computeBoardStatsUpdate(b, bts, {}, taskById);
     expect(result.completedTasks).toBe(1);
     // row_0 not complete (t2 not done), so no bingos
     expect(result.linesCompleted).toBe(0);
@@ -225,7 +225,7 @@ describe('computeBoardStatsUpdate', () => {
       comp: [child('comp', 'c1', 0), child('comp', 'c2', 1)],
     };
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, childrenByCompound);
+    const result = computeBoardStatsUpdate(b, bts, childrenByCompound, taskById);
     expect(result.completedTasks).toBe(1);
   });
 
@@ -240,7 +240,7 @@ describe('computeBoardStatsUpdate', () => {
       comp: [child('comp', 'c1', 0), child('comp', 'c2', 1)],
     };
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, childrenByCompound);
+    const result = computeBoardStatsUpdate(b, bts, childrenByCompound, taskById);
     expect(result.completedTasks).toBe(0);
   });
 
@@ -257,7 +257,7 @@ describe('computeBoardStatsUpdate', () => {
     ];
     const taskById = { t0, t1, t2 };
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, {});
+    const result = computeBoardStatsUpdate(b, bts, {}, taskById);
     expect(result.linesCompleted).toBe(1);
     expect(result.completedLineIds).toContain('row_0');
   });
@@ -275,7 +275,7 @@ describe('computeBoardStatsUpdate', () => {
     ];
     const taskById = { t0, t1, t2 };
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, {});
+    const result = computeBoardStatsUpdate(b, bts, {}, taskById);
     expect(result.newBingos).toContain('row_0');
     expect(result.lostBingos).toEqual([]);
   });
@@ -293,7 +293,7 @@ describe('computeBoardStatsUpdate', () => {
     ];
     const taskById = { t0, t1, t2 };
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, {});
+    const result = computeBoardStatsUpdate(b, bts, {}, taskById);
     expect(result.lostBingos).toContain('row_0');
     expect(result.newBingos).toEqual([]);
   });
@@ -344,7 +344,7 @@ describe('computeBoardStatsUpdate', () => {
       boardTask('b1', 't22', 2, 2),
     ];
     const taskById = { t01, t21, t00, t22 };
-    const result = computeBoardStatsUpdate(b, bts, taskById, {});
+    const result = computeBoardStatsUpdate(b, bts, {}, taskById);
     // auto-filled center counts + 4 explicit tasks
     expect(result.completedTasks).toBe(5);
     expect(result.completedLineIds).toContain('col_1');
@@ -357,7 +357,7 @@ describe('computeBoardStatsUpdate', () => {
     const bts = [boardTask('b1', 't1', 0, 0)];
     const taskById = { t1: deletedTask };
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, {});
+    const result = computeBoardStatsUpdate(b, bts, {}, taskById);
     expect(result.completedTasks).toBe(0);
   });
 
@@ -366,7 +366,7 @@ describe('computeBoardStatsUpdate', () => {
     const bts = [boardTask('b1', 'ghost', 0, 0)];
     const taskById = {};
 
-    const result = computeBoardStatsUpdate(b, bts, taskById, {});
+    const result = computeBoardStatsUpdate(b, bts, {}, taskById);
     expect(result.completedTasks).toBe(0);
   });
 
@@ -374,5 +374,24 @@ describe('computeBoardStatsUpdate', () => {
     const b = board('myBoard', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const result = computeBoardStatsUpdate(b, [], {}, {});
     expect(result.boardId).toBe('myBoard');
+  });
+
+  it('skips out-of-bounds row/col defensively', () => {
+    // BoardTask with row=99 exceeds boardSize=3 — idx will be out of range and must be skipped
+    const b = board('myBoard', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const t = task('t1', { isCompleted: true });
+    const stale = boardTask('myBoard', 't1', 99, 0); // row 99 is out of bounds for a 3x3 board
+    const result = computeBoardStatsUpdate(b, [stale], {}, { t1: t });
+    expect(result.completedTasks).toBe(0);
+    expect(result.completedLineIds).toEqual([]);
+  });
+
+  it('handles board.completedLineIds === undefined (defensive)', () => {
+    // Board row from legacy data may have completedLineIds absent
+    const b = board('myBoard', { boardSize: 3, centerSquareType: CenterSquareType.NONE, completedLineIds: undefined });
+    // Empty task list → no bingos, so diff produces no new or lost lines
+    const result = computeBoardStatsUpdate(b, [], {}, {});
+    expect(result.newBingos).toEqual([]);
+    expect(result.lostBingos).toEqual([]);
   });
 });

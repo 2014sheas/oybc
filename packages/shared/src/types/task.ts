@@ -141,3 +141,46 @@ export interface UpdateTaskInput {
   description?: string;
   // Note: Can't change type after creation
 }
+
+/**
+ * Inline definition for an auto-created child Task. Compound children created
+ * inline must be primitives — nested compounds must be created standalone first
+ * and referenced via `childTaskId`.
+ */
+export interface AutoCreateCompoundChildTask {
+  type: TaskType.NORMAL | TaskType.COUNTING;
+  title: string;
+  description?: string;
+  /** Counting-task fields (only when type='counting'). */
+  action?: string;
+  unit?: string;
+  maxCount?: number;
+}
+
+/**
+ * One child of a compound being created. The caller supplies either an
+ * existing Task id or an inline new-task definition — never both.
+ */
+export interface CreateCompoundChildEntry {
+  childTaskId?: string;
+  autoCreate?: AutoCreateCompoundChildTask;
+}
+
+/**
+ * Input for creating a compound task (replaces both progress-create and
+ * composite-create paths).
+ *
+ * Each child entry references either an existing Task (`childTaskId`) OR
+ * provides an inline `autoCreate` definition for a new primitive Task to be
+ * created in the same write transaction. Exactly one of the two must be set.
+ */
+export interface CreateCompoundTaskInput {
+  title: string;
+  description?: string;
+  operator: OperatorType;
+  /** Required when operator === 'M_OF_N'. */
+  threshold?: number;
+  /** Display hint: true → renders as ordered "step list" (former Progress UX). */
+  isOrdered: boolean;
+  children: CreateCompoundChildEntry[];
+}
