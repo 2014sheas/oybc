@@ -146,18 +146,44 @@ export const TaskSchema = z.object({
   action: z.string().max(50).optional(),
   unit: z.string().max(50).optional(),
   maxCount: z.number().int().positive().optional(),
+  // Compound task fields
+  operator: z.nativeEnum(OperatorType).optional(),
+  threshold: z.number().int().positive().optional(),
+  isOrdered: z.boolean().optional(),
   parentStepId: z.string().uuid().optional(),
   parentStepIndex: z.number().int().min(0).optional(),
   progressCounters: z.array(TaskProgressCounterSchema).optional(),
   totalCompletions: z.number().int().min(0),
   totalInstances: z.number().int().min(0),
+  // Completion tracking fields (live on Task, not BoardTask)
+  isCompleted: z.boolean(),
+  completedAt: z.string().datetime().optional(),
+  currentCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
-});
+}).refine(
+  (data) => {
+    // Compound tasks must have an operator.
+    if (data.type === TaskType.COMPOUND) {
+      return data.operator !== undefined;
+    }
+    return true;
+  },
+  { message: "Task with type='compound' must have an operator" },
+).refine(
+  (data) => {
+    // M_OF_N operator requires a threshold.
+    if (data.operator === OperatorType.M_OF_N) {
+      return data.threshold !== undefined;
+    }
+    return true;
+  },
+  { message: "Task with operator='M_OF_N' must have a threshold" },
+);
 
 export const TaskStepSchema = z.object({
   id: z.string().uuid(),
@@ -191,13 +217,6 @@ export const CreateBoardTaskInputSchema = z.object({
   achievementTimeframe: z.nativeEnum(Timeframe).optional(),
 });
 
-export const UpdateBoardTaskCompletionInputSchema = z.object({
-  isCompleted: z.boolean(),
-  currentCount: z.number().int().min(0).optional(),
-  completedStepIds: z.array(z.string().uuid()).optional(),
-  achievementProgress: z.number().int().min(0).optional(),
-});
-
 export const BoardTaskSchema = z.object({
   id: z.string().uuid(),
   boardId: z.string().uuid(),
@@ -205,10 +224,6 @@ export const BoardTaskSchema = z.object({
   row: z.number().int().min(0),
   col: z.number().int().min(0),
   isCenter: z.boolean(),
-  isCompleted: z.boolean(),
-  completedAt: z.string().datetime().optional(),
-  currentCount: z.number().int().min(0).optional(),
-  completedStepIds: z.array(z.string().uuid()).optional(),
   isAchievementSquare: z.boolean().optional(),
   achievementType: z.enum(['bingo', 'full_completion']).optional(),
   achievementCount: z.number().int().positive().optional(),
@@ -219,6 +234,33 @@ export const BoardTaskSchema = z.object({
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
 });
+
+// ===== CompoundChild Schemas =====
+
+export const CreateCompoundChildInputSchema = z.object({
+  compoundTaskId: z.string().uuid(),
+  childTaskId: z.string().uuid(),
+  childIndex: z.number().int().nonnegative(),
+}).refine(
+  (data) => data.compoundTaskId !== data.childTaskId,
+  { message: 'CompoundChild must not self-reference (compoundTaskId == childTaskId)' },
+);
+
+export const CompoundChildSchema = z.object({
+  id: z.string().uuid(),
+  compoundTaskId: z.string().uuid(),
+  childTaskId: z.string().uuid(),
+  childIndex: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().positive(),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+}).refine(
+  (data) => data.compoundTaskId !== data.childTaskId,
+  { message: 'CompoundChild must not self-reference (compoundTaskId == childTaskId)' },
+);
 
 // ===== ProgressCounter Schemas =====
 
