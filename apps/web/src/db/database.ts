@@ -9,6 +9,7 @@ import type {
   SyncQueueItem,
   CompositeTask,
   CompositeNode,
+  CompoundChild,
 } from '@oybc/shared';
 
 /**
@@ -27,6 +28,7 @@ export class AppDatabase extends Dexie {
   syncQueue!: Table<SyncQueueItem, string>;
   compositeTasks!: Table<CompositeTask, string>;
   compositeNodes!: Table<CompositeNode, string>;
+  compoundChildren!: Table<CompoundChild, string>;
 
   constructor() {
     super('oybc');
@@ -119,6 +121,18 @@ export class AppDatabase extends Dexie {
         childCompositeTaskId
       `,
     });
+
+    // v4: Add compoundChildren table for the unified compound model.
+    // Replaces task_steps + composite_nodes (legacy stores remain in place
+    // until v5 — Task 2.6 — drops them after Task 2.5's data migration).
+    this.version(4).stores({
+      compoundChildren: `
+        id,
+        compoundTaskId,
+        childTaskId,
+        [compoundTaskId+childIndex]
+      `,
+    });
   }
 }
 
@@ -153,4 +167,5 @@ export type {
   SyncQueueItem,
   CompositeTask,
   CompositeNode,
+  CompoundChild,
 };
