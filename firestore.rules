@@ -23,7 +23,8 @@ service cloud.firestore {
       function isKnownCollection() {
         return collection in [
           'boards', 'tasks', 'taskSteps',
-          'boardTasks', 'compositeTasks', 'compositeNodes'
+          'boardTasks', 'compositeTasks', 'compositeNodes',
+          'compoundChildren'
         ];
       }
 

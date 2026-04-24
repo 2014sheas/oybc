@@ -111,6 +111,24 @@ export function computeBoardStatsUpdate(
   let completedTasks = 0;
 
   for (const bt of boardTasksOnBoard) {
+    // Achievement squares: completion derives from achievementProgress reaching
+    // achievementCount on THIS board. The backing Task's isCompleted state is
+    // irrelevant — the square's semantic is "this cross-board goal is reached",
+    // tracked by achievementProgress / achievementCount on the BoardTask row.
+    if (bt.isAchievementSquare) {
+      const required = bt.achievementCount ?? 0;
+      const progress = bt.achievementProgress ?? 0;
+      const idx = bt.row * size + bt.col;
+      if (idx < 0 || idx >= totalSquares) continue;
+      // required > 0 guard: prevents a 0/0 achievement square from registering
+      // as complete before it has been configured.
+      if (required > 0 && progress >= required) {
+        grid[idx] = true;
+        completedTasks += 1;
+      }
+      continue; // don't fall through to the Task.isCompleted branch
+    }
+
     const t = taskById[bt.taskId];
     if (!t || t.isDeleted) continue;
     const isDone =

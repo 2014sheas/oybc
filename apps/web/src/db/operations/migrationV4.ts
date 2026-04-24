@@ -103,6 +103,30 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
     };
   });
 
+  /**
+   * Enqueue a Task UPDATE sync entry so that backfilled completion state
+   * propagates to Firestore (and wins over any stale pre-migration remote doc
+   * on a second device that pulls later).
+   *
+   * Uses direct `db.syncQueue.add` — NOT `addToSyncQueue` — because we are
+   * inside the Dexie upgrade transaction and that helper isn't tx-aware.
+   */
+  async function enqueueTaskUpdate(taskId: string): Promise<void> {
+    const afterUpdate = await db.tasks.get(taskId);
+    if (!afterUpdate) return;
+    await db.syncQueue.add({
+      id: generateUUID(),
+      entityType: 'tasks',
+      entityId: taskId,
+      operationType: SyncOperationType.UPDATE,
+      payload: JSON.stringify(afterUpdate),
+      status: SyncStatus.PENDING,
+      retryCount: 0,
+      createdAt: currentTimestamp(),
+      priority: 0,
+    });
+  }
+
   // Re-fetch all tasks now that step 3 may have added composite-derived rows.
   const tasksAfterStep3 = await db.tasks.toArray();
   for (const task of tasksAfterStep3) {
@@ -120,6 +144,11 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
       updates.currentCount = backfill.currentCount;
     }
     await db.tasks.update(task.id, updates);
+    // Enqueue sync entry so the backfilled state reaches Firestore and won't be
+    // overwritten by a second device pulling the stale pre-migration remote doc.
+    if (backfill.isCompleted === true || backfill.currentCount !== undefined) {
+      await enqueueTaskUpdate(task.id);
+    }
   }
 
   // ── 6. Backfill step completion ────────────────────────────────────────────
@@ -138,6 +167,8 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
       completedAt: linkedTask.completedAt ?? now,
       updatedAt: now,
     });
+    // Enqueue sync entry for step-completion backfill.
+    await enqueueTaskUpdate(step.linkedTaskId);
   }
 
   // ── 7. Enqueue legacy delete sync ops ─────────────────────────────────────

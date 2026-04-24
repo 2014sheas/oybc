@@ -394,4 +394,55 @@ describe('computeBoardStatsUpdate', () => {
     expect(result.newBingos).toEqual([]);
     expect(result.lostBingos).toEqual([]);
   });
+
+  // ─── Achievement square completion ───────────────────────────────────────────
+
+  it('achievement square with progress >= count registers as complete and increments completedTasks', () => {
+    const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const backingTask = task('ach1', { isCompleted: false });
+    const bt = boardTask('b1', 'ach1', 0, 0, {
+      isAchievementSquare: true,
+      achievementCount: 3,
+      achievementProgress: 3,
+    });
+    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
+    expect(result.completedTasks).toBe(1);
+  });
+
+  it('achievement square with progress < count is NOT complete', () => {
+    const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const backingTask = task('ach1', { isCompleted: false });
+    const bt = boardTask('b1', 'ach1', 0, 0, {
+      isAchievementSquare: true,
+      achievementCount: 3,
+      achievementProgress: 2,
+    });
+    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
+    expect(result.completedTasks).toBe(0);
+  });
+
+  it('achievement square with progress=0 and count=0 is NOT complete (0/0 guard)', () => {
+    const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const backingTask = task('ach1', { isCompleted: false });
+    const bt = boardTask('b1', 'ach1', 0, 0, {
+      isAchievementSquare: true,
+      achievementCount: 0,
+      achievementProgress: 0,
+    });
+    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
+    expect(result.completedTasks).toBe(0);
+  });
+
+  it('achievement square ignores backing Task.isCompleted — Task done but progress=0 means cell incomplete', () => {
+    const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    // Backing task is marked complete, but achievement progress hasn't reached count
+    const backingTask = task('ach1', { isCompleted: true });
+    const bt = boardTask('b1', 'ach1', 0, 0, {
+      isAchievementSquare: true,
+      achievementCount: 3,
+      achievementProgress: 0,
+    });
+    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
+    expect(result.completedTasks).toBe(0);
+  });
 });
