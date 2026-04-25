@@ -84,13 +84,15 @@ export function CompositeTaskWizard({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Library feeds — live so a task created elsewhere shows up here.
-  // Primitive tasks (normal, counting, progress) for the picker.
+  // Use JS-level .filter() (same pattern as the useTasks hook) so the boolean
+  // `isDeleted` matches across both new compound rows (stored as `false`) and
+  // legacy migrated rows (stored as `0`). Indexing-level `equals([..., 0])`
+  // breaks for new rows because Dexie compound-index match is strict-equal,
+  // and `false !== 0`.
   const allTasks = useLiveQuery(
     () =>
       db.tasks
-        .where('[userId+isDeleted]')
-        .equals([resolvedUserId, 0])
-        .filter((t) => t.type !== TaskType.COMPOUND)
+        .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type !== TaskType.COMPOUND)
         .toArray(),
     [resolvedUserId],
   ) ?? [];
@@ -99,9 +101,7 @@ export function CompositeTaskWizard({
   const allCompoundTasks: Task[] = useLiveQuery(
     () =>
       db.tasks
-        .where('[userId+isDeleted]')
-        .equals([resolvedUserId, 0])
-        .filter((t) => t.type === TaskType.COMPOUND)
+        .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type === TaskType.COMPOUND)
         .toArray(),
     [resolvedUserId],
   ) ?? [];
