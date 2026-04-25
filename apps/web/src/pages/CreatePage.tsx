@@ -5,7 +5,6 @@ import {
   generateCounterTaskTitle,
   type Task,
   type TaskStep,
-  type CompositeTask,
   type CompoundChild,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
@@ -345,11 +344,10 @@ export function CreatePage(): React.ReactElement {
         <CreateNewTaskForm
           form={form}
           userId={userId}
-          onCompositeCreated={(ct: CompositeTask) => {
-            // Composites aren't added directly to the board pool — BoardTask.taskId
-            // references the tasks table, not compositeTasks. Users add the
-            // composite's individual leaf/subtasks via the Existing Tasks tab.
-            showSuccess(`Created composite "${ct.title}". Add its subtasks from Existing Tasks.`);
+          onCompositeCreated={(task: Task) => {
+            // Compound tasks aren't added directly to the board pool — users
+            // add them or their children via the Existing Tasks tab.
+            showSuccess(`Created compound task "${task.title}". Add it or its children from Existing Tasks.`);
           }}
         />
       )}

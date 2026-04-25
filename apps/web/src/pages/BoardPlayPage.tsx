@@ -436,15 +436,6 @@ export function BoardPlayPage(): React.ReactElement {
               void handleComplete(bt.id, { currentCount: 0, isCompleted: false });
               setContextMenu(null);
             }}
-            onMarkAllStepsComplete={() => {
-              const allStepIds = (squareData.steps ?? []).map((s) => s.id);
-              void handleComplete(bt.id, { completedStepIds: allStepIds });
-              setContextMenu(null);
-            }}
-            onMarkAllStepsIncomplete={() => {
-              void handleComplete(bt.id, { completedStepIds: [] });
-              setContextMenu(null);
-            }}
             onViewDetails={() => {
               setSelectedSquareId(bt.id);
               setContextMenu(null);

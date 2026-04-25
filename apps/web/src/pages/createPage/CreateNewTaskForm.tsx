@@ -1,4 +1,4 @@
-import { TaskType, type CompositeTask } from '@oybc/shared';
+import { TaskType, type Task } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
@@ -35,7 +35,7 @@ const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
 export interface CreateNewTaskFormProps {
   form: UseCreateFormState;
   userId: string | undefined;
-  onCompositeCreated: (ct: CompositeTask) => void;
+  onCompositeCreated: (task: Task) => void;
 }
 
 export function CreateNewTaskForm({
