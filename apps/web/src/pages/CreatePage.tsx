@@ -6,6 +6,7 @@ import {
   type Task,
   type TaskStep,
   type CompositeTask,
+  type CompoundChild,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { usePreferences } from '../hooks';
@@ -21,7 +22,6 @@ import { useBoardPool } from './createPage/useBoardPool';
 import {
   useTaskLibrary,
   filterLibraryForDisplay,
-  COMPOSITE_TYPE,
   type ExistingFilter,
 } from './createPage/useTaskLibrary';
 import { useCreateFormState } from './createPage/useCreateFormState';
@@ -44,7 +44,7 @@ const EXISTING_FILTER_TABS: { value: ExistingFilter; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
   { value: TaskType.PROGRESS, label: 'Progress' },
-  { value: COMPOSITE_TYPE, label: 'Composite' },
+  { value: 'composite', label: 'Composite' },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -87,8 +87,16 @@ export function CreatePage(): React.ReactElement {
   // ── Pool + library ──────────────────────────────────────────────────────
   const { pool: boardPool, addToPool, removeFromPool, isInPool, clearPool } = useBoardPool();
   const library = useTaskLibrary(userId);
-  const { allCompositeNodes, allTaskSteps, taskMap, compositeTaskMap } = library;
-  const { filteredTasks, filteredCompositeTasks } = filterLibraryForDisplay(library, existingFilter);
+  const { allCompoundChildren, taskMap, compoundChildrenByCompound } = library;
+  const { filteredTasks } = filterLibraryForDisplay(library, existingFilter);
+  // Derive composite-tab tasks locally: compound tasks with isOrdered !== true
+  const filteredCompositeTasks = filteredTasks.filter(
+    (t) => t.type === TaskType.COMPOUND && t.isOrdered !== true,
+  );
+  // Normal + counting + progress tasks (non-composite) to display in the main list
+  const filteredNonCompositeTasks = filteredTasks.filter(
+    (t) => !(t.type === TaskType.COMPOUND && t.isOrdered !== true),
+  );
 
   // ── Success toast ───────────────────────────────────────────────────────
 
@@ -141,13 +149,11 @@ export function CreatePage(): React.ReactElement {
 
     if (expandedTaskId) {
       const task = taskMap[expandedTaskId];
-      const composite = compositeTaskMap[expandedTaskId];
 
       if (task) {
-        const nowVisible = newFilter === 'all' || task.type === newFilter;
-        if (!nowVisible) setExpandedTaskId(null);
-      } else if (composite) {
-        const nowVisible = newFilter === 'all' || newFilter === COMPOSITE_TYPE;
+        const isComposite = task.type === TaskType.COMPOUND && task.isOrdered !== true;
+        const nowVisible = newFilter === 'all'
+          || (isComposite ? newFilter === 'composite' : task.type === newFilter);
         if (!nowVisible) setExpandedTaskId(null);
       }
     }
@@ -286,15 +292,15 @@ export function CreatePage(): React.ReactElement {
     );
   }
 
-  function renderInlineCompositePanel(ct: CompositeTask): React.ReactElement {
+  function renderInlineCompositePanel(ct: Task): React.ReactElement {
+    const compoundChildren: CompoundChild[] = compoundChildrenByCompound[ct.id] ?? [];
     return (
       <div className={styles.inlinePanel}>
         <span className={styles.panelSectionLabel}>Add individual subtasks to the pool:</span>
         <CompositeDerivationPanel
           compositeTask={ct}
-          allNodes={allCompositeNodes}
+          compoundChildren={compoundChildren}
           taskMap={taskMap}
-          compositeTaskMap={compositeTaskMap}
           onAddLeafToPool={(taskId_: string, leafTitle: string, type: string) => {
             addToPool({ taskId: taskId_, title: leafTitle, type });
             showSuccess(`Added to board pool: "${leafTitle}"`);
@@ -357,14 +363,14 @@ export function CreatePage(): React.ReactElement {
             onTabChange={(value) => handleExistingFilterChange(value as ExistingFilter)}
           />
 
-          {filteredTasks.length === 0 && filteredCompositeTasks.length === 0 ? (
+          {filteredTasks.length === 0 ? (
             <div className={styles.emptyState}>
               <div className={styles.emptyIcon} aria-hidden="true">+</div>
               <p>No tasks yet. Create your first task above!</p>
             </div>
           ) : (
             <div className={styles.taskList}>
-              {filteredTasks.map((task: Task) => (
+              {filteredNonCompositeTasks.map((task: Task) => (
                 <div key={task.id}>
                   <div className={styles.taskItem}>
                     <div className={styles.taskItemInfo}>
@@ -403,7 +409,7 @@ export function CreatePage(): React.ReactElement {
                 </div>
               ))}
 
-              {filteredCompositeTasks.map((ct: CompositeTask) => (
+              {filteredCompositeTasks.map((ct: Task) => (
                 <div key={ct.id}>
                   <div className={styles.taskItem}>
                     <div className={styles.taskItemInfo}>
@@ -468,7 +474,7 @@ export function CreatePage(): React.ReactElement {
         <BoardCreatorPanel
           pool={boardPool}
           taskMap={taskMap}
-          allTaskSteps={allTaskSteps}
+          allCompoundChildren={allCompoundChildren}
           userId={userId}
           initialPreferences={preferences}
           onBoardCreated={(boardId: string) => {

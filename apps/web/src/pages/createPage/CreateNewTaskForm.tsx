@@ -3,7 +3,7 @@ import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
-import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
+import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
 import {
   type UseCreateFormState,
   TITLE_MAX_LENGTH,

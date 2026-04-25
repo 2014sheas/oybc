@@ -2,7 +2,9 @@ import { useCallback, useState } from 'react';
 import { TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
 import { createTask } from '../../db/operations/tasks';
 import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
-import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
+/** Union of TaskType values plus 'composite' for the Create-New tab type selector. */
+export type TaskTypeOrComposite = TaskType | 'composite';
+export const COMPOSITE_TYPE = 'composite' as const;
 
 // ─── Constants (shared with CreatePage UI) ────────────────────────────────────
 

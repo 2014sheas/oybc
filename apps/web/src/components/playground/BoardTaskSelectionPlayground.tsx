@@ -1541,7 +1541,7 @@ export function BoardTaskSelectionPlayground(): React.ReactElement {
         <BoardCreatorPanel
           pool={boardPool}
           taskMap={taskMap}
-          allTaskSteps={allTaskSteps}
+          allCompoundChildren={[]}
           userId={PLAYGROUND_USER_ID}
           initialPreferences={DEFAULT_USER_PREFERENCES}
         />

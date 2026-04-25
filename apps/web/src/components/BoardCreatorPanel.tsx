@@ -7,7 +7,7 @@ import {
   formatTimeframeLabel,
   toLocalISO,
   type Task,
-  type TaskStep,
+  type CompoundChild,
   type BoardTask,
   type UserPreferences,
 } from '@oybc/shared';
@@ -32,8 +32,8 @@ export interface BoardCreatorPanelProps {
   pool: PoolEntry[];
   /** Record mapping task IDs to Task objects for resolving square data */
   taskMap: Record<string, Task>;
-  /** All non-deleted task steps, used to resolve progress step fractions */
-  allTaskSteps: TaskStep[];
+  /** All non-deleted compound children, used to resolve progress step fractions (Task 4.3 will wire this properly) */
+  allCompoundChildren: CompoundChild[];
   /** User ID to associate with the created board */
   userId: string;
   /**
@@ -67,14 +67,14 @@ const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
  *
  * @param props.pool - Pool entries from the parent playground
  * @param props.taskMap - Record mapping task IDs to Task objects
- * @param props.allTaskSteps - All task steps for step-fraction rendering
+ * @param props.allCompoundChildren - All compound children for step-fraction rendering (Task 4.3)
  * @param props.userId - User ID for the created board
  * @param props.onBoardCreated - Optional callback after successful creation
  */
 export function BoardCreatorPanel({
   pool,
   taskMap,
-  allTaskSteps,
+  allCompoundChildren: _allCompoundChildren,
   userId,
   initialPreferences,
   onBoardCreated,
@@ -340,7 +340,8 @@ export function BoardCreatorPanel({
 
         const task = taskMap[bt.taskId];
         if (task) {
-          const squareData = taskToSquareData(task, allTaskSteps);
+          // TODO Task 4.3: pass compound children for progress step rendering
+          const squareData = taskToSquareData(task, []);
           const squareState = boardTaskToSquareState(bt);
           cells.push(
             <div key={bt.id}>
