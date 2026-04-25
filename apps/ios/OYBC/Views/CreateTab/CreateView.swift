@@ -374,6 +374,9 @@ struct CreateView: View {
                         )
                     }
                 )
+
+            case .compound:
+                EmptyView()  // Phase 5 routes compound creation through the dedicated wizard
             }
         }
     }
