@@ -278,7 +278,21 @@ struct BoardPlayView: View {
         let task = taskMap[boardTask.taskId]
         let taskType = task?.type ?? .normal
         // Completion state lives on Task (not BoardTask) after compound-tasks unification.
-        let isCompleted = task?.isCompleted ?? false
+        // Compounds: NEVER read Task.isCompleted (spec §4.1 — NEVER WRITTEN, NEVER READ on
+        // compound rows). Derive completion via CompoundEvaluation so the green-complete
+        // background + checkmark render correctly when all children are done.
+        // Primitives: read the stored column directly.
+        let isCompleted: Bool = {
+            guard let task = task else { return false }
+            if task.type == .compound {
+                return CompoundEvaluation.evaluate(
+                    compound: task,
+                    childrenByCompound: compoundChildrenByCompound,
+                    taskById: taskMap
+                )
+            }
+            return task.isCompleted
+        }()
 
         switch taskType {
         case .normal:
@@ -1000,6 +1014,11 @@ struct BoardPlayView: View {
                     isProcessing = false
                     loadBoard()
                     loadBoardTasks()
+                    // Also refresh allTasks + allCompoundChildren so the compound
+                    // detail sheet (which renders from taskMap + compoundChildrenByCompound)
+                    // reflects the latest child-toggle state immediately without needing a
+                    // dismiss-and-reopen. Mirrors the Path-B (child-not-on-board) pattern.
+                    loadTaskData()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
                         let dismissAfter: Double = 3.0

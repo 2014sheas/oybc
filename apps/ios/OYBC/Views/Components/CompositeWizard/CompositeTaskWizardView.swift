@@ -260,6 +260,18 @@ struct CompositeTaskWizardView: View {
     ///    a TODO for Phase 8 (matches web's decision in commit 63e90f3).
     /// All writes are atomic in a single AppDatabase.write block.
     private func handleCreateCompositeTask() {
+        // Precondition: inline progress subtasks aren't yet supported under the unified
+        // model — autoCreate doesn't carry nested children. Block submission with a clear
+        // error so the user understands the workaround, rather than silently skipping the
+        // item and losing data (which is what the `continue` in the save loop would do).
+        let hasInlineProgress = subtaskList.items.contains { item in
+            item.mode == .inline_ && item.inlineType == .progress
+        }
+        if hasInlineProgress {
+            errorMessage = "Inline Progress subtasks aren't supported yet — create the inner Progress task first as a standalone task, then add it here as an existing subtask."
+            return
+        }
+
         errorMessage = nil
         isSubmitting = true
 

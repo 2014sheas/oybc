@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   CenterSquareType,
+  SyncOperationType,
   type TaskStep,
   type BoardTask,
 } from '@oybc/shared';
@@ -12,6 +13,7 @@ import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion } from '../db/operations/orchestration';
+import { addToSyncQueue } from '../db/operations/syncQueue';
 import {
   InteractiveTaskSquare,
   DetailModal,
@@ -178,6 +180,12 @@ export function BoardPlayPage(): React.ReactElement {
             updatedAt: now,
             version: childTask.version + 1,
           });
+          // Enqueue sync so the toggle propagates to other devices.
+          // Mirrors the iOS fallback path which calls SyncQueueItem.save after updating.
+          const updated = await db.tasks.get(childTaskId);
+          if (updated) {
+            void addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
+          }
         } catch (err) {
           console.error('Compound child toggle failed:', err);
           showFlash('Something went wrong', 'bingo');
