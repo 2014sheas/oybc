@@ -264,7 +264,8 @@ struct BoardPlayView: View {
     private func playSquare(boardTask: BoardTask) -> some View {
         let task = taskMap[boardTask.taskId]
         let taskType = task?.type ?? .normal
-        let isCompleted = boardTask.isCompleted
+        // Completion state lives on Task (not BoardTask) after compound-tasks unification.
+        let isCompleted = task?.isCompleted ?? false
 
         switch taskType {
         case .normal:
@@ -293,7 +294,8 @@ struct BoardPlayView: View {
             }
 
         case .counting:
-            let current = boardTask.currentCount ?? 0
+            // currentCount lives on Task after compound-tasks unification.
+            let current = task?.currentCount ?? 0
             let maxVal = task?.maxCount ?? 0
             let unitText = task?.unit ?? ""
             let actionLabel = task?.action ?? "item"
@@ -331,8 +333,10 @@ struct BoardPlayView: View {
             }
 
         case .progress:
-            let completedStepsCount = boardTask.completedStepIds?.count ?? 0
+            // Phase 5: step completion state will be tracked via Task.progressCounters.
+            // For now derive step count from TaskSteps; completed count stubbed at 0.
             let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
+            let completedStepsCount = 0
             let totalSteps = stepsForTask.isEmpty ? 1 : stepsForTask.count
 
             ZStack {
@@ -369,6 +373,18 @@ struct BoardPlayView: View {
                 }
                 .disabled(!isCompleted || isProcessing || isBoardLocked)
             }
+
+        case .compound:
+            // Phase 5: compound task squares will have a dedicated interaction model.
+            InteractiveTaskSquareView(
+                title: task?.title ?? "Unknown",
+                taskType: .normal,
+                isCompleted: isCompleted,
+                onTap: {
+                    guard !isBoardLocked else { return }
+                    handleNormalTap(boardTask: boardTask)
+                }
+            )
         }
     }
 
@@ -407,6 +423,9 @@ struct BoardPlayView: View {
                         countingDetailContent(boardTask: bt, task: task)
                     case .progress:
                         progressDetailContent(boardTask: bt, task: task)
+                    case .compound:
+                        // Phase 5: compound detail view.
+                        normalDetailContent(boardTask: bt)
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -424,21 +443,23 @@ struct BoardPlayView: View {
         case .normal:   return "Normal task"
         case .counting: return "Counting task"
         case .progress: return "Progress task"
+        case .compound: return "Compound task"
         }
     }
 
     @ViewBuilder
     private func normalDetailContent(boardTask: BoardTask) -> some View {
+        let isCompleted = taskMap[boardTask.taskId]?.isCompleted ?? false
         Section("Completion") {
             Button {
                 handleNormalTap(boardTask: boardTask)
                 detailBoardTaskId = nil
             } label: {
                 Label(
-                    boardTask.isCompleted ? "Mark Incomplete" : "Mark Complete",
-                    systemImage: boardTask.isCompleted ? "xmark.circle" : "checkmark.circle"
+                    isCompleted ? "Mark Incomplete" : "Mark Complete",
+                    systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
                 )
-                .foregroundColor(boardTask.isCompleted ? .red : .green)
+                .foregroundColor(isCompleted ? .red : .green)
             }
             .disabled(isProcessing || isBoardLocked)
         }
@@ -446,7 +467,8 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private func countingDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        let current = boardTask.currentCount ?? 0
+        // currentCount lives on Task after compound-tasks unification.
+        let current = task.currentCount ?? 0
         let maxVal = task.maxCount ?? 0
         let unitText = task.unit ?? ""
 
@@ -497,7 +519,9 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private func progressDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        let completedIds = boardTask.completedStepIds ?? []
+        // Phase 5: step completion IDs will come from Task.progressCounters or a dedicated table.
+        // Stubbed as empty until Phase 5 implements the progress-step completion model.
+        let completedIds: [String] = []
         let stepsForTask = allTaskSteps.filter { $0.taskId == task.id }
 
         Section("Steps") {
@@ -535,22 +559,25 @@ struct BoardPlayView: View {
     }
 
     // MARK: - Tap Handlers
+    //
+    // After compound-tasks unification, completion state lives on Task (not BoardTask).
+    // Each handler mutates the Task record and passes it to runOrchestration alongside
+    // the BoardTask (used only to update its updatedAt/version placement metadata).
 
     /// Toggles completion of a normal task square and runs the full bingo orchestration.
     ///
     /// - Parameter boardTask: The tapped `BoardTask`.
     private func handleNormalTap(boardTask: BoardTask) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
-        let newCompleted = !boardTask.isCompleted
+        let newCompleted = !task.isCompleted
 
-        var updated = boardTask
-        updated.isCompleted = newCompleted
-        updated.completedAt = newCompleted ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = newCompleted
+        task.completedAt = newCompleted ? now : nil
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
     /// Increments a counting task's `currentCount` by 1, marking complete at `maxCount`.
@@ -559,105 +586,96 @@ struct BoardPlayView: View {
     ///   - boardTask: The counting task's `BoardTask` record.
     ///   - task: The `Task` providing `maxCount`.
     private func handleCountingTap(boardTask: BoardTask, task: Task) {
-        guard !isProcessing, !boardTask.isCompleted, let maxCount = task.maxCount else { return }
+        guard !isProcessing, !task.isCompleted, let maxCount = task.maxCount else { return }
         let now = AppDatabase.currentTimestamp()
-        let newCount = min((boardTask.currentCount ?? 0) + 1, maxCount)
+        let newCount = min((task.currentCount ?? 0) + 1, maxCount)
         let nowCompleted = newCount >= maxCount
 
-        var updated = boardTask
-        updated.currentCount = newCount
-        updated.isCompleted = nowCompleted
-        updated.completedAt = nowCompleted ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        var updatedTask = task
+        updatedTask.currentCount = newCount
+        updatedTask.isCompleted = nowCompleted
+        updatedTask.completedAt = nowCompleted ? now : nil
+        updatedTask.updatedAt = now
+        updatedTask.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
     }
 
     /// Decrements a counting task's `currentCount` by 1 and un-marks completion.
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
-    ///   - task: The `Task` providing metadata (kept for symmetry with increment handler).
+    ///   - task: The `Task` providing current state.
     private func handleCountingDecrement(boardTask: BoardTask, task: Task) {
         guard !isProcessing else { return }
         let now = AppDatabase.currentTimestamp()
-        let newCount = max((boardTask.currentCount ?? 0) - 1, 0)
+        let newCount = max((task.currentCount ?? 0) - 1, 0)
 
-        var updated = boardTask
-        updated.currentCount = newCount
-        updated.isCompleted = false
-        updated.completedAt = nil
-        updated.updatedAt = now
-        updated.version += 1
+        var updatedTask = task
+        updatedTask.currentCount = newCount
+        updatedTask.isCompleted = false
+        updatedTask.completedAt = nil
+        updatedTask.updatedAt = now
+        updatedTask.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
     }
 
     /// Toggles a single progress step for a board task and recomputes task completion.
+    ///
+    /// Phase 5 will track completedStepIds on a dedicated table or Task.progressCounters.
+    /// This stub toggles Task.isCompleted when all steps are done, without tracking
+    /// individual step IDs.
     ///
     /// - Parameters:
     ///   - boardTask: The progress task's `BoardTask` record.
     ///   - step: The `TaskStep` being toggled.
     ///   - isDone: Current state of the step (`true` = already complete, will be un-checked).
     private func handleProgressStepTap(boardTask: BoardTask, step: TaskStep, isDone: Bool) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
 
-        var currentIds = boardTask.completedStepIds ?? []
-        if isDone {
-            currentIds.removeAll(where: { $0 == step.id })
-        } else {
-            currentIds.append(step.id)
-        }
-
+        // Phase 5 TODO: track completedStepIds via Task.progressCounters or dedicated table.
+        // For now, toggling any step toggles overall task completion as a stub.
         let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
-        let nowCompleted = !stepsForTask.isEmpty && currentIds.count >= stepsForTask.count
+        let newCompleted = isDone ? false : (stepsForTask.count <= 1)
 
-        var updated = boardTask
-        updated.completedStepIds = currentIds
-        updated.isCompleted = nowCompleted
-        updated.completedAt = nowCompleted ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = newCompleted
+        task.completedAt = newCompleted ? now : nil
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
-    /// Marks all steps for a progress task as complete.
+    /// Marks the progress task as complete (all steps done).
     ///
     /// - Parameter boardTask: The progress task's `BoardTask` record.
     private func handleProgressCompleteAll(boardTask: BoardTask) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
-        let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
-        let allIds = stepsForTask.map { $0.id }
 
-        var updated = boardTask
-        updated.completedStepIds = allIds
-        updated.isCompleted = !allIds.isEmpty
-        updated.completedAt = !allIds.isEmpty ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = true
+        task.completedAt = now
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
-    /// Clears all completed step IDs and marks the progress task incomplete.
+    /// Clears progress task completion.
     ///
     /// - Parameter boardTask: The progress task's `BoardTask` record.
     private func handleProgressReset(boardTask: BoardTask) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
 
-        var updated = boardTask
-        updated.completedStepIds = []
-        updated.isCompleted = false
-        updated.completedAt = nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = false
+        task.completedAt = nil
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
     // MARK: - Orchestration
@@ -676,8 +694,14 @@ struct BoardPlayView: View {
     ///
     /// Uses `_Concurrency.Task` to avoid shadowing by the GRDB `Task` model.
     ///
-    /// - Parameter updatedBoardTask: The already-mutated `BoardTask` to persist.
-    private func runOrchestration(updatedBoardTask: BoardTask) {
+    /// After compound-tasks unification, completion state lives on `Task` (not `BoardTask`).
+    /// This orchestrator persists the updated `Task`, bumps the `BoardTask` placement metadata,
+    /// then rebuilds the bingo grid by joining board tasks with their task completion state.
+    ///
+    /// - Parameters:
+    ///   - updatedTask: The already-mutated `Task` carrying new completion state.
+    ///   - boardTask: The `BoardTask` placement record (updatedAt/version will be bumped).
+    private func runOrchestration(updatedTask: Task, boardTask: BoardTask) {
         guard let board = board else { return }
         isProcessing = true
         let now = AppDatabase.currentTimestamp()
@@ -700,7 +724,20 @@ struct BoardPlayView: View {
                         // includes the activated status and avoids redundant queue entries.
                     }
 
-                    // 2. Persist the updated board task.
+                    // 2a. Persist the updated Task (carries completion state).
+                    try updatedTask.save(db)
+                    try bpvMakeSyncItem(
+                        entityType: "tasks",
+                        entityId: updatedTask.id,
+                        operationType: .update,
+                        payload: updatedTask,
+                        now: now
+                    ).save(db)
+
+                    // 2b. Bump the BoardTask placement record's updatedAt/version.
+                    var updatedBoardTask = boardTask
+                    updatedBoardTask.updatedAt = now
+                    updatedBoardTask.version += 1
                     try updatedBoardTask.save(db)
                     try bpvMakeSyncItem(
                         entityType: "boardTasks",
@@ -710,17 +747,29 @@ struct BoardPlayView: View {
                         now: now
                     ).save(db)
 
-                    // 3. Reload all board tasks to build the completion grid.
+                    // 3. Reload all board tasks + current task completion state.
                     let allBoardTasks = try BoardTask
                         .filter(Column("boardId") == board.id)
                         .fetchAll(db)
 
-                    // 4. Build flat boolean grid (row-major).
+                    // Build a taskId → isCompleted map from DB (reflects the just-saved updatedTask).
+                    let taskIds = allBoardTasks.map { $0.taskId }
+                    let completionMap: [String: Bool] = try {
+                        var m: [String: Bool] = [:]
+                        for taskId in taskIds {
+                            if let t = try Task.fetchOne(db, key: taskId) {
+                                m[taskId] = t.isCompleted
+                            }
+                        }
+                        return m
+                    }()
+
+                    // 4. Build flat boolean grid (row-major) using Task.isCompleted.
                     var grid = [Bool](repeating: false, count: size * size)
                     for bt in allBoardTasks {
                         let idx = bt.row * size + bt.col
                         guard idx >= 0, idx < grid.count else { continue }
-                        grid[idx] = bt.isCompleted
+                        grid[idx] = completionMap[bt.taskId] ?? false
                     }
 
                     // Handle FREE/CUSTOM_FREE center auto-completion (no BoardTask at center)
@@ -739,8 +788,8 @@ struct BoardPlayView: View {
                     let brandNewLines = newLineIds.subtracting(previousLineIds)
                     let lostBingos = previousLineIds.filter { !newLineIds.contains($0) }
 
-                    // Count all completed BoardTasks + add FREE center if auto-completed (no BoardTask).
-                    var completedCount = allBoardTasks.filter { $0.isCompleted }.count
+                    // Count completed squares using Task.isCompleted + FREE center.
+                    var completedCount = allBoardTasks.filter { completionMap[$0.taskId] == true }.count
                     let totalCount = size * size
                     if size % 2 == 1 {
                         let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }

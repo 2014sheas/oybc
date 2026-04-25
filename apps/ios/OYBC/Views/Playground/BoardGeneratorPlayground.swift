@@ -1,6 +1,12 @@
 import SwiftUI
 import GRDB
 
+// swiftlint:disable all
+// Phase 5 will rewrite or delete this playground. Gated out because it references
+// UnifiedTaskCreatorPlayground (also gated) and is tied to the pre-compound
+// BoardTask completion model. Do not remove the gate until Phase 5 lands.
+#if false
+
 /// Board Generator Playground
 ///
 /// Lets the user create tasks via the Unified Task Creator and generate a 3×3
@@ -147,3 +153,6 @@ struct BoardGeneratorPlayground: View {
             .padding()
     }
 }
+
+#endif
+// swiftlint:enable all
