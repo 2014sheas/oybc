@@ -12,7 +12,7 @@ import {
   type UserPreferences,
 } from '@oybc/shared';
 import { useBoardTasks } from '../hooks';
-import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
+import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { createBoard } from '../db/operations/boards';
 import { createBoardTask } from '../db/operations/boardTasks';
 import { InteractiveTaskSquare } from './InteractiveTaskSquare';
@@ -340,9 +340,9 @@ export function BoardCreatorPanel({
 
         const task = taskMap[bt.taskId];
         if (task) {
-          // TODO Task 4.3: pass compound children for progress step rendering
+          // TODO Task 4.5: pass compound children for compound square rendering
           const squareData = taskToSquareData(task, []);
-          const squareState = boardTaskToSquareState(bt);
+          const squareState = taskToSquareState(task);
           cells.push(
             <div key={bt.id}>
               <InteractiveTaskSquare
