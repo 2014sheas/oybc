@@ -2,8 +2,13 @@ import Foundation
 import GRDB
 import Observation
 
-/// Filter options for the Existing Tasks tab. Mirrors the web
-/// `LibraryFilter` type.
+/// Filter options for the Existing Tasks tab. Five user-facing tabs map
+/// onto two underlying classifications (mirrors web's ExistingFilter):
+///   - .all       → every task
+///   - .normal    → type=.normal
+///   - .counting  → type=.counting
+///   - .progress  → type=.compound && isOrdered=true
+///   - .composite → type=.compound && isOrdered!=true
 enum LibraryFilter: String, CaseIterable {
     case all = "All"
     case normal = "Normal"
@@ -12,175 +17,108 @@ enum LibraryFilter: String, CaseIterable {
     case composite = "Composite"
 }
 
-/// Owns the user's task/composite library + derive-panel working sets
-/// for the Create tab. Mirrors web's `useTaskLibrary` hook (which
-/// wraps `useLiveQuery` observations) with GRDB async reads kicked
-/// off from view lifecycle methods.
+/// Owns the user's task library + derive-panel working set under the
+/// unified compound model. iOS twin of web's useTaskLibrary hook
+/// (Phase 4.1).
 ///
-/// The `deriveTaskSteps` / `deriveCompositeNodes` fields are scoped
-/// state for the currently-expanded derivation panel — loaded on
-/// expand, cleared on collapse.
+/// All compounds live in `libraryTasks` with type=.compound. The
+/// legacy composite_tasks / composite_nodes / task_steps tables were
+/// dropped in GRDB v7; this view-model only touches `tasks` and
+/// `compound_children`.
 ///
-/// Uses `@Observable` so SwiftUI observes field-level reads.
+/// Uses @Observable so SwiftUI observes field-level reads.
 @Observable
 final class TaskLibraryViewModel {
 
     // MARK: - Library data
 
     /// All non-deleted tasks for the authenticated user, ordered by title.
+    /// Includes every TaskType (.normal / .counting / .compound / .progress
+    /// alias for legacy rows).
     var libraryTasks: [Task] = []
 
-    /// All non-deleted composite tasks for the authenticated user, ordered by title.
-    var libraryCompositeTasks: [CompositeTask] = []
+    /// All non-deleted compound_children rows in the workspace.
+    /// Small-N (one row per parent-child link, typically under a few hundred
+    /// per user). Used by the wizard / board grid / detail sheet to resolve
+    /// compound children without re-fetching per-render.
+    var allCompoundChildren: [CompoundChild] = []
 
-    /// All non-deleted task steps belonging to progress tasks owned by
-    /// the authenticated user. Used by `BoardCreatorPanelView` for
-    /// step-aware board layouts.
-    var allLibraryTaskSteps: [TaskStep] = []
+    /// Pre-grouped + sorted-by-childIndex map keyed by parent compoundTaskId.
+    /// Computed from allCompoundChildren on every reload — saves consumers
+    /// from re-grouping in their own renders.
+    var compoundChildrenByCompound: [String: [CompoundChild]] = [:]
 
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
 
-    // MARK: - Derive panel working state
+    // MARK: - Filtered queries (computed)
 
-    /// Steps for the currently-expanded progress task's derive panel.
-    var deriveTaskSteps: [TaskStep] = []
-
-    /// Nodes for the currently-expanded composite's derive panel.
-    var deriveCompositeNodes: [CompositeNode] = []
-
-    /// Most-recent `taskId` requested via `loadDeriveSteps`. Guards
-    /// against a slower earlier fetch landing after a faster later
-    /// one and overwriting state for the currently-expanded row —
-    /// easy to hit by rapidly tapping between two progress tasks.
-    private var activeDeriveStepsTaskId: String?
-
-    /// Most-recent `compositeTaskId` requested via
-    /// `loadDeriveNodes`. Same race guard as above for composites.
-    private var activeDeriveNodesCompositeTaskId: String?
-
-    // MARK: - Filters
-
-    /// Applies the Existing-Tasks filter to `libraryTasks`. Composites
-    /// have their own filter path because they live in a separate table.
-    func filteredTasks(filter: LibraryFilter) -> [Task] {
+    /// Filtered task list for the active library tab.
+    func filteredTasks(_ filter: LibraryFilter) -> [Task] {
         switch filter {
-        case .all:       return libraryTasks
-        case .normal:    return libraryTasks.filter { $0.type == .normal }
-        case .counting:  return libraryTasks.filter { $0.type == .counting }
-        case .progress:  return libraryTasks.filter { $0.type == .progress }
-        case .composite: return []
+        case .all:
+            return libraryTasks
+        case .normal:
+            return libraryTasks.filter { $0.type == .normal }
+        case .counting:
+            return libraryTasks.filter { $0.type == .counting }
+        case .progress:
+            return libraryTasks.filter { $0.type == .compound && $0.isOrdered == true }
+        case .composite:
+            return libraryTasks.filter { $0.type == .compound && $0.isOrdered != true }
         }
     }
 
-    func filteredComposites(filter: LibraryFilter) -> [CompositeTask] {
-        switch filter {
-        case .all, .composite: return libraryCompositeTasks
-        default:               return []
-        }
+    /// Look up a Task by id. O(N) since libraryTasks is small; if N grows,
+    /// switch to a maintained dictionary.
+    func task(byId id: String) -> Task? {
+        libraryTasks.first { $0.id == id }
     }
 
-    // MARK: - Data loading
+    // MARK: - Lifecycle
 
-    /// Reloads `libraryTasks`, `libraryCompositeTasks`, and
-    /// `allLibraryTaskSteps` off the main queue; commits results on the
-    /// main queue so SwiftUI observers see a consistent snapshot.
-    func loadLibrary(userId: String) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            do {
-                let fetched = try AppDatabase.shared.fetchTasks(userId: userId)
-                let composites = try AppDatabase.shared.read { db in
-                    try CompositeTask
-                        .filter(Column("userId") == userId && Column("isDeleted") == false)
-                        .order(Column("title"))
-                        .fetchAll(db)
+    /// Reloads libraryTasks + allCompoundChildren from the local database.
+    /// Called on .onAppear of the consuming views and after each task
+    /// creation/edit so the library stays consistent.
+    func reload(userId: String) async {
+        do {
+            let tasks = try await Self.loadTasks(userId: userId)
+            let children = try await Self.loadCompoundChildren()
+            await MainActor.run {
+                self.libraryTasks = tasks
+                self.allCompoundChildren = children
+                var grouped: [String: [CompoundChild]] = [:]
+                for c in children {
+                    grouped[c.compoundTaskId, default: []].append(c)
                 }
-                let fetchedSteps = try AppDatabase.shared.fetchAllTaskSteps(userId: userId)
-                DispatchQueue.main.async {
-                    self.libraryTasks = fetched
-                    self.libraryCompositeTasks = composites
-                    self.allLibraryTaskSteps = fetchedSteps
-                    self.loadError = nil
+                for id in grouped.keys {
+                    grouped[id]?.sort { $0.childIndex < $1.childIndex }
                 }
-            } catch {
-                DispatchQueue.main.async {
-                    self.loadError = "Failed to load tasks: \(error.localizedDescription)"
-                }
+                self.compoundChildrenByCompound = grouped
+                self.loadError = nil
+            }
+        } catch {
+            await MainActor.run {
+                self.loadError = "Failed to load library: \(error.localizedDescription)"
             }
         }
     }
 
-    /// Loads the step list for a single progress task into
-    /// `deriveTaskSteps`. Called when the user expands a progress
-    /// task's derive panel.
-    ///
-    /// Results are only committed if the in-flight request is still
-    /// the most recent one — an older fetch landing late (because
-    /// the user rapidly switched to a different progress task) is
-    /// discarded so it can't overwrite the currently-expanded state.
-    func loadDeriveSteps(for taskId: String) {
-        activeDeriveStepsTaskId = taskId
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            do {
-                let steps = try AppDatabase.shared.fetchTaskSteps(taskId: taskId)
-                DispatchQueue.main.async {
-                    guard self.activeDeriveStepsTaskId == taskId else { return }
-                    self.deriveTaskSteps = steps
-                    self.loadError = nil
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    guard self.activeDeriveStepsTaskId == taskId else { return }
-                    self.loadError = "Failed to load steps: \(error.localizedDescription)"
-                }
-            }
+    private static func loadTasks(userId: String) async throws -> [Task] {
+        try await AppDatabase.shared.read { db in
+            try Task
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("title"))
+                .fetchAll(db)
         }
     }
 
-    /// Loads composite nodes for a single composite into
-    /// `deriveCompositeNodes`. Called when the user expands a
-    /// composite's derive panel.
-    ///
-    /// Same stale-result guard as `loadDeriveSteps`: rapid expand/
-    /// collapse across different composites can cause an earlier
-    /// fetch to land after a later one; the guard drops results that
-    /// no longer match the currently-expanded id.
-    func loadDeriveNodes(for compositeTaskId: String) {
-        activeDeriveNodesCompositeTaskId = compositeTaskId
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            do {
-                let nodes = try AppDatabase.shared.read { db in
-                    try CompositeNode
-                        .filter(
-                            Column("compositeTaskId") == compositeTaskId
-                            && Column("isDeleted") == false
-                        )
-                        .fetchAll(db)
-                }
-                DispatchQueue.main.async {
-                    guard self.activeDeriveNodesCompositeTaskId == compositeTaskId else { return }
-                    self.deriveCompositeNodes = nodes
-                    self.loadError = nil
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    guard self.activeDeriveNodesCompositeTaskId == compositeTaskId else { return }
-                    self.loadError = "Failed to load composite nodes: \(error.localizedDescription)"
-                }
-            }
+    private static func loadCompoundChildren() async throws -> [CompoundChild] {
+        try await AppDatabase.shared.read { db in
+            try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
         }
-    }
-
-    /// Clears the derive-panel working state. Called on filter change
-    /// or when collapsing all rows.
-    func clearDeriveState() {
-        activeDeriveStepsTaskId = nil
-        activeDeriveNodesCompositeTaskId = nil
-        deriveTaskSteps = []
-        deriveCompositeNodes = []
     }
 }
