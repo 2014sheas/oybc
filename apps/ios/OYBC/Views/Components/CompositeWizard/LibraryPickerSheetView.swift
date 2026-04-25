@@ -25,7 +25,8 @@ struct LibraryDiff {
 struct LibraryPickerSheetView: View {
 
     let libraryTasks: [OYBC.Task]
-    let libraryCompositeTasks: [CompositeTask]
+    /// Compound tasks (type=.compound && !isOrdered) available as nested children.
+    let libraryCompositeTasks: [OYBC.Task]
     /// Ids currently members of this composite (existing-mode subtasks).
     /// Drives the initial checkbox state.
     let initialCheckedIds: Set<String>
@@ -58,7 +59,7 @@ struct LibraryPickerSheetView: View {
 
     init(
         libraryTasks: [OYBC.Task],
-        libraryCompositeTasks: [CompositeTask],
+        libraryCompositeTasks: [OYBC.Task],
         initialCheckedIds: Set<String>,
         taskBoardCounts: [String: Int],
         taskStepCounts: [String: Int],

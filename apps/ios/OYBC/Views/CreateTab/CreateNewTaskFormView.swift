@@ -17,9 +17,9 @@ struct CreateNewTaskFormView: View {
     /// onTaskCreated + onLibraryReloadRequested callbacks.
     var onSubmit: () -> Void
     /// Called when `CompositeTaskWizardView` reports a successful save.
-    /// Parent uses this to flash "Created composite ... add subtasks
+    /// Parent uses this to flash "Created compound ... add subtasks
     /// from Existing Tasks" and reload the library.
-    var onCompositeCreated: (CompositeTask) -> Void
+    var onCompositeCreated: (OYBC.Task) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

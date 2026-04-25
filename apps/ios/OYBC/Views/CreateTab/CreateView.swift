@@ -49,18 +49,16 @@ struct CreateView: View {
     @State private var mode: CreateMode = .create
     @State private var existingFilter: LibraryFilter = .all
     @State private var expandedTaskId: String?
-    @State private var expandedCompositeTaskId: String?
+    @State private var expandedCompoundTaskId: String?
     @State private var derivePartialCountStr: String = ""
     @State private var deriveIsCreating: Bool = false
 
     // MARK: - Derived
 
     /// Tuple-shaped projection of the pool used by shared panels
-    /// (`BoardCreatorPanelView`, `CompositeDerivationPanelView`,
-    /// `ProgressDerivationPanelView`) whose APIs predate
-    /// `BoardPoolEntry`. Computed once per body evaluation so we
-    /// don't re-allocate identical tuple arrays three times in the
-    /// same render.
+    /// (`BoardCreatorPanelView`) whose APIs predate `BoardPoolEntry`.
+    /// Computed once per body evaluation so we don't re-allocate
+    /// identical tuple arrays in the same render.
     private var poolAsTuples: [(taskId: String, title: String, type: String)] {
         pool.pool.map { (taskId: $0.taskId, title: $0.title, type: $0.type) }
     }
@@ -85,7 +83,11 @@ struct CreateView: View {
                     BoardCreatorPanelView(
                         boardPool: poolAsTuples,
                         libraryTasks: library.libraryTasks,
-                        allTaskSteps: library.allLibraryTaskSteps,
+                        // allTaskSteps is used only for step-count hints in the board
+                        // preview grid. The unified library no longer pre-loads task_steps
+                        // in bulk; pass empty — the preview count shows 0 until Phase 6
+                        // wires compound children into the preview path.
+                        allTaskSteps: [],
                         userId: userId,
                         initialPreferences: authService.userPreferences,
                         onBoardCreated: { boardId in
@@ -102,7 +104,7 @@ struct CreateView: View {
         }
         .onAppear {
             if let userId = authService.currentUser?.id {
-                library.loadLibrary(userId: userId)
+                _Concurrency.Task { await library.reload(userId: userId) }
             }
         }
     }
@@ -150,18 +152,17 @@ struct CreateView: View {
                         pool.addToPool(taskId: taskId, title: title, type: type)
                     },
                     onLibraryReloadRequested: {
-                        library.loadLibrary(userId: userId)
+                        _Concurrency.Task { await library.reload(userId: userId) }
                     }
                 )
             },
-            onCompositeCreated: { compositeTask in
-                // Composites aren't added directly to the board pool —
-                // BoardTask.taskId references the tasks table, not
-                // compositeTasks. Users add the composite's individual
-                // leaf/subtasks from Existing Tasks.
-                form.successMessage = "Created composite \"\(compositeTask.title)\". Add its subtasks from Existing Tasks."
+            onCompositeCreated: { createdTask in
+                // Compound tasks aren't added directly to the board pool —
+                // users add the compound's individual child tasks from
+                // Existing Tasks instead.
+                form.successMessage = "Created compound \"\(createdTask.title)\". Add its subtasks from Existing Tasks."
                 if let userId = authService.currentUser?.id {
-                    library.loadLibrary(userId: userId)
+                    _Concurrency.Task { await library.reload(userId: userId) }
                 }
             }
         )
@@ -200,17 +201,34 @@ struct CreateView: View {
                     .font(.caption)
             }
 
-            let filteredTasks = library.filteredTasks(filter: existingFilter)
-            let filteredComposites = library.filteredComposites(filter: existingFilter)
+            // Primitive tasks (normal / counting / progress-as-compound).
+            // For .all we exclude composites here since they are shown separately below.
+            let filteredPrimitives: [Task] = {
+                if existingFilter == .all {
+                    return library.libraryTasks.filter { $0.type != .compound || $0.isOrdered == true }
+                } else if existingFilter == .composite {
+                    return []
+                } else {
+                    return library.filteredTasks(existingFilter)
+                }
+            }()
+            // Compound (composite) tasks — visible under .all and .composite filters.
+            let filteredCompounds: [Task] = {
+                if existingFilter == .all || existingFilter == .composite {
+                    return library.filteredTasks(.composite)
+                } else {
+                    return []
+                }
+            }()
 
-            if filteredTasks.isEmpty && filteredComposites.isEmpty {
+            if filteredPrimitives.isEmpty && filteredCompounds.isEmpty {
                 ContentUnavailableView(
                     "No Tasks Yet",
                     systemImage: "plus.square",
                     description: Text("Create your first task above!")
                 )
             } else {
-                ForEach(filteredTasks, id: \.id) { task in
+                ForEach(filteredPrimitives, id: \.id) { task in
                     existingTaskRow(task)
                     if expandedTaskId == task.id {
                         derivePanel(for: task)
@@ -218,21 +236,12 @@ struct CreateView: View {
                             .transition(.opacity)
                     }
                 }
-                ForEach(filteredComposites, id: \.id) { ct in
-                    existingCompositeRow(ct)
-                    if expandedCompositeTaskId == ct.id {
-                        CompositeDerivationPanelView(
-                            compositeTask: ct,
-                            compositeNodes: library.deriveCompositeNodes,
-                            tasks: library.libraryTasks,
-                            compositeTasks: library.libraryCompositeTasks,
-                            boardPool: poolAsTuples,
-                            onAddLeafToPool: { taskId, title, type in
-                                pool.addToPool(taskId: taskId, title: title, type: type)
-                            }
-                        )
-                        .padding(.leading, 8)
-                        .transition(.opacity)
+                ForEach(filteredCompounds, id: \.id) { compound in
+                    existingCompoundRow(compound)
+                    if expandedCompoundTaskId == compound.id {
+                        compoundDerivationPanel(for: compound)
+                            .padding(.leading, 8)
+                            .transition(.opacity)
                     }
                 }
             }
@@ -297,16 +306,17 @@ struct CreateView: View {
         .cornerRadius(8)
     }
 
+    /// Row for a compound task (type=.compound && !isOrdered).
     @ViewBuilder
-    private func existingCompositeRow(_ ct: CompositeTask) -> some View {
-        let isExpanded = expandedCompositeTaskId == ct.id
+    private func existingCompoundRow(_ compound: Task) -> some View {
+        let isExpanded = expandedCompoundTaskId == compound.id
 
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(ct.title)
+                Text(compound.title)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                if let desc = ct.description, !desc.isEmpty {
+                if let desc = compound.description, !desc.isEmpty {
                     Text(desc)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -318,26 +328,142 @@ struct CreateView: View {
             TypeBadgeView(type: "composite", size: .small)
 
             Button {
-                toggleExpandComposite(ct)
+                toggleExpandCompound(compound)
             } label: {
                 Image(systemName: isExpanded ? "chevron.up.circle" : "arrow.triangle.branch")
                     .font(.system(size: 24))
                     .foregroundColor(isExpanded ? .accentColor : .secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isExpanded ? "Collapse derivation" : "Derive subtasks")
+            .accessibilityLabel(isExpanded ? "Collapse children" : "Show children")
 
-            // Composites can't be added directly to the pool —
-            // BoardTask.taskId references the tasks table, not
-            // compositeTasks. Users expand the composite and add its
-            // individual leaf/subtasks instead.
+            // Compound tasks can't be added directly to the pool —
+            // users add the compound's individual child tasks instead.
         }
         .padding(10)
         .background(Color(.systemGray6))
         .cornerRadius(8)
     }
 
-    // MARK: - Derive panel
+    // MARK: - Compound derivation panel (replaces legacy CompositeDerivationPanelView)
+
+    /// Inline panel showing the operator + children of a compound task.
+    /// Uses `library.compoundChildrenByCompound[id]` — no async fetch needed.
+    @ViewBuilder
+    private func compoundDerivationPanel(for compound: Task) -> some View {
+        let children = library.compoundChildrenByCompound[compound.id] ?? []
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(compound.title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+                TypeBadgeView(type: "composite", size: .small)
+            }
+
+            if children.isEmpty {
+                Text("No children found for this compound task.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                // Operator summary
+                if let opType = compound.operatorType {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Operator")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack {
+                            Text(operatorSummaryLabel(opType, threshold: compound.threshold, childCount: children.count))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(opType.rawValue)
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.2))
+                                .cornerRadius(4)
+                        }
+                    }
+                    Divider()
+                }
+
+                // Children rows
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(children.count) child task\(children.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    ForEach(children, id: \.id) { child in
+                        compoundChildRow(child)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+
+    @ViewBuilder
+    private func compoundChildRow(_ child: CompoundChild) -> some View {
+        let childTask = library.task(byId: child.childTaskId)
+        let inPool = childTask.map { pool.isInPool(taskId: $0.id) } ?? false
+
+        HStack {
+            Text("\u{00B7}")
+                .foregroundColor(.secondary)
+
+            if let task = childTask {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(task.title)
+                        .font(.subheadline)
+                    if task.type == .counting,
+                       let action = task.action,
+                       let maxCount = task.maxCount,
+                       let unit = task.unit {
+                        Text("\(action) \(maxCount) \(unit)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+                TypeBadgeView(type: task.type.rawValue, size: .small)
+
+                if inPool {
+                    Text("In Pool \u{2713}")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.2))
+                        .foregroundColor(.green)
+                        .cornerRadius(4)
+                } else {
+                    Button("Add to Pool") {
+                        pool.addToPool(taskId: task.id, title: task.title, type: task.type.rawValue)
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                Text("Unknown task (id: \(child.childTaskId))")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+        }
+        .padding(8)
+        .background(Color(.systemGray5))
+        .cornerRadius(6)
+    }
+
+    private func operatorSummaryLabel(_ type: OperatorType, threshold: Int?, childCount: Int) -> String {
+        switch type {
+        case .and:  return "All of"
+        case .or:   return "Any of"
+        case .mOfN: return "At least \(threshold ?? 0) of \(childCount)"
+        }
+    }
+
+    // MARK: - Derive panel (for primitive task types)
 
     @ViewBuilder
     private func derivePanel(for task: Task) -> some View {
@@ -359,7 +485,7 @@ struct CreateView: View {
             case .progress:
                 ProgressDerivationPanelView(
                     task: task,
-                    taskSteps: library.deriveTaskSteps,
+                    taskSteps: loadedProgressSteps(for: task.id),
                     allTasks: library.libraryTasks,
                     boardPool: poolAsTuples,
                     isCreating: deriveIsCreating,
@@ -376,9 +502,22 @@ struct CreateView: View {
                 )
 
             case .compound:
-                EmptyView()  // Phase 5 routes compound creation through the dedicated wizard
+                EmptyView()  // Compound expansion is handled by compoundDerivationPanel
             }
         }
+    }
+
+    /// Fetches task steps for a progress task synchronously from the
+    /// in-memory library. Steps live in `task_steps` table; we load
+    /// them on demand here to avoid coupling ProgressDerivationPanelView
+    /// to the library view model.
+    private func loadedProgressSteps(for taskId: String) -> [TaskStep] {
+        (try? AppDatabase.shared.read { db in
+            try TaskStep
+                .filter(Column("taskId") == taskId && Column("isDeleted") == false)
+                .order(Column("stepIndex"))
+                .fetchAll(db)
+        }) ?? []
     }
 
     // MARK: - Pool section
@@ -426,37 +565,30 @@ struct CreateView: View {
     private func toggleExpandTask(_ task: Task) {
         if expandedTaskId == task.id {
             expandedTaskId = nil
-            library.clearDeriveState()
             derivePartialCountStr = ""
         } else {
             expandedTaskId = task.id
-            expandedCompositeTaskId = nil
-            library.clearDeriveState()
+            expandedCompoundTaskId = nil
             derivePartialCountStr = ""
-            if task.type == .progress {
-                library.loadDeriveSteps(for: task.id)
-            }
         }
     }
 
-    private func toggleExpandComposite(_ ct: CompositeTask) {
-        if expandedCompositeTaskId == ct.id {
-            expandedCompositeTaskId = nil
-            library.clearDeriveState()
+    private func toggleExpandCompound(_ compound: Task) {
+        if expandedCompoundTaskId == compound.id {
+            expandedCompoundTaskId = nil
         } else {
-            expandedCompositeTaskId = ct.id
+            expandedCompoundTaskId = compound.id
             expandedTaskId = nil
-            library.clearDeriveState()
             derivePartialCountStr = ""
-            library.loadDeriveNodes(for: ct.id)
+            // Children are already available in library.compoundChildrenByCompound —
+            // no async fetch needed.
         }
     }
 
     private func clearExpandedState() {
         expandedTaskId = nil
-        expandedCompositeTaskId = nil
+        expandedCompoundTaskId = nil
         derivePartialCountStr = ""
-        library.clearDeriveState()
     }
 
     /// Creates a counting subtask from an existing counting parent
@@ -490,7 +622,7 @@ struct CreateView: View {
                     self.deriveIsCreating = false
                     self.pool.addToPool(taskId: newTask.id, title: title, type: TaskType.counting.rawValue)
                     self.derivePartialCountStr = ""
-                    self.library.loadLibrary(userId: userId)
+                    _Concurrency.Task { await self.library.reload(userId: userId) }
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -543,8 +675,7 @@ struct CreateView: View {
                 DispatchQueue.main.async {
                     self.deriveIsCreating = false
                     self.pool.addToPool(taskId: newTask.id, title: newTask.title, type: newTask.type.rawValue)
-                    self.library.loadLibrary(userId: userId)
-                    self.library.loadDeriveSteps(for: parentTask.id)
+                    _Concurrency.Task { await self.library.reload(userId: userId) }
                 }
             } catch {
                 DispatchQueue.main.async {
