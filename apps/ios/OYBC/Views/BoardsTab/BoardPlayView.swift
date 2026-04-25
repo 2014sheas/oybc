@@ -47,6 +47,120 @@ private func bpvMakeSyncItem<T: Codable>(
     )
 }
 
+/// Per-board outcome of `bpvRunCrossBoardCascade`. Caller uses this to surface
+/// flash messages for the currently-visible board.
+struct BPVCascadeBoardResult {
+    let update: DerivationPass.BoardStatsUpdate
+    /// True if this board transitioned COMPLETED → ACTIVE because it is no
+    /// longer GREENLOG.
+    let wasReactivated: Bool
+    /// True if every cell on this board is now complete.
+    let isGreenlogNow: Bool
+    /// True if `board.status` was bumped to `.completed` by this cascade pass.
+    let didAutoComplete: Bool
+}
+
+/// Run the cross-board derivation cascade for a Task that just changed locally.
+///
+/// For every board affected by `changedTaskId` (directly or via a compound
+/// containing it transitively), this:
+///   1. Rebuilds bingo state via `DerivationPass.computeBoardStatsUpdate`
+///      — which respects compound evaluation + achievement-square overrides.
+///   2. Auto-completes the board on GREENLOG; reverts COMPLETED → ACTIVE when
+///      no longer GREENLOG.
+///   3. Persists the updated `Board` row (bumping `updatedAt` + `version`).
+///   4. Enqueues a `boards` sync entry for Firestore.
+///
+/// Mirrors `SyncService.runPullCascade` but additionally applies the GREENLOG
+/// status transitions that local interactions own. Caller controls the
+/// transaction via the passed `db` handle.
+///
+/// - Parameters:
+///   - db: GRDB database handle (must be inside a write transaction).
+///   - changedTaskId: The id of the Task whose state just changed.
+///   - now: ISO8601 timestamp to stamp on every updated board row.
+/// - Returns: A `[boardId: BPVCascadeBoardResult]` map. Boards excluded by
+///   `isDeleted` are omitted.
+private func bpvRunCrossBoardCascade(
+    db: Database,
+    changedTaskId: String,
+    now: String
+) throws -> [String: BPVCascadeBoardResult] {
+    let allChildren: [CompoundChild] = try CompoundChild
+        .filter(Column("isDeleted") == false)
+        .fetchAll(db)
+    let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+    let allTasks: [Task] = try Task.fetchAll(db)
+
+    var taskById: [String: Task] = [:]
+    for t in allTasks { taskById[t.id] = t }
+    var childrenByCompound: [String: [CompoundChild]] = [:]
+    for c in allChildren {
+        childrenByCompound[c.compoundTaskId, default: []].append(c)
+    }
+
+    let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+        changedTaskId: changedTaskId,
+        children: allChildren
+    )
+    let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+        changedTaskId: changedTaskId,
+        parentCompounds: parentCompounds,
+        boardTasks: allBoardTasks
+    )
+
+    var results: [String: BPVCascadeBoardResult] = [:]
+    for boardId in affectedBoardIds {
+        guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+        let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+        let update = DerivationPass.computeBoardStatsUpdate(
+            board: board,
+            boardTasksOnBoard: boardTasksOnBoard,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById
+        )
+
+        let totalSquares = board.boardSize * board.boardSize
+        let isGreenlogNow = update.completedTasks >= totalSquares
+        var wasReactivated = false
+        var didAutoComplete = false
+
+        board.completedTasks = update.completedTasks
+        board.totalTasks = totalSquares
+        board.linesCompleted = update.linesCompleted
+        board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+        board.updatedAt = now
+        board.version += 1
+
+        if isGreenlogNow, board.status == .active {
+            board.status = .completed
+            board.completedAt = now
+            didAutoComplete = true
+        } else if !isGreenlogNow, board.status == .completed {
+            board.status = .active
+            board.completedAt = nil
+            wasReactivated = true
+        }
+
+        try board.save(db)
+        try bpvMakeSyncItem(
+            entityType: "boards",
+            entityId: boardId,
+            operationType: .update,
+            payload: board,
+            now: now
+        ).save(db)
+
+        results[boardId] = BPVCascadeBoardResult(
+            update: update,
+            wasReactivated: wasReactivated,
+            isGreenlogNow: isGreenlogNow,
+            didAutoComplete: didAutoComplete
+        )
+    }
+    return results
+}
+
 // MARK: - BoardPlayView
 
 /// Full interactive bingo board play screen.
@@ -814,10 +928,16 @@ struct BoardPlayView: View {
             return
         }
 
-        // Fallback: child is not placed on this board — persist Task + sync entry directly.
+        // Fallback: child is not placed on this board, but a parent compound
+        // (or the child via another board) may be — so we still need the
+        // cross-board cascade to recompute every affected board's bingo state
+        // and propagate the change to UI on this board (its compound square
+        // derives via CompoundEvaluation, not Task.isCompleted).
         isProcessing = true
+        let currentBoardId = board?.id
         _Concurrency.Task.detached(priority: .userInitiated) {
             do {
+                var newBingoMsg: String? = nil
                 try AppDatabase.shared.write { db in
                     try updatedChild.save(db)
                     try bpvMakeSyncItem(
@@ -827,10 +947,41 @@ struct BoardPlayView: View {
                         payload: updatedChild,
                         now: now
                     ).save(db)
+
+                    let cascadeResults = try bpvRunCrossBoardCascade(
+                        db: db,
+                        changedTaskId: updatedChild.id,
+                        now: now
+                    )
+                    if let cid = currentBoardId, let result = cascadeResults[cid] {
+                        let lost = result.update.lostBingos.sorted()
+                        let gained = result.update.newBingos.sorted()
+                        if result.wasReactivated {
+                            newBingoMsg = "Board reactivated — no longer complete"
+                        } else if !lost.isEmpty {
+                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                        } else if result.isGreenlogNow {
+                            newBingoMsg = "GREENLOG!"
+                        } else if !gained.isEmpty {
+                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
+                        }
+                    }
                 }
                 await MainActor.run {
                     isProcessing = false
+                    loadBoard()
+                    loadBoardTasks()
                     loadTaskData()
+                    if let msg = newBingoMsg {
+                        bingoMessage = msg
+                        let dismissAfter: Double = 3.0
+                        _Concurrency.Task.detached { @MainActor in
+                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
+                            if bingoMessage == msg {
+                                bingoMessage = nil
+                            }
+                        }
+                    }
                 }
             } catch {
                 print("⚠️ BoardPlayView compoundChildToggle error: \(error)")
@@ -847,44 +998,46 @@ struct BoardPlayView: View {
     ///
     /// Steps:
     /// 1. Auto-activates a DRAFT board on first interaction.
-    /// 2. Persists the updated `BoardTask` and queues a sync entry.
-    /// 3. Reloads all `BoardTask` records and builds the row-major completion grid.
-    /// 4. Calls `BingoDetection.detectBingos` to find completed lines.
-    /// 5. Diffs new vs previous `completedLineIds` to find gained and lost bingos.
-    /// 6. Updates board stats: `completedTasks`, `linesCompleted`, `completedLineIds`, `updatedAt`, `version`.
-    /// 7. Auto-completes the board on GREENLOG; reverts COMPLETED → ACTIVE when no longer GREENLOG.
-    /// 8. Queues board sync entry, then refreshes UI state on the main thread.
+    /// 2. Persists the updated `Task` (global completion state) and bumps the
+    ///    `BoardTask` placement record's `updatedAt`/`version`. Both are queued
+    ///    for sync.
+    /// 3. Delegates to `bpvRunCrossBoardCascade` — which uses
+    ///    `DerivationPass.computeBoardStatsUpdate` to rebuild bingo state for
+    ///    every affected board (current board plus any other board placing this
+    ///    task or a compound containing it). Cascade respects compound
+    ///    evaluation + achievement-square overrides, applies GREENLOG → COMPLETED
+    ///    auto-completion + COMPLETED → ACTIVE reactivation, persists each
+    ///    affected board, and queues board sync entries.
+    /// 4. Surfaces a flash message for the *current* board only (other affected
+    ///    boards update silently — the user isn't looking at them).
     ///
     /// Uses `_Concurrency.Task` to avoid shadowing by the GRDB `Task` model.
     ///
-    /// After compound-tasks unification, completion state lives on `Task` (not `BoardTask`).
-    /// This orchestrator persists the updated `Task`, bumps the `BoardTask` placement metadata,
-    /// then rebuilds the bingo grid by joining board tasks with their task completion state.
-    ///
     /// - Parameters:
     ///   - updatedTask: The already-mutated `Task` carrying new completion state.
-    ///   - boardTask: The `BoardTask` placement record (updatedAt/version will be bumped).
+    ///   - boardTask: The `BoardTask` placement record on the current board
+    ///     (updatedAt/version will be bumped + sync-queued).
     private func runOrchestration(updatedTask: Task, boardTask: BoardTask) {
         guard let board = board else { return }
         isProcessing = true
         let now = AppDatabase.currentTimestamp()
-        let previousLineIds = Set(board.completedLineIds ?? [])
-        let size = board.boardSize
+        let currentBoardId = board.id
 
         _Concurrency.Task.detached(priority: .userInitiated) {
             do {
                 var newBingoMsg: String? = nil
 
                 try AppDatabase.shared.write { db in
-                    // 1. Auto-activate DRAFT boards on first interaction.
+                    // 1. Auto-activate DRAFT boards on first interaction. Cascade
+                    //    will re-save the board with stats; this leg only flips
+                    //    .draft → .active so cascade doesn't promote a draft to
+                    //    .completed (which would be wrong for first-tap).
                     if board.status == .draft {
                         var activated = board
                         activated.status = .active
                         activated.updatedAt = now
                         activated.version += 1
                         try activated.save(db)
-                        // No separate sync item here — the final board save below
-                        // includes the activated status and avoids redundant queue entries.
                     }
 
                     // 2a. Persist the updated Task (carries completion state).
@@ -910,103 +1063,32 @@ struct BoardPlayView: View {
                         now: now
                     ).save(db)
 
-                    // 3. Reload all board tasks + current task completion state.
-                    let allBoardTasks = try BoardTask
-                        .filter(Column("boardId") == board.id)
-                        .fetchAll(db)
-
-                    // Build a taskId → isCompleted map from DB (reflects the just-saved updatedTask).
-                    let taskIds = allBoardTasks.map { $0.taskId }
-                    let completionMap: [String: Bool] = try {
-                        var m: [String: Bool] = [:]
-                        for taskId in taskIds {
-                            if let t = try Task.fetchOne(db, key: taskId) {
-                                m[taskId] = t.isCompleted
-                            }
-                        }
-                        return m
-                    }()
-
-                    // 4. Build flat boolean grid (row-major) using Task.isCompleted.
-                    var grid = [Bool](repeating: false, count: size * size)
-                    for bt in allBoardTasks {
-                        let idx = bt.row * size + bt.col
-                        guard idx >= 0, idx < grid.count else { continue }
-                        grid[idx] = completionMap[bt.taskId] ?? false
-                    }
-
-                    // Handle FREE/CUSTOM_FREE center auto-completion (no BoardTask at center)
-                    if size % 2 == 1 {
-                        let centerIdx = size * size / 2
-                        let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
-                        if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
-                            grid[centerIdx] = true
-                        }
-                    }
-
-                    // 5. Detect bingos.
-                    let result = BingoDetection.detectBingos(completionGrid: grid, gridSize: size)
-
-                    let newLineIds = Set(result.completedLines)
-                    let brandNewLines = newLineIds.subtracting(previousLineIds)
-                    let lostBingos = previousLineIds.filter { !newLineIds.contains($0) }
-
-                    // Count completed squares using Task.isCompleted + FREE center.
-                    var completedCount = allBoardTasks.filter { completionMap[$0.taskId] == true }.count
-                    let totalCount = size * size
-                    if size % 2 == 1 {
-                        let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
-                        if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
-                            completedCount += 1
-                        }
-                    }
-
-                    // 6. Update board stats, refreshing from DB to avoid stale reads.
-                    var updatedBoard: Board
-                    if let fresh = try Board.fetchOne(db, key: board.id) {
-                        updatedBoard = fresh
-                    } else {
-                        updatedBoard = board
-                    }
-                    updatedBoard.completedTasks = completedCount
-                    updatedBoard.totalTasks = totalCount
-                    updatedBoard.linesCompleted = result.completedLines.count
-                    updatedBoard.completedLineIds = result.completedLines.isEmpty ? nil : result.completedLines
-                    updatedBoard.updatedAt = now
-                    updatedBoard.version += 1
-
-                    // 7. Auto-complete on GREENLOG; revert when no longer complete.
-                    var boardWasReactivated = false
-                    if result.isGreenlog, updatedBoard.status == .active {
-                        updatedBoard.status = .completed
-                        updatedBoard.completedAt = now
-                    } else if !result.isGreenlog, updatedBoard.status == .completed {
-                        updatedBoard.status = .active
-                        updatedBoard.completedAt = nil
-                        boardWasReactivated = true
-                    }
-
-                    // Determine flash message priority:
-                    // reactivated > lostBingos > greenlog > newBingos.
-                    if boardWasReactivated {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lostBingos.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lostBingos.sorted().joined(separator: ", "))"
-                    } else if result.isGreenlog {
-                        newBingoMsg = "GREENLOG!"
-                    } else if !brandNewLines.isEmpty {
-                        newBingoMsg = "Bingo! (\(brandNewLines.sorted().joined(separator: ", ")))"
-                    }
-
-                    // 8. Persist board and queue sync.
-                    try updatedBoard.save(db)
-                    try bpvMakeSyncItem(
-                        entityType: "boards",
-                        entityId: updatedBoard.id,
-                        operationType: .update,
-                        payload: updatedBoard,
+                    // 3. Cross-board cascade: rebuilds bingo state via
+                    //    DerivationPass.computeBoardStatsUpdate (which honours
+                    //    compound evaluation + achievement squares), applies
+                    //    GREENLOG transitions, and persists every affected board.
+                    let cascadeResults = try bpvRunCrossBoardCascade(
+                        db: db,
+                        changedTaskId: updatedTask.id,
                         now: now
-                    ).save(db)
+                    )
+
+                    // 4. Surface a flash message for the *current* board only.
+                    //    Other affected boards still updated stats — they just
+                    //    don't get a transient banner since the user isn't on them.
+                    if let result = cascadeResults[currentBoardId] {
+                        let lost = result.update.lostBingos.sorted()
+                        let gained = result.update.newBingos.sorted()
+                        if result.wasReactivated {
+                            newBingoMsg = "Board reactivated — no longer complete"
+                        } else if !lost.isEmpty {
+                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                        } else if result.isGreenlogNow {
+                            newBingoMsg = "GREENLOG!"
+                        } else if !gained.isEmpty {
+                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
+                        }
+                    }
                 }
 
                 // Refresh UI on main thread.

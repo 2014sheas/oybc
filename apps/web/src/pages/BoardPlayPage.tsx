@@ -12,7 +12,7 @@ import { useBoard, useBoardTasks } from '../hooks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
-import { handleTaskCompletion } from '../db/operations/orchestration';
+import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
 import { addToSyncQueue } from '../db/operations/syncQueue';
 import {
   InteractiveTaskSquare,
@@ -170,8 +170,10 @@ export function BoardPlayPage(): React.ReactElement {
       if (childBt) {
         await handleComplete(childBt.id, { isCompleted: !childTask.isCompleted });
       } else {
-        // Child is not placed on any board — update the Task directly.
-        // No board-level cascade needed since it's unplaced.
+        // Child is not placed on any board, but the parent compound (on THIS
+        // board, since the user is opening its detail sheet) still derives
+        // through this child — so we must run the board cascade to recompute
+        // bingo state + denormalised board stats.
         try {
           const now = new Date().toISOString();
           await db.tasks.update(childTaskId, {
@@ -186,6 +188,10 @@ export function BoardPlayPage(): React.ReactElement {
           if (updated) {
             void addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
           }
+          // Run cross-board derivation so every board containing a compound
+          // that transitively references this child gets stats + bingo
+          // recomputed. Mirrors iOS handleCompoundChildToggle Path B.
+          await runBoardCascadeForTask(childTaskId);
         } catch (err) {
           console.error('Compound child toggle failed:', err);
           showFlash('Something went wrong', 'bingo');
