@@ -71,6 +71,7 @@ struct BoardPlayView: View {
     @State private var boardTasks: [BoardTask] = []
     @State private var allTasks: [Task] = []
     @State private var allTaskSteps: [TaskStep] = []
+    @State private var allCompoundChildren: [CompoundChild] = []
 
     @State private var isProcessing = false
     @State private var bingoMessage: String?
@@ -81,6 +82,18 @@ struct BoardPlayView: View {
     /// O(1) task lookup by task ID.
     private var taskMap: [String: Task] {
         Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+    }
+
+    /// Compound children grouped by parent compound task ID, sorted by childIndex.
+    private var compoundChildrenByCompound: [String: [CompoundChild]] {
+        var grouped: [String: [CompoundChild]] = [:]
+        for c in allCompoundChildren {
+            grouped[c.compoundTaskId, default: []].append(c)
+        }
+        for id in grouped.keys {
+            grouped[id]?.sort { $0.childIndex < $1.childIndex }
+        }
+        return grouped
     }
 
     /// Board tasks sorted row-major (ascending row then col).
@@ -375,16 +388,49 @@ struct BoardPlayView: View {
             }
 
         case .compound:
-            // Phase 5: compound task squares will have a dedicated interaction model.
-            InteractiveTaskSquareView(
-                title: task?.title ?? "Unknown",
-                taskType: .normal,
-                isCompleted: isCompleted,
-                onTap: {
-                    guard !isBoardLocked else { return }
-                    handleNormalTap(boardTask: boardTask)
+            let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
+            let compoundChildCount = compoundLinks.count
+            let compoundDoneCount = compoundLinks.filter { link in
+                guard let childTask = taskMap[link.childTaskId], !childTask.isDeleted else { return false }
+                if childTask.type == .compound {
+                    return CompoundEvaluation.evaluate(
+                        compound: childTask,
+                        childrenByCompound: compoundChildrenByCompound,
+                        taskById: taskMap
+                    )
                 }
-            )
+                return childTask.isCompleted
+            }.count
+
+            ZStack {
+                InteractiveTaskSquareView(
+                    title: task?.title ?? "Unknown",
+                    taskType: .compound,
+                    isCompleted: isCompleted,
+                    compoundOperator: task?.operatorType,
+                    compoundThreshold: task?.threshold,
+                    compoundChildCount: compoundChildCount,
+                    compoundDoneCount: compoundDoneCount,
+                    onTap: {
+                        guard !isBoardLocked else { return }
+                        detailBoardTaskId = boardTask.id
+                    }
+                )
+                // Transparent overlay ensures compound taps always open the detail sheet,
+                // matching the progress-square pattern.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard !isBoardLocked else { return }
+                        detailBoardTaskId = boardTask.id
+                    }
+            }
+            .frame(width: 90, height: 90)
+            .contextMenu {
+                Button("View Children", systemImage: "list.bullet") {
+                    detailBoardTaskId = boardTask.id
+                }
+            }
         }
     }
 
@@ -424,8 +470,7 @@ struct BoardPlayView: View {
                     case .progress:
                         progressDetailContent(boardTask: bt, task: task)
                     case .compound:
-                        // Phase 5: compound detail view.
-                        normalDetailContent(boardTask: bt)
+                        compoundDetailContent(boardTask: bt, task: task)
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -558,6 +603,60 @@ struct BoardPlayView: View {
         }
     }
 
+    /// Detail sheet content for a compound task: shows each child with its current
+    /// completion state and a tap handler that toggles the child's `Task.isCompleted`.
+    ///
+    /// - Parameters:
+    ///   - boardTask: The parent compound's `BoardTask` placement record.
+    ///   - task: The parent compound `Task`.
+    @ViewBuilder
+    private func compoundDetailContent(boardTask: BoardTask, task: Task) -> some View {
+        let links = (compoundChildrenByCompound[task.id] ?? [])
+
+        Section("Children") {
+            if links.isEmpty {
+                Text("No children found")
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(links, id: \.id) { link in
+                    let childTask = taskMap[link.childTaskId]
+                    let isDone: Bool = {
+                        guard let ct = childTask, !ct.isDeleted else { return false }
+                        if ct.type == .compound {
+                            return CompoundEvaluation.evaluate(
+                                compound: ct,
+                                childrenByCompound: compoundChildrenByCompound,
+                                taskById: taskMap
+                            )
+                        }
+                        return ct.isCompleted
+                    }()
+
+                    Button {
+                        guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
+                        handleCompoundChildToggle(childTask: ct)
+                    } label: {
+                        HStack {
+                            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(isDone ? .green : .secondary)
+                            Text(childTask?.title ?? link.childTaskId)
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isProcessing || isBoardLocked || childTask == nil)
+                }
+            }
+        }
+
+        Section {
+            Text("Completion applies to all boards where this task appears.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
     // MARK: - Tap Handlers
     //
     // After compound-tasks unification, completion state lives on Task (not BoardTask).
@@ -676,6 +775,56 @@ struct BoardPlayView: View {
         task.version += 1
 
         runOrchestration(updatedTask: task, boardTask: boardTask)
+    }
+
+    /// Toggles a compound child's `Task.isCompleted` state.
+    ///
+    /// If the child is placed on the current board, orchestrates via the full bingo pipeline.
+    /// If the child is not on any board, falls back to a direct Task update + sync enqueue.
+    ///
+    /// - Parameter childTask: The child `Task` to toggle.
+    private func handleCompoundChildToggle(childTask: Task) {
+        guard !isProcessing else { return }
+        let now = AppDatabase.currentTimestamp()
+        var updatedChild = childTask
+        let newCompleted = !childTask.isCompleted
+        updatedChild.isCompleted = newCompleted
+        updatedChild.completedAt = newCompleted ? now : nil
+        updatedChild.updatedAt = now
+        updatedChild.version += 1
+
+        // If the child has a BoardTask on the current board, use the full orchestration
+        // pipeline so bingo detection stays consistent.
+        if let childBt = boardTasks.first(where: { $0.taskId == childTask.id }) {
+            runOrchestration(updatedTask: updatedChild, boardTask: childBt)
+            return
+        }
+
+        // Fallback: child is not placed on this board — persist Task + sync entry directly.
+        isProcessing = true
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                try AppDatabase.shared.write { db in
+                    try updatedChild.save(db)
+                    try bpvMakeSyncItem(
+                        entityType: "tasks",
+                        entityId: updatedChild.id,
+                        operationType: .update,
+                        payload: updatedChild,
+                        now: now
+                    ).save(db)
+                }
+                await MainActor.run {
+                    isProcessing = false
+                    loadTaskData()
+                }
+            } catch {
+                print("⚠️ BoardPlayView compoundChildToggle error: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                }
+            }
+        }
     }
 
     // MARK: - Orchestration
@@ -891,9 +1040,10 @@ struct BoardPlayView: View {
         }
     }
 
-    /// Loads all tasks and task steps for the authenticated user into memory.
+    /// Loads all tasks, task steps, and compound children for the authenticated user into memory.
     ///
-    /// Task steps are fetched for the authenticated user if available, otherwise skipped.
+    /// Task steps and compound children are fetched globally (not user-scoped) since
+    /// the AppDatabase helpers don't filter by userId for those tables.
     private func loadTaskData() {
         let userId = authService.currentUser?.id
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -903,9 +1053,11 @@ struct BoardPlayView: View {
             let steps = userId.flatMap { id in
                 try? AppDatabase.shared.fetchAllTaskSteps(userId: id)
             } ?? []
+            let children = (try? AppDatabase.shared.fetchAllCompoundChildren()) ?? []
             await MainActor.run {
                 allTasks = tasks
                 allTaskSteps = steps
+                allCompoundChildren = children
             }
         }
     }

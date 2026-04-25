@@ -2,10 +2,11 @@ import SwiftUI
 
 /// A reusable interactive bingo square that adapts its appearance and behavior to the task type.
 ///
-/// Supports all three task types with type-specific visual indicators:
+/// Supports all task types with type-specific visual indicators:
 /// - **Normal**: Tap toggles completion. Checkmark overlay when complete.
 /// - **Counting**: Tap increments count. Shows "X / max unit" progress bar and a "+1 unit" hint.
 /// - **Progress**: Read-only in the grid (steps are managed elsewhere). Shows "X / Y steps" progress bar.
+/// - **Compound**: Tap opens the compound detail sheet. Shows operator-aware fill bar and a "C" badge.
 ///
 /// The square is 90 × 90 pt by default (matching the web `InteractiveTaskSquare`) and can be
 /// made read-only by omitting `onTap` or setting `isReadOnly = true`.
@@ -19,6 +20,10 @@ import SwiftUI
 ///   - unit: Unit label for counting tasks (e.g. "pages", "km").
 ///   - completedSteps: Number of completed steps for progress tasks.
 ///   - totalSteps: Total number of steps for progress tasks.
+///   - compoundOperator: Logical operator for compound tasks (.and / .or / .mOfN).
+///   - compoundThreshold: M threshold for .mOfN compound tasks.
+///   - compoundChildCount: Total number of active children for compound tasks.
+///   - compoundDoneCount: Number of completed children for compound tasks.
 ///   - onTap: Optional tap handler. When nil the square is not interactive (unless `isReadOnly`
 ///     is explicitly set). Progress tasks ignore `onTap` from the grid.
 ///   - isReadOnly: Suppresses tap handling even when `onTap` is provided (used for Board A).
@@ -40,6 +45,12 @@ struct InteractiveTaskSquareView: View {
     var completedSteps: Int = 0
     var totalSteps: Int = 0
 
+    // Compound-specific (only meaningful when taskType == .compound)
+    var compoundOperator: OperatorType? = nil
+    var compoundThreshold: Int? = nil
+    var compoundChildCount: Int = 0
+    var compoundDoneCount: Int = 0
+
     // Interaction
     var onTap: (() -> Void)? = nil
     var isReadOnly: Bool = false
@@ -55,7 +66,7 @@ struct InteractiveTaskSquareView: View {
 
     /// Whether a progress bar should be shown at the bottom of the square.
     private var showProgressBar: Bool {
-        taskType == .counting || taskType == .progress
+        taskType == .counting || taskType == .progress || taskType == .compound
     }
 
     /// Fraction (0–1) to fill the progress bar.
@@ -70,10 +81,17 @@ struct InteractiveTaskSquareView: View {
             guard totalSteps > 0 else { return 0 }
             return min(Double(completedSteps) / Double(totalSteps), 1.0)
         case .compound:
-            // Compound squares are handled by Phase 5 UI work (dedicated compound
-            // rendering + read-only detail sheet). This view predates that work;
-            // calls with type=.compound shouldn't reach it. Treat as incomplete.
-            return 0
+            if compoundChildCount == 0 { return 0 }
+            switch compoundOperator {
+            case .or:
+                return compoundDoneCount > 0 ? 1.0 : 0.0
+            case .mOfN:
+                let threshold = compoundThreshold ?? 0
+                if threshold == 0 { return 0 }
+                return min(Double(compoundDoneCount) / Double(threshold), 1.0)
+            case .and, .none:
+                return Double(compoundDoneCount) / Double(compoundChildCount)
+            }
         }
     }
 
@@ -83,7 +101,7 @@ struct InteractiveTaskSquareView: View {
         case .normal:   return .green
         case .counting: return .orange
         case .progress: return .purple
-        case .compound: return .indigo  // Placeholder; dedicated compound UI in Phase 5.
+        case .compound: return Color(red: 0.39, green: 0.4, blue: 0.95)  // indigo, mirrors web's #6366f1
         }
     }
 
@@ -98,7 +116,14 @@ struct InteractiveTaskSquareView: View {
         case .progress:
             return "\(completedSteps)/\(totalSteps) steps"
         case .compound:
-            return ""  // Dedicated compound rendering in Phase 5.
+            switch compoundOperator {
+            case .or:
+                return compoundDoneCount > 0 ? "complete" : "0 of \(compoundChildCount)"
+            case .mOfN:
+                return "\(compoundDoneCount)/\(compoundThreshold ?? 0)"
+            case .and, .none:
+                return "\(compoundDoneCount)/\(compoundChildCount)"
+            }
         }
     }
 
@@ -111,7 +136,7 @@ struct InteractiveTaskSquareView: View {
     /// Whether tapping the square should trigger the handler.
     private var isTappable: Bool {
         guard !isReadOnly, let _ = onTap else { return false }
-        // Progress tasks are not directly actionable from the grid.
+        // Progress tasks are not directly actionable from the grid; compound taps open the detail sheet.
         return taskType != .progress
     }
 
@@ -195,6 +220,23 @@ struct InteractiveTaskSquareView: View {
                     Spacer()
                 }
             }
+
+            // ── "C" badge (top-left corner for compound squares) ──
+            if taskType == .compound {
+                VStack {
+                    HStack {
+                        Text("C")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 16, height: 16)
+                            .background(Color(red: 0.39, green: 0.4, blue: 0.95))
+                            .clipShape(Circle())
+                            .padding(4)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
         }
         .frame(width: size, height: size)
         .scaleEffect(isPressed ? 0.93 : 1.0)
@@ -228,7 +270,14 @@ struct InteractiveTaskSquareView: View {
         case .progress:
             return "\(title) — \(completedSteps) of \(totalSteps) steps completed"
         case .compound:
-            return "\(title) — compound task"  // Phase 5 adds detail-sheet-driven rendering.
+            switch compoundOperator {
+            case .or:
+                return "\(title) — compound task, \(compoundDoneCount > 0 ? "complete" : "0 of \(compoundChildCount) children done")"
+            case .mOfN:
+                return "\(title) — compound task, \(compoundDoneCount) of \(compoundThreshold ?? 0) required children done"
+            case .and, .none:
+                return "\(title) — compound task, \(compoundDoneCount) of \(compoundChildCount) children done"
+            }
         }
     }
 
