@@ -6,10 +6,18 @@ import Foundation
 /// (no DB I/O, no caller-visible side effects) and computes whether a compound
 /// Task's operator condition is satisfied by its children's states.
 ///
-/// Recurses into nested compounds. Filters soft-deleted children.
+/// Recurses into nested compounds, with cycle detection.
+/// Filters soft-deleted children.
 /// Treats unresolvable childTaskId / soft-deleted child Task as incomplete.
 /// Non-compound inputs return `task.isCompleted` directly (defensive uniform
 /// lookup).
+///
+/// **Cycle handling.** A `compound_children` cycle (e.g., A→B→A) can in
+/// principle land via sync of malformed data. If evaluation hits a compound
+/// already on the recursion stack, the back-edge is treated as `false` for
+/// that branch (and the rest of the operator evaluates normally). Deterministic,
+/// bounded, never traps — preferred to a stack overflow that would brick board
+/// derivation across the entire workspace.
 enum CompoundEvaluation {
 
     /// Evaluate whether a compound Task is complete.
@@ -28,9 +36,30 @@ enum CompoundEvaluation {
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task]
     ) -> Bool {
+        var visiting: Set<String> = []
+        return evaluateInner(
+            compound: compound,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            visiting: &visiting
+        )
+    }
+
+    private static func evaluateInner(
+        compound: Task,
+        childrenByCompound: [String: [CompoundChild]],
+        taskById: [String: Task],
+        visiting: inout Set<String>
+    ) -> Bool {
         guard compound.type == .compound else {
             return compound.isCompleted
         }
+
+        // Cycle guard: a compound already on the recursion stack resolves to
+        // `false` for this branch.
+        if visiting.contains(compound.id) { return false }
+        visiting.insert(compound.id)
+        defer { visiting.remove(compound.id) }
 
         let links = (childrenByCompound[compound.id] ?? []).filter { !$0.isDeleted }
         let childStates: [Bool] = links.map { link in
@@ -38,10 +67,11 @@ enum CompoundEvaluation {
                 return false
             }
             if child.type == .compound {
-                return evaluate(
+                return evaluateInner(
                     compound: child,
                     childrenByCompound: childrenByCompound,
-                    taskById: taskById
+                    taskById: taskById,
+                    visiting: &visiting
                 )
             }
             return child.isCompleted

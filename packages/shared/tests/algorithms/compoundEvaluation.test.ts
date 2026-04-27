@@ -223,3 +223,55 @@ describe('evaluateCompound — edge cases', () => {
     expect(evaluateCompound(compound, childrenByCompound, taskById)).toBe(true);
   });
 });
+
+// ─── Cycle safety ─────────────────────────────────────────────────────────────
+
+describe('evaluateCompound — cycle safety', () => {
+  it('breaks A→B→A self-cycle without stack overflow (AND-of-cycle = false)', () => {
+    // Malformed graph: parent A's child is B; B's child is A. Could occur via
+    // a sync of malformed remote data even though normal write paths block
+    // direct self-reference.
+    const a = compoundTask('a', OperatorType.AND);
+    const b = compoundTask('b', OperatorType.AND);
+    const childrenByCompound = {
+      a: [child('a', 'b', 0)],
+      b: [child('b', 'a', 0)],
+    };
+    const taskById = { a, b };
+    // A's only child is B. B's only child is A — back-edge resolves to false.
+    // So B is AND of [false] → false. So A is AND of [false] → false.
+    expect(evaluateCompound(a, childrenByCompound, taskById)).toBe(false);
+    expect(evaluateCompound(b, childrenByCompound, taskById)).toBe(false);
+  });
+
+  it('breaks 3-node cycle A→B→C→A deterministically', () => {
+    const a = compoundTask('a', OperatorType.AND);
+    const b = compoundTask('b', OperatorType.AND);
+    const c = compoundTask('c', OperatorType.AND);
+    const childrenByCompound = {
+      a: [child('a', 'b', 0)],
+      b: [child('b', 'c', 0)],
+      c: [child('c', 'a', 0)],
+    };
+    const taskById = { a, b, c };
+    expect(evaluateCompound(a, childrenByCompound, taskById)).toBe(false);
+  });
+
+  it('cycle visit-set is per-call: parent with two unrelated branches still evaluates correctly after each branch resolves', () => {
+    // visiting must be cleared on the way back up the recursion stack (not
+    // accumulated across siblings) — otherwise sibling branches would falsely
+    // see each other as cycles.
+    const parent = compoundTask('parent', OperatorType.AND);
+    const branchA = compoundTask('branchA', OperatorType.AND);
+    const branchB = compoundTask('branchB', OperatorType.AND);
+    const leafA = task('leafA', { isCompleted: true });
+    const leafB = task('leafB', { isCompleted: true });
+    const childrenByCompound = {
+      parent: [child('parent', 'branchA', 0), child('parent', 'branchB', 1)],
+      branchA: [child('branchA', 'leafA', 0)],
+      branchB: [child('branchB', 'leafB', 0)],
+    };
+    const taskById = { parent, branchA, branchB, leafA, leafB };
+    expect(evaluateCompound(parent, childrenByCompound, taskById)).toBe(true);
+  });
+});

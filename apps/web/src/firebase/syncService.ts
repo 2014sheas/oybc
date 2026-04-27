@@ -422,13 +422,6 @@ async function applyRemoteSubdoc(
 
   // Determine if the pulled doc's completion state differs from what we
   // have locally. Used below to decide whether to trigger the board cascade.
-  const completionChanged =
-    isNew ||
-    (localData as { isCompleted?: boolean } | undefined)?.isCompleted !==
-      (validated as { isCompleted?: boolean }).isCompleted ||
-    (localData as { currentCount?: number } | undefined)?.currentCount !==
-      (validated as { currentCount?: number }).currentCount;
-
   // Apply the remote row to local Dexie (does NOT bump version — pulled
   // value is authoritative; version comes directly from the remote doc).
   await db.transaction(
@@ -440,8 +433,15 @@ async function applyRemoteSubdoc(
       // After pulling a Task or CompoundChild, cascade the board derivation
       // pass so that any board containing the changed task recomputes its
       // stats + status transitions. The cascade writes boards + sync queue
-      // entries but does NOT touch the Task itself — pulled version is final.
-      if (collectionName === 'tasks' && completionChanged) {
+      // entries but does NOT touch the Task itself — pulled value is final.
+      //
+      // Cascade unconditionally (matches iOS SyncService.runPullCascade).
+      // The previous `completionChanged` gate (isCompleted/currentCount diff)
+      // missed compound-affecting edits — operator/threshold/isOrdered changes
+      // would leave boards with stale stats + completedLineIds even though
+      // the compound's derived state had flipped. The cascade is idempotent
+      // and small-N, so always running it is the safer + iOS-parity choice.
+      if (collectionName === 'tasks') {
         try {
           await runBoardCascadeForTask(validated.id);
         } catch (err) {

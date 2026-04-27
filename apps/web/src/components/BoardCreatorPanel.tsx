@@ -74,7 +74,7 @@ const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
 export function BoardCreatorPanel({
   pool,
   taskMap,
-  allCompoundChildren: _allCompoundChildren,
+  allCompoundChildren,
   userId,
   initialPreferences,
   onBoardCreated,
@@ -314,6 +314,20 @@ export function BoardCreatorPanel({
       btMap[`${bt.row}-${bt.col}`] = bt;
     }
 
+    // Pre-group compound children for the preview adapters. Without this,
+    // taskToSquareData / taskToSquareState fall through to the
+    // empty-children branch — and AND-of-empty-set evaluates as `true` via
+    // vacuous truth, so freshly-placed compounds would render as already-
+    // complete in the preview before the user has done anything.
+    const childrenByCompound: Record<string, typeof allCompoundChildren> = {};
+    for (const c of allCompoundChildren) {
+      if (c.isDeleted) continue;
+      (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+    }
+    for (const id of Object.keys(childrenByCompound)) {
+      childrenByCompound[id].sort((a, b) => a.childIndex - b.childIndex);
+    }
+
     const centerRow = Math.floor(boardSize / 2);
     const centerCol = Math.floor(boardSize / 2);
     const cells: React.ReactElement[] = [];
@@ -340,9 +354,20 @@ export function BoardCreatorPanel({
 
         const task = taskMap[bt.taskId];
         if (task) {
-          // TODO Task 4.5: pass compound children for compound square rendering
-          const squareData = taskToSquareData(task, []);
-          const squareState = taskToSquareState(task);
+          const compoundChildrenForTask = childrenByCompound[task.id];
+          const squareData = taskToSquareData(
+            task,
+            [],
+            compoundChildrenForTask,
+            taskMap,
+            childrenByCompound,
+          );
+          const squareState = taskToSquareState(
+            task,
+            compoundChildrenForTask,
+            taskMap,
+            childrenByCompound,
+          );
           cells.push(
             <div key={bt.id}>
               <InteractiveTaskSquare

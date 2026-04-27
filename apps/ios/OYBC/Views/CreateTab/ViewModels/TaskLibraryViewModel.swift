@@ -22,9 +22,13 @@ enum LibraryFilter: String, CaseIterable {
 /// (Phase 4.1).
 ///
 /// All compounds live in `libraryTasks` with type=.compound. The
-/// legacy composite_tasks / composite_nodes / task_steps tables were
-/// dropped in GRDB v7; this view-model only touches `tasks` and
-/// `compound_children`.
+/// legacy composite_tasks / composite_nodes / task_steps tables are
+/// no longer used by this view-model; it only touches `tasks` and
+/// `compound_children`. (The legacy tables are not actually dropped
+/// by GRDB v7 — MigrationV7Helpers only DELETEs their rows so the
+/// sync queue can drain corresponding Firestore tombstones; a future
+/// cleanup migration can drop them once the sync queue is verified
+/// empty across devices.)
 ///
 /// Uses @Observable so SwiftUI observes field-level reads.
 @Observable
