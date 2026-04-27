@@ -40,15 +40,28 @@ export interface TaskLibrary {
 export function useTaskLibrary(userId: string | undefined): TaskLibrary {
   const allTasks = useTasks(userId) ?? EMPTY_TASKS;
 
-  // Workspace-wide compoundChildren — small-N, no per-user filter (children
-  // don't carry userId; they're scoped via the parent Task's userId, which
-  // is implicitly the authenticated user since `tasks` is already userId-
-  // scoped). Live query for reactivity.
-  const allCompoundChildren =
+  // CompoundChild has no userId column (children scope to a parent Task),
+  // so a workspace-wide query would leak rows from a previous user across an
+  // account switch on the same device (signOut only clears the sync queue,
+  // not entity tables). Live-query the workspace then filter to the current
+  // user's compound parents in JS — small-N, single-pass — so cross-account
+  // pollution can't influence grouping/evaluation/cascade work.
+  const userCompoundIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const t of allTasks) {
+      if (t.type === TaskType.COMPOUND) ids.add(t.id);
+    }
+    return ids;
+  }, [allTasks]);
+  const allCompoundChildrenWorkspace =
     useLiveQuery(
       () => db.compoundChildren.filter((c: CompoundChild) => !c.isDeleted).toArray(),
       [],
     ) ?? EMPTY_COMPOUND_CHILDREN;
+  const allCompoundChildren = useMemo(
+    () => allCompoundChildrenWorkspace.filter((c) => userCompoundIds.has(c.compoundTaskId)),
+    [allCompoundChildrenWorkspace, userCompoundIds],
+  );
 
   const taskMap = useMemo(() => {
     const m: Record<string, Task> = {};

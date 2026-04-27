@@ -51,12 +51,20 @@ import { generateUUID, currentTimestamp } from '../utils';
 export async function runMigrationV4(_tx: Transaction): Promise<void> {
   const now = currentTimestamp();
 
+  // Track ids that need sync entries enqueued at the end. We can't enqueue
+  // mid-migration because the final isCompleted backfill (step 5) mutates
+  // the Task rows, and we want the sync payload to reflect the final state.
+  const transformedTaskIds = new Set<string>();   // step 1 + step 3 (UPDATE/CREATE)
+  const newCompoundTaskIds = new Set<string>();   // step 3 only (CREATE op)
+  const newCompoundChildIds: string[] = [];       // step 2 + step 4 (CREATE)
+
   // ── 1. Progress Tasks → Compound ──────────────────────────────────────────
   const allTasks = await db.tasks.toArray();
   const progressTasks = allTasks.filter((t) => t.type === ('progress' as TaskType));
   for (const t of progressTasks) {
     const updates = progressTaskToCompound(t);
     await db.tasks.update(t.id, { ...updates, updatedAt: now });
+    transformedTaskIds.add(t.id);
   }
 
   // ── 2. TaskSteps → CompoundChildren ───────────────────────────────────────
@@ -69,6 +77,7 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
     const row = taskStepToCompoundChild(step, generateUUID());
     if (!row) continue; // step missing linkedTaskId — skip defensively
     await db.compoundChildren.add(row);
+    newCompoundChildIds.push(row.id);
   }
 
   // ── 3. CompositeTasks → Tasks ──────────────────────────────────────────────
@@ -79,6 +88,8 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
     const newTask = compositeTaskToTask(ct, root);
     if (!newTask) continue; // missing/malformed root — skip
     await db.tasks.add(newTask);
+    transformedTaskIds.add(newTask.id);
+    newCompoundTaskIds.add(newTask.id);
   }
 
   // ── 4. Leaf CompositeNodes → CompoundChildren ─────────────────────────────
@@ -86,6 +97,7 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
     const row = compositeNodeToCompoundChild(node, generateUUID());
     if (!row) continue; // operator node, or leaf without taskId/childCompositeTaskId
     await db.compoundChildren.add(row);
+    newCompoundChildIds.push(row.id);
   }
 
   // ── 5. Backfill Task global completion from legacy BoardTask data ──────────
@@ -104,27 +116,55 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
   });
 
   /**
-   * Enqueue a Task UPDATE sync entry so that backfilled completion state
-   * propagates to Firestore (and wins over any stale pre-migration remote doc
-   * on a second device that pulls later).
+   * Enqueue a Task sync entry so the post-migration row propagates to
+   * Firestore (and wins over any stale pre-migration remote doc on a second
+   * device that pulls later).
    *
    * Uses direct `db.syncQueue.add` — NOT `addToSyncQueue` — because we are
    * inside the Dexie upgrade transaction and that helper isn't tx-aware.
+   *
+   * @param op CREATE for tasks the migration introduced (composites moved
+   *           into `tasks`); UPDATE for in-place transforms + backfills.
    */
-  async function enqueueTaskUpdate(taskId: string): Promise<void> {
+  async function enqueueTaskSync(taskId: string, op: SyncOperationType): Promise<void> {
     const afterUpdate = await db.tasks.get(taskId);
     if (!afterUpdate) return;
     await db.syncQueue.add({
       id: generateUUID(),
       entityType: 'tasks',
       entityId: taskId,
-      operationType: SyncOperationType.UPDATE,
+      operationType: op,
       payload: JSON.stringify(afterUpdate),
       status: SyncStatus.PENDING,
       retryCount: 0,
       createdAt: currentTimestamp(),
       priority: 0,
     });
+  }
+
+  /** Enqueue a CompoundChild CREATE so the new link reaches Firestore. */
+  async function enqueueCompoundChildCreate(childId: string): Promise<void> {
+    const child = await db.compoundChildren.get(childId);
+    if (!child) return;
+    await db.syncQueue.add({
+      id: generateUUID(),
+      entityType: 'compoundChildren',
+      entityId: childId,
+      operationType: SyncOperationType.CREATE,
+      payload: JSON.stringify(child),
+      status: SyncStatus.PENDING,
+      retryCount: 0,
+      createdAt: currentTimestamp(),
+      priority: 0,
+    });
+  }
+
+  /**
+   * Backwards-compat shim used by the existing in-loop step-completion
+   * backfill — those calls already meant "UPDATE."
+   */
+  async function enqueueTaskUpdate(taskId: string): Promise<void> {
+    await enqueueTaskSync(taskId, SyncOperationType.UPDATE);
   }
 
   // Re-fetch all tasks now that step 3 may have added composite-derived rows.
@@ -183,6 +223,22 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
     });
     // Enqueue sync entry for step-completion backfill.
     await enqueueTaskUpdate(step.linkedTaskId);
+  }
+
+  // ── 6.5. Enqueue migrated entities so other devices receive the new shape ─
+  // Without this, the legacy DELETEs in step 7 would tombstone the old
+  // collections in Firestore while the replacement Tasks/compoundChildren
+  // never push — leaving a second device with no progress/composite content
+  // after the next pull. Enqueued AFTER backfill so payloads carry the final
+  // post-migration state (incl. backfilled isCompleted etc).
+  for (const taskId of transformedTaskIds) {
+    const op = newCompoundTaskIds.has(taskId)
+      ? SyncOperationType.CREATE
+      : SyncOperationType.UPDATE;
+    await enqueueTaskSync(taskId, op);
+  }
+  for (const childId of newCompoundChildIds) {
+    await enqueueCompoundChildCreate(childId);
   }
 
   // ── 7. Enqueue legacy delete sync ops ─────────────────────────────────────

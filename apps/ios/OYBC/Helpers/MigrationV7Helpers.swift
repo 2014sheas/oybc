@@ -27,6 +27,15 @@ enum MigrationV7Helpers {
     static func run(_ db: Database) throws {
         let now = isoNow()
 
+        // Track ids that need sync entries enqueued at the end (step 6.5).
+        // Without this, the legacy DELETEs in step 7 tombstone the old
+        // collections in Firestore while the replacement Tasks/compound_children
+        // never push — leaving a second device with no progress/composite
+        // content after the next pull.
+        var transformedTaskIds: Set<String> = []   // step 1 (UPDATE) + step 3 (CREATE)
+        var newCompoundTaskIds: Set<String> = []   // step 3 only — distinguishes CREATE from UPDATE
+        var newCompoundChildIds: [String] = []     // step 2 + step 4 (CREATE)
+
         // ── Step 1: Progress Tasks → Compound ────────────────────────────────
         // Set type='compound', operator='AND', isOrdered=1 on every progress Task.
         let progressRows = try Row.fetchAll(db, sql: "SELECT id FROM tasks WHERE type = 'progress'")
@@ -43,6 +52,7 @@ enum MigrationV7Helpers {
                     """,
                 arguments: [now, id]
             )
+            transformedTaskIds.insert(id)
         }
 
         // ── Step 2: TaskSteps → CompoundChildren ──────────────────────────────
@@ -70,6 +80,7 @@ enum MigrationV7Helpers {
             let isDeleted: Bool = (row["isDeleted"] as Int? ?? 0) != 0
             let deletedAt: String? = row["deletedAt"]
 
+            let newChildId = UUID().uuidString.lowercased()
             try db.execute(
                 sql: """
                     INSERT INTO compound_children (
@@ -79,12 +90,13 @@ enum MigrationV7Helpers {
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                     """,
                 arguments: [
-                    UUID().uuidString.lowercased(),
+                    newChildId,
                     parentTaskId, linkedTaskId, stepIndex,
                     createdAt, updatedAt, lastSyncedAt,
                     isDeleted ? 1 : 0, deletedAt
                 ]
             )
+            newCompoundChildIds.append(newChildId)
         }
 
         // ── Step 3: CompositeTasks → Tasks ────────────────────────────────────
@@ -149,6 +161,8 @@ enum MigrationV7Helpers {
                     version, isDeleted ? 1 : 0, deletedAt
                 ]
             )
+            transformedTaskIds.insert(ctId)
+            newCompoundTaskIds.insert(ctId)
         }
 
         // ── Step 4: Leaf CompositeNodes → CompoundChildren ────────────────────
@@ -172,6 +186,7 @@ enum MigrationV7Helpers {
             let isDeleted: Bool = (nodeRow["isDeleted"] as Int? ?? 0) != 0
             let deletedAt: String? = nodeRow["deletedAt"]
 
+            let newChildId = UUID().uuidString.lowercased()
             try db.execute(
                 sql: """
                     INSERT INTO compound_children (
@@ -181,12 +196,13 @@ enum MigrationV7Helpers {
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                     """,
                 arguments: [
-                    UUID().uuidString.lowercased(),
+                    newChildId,
                     compositeTaskId, childTaskId, nodeIndex,
                     createdAt, updatedAt, lastSyncedAt,
                     isDeleted ? 1 : 0, deletedAt
                 ]
             )
+            newCompoundChildIds.append(newChildId)
         }
 
         // ── Step 5: Backfill global Task completion ───────────────────────────
@@ -299,6 +315,20 @@ enum MigrationV7Helpers {
                 arguments: [now, now, linkedTaskId]
             )
             try enqueueTaskSync(db: db, taskId: linkedTaskId, now: now)
+        }
+
+        // ── Step 6.5: Enqueue migrated entities ──────────────────────────────
+        // Web parity: without this, the legacy DELETEs in step 7 tombstone the
+        // old Firestore collections while the replacement Tasks + compound_children
+        // never push, leaving a second device with no progress/composite content
+        // after the next pull. Run AFTER backfill so the payloads carry the
+        // final post-migration state (incl. backfilled isCompleted etc).
+        for taskId in transformedTaskIds {
+            let op = newCompoundTaskIds.contains(taskId) ? "create" : "update"
+            try enqueueTaskSync(db: db, taskId: taskId, op: op, now: now)
+        }
+        for childId in newCompoundChildIds {
+            try enqueueCompoundChildCreate(db: db, childId: childId, now: now)
         }
 
         // ── Step 7: Enqueue legacy DELETE sync ops ────────────────────────────
@@ -455,11 +485,21 @@ enum MigrationV7Helpers {
         return s
     }
 
-    /// Enqueues an UPDATE sync item for a Task row.
+    /// Enqueues a sync item for a Task row.
     ///
     /// Fetches the current Task state from the DB so the payload reflects the
-    /// post-migration row. Must be called AFTER the UPDATE that changed the row.
-    private static func enqueueTaskSync(db: Database, taskId: String, now: String) throws {
+    /// post-migration row. Must be called AFTER the UPDATE/INSERT that produced
+    /// the row.
+    ///
+    /// - Parameter op: "create" for tasks the migration introduced (composites
+    ///                 moved into `tasks`); "update" for in-place transforms +
+    ///                 backfills.
+    private static func enqueueTaskSync(
+        db: Database,
+        taskId: String,
+        op: String = "update",
+        now: String
+    ) throws {
         guard let taskRow = try Row.fetchOne(
             db,
             sql: "SELECT * FROM tasks WHERE id = ?",
@@ -472,7 +512,36 @@ enum MigrationV7Helpers {
             db: db,
             entityType: "tasks",
             entityId: taskId,
-            op: "update",
+            op: op,
+            payload: payload,
+            now: now
+        )
+    }
+
+    /// Enqueues a CREATE sync item for a CompoundChild row.
+    ///
+    /// Required for migrated compound_children rows (taskSteps + compositeNodes
+    /// transforms) so other devices receive the new shape — without this, the
+    /// legacy DELETE sync would tombstone the legacy collections in Firestore
+    /// while the replacement compoundChildren never push.
+    private static func enqueueCompoundChildCreate(
+        db: Database,
+        childId: String,
+        now: String
+    ) throws {
+        guard let childRow = try Row.fetchOne(
+            db,
+            sql: "SELECT * FROM compound_children WHERE id = ?",
+            arguments: [childId]
+        ) else { return }
+        let child = try CompoundChild(row: childRow)
+        let payloadData = try JSONEncoder().encode(child)
+        guard let payload = String(data: payloadData, encoding: .utf8) else { return }
+        try insertSyncItem(
+            db: db,
+            entityType: "compoundChildren",
+            entityId: childId,
+            op: "create",
             payload: payload,
             now: now
         )
