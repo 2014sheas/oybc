@@ -206,8 +206,13 @@ export const TaskSchema = z.object({
   progressCounters: z.array(TaskProgressCounterSchema).optional(),
   totalCompletions: z.number().int().min(0),
   totalInstances: z.number().int().min(0),
-  // Completion tracking fields (live on Task, not BoardTask)
-  isCompleted: z.boolean(),
+  // Completion tracking fields (live on Task, not BoardTask).
+  // `isCompleted` defaults to `false` on decode so pre-unification Firestore
+  // docs (written before global-completion landed) still pass pull validation
+  // on a fresh device. Mirrors iOS Task.swift's `decodeIfPresent ?? false`
+  // defensive decode at line 170. Without this default, first-sync against a
+  // project with stale remote docs would skip every legacy Task.
+  isCompleted: z.boolean().default(false),
   completedAt: z.string().datetime().optional(),
   currentCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),

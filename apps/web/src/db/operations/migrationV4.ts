@@ -128,9 +128,23 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
   }
 
   // Re-fetch all tasks now that step 3 may have added composite-derived rows.
+  // Two passes:
+  //   1. Default-backfill `isCompleted: false` on EVERY task (incl. compound +
+  //      unplaced primitives) so the post-migration Dexie row always has the
+  //      field — pre-unification rows lacked it entirely, which would now
+  //      skip pull validation under TaskSchema. Mirrors iOS's defensive
+  //      `decodeIfPresent ?? false` decode.
+  //   2. Apply legacy BoardTask-derived completion on top (primitives only;
+  //      compound is always derived at query time, never stored).
   const tasksAfterStep3 = await db.tasks.toArray();
   for (const task of tasksAfterStep3) {
-    // Compound completion is derived at query time — never stored globally.
+    // Pass 1 — defensive default for any task missing the field.
+    if (task.isCompleted === undefined) {
+      await db.tasks.update(task.id, { isCompleted: false, updatedAt: now });
+    }
+
+    // Pass 2 — completion backfill from legacy per-board state. Compound
+    // tasks skip this pass: their completion is always derived live.
     if (task.type === TaskType.COMPOUND) continue;
     const rowsForTask = legacyBoardTasks.filter((r) => r.taskId === task.id);
     if (rowsForTask.length === 0) continue;

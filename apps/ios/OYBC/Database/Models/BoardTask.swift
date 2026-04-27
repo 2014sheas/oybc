@@ -43,6 +43,46 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     static let board = belongsTo(Board.self)
     static let task = belongsTo(Task.self)
 
+    // MARK: - Memberwise init
+    //
+    // Swift would normally synthesise this for free, but the custom
+    // `init(from decoder:)` below suppresses synthesis. We declare it
+    // explicitly so callers can construct a `BoardTask` directly without
+    // a JSON round-trip + force-try (see BoardCreatorPanelView.makeBoardTask).
+    init(
+        id: String,
+        boardId: String,
+        taskId: String,
+        row: Int,
+        col: Int,
+        isCenter: Bool,
+        isAchievementSquare: Bool? = nil,
+        achievementType: AchievementType? = nil,
+        achievementCount: Int? = nil,
+        achievementTimeframe: Timeframe? = nil,
+        achievementProgress: Int? = nil,
+        createdAt: String,
+        updatedAt: String,
+        lastSyncedAt: String? = nil,
+        version: Int
+    ) {
+        self.id = id
+        self.boardId = boardId
+        self.taskId = taskId
+        self.row = row
+        self.col = col
+        self.isCenter = isCenter
+        self.isAchievementSquare = isAchievementSquare
+        self.achievementType = achievementType
+        self.achievementCount = achievementCount
+        self.achievementTimeframe = achievementTimeframe
+        self.achievementProgress = achievementProgress
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.lastSyncedAt = lastSyncedAt
+        self.version = version
+    }
+
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {

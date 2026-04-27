@@ -190,11 +190,18 @@ describe('TaskSchema — completion fields', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects a task with isCompleted missing (required field)', () => {
+  it('defaults isCompleted to false when missing (defensive decode for stale Firestore docs)', () => {
+    // Pre-unification Firestore docs lack `isCompleted` because the field
+    // didn't exist on Task before global completion landed. Pull validation
+    // must accept those docs and default the field, mirroring iOS Task.swift's
+    // `decodeIfPresent ?? false` decode.
     const base = validNormalTask();
     delete (base as Record<string, unknown>).isCompleted;
     const result = TaskSchema.safeParse(base);
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.isCompleted).toBe(false);
+    }
   });
 
   it('accepts a task with currentCount=0', () => {

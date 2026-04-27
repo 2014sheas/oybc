@@ -8,9 +8,11 @@ import { OperatorType, TaskType } from '../constants/enums';
  * - Global completion state lives on Task itself (`isCompleted`, `currentCount`,
  *   `completedAt`). Completing a task on any board reflects on every board it
  *   appears on. BoardTask is now a pure placement record.
- * - For compound Tasks (`type='compound'`), `isCompleted` is structurally
- *   present but never written or read — derive completion via the evaluator
- *   (see `compoundEvaluation.ts`).
+ * - For compound Tasks (`type='compound'`), `isCompleted` is written
+ *   defensively as `false` for column uniformity (so Firestore + Zod always
+ *   see the field) but is never *read* — derive completion at evaluation
+ *   time via `evaluateCompound()` instead. Reading `isCompleted` directly
+ *   off a compound row is a bug.
  * - UUID primary key (offline creation)
  * - Aggregate stats track usage across boards
  */
@@ -42,11 +44,12 @@ export interface Task {
   progressCounters?: TaskProgressCounter[];
 
   // Global completion state
-  //   - STORED for primitives (NORMAL / COUNTING): the actual value
-  //   - PRESENT on compound rows for column uniformity, but NEVER WRITTEN and
-  //     NEVER READ. Consumers must resolve compound completion via
-  //     evaluateCompound() (added in a later task). Reading isCompleted on
-  //     a compound Task is a bug.
+  //   - STORED for primitives (NORMAL / COUNTING): the actual value.
+  //   - STORED as `false` on compound rows for column uniformity (so the
+  //     field is always present in Firestore docs + Zod-validated payloads),
+  //     but NEVER READ. Consumers must resolve compound completion via
+  //     evaluateCompound(). Reading isCompleted directly off a compound row
+  //     is a bug.
   isCompleted: boolean;          // Default false
   completedAt?: string;          // ISO8601
   currentCount?: number;         // For counting tasks (NOTE: moved here from BoardTask)

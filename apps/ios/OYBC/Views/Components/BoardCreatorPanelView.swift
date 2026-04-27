@@ -606,24 +606,22 @@ struct BoardCreatorPanelView: View {
                 let centerCol = size / 2
                 var boardTasks: [BoardTask] = []
 
-                // Local helper — builds a BoardTask using only the current schema fields
-                // (no isCompleted / currentCount / completedStepIds which were removed in
-                // the compound-tasks unification). Phase 5 will replace this with a proper
-                // factory once completion state moves fully to Task.
+                // Builds a BoardTask using the explicit memberwise initializer.
+                // Compound-tasks unification removed isCompleted / currentCount /
+                // completedStepIds from BoardTask — completion now lives globally on
+                // Task — so this factory only sets placement + sync metadata.
                 func makeBoardTask(boardId: String, taskId: String, row: Int, col: Int, now: String, isCenter: Bool) -> BoardTask {
-                    let dict: [String: Any] = [
-                        "id": UUID().uuidString.lowercased(),
-                        "boardId": boardId,
-                        "taskId": taskId,
-                        "row": row,
-                        "col": col,
-                        "isCenter": isCenter,
-                        "createdAt": now,
-                        "updatedAt": now,
-                        "version": 1
-                    ]
-                    let data = try! JSONSerialization.data(withJSONObject: dict) // swiftlint:disable:this force_try
-                    return try! JSONDecoder().decode(BoardTask.self, from: data) // swiftlint:disable:this force_try
+                    BoardTask(
+                        id: UUID().uuidString.lowercased(),
+                        boardId: boardId,
+                        taskId: taskId,
+                        row: row,
+                        col: col,
+                        isCenter: isCenter,
+                        createdAt: now,
+                        updatedAt: now,
+                        version: 1
+                    )
                 }
 
                 // For CHOSEN center type, place the selected task at the center cell first.
