@@ -29,6 +29,15 @@ import styles from './BoardPlayPage.module.css';
 
 const FLASH_MS = 3000;
 
+// Module-scoped frozen empty arrays. Reused as a stable fallback for
+// `useLiveQuery(...) ?? FALLBACK` so React Compiler can preserve memoization
+// of downstream useCallback/useMemo deps; an inline `?? []` re-allocates on
+// every render and trips `react-hooks/preserve-manual-memoization`. Typed as
+// the mutable element array because consumers (legacy step helpers) require
+// `T[]`, not `readonly T[]`; the runtime frozen array still throws on mutation.
+const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+const EMPTY_TASK_STEPS = Object.freeze([]) as unknown as TaskStep[];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FlashMessage {
@@ -54,19 +63,19 @@ export function BoardPlayPage(): React.ReactElement {
   // undefined = still loading, null = resolved but not found, Board = found
   const boardQuery = useBoard(id);
   const board = boardQuery === undefined ? undefined : (boardQuery ?? null);
-  const boardTasks = useBoardTasks(id) ?? [];
+  const boardTasks = useBoardTasks(id) ?? EMPTY_BOARD_TASKS;
   const allTaskSteps: TaskStep[] =
     useLiveQuery(
       () => db.taskSteps.filter((s: TaskStep) => !s.isDeleted).toArray(),
       []
-    ) ?? [];
+    ) ?? EMPTY_TASK_STEPS;
 
   // Compound resolution data (all BoardTasks workspace-wide for child lookup).
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(user?.id);
 
   // Workspace-wide BoardTask list for compound child toggle fallback.
   const allBoardTasks: BoardTask[] =
-    useLiveQuery(() => db.boardTasks.toArray(), []) ?? [];
+    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
 
   // ── UI state ───────────────────────────────────────────────────────────
 

@@ -6,6 +6,10 @@ import { useTasks } from '../../hooks';
 
 export type ExistingFilter = 'all' | 'normal' | 'counting' | 'progress' | 'composite';
 
+// Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
+const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
+const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
+
 /**
  * Loads the user's task library — unified under the compound model.
  *
@@ -34,7 +38,7 @@ export interface TaskLibrary {
 }
 
 export function useTaskLibrary(userId: string | undefined): TaskLibrary {
-  const allTasks = useTasks(userId) ?? [];
+  const allTasks = useTasks(userId) ?? EMPTY_TASKS;
 
   // Workspace-wide compoundChildren — small-N, no per-user filter (children
   // don't carry userId; they're scoped via the parent Task's userId, which
@@ -44,7 +48,7 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     useLiveQuery(
       () => db.compoundChildren.filter((c: CompoundChild) => !c.isDeleted).toArray(),
       [],
-    ) ?? [];
+    ) ?? EMPTY_COMPOUND_CHILDREN;
 
   const taskMap = useMemo(() => {
     const m: Record<string, Task> = {};

@@ -4,6 +4,7 @@ import {
   OperatorType,
   TaskType,
   type Task,
+  type BoardTask,
   type CompoundChild,
   type CreateCompoundChildEntry,
 } from '@oybc/shared';
@@ -25,6 +26,11 @@ import {
 } from './compositeSubtaskDraft';
 import type { LibraryDiff } from './LibraryPickerSheet';
 import styles from './CompositeTaskWizard.module.css';
+
+// Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
+const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
+const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
 
 export interface CompositeTaskWizardProps {
   /** User ID for task ownership. Defaults to playground user when omitted. */
@@ -95,7 +101,7 @@ export function CompositeTaskWizard({
         .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type !== TaskType.COMPOUND)
         .toArray(),
     [resolvedUserId],
-  ) ?? [];
+  ) ?? EMPTY_TASKS;
 
   // Compound tasks in the library (formerly "compositeTasks").
   const allCompoundTasks: Task[] = useLiveQuery(
@@ -104,16 +110,16 @@ export function CompositeTaskWizard({
         .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type === TaskType.COMPOUND)
         .toArray(),
     [resolvedUserId],
-  ) ?? [];
+  ) ?? EMPTY_TASKS;
 
   // Usage hints for the existing-task picker.
-  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? [];
+  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
 
   // compoundChildren — used to compute child counts + leaf previews for compound tasks.
   const allCompoundChildren: CompoundChild[] = useLiveQuery(
     () => db.compoundChildren.filter((c) => !c.isDeleted).toArray(),
     [],
-  ) ?? [];
+  ) ?? EMPTY_COMPOUND_CHILDREN;
 
   /** taskId → count of distinct board IDs it's placed on. */
   const taskBoardCounts = useMemo(() => {
