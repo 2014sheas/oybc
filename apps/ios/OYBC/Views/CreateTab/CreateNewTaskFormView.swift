@@ -37,6 +37,11 @@ struct CreateNewTaskFormView: View {
             .pickerStyle(.segmented)
             .onChange(of: form.taskType) {
                 form.clearFeedback()
+                // Clear the template AND the action/unit/maxCount fields it
+                // populated — otherwise switching away from Counting and back
+                // leaves stale fields with the picker showing the "Use template"
+                // affordance, silently submitting another task's action+unit.
+                form.clearTemplate()
             }
 
             if form.taskType == .composite {
@@ -108,6 +113,16 @@ struct CreateNewTaskFormView: View {
             Text("Counting Details")
                 .font(.subheadline)
                 .fontWeight(.semibold)
+
+            // "Derive from existing" affordance — only shown when userId is available.
+            if let uid = userId {
+                CountingTemplatePickerView(
+                    userId: uid,
+                    selectedTemplate: form.countingDeriveFromTask,
+                    onSelect: { form.applyTemplate($0) },
+                    onClear: { form.clearTemplate() }
+                )
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Action (e.g. Run, Read)", text: $form.countingAction)

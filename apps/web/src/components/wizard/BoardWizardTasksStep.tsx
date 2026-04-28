@@ -16,11 +16,15 @@ const FILTER_TABS: { value: TasksFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
-  { value: TaskType.PROGRESS, label: 'Progress' },
+  // 'progress' is a local string sentinel (NOT TaskType.PROGRESS, which is
+  // a deprecated alias being removed in Phase 8). The filter logic below
+  // maps it to compound+isOrdered=true. Same pattern as 'composite' for
+  // compound+isOrdered=false.
+  { value: 'progress', label: 'Progress' },
   { value: 'composite', label: 'Composite' },
 ];
 
-export type TasksFilter = 'all' | TaskType | 'composite';
+export type TasksFilter = 'all' | TaskType | 'progress' | 'composite';
 
 export interface BoardWizardTasksStepProps {
   /** User's full task + composite library (from `useTaskLibrary`). */
@@ -183,28 +187,32 @@ export function BoardWizardTasksStep({
       q.length === 0 || title.toLowerCase().includes(q);
 
     // Under the unified compound model:
-    //   - "Progress" filter = type=COMPOUND && isOrdered=true
+    //   - "Progress" filter = type=COMPOUND && isOrdered=true  → show in composites region
     //   - "Composite" filter (and the composites region) = type=COMPOUND && isOrdered!=true
     //   - "Normal"/"Counting" = primitives
-    //   - "All" pool = primitives only (compounds render in the composites region)
+    //   - "All" pool = primitives only (all compounds render in the composites region)
     const tasks =
       activeFilter === 'all'
         ? library.allTasks.filter((t) => t.type !== TaskType.COMPOUND && matches(t.title))
-        : activeFilter === 'composite'
+        : activeFilter === 'composite' || activeFilter === 'progress'
           ? []
-          : activeFilter === TaskType.PROGRESS
+          : library.allTasks.filter((t) => t.type === activeFilter && matches(t.title));
+
+    // Composites region shows ALL compound tasks under "All" and type-specific
+    // compound subsets under "Progress" / "Composite" filters so every compound
+    // is reachable, selectable as a whole, and expandable into its leaves.
+    const composites =
+      activeFilter === 'all'
+        ? library.allTasks.filter((t) => t.type === TaskType.COMPOUND && matches(t.title))
+        : activeFilter === 'composite'
+          ? library.allTasks.filter(
+              (t) => t.type === TaskType.COMPOUND && t.isOrdered !== true && matches(t.title),
+            )
+          : activeFilter === 'progress'
             ? library.allTasks.filter(
                 (t) => t.type === TaskType.COMPOUND && t.isOrdered === true && matches(t.title),
               )
-            : library.allTasks.filter((t) => t.type === activeFilter && matches(t.title));
-
-    const composites =
-      activeFilter === 'all' || activeFilter === 'composite'
-        ? library.allTasks.filter(
-            (t) =>
-              t.type === TaskType.COMPOUND && t.isOrdered !== true && matches(t.title),
-          )
-        : [];
+            : [];
 
     return { tasks, composites };
   }, [library, activeFilter, searchQuery]);
@@ -310,6 +318,7 @@ export function BoardWizardTasksStep({
 
           {visible.composites.map((ct) => {
             const isExpanded = expandedCompositeId === ct.id;
+            const isCompoundSelected = selectedTaskIds.has(ct.id);
             const leafCount = compositeSubtaskCounts[ct.id] ?? 0;
             const preview = compositeLeafPreviews[ct.id];
             const previewSubtitle = preview && preview.titles.length > 0
@@ -320,32 +329,45 @@ export function BoardWizardTasksStep({
             const leaves = compositeLeafTasks[ct.id] ?? [];
             return (
               <li key={ct.id}>
-                <button
-                  type="button"
-                  className={styles.row}
-                  onClick={() =>
-                    setExpandedCompositeId((prev) => (prev === ct.id ? null : ct.id))
-                  }
-                  aria-expanded={isExpanded}
-                >
-                  <span className={styles.leadingBar} aria-hidden="true" />
-                  <span
-                    className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ''}`}
-                    aria-hidden="true"
+                {/* Compound header row — two independent interaction zones:
+                 *  1. Row body (select toggle) — adds/removes the compound task itself.
+                 *  2. Disclosure button (chevron) — expands/collapses the leaf list. */}
+                <div className={isCompoundSelected ? styles.rowSelectedWrap : styles.rowWrap}>
+                  <button
+                    type="button"
+                    className={styles.row}
+                    onClick={() => handleToggle(ct.id)}
+                    aria-pressed={isCompoundSelected}
                   >
-                    ▶
-                  </span>
-                  <TypeBadge type="composite" size="small" letterOnly />
-                  <div className={styles.rowCenter}>
-                    <span className={styles.rowTitle}>{ct.title}</span>
-                    {previewSubtitle && (
-                      <span className={styles.rowSubtitle}>{previewSubtitle}</span>
-                    )}
-                  </div>
-                  <span className={styles.rowUsage}>
-                    {leafCount} subtask{leafCount === 1 ? '' : 's'}
-                  </span>
-                </button>
+                    <TypeBadge type="composite" size="small" letterOnly />
+                    <div className={styles.rowCenter}>
+                      <span className={styles.rowTitle}>{ct.title}</span>
+                      {previewSubtitle && (
+                        <span className={styles.rowSubtitle}>{previewSubtitle}</span>
+                      )}
+                    </div>
+                    <span className={styles.rowUsage}>
+                      {leafCount} subtask{leafCount === 1 ? '' : 's'}
+                    </span>
+                  </button>
+                  {/* Disclosure button — separate from the select tap target */}
+                  <button
+                    type="button"
+                    className={styles.disclosureButton}
+                    onClick={() =>
+                      setExpandedCompositeId((prev) => (prev === ct.id ? null : ct.id))
+                    }
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? 'Collapse subtasks' : 'Expand subtasks'}
+                  >
+                    <span
+                      className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ''}`}
+                      aria-hidden="true"
+                    >
+                      ▶
+                    </span>
+                  </button>
+                </div>
 
                 {isExpanded && (
                   <ul className={styles.leafList}>
@@ -454,13 +476,6 @@ function renderTaskRow({
         onClick={onToggle}
         aria-pressed={isSelected}
       >
-        <span className={styles.leadingBar} aria-hidden="true" />
-        <span
-          className={isSelected ? styles.checkboxOn : styles.checkbox}
-          aria-hidden="true"
-        >
-          {isSelected ? '✓' : ''}
-        </span>
         <TypeBadge type={task.type} size="small" letterOnly />
         <div className={styles.rowCenter}>
           <span className={styles.rowTitle}>{task.title}</span>
@@ -496,7 +511,10 @@ function buildTaskSubtitle(
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  if (task.type === TaskType.PROGRESS) {
+  // Former Progress tasks: now compound + isOrdered=true. Show "N step(s)"
+  // subtitle from compound children. Mirrors the iOS twin's
+  // `case .compound where task.isOrdered == true` branch.
+  if (task.type === TaskType.COMPOUND && task.isOrdered === true) {
     const n = taskStepCounts[task.id] ?? 0;
     if (n === 0) return '';
     return `${n} step${n === 1 ? '' : 's'}`;

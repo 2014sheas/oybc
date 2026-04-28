@@ -77,28 +77,35 @@ struct BoardWizardTasksStepView: View {
     private var visibleTasks: [Task] {
         let pool: [Task]
         switch activeFilter {
-        // Under the unified compound model, "progress" / "composite" are
-        // both `type=.compound` distinguished by `isOrdered`. Visible-task
-        // pools and the visible-composites list both pull from the same
-        // `library.libraryTasks` array.
+        // Under the unified compound model, all compound tasks (progress and
+        // composite) are rendered in the composites region below, so the
+        // primitives pool never includes compounds.
         case .all:       pool = library.libraryTasks.filter { $0.type != .compound }
         case .normal:    pool = library.libraryTasks.filter { $0.type == .normal }
         case .counting:  pool = library.libraryTasks.filter { $0.type == .counting }
-        case .progress:  pool = library.libraryTasks.filter { $0.type == .compound && $0.isOrdered == true }
+        case .progress:  pool = []
         case .composite: pool = []
         }
         return pool.filter { matches($0.title) }
     }
 
-    /// Compound-typed tasks shown alongside primitives. Despite the name
-    /// (kept for parity with the legacy "Composite" filter tab), this
-    /// includes both former Composite (isOrdered=false) and former
-    /// Progress (isOrdered=true) tasks under the unified compound model.
+    /// Compound-typed tasks shown in the composites region.
+    /// "All" shows every compound; "Composite" filter shows isOrdered=false;
+    /// "Progress" filter shows isOrdered=true. This makes every compound
+    /// reachable, selectable as a whole, and expandable into its leaves.
     private var visibleComposites: [OYBC.Task] {
         switch activeFilter {
-        case .all, .composite:
+        case .all:
+            return library.libraryTasks
+                .filter { $0.type == .compound }
+                .filter { matches($0.title) }
+        case .composite:
             return library.libraryTasks
                 .filter { $0.type == .compound && $0.isOrdered != true }
+                .filter { matches($0.title) }
+        case .progress:
+            return library.libraryTasks
+                .filter { $0.type == .compound && $0.isOrdered == true }
                 .filter { matches($0.title) }
         default:
             return []
@@ -344,13 +351,12 @@ struct BoardWizardTasksStepView: View {
             } label: {
                 HStack(spacing: 0) {
                     // Leading accent bar — visible only when selected.
+                    // Checkbox removed; selection is communicated entirely
+                    // through this bar + the tinted row background.
                     Rectangle()
                         .fill(isSelected ? Color.blue : Color.clear)
                         .frame(width: 3)
                     HStack(spacing: 12) {
-                        Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(isSelected ? .blue : .secondary)
                         TypeBadgeView(type: task.type.rawValue, size: .small, letterOnly: true)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(task.title)
@@ -397,6 +403,7 @@ struct BoardWizardTasksStepView: View {
     @ViewBuilder
     private func compositeRow(_ ct: OYBC.Task) -> some View {
         let isExpanded = expandedCompositeId == ct.id
+        let isCompoundSelected = selectedTaskIds.contains(ct.id)
         let leafCount = compositeSubtaskCounts[ct.id] ?? 0
         let preview = compositeLeafPreviews[ct.id]
         let previewSubtitle: String = {
@@ -408,43 +415,62 @@ struct BoardWizardTasksStepView: View {
         let leaves = leafTasks(for: ct.id)
 
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                expandedCompositeId = isExpanded ? nil : ct.id
-            } label: {
-                HStack(spacing: 0) {
-                    // No leading bar on composite rows — chevron is the
-                    // affordance; composites aren't themselves selected.
-                    Rectangle().fill(Color.clear).frame(width: 3)
-                    HStack(spacing: 12) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .foregroundColor(.secondary)
-                            .font(.caption.bold())
-                            .frame(width: 20)
-                        TypeBadgeView(type: "composite", size: .small, letterOnly: true)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(ct.title)
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                            if !previewSubtitle.isEmpty {
-                                Text(previewSubtitle)
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
+            // Compound header — two independent interaction zones:
+            //  1. Row body (select toggle) — adds/removes the compound task itself.
+            //  2. Disclosure button (chevron) — expands/collapses the leaf list.
+            HStack(spacing: 0) {
+                Button {
+                    toggleSelection(ct.id)
+                } label: {
+                    HStack(spacing: 0) {
+                        // Leading accent bar — visible only when selected.
+                        Rectangle()
+                            .fill(isCompoundSelected ? Color.blue : Color.clear)
+                            .frame(width: 3)
+                        HStack(spacing: 12) {
+                            TypeBadgeView(type: "composite", size: .small, letterOnly: true)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(ct.title)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
                                     .lineLimit(1)
+                                if !previewSubtitle.isEmpty {
+                                    Text(previewSubtitle)
+                                        .font(.footnote)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
                             }
+                            Spacer()
+                            Text("\(leafCount) subtask\(leafCount == 1 ? "" : "s")")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
-                        Spacer()
-                        Text("\(leafCount) subtask\(leafCount == 1 ? "" : "s")")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 12)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
+                    .background(isCompoundSelected ? Color.blue.opacity(0.10) : Color(.systemBackground))
                 }
-                .background(Color(.systemBackground))
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isCompoundSelected ? [.isSelected] : [])
+
+                // Disclosure button — separated by a hairline divider so
+                // tap targets are visually distinct.
+                Divider()
+                    .frame(width: 1)
+
+                Button {
+                    expandedCompositeId = isExpanded ? nil : ct.id
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .foregroundColor(.secondary)
+                        .font(.caption.bold())
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "Collapse subtasks" : "Expand subtasks")
             }
-            .buttonStyle(.plain)
 
             if isExpanded {
                 // Indented leaf list. Leaves use the same row layout as

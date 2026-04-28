@@ -47,6 +47,11 @@ final class CreateFormViewModel {
     var countingUnit: String = ""
     var countingMaxCount: String = ""
 
+    /// The counting Task currently used as a derivation template, or nil.
+    /// When set, `countingAction` and `countingUnit` are pre-filled from
+    /// this task. Only relevant when `taskType == .counting`.
+    var countingDeriveFromTask: OYBC.Task? = nil
+
     // Progress fields
     var progressSteps: [ProgressStepFormState] = [ProgressStepFormState()]
     var progressStepErrors: [UUID: ProgressStepFormErrors] = [:]
@@ -200,40 +205,64 @@ final class CreateFormViewModel {
             desc: trimmedDesc.isEmpty ? nil : trimmedDesc,
             now: now
         )
-        let newSteps: [TaskStep] = resolvedType == .progress
-            ? buildCreateSteps(taskId: taskId, userId: userId, now: now)
-            : []
+        // Progress submit becomes a compound write: one Task with
+        // type=.compound + isOrdered=true, plus one CompoundChild row per
+        // step (linked to an inline-created primitive child Task). Mirrors
+        // web's `useCreateFormState.handleSubmit` which routes Progress
+        // through `createCompound`.
+        let progressChildTasks: [Task]
+        let progressChildLinks: [CompoundChild]
+        if resolvedType == .progress {
+            let pair = buildCompoundChildrenForProgress(parentId: taskId, userId: userId, now: now)
+            progressChildTasks = pair.tasks
+            progressChildLinks = pair.children
+        } else {
+            progressChildTasks = []
+            progressChildLinks = []
+        }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                if newSteps.isEmpty {
+                if progressChildLinks.isEmpty {
                     try AppDatabase.shared.saveTask(newTask)
+                    try AppDatabase.shared.write { db in
+                        try SyncQueueBuilder.makeItem(
+                            entityType: "tasks",
+                            entityId: newTask.id,
+                            operationType: .create,
+                            payload: newTask,
+                            now: now
+                        ).save(db)
+                    }
                 } else {
                     try AppDatabase.shared.write { db in
                         try newTask.save(db)
-                        for var step in newSteps {
-                            // Create a standalone task for each step so the step
-                            // is immediately pool-addable via cross-board rollup.
-                            let stepTaskId = AppDatabase.generateUUID()
-                            let stepTask = Task(
-                                id: stepTaskId,
-                                userId: userId,
-                                title: step.title,
-                                type: step.type,
-                                action: step.action,
-                                unit: step.unit,
-                                maxCount: step.maxCount,
-                                totalCompletions: 0,
-                                totalInstances: 0,
-                                createdAt: now,
-                                updatedAt: now,
-                                version: 1,
-                                isDeleted: false
-                            )
-                            try stepTask.save(db)
-                            step.linkedTaskId = stepTaskId
-                            try step.save(db)
+                        try SyncQueueBuilder.makeItem(
+                            entityType: "tasks",
+                            entityId: newTask.id,
+                            operationType: .create,
+                            payload: newTask,
+                            now: now
+                        ).save(db)
+
+                        for (childTask, link) in zip(progressChildTasks, progressChildLinks) {
+                            try childTask.save(db)
+                            try SyncQueueBuilder.makeItem(
+                                entityType: "tasks",
+                                entityId: childTask.id,
+                                operationType: .create,
+                                payload: childTask,
+                                now: now
+                            ).save(db)
+                            try link.save(db)
+                            try SyncQueueBuilder.makeItem(
+                                entityType: "compoundChildren",
+                                entityId: link.id,
+                                operationType: .create,
+                                payload: link,
+                                now: now
+                            ).save(db)
                         }
                     }
                 }
@@ -267,6 +296,7 @@ final class CreateFormViewModel {
         countingAction = ""
         countingUnit = ""
         countingMaxCount = ""
+        countingDeriveFromTask = nil
         progressSteps = [ProgressStepFormState()]
         progressStepErrors = [:]
     }
@@ -276,6 +306,29 @@ final class CreateFormViewModel {
     func clearFeedback() {
         errorMessage = nil
         successMessage = nil
+    }
+
+    /// Applies a counting task as the derivation template: pre-fills
+    /// `countingAction` and `countingUnit` from the source task and clears
+    /// `countingMaxCount` so the user must enter a fresh value.
+    ///
+    /// - Parameter source: The counting `Task` to use as a template.
+    func applyTemplate(_ source: OYBC.Task) {
+        countingDeriveFromTask = source
+        countingAction = source.action ?? ""
+        countingUnit = source.unit ?? ""
+        countingMaxCount = ""
+        clearFeedback()
+    }
+
+    /// Clears the derivation template and resets `countingAction`,
+    /// `countingUnit`, and `countingMaxCount` back to empty strings.
+    func clearTemplate() {
+        countingDeriveFromTask = nil
+        countingAction = ""
+        countingUnit = ""
+        countingMaxCount = ""
+        clearFeedback()
     }
 
     // MARK: - Build helpers
@@ -301,9 +354,17 @@ final class CreateFormViewModel {
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )
         case .progress:
+            // Under the unified compound model, "Progress" is just a
+            // compound with `operator=.and` + `isOrdered=true`. The
+            // form's submit flow writes one CompoundChild row per
+            // step (linked to a primitive child Task).
             return Task(
                 id: id, userId: userId, title: title, description: desc,
-                type: .progress, totalCompletions: 0, totalInstances: 0,
+                type: .compound,
+                operatorType: .and,
+                threshold: nil,
+                isOrdered: true,
+                totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )
         case .compound:
@@ -315,11 +376,16 @@ final class CreateFormViewModel {
         }
     }
 
-    /// Builds `TaskStep` records from the current progress-step form
-    /// state. Counting steps with a blank title get an auto-generated
-    /// title matching the shared `generateCounterTaskTitle` format.
-    private func buildCreateSteps(taskId: String, userId: String, now: String) -> [TaskStep] {
-        progressSteps.enumerated().map { index, stepForm in
+    /// Builds the unified-compound write set for a Progress submit:
+    /// one freshly-allocated child Task per step (so each step is
+    /// independently pool-addable, mirroring legacy progress-step
+    /// behavior) plus the corresponding CompoundChild link rows.
+    /// Counting steps with a blank title get an auto-generated title.
+    /// Mirrors web's `createCompound(...autoCreate...)` path.
+    private func buildCompoundChildrenForProgress(parentId: String, userId: String, now: String) -> (tasks: [Task], children: [CompoundChild]) {
+        var tasks: [Task] = []
+        var children: [CompoundChild] = []
+        for (index, stepForm) in progressSteps.enumerated() {
             let trimmedAction = stepForm.action.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedUnit = stepForm.unit.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedTitle = stepForm.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -330,20 +396,39 @@ final class CreateFormViewModel {
             } else {
                 resolvedStepTitle = trimmedTitle
             }
-            return TaskStep(
-                id: AppDatabase.generateUUID(),
-                taskId: taskId,
-                stepIndex: index,
+            let childTaskId = AppDatabase.generateUUID()
+            let childTask = Task(
+                id: childTaskId,
+                userId: userId,
                 title: resolvedStepTitle,
+                description: nil,
                 type: stepForm.type == .counting ? .counting : .normal,
                 action: stepForm.type == .counting ? trimmedAction : nil,
                 unit: stepForm.type == .counting ? trimmedUnit : nil,
                 maxCount: stepForm.type == .counting ? Int(stepForm.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)) : nil,
+                totalCompletions: 0,
+                totalInstances: 0,
                 createdAt: now,
                 updatedAt: now,
                 version: 1,
                 isDeleted: false
             )
+            let link = CompoundChild(
+                id: AppDatabase.generateUUID(),
+                compoundTaskId: parentId,
+                childTaskId: childTaskId,
+                childIndex: index,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+            tasks.append(childTask)
+            children.append(link)
         }
+        return (tasks, children)
     }
+
 }

@@ -2,6 +2,7 @@ import { TaskType, type Task } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
+import { CountingTemplatePicker } from '../../components/wizard/CountingTemplatePicker';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
 import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
 import {
@@ -111,6 +112,18 @@ export function CreateNewTaskForm({
           {/* Counting fields */}
           {form.taskType === TaskType.COUNTING && (
             <div className={styles.countingFields}>
+              {/* "Derive from existing" affordance — only when userId is
+                 resolved. Rendering with `userId === undefined` shows a stale
+                 "No counting tasks yet" empty-state during auth load. */}
+              {userId != null && (
+                <CountingTemplatePicker
+                  userId={userId}
+                  selectedTemplate={form.deriveFromTask}
+                  onSelect={form.applyTemplate}
+                  onClear={form.clearTemplate}
+                />
+              )}
+
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-action">
                   Action<span className={styles.required}>*</span>
