@@ -342,6 +342,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Soft Deletes**: Never hard delete. Use `isDeleted=true, deletedAt=timestamp`.
 - **Denormalized Stats**: Update stats when source data changes (e.g., `board.completedTasks`).
 - **Version Increment**: Always increment `version` field on updates (critical for conflict resolution).
+- **Atomic pull-path multi-writes**: When a sync pull does fetch + upsert + cross-board cascade (or any multi-step write), thread the `db: Database` (iOS) / pass-through inside `db.transaction('rw', [...], async () => { ... })` (web) so all writes share one transaction. A cascade-fail then rolls back the upsert; the safety-net pull retries cleanly. Don't run cascade in a separate write block with a `try/catch` that swallows — that's silent divergence with no recovery.
 
 ## Common Pitfalls
 
