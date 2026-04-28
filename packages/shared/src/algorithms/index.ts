@@ -20,6 +20,35 @@ export {
   evaluateCompositeTree,
 } from './compositeEvaluation';
 
+// ===== Compound tasks unification =====
+export {
+  evaluateCompound,
+} from './compoundEvaluation';
+
+export {
+  findTransitiveParentCompounds,
+  findAffectedBoardIds,
+  computeBoardStatsUpdate,
+} from './derivationPass';
+
+export type { BoardStatsUpdate } from './derivationPass';
+
+export {
+  progressTaskToCompound,
+  taskStepToCompoundChild,
+  compositeTaskToTask,
+  compositeNodeToCompoundChild,
+  backfillTaskCompletion,
+  collectEverCompletedStepIds,
+  shouldBackfillStepLinkedTaskAsComplete,
+} from './migrationHelpers';
+
+export type {
+  LegacyBoardTaskCompletion,
+  CompletionBackfillResult,
+} from './migrationHelpers';
+// ===== End compound tasks unification =====
+
 export {
   calculateCountingRollup,
   calculateProgressRollup,

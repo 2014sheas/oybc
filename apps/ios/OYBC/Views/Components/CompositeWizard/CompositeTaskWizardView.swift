@@ -12,8 +12,8 @@ struct CompositeTaskWizardView: View {
     /// User ID for task ownership. Defaults to playground user when omitted.
     var userId: String = playgroundUserId
 
-    /// Invoked with the newly created CompositeTask after a successful save.
-    var onCreated: ((CompositeTask) -> Void)? = nil
+    /// Invoked with the newly created compound Task after a successful save.
+    var onCreated: ((OYBC.Task) -> Void)? = nil
 
     // MARK: - Core form state
 
@@ -34,17 +34,20 @@ struct CompositeTaskWizardView: View {
 
     // MARK: - Library state
 
+    /// All non-compound tasks in the user's library (pool of potential children).
     @State private var libraryTasks: [OYBC.Task] = []
-    @State private var libraryCompositeTasks: [CompositeTask] = []
+    /// Compound tasks (type=.compound && !isOrdered) — used as selectable
+    /// nested children in the Build step.
+    @State private var libraryCompositeTasks: [OYBC.Task] = []
     /// taskId → count of distinct boards the task is placed on. Drives
     /// the "on N boards" hint in the existing-task picker. iOS twin of
     /// `taskBoardCounts` on web.
     @State private var taskBoardCounts: [String: Int] = [:]
     /// taskId → number of non-deleted steps (progress tasks only).
     @State private var taskStepCounts: [String: Int] = [:]
-    /// compositeTaskId → number of leaf subtasks.
+    /// compoundTaskId → number of direct children (CompoundChild rows).
     @State private var compositeSubtaskCounts: [String: Int] = [:]
-    /// compositeTaskId → first few leaf titles for the picker subtitle.
+    /// compoundTaskId → first few child task titles for the picker subtitle.
     @State private var compositeLeafPreviews: [String: CompositeLeafPreview] = [:]
 
     // MARK: - Body
@@ -176,72 +179,72 @@ struct CompositeTaskWizardView: View {
     private func loadLibrary() {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let tasks = try AppDatabase.shared.fetchTasks(userId: userId)
-                let composites: [CompositeTask] = try AppDatabase.shared.read { db in
-                    try CompositeTask
+                // All tasks for this user.
+                let allTasks: [OYBC.Task] = try AppDatabase.shared.read { db in
+                    try OYBC.Task
                         .filter(Column("userId") == userId && Column("isDeleted") == false)
-                        .order(Column("updatedAt").desc)
+                        .order(Column("title"))
                         .fetchAll(db)
                 }
-                // Usage hints for the picker.
+                // Split into primitives + compound (composite) tasks.
+                let primitives = allTasks.filter { $0.type != .compound }
+                let compounds  = allTasks.filter { $0.type == .compound && $0.isOrdered != true }
+
+                // Usage hints: board placements per task.
                 let boardTasks: [BoardTask] = try AppDatabase.shared.read { db in
                     try BoardTask.fetchAll(db)
                 }
-                let nodes: [CompositeNode] = try AppDatabase.shared.read { db in
-                    try CompositeNode
-                        .filter(Column("isDeleted") == false)
-                        .fetchAll(db)
+                var boardsByTask: [String: Set<String>] = [:]
+                for bt in boardTasks {
+                    boardsByTask[bt.taskId, default: []].insert(bt.boardId)
                 }
+                let taskCounts = boardsByTask.mapValues { $0.count }
+
+                // Step counts for progress tasks.
                 let steps: [TaskStep] = try AppDatabase.shared.read { db in
                     try TaskStep
                         .filter(Column("isDeleted") == false)
                         .fetchAll(db)
                 }
-
-                var boardsByTask: [String: Set<String>] = [:]
-                for bt in boardTasks {
-                    boardsByTask[bt.taskId, default: []].insert(bt.boardId)
-                }
-                let taskCounts: [String: Int] = boardsByTask.mapValues { $0.count }
-
                 var stepCounts: [String: Int] = [:]
                 for step in steps {
                     stepCounts[step.taskId, default: 0] += 1
                 }
 
-                var leafCounts: [String: Int] = [:]
-                var leavesByComposite: [String: [CompositeNode]] = [:]
-                for node in nodes where node.nodeType == .leaf {
-                    leafCounts[node.compositeTaskId, default: 0] += 1
-                    leavesByComposite[node.compositeTaskId, default: []].append(node)
+                // CompoundChild counts + previews for compound tasks.
+                let children: [CompoundChild] = try AppDatabase.shared.read { db in
+                    try CompoundChild
+                        .filter(Column("isDeleted") == false)
+                        .fetchAll(db)
                 }
-
-                // Build composite leaf previews (first 3 leaf titles).
-                let taskTitleById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
-                let compositeTitleById = Dictionary(uniqueKeysWithValues: composites.map { ($0.id, $0.title) })
+                var childCounts: [String: Int] = [:]
+                var childrenByCompound: [String: [CompoundChild]] = [:]
+                for child in children {
+                    childCounts[child.compoundTaskId, default: 0] += 1
+                    childrenByCompound[child.compoundTaskId, default: []].append(child)
+                }
+                let taskTitleById = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0.title) })
                 var previews: [String: CompositeLeafPreview] = [:]
-                for (compositeId, leaves) in leavesByComposite {
-                    let sortedLeaves = leaves.sorted { $0.nodeIndex < $1.nodeIndex }
+                for (compoundId, kids) in childrenByCompound {
+                    let sorted = kids.sorted { $0.childIndex < $1.childIndex }
                     var titles: [String] = []
-                    for leaf in sortedLeaves.prefix(3) {
-                        if let tid = leaf.taskId, let t = taskTitleById[tid] {
-                            titles.append(t)
-                        } else if let cid = leaf.childCompositeTaskId, let t = compositeTitleById[cid] {
+                    for child in sorted.prefix(3) {
+                        if let t = taskTitleById[child.childTaskId] {
                             titles.append(t)
                         }
                     }
-                    previews[compositeId] = CompositeLeafPreview(
+                    previews[compoundId] = CompositeLeafPreview(
                         titles: titles,
-                        totalLeaves: sortedLeaves.count
+                        totalLeaves: sorted.count
                     )
                 }
 
                 DispatchQueue.main.async {
-                    self.libraryTasks = tasks
-                    self.libraryCompositeTasks = composites
+                    self.libraryTasks = primitives
+                    self.libraryCompositeTasks = compounds
                     self.taskBoardCounts = taskCounts
                     self.taskStepCounts = stepCounts
-                    self.compositeSubtaskCounts = leafCounts
+                    self.compositeSubtaskCounts = childCounts
                     self.compositeLeafPreviews = previews
                 }
             } catch {
@@ -254,13 +257,32 @@ struct CompositeTaskWizardView: View {
 
     // MARK: - Submit
 
+    /// Creates the compound task in the unified schema:
+    /// 1. Insert a Task row with type=.compound + operator/threshold fields.
+    /// 2. For each existing-reference subtask: create CompoundChild row.
+    /// 3. For each inline-created primitive (.normal / .counting): insert
+    ///    the new Task first, then the CompoundChild row.
+    /// 4. Inline progress-subtask creation is NOT supported here — drop with
+    ///    a TODO for Phase 8 (matches web's decision in commit 63e90f3).
+    /// All writes are atomic in a single AppDatabase.write block.
     private func handleCreateCompositeTask() {
+        // Precondition: inline progress subtasks aren't yet supported under the unified
+        // model — autoCreate doesn't carry nested children. Block submission with a clear
+        // error so the user understands the workaround, rather than silently skipping the
+        // item and losing data (which is what the `continue` in the save loop would do).
+        let hasInlineProgress = subtaskList.items.contains { item in
+            item.mode == .inline_ && item.inlineType == .progress
+        }
+        if hasInlineProgress {
+            errorMessage = "Inline Progress subtasks aren't supported yet — create the inner Progress task first as a standalone task, then add it here as an existing subtask."
+            return
+        }
+
         errorMessage = nil
         isSubmitting = true
 
         let now = AppDatabase.currentTimestamp()
-        let compositeTaskId = AppDatabase.generateUUID()
-        let rootNodeId = AppDatabase.generateUUID()
+        let compoundTaskId = AppDatabase.generateUUID()
         let capturedSubtasks = subtaskList.items
         let capturedTitle = compositeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let capturedOperator = operatorType
@@ -269,170 +291,118 @@ struct CompositeTaskWizardView: View {
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                try AppDatabase.shared.write { db in
-                    var resolvedLeaves: [(taskId: String?, childCompositeTaskId: String?)] = []
+                // Items to enqueue for sync AFTER the transaction.
+                var syncItems: [(entityType: String, entityId: String, payload: String)] = []
 
-                    for item in capturedSubtasks {
+                // Build the parent compound Task.
+                let compoundTask = OYBC.Task(
+                    id: compoundTaskId,
+                    userId: capturedUserId,
+                    title: capturedTitle,
+                    description: nil,
+                    type: .compound,
+                    operatorType: capturedOperator,
+                    threshold: capturedOperator == .mOfN ? capturedThreshold : nil,
+                    isOrdered: false,
+                    totalCompletions: 0,
+                    totalInstances: 0,
+                    createdAt: now,
+                    updatedAt: now,
+                    version: 1,
+                    isDeleted: false
+                )
+
+                if let payload = Self.encodePayload(compoundTask) {
+                    syncItems.append(("tasks", compoundTaskId, payload))
+                }
+
+                try AppDatabase.shared.write { db in
+                    try compoundTask.save(db)
+
+                    // Sync items get inserted at the end of this same transaction so
+                    // entity writes + sync entries land atomically. A crash between
+                    // them previously left the new compound unreachable from any
+                    // other device — the legacy two-block pattern was unsafe.
+                    for (index, item) in capturedSubtasks.enumerated() {
+                        var childTaskId: String
+
                         switch item.mode {
                         case .existing:
-                            if item.selectionType == .task {
-                                resolvedLeaves.append((taskId: item.selectedTaskId, childCompositeTaskId: nil))
-                            } else {
-                                resolvedLeaves.append((taskId: nil, childCompositeTaskId: item.selectedCompositeId))
-                            }
+                            // Reference to a task already in the library.
+                            childTaskId = item.selectionType == .task
+                                ? item.selectedTaskId
+                                : item.selectedCompositeId
+
                         case .inline_:
-                            let newTaskId = AppDatabase.generateUUID()
-                            let trimmedTitle = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                            // Inline-created primitive child task.
+                            let trimmedTitle  = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                             let trimmedAction = item.inlineAction.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let trimmedUnit = item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let parsedMax = Int(item.inlineMaxCountStr.trimmingCharacters(in: .whitespacesAndNewlines))
-                            let taskType: TaskType
+                            let trimmedUnit   = item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let parsedMax     = Int(item.inlineMaxCountStr.trimmingCharacters(in: .whitespacesAndNewlines))
+
                             switch item.inlineType {
-                            case .normal: taskType = .normal
-                            case .counting: taskType = .counting
-                            case .progress: taskType = .progress
-                            }
-                            // For counting tasks, mirror the shared
-                            // `generateCounterTaskTitle` fallback — if
-                            // the user left the title blank, derive it
-                            // from `action + max + unit`. Matches the
-                            // web wizard and the rest of the iOS create
-                            // flow.
-                            let resolvedTitle: String
-                            if item.inlineType == .counting && trimmedTitle.isEmpty {
-                                resolvedTitle = "\(trimmedAction) \(parsedMax ?? 0) \(trimmedUnit)"
-                            } else {
-                                resolvedTitle = trimmedTitle
-                            }
-                            let newTask = OYBC.Task(
-                                id: newTaskId,
-                                userId: capturedUserId,
-                                title: resolvedTitle,
-                                description: nil,
-                                type: taskType,
-                                action: item.inlineType == .counting ? trimmedAction : nil,
-                                unit: item.inlineType == .counting ? trimmedUnit : nil,
-                                maxCount: item.inlineType == .counting ? parsedMax : nil,
-                                totalCompletions: 0,
-                                totalInstances: 0,
-                                createdAt: now,
-                                updatedAt: now,
-                                version: 1,
-                                isDeleted: false
-                            )
-                            try newTask.save(db)
+                            case .progress:
+                                // TODO Phase 8: inline progress subtasks in the composite
+                                // wizard are not yet supported in the unified model.
+                                // Matches web's same decision (commit 63e90f3). Skip.
+                                continue
 
-                            if item.inlineType == .progress {
-                                for (stepIndex, step) in item.inlineSteps.enumerated() {
-                                    let stepTrimTitle = step.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let stepTrimAction = step.action.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let stepTrimUnit = step.unit.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let stepMax = Int(step.maxCount.trimmingCharacters(in: .whitespacesAndNewlines))
-                                    let stepIsCounting = step.type == .counting
-                                    // Mirror web: counting step with a
-                                    // blank title gets the derived
-                                    // `action + max + unit` title; other
-                                    // steps keep whatever the user typed.
-                                    let resolvedStepTitle: String
-                                    if stepIsCounting && stepTrimTitle.isEmpty {
-                                        resolvedStepTitle = "\(stepTrimAction) \(stepMax ?? 0) \(stepTrimUnit)"
-                                    } else {
-                                        resolvedStepTitle = stepTrimTitle
-                                    }
-                                    // Create a standalone Task per step
-                                    // (same as the primary createTask
-                                    // flow) so the step is immediately
-                                    // pool-addable and participates in
-                                    // cross-board rollup. Link it via
-                                    // TaskStep.linkedTaskId.
-                                    let stepTaskId = AppDatabase.generateUUID()
-                                    let stepTask = OYBC.Task(
-                                        id: stepTaskId,
-                                        userId: capturedUserId,
-                                        title: resolvedStepTitle,
-                                        description: nil,
-                                        type: stepIsCounting ? .counting : .normal,
-                                        action: stepIsCounting ? stepTrimAction : nil,
-                                        unit: stepIsCounting ? stepTrimUnit : nil,
-                                        maxCount: stepIsCounting ? stepMax : nil,
-                                        totalCompletions: 0,
-                                        totalInstances: 0,
-                                        createdAt: now,
-                                        updatedAt: now,
-                                        version: 1,
-                                        isDeleted: false
-                                    )
-                                    try stepTask.save(db)
-                                    let taskStep = TaskStep(
-                                        id: AppDatabase.generateUUID(),
-                                        taskId: newTaskId,
-                                        stepIndex: stepIndex,
-                                        title: resolvedStepTitle,
-                                        type: stepIsCounting ? .counting : .normal,
-                                        action: stepIsCounting ? stepTrimAction : nil,
-                                        unit: stepIsCounting ? stepTrimUnit : nil,
-                                        maxCount: stepIsCounting ? stepMax : nil,
-                                        linkedTaskId: stepTaskId,
-                                        createdAt: now,
-                                        updatedAt: now,
-                                        lastSyncedAt: nil,
-                                        version: 1,
-                                        isDeleted: false,
-                                        deletedAt: nil
-                                    )
-                                    try taskStep.save(db)
+                            case .normal:
+                                let newId   = AppDatabase.generateUUID()
+                                let newTask = OYBC.Task(
+                                    id: newId,
+                                    userId: capturedUserId,
+                                    title: trimmedTitle,
+                                    description: nil,
+                                    type: .normal,
+                                    totalCompletions: 0,
+                                    totalInstances: 0,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    version: 1,
+                                    isDeleted: false
+                                )
+                                try newTask.save(db)
+                                if let p = Self.encodePayload(newTask) {
+                                    syncItems.append(("tasks", newId, p))
                                 }
+                                childTaskId = newId
+
+                            case .counting:
+                                let newId = AppDatabase.generateUUID()
+                                // Mirror shared `generateCounterTaskTitle` fallback.
+                                let resolvedTitle: String = trimmedTitle.isEmpty
+                                    ? "\(trimmedAction) \(parsedMax ?? 0) \(trimmedUnit)"
+                                    : trimmedTitle
+                                let newTask = OYBC.Task(
+                                    id: newId,
+                                    userId: capturedUserId,
+                                    title: resolvedTitle,
+                                    description: nil,
+                                    type: .counting,
+                                    action: trimmedAction,
+                                    unit: trimmedUnit,
+                                    maxCount: parsedMax,
+                                    totalCompletions: 0,
+                                    totalInstances: 0,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    version: 1,
+                                    isDeleted: false
+                                )
+                                try newTask.save(db)
+                                if let p = Self.encodePayload(newTask) {
+                                    syncItems.append(("tasks", newId, p))
+                                }
+                                childTaskId = newId
                             }
-
-                            resolvedLeaves.append((taskId: newTaskId, childCompositeTaskId: nil))
                         }
-                    }
 
-                    let compositeTask = CompositeTask(
-                        id: compositeTaskId,
-                        userId: capturedUserId,
-                        title: capturedTitle,
-                        description: nil,
-                        rootNodeId: rootNodeId,
-                        createdAt: now,
-                        updatedAt: now,
-                        lastSyncedAt: nil,
-                        version: 1,
-                        isDeleted: false,
-                        deletedAt: nil
-                    )
-                    try compositeTask.save(db)
-
-                    let rootNode = CompositeNode(
-                        id: rootNodeId,
-                        compositeTaskId: compositeTaskId,
-                        parentNodeId: nil,
-                        nodeIndex: 0,
-                        nodeType: .operator,
-                        operatorType: capturedOperator,
-                        threshold: capturedOperator == .mOfN ? capturedThreshold : nil,
-                        taskId: nil,
-                        childCompositeTaskId: nil,
-                        createdAt: now,
-                        updatedAt: now,
-                        lastSyncedAt: nil,
-                        version: 1,
-                        isDeleted: false,
-                        deletedAt: nil
-                    )
-                    try rootNode.save(db)
-
-                    for (index, leaf) in resolvedLeaves.enumerated() {
-                        let leafNode = CompositeNode(
+                        let childRow = CompoundChild(
                             id: AppDatabase.generateUUID(),
-                            compositeTaskId: compositeTaskId,
-                            parentNodeId: rootNodeId,
-                            nodeIndex: index,
-                            nodeType: .leaf,
-                            operatorType: nil,
-                            threshold: nil,
-                            taskId: leaf.taskId,
-                            childCompositeTaskId: leaf.childCompositeTaskId,
+                            compoundTaskId: compoundTaskId,
+                            childTaskId: childTaskId,
+                            childIndex: index,
                             createdAt: now,
                             updatedAt: now,
                             lastSyncedAt: nil,
@@ -440,30 +410,40 @@ struct CompositeTaskWizardView: View {
                             isDeleted: false,
                             deletedAt: nil
                         )
-                        try leafNode.save(db)
+                        try childRow.save(db)
+                        if let p = Self.encodePayload(childRow) {
+                            syncItems.append(("compound_children", childRow.id, p))
+                        }
+                    }
+
+                    // Sync items inside the SAME transaction as the entity
+                    // writes — atomicity guarantees that either every entity
+                    // + every sync entry lands or nothing does. The legacy
+                    // two-block pattern dropped sync entries on a crash window.
+                    for item in syncItems {
+                        let syncItem = SyncQueueItem(
+                            id: AppDatabase.generateUUID(),
+                            entityType: item.entityType,
+                            entityId: item.entityId,
+                            operationType: .create,
+                            payload: item.payload,
+                            status: .pending,
+                            retryCount: 0,
+                            lastError: nil,
+                            createdAt: now,
+                            lastAttemptAt: nil,
+                            completedAt: nil,
+                            priority: 1
+                        )
+                        try syncItem.save(db)
                     }
                 }
 
                 DispatchQueue.main.async {
                     resetForm()
-                    successMessage = "Composite task created!"
+                    successMessage = "Compound task created!"
                     loadLibrary()
-                    if let callback = onCreated {
-                        let createdComposite = CompositeTask(
-                            id: compositeTaskId,
-                            userId: capturedUserId,
-                            title: capturedTitle,
-                            description: nil,
-                            rootNodeId: rootNodeId,
-                            createdAt: now,
-                            updatedAt: now,
-                            lastSyncedAt: nil,
-                            version: 1,
-                            isDeleted: false,
-                            deletedAt: nil
-                        )
-                        callback(createdComposite)
-                    }
+                    onCreated?(compoundTask)
                     DispatchQueue.main.asyncAfter(deadline: .now() + successDismissSeconds) {
                         successMessage = nil
                     }
@@ -475,5 +455,17 @@ struct CompositeTaskWizardView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Helpers
+
+    /// JSON-encodes a Codable value to a UTF-8 string suitable for the sync
+    /// queue payload column. Returns nil on encoding failure (non-fatal —
+    /// the local write already succeeded; the row will be picked up on the
+    /// next full pull).
+    private static func encodePayload<T: Codable>(_ value: T) -> String? {
+        guard let data = try? JSONEncoder().encode(value),
+              let str  = String(data: data, encoding: .utf8) else { return nil }
+        return str
     }
 }

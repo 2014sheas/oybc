@@ -19,7 +19,7 @@ struct NewTaskSheetView: View {
     /// Fired when a composite task is created. The wizard typically
     /// reloads the library so the composite shows up under filters; it
     /// is NOT auto-selected because composites can't be boarded directly.
-    let onCompositeCreated: (CompositeTask) -> Void
+    let onCompositeCreated: (OYBC.Task) -> Void
 
     /// Called after either creation callback so the parent's library
     /// view-model can refresh in the same turn the sheet dismisses.

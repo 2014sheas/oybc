@@ -3,15 +3,17 @@ import { useParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   CenterSquareType,
+  SyncOperationType,
   type TaskStep,
-  type Task,
   type BoardTask,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
-import { useBoard, useBoardTasks, useTasks } from '../hooks';
+import { useBoard, useBoardTasks } from '../hooks';
+import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { db } from '../db/database';
-import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
-import { handleTaskCompletion } from '../db/operations/orchestration';
+import { taskToSquareData, taskToSquareState } from '../db/adapters';
+import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
+import { addToSyncQueue } from '../db/operations/syncQueue';
 import {
   InteractiveTaskSquare,
   DetailModal,
@@ -26,6 +28,15 @@ import styles from './BoardPlayPage.module.css';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FLASH_MS = 3000;
+
+// Module-scoped frozen empty arrays. Reused as a stable fallback for
+// `useLiveQuery(...) ?? FALLBACK` so React Compiler can preserve memoization
+// of downstream useCallback/useMemo deps; an inline `?? []` re-allocates on
+// every render and trips `react-hooks/preserve-manual-memoization`. Typed as
+// the mutable element array because consumers (legacy step helpers) require
+// `T[]`, not `readonly T[]`; the runtime frozen array still throws on mutation.
+const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+const EMPTY_TASK_STEPS = Object.freeze([]) as unknown as TaskStep[];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,13 +63,19 @@ export function BoardPlayPage(): React.ReactElement {
   // undefined = still loading, null = resolved but not found, Board = found
   const boardQuery = useBoard(id);
   const board = boardQuery === undefined ? undefined : (boardQuery ?? null);
-  const boardTasks = useBoardTasks(id) ?? [];
-  const allTasks = useTasks(user?.id) ?? [];
-  const allTaskSteps: TaskStep[] =
-    useLiveQuery(
-      () => db.taskSteps.filter((s: TaskStep) => !s.isDeleted).toArray(),
-      []
-    ) ?? [];
+  const boardTasks = useBoardTasks(id) ?? EMPTY_BOARD_TASKS;
+  // Post-unification, taskSteps was dropped in Dexie v5. The adapter still
+  // accepts a steps array for the legacy progress branch, but every consumer
+  // here passes EMPTY_TASK_STEPS — the live query was needlessly hitting a
+  // deregistered store. The adapter's progress branch is itself dead code
+  // post-migration; Phase 8 will remove it.
+
+  // Compound resolution data (all BoardTasks workspace-wide for child lookup).
+  const { taskMap, compoundChildrenByCompound } = useTaskLibrary(user?.id);
+
+  // Workspace-wide BoardTask list for compound child toggle fallback.
+  const allBoardTasks: BoardTask[] =
+    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
 
   // ── UI state ───────────────────────────────────────────────────────────
 
@@ -74,8 +91,7 @@ export function BoardPlayPage(): React.ReactElement {
 
   // ── Derived data ───────────────────────────────────────────────────────
 
-  const taskMap: Record<string, Task> = {};
-  for (const t of allTasks) taskMap[t.id] = t;
+  // taskMap is provided by useTaskLibrary — no need to rebuild it here.
 
   const sortedBoardTasks = [...boardTasks].sort((a, b) =>
     a.row !== b.row ? a.row - b.row : a.col - b.col
@@ -135,8 +151,68 @@ export function BoardPlayPage(): React.ReactElement {
         setContextMenu(null);
       }
     },
-     
+
     [id]
+  );
+
+  /**
+   * Handles toggling a compound child task from the detail sheet.
+   *
+   * Looks up the child's BoardTask on any board and delegates to
+   * `handleTaskCompletion` so the global Task update and cross-board cascade
+   * run atomically. If the child isn't placed on any board, falls back to a
+   * direct Task update via the orchestration layer using its own BoardTask
+   * id (or bails out gracefully).
+   */
+  const handleCompoundChildToggle = useCallback(
+    async (childTaskId: string): Promise<void> => {
+      if (isExpired) return;
+      const childTask = taskMap[childTaskId];
+      if (!childTask) return;
+
+      // Find any BoardTask for this child Task on the current board first,
+      // then fall back to any board in the workspace.
+      const childBt =
+        boardTasks.find((bt) => bt.taskId === childTaskId) ??
+        allBoardTasks.find((bt) => bt.taskId === childTaskId);
+
+      if (childBt) {
+        await handleComplete(childBt.id, { isCompleted: !childTask.isCompleted });
+      } else {
+        // Child is not placed on any board, but the parent compound (on THIS
+        // board, since the user is opening its detail sheet) still derives
+        // through this child — so we must run the board cascade to recompute
+        // bingo state + denormalised board stats. Wrap the Task update + sync
+        // enqueue + cascade in a single Dexie transaction so a downstream
+        // failure rolls back the partial writes; previously a crash between
+        // the task update and the cascade would leave the Task flipped but
+        // board stats stale forever.
+        try {
+          const now = new Date().toISOString();
+          await db.transaction(
+            'rw',
+            [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+            async () => {
+              await db.tasks.update(childTaskId, {
+                isCompleted: !childTask.isCompleted,
+                completedAt: !childTask.isCompleted ? now : undefined,
+                updatedAt: now,
+                version: childTask.version + 1,
+              });
+              const updated = await db.tasks.get(childTaskId);
+              if (updated) {
+                await addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
+              }
+              await runBoardCascadeForTask(childTaskId);
+            },
+          );
+        } catch (err) {
+          console.error('Compound child toggle failed:', err);
+          showFlash('Something went wrong', 'bingo');
+        }
+      }
+    },
+    [isExpired, taskMap, boardTasks, allBoardTasks, handleComplete]
   );
 
   // ── Board not found ────────────────────────────────────────────────────
@@ -238,8 +314,15 @@ export function BoardPlayPage(): React.ReactElement {
                   continue;
                 }
 
-                const squareData = taskToSquareData(task, allTaskSteps);
-                const squareState = boardTaskToSquareState(bt);
+                const taskChildren = compoundChildrenByCompound[task.id] ?? [];
+                const squareData = taskToSquareData(
+                  task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+                );
+                const squareState = taskToSquareState(
+                  task, taskChildren, taskMap, compoundChildrenByCompound,
+                );
+                const taskIsCompleted = squareState.isCompleted;
+                const taskCurrentCount = task.currentCount ?? 0;
 
                 cells.push(
                   <InteractiveTaskSquare
@@ -248,15 +331,15 @@ export function BoardPlayPage(): React.ReactElement {
                     state={squareState}
                     onAct={() => {
                       if (isExpired) return;
-                      if (squareData.type === 'progress') {
+                      if (squareData.type === 'progress' || squareData.type === 'compound') {
                         setSelectedSquareId(bt.id);
                       } else if (squareData.type === 'counting') {
-                        const next = (bt.currentCount ?? 0) + 1;
+                        const next = taskCurrentCount + 1;
                         if (squareData.maxCount && next > squareData.maxCount) return;
                         void handleComplete(bt.id, { currentCount: next });
                       } else {
                         void handleComplete(bt.id, {
-                          isCompleted: !bt.isCompleted,
+                          isCompleted: !taskIsCompleted,
                         });
                       }
                     }}
@@ -264,6 +347,9 @@ export function BoardPlayPage(): React.ReactElement {
                       if (isExpired) return;
                       setContextMenu({ squareId: bt.id, x: e.clientX, y: e.clientY });
                     }}
+                    onCompoundChildToggle={
+                      squareData.type === 'compound' ? handleCompoundChildToggle : undefined
+                    }
                   />
                 );
               }
@@ -292,14 +378,20 @@ export function BoardPlayPage(): React.ReactElement {
         </span>
       </div>
 
-      {/* Detail Modal (progress tasks) */}
+      {/* Detail Modal (progress / compound tasks) */}
       {selectedSquareId && (() => {
         const bt = boardTasks.find((b) => b.id === selectedSquareId);
         if (!bt) return null;
         const task = taskMap[bt.taskId];
         if (!task) return null;
-        const squareData = taskToSquareData(task, allTaskSteps);
-        const squareState = boardTaskToSquareState(bt);
+        const taskChildren = compoundChildrenByCompound[task.id] ?? [];
+        const squareData = taskToSquareData(
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+        );
+        const squareState = taskToSquareState(
+          task, taskChildren, taskMap, compoundChildrenByCompound,
+        );
+        const modalCurrentCount = task.currentCount ?? 0;
 
         return (
           <DetailModal
@@ -308,29 +400,27 @@ export function BoardPlayPage(): React.ReactElement {
             onClose={() => setSelectedSquareId(null)}
             onToggleComplete={() => {
               if (isExpired) return;
-              void handleComplete(bt.id, { isCompleted: !bt.isCompleted });
+              void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
             }}
             onIncrementCount={() => {
               if (isExpired) return;
-              void handleComplete(bt.id, { currentCount: (bt.currentCount ?? 0) + 1 });
+              void handleComplete(bt.id, { currentCount: modalCurrentCount + 1 });
             }}
             onDecrementCount={() => {
               if (isExpired) return;
-              const prev = bt.currentCount ?? 0;
-              if (prev > 0) {
-                void handleComplete(bt.id, { currentCount: prev - 1 });
+              if (modalCurrentCount > 0) {
+                void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
               }
             }}
             onToggleStep={(stepId: string) => {
               if (isExpired) return;
-              const current = new Set(bt.completedStepIds ?? []);
-              if (current.has(stepId)) {
-                current.delete(stepId);
-              } else {
-                current.add(stepId);
-              }
-              void handleComplete(bt.id, { completedStepIds: Array.from(current) });
+              // Per-board step completion is not tracked under the unified model.
+              // Progress steps link to their own Task records; toggle them directly.
+              void handleCompoundChildToggle(stepId);
             }}
+            onCompoundChildToggle={
+              squareData.type === 'compound' ? handleCompoundChildToggle : undefined
+            }
           />
         );
       })()}
@@ -341,8 +431,14 @@ export function BoardPlayPage(): React.ReactElement {
         if (!bt) return null;
         const task = taskMap[bt.taskId];
         if (!task) return null;
-        const squareData = taskToSquareData(task, allTaskSteps);
-        const squareState = boardTaskToSquareState(bt);
+        const taskChildren = compoundChildrenByCompound[task.id] ?? [];
+        const squareData = taskToSquareData(
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+        );
+        const squareState = taskToSquareState(
+          task, taskChildren, taskMap, compoundChildrenByCompound,
+        );
+        const menuCurrentCount = task.currentCount ?? 0;
 
         return (
           <FloatingContextMenu
@@ -351,31 +447,21 @@ export function BoardPlayPage(): React.ReactElement {
             position={{ x: contextMenu.x, y: contextMenu.y }}
             onClose={() => setContextMenu(null)}
             onToggleComplete={() => {
-              void handleComplete(bt.id, { isCompleted: !bt.isCompleted });
+              void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
               setContextMenu(null);
             }}
             onIncrementCount={() => {
-              void handleComplete(bt.id, { currentCount: (bt.currentCount ?? 0) + 1 });
+              void handleComplete(bt.id, { currentCount: menuCurrentCount + 1 });
               setContextMenu(null);
             }}
             onDecrementCount={() => {
-              const prev = bt.currentCount ?? 0;
-              if (prev > 0) {
-                void handleComplete(bt.id, { currentCount: prev - 1 });
+              if (menuCurrentCount > 0) {
+                void handleComplete(bt.id, { currentCount: menuCurrentCount - 1 });
               }
               setContextMenu(null);
             }}
             onResetCount={() => {
               void handleComplete(bt.id, { currentCount: 0, isCompleted: false });
-              setContextMenu(null);
-            }}
-            onMarkAllStepsComplete={() => {
-              const allStepIds = (squareData.steps ?? []).map((s) => s.id);
-              void handleComplete(bt.id, { completedStepIds: allStepIds });
-              setContextMenu(null);
-            }}
-            onMarkAllStepsIncomplete={() => {
-              void handleComplete(bt.id, { completedStepIds: [] });
               setContextMenu(null);
             }}
             onViewDetails={() => {

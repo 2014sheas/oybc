@@ -56,7 +56,8 @@ struct CompositeWizardBuildStepView: View {
     /// list shrinks below it; both are on-screen so no toast needed.
     @Binding var threshold: Int
     let libraryTasks: [OYBC.Task]
-    let libraryCompositeTasks: [CompositeTask]
+    /// Compound tasks (type=.compound && !isOrdered) available as nested children.
+    let libraryCompositeTasks: [OYBC.Task]
     let taskBoardCounts: [String: Int]
     let taskStepCounts: [String: Int]
     let compositeSubtaskCounts: [String: Int]

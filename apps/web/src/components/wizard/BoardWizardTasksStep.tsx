@@ -4,8 +4,6 @@ import {
   TaskType,
   generateCounterTaskTitle,
   type Task,
-  type CompositeNode,
-  type CompositeTask,
 } from '@oybc/shared';
 import { db } from '../../db/database';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
@@ -49,9 +47,10 @@ export interface BoardWizardTasksStepProps {
   /** Fired after a non-composite task is created from the sheet — the
    *  wizard should auto-add the new id to `selectedTaskIds`. */
   onTaskCreated: (task: Task) => void;
-  /** Fired after a composite task is created from the sheet — the
-   *  wizard should reload the library so the composite shows up. */
-  onCompositeCreated: (ct: CompositeTask) => void;
+  /** Fired after a compound (formerly composite) task is created from the
+   *  sheet — the wizard should reload the library so the compound shows up.
+   *  Under the unified model composites are Tasks, so the callback uses Task. */
+  onCompositeCreated: (task: Task) => void;
 
   /** Navigates to the previous wizard step. */
   onBack: () => void;
@@ -121,90 +120,90 @@ export function BoardWizardTasksStep({
     return counts;
   }, [allBoardTasks]);
 
-  const taskStepCounts = useMemo(() => {
+  // Subtask counts for compounds (formerly composites + progress). Both
+  // tabs render counts from the same `compound_children` source — the
+  // legacy `taskStepCounts` and `compositeSubtaskCounts` collapse into
+  // one map keyed by the parent compoundTaskId.
+  const compoundChildCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const s of library.allTaskSteps) {
-      counts[s.taskId] = (counts[s.taskId] ?? 0) + 1;
+    for (const [compoundId, children] of Object.entries(library.compoundChildrenByCompound)) {
+      counts[compoundId] = children.length;
     }
     return counts;
-  }, [library.allTaskSteps]);
+  }, [library.compoundChildrenByCompound]);
 
-  const compositeSubtaskCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const n of library.allCompositeNodes) {
-      if (n.nodeType !== 'leaf') continue;
-      counts[n.compositeTaskId] = (counts[n.compositeTaskId] ?? 0) + 1;
-    }
-    return counts;
-  }, [library.allCompositeNodes]);
+  // Alias kept for the existing call sites that still pass
+  // `taskStepCounts` and `compositeSubtaskCounts` separately. Both
+  // resolve to the same compound-children-derived count under the
+  // unified model.
+  const taskStepCounts = compoundChildCounts;
+  const compositeSubtaskCounts = compoundChildCounts;
 
+  // First-3 child titles + total subtask count, keyed by parent
+  // compoundTaskId. Looks each child up via `taskMap` — under the unified
+  // model, composites *are* tasks, so a single map handles both primitive
+  // and nested compound children.
   const compositeLeafPreviews = useMemo(() => {
     const previews: Record<string, { titles: string[]; totalLeaves: number }> = {};
-    const leavesByComposite = new Map<string, CompositeNode[]>();
-    for (const n of library.allCompositeNodes) {
-      if (n.nodeType !== 'leaf') continue;
-      const arr = leavesByComposite.get(n.compositeTaskId) ?? [];
-      arr.push(n);
-      leavesByComposite.set(n.compositeTaskId, arr);
-    }
-    for (const [cid, leaves] of leavesByComposite) {
-      leaves.sort((a, b) => a.nodeIndex - b.nodeIndex);
+    for (const [compoundId, children] of Object.entries(library.compoundChildrenByCompound)) {
+      // children are pre-sorted by childIndex in useTaskLibrary.
       const titles: string[] = [];
-      for (const leaf of leaves.slice(0, 3)) {
-        if (leaf.taskId) {
-          const t = library.taskMap[leaf.taskId];
-          if (t) titles.push(t.title);
-        } else if (leaf.childCompositeTaskId) {
-          const cc = library.compositeTaskMap[leaf.childCompositeTaskId];
-          if (cc) titles.push(cc.title);
-        }
+      for (const child of children.slice(0, 3)) {
+        const t = library.taskMap[child.childTaskId];
+        if (t) titles.push(t.title);
       }
-      previews[cid] = { titles, totalLeaves: leaves.length };
+      previews[compoundId] = { titles, totalLeaves: children.length };
     }
     return previews;
-  }, [library.allCompositeNodes, library.taskMap, library.compositeTaskMap]);
+  }, [library.compoundChildrenByCompound, library.taskMap]);
 
-  // Resolve a composite's leaf tasks (flat, normal tasks only — nested
-  // composites aren't boardable). Used when rendering the expanded leaf
-  // list. Keyed by composite id for memoisation.
+  // Resolve a compound's primitive task leaves (flat — nested compounds
+  // aren't boardable). Mirrors the legacy "taskId-only" semantic of
+  // CompositeNode leaves.
   const compositeLeafTasks = useMemo(() => {
-    const byComposite: Record<string, Task[]> = {};
-    const leavesByComposite = new Map<string, CompositeNode[]>();
-    for (const n of library.allCompositeNodes) {
-      if (n.nodeType !== 'leaf') continue;
-      const arr = leavesByComposite.get(n.compositeTaskId) ?? [];
-      arr.push(n);
-      leavesByComposite.set(n.compositeTaskId, arr);
-    }
-    for (const [cid, leaves] of leavesByComposite) {
-      leaves.sort((a, b) => a.nodeIndex - b.nodeIndex);
+    const byCompound: Record<string, Task[]> = {};
+    for (const [compoundId, children] of Object.entries(library.compoundChildrenByCompound)) {
       const tasks: Task[] = [];
-      for (const leaf of leaves) {
-        if (leaf.taskId) {
-          const t = library.taskMap[leaf.taskId];
-          if (t) tasks.push(t);
-        }
+      for (const child of children) {
+        const t = library.taskMap[child.childTaskId];
+        if (!t) continue;
+        // Skip nested compounds — only flat primitive task leaves can be
+        // placed directly on a board.
+        if (t.type === TaskType.COMPOUND) continue;
+        tasks.push(t);
       }
-      byComposite[cid] = tasks;
+      byCompound[compoundId] = tasks;
     }
-    return byComposite;
-  }, [library.allCompositeNodes, library.taskMap]);
+    return byCompound;
+  }, [library.compoundChildrenByCompound, library.taskMap]);
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const matches = (title: string): boolean =>
       q.length === 0 || title.toLowerCase().includes(q);
 
+    // Under the unified compound model:
+    //   - "Progress" filter = type=COMPOUND && isOrdered=true
+    //   - "Composite" filter (and the composites region) = type=COMPOUND && isOrdered!=true
+    //   - "Normal"/"Counting" = primitives
+    //   - "All" pool = primitives only (compounds render in the composites region)
     const tasks =
       activeFilter === 'all'
-        ? library.allTasks.filter((t) => matches(t.title))
+        ? library.allTasks.filter((t) => t.type !== TaskType.COMPOUND && matches(t.title))
         : activeFilter === 'composite'
           ? []
-          : library.allTasks.filter((t) => t.type === activeFilter && matches(t.title));
+          : activeFilter === TaskType.PROGRESS
+            ? library.allTasks.filter(
+                (t) => t.type === TaskType.COMPOUND && t.isOrdered === true && matches(t.title),
+              )
+            : library.allTasks.filter((t) => t.type === activeFilter && matches(t.title));
 
     const composites =
       activeFilter === 'all' || activeFilter === 'composite'
-        ? library.allCompositeTasks.filter((ct) => matches(ct.title))
+        ? library.allTasks.filter(
+            (t) =>
+              t.type === TaskType.COMPOUND && t.isOrdered !== true && matches(t.title),
+          )
         : [];
 
     return { tasks, composites };

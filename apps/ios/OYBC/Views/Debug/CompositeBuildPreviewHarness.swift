@@ -1,3 +1,7 @@
+// Gated out post-compound-tasks-unification. The mock fixture passed
+// `[CompositeTask]` to `CompositeWizardBuildStepView` whose signature
+// changed to `[Task]`. Phase 8 will update + re-enable this harness.
+#if false
 #if DEBUG
 import SwiftUI
 
@@ -193,4 +197,5 @@ struct CompositeBuildPreviewHarness: View {
         return list
     }
 }
+#endif
 #endif

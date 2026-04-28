@@ -71,8 +71,8 @@ struct CreateHubQuickAddView: View {
         )
     }
 
-    private func handleCompositeCreated(_ ct: CompositeTask) {
-        flashSuccess("Added composite \"\(ct.title)\" to your library.")
+    private func handleCompositeCreated(_ task: OYBC.Task) {
+        flashSuccess("Added composite \"\(task.title)\" to your library.")
         onTaskCreated()
     }
 

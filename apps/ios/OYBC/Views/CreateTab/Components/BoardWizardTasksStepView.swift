@@ -45,7 +45,7 @@ struct BoardWizardTasksStepView: View {
 
     /// Fired after a composite task is created from the sheet — the
     /// wizard should reload the library so the composite shows up.
-    let onCompositeCreated: (CompositeTask) -> Void
+    let onCompositeCreated: (OYBC.Task) -> Void
 
     /// Called after either creation callback so the parent's library
     /// view-model can refresh in the same turn the sheet dismisses.
@@ -77,19 +77,29 @@ struct BoardWizardTasksStepView: View {
     private var visibleTasks: [Task] {
         let pool: [Task]
         switch activeFilter {
-        case .all:       pool = library.libraryTasks
+        // Under the unified compound model, "progress" / "composite" are
+        // both `type=.compound` distinguished by `isOrdered`. Visible-task
+        // pools and the visible-composites list both pull from the same
+        // `library.libraryTasks` array.
+        case .all:       pool = library.libraryTasks.filter { $0.type != .compound }
         case .normal:    pool = library.libraryTasks.filter { $0.type == .normal }
         case .counting:  pool = library.libraryTasks.filter { $0.type == .counting }
-        case .progress:  pool = library.libraryTasks.filter { $0.type == .progress }
+        case .progress:  pool = library.libraryTasks.filter { $0.type == .compound && $0.isOrdered == true }
         case .composite: pool = []
         }
         return pool.filter { matches($0.title) }
     }
 
-    private var visibleComposites: [CompositeTask] {
+    /// Compound-typed tasks shown alongside primitives. Despite the name
+    /// (kept for parity with the legacy "Composite" filter tab), this
+    /// includes both former Composite (isOrdered=false) and former
+    /// Progress (isOrdered=true) tasks under the unified compound model.
+    private var visibleComposites: [OYBC.Task] {
         switch activeFilter {
         case .all, .composite:
-            return library.libraryCompositeTasks.filter { matches($0.title) }
+            return library.libraryTasks
+                .filter { $0.type == .compound && $0.isOrdered != true }
+                .filter { matches($0.title) }
         default:
             return []
         }
@@ -115,18 +125,14 @@ struct BoardWizardTasksStepView: View {
         return buckets.mapValues { $0.count }
     }
 
-    private var taskStepCounts: [String: Int] {
-        var counts: [String: Int] = [:]
-        for step in library.allLibraryTaskSteps {
-            counts[step.taskId, default: 0] += 1
-        }
-        return counts
-    }
-
+    /// Subtask counts for compound (formerly composite + progress) tasks.
+    /// Both "Composite" and "Progress" tabs render counts from the same
+    /// `compound_children` source; the only thing that differs is which
+    /// subset of compound tasks gets shown in the row list.
     private var compositeSubtaskCounts: [String: Int] {
         var counts: [String: Int] = [:]
-        for node in library.allLibraryCompositeNodes where node.nodeType == .leaf {
-            counts[node.compositeTaskId, default: 0] += 1
+        for (compoundId, children) in library.compoundChildrenByCompound {
+            counts[compoundId] = children.count
         }
         return counts
     }
@@ -136,40 +142,41 @@ struct BoardWizardTasksStepView: View {
         let totalLeaves: Int
     }
 
+    /// First-3 child titles + total subtask count, keyed by parent
+    /// compoundTaskId. Children are looked up by `childTaskId` against
+    /// `library.libraryTasks` (composites are themselves Tasks under the
+    /// unified model, so a single map handles both primitive and nested
+    /// compound children).
     private var compositeLeafPreviews: [String: LeafPreview] {
-        var byComposite: [String: [CompositeNode]] = [:]
-        for n in library.allLibraryCompositeNodes where n.nodeType == .leaf {
-            byComposite[n.compositeTaskId, default: []].append(n)
-        }
         let taskTitleById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0.title) })
-        let compositeTitleById = Dictionary(uniqueKeysWithValues: library.libraryCompositeTasks.map { ($0.id, $0.title) })
         var out: [String: LeafPreview] = [:]
-        for (cid, nodes) in byComposite {
-            let sorted = nodes.sorted { $0.nodeIndex < $1.nodeIndex }
+        for (compoundId, children) in library.compoundChildrenByCompound {
+            // children are pre-sorted by childIndex in the view-model.
             var titles: [String] = []
-            for leaf in sorted.prefix(3) {
-                if let tid = leaf.taskId, let t = taskTitleById[tid] {
-                    titles.append(t)
-                } else if let cid2 = leaf.childCompositeTaskId, let c = compositeTitleById[cid2] {
-                    titles.append(c)
+            for child in children.prefix(3) {
+                if let title = taskTitleById[child.childTaskId] {
+                    titles.append(title)
                 }
             }
-            out[cid] = LeafPreview(titles: titles, totalLeaves: sorted.count)
+            out[compoundId] = LeafPreview(titles: titles, totalLeaves: children.count)
         }
         return out
     }
 
-    /// Flat task leaves per composite — composites can't be boarded
-    /// directly, only their flat task leaves can. Nested composite
-    /// leaves are intentionally skipped (boards don't accept them).
-    private func leafTasks(for compositeId: String) -> [Task] {
-        let leaves = library.allLibraryCompositeNodes
-            .filter { $0.compositeTaskId == compositeId && $0.nodeType == .leaf }
-            .sorted { $0.nodeIndex < $1.nodeIndex }
+    /// Flat task leaves per compound — only primitive (non-compound)
+    /// children are returned, since boards don't accept nested compounds
+    /// as inline taps. Caller filters out nested compound children
+    /// (they show up as their own "compound row" elsewhere in the tab).
+    private func leafTasks(for compoundId: String) -> [OYBC.Task] {
+        let children = library.compoundChildrenByCompound[compoundId] ?? []
         let taskById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
-        return leaves.compactMap { leaf -> Task? in
-            guard let tid = leaf.taskId else { return nil }
-            return taskById[tid]
+        return children.compactMap { child -> OYBC.Task? in
+            guard let task = taskById[child.childTaskId] else { return nil }
+            // Skip nested compounds — only flat task leaves can be placed
+            // directly on a board (mirrors legacy CompositeNode.taskId-only
+            // semantics).
+            if task.type == .compound { return nil }
+            return task
         }
     }
 
@@ -388,7 +395,7 @@ struct BoardWizardTasksStepView: View {
     }
 
     @ViewBuilder
-    private func compositeRow(_ ct: CompositeTask) -> some View {
+    private func compositeRow(_ ct: OYBC.Task) -> some View {
         let isExpanded = expandedCompositeId == ct.id
         let leafCount = compositeSubtaskCounts[ct.id] ?? 0
         let preview = compositeLeafPreviews[ct.id]
@@ -514,8 +521,10 @@ struct BoardWizardTasksStepView: View {
                 return ""
             }
             return derived
-        case .progress:
-            let n = taskStepCounts[task.id] ?? 0
+        case .compound where task.isOrdered == true:
+            // Former Progress tasks: show "N step(s)" subtitle from compound
+            // children (the unified replacement for legacy task_steps).
+            let n = library.compoundChildrenByCompound[task.id]?.count ?? 0
             if n == 0 { return "" }
             return "\(n) step\(n == 1 ? "" : "s")"
         default:

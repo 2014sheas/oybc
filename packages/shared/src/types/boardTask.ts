@@ -4,9 +4,8 @@ import { Timeframe } from '../constants/enums';
  * BoardTask - Junction table linking boards and tasks
  *
  * Design principles:
- * - Per-board completion state for each task
+ * - Pure placement record — completion lives globally on Task, not per-board
  * - Grid position (row, col) for board layout
- * - Progress data stored as array of completed step IDs (queryable)
  * - UUID primary key (offline creation)
  * - Achievement squares for cross-board goals
  */
@@ -20,14 +19,6 @@ export interface BoardTask {
   row: number;                   // Row index (0-based)
   col: number;                   // Column index (0-based)
   isCenter: boolean;             // True if center square (for odd-sized boards)
-
-  // Per-board completion state
-  isCompleted: boolean;          // Completion status for this board
-  completedAt?: string;          // ISO8601 (when completed on this board)
-
-  // Task type-specific data
-  currentCount?: number;         // Current count (for counting tasks)
-  completedStepIds?: string[];   // Array of TaskStep.id (for progress tasks)
 
   // Achievement square data (for cross-board goals)
   isAchievementSquare?: boolean;           // True if this is a cross-board goal
@@ -60,12 +51,3 @@ export interface CreateBoardTaskInput {
   achievementTimeframe?: Timeframe;
 }
 
-/**
- * BoardTask completion update
- */
-export interface UpdateBoardTaskCompletionInput {
-  isCompleted: boolean;
-  currentCount?: number;
-  completedStepIds?: string[];
-  achievementProgress?: number;
-}

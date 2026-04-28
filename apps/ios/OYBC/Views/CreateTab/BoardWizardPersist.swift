@@ -182,13 +182,16 @@ func persistWizardBoard(
                 let row = i / size
                 let col = i % size
                 let isCenterPos = isOdd && row == centerRow && col == centerCol
-                let bt = BoardTask.makePlayground(
+                let bt = BoardTask(
+                    id: UUID().uuidString.lowercased(),
                     boardId: boardId,
                     taskId: task.id,
                     row: row,
                     col: col,
-                    now: now,
-                    isCenter: isCenterPos && (centerType == .chosen || centerType == .none)
+                    isCenter: isCenterPos && (centerType == .chosen || centerType == .none),
+                    createdAt: now,
+                    updatedAt: now,
+                    version: 1
                 )
                 boardTasks.append(bt)
             }

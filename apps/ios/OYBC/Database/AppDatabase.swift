@@ -210,6 +210,61 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE users ADD COLUMN preferences TEXT")
         }
 
+        // v6: Compound tasks unification — schema changes only.
+        //   - Create compound_children table (replaces the role of task_steps +
+        //     composite_nodes leaves under the unified model).
+        //   - Widen tasks with compound fields (operator, threshold, isOrdered)
+        //     and global completion fields (isCompleted, completedAt, currentCount).
+        //
+        // The board_tasks completion-column rebuild that was originally here has
+        // been moved to v7 (MigrationV7Helpers.swift). It must run AFTER the data
+        // migration so that steps 5 (Task completion backfill), 6 (step completion
+        // backfill), and 8 (board stats recompute) can still read the legacy
+        // board_tasks.isCompleted / completedAt / currentCount / completedStepIds
+        // columns before they are dropped.
+        migrator.registerMigration("v6") { db in
+            // (a) compound_children
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS compound_children (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    compoundTaskId TEXT NOT NULL,
+                    childTaskId TEXT NOT NULL,
+                    childIndex INTEGER NOT NULL,
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+
+                    FOREIGN KEY (compoundTaskId) REFERENCES tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (childTaskId) REFERENCES tasks(id)
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_compound_children_compound_index ON compound_children(compoundTaskId, childIndex)")
+            try db.execute(sql: "CREATE INDEX idx_compound_children_child ON compound_children(childTaskId)")
+
+            // (b) Widen tasks with compound + global completion columns.
+            // isCompleted is NOT NULL DEFAULT 0 so existing rows get a value.
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN \"operator\" TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN threshold INTEGER")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isOrdered INTEGER")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isCompleted INTEGER NOT NULL DEFAULT 0")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN completedAt TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN currentCount INTEGER")
+        }
+
+        // v7: Data migration for the compound unification. Transforms legacy
+        // progress + composite rows into the unified compound shape, backfills
+        // global Task completion, enqueues legacy doc deletes, recomputes board
+        // stats via DerivationPass, and finally rebuilds board_tasks to drop
+        // the per-board completion columns (moved here from v6).
+        migrator.registerMigration("v7") { db in
+            try MigrationV7Helpers.run(db)
+        }
+
         return migrator
     }
 
@@ -369,6 +424,42 @@ extension AppDatabase {
     func saveBoardTask(_ boardTask: BoardTask) throws {
         try write { db in
             try boardTask.save(db)
+        }
+    }
+
+    /// Fetch every BoardTask in the workspace. Used by the derivation pass
+    /// to find which boards contain a given task (directly or via a compound).
+    /// Small-N: typical user has under a few thousand BoardTasks.
+    func fetchAllBoardTasks() throws -> [BoardTask] {
+        return try read { db in
+            try BoardTask.fetchAll(db)
+        }
+    }
+
+    // MARK: - CompoundChildren
+
+    /// Fetch every non-deleted compound_children row in the workspace.
+    /// Used by the derivation pass to find transitive parent compounds and
+    /// build the childrenByCompound map fed into computeBoardStatsUpdate.
+    func fetchAllCompoundChildren() throws -> [CompoundChild] {
+        return try read { db in
+            try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+    }
+
+    /// Fetch all non-deleted compound_children rows for a single parent compound,
+    /// ordered by childIndex.
+    ///
+    /// - Parameter compoundTaskId: The parent compound task's ID.
+    /// - Returns: All matching children ordered by `childIndex`.
+    func fetchCompoundChildren(compoundTaskId: String) throws -> [CompoundChild] {
+        return try read { db in
+            try CompoundChild
+                .filter(Column("compoundTaskId") == compoundTaskId && Column("isDeleted") == false)
+                .order(Column("childIndex"))
+                .fetchAll(db)
         }
     }
 

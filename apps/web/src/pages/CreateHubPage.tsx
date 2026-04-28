@@ -87,7 +87,10 @@ export function CreateHubPage({
     );
   }
 
-  const libraryCount = library.allTasks.length + library.allCompositeTasks.length;
+  // Under the unified compound model, composites live in `allTasks` with
+  // type='compound' — counting them separately would double-count. The
+  // library count is just the size of allTasks (incl. compounds).
+  const libraryCount = library.allTasks.length;
 
   return (
     <div className={styles.shell}>

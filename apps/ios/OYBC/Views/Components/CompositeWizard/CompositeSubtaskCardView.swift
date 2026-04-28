@@ -12,7 +12,8 @@ struct CompositeSubtaskCardView: View {
     /// Library feeds — needed so an existing-mode row can look up the
     /// title + metadata of its selection.
     let libraryTasks: [OYBC.Task]
-    let libraryCompositeTasks: [CompositeTask]
+    /// Compound tasks (type=.compound && !isOrdered) available as nested children.
+    let libraryCompositeTasks: [OYBC.Task]
     let taskBoardCounts: [String: Int]
     let taskStepCounts: [String: Int]
     let compositeSubtaskCounts: [String: Int]

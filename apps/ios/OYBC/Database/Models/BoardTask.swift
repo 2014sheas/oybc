@@ -1,9 +1,15 @@
 import Foundation
 import GRDB
 
-/// BoardTask - Junction table linking boards and tasks
+/// BoardTask - Placement record linking a board to a task at a grid position.
 ///
-/// Matches TypeScript BoardTask interface from @oybc/shared
+/// Matches TypeScript BoardTask interface from @oybc/shared.
+///
+/// Under the unified compound model, BoardTask carries NO completion state —
+/// `isCompleted` / `currentCount` / `completedAt` all live globally on Task.
+/// BoardTask just records where a task sits in a board's grid, plus the
+/// achievement-square cross-board-rollup fields (which remain per-board
+/// because they track board-specific progress toward a cross-board goal).
 struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     // Identity
     var id: String
@@ -14,14 +20,6 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     var row: Int
     var col: Int
     var isCenter: Bool
-
-    // Per-board completion state
-    var isCompleted: Bool
-    var completedAt: String? // ISO8601
-
-    // Task type-specific data
-    var currentCount: Int?
-    var completedStepIds: [String]?
 
     // Achievement square data
     var isAchievementSquare: Bool?
@@ -45,20 +43,57 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     static let board = belongsTo(Board.self)
     static let task = belongsTo(Task.self)
 
+    // MARK: - Memberwise init
+    //
+    // Swift would normally synthesise this for free, but the custom
+    // `init(from decoder:)` below suppresses synthesis. We declare it
+    // explicitly so callers can construct a `BoardTask` directly without
+    // a JSON round-trip + force-try (see BoardCreatorPanelView.makeBoardTask).
+    init(
+        id: String,
+        boardId: String,
+        taskId: String,
+        row: Int,
+        col: Int,
+        isCenter: Bool,
+        isAchievementSquare: Bool? = nil,
+        achievementType: AchievementType? = nil,
+        achievementCount: Int? = nil,
+        achievementTimeframe: Timeframe? = nil,
+        achievementProgress: Int? = nil,
+        createdAt: String,
+        updatedAt: String,
+        lastSyncedAt: String? = nil,
+        version: Int
+    ) {
+        self.id = id
+        self.boardId = boardId
+        self.taskId = taskId
+        self.row = row
+        self.col = col
+        self.isCenter = isCenter
+        self.isAchievementSquare = isAchievementSquare
+        self.achievementType = achievementType
+        self.achievementCount = achievementCount
+        self.achievementTimeframe = achievementTimeframe
+        self.achievementProgress = achievementProgress
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.lastSyncedAt = lastSyncedAt
+        self.version = version
+    }
+
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {
         case id, boardId, taskId
         case row, col, isCenter
-        case isCompleted, completedAt
-        case currentCount, completedStepIds
         case isAchievementSquare, achievementType, achievementCount
         case achievementTimeframe, achievementProgress
         case createdAt, updatedAt
         case lastSyncedAt, version
     }
 
-    // Custom decoding for completedStepIds (stored as JSON string)
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -68,17 +103,6 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         row = try container.decode(Int.self, forKey: .row)
         col = try container.decode(Int.self, forKey: .col)
         isCenter = try container.decode(Bool.self, forKey: .isCenter)
-        isCompleted = try container.decode(Bool.self, forKey: .isCompleted)
-        completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
-        currentCount = try container.decodeIfPresent(Int.self, forKey: .currentCount)
-
-        // Decode completedStepIds from JSON string
-        if let jsonString = try container.decodeIfPresent(String.self, forKey: .completedStepIds),
-           let data = jsonString.data(using: .utf8) {
-            completedStepIds = try? JSONDecoder().decode([String].self, from: data)
-        } else {
-            completedStepIds = nil
-        }
 
         isAchievementSquare = try container.decodeIfPresent(Bool.self, forKey: .isAchievementSquare)
         achievementType = try container.decodeIfPresent(AchievementType.self, forKey: .achievementType)
@@ -91,7 +115,6 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         version = try container.decode(Int.self, forKey: .version)
     }
 
-    // Custom encoding for completedStepIds (store as JSON string)
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
@@ -101,16 +124,6 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         try container.encode(row, forKey: .row)
         try container.encode(col, forKey: .col)
         try container.encode(isCenter, forKey: .isCenter)
-        try container.encode(isCompleted, forKey: .isCompleted)
-        try container.encodeIfPresent(completedAt, forKey: .completedAt)
-        try container.encodeIfPresent(currentCount, forKey: .currentCount)
-
-        // Encode completedStepIds as JSON string
-        if let completedStepIds = completedStepIds,
-           let data = try? JSONEncoder().encode(completedStepIds),
-           let jsonString = String(data: data, encoding: .utf8) {
-            try container.encode(jsonString, forKey: .completedStepIds)
-        }
 
         try container.encodeIfPresent(isAchievementSquare, forKey: .isAchievementSquare)
         try container.encodeIfPresent(achievementType, forKey: .achievementType)

@@ -8,6 +8,31 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 **Core Architecture**: Local-first design where local databases (GRDB on iOS, Dexie on web) are the source of truth, with Firestore providing background sync for multi-device support only.
 
+## Active refactor: Compound Tasks Unification
+
+> Designed 2026-04-23, implementation in progress on `feature/compound-tasks-unification` (~75% complete: Phases 1-4 + 6 done; Phase 5 iOS UI + Phase 8 cleanup + Phase 9 verification remaining). Spec: [`docs/superpowers/specs/2026-04-23-compound-tasks-unification-design.md`](docs/superpowers/specs/2026-04-23-compound-tasks-unification-design.md). Doc target: [`docs/TASK_SYSTEM.md`](docs/TASK_SYSTEM.md).
+
+The legacy 4-type model (Normal / Counting / Progress / Composite) is being unified into a 3-type model (Normal / Counting / **Compound**). Progress and Composite are functionally the same parent-children-with-completion-rule pattern; the unification collapses them onto a single schema:
+
+- `tasks` carries operator + threshold + isOrdered for compounds.
+- `compound_children` replaces `task_steps` AND `composite_nodes` (one row per child link, child can be any Task including another compound).
+- `composite_tasks` is dropped (composites move into `tasks` with `type='compound'`).
+- `BoardTask` loses its completion fields (`isCompleted`, `completedAt`, `currentCount`, `completedStepIds`) — completion becomes **global per Task**, never per-board.
+- The migration runs at first launch as iOS GRDB v6+v7 / web Dexie v4+v5. Pre-public-launch, so dev/test data backfill is automatic and non-destructive.
+
+**Phase status on the feature branch:**
+
+- ✅ Phase 1 (shared types + Zod + algorithms + migration helpers): 11 commits, 435 tests passing.
+- ✅ Phase 2 (web data layer): 9 commits incl. hardening (compoundChildren CRUD + Dexie v4/v5 migration + orchestration with derivation pass + sync service).
+- ✅ Phase 3 (iOS data layer): 9 commits incl. unblock stubs (CompoundChild GRDB model + Task/BoardTask updates + GRDB v6/v7 migration + Swift twins of compoundEvaluation/derivationPass + sync service).
+- ✅ Phase 4 (web UI): 6 commits incl. hardening (useTaskLibrary unified + InteractiveTaskSquare compound rendering + interactive detail sheet + BingoBoard/BoardPlayPage Task-first reads + CompositeTaskWizard rewritten to call createCompound).
+- ✅ Phase 6 (Firestore rules): commit `8e6f355` — `compoundChildren` added to `isKnownCollection()`; cross-device manual test pending.
+- ⏳ Phase 5 (iOS UI rewrite): the equivalent of Phase 4 for iOS — BoardPlayView wired to runOrchestration with derivation pass + cascade, dedicated compound detail sheet, refresh of the iOS playgrounds currently `#if false`-gated.
+- ⏳ Phase 8 (cleanup): drop legacy enum aliases (TaskType.PROGRESS), delete legacy operations files, build the deferred CompoundTaskPlayground + GlobalCompletionPlayground, restore inline progress-subtask creation in CompositeTaskWizard, add "appears on: Board A, Board B" links to the compound detail sheet.
+- ⏳ Phase 9 (verification + PR): full clean build on both platforms, run all tests, Playwright + iOS sim screenshots, push, open PR against `dev`.
+
+**Until everything ships**, treat `TASK_SYSTEM.md` and the spec as the canonical model.
+
 ## Code Quality Standards
 
 - Type hints and docstrings required for all functions and classes. Public APIs must document parameters, return values, and exceptions.
@@ -251,6 +276,8 @@ oybc/
 
 **Tables**: `users`, `boards`, `tasks`, `task_steps`, `board_tasks`, `progress_counters`, `sync_queue`
 
+> **Planned post-unification** (see top-of-doc callout): `task_steps`, `composite_tasks`, and `composite_nodes` are dropped; a new `compound_children` table is added. `tasks` widens to carry compound operator/threshold/isOrdered fields. `board_tasks` loses its completion-state columns.
+
 **Key Design Elements**:
 
 - UUID primary keys (client-generated, enables offline creation)
@@ -262,6 +289,8 @@ oybc/
 ### Type System
 
 **`packages/shared`** is the single source of truth for types: `Board`, `Task`, `TaskStep`, `BoardTask`, `ProgressCounter`, `User`, `SyncQueueItem`. Includes Zod validation schemas and enums (`BoardStatus`, `TaskType`, `Timeframe`, `CenterSquareType`).
+
+> **Planned post-unification**: `TaskStep`, `CompositeTask`, `CompositeNode` are removed; `CompoundChild` is added. `TaskType` enum drops `PROGRESS` and `COMPOSITE`, gains `COMPOUND` (with `operator` + `threshold` + `isOrdered` fields on `Task`). See the unification spec.
 
 - **iOS**: Swift models mirror TypeScript types using GRDB's `Codable`/`FetchableRecord`/`PersistableRecord`. JSON arrays stored as strings in SQLite.
 - **Web**: Dexie uses TypeScript types directly from `@oybc/shared`. Compound indexes match iOS GRDB indexes.
@@ -320,6 +349,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Soft Deletes**: Never hard delete. Use `isDeleted=true, deletedAt=timestamp`.
 - **Denormalized Stats**: Update stats when source data changes (e.g., `board.completedTasks`).
 - **Version Increment**: Always increment `version` field on updates (critical for conflict resolution).
+- **Atomic pull-path multi-writes**: When a sync pull does fetch + upsert + cross-board cascade (or any multi-step write), thread the `db: Database` (iOS) / pass-through inside `db.transaction('rw', [...], async () => { ... })` (web) so all writes share one transaction. A cascade-fail then rolls back the upsert; the safety-net pull retries cleanly. Don't run cascade in a separate write block with a `try/catch` that swallows — that's silent divergence with no recovery.
 
 ## Common Pitfalls
 
@@ -333,7 +363,7 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Don't block UI for sync**: All sync operations must be background/async.
 - **Counting task field order**: Action → Max Count → Unit (not Action → Unit → Max Count).
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
-- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline progress subtasks.
+- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline progress subtasks. **Post-unification**: this pattern stays but routes through `compound_children.childTaskId` instead of `TaskStep.linkedTaskId` — the inline-create-paired-Task transaction shape is unchanged.
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.
 
 ## Performance Targets
@@ -348,9 +378,9 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - `docs/ARCHITECTURE.md` — Technical plan, development phases
 - `docs/OFFLINE_FIRST.md` — Offline-first design and data flow
 - `docs/superpowers/specs/` — Feature design specs (created during `/feature` planning phase)
+  - `2026-04-23-compound-tasks-unification-design.md` — In-flight refactor: unify Progress + Composite into Compound + adopt global completion. See top-of-doc callout.
 - `docs/SYNC_STRATEGY.md` — Conflict resolution patterns
-- `docs/TASK_SYSTEM.md` — Comprehensive task system documentation
-- `docs/COMPOSITE_TASKS.md` — Composite/progress task system details
+- `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (now reflects the planned unified compound model; old `COMPOSITE_TASKS.md` retired and merged into this file)
 
 **Not yet configured**: Prettier, SwiftLint.
 
@@ -459,6 +489,7 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 
 ### Known follow-ups (not blockers for Phase 6)
 
+- **Compound Tasks Unification** (designed 2026-04-23): merge Progress + Composite into a single `compound` task type, adopt global per-Task completion, drop `BoardTask` completion fields. Spec: `docs/superpowers/specs/2026-04-23-compound-tasks-unification-design.md`. Big-bang on a single `feature/compound-tasks-unification` branch. Resolves the gap that composites can't currently be placed on boards even though the design treats them as tasks.
 - `CreatePage.tsx` (972 LOC) and `CreateView.swift` (1030 LOC) violate the "containers stay thin" rule. Tracked as future `refactor/create-page-hooks` + `refactor/create-view-viewmodels` branches — no sync/correctness impact, just makes adding form fields easier.
 - Web has no Jest/Vitest harness yet; `packages/shared` covers cross-platform logic. Adding web-layer tests is tracked for the next tooling pass.
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.

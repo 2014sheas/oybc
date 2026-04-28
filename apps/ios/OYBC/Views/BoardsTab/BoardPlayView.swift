@@ -1,6 +1,166 @@
 import SwiftUI
 import GRDB
 
+// MARK: - Sync Queue Helpers (private to this file)
+
+/// Encodes a `Codable` value to a JSON string for storage in the sync queue payload.
+///
+/// - Parameter value: The value to encode.
+/// - Returns: A JSON string, or an empty JSON object string `"{}"` on failure.
+private func bpvEncodeSyncPayload<T: Codable>(_ value: T) -> String {
+    guard
+        let data = try? JSONEncoder().encode(value),
+        let string = String(data: data, encoding: .utf8)
+    else { return "{}" }
+    return string
+}
+
+/// Builds a `SyncQueueItem` for a local write that should be synced to Firestore.
+///
+/// - Parameters:
+///   - entityType: The Firestore collection name (e.g. `"boards"`, `"boardTasks"`).
+///   - entityId: The primary key of the entity.
+///   - operationType: `.create`, `.update`, or `.delete`.
+///   - payload: A `Codable` value whose JSON representation is stored as the payload.
+///   - now: The current ISO8601 timestamp.
+/// - Returns: A new `SyncQueueItem` with `status = .pending`.
+private func bpvMakeSyncItem<T: Codable>(
+    entityType: String,
+    entityId: String,
+    operationType: SyncOperationType,
+    payload: T,
+    now: String
+) -> SyncQueueItem {
+    SyncQueueItem(
+        id: AppDatabase.generateUUID(),
+        entityType: entityType,
+        entityId: entityId,
+        operationType: operationType,
+        payload: bpvEncodeSyncPayload(payload),
+        status: .pending,
+        retryCount: 0,
+        lastError: nil,
+        createdAt: now,
+        lastAttemptAt: nil,
+        completedAt: nil,
+        priority: 1
+    )
+}
+
+/// Per-board outcome of `bpvRunCrossBoardCascade`. Caller uses this to surface
+/// flash messages for the currently-visible board.
+struct BPVCascadeBoardResult {
+    let update: DerivationPass.BoardStatsUpdate
+    /// True if this board transitioned COMPLETED → ACTIVE because it is no
+    /// longer GREENLOG.
+    let wasReactivated: Bool
+    /// True if every cell on this board is now complete.
+    let isGreenlogNow: Bool
+    /// True if `board.status` was bumped to `.completed` by this cascade pass.
+    let didAutoComplete: Bool
+}
+
+/// Run the cross-board derivation cascade for a Task that just changed locally.
+///
+/// For every board affected by `changedTaskId` (directly or via a compound
+/// containing it transitively), this:
+///   1. Rebuilds bingo state via `DerivationPass.computeBoardStatsUpdate`
+///      — which respects compound evaluation + achievement-square overrides.
+///   2. Auto-completes the board on GREENLOG; reverts COMPLETED → ACTIVE when
+///      no longer GREENLOG.
+///   3. Persists the updated `Board` row (bumping `updatedAt` + `version`).
+///   4. Enqueues a `boards` sync entry for Firestore.
+///
+/// Mirrors `SyncService.runPullCascade` but additionally applies the GREENLOG
+/// status transitions that local interactions own. Caller controls the
+/// transaction via the passed `db` handle.
+///
+/// - Parameters:
+///   - db: GRDB database handle (must be inside a write transaction).
+///   - changedTaskId: The id of the Task whose state just changed.
+///   - now: ISO8601 timestamp to stamp on every updated board row.
+/// - Returns: A `[boardId: BPVCascadeBoardResult]` map. Boards excluded by
+///   `isDeleted` are omitted.
+private func bpvRunCrossBoardCascade(
+    db: Database,
+    changedTaskId: String,
+    now: String
+) throws -> [String: BPVCascadeBoardResult] {
+    let allChildren: [CompoundChild] = try CompoundChild
+        .filter(Column("isDeleted") == false)
+        .fetchAll(db)
+    let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+    let allTasks: [Task] = try Task.fetchAll(db)
+
+    var taskById: [String: Task] = [:]
+    for t in allTasks { taskById[t.id] = t }
+    var childrenByCompound: [String: [CompoundChild]] = [:]
+    for c in allChildren {
+        childrenByCompound[c.compoundTaskId, default: []].append(c)
+    }
+
+    let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+        changedTaskId: changedTaskId,
+        children: allChildren
+    )
+    let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+        changedTaskId: changedTaskId,
+        parentCompounds: parentCompounds,
+        boardTasks: allBoardTasks
+    )
+
+    var results: [String: BPVCascadeBoardResult] = [:]
+    for boardId in affectedBoardIds {
+        guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+        let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+        let update = DerivationPass.computeBoardStatsUpdate(
+            board: board,
+            boardTasksOnBoard: boardTasksOnBoard,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById
+        )
+
+        let totalSquares = board.boardSize * board.boardSize
+        let isGreenlogNow = update.completedTasks >= totalSquares
+        var wasReactivated = false
+        var didAutoComplete = false
+
+        board.completedTasks = update.completedTasks
+        board.totalTasks = totalSquares
+        board.linesCompleted = update.linesCompleted
+        board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+        board.updatedAt = now
+        board.version += 1
+
+        if isGreenlogNow, board.status == .active {
+            board.status = .completed
+            board.completedAt = now
+            didAutoComplete = true
+        } else if !isGreenlogNow, board.status == .completed {
+            board.status = .active
+            board.completedAt = nil
+            wasReactivated = true
+        }
+
+        try board.save(db)
+        try bpvMakeSyncItem(
+            entityType: "boards",
+            entityId: boardId,
+            operationType: .update,
+            payload: board,
+            now: now
+        ).save(db)
+
+        results[boardId] = BPVCascadeBoardResult(
+            update: update,
+            wasReactivated: wasReactivated,
+            isGreenlogNow: isGreenlogNow,
+            didAutoComplete: didAutoComplete
+        )
+    }
+    return results
+}
+
 // MARK: - BoardPlayView
 
 /// Full interactive bingo board play screen.
@@ -25,6 +185,7 @@ struct BoardPlayView: View {
     @State private var boardTasks: [BoardTask] = []
     @State private var allTasks: [Task] = []
     @State private var allTaskSteps: [TaskStep] = []
+    @State private var allCompoundChildren: [CompoundChild] = []
 
     @State private var isProcessing = false
     @State private var bingoMessage: String?
@@ -35,6 +196,18 @@ struct BoardPlayView: View {
     /// O(1) task lookup by task ID.
     private var taskMap: [String: Task] {
         Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+    }
+
+    /// Compound children grouped by parent compound task ID, sorted by childIndex.
+    private var compoundChildrenByCompound: [String: [CompoundChild]] {
+        var grouped: [String: [CompoundChild]] = [:]
+        for c in allCompoundChildren {
+            grouped[c.compoundTaskId, default: []].append(c)
+        }
+        for id in grouped.keys {
+            grouped[id]?.sort { $0.childIndex < $1.childIndex }
+        }
+        return grouped
     }
 
     /// Board tasks sorted row-major (ascending row then col).
@@ -218,7 +391,22 @@ struct BoardPlayView: View {
     private func playSquare(boardTask: BoardTask) -> some View {
         let task = taskMap[boardTask.taskId]
         let taskType = task?.type ?? .normal
-        let isCompleted = boardTask.isCompleted
+        // Completion state lives on Task (not BoardTask) after compound-tasks unification.
+        // Compounds: NEVER read Task.isCompleted (spec §4.1 — NEVER WRITTEN, NEVER READ on
+        // compound rows). Derive completion via CompoundEvaluation so the green-complete
+        // background + checkmark render correctly when all children are done.
+        // Primitives: read the stored column directly.
+        let isCompleted: Bool = {
+            guard let task = task else { return false }
+            if task.type == .compound {
+                return CompoundEvaluation.evaluate(
+                    compound: task,
+                    childrenByCompound: compoundChildrenByCompound,
+                    taskById: taskMap
+                )
+            }
+            return task.isCompleted
+        }()
 
         switch taskType {
         case .normal:
@@ -247,7 +435,8 @@ struct BoardPlayView: View {
             }
 
         case .counting:
-            let current = boardTask.currentCount ?? 0
+            // currentCount lives on Task after compound-tasks unification.
+            let current = task?.currentCount ?? 0
             let maxVal = task?.maxCount ?? 0
             let unitText = task?.unit ?? ""
             let actionLabel = task?.action ?? "item"
@@ -285,8 +474,10 @@ struct BoardPlayView: View {
             }
 
         case .progress:
-            let completedStepsCount = boardTask.completedStepIds?.count ?? 0
+            // Phase 5: step completion state will be tracked via Task.progressCounters.
+            // For now derive step count from TaskSteps; completed count stubbed at 0.
             let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
+            let completedStepsCount = 0
             let totalSteps = stepsForTask.isEmpty ? 1 : stepsForTask.count
 
             ZStack {
@@ -322,6 +513,51 @@ struct BoardPlayView: View {
                     handleProgressReset(boardTask: boardTask)
                 }
                 .disabled(!isCompleted || isProcessing || isBoardLocked)
+            }
+
+        case .compound:
+            let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
+            let compoundChildCount = compoundLinks.count
+            let compoundDoneCount = compoundLinks.filter { link in
+                guard let childTask = taskMap[link.childTaskId], !childTask.isDeleted else { return false }
+                if childTask.type == .compound {
+                    return CompoundEvaluation.evaluate(
+                        compound: childTask,
+                        childrenByCompound: compoundChildrenByCompound,
+                        taskById: taskMap
+                    )
+                }
+                return childTask.isCompleted
+            }.count
+
+            ZStack {
+                InteractiveTaskSquareView(
+                    title: task?.title ?? "Unknown",
+                    taskType: .compound,
+                    isCompleted: isCompleted,
+                    compoundOperator: task?.operatorType,
+                    compoundThreshold: task?.threshold,
+                    compoundChildCount: compoundChildCount,
+                    compoundDoneCount: compoundDoneCount,
+                    onTap: {
+                        guard !isBoardLocked else { return }
+                        detailBoardTaskId = boardTask.id
+                    }
+                )
+                // Transparent overlay ensures compound taps always open the detail sheet,
+                // matching the progress-square pattern.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard !isBoardLocked else { return }
+                        detailBoardTaskId = boardTask.id
+                    }
+            }
+            .frame(width: 90, height: 90)
+            .contextMenu {
+                Button("View Children", systemImage: "list.bullet") {
+                    detailBoardTaskId = boardTask.id
+                }
             }
         }
     }
@@ -361,6 +597,8 @@ struct BoardPlayView: View {
                         countingDetailContent(boardTask: bt, task: task)
                     case .progress:
                         progressDetailContent(boardTask: bt, task: task)
+                    case .compound:
+                        compoundDetailContent(boardTask: bt, task: task)
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -378,21 +616,23 @@ struct BoardPlayView: View {
         case .normal:   return "Normal task"
         case .counting: return "Counting task"
         case .progress: return "Progress task"
+        case .compound: return "Compound task"
         }
     }
 
     @ViewBuilder
     private func normalDetailContent(boardTask: BoardTask) -> some View {
+        let isCompleted = taskMap[boardTask.taskId]?.isCompleted ?? false
         Section("Completion") {
             Button {
                 handleNormalTap(boardTask: boardTask)
                 detailBoardTaskId = nil
             } label: {
                 Label(
-                    boardTask.isCompleted ? "Mark Incomplete" : "Mark Complete",
-                    systemImage: boardTask.isCompleted ? "xmark.circle" : "checkmark.circle"
+                    isCompleted ? "Mark Incomplete" : "Mark Complete",
+                    systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
                 )
-                .foregroundColor(boardTask.isCompleted ? .red : .green)
+                .foregroundColor(isCompleted ? .red : .green)
             }
             .disabled(isProcessing || isBoardLocked)
         }
@@ -400,7 +640,8 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private func countingDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        let current = boardTask.currentCount ?? 0
+        // currentCount lives on Task after compound-tasks unification.
+        let current = task.currentCount ?? 0
         let maxVal = task.maxCount ?? 0
         let unitText = task.unit ?? ""
 
@@ -451,7 +692,9 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private func progressDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        let completedIds = boardTask.completedStepIds ?? []
+        // Phase 5: step completion IDs will come from Task.progressCounters or a dedicated table.
+        // Stubbed as empty until Phase 5 implements the progress-step completion model.
+        let completedIds: [String] = []
         let stepsForTask = allTaskSteps.filter { $0.taskId == task.id }
 
         Section("Steps") {
@@ -488,23 +731,80 @@ struct BoardPlayView: View {
         }
     }
 
+    /// Detail sheet content for a compound task: shows each child with its current
+    /// completion state and a tap handler that toggles the child's `Task.isCompleted`.
+    ///
+    /// - Parameters:
+    ///   - boardTask: The parent compound's `BoardTask` placement record.
+    ///   - task: The parent compound `Task`.
+    @ViewBuilder
+    private func compoundDetailContent(boardTask: BoardTask, task: Task) -> some View {
+        let links = (compoundChildrenByCompound[task.id] ?? [])
+
+        Section("Children") {
+            if links.isEmpty {
+                Text("No children found")
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(links, id: \.id) { link in
+                    let childTask = taskMap[link.childTaskId]
+                    let isDone: Bool = {
+                        guard let ct = childTask, !ct.isDeleted else { return false }
+                        if ct.type == .compound {
+                            return CompoundEvaluation.evaluate(
+                                compound: ct,
+                                childrenByCompound: compoundChildrenByCompound,
+                                taskById: taskMap
+                            )
+                        }
+                        return ct.isCompleted
+                    }()
+
+                    Button {
+                        guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
+                        handleCompoundChildToggle(childTask: ct)
+                    } label: {
+                        HStack {
+                            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(isDone ? .green : .secondary)
+                            Text(childTask?.title ?? link.childTaskId)
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isProcessing || isBoardLocked || childTask == nil)
+                }
+            }
+        }
+
+        Section {
+            Text("Completion applies to all boards where this task appears.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
     // MARK: - Tap Handlers
+    //
+    // After compound-tasks unification, completion state lives on Task (not BoardTask).
+    // Each handler mutates the Task record and passes it to runOrchestration alongside
+    // the BoardTask (used only to update its updatedAt/version placement metadata).
 
     /// Toggles completion of a normal task square and runs the full bingo orchestration.
     ///
     /// - Parameter boardTask: The tapped `BoardTask`.
     private func handleNormalTap(boardTask: BoardTask) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
-        let newCompleted = !boardTask.isCompleted
+        let newCompleted = !task.isCompleted
 
-        var updated = boardTask
-        updated.isCompleted = newCompleted
-        updated.completedAt = newCompleted ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = newCompleted
+        task.completedAt = newCompleted ? now : nil
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
     /// Increments a counting task's `currentCount` by 1, marking complete at `maxCount`.
@@ -513,105 +813,183 @@ struct BoardPlayView: View {
     ///   - boardTask: The counting task's `BoardTask` record.
     ///   - task: The `Task` providing `maxCount`.
     private func handleCountingTap(boardTask: BoardTask, task: Task) {
-        guard !isProcessing, !boardTask.isCompleted, let maxCount = task.maxCount else { return }
+        guard !isProcessing, !task.isCompleted, let maxCount = task.maxCount else { return }
         let now = AppDatabase.currentTimestamp()
-        let newCount = min((boardTask.currentCount ?? 0) + 1, maxCount)
+        let newCount = min((task.currentCount ?? 0) + 1, maxCount)
         let nowCompleted = newCount >= maxCount
 
-        var updated = boardTask
-        updated.currentCount = newCount
-        updated.isCompleted = nowCompleted
-        updated.completedAt = nowCompleted ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        var updatedTask = task
+        updatedTask.currentCount = newCount
+        updatedTask.isCompleted = nowCompleted
+        updatedTask.completedAt = nowCompleted ? now : nil
+        updatedTask.updatedAt = now
+        updatedTask.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
     }
 
     /// Decrements a counting task's `currentCount` by 1 and un-marks completion.
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
-    ///   - task: The `Task` providing metadata (kept for symmetry with increment handler).
+    ///   - task: The `Task` providing current state.
     private func handleCountingDecrement(boardTask: BoardTask, task: Task) {
         guard !isProcessing else { return }
         let now = AppDatabase.currentTimestamp()
-        let newCount = max((boardTask.currentCount ?? 0) - 1, 0)
+        let newCount = max((task.currentCount ?? 0) - 1, 0)
 
-        var updated = boardTask
-        updated.currentCount = newCount
-        updated.isCompleted = false
-        updated.completedAt = nil
-        updated.updatedAt = now
-        updated.version += 1
+        var updatedTask = task
+        updatedTask.currentCount = newCount
+        updatedTask.isCompleted = false
+        updatedTask.completedAt = nil
+        updatedTask.updatedAt = now
+        updatedTask.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
     }
 
     /// Toggles a single progress step for a board task and recomputes task completion.
+    ///
+    /// Phase 5 will track completedStepIds on a dedicated table or Task.progressCounters.
+    /// This stub toggles Task.isCompleted when all steps are done, without tracking
+    /// individual step IDs.
     ///
     /// - Parameters:
     ///   - boardTask: The progress task's `BoardTask` record.
     ///   - step: The `TaskStep` being toggled.
     ///   - isDone: Current state of the step (`true` = already complete, will be un-checked).
     private func handleProgressStepTap(boardTask: BoardTask, step: TaskStep, isDone: Bool) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
 
-        var currentIds = boardTask.completedStepIds ?? []
-        if isDone {
-            currentIds.removeAll(where: { $0 == step.id })
-        } else {
-            currentIds.append(step.id)
-        }
-
+        // Phase 5 TODO: track completedStepIds via Task.progressCounters or dedicated table.
+        // For now, toggling any step toggles overall task completion as a stub.
         let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
-        let nowCompleted = !stepsForTask.isEmpty && currentIds.count >= stepsForTask.count
+        let newCompleted = isDone ? false : (stepsForTask.count <= 1)
 
-        var updated = boardTask
-        updated.completedStepIds = currentIds
-        updated.isCompleted = nowCompleted
-        updated.completedAt = nowCompleted ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = newCompleted
+        task.completedAt = newCompleted ? now : nil
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
-    /// Marks all steps for a progress task as complete.
+    /// Marks the progress task as complete (all steps done).
     ///
     /// - Parameter boardTask: The progress task's `BoardTask` record.
     private func handleProgressCompleteAll(boardTask: BoardTask) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
-        let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
-        let allIds = stepsForTask.map { $0.id }
 
-        var updated = boardTask
-        updated.completedStepIds = allIds
-        updated.isCompleted = !allIds.isEmpty
-        updated.completedAt = !allIds.isEmpty ? now : nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = true
+        task.completedAt = now
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
-    /// Clears all completed step IDs and marks the progress task incomplete.
+    /// Clears progress task completion.
     ///
     /// - Parameter boardTask: The progress task's `BoardTask` record.
     private func handleProgressReset(boardTask: BoardTask) {
-        guard !isProcessing else { return }
+        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
         let now = AppDatabase.currentTimestamp()
 
-        var updated = boardTask
-        updated.completedStepIds = []
-        updated.isCompleted = false
-        updated.completedAt = nil
-        updated.updatedAt = now
-        updated.version += 1
+        task.isCompleted = false
+        task.completedAt = nil
+        task.updatedAt = now
+        task.version += 1
 
-        runOrchestration(updatedBoardTask: updated)
+        runOrchestration(updatedTask: task, boardTask: boardTask)
+    }
+
+    /// Toggles a compound child's `Task.isCompleted` state.
+    ///
+    /// If the child is placed on the current board, orchestrates via the full bingo pipeline.
+    /// If the child is not on any board, falls back to a direct Task update + sync enqueue.
+    ///
+    /// - Parameter childTask: The child `Task` to toggle.
+    private func handleCompoundChildToggle(childTask: Task) {
+        guard !isProcessing else { return }
+        let now = AppDatabase.currentTimestamp()
+        var updatedChild = childTask
+        let newCompleted = !childTask.isCompleted
+        updatedChild.isCompleted = newCompleted
+        updatedChild.completedAt = newCompleted ? now : nil
+        updatedChild.updatedAt = now
+        updatedChild.version += 1
+
+        // If the child has a BoardTask on the current board, use the full orchestration
+        // pipeline so bingo detection stays consistent.
+        if let childBt = boardTasks.first(where: { $0.taskId == childTask.id }) {
+            runOrchestration(updatedTask: updatedChild, boardTask: childBt)
+            return
+        }
+
+        // Fallback: child is not placed on this board, but a parent compound
+        // (or the child via another board) may be — so we still need the
+        // cross-board cascade to recompute every affected board's bingo state
+        // and propagate the change to UI on this board (its compound square
+        // derives via CompoundEvaluation, not Task.isCompleted).
+        isProcessing = true
+        let currentBoardId = board?.id
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                var newBingoMsg: String? = nil
+                try AppDatabase.shared.write { db in
+                    try updatedChild.save(db)
+                    try bpvMakeSyncItem(
+                        entityType: "tasks",
+                        entityId: updatedChild.id,
+                        operationType: .update,
+                        payload: updatedChild,
+                        now: now
+                    ).save(db)
+
+                    let cascadeResults = try bpvRunCrossBoardCascade(
+                        db: db,
+                        changedTaskId: updatedChild.id,
+                        now: now
+                    )
+                    if let cid = currentBoardId, let result = cascadeResults[cid] {
+                        let lost = result.update.lostBingos.sorted()
+                        let gained = result.update.newBingos.sorted()
+                        if result.wasReactivated {
+                            newBingoMsg = "Board reactivated — no longer complete"
+                        } else if !lost.isEmpty {
+                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                        } else if result.isGreenlogNow {
+                            newBingoMsg = "GREENLOG!"
+                        } else if !gained.isEmpty {
+                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
+                        }
+                    }
+                }
+                await MainActor.run {
+                    isProcessing = false
+                    loadBoard()
+                    loadBoardTasks()
+                    loadTaskData()
+                    if let msg = newBingoMsg {
+                        bingoMessage = msg
+                        let dismissAfter: Double = 3.0
+                        _Concurrency.Task.detached { @MainActor in
+                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
+                            if bingoMessage == msg {
+                                bingoMessage = nil
+                            }
+                        }
+                    }
+                }
+            } catch {
+                print("⚠️ BoardPlayView compoundChildToggle error: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                }
+            }
+        }
     }
 
     // MARK: - Orchestration
@@ -620,41 +998,62 @@ struct BoardPlayView: View {
     ///
     /// Steps:
     /// 1. Auto-activates a DRAFT board on first interaction.
-    /// 2. Persists the updated `BoardTask` and queues a sync entry.
-    /// 3. Reloads all `BoardTask` records and builds the row-major completion grid.
-    /// 4. Calls `BingoDetection.detectBingos` to find completed lines.
-    /// 5. Diffs new vs previous `completedLineIds` to find gained and lost bingos.
-    /// 6. Updates board stats: `completedTasks`, `linesCompleted`, `completedLineIds`, `updatedAt`, `version`.
-    /// 7. Auto-completes the board on GREENLOG; reverts COMPLETED → ACTIVE when no longer GREENLOG.
-    /// 8. Queues board sync entry, then refreshes UI state on the main thread.
+    /// 2. Persists the updated `Task` (global completion state) and bumps the
+    ///    `BoardTask` placement record's `updatedAt`/`version`. Both are queued
+    ///    for sync.
+    /// 3. Delegates to `bpvRunCrossBoardCascade` — which uses
+    ///    `DerivationPass.computeBoardStatsUpdate` to rebuild bingo state for
+    ///    every affected board (current board plus any other board placing this
+    ///    task or a compound containing it). Cascade respects compound
+    ///    evaluation + achievement-square overrides, applies GREENLOG → COMPLETED
+    ///    auto-completion + COMPLETED → ACTIVE reactivation, persists each
+    ///    affected board, and queues board sync entries.
+    /// 4. Surfaces a flash message for the *current* board only (other affected
+    ///    boards update silently — the user isn't looking at them).
     ///
     /// Uses `_Concurrency.Task` to avoid shadowing by the GRDB `Task` model.
     ///
-    /// - Parameter updatedBoardTask: The already-mutated `BoardTask` to persist.
-    private func runOrchestration(updatedBoardTask: BoardTask) {
+    /// - Parameters:
+    ///   - updatedTask: The already-mutated `Task` carrying new completion state.
+    ///   - boardTask: The `BoardTask` placement record on the current board
+    ///     (updatedAt/version will be bumped + sync-queued).
+    private func runOrchestration(updatedTask: Task, boardTask: BoardTask) {
         guard let board = board else { return }
         isProcessing = true
         let now = AppDatabase.currentTimestamp()
-        let previousLineIds = Set(board.completedLineIds ?? [])
-        let size = board.boardSize
+        let currentBoardId = board.id
 
         _Concurrency.Task.detached(priority: .userInitiated) {
             do {
                 var newBingoMsg: String? = nil
 
                 try AppDatabase.shared.write { db in
-                    // 1. Auto-activate DRAFT boards on first interaction.
+                    // 1. Auto-activate DRAFT boards on first interaction. Cascade
+                    //    will re-save the board with stats; this leg only flips
+                    //    .draft → .active so cascade doesn't promote a draft to
+                    //    .completed (which would be wrong for first-tap).
                     if board.status == .draft {
                         var activated = board
                         activated.status = .active
                         activated.updatedAt = now
                         activated.version += 1
                         try activated.save(db)
-                        // No separate sync item here — the final board save below
-                        // includes the activated status and avoids redundant queue entries.
                     }
 
-                    // 2. Persist the updated board task.
+                    // 2a. Persist the updated Task (carries completion state).
+                    try updatedTask.save(db)
+                    try bpvMakeSyncItem(
+                        entityType: "tasks",
+                        entityId: updatedTask.id,
+                        operationType: .update,
+                        payload: updatedTask,
+                        now: now
+                    ).save(db)
+
+                    // 2b. Bump the BoardTask placement record's updatedAt/version.
+                    var updatedBoardTask = boardTask
+                    updatedBoardTask.updatedAt = now
+                    updatedBoardTask.version += 1
                     try updatedBoardTask.save(db)
                     try SyncQueueBuilder.makeItem(
                         entityType: "boardTasks",
@@ -664,91 +1063,32 @@ struct BoardPlayView: View {
                         now: now
                     ).save(db)
 
-                    // 3. Reload all board tasks to build the completion grid.
-                    let allBoardTasks = try BoardTask
-                        .filter(Column("boardId") == board.id)
-                        .fetchAll(db)
-
-                    // 4. Build flat boolean grid (row-major).
-                    var grid = [Bool](repeating: false, count: size * size)
-                    for bt in allBoardTasks {
-                        let idx = bt.row * size + bt.col
-                        guard idx >= 0, idx < grid.count else { continue }
-                        grid[idx] = bt.isCompleted
-                    }
-
-                    // Handle FREE/CUSTOM_FREE center auto-completion (no BoardTask at center)
-                    if size % 2 == 1 {
-                        let centerIdx = size * size / 2
-                        let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
-                        if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
-                            grid[centerIdx] = true
-                        }
-                    }
-
-                    // 5. Detect bingos.
-                    let result = BingoDetection.detectBingos(completionGrid: grid, gridSize: size)
-
-                    let newLineIds = Set(result.completedLines)
-                    let brandNewLines = newLineIds.subtracting(previousLineIds)
-                    let lostBingos = previousLineIds.filter { !newLineIds.contains($0) }
-
-                    // Count all completed BoardTasks + add FREE center if auto-completed (no BoardTask).
-                    var completedCount = allBoardTasks.filter { $0.isCompleted }.count
-                    let totalCount = size * size
-                    if size % 2 == 1 {
-                        let hasCenterTask = allBoardTasks.contains { $0.row == size / 2 && $0.col == size / 2 }
-                        if !hasCenterTask && (board.centerSquareType == .free || board.centerSquareType == .customFree) {
-                            completedCount += 1
-                        }
-                    }
-
-                    // 6. Update board stats, refreshing from DB to avoid stale reads.
-                    var updatedBoard: Board
-                    if let fresh = try Board.fetchOne(db, key: board.id) {
-                        updatedBoard = fresh
-                    } else {
-                        updatedBoard = board
-                    }
-                    updatedBoard.completedTasks = completedCount
-                    updatedBoard.totalTasks = totalCount
-                    updatedBoard.linesCompleted = result.completedLines.count
-                    updatedBoard.completedLineIds = result.completedLines.isEmpty ? nil : result.completedLines
-                    updatedBoard.updatedAt = now
-                    updatedBoard.version += 1
-
-                    // 7. Auto-complete on GREENLOG; revert when no longer complete.
-                    var boardWasReactivated = false
-                    if result.isGreenlog, updatedBoard.status == .active {
-                        updatedBoard.status = .completed
-                        updatedBoard.completedAt = now
-                    } else if !result.isGreenlog, updatedBoard.status == .completed {
-                        updatedBoard.status = .active
-                        updatedBoard.completedAt = nil
-                        boardWasReactivated = true
-                    }
-
-                    // Determine flash message priority:
-                    // reactivated > lostBingos > greenlog > newBingos.
-                    if boardWasReactivated {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lostBingos.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lostBingos.sorted().joined(separator: ", "))"
-                    } else if result.isGreenlog {
-                        newBingoMsg = "GREENLOG!"
-                    } else if !brandNewLines.isEmpty {
-                        newBingoMsg = "Bingo! (\(brandNewLines.sorted().joined(separator: ", ")))"
-                    }
-
-                    // 8. Persist board and queue sync.
-                    try updatedBoard.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "boards",
-                        entityId: updatedBoard.id,
-                        operationType: .update,
-                        payload: updatedBoard,
+                    // 3. Cross-board cascade: rebuilds bingo state via
+                    //    DerivationPass.computeBoardStatsUpdate (which honours
+                    //    compound evaluation + achievement squares), applies
+                    //    GREENLOG transitions, and persists every affected board.
+                    let cascadeResults = try bpvRunCrossBoardCascade(
+                        db: db,
+                        changedTaskId: updatedTask.id,
                         now: now
-                    ).save(db)
+                    )
+
+                    // 4. Surface a flash message for the *current* board only.
+                    //    Other affected boards still updated stats — they just
+                    //    don't get a transient banner since the user isn't on them.
+                    if let result = cascadeResults[currentBoardId] {
+                        let lost = result.update.lostBingos.sorted()
+                        let gained = result.update.newBingos.sorted()
+                        if result.wasReactivated {
+                            newBingoMsg = "Board reactivated — no longer complete"
+                        } else if !lost.isEmpty {
+                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                        } else if result.isGreenlogNow {
+                            newBingoMsg = "GREENLOG!"
+                        } else if !gained.isEmpty {
+                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
+                        }
+                    }
                 }
 
                 // Refresh UI on main thread.
@@ -756,6 +1096,11 @@ struct BoardPlayView: View {
                     isProcessing = false
                     loadBoard()
                     loadBoardTasks()
+                    // Also refresh allTasks + allCompoundChildren so the compound
+                    // detail sheet (which renders from taskMap + compoundChildrenByCompound)
+                    // reflects the latest child-toggle state immediately without needing a
+                    // dismiss-and-reopen. Mirrors the Path-B (child-not-on-board) pattern.
+                    loadTaskData()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
                         let dismissAfter: Double = 3.0
@@ -796,9 +1141,10 @@ struct BoardPlayView: View {
         }
     }
 
-    /// Loads all tasks and task steps for the authenticated user into memory.
+    /// Loads all tasks, task steps, and compound children for the authenticated user into memory.
     ///
-    /// Task steps are fetched for the authenticated user if available, otherwise skipped.
+    /// Task steps and compound children are fetched globally (not user-scoped) since
+    /// the AppDatabase helpers don't filter by userId for those tables.
     private func loadTaskData() {
         let userId = authService.currentUser?.id
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -808,9 +1154,11 @@ struct BoardPlayView: View {
             let steps = userId.flatMap { id in
                 try? AppDatabase.shared.fetchAllTaskSteps(userId: id)
             } ?? []
+            let children = (try? AppDatabase.shared.fetchAllCompoundChildren()) ?? []
             await MainActor.run {
                 allTasks = tasks
                 allTaskSteps = steps
+                allCompoundChildren = children
             }
         }
     }

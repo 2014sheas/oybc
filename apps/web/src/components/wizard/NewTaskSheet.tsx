@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useCreateFormState } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
-import type { Task, CompositeTask } from '@oybc/shared';
+import type { Task } from '@oybc/shared';
 import styles from './NewTaskSheet.module.css';
 
 export interface NewTaskSheetProps {
@@ -11,10 +11,11 @@ export interface NewTaskSheetProps {
   /** Fired when a NORMAL/COUNTING/PROGRESS task is created. The wizard
    *  should auto-add the new id to its `selectedTaskIds` set. */
   onTaskCreated: (task: Task) => void;
-  /** Fired when a composite task is created. The wizard typically
-   *  reloads the library so the composite shows up under filters; it
-   *  is NOT auto-selected because composites can't be boarded directly. */
-  onCompositeCreated: (ct: CompositeTask) => void;
+  /** Fired when a compound (formerly composite) task is created. The
+   *  wizard typically reloads the library so the compound shows up under
+   *  filters. Under the unified compound model composites are Tasks, so
+   *  the callback signature uses Task. */
+  onCompositeCreated: (task: Task) => void;
 }
 
 /**

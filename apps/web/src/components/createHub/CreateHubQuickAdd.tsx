@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Task, CompositeTask } from '@oybc/shared';
+import type { Task } from '@oybc/shared';
 import { useCreateFormState } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
 import styles from './CreateHubQuickAdd.module.css';
@@ -30,8 +30,8 @@ export function CreateHubQuickAdd({ userId }: CreateHubQuickAddProps): React.Rea
     window.setTimeout(() => setSuccessMessage(null), 3000);
   }
 
-  function onCompositeCreated(ct: CompositeTask): void {
-    setSuccessMessage(`Added composite "${ct.title}" to your library.`);
+  function onCompositeCreated(task: Task): void {
+    setSuccessMessage(`Added composite "${task.title}" to your library.`);
     window.setTimeout(() => setSuccessMessage(null), 3000);
   }
 

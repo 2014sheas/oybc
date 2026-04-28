@@ -41,6 +41,38 @@ export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
 }
 
 /**
+ * Fetch every BoardTask in the workspace.
+ *
+ * Used by the derivation pass to find which boards are affected by a
+ * Task state change. Small-N: every BoardTask across every board.
+ * Typical user has fewer than a few thousand.
+ *
+ * Note: BoardTask has no isDeleted field (placement removals are hard
+ * deletes), so all returned rows are live.
+ */
+export async function fetchAllBoardTasks(): Promise<BoardTask[]> {
+  return db.boardTasks.toArray();
+}
+
+/**
+ * Fetch BoardTask rows for the given board ids, grouped by boardId.
+ * Returns a Map keyed by boardId; boards with no BoardTasks have an empty array entry.
+ */
+export async function fetchBoardTasksForBoards(
+  boardIds: string[],
+): Promise<Map<string, BoardTask[]>> {
+  const out = new Map<string, BoardTask[]>();
+  for (const id of boardIds) out.set(id, []);
+  if (boardIds.length === 0) return out;
+  const rows = await db.boardTasks.where('boardId').anyOf(boardIds).toArray();
+  for (const row of rows) {
+    const arr = out.get(row.boardId);
+    if (arr) arr.push(row);
+  }
+  return out;
+}
+
+/**
  * Create a board task (add task to board)
  */
 export async function createBoardTask(
@@ -53,7 +85,6 @@ export async function createBoardTask(
     row: input.row,
     col: input.col,
     isCenter: input.isCenter,
-    isCompleted: false,
     isAchievementSquare: input.isAchievementSquare,
     achievementType: input.achievementType,
     achievementCount: input.achievementCount,
@@ -69,86 +100,6 @@ export async function createBoardTask(
 }
 
 /**
- * Complete a board task.
- *
- * @param id - The board task ID to mark as completed
- */
-export async function completeBoardTask(id: string): Promise<void> {
-  const bt = await db.boardTasks.get(id);
-  if (!bt) return;
-  await db.boardTasks.update(id, {
-    isCompleted: true,
-    completedAt: currentTimestamp(),
-    updatedAt: currentTimestamp(),
-    version: (bt.version ?? 0) + 1,
-  });
-}
-
-/**
- * Update counting task progress on a board task.
- *
- * Note: For game-loop interactions, prefer `handleTaskCompletion()` from
- * orchestration.ts which also handles bingo detection and board stats.
- *
- * @param id - The board task ID
- * @param currentCount - The new count value
- * @param maxCount - The task's maximum count (for completion detection)
- */
-export async function updateCountingProgress(
-  id: string,
-  currentCount: number,
-  maxCount: number,
-): Promise<void> {
-  const boardTask = await db.boardTasks.get(id);
-  if (!boardTask) return;
-
-  const isNowCompleted = currentCount >= maxCount;
-  await db.boardTasks.update(id, {
-    currentCount,
-    isCompleted: isNowCompleted,
-    completedAt: isNowCompleted ? currentTimestamp() : undefined,
-    updatedAt: currentTimestamp(),
-    version: (boardTask.version ?? 0) + 1,
-  });
-}
-
-/**
- * Update progress task step completion on a board task.
- *
- * @param id - The board task ID
- * @param completedStepIds - Array of completed step IDs
- */
-export async function updateProgressSteps(
-  id: string,
-  completedStepIds: string[]
-): Promise<void> {
-  const bt = await db.boardTasks.get(id);
-  if (!bt) return;
-  await db.boardTasks.update(id, {
-    completedStepIds,
-    updatedAt: currentTimestamp(),
-    version: (bt.version ?? 0) + 1,
-  });
-}
-
-/**
- * Complete a step in a progress task
- */
-export async function completeProgressStep(
-  boardTaskId: string,
-  stepId: string
-): Promise<void> {
-  const boardTask = await db.boardTasks.get(boardTaskId);
-  if (!boardTask) return;
-
-  const completedStepIds = boardTask.completedStepIds || [];
-  if (!completedStepIds.includes(stepId)) {
-    completedStepIds.push(stepId);
-    await updateProgressSteps(boardTaskId, completedStepIds);
-  }
-}
-
-/**
  * Update achievement square progress
  */
 export async function updateAchievementProgress(
@@ -158,12 +109,8 @@ export async function updateAchievementProgress(
   const boardTask = await db.boardTasks.get(id);
   if (!boardTask || !boardTask.isAchievementSquare) return;
 
-  const isComplete = progress >= (boardTask.achievementCount ?? 0);
-
   await db.boardTasks.update(id, {
     achievementProgress: progress,
-    isCompleted: isComplete,
-    completedAt: isComplete ? currentTimestamp() : undefined,
     updatedAt: currentTimestamp(),
     version: (boardTask.version ?? 0) + 1,
   });

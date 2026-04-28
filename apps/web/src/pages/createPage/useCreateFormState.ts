@@ -1,8 +1,16 @@
 import { useCallback, useState } from 'react';
-import { TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
-import { createTask } from '../../db/operations/tasks';
+import {
+  TaskType,
+  OperatorType,
+  generateCounterTaskTitle,
+  type Task,
+  type CreateCompoundChildEntry,
+} from '@oybc/shared';
+import { createTask, createCompound } from '../../db/operations/tasks';
 import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
-import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
+/** Union of TaskType values plus 'composite' for the Create-New tab type selector. */
+export type TaskTypeOrComposite = TaskType | 'composite';
+export const COMPOSITE_TYPE = 'composite' as const;
 
 // ─── Constants (shared with the Create-tab UIs that consume this hook) ──────
 
@@ -311,32 +319,40 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
             maxCount: parsedMaxCount,
           });
         } else {
-          newTask = await createTask(userId, {
-            title: title.trim(),
-            description: description.trim() || undefined,
-            type: TaskType.PROGRESS,
-            steps: steps.map((s) => {
-              const trimmedStepTitle = s.title.trim();
-              const trimmedAction = s.action.trim();
-              const trimmedUnit = s.unit.trim();
-              const maxCount = parseInt(s.maxCount, 10);
-              const resolvedStepTitle =
-                s.type === 'counting'
-                  ? generateCounterTaskTitle(
-                      trimmedAction,
-                      maxCount,
-                      trimmedUnit,
-                      trimmedStepTitle || undefined
-                    )
-                  : trimmedStepTitle;
-              return {
+          // Progress tasks: route through createCompound (compound + isOrdered=true).
+          // Each step becomes an inline-created primitive child Task linked via
+          // compoundChildren — preserves the "step is independently pool-addable"
+          // semantic that legacy progress tasks had.
+          const children: CreateCompoundChildEntry[] = steps.map((s) => {
+            const trimmedStepTitle = s.title.trim();
+            const trimmedAction = s.action.trim();
+            const trimmedUnit = s.unit.trim();
+            const maxCount = parseInt(s.maxCount, 10);
+            const resolvedStepTitle =
+              s.type === 'counting'
+                ? generateCounterTaskTitle(
+                    trimmedAction,
+                    maxCount,
+                    trimmedUnit,
+                    trimmedStepTitle || undefined
+                  )
+                : trimmedStepTitle;
+            return {
+              autoCreate: {
                 title: resolvedStepTitle,
                 type: s.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL,
                 ...(s.type === 'counting'
                   ? { action: trimmedAction, unit: trimmedUnit, maxCount }
                   : {}),
-              };
-            }),
+              },
+            };
+          });
+          newTask = await createCompound(userId, {
+            title: title.trim(),
+            description: description.trim() || undefined,
+            operator: OperatorType.AND,
+            isOrdered: true,
+            children,
           });
         }
 

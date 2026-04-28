@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { CompositeTask, Task } from '@oybc/shared';
+import type { Task } from '@oybc/shared';
 import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
 import { TypeBadge } from '../TypeBadge';
 import { CountingStepFields } from '../CountingStepFields';
@@ -27,7 +27,7 @@ export interface SubtaskCardProps {
   draft: SubtaskDraft;
   /** Library feeds — needed by existing-mode rows to look up their title + meta. */
   allTasks: Task[];
-  allCompositeTasks: CompositeTask[];
+  allCompositeTasks: Task[];
   /** taskId → count of distinct boards the task is placed on. */
   taskBoardCounts: Record<string, number>;
   /** taskId → number of non-deleted steps (progress tasks only). */

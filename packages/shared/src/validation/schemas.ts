@@ -131,6 +131,57 @@ export const UpdateTaskInputSchema = z.object({
   description: z.string().max(1000).optional(),
 });
 
+// ===== Compound creation input =====
+
+export const AutoCreateCompoundChildTaskSchema = z.object({
+  type: z.enum([TaskType.NORMAL, TaskType.COUNTING]),
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  action: z.string().min(1).max(50).optional(),
+  unit: z.string().min(1).max(50).optional(),
+  maxCount: z.number().int().positive().optional(),
+}).refine(
+  (data) => {
+    if (data.type === TaskType.COUNTING) {
+      return data.action !== undefined && data.unit !== undefined && data.maxCount !== undefined;
+    }
+    return true;
+  },
+  { message: 'Counting child tasks require action, unit, and maxCount' },
+);
+
+export const CreateCompoundChildEntrySchema = z.object({
+  childTaskId: z.string().uuid().optional(),
+  autoCreate: AutoCreateCompoundChildTaskSchema.optional(),
+}).refine(
+  (data) => (data.childTaskId !== undefined) !== (data.autoCreate !== undefined),
+  { message: 'CreateCompoundChildEntry must specify exactly one of childTaskId or autoCreate' },
+);
+
+export const CreateCompoundTaskInputSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  operator: z.nativeEnum(OperatorType),
+  threshold: z.number().int().positive().optional(),
+  isOrdered: z.boolean(),
+  children: z.array(CreateCompoundChildEntrySchema).min(2),
+}).refine(
+  (data) => {
+    if (data.operator === OperatorType.M_OF_N) {
+      return data.threshold !== undefined && data.threshold >= 1 && data.threshold <= data.children.length;
+    }
+    return true;
+  },
+  { message: "operator='M_OF_N' requires threshold in [1, children.length]" },
+).refine(
+  (data) => {
+    // No duplicate childTaskIds.
+    const ids = data.children.map((c) => c.childTaskId).filter((id): id is string => id !== undefined);
+    return new Set(ids).size === ids.length;
+  },
+  { message: 'Compound children must not contain duplicate childTaskId references' },
+);
+
 export const TaskProgressCounterSchema = z.object({
   counterId: z.string().uuid(),
   targetValue: z.number().positive(),
@@ -146,18 +197,49 @@ export const TaskSchema = z.object({
   action: z.string().max(50).optional(),
   unit: z.string().max(50).optional(),
   maxCount: z.number().int().positive().optional(),
+  // Compound task fields
+  operator: z.nativeEnum(OperatorType).optional(),
+  threshold: z.number().int().positive().optional(),
+  isOrdered: z.boolean().optional(),
   parentStepId: z.string().uuid().optional(),
   parentStepIndex: z.number().int().min(0).optional(),
   progressCounters: z.array(TaskProgressCounterSchema).optional(),
   totalCompletions: z.number().int().min(0),
   totalInstances: z.number().int().min(0),
+  // Completion tracking fields (live on Task, not BoardTask).
+  // `isCompleted` defaults to `false` on decode so pre-unification Firestore
+  // docs (written before global-completion landed) still pass pull validation
+  // on a fresh device. Mirrors iOS Task.swift's `decodeIfPresent ?? false`
+  // defensive decode at line 170. Without this default, first-sync against a
+  // project with stale remote docs would skip every legacy Task.
+  isCompleted: z.boolean().default(false),
+  completedAt: z.string().datetime().optional(),
+  currentCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
-});
+}).refine(
+  (data) => {
+    // Compound tasks must have an operator.
+    if (data.type === TaskType.COMPOUND) {
+      return data.operator !== undefined;
+    }
+    return true;
+  },
+  { message: "Task with type='compound' must have an operator" },
+).refine(
+  (data) => {
+    // M_OF_N operator requires a threshold.
+    if (data.operator === OperatorType.M_OF_N) {
+      return data.threshold !== undefined;
+    }
+    return true;
+  },
+  { message: "Task with operator='M_OF_N' must have a threshold" },
+);
 
 export const TaskStepSchema = z.object({
   id: z.string().uuid(),
@@ -191,13 +273,6 @@ export const CreateBoardTaskInputSchema = z.object({
   achievementTimeframe: z.nativeEnum(Timeframe).optional(),
 });
 
-export const UpdateBoardTaskCompletionInputSchema = z.object({
-  isCompleted: z.boolean(),
-  currentCount: z.number().int().min(0).optional(),
-  completedStepIds: z.array(z.string().uuid()).optional(),
-  achievementProgress: z.number().int().min(0).optional(),
-});
-
 export const BoardTaskSchema = z.object({
   id: z.string().uuid(),
   boardId: z.string().uuid(),
@@ -205,10 +280,6 @@ export const BoardTaskSchema = z.object({
   row: z.number().int().min(0),
   col: z.number().int().min(0),
   isCenter: z.boolean(),
-  isCompleted: z.boolean(),
-  completedAt: z.string().datetime().optional(),
-  currentCount: z.number().int().min(0).optional(),
-  completedStepIds: z.array(z.string().uuid()).optional(),
   isAchievementSquare: z.boolean().optional(),
   achievementType: z.enum(['bingo', 'full_completion']).optional(),
   achievementCount: z.number().int().positive().optional(),
@@ -219,6 +290,34 @@ export const BoardTaskSchema = z.object({
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
 });
+
+// ===== CompoundChild Schemas =====
+
+const compoundChildNoSelfReference = (data: { compoundTaskId: string; childTaskId: string }) =>
+  data.compoundTaskId !== data.childTaskId;
+
+const compoundChildSelfReferenceMessage = {
+  message: 'CompoundChild must not self-reference (compoundTaskId == childTaskId)',
+};
+
+export const CreateCompoundChildInputSchema = z.object({
+  compoundTaskId: z.string().uuid(),
+  childTaskId: z.string().uuid(),
+  childIndex: z.number().int().nonnegative(),
+}).refine(compoundChildNoSelfReference, compoundChildSelfReferenceMessage);
+
+export const CompoundChildSchema = z.object({
+  id: z.string().uuid(),
+  compoundTaskId: z.string().uuid(),
+  childTaskId: z.string().uuid(),
+  childIndex: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+}).refine(compoundChildNoSelfReference, compoundChildSelfReferenceMessage);
 
 // ===== ProgressCounter Schemas =====
 

@@ -1,9 +1,9 @@
-import { TaskType, type CompositeTask } from '@oybc/shared';
+import { TaskType, type Task } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
-import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
+import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
 import {
   type UseCreateFormState,
   TITLE_MAX_LENGTH,
@@ -35,7 +35,8 @@ const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
 export interface CreateNewTaskFormProps {
   form: UseCreateFormState;
   userId: string | undefined;
-  onCompositeCreated: (ct: CompositeTask) => void;
+  /** Called with the newly-created compound Task when the user finishes the wizard. */
+  onCompositeCreated: (task: Task) => void;
   /** Label for the submit button. Defaults to the legacy pool-flow wording. */
   submitLabel?: string;
 }

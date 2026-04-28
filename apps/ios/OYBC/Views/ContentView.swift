@@ -11,33 +11,14 @@ import SwiftUI
 /// `-previewCompositeBuild` branch below.
 struct ContentView: View {
     var body: some View {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-previewCompositeBuild") {
-            // Mount the composite wizard's Build step directly with mock
-            // data so we can screenshot layout/density changes without
-            // driving the full wizard flow.
-            //
-            // Launch:
-            //   xcrun simctl launch <device> com.oybc.OYBC -previewCompositeBuild YES
-            CompositeBuildPreviewHarness()
-        } else if ProcessInfo.processInfo.arguments.contains("-previewBoardTasks") {
-            // Same pattern for the board wizard's Tasks step so we can
-            // verify row layout / usage hints / composite expansion
-            // without driving the full board flow.
-            //
-            // Launch:
-            //   xcrun simctl launch <device> com.oybc.OYBC -previewBoardTasks YES
-            BoardWizardTasksPreviewHarness()
-        } else {
-            AuthGateView {
-                MainTabView()
-            }
-        }
-        #else
+        // CompositeBuildPreviewHarness + BoardWizardTasksPreviewHarness were
+        // gated post-compound-tasks-unification (their mock fixtures used
+        // legacy CompositeTask / CompositeNode / TaskStep types). Phase 8
+        // will rebuild and re-enable the `-previewCompositeBuild` and
+        // `-previewBoardTasks` launch args.
         AuthGateView {
             MainTabView()
         }
-        #endif
     }
 }
 

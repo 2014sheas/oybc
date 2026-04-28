@@ -1,3 +1,7 @@
+// Gated out post-compound-tasks-unification. The mock fixture used legacy
+// CompositeNode + TaskStep + the gated `BoardTask.makePlayground` factory.
+// Phase 8 will rebuild this harness with `compoundChildren` mocks.
+#if false
 #if DEBUG
 import SwiftUI
 
@@ -181,4 +185,5 @@ struct BoardWizardTasksPreviewHarness: View {
         ),
     ]
 }
+#endif
 #endif

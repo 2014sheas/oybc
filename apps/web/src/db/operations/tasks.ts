@@ -1,6 +1,12 @@
 import { db } from '../database';
-import type { Task, TaskStep, CreateTaskInput } from '@oybc/shared';
-import { SyncOperationType, TaskType } from '@oybc/shared';
+import type {
+  Task,
+  TaskStep,
+  CreateTaskInput,
+  CreateCompoundTaskInput,
+  CompoundChild,
+} from '@oybc/shared';
+import { SyncOperationType, TaskType, OperatorType } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -40,6 +46,8 @@ export async function createTask(
     action: input.action,
     unit: input.unit,
     maxCount: input.maxCount,
+    currentCount: input.type === TaskType.COUNTING ? 0 : undefined,
+    isCompleted: false,
     totalCompletions: 0,
     totalInstances: 0,
     createdAt: currentTimestamp(),
@@ -48,27 +56,92 @@ export async function createTask(
     isDeleted: false,
   };
 
-  await db.transaction('rw', [db.tasks, db.taskSteps], async () => {
-    // Add task
+  // Post-unification: createTask is for primitives only (NORMAL / COUNTING).
+  // Progress + Composite both route through createCompound, which writes
+  // tasks + compound_children. The dropped task_steps table is no longer
+  // referenced here.
+  if (input.type === TaskType.PROGRESS || input.type === TaskType.COMPOUND) {
+    throw new Error(
+      `createTask received type='${input.type}'. Compound and progress tasks must call createCompound (with isOrdered=true for progress).`
+    );
+  }
+
+  await db.transaction('rw', [db.tasks], async () => {
     await db.tasks.add(task);
+  });
 
-    // Add steps if progress task — each step also gets a standalone Task
-    // record linked via linkedTaskId so steps are immediately pool-addable
-    if (input.type === 'progress' && input.steps) {
-      for (let i = 0; i < input.steps.length; i++) {
-        const stepInput = input.steps[i];
+  void addToSyncQueue('tasks', task.id, SyncOperationType.CREATE, task);
 
-        // Create standalone task for this step
-        const stepTaskId = generateUUID();
-        const now = currentTimestamp();
-        const stepTask: Task = {
-          id: stepTaskId,
+  return task;
+}
+
+/**
+ * Create a new compound task (unifies former progress + composite create paths).
+ *
+ * Writes:
+ *   - One `tasks` row with `type='compound'` + operator/threshold/isOrdered.
+ *   - For each child entry: either references the provided `childTaskId`, or
+ *     auto-creates a new primitive Task (if `autoCreate` is provided).
+ *   - One `compoundChildren` row per child link.
+ *
+ * All writes run in a single Dexie transaction so partial failures don't
+ * leave dangling rows. Sync entries are enqueued after the transaction
+ * commits (matches the pattern in createTask).
+ *
+ * Caller is responsible for validating `input` against
+ * `CreateCompoundTaskInputSchema` from @oybc/shared before calling.
+ *
+ * @param userId - The owning user's ID
+ * @param input - Validated compound task creation input
+ * @returns The newly created compound Task row
+ */
+export async function createCompound(
+  userId: string,
+  input: CreateCompoundTaskInput,
+): Promise<Task> {
+  const now = currentTimestamp();
+  const compound: Task = {
+    id: generateUUID(),
+    userId,
+    title: input.title,
+    description: input.description,
+    type: TaskType.COMPOUND,
+    operator: input.operator,
+    threshold: input.operator === OperatorType.M_OF_N ? input.threshold : undefined,
+    isOrdered: input.isOrdered,
+    isCompleted: false, // Field exists for column uniformity; never read on compound rows.
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+  };
+
+  const childRowsToSync: { task?: Task; child: CompoundChild }[] = [];
+
+  await db.transaction('rw', [db.tasks, db.compoundChildren], async () => {
+    await db.tasks.add(compound);
+
+    for (let i = 0; i < input.children.length; i++) {
+      const entry = input.children[i];
+
+      let childTaskId = entry.childTaskId;
+      let inlineCreatedTask: Task | undefined;
+
+      if (!childTaskId && entry.autoCreate) {
+        // Inline-create a primitive child Task in the same transaction.
+        inlineCreatedTask = {
+          id: generateUUID(),
           userId,
-          title: stepInput.title,
-          type: stepInput.type,
-          action: stepInput.action,
-          unit: stepInput.unit,
-          maxCount: stepInput.maxCount,
+          title: entry.autoCreate.title,
+          description: entry.autoCreate.description,
+          type: entry.autoCreate.type,
+          action: entry.autoCreate.action,
+          unit: entry.autoCreate.unit,
+          maxCount: entry.autoCreate.maxCount,
+          currentCount: entry.autoCreate.type === TaskType.COUNTING ? 0 : undefined,
+          isCompleted: false,
           totalCompletions: 0,
           totalInstances: 0,
           createdAt: now,
@@ -76,44 +149,41 @@ export async function createTask(
           version: 1,
           isDeleted: false,
         };
-        await db.tasks.add(stepTask);
-
-        // Create the step record linked to both the parent and the standalone task
-        const step: TaskStep = {
-          id: generateUUID(),
-          taskId: task.id,
-          stepIndex: i,
-          title: stepInput.title,
-          type: stepInput.type,
-          action: stepInput.action,
-          unit: stepInput.unit,
-          maxCount: stepInput.maxCount,
-          linkedTaskId: stepTaskId,
-          createdAt: now,
-          updatedAt: now,
-          version: 1,
-          isDeleted: false,
-        };
-        await db.taskSteps.add(step);
+        await db.tasks.add(inlineCreatedTask);
+        childTaskId = inlineCreatedTask.id;
       }
+
+      if (!childTaskId) {
+        // Should be impossible given Zod validation, but defensive: skip
+        // an entry that has neither childTaskId nor autoCreate.
+        continue;
+      }
+
+      const childRow: CompoundChild = {
+        id: generateUUID(),
+        compoundTaskId: compound.id,
+        childTaskId,
+        childIndex: i,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        isDeleted: false,
+      };
+      await db.compoundChildren.add(childRow);
+      childRowsToSync.push({ task: inlineCreatedTask, child: childRow });
     }
   });
 
-  void addToSyncQueue('tasks', task.id, SyncOperationType.CREATE, task);
-
-  // Also sync any task steps and linked step tasks that were created
-  const createdSteps = await db.taskSteps.where('taskId').equals(task.id).toArray();
-  for (const step of createdSteps) {
-    void addToSyncQueue('taskSteps', step.id, SyncOperationType.CREATE, step);
-    if (step.linkedTaskId) {
-      const linkedTask = await db.tasks.get(step.linkedTaskId);
-      if (linkedTask) {
-        void addToSyncQueue('tasks', linkedTask.id, SyncOperationType.CREATE, linkedTask);
-      }
+  // Enqueue sync entries OUTSIDE the transaction (matches createTask pattern).
+  void addToSyncQueue('tasks', compound.id, SyncOperationType.CREATE, compound);
+  for (const { task: inlineTask, child: childRow } of childRowsToSync) {
+    if (inlineTask) {
+      void addToSyncQueue('tasks', inlineTask.id, SyncOperationType.CREATE, inlineTask);
     }
+    void addToSyncQueue('compoundChildren', childRow.id, SyncOperationType.CREATE, childRow);
   }
 
-  return task;
+  return compound;
 }
 
 /**
