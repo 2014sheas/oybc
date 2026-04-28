@@ -49,6 +49,13 @@ private func makeSyncItem<T: Codable>(
 
 // MARK: - Board Lifecycle Playground
 
+// swiftlint:disable all
+// Phase 5 will rewrite or delete this playground. Gated out because it references
+// BoardTask completion fields (isCompleted, currentCount, completedStepIds) and
+// non-exhaustive task-type switches that were invalidated by the compound-tasks
+// unification refactor. Do not remove the gate until Phase 5 lands.
+#if false
+
 /// Board Lifecycle Playground.
 ///
 /// Demonstrates the full board lifecycle end-to-end:
@@ -1293,3 +1300,6 @@ struct BoardLifecyclePlayground: View {
         }
     }
 }
+
+#endif
+// swiftlint:enable all

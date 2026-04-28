@@ -1,4 +1,4 @@
-import { OperatorType, type CompositeTask, type Task } from '@oybc/shared';
+import { OperatorType, type Task } from '@oybc/shared';
 import type { SubtaskDraft } from './compositeSubtaskDraft';
 import styles from './ReviewStep.module.css';
 
@@ -10,7 +10,7 @@ export interface ReviewStepProps {
   /** Library tasks + composites — needed to resolve existing-mode chips
    *  to their actual titles and metadata. */
   allTasks: Task[];
-  allCompositeTasks: CompositeTask[];
+  allCompositeTasks: Task[];
   isSubmitting: boolean;
   errorMessage: string | null;
   onBack: () => void;
@@ -127,7 +127,7 @@ export function ReviewStep({
 interface SubtaskReviewChipProps {
   draft: SubtaskDraft;
   allTasks: Task[];
-  allCompositeTasks: CompositeTask[];
+  allCompositeTasks: Task[];
   index: number;
 }
 

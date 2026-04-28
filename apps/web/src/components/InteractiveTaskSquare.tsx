@@ -186,6 +186,18 @@ export function FloatingContextMenu({
         </>
       )}
 
+      {sq.type === 'compound' && (
+        <button
+          className={styles.contextMenuItem}
+          onClick={() => {
+            onViewDetails?.(sq.id);
+            onClose();
+          }}
+        >
+          ⊕ View Children
+        </button>
+      )}
+
       <div className={styles.contextMenuDivider} />
       <button
         className={styles.contextMenuItem}
@@ -208,6 +220,8 @@ interface InteractiveTaskSquareProps {
   state: SquareState;
   onAct: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
+  onCompoundChildToggle?: (childTaskId: string) => void;
 }
 
 /**
@@ -228,7 +242,7 @@ export function InteractiveTaskSquare({
   onAct,
   onContextMenu,
 }: InteractiveTaskSquareProps) {
-  const hasProgress = sq.type === 'counting' || sq.type === 'progress';
+  const hasProgress = sq.type === 'counting' || sq.type === 'progress' || sq.type === 'compound';
   const fraction = progressFraction(sq, state);
   const barLabel = progressBarLabel(sq, state);
 
@@ -267,6 +281,11 @@ export function InteractiveTaskSquare({
       {/* Checkmark (visible when completed) */}
       <span className={styles.checkmark}>✓</span>
 
+      {/* Compound badge (top-left, compound tasks only) */}
+      {sq.type === 'compound' && (
+        <span className={styles.compoundBadge}>C</span>
+      )}
+
       {/* Task name */}
       <span className={styles.taskName}>{sq.title}</span>
 
@@ -282,7 +301,9 @@ export function InteractiveTaskSquare({
             className={`${styles.progressBarFill} ${
               sq.type === 'counting'
                 ? styles.progressBarFillCounting
-                : styles.progressBarFillProgress
+                : sq.type === 'compound'
+                  ? styles.progressBarFillCompound
+                  : styles.progressBarFillProgress
             }`}
             style={{ width: `${fraction * 100}%` }}
           />
@@ -303,6 +324,8 @@ interface DetailModalProps {
   onIncrementCount: (id: string) => void;
   onDecrementCount: (id: string) => void;
   onToggleStep: (squareId: string, stepId: string) => void;
+  /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
+  onCompoundChildToggle?: (childTaskId: string) => void;
 }
 
 /**
@@ -319,6 +342,7 @@ interface DetailModalProps {
  * @param onIncrementCount - Called with square id to add one count unit
  * @param onDecrementCount - Called with square id to remove one count unit
  * @param onToggleStep - Called with (squareId, stepId) to toggle a progress step
+ * @param onCompoundChildToggle - Compound tasks only: called with childTaskId to toggle a child
  */
 export function DetailModal({
   sq,
@@ -328,6 +352,7 @@ export function DetailModal({
   onIncrementCount,
   onDecrementCount,
   onToggleStep,
+  onCompoundChildToggle,
 }: DetailModalProps) {
   // Close on Escape key
   useEffect(() => {
@@ -340,6 +365,15 @@ export function DetailModal({
 
   const fraction = progressFraction(sq, state);
   const barLabel = progressBarLabel(sq, state);
+
+  /** Human-readable caption for the compound operator. */
+  function compoundOperatorCaption(): string {
+    if (sq.type !== 'compound') return '';
+    const total = sq.children?.length ?? 0;
+    if (sq.operator === 'OR') return `Any 1 of ${total}`;
+    if (sq.operator === 'M_OF_N') return `At least ${sq.threshold ?? '?'} of ${total}`;
+    return `All ${total} of ${total}`;
+  }
 
   return (
     <div
@@ -452,6 +486,58 @@ export function DetailModal({
                 </label>
               ))}
             </div>
+          </>
+        )}
+
+        {/* Compound task */}
+        {sq.type === 'compound' && (
+          <>
+            {sq.description && (
+              <p className={styles.modalDescription}>{sq.description}</p>
+            )}
+            {/* Operator caption */}
+            <p className={styles.compoundOperatorCaption}>{compoundOperatorCaption()}</p>
+            {/* Progress bar */}
+            <div className={styles.modalProgressBar}>
+              <div
+                className={`${styles.modalProgressFill} ${styles.modalProgressFillCompound}`}
+                style={{ width: `${fraction * 100}%` }}
+              />
+              <div className={styles.modalProgressLabel}>{barLabel}</div>
+            </div>
+            {/* Child task list */}
+            <ul className={styles.compoundChildList}>
+              {(sq.children ?? []).map((child) => (
+                <li
+                  key={child.taskId}
+                  className={styles.compoundChildItem}
+                  onClick={() => onCompoundChildToggle?.(child.taskId)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onCompoundChildToggle?.(child.taskId);
+                    }
+                  }}
+                  aria-pressed={child.isCompleted}
+                >
+                  <span className={styles.compoundChildCheck}>
+                    {child.isCompleted ? '✓' : '○'}
+                  </span>
+                  <span
+                    className={`${styles.compoundChildLabel} ${
+                      child.isCompleted ? styles.compoundChildLabelDone : ''
+                    }`}
+                  >
+                    {child.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className={styles.compoundFooter}>
+              Completion applies to all boards where this task appears.
+            </p>
           </>
         )}
       </div>

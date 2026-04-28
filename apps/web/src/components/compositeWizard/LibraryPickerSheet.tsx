@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CompositeTask, Task } from '@oybc/shared';
+import type { Task } from '@oybc/shared';
 import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
 import { TypeBadge } from '../TypeBadge';
 import { FilterTabs } from '../FilterTabs';
@@ -32,7 +32,7 @@ export interface LibraryDiff {
 export interface LibraryPickerSheetProps {
   /** Library feeds. */
   allTasks: Task[];
-  allCompositeTasks: CompositeTask[];
+  allCompositeTasks: Task[];
   /** Ids currently members of this composite (existing-mode subtasks). Drives
    *  the initial checkbox state. */
   initialCheckedIds: Set<string>;

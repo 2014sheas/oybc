@@ -42,6 +42,12 @@ private enum ExistingFilter: String, CaseIterable {
     case composite = "Composite"
 }
 
+// swiftlint:disable all
+// Phase 5 will rewrite or delete this playground. Gated out because it references
+// BoardTask completion fields and Board.makePlayground that were removed in the
+// compound-tasks unification. Do not remove the gate until Phase 5 lands.
+#if false
+
 // MARK: - BoardTaskSelectionPlayground
 
 /// Board Task Selection Playground — SF4 entry point.
@@ -1860,3 +1866,6 @@ struct BoardTaskSelectionPlayground: View {
         }
     }
 }
+
+#endif
+// swiftlint:enable all

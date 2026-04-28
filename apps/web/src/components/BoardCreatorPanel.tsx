@@ -7,12 +7,12 @@ import {
   formatTimeframeLabel,
   toLocalISO,
   type Task,
-  type TaskStep,
+  type CompoundChild,
   type BoardTask,
   type UserPreferences,
 } from '@oybc/shared';
 import { useBoardTasks } from '../hooks';
-import { taskToSquareData, boardTaskToSquareState } from '../db/adapters';
+import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { createBoard } from '../db/operations/boards';
 import { createBoardTask } from '../db/operations/boardTasks';
 import { InteractiveTaskSquare } from './InteractiveTaskSquare';
@@ -32,8 +32,8 @@ export interface BoardCreatorPanelProps {
   pool: PoolEntry[];
   /** Record mapping task IDs to Task objects for resolving square data */
   taskMap: Record<string, Task>;
-  /** All non-deleted task steps, used to resolve progress step fractions */
-  allTaskSteps: TaskStep[];
+  /** All non-deleted compound children, used to resolve progress step fractions (Task 4.3 will wire this properly) */
+  allCompoundChildren: CompoundChild[];
   /** User ID to associate with the created board */
   userId: string;
   /**
@@ -67,14 +67,14 @@ const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
  *
  * @param props.pool - Pool entries from the parent playground
  * @param props.taskMap - Record mapping task IDs to Task objects
- * @param props.allTaskSteps - All task steps for step-fraction rendering
+ * @param props.allCompoundChildren - All compound children for step-fraction rendering (Task 4.3)
  * @param props.userId - User ID for the created board
  * @param props.onBoardCreated - Optional callback after successful creation
  */
 export function BoardCreatorPanel({
   pool,
   taskMap,
-  allTaskSteps,
+  allCompoundChildren,
   userId,
   initialPreferences,
   onBoardCreated,
@@ -314,6 +314,20 @@ export function BoardCreatorPanel({
       btMap[`${bt.row}-${bt.col}`] = bt;
     }
 
+    // Pre-group compound children for the preview adapters. Without this,
+    // taskToSquareData / taskToSquareState fall through to the
+    // empty-children branch — and AND-of-empty-set evaluates as `true` via
+    // vacuous truth, so freshly-placed compounds would render as already-
+    // complete in the preview before the user has done anything.
+    const childrenByCompound: Record<string, typeof allCompoundChildren> = {};
+    for (const c of allCompoundChildren) {
+      if (c.isDeleted) continue;
+      (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+    }
+    for (const id of Object.keys(childrenByCompound)) {
+      childrenByCompound[id].sort((a, b) => a.childIndex - b.childIndex);
+    }
+
     const centerRow = Math.floor(boardSize / 2);
     const centerCol = Math.floor(boardSize / 2);
     const cells: React.ReactElement[] = [];
@@ -340,8 +354,20 @@ export function BoardCreatorPanel({
 
         const task = taskMap[bt.taskId];
         if (task) {
-          const squareData = taskToSquareData(task, allTaskSteps);
-          const squareState = boardTaskToSquareState(bt);
+          const compoundChildrenForTask = childrenByCompound[task.id];
+          const squareData = taskToSquareData(
+            task,
+            [],
+            compoundChildrenForTask,
+            taskMap,
+            childrenByCompound,
+          );
+          const squareState = taskToSquareState(
+            task,
+            compoundChildrenForTask,
+            taskMap,
+            childrenByCompound,
+          );
           cells.push(
             <div key={bt.id}>
               <InteractiveTaskSquare

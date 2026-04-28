@@ -107,6 +107,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "com.oybc.OYBCTests"
         CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   OYBC:

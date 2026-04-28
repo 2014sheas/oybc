@@ -10,11 +10,23 @@ export enum BoardStatus {
 
 /**
  * Task type definitions
+ *
+ * COMPOUND is the canonical task type that subsumes PROGRESS and the legacy
+ * separate composite_tasks hierarchy. Both fold into compound: PROGRESS tasks
+ * become COMPOUND with operator=AND, isOrdered=true; legacy composite tasks
+ * are migrated to COMPOUND in Phase 6+.
  */
 export enum TaskType {
   NORMAL = 'normal',         // Simple completion task
   COUNTING = 'counting',     // Tasks with counts (e.g., "Read 100 pages")
-  PROGRESS = 'progress'      // Multi-step tasks with sub-steps
+  /**
+   * @deprecated Transitional alias kept for the duration of the compound-tasks
+   * unification refactor; downstream callers in apps/web and apps/ios still
+   * reference TaskType.PROGRESS. Removed in Phase 8 once all callers migrate
+   * to TaskType.COMPOUND with isOrdered=true.
+   */
+  PROGRESS = 'progress',
+  COMPOUND = 'compound'      // Compound task: multi-child with operator (AND/OR/M_OF_N) and ordering
 }
 
 /**

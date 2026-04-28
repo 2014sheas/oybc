@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CompositeTask, Task } from '@oybc/shared';
+import type { Task } from '@oybc/shared';
 import { OperatorType } from '@oybc/shared';
 import { CounterStepper } from '../CounterStepper';
 import { SubtaskCard } from './SubtaskCard';
@@ -26,7 +26,7 @@ export interface BuildStepProps {
    *  and survives operator toggles). */
   onThresholdChange: (next: number) => void;
   allTasks: Task[];
-  allCompositeTasks: CompositeTask[];
+  allCompositeTasks: Task[];
   /** taskId → count of distinct boards the task is placed on. */
   taskBoardCounts: Record<string, number>;
   /** taskId → number of non-deleted steps (progress tasks only). */

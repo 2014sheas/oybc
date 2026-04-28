@@ -446,7 +446,7 @@ struct BoardCreatorPanelView: View {
                 InteractiveTaskSquareView(
                     title: task.title,
                     taskType: .normal,
-                    isCompleted: bt.isCompleted,
+                    isCompleted: task.isCompleted,
                     isReadOnly: true
                 )
 
@@ -454,8 +454,8 @@ struct BoardCreatorPanelView: View {
                 InteractiveTaskSquareView(
                     title: task.title,
                     taskType: .counting,
-                    isCompleted: bt.isCompleted,
-                    currentCount: bt.currentCount ?? 0,
+                    isCompleted: task.isCompleted,
+                    currentCount: task.currentCount ?? 0,
                     maxCount: task.maxCount ?? 0,
                     unit: task.unit ?? "",
                     isReadOnly: true
@@ -463,13 +463,21 @@ struct BoardCreatorPanelView: View {
 
             case .progress:
                 let stepsForTask = allTaskSteps.filter { $0.taskId == task.id }
-                let completedCount = bt.completedStepIds?.count ?? 0
                 InteractiveTaskSquareView(
                     title: task.title,
                     taskType: .progress,
-                    isCompleted: bt.isCompleted,
-                    completedSteps: completedCount,
+                    isCompleted: task.isCompleted,
+                    completedSteps: 0,  // Phase 5: derive from task step completion
                     totalSteps: stepsForTask.count,
+                    isReadOnly: true
+                )
+
+            case .compound:
+                // Phase 5: compound tasks will render via a dedicated square variant.
+                InteractiveTaskSquareView(
+                    title: task.title,
+                    taskType: .normal,
+                    isCompleted: task.isCompleted,
                     isReadOnly: true
                 )
             }
@@ -598,9 +606,27 @@ struct BoardCreatorPanelView: View {
                 let centerCol = size / 2
                 var boardTasks: [BoardTask] = []
 
+                // Builds a BoardTask using the explicit memberwise initializer.
+                // Compound-tasks unification removed isCompleted / currentCount /
+                // completedStepIds from BoardTask — completion now lives globally on
+                // Task — so this factory only sets placement + sync metadata.
+                func makeBoardTask(boardId: String, taskId: String, row: Int, col: Int, now: String, isCenter: Bool) -> BoardTask {
+                    BoardTask(
+                        id: UUID().uuidString.lowercased(),
+                        boardId: boardId,
+                        taskId: taskId,
+                        row: row,
+                        col: col,
+                        isCenter: isCenter,
+                        createdAt: now,
+                        updatedAt: now,
+                        version: 1
+                    )
+                }
+
                 // For CHOSEN center type, place the selected task at the center cell first.
                 if size % 2 == 1 && centerType == .chosen, let ctId = capturedCenterTaskId {
-                    let centerBt = BoardTask.makePlayground(
+                    let centerBt = makeBoardTask(
                         boardId: boardId,
                         taskId: ctId,
                         row: centerRow,
@@ -624,7 +650,7 @@ struct BoardCreatorPanelView: View {
                         let entry = selectedEntries[poolIndex]
                         poolIndex += 1
 
-                        let bt = BoardTask.makePlayground(
+                        let bt = makeBoardTask(
                             boardId: boardId,
                             taskId: entry.taskId,
                             row: row,

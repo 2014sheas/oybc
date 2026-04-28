@@ -47,17 +47,20 @@ struct PlaygroundView: View {
         Feature(
             id: "board-lifecycle",
             title: "Board Lifecycle",
-            content: AnyView(BoardLifecyclePlayground(weekStartDay: weekStartDay))
+            // BoardLifecyclePlayground gated out until Phase 5 rewrite (compound-tasks unification)
+            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
         ),
         Feature(
             id: "board-task-selection",
             title: "Board Task Selection",
-            content: AnyView(BoardTaskSelectionPlayground())
+            // BoardTaskSelectionPlayground gated out until Phase 5 rewrite (compound-tasks unification)
+            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
         ),
         Feature(
             id: "cross-board-rollup",
             title: "Cross-Board Progress Rollup",
-            content: AnyView(CrossBoardRollupPlayground())
+            // CrossBoardRollupPlayground gated out until Phase 5 rewrite (TaskType.compound)
+            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
         ),
         Feature(
             id: "subtask-derivation",
@@ -72,12 +75,14 @@ struct PlaygroundView: View {
         Feature(
             id: "board-generator",
             title: "Board Generator",
-            content: AnyView(BoardGeneratorPlayground())
+            // BoardGeneratorPlayground gated out until Phase 5 rewrite (compound-tasks unification)
+            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
         ),
         Feature(
             id: "unified-task-creation",
             title: "Task Creation (Unified)",
-            content: AnyView(UnifiedTaskCreatorPlayground())
+            // UnifiedTaskCreatorPlayground gated out until Phase 5 rewrite (TaskType.compound)
+            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
         ),
     ]
     }

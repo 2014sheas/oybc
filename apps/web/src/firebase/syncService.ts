@@ -33,9 +33,11 @@ import {
   BoardTaskSchema,
   CompositeTaskSchema,
   CompositeNodeSchema,
+  CompoundChildSchema,
   mergeUserPreferences,
   type User,
 } from '@oybc/shared';
+import { runBoardCascadeForTask } from '../db/operations/orchestration';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,10 +48,11 @@ import {
 const SYNCABLE_COLLECTIONS = [
   'boards',
   'tasks',
-  'taskSteps',
+  'taskSteps',           // legacy — kept so push can drain DELETE ops from migration v4
   'boardTasks',
-  'compositeTasks',
-  'compositeNodes',
+  'compositeTasks',      // legacy — kept so push can drain DELETE ops from migration v4
+  'compositeNodes',      // legacy — kept so push can drain DELETE ops from migration v4
+  'compoundChildren',    // NEW
 ] as const;
 
 type SyncCollection = (typeof SYNCABLE_COLLECTIONS)[number];
@@ -81,6 +84,7 @@ const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   boardTasks: BoardTaskSchema,
   compositeTasks: CompositeTaskSchema,
   compositeNodes: CompositeNodeSchema,
+  compoundChildren: CompoundChildSchema,
 };
 
 /**
@@ -95,6 +99,18 @@ const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
   'boards',
   'tasks',
   'compositeTasks',
+]);
+
+/**
+ * Legacy collections kept in SYNCABLE_COLLECTIONS so the push path can drain
+ * DELETE ops produced by the migration-v4 cleanup. The pull path skips them
+ * because their Firestore subcollections are either empty or being actively
+ * retired — pulling their docs would resurrect legacy rows in local Dexie.
+ */
+const LEGACY_PULL_SKIP_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
+  'taskSteps',
+  'compositeTasks',
+  'compositeNodes',
 ]);
 
 export interface PushResult {
@@ -394,21 +410,79 @@ async function applyRemoteSubdoc(
     }
   }
 
+  // CompoundChild has no `userId` column — children scope through their
+  // parent compound's userId. A crafted Firestore doc with a `compoundTaskId`
+  // pointing at another user's compound would land in local Dexie with no
+  // direct check. Resolve the parent and reject on mismatch.
+  if (collectionName === 'compoundChildren') {
+    const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
+    if (typeof compoundTaskId !== 'string' || !compoundTaskId) {
+      return `Skipped compoundChildren/${validated.id}: missing compoundTaskId`;
+    }
+    const parentTask = await db.tasks.get(compoundTaskId);
+    if (!parentTask) {
+      // No local parent — could be a legitimate cross-device race. Defer:
+      // skip this pull cycle, the safety net will retry. Don't accept blind.
+      return `Skipped compoundChildren/${validated.id}: parent compound not yet present locally`;
+    }
+    if (parentTask.userId !== authenticatedUserId) {
+      return `Skipped compoundChildren/${validated.id}: parent userId mismatch`;
+    }
+  }
+
   const table = db.table(collectionName);
   const localData = (await table.get(validated.id)) as SyncableEntity | undefined;
 
-  if (!localData) {
-    await table.put(validated);
-    recordSyncEvent('pulled');
+  const isNew = !localData;
+  const remoteWins = isNew || resolveConflict(localData!, validated).winner === 'remote';
+
+  if (!remoteWins) {
+    return null; // local-wins → silent no-op
+  }
+
+  // Determine if the pulled doc's completion state differs from what we
+  // have locally. Used below to decide whether to trigger the board cascade.
+  // Apply the remote row to local Dexie (does NOT bump version — pulled
+  // value is authoritative; version comes directly from the remote doc).
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      await table.put(validated);
+
+      // After pulling a Task or CompoundChild, cascade the board derivation
+      // pass so that any board containing the changed task recomputes its
+      // stats + status transitions. The cascade writes boards + sync queue
+      // entries but does NOT touch the Task itself — pulled value is final.
+      //
+      // Cascade unconditionally (matches iOS SyncService.runPullCascade).
+      // The previous `completionChanged` gate (isCompleted/currentCount diff)
+      // missed compound-affecting edits — operator/threshold/isOrdered changes
+      // would leave boards with stale stats + completedLineIds even though
+      // the compound's derived state had flipped. The cascade is idempotent
+      // and small-N, so always running it is the safer + iOS-parity choice.
+      if (collectionName === 'tasks') {
+        // Let cascade errors propagate so the outer Dexie transaction rolls
+        // back the `table.put(validated)` that just landed. Pulling will retry
+        // on the next cycle. Previously this branch swallowed errors, which
+        // left the task applied locally but board stats stale forever — a
+        // silent divergence that no safety net resolved.
+        await runBoardCascadeForTask(validated.id);
+      } else if (collectionName === 'compoundChildren') {
+        // For a pulled CompoundChild, cascade via the parent compound task.
+        const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
+        if (typeof compoundTaskId === 'string' && compoundTaskId) {
+          await runBoardCascadeForTask(compoundTaskId);
+        }
+      }
+    },
+  );
+
+  recordSyncEvent('pulled');
+  if (isNew) {
     return `Pulled ${collectionName}/${validated.id} (new)`;
   }
-  const resolution = resolveConflict(localData, validated);
-  if (resolution.winner === 'remote') {
-    await table.put(validated);
-    recordSyncEvent('pulled');
-    return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${localData.version})`;
-  }
-  return null; // local-wins → silent no-op
+  return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
 }
 
 export async function pullSync(
@@ -443,6 +517,11 @@ export async function pullSync(
   }
 
   for (const collectionName of SYNCABLE_COLLECTIONS) {
+    // Legacy collections are kept in SYNCABLE_COLLECTIONS so push can drain
+    // their DELETE ops, but we must NOT pull from them — doing so would
+    // resurrect retired rows in local Dexie.
+    if (LEGACY_PULL_SKIP_COLLECTIONS.has(collectionName)) continue;
+
     try {
       const colRef = collection(firestore, 'users', userId, collectionName);
 
@@ -561,6 +640,10 @@ export function attachPullListeners(
     : new Date(0); // Unix epoch — first-sync delivery
   const watermarkTs = Timestamp.fromDate(watermarkDate);
   for (const collectionName of SYNCABLE_COLLECTIONS) {
+    // Legacy collections are kept in SYNCABLE_COLLECTIONS so push can drain
+    // their DELETE ops, but we must NOT attach real-time listeners to them.
+    if (LEGACY_PULL_SKIP_COLLECTIONS.has(collectionName)) continue;
+
     const colRef = collection(firestore, 'users', userId, collectionName);
     const q = query(colRef, where('_syncedAt', '>', watermarkTs));
     const unsub = onSnapshot(

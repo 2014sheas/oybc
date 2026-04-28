@@ -112,6 +112,14 @@ final class CreateFormViewModel {
         case .normal:
             break
 
+        case .compound:
+            // Phase 5 will route compound creation through a dedicated editor
+            // (separate Progress + Composite forms calling createCompound).
+            // The legacy single-task form never reaches this case in practice;
+            // present it as an internal error if it does.
+            errorMessage = "Compound tasks are created via the dedicated wizard, not this form."
+            return
+
         case .counting:
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -298,6 +306,12 @@ final class CreateFormViewModel {
                 type: .progress, totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )
+        case .compound:
+            // Defensive: validate() guards against the compound branch reaching
+            // submission via this legacy form (Phase 5 routes compounds through
+            // the dedicated wizard). preconditionFailure if execution
+            // somehow gets here.
+            preconditionFailure("Compound tasks must use the unified compound wizard, not buildCreateTask()")
         }
     }
 

@@ -1,3 +1,6 @@
+// Phase 5 will rewrite this playground to support TaskType.compound. Until
+// then, gate it out of the build so the rest of the iOS app can compile.
+#if false
 import SwiftUI
 import GRDB
 
@@ -1286,3 +1289,4 @@ extension TaskStep {
         self.deletedAt = nil
     }
 }
+#endif

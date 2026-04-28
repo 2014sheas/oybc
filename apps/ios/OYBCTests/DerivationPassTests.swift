@@ -1,0 +1,632 @@
+import XCTest
+@testable import OYBC
+
+/// Unit tests for `DerivationPass` — parity with
+/// `packages/shared/tests/algorithms/derivationPass.test.ts`.
+///
+/// Three pure functions are tested:
+///   - `findTransitiveParentCompounds`
+///   - `findAffectedBoardIds`
+///   - `computeBoardStatsUpdate`
+final class DerivationPassTests: XCTestCase {
+
+    // MARK: - Helpers
+
+    /// Build a minimal Task with sensible defaults; caller overrides only what matters.
+    private func task(
+        _ id: String,
+        type: TaskType = .normal,
+        isCompleted: Bool = false,
+        isDeleted: Bool = false,
+        operatorType: OperatorType? = nil,
+        threshold: Int? = nil
+    ) -> Task {
+        Task(
+            id: id,
+            userId: "u",
+            title: id,
+            type: type,
+            operatorType: operatorType,
+            threshold: threshold,
+            totalCompletions: 0,
+            totalInstances: 0,
+            isCompleted: isCompleted,
+            createdAt: "2026-04-23T00:00:00.000Z",
+            updatedAt: "2026-04-23T00:00:00.000Z",
+            version: 1,
+            isDeleted: isDeleted
+        )
+    }
+
+    /// Build a compound Task with the given operator.
+    private func compoundTask(
+        _ id: String,
+        operator op: OperatorType,
+        threshold: Int? = nil
+    ) -> Task {
+        task(id, type: .compound, operatorType: op, threshold: threshold)
+    }
+
+    /// Build a CompoundChild link.
+    private func child(
+        _ parent: String,
+        _ childId: String,
+        _ idx: Int,
+        isDeleted: Bool = false
+    ) -> CompoundChild {
+        CompoundChild(
+            id: "\(parent)-\(childId)-\(idx)",
+            compoundTaskId: parent,
+            childTaskId: childId,
+            childIndex: idx,
+            createdAt: "2026-04-23T00:00:00.000Z",
+            updatedAt: "2026-04-23T00:00:00.000Z",
+            version: 1,
+            isDeleted: isDeleted
+        )
+    }
+
+    /// Build a BoardTask using JSON round-trip (BoardTask has no memberwise init due
+    /// to its custom Codable decoder).
+    private func boardTask(
+        _ boardId: String,
+        _ taskId: String,
+        _ row: Int,
+        _ col: Int,
+        isAchievementSquare: Bool? = nil,
+        achievementCount: Int? = nil,
+        achievementProgress: Int? = nil
+    ) -> BoardTask {
+        var dict: [String: Any] = [
+            "id": "\(boardId)-\(taskId)",
+            "boardId": boardId,
+            "taskId": taskId,
+            "row": row,
+            "col": col,
+            "isCenter": false,
+            "createdAt": "2026-04-23T00:00:00.000Z",
+            "updatedAt": "2026-04-23T00:00:00.000Z",
+            "version": 1,
+        ]
+        if let v = isAchievementSquare { dict["isAchievementSquare"] = v }
+        if let v = achievementCount { dict["achievementCount"] = v }
+        if let v = achievementProgress { dict["achievementProgress"] = v }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(BoardTask.self, from: data)
+    }
+
+    /// Build a Board using JSON round-trip (Board has no memberwise init due to
+    /// its custom Codable decoder).
+    private func board(
+        _ id: String,
+        boardSize: Int = 3,
+        centerSquareType: CenterSquareType = .none,
+        completedLineIds: [String]? = []
+    ) -> Board {
+        // completedLineIds is stored as a JSON-encoded string in the DB/codable layer
+        var dict: [String: Any] = [
+            "id": id,
+            "userId": "u",
+            "name": id,
+            "status": "active",
+            "boardSize": boardSize,
+            "timeframe": "monthly",
+            "startDate": "2026-04-01T00:00:00.000Z",
+            "endDate": "2026-04-30T23:59:59.000Z",
+            "centerSquareType": centerSquareType.rawValue,
+            "isRandomized": false,
+            "totalTasks": boardSize * boardSize,
+            "completedTasks": 0,
+            "linesCompleted": 0,
+            "createdAt": "2026-04-23T00:00:00.000Z",
+            "updatedAt": "2026-04-23T00:00:00.000Z",
+            "version": 1,
+            "isDeleted": false,
+        ]
+        if let ids = completedLineIds {
+            // completedLineIds is stored/decoded as a JSON string inside the row
+            let jsonData = try! JSONEncoder().encode(ids)
+            dict["completedLineIds"] = String(data: jsonData, encoding: .utf8)!
+        }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
+    // MARK: - findTransitiveParentCompounds: empty
+
+    func testFindTransitiveParentCompounds_ReturnsEmptyWhenNoParent() {
+        let children = [child("compA", "otherTask", 0)]
+        let result = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: "changedTask",
+            children: children
+        )
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    // MARK: - findTransitiveParentCompounds: single parent
+
+    func testFindTransitiveParentCompounds_ReturnsSingleParent() {
+        let children = [
+            child("compA", "changedTask", 0),
+            child("compA", "otherTask", 1),
+        ]
+        let result = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: "changedTask",
+            children: children
+        )
+        XCTAssertEqual(result, ["compA"])
+    }
+
+    // MARK: - findTransitiveParentCompounds: grandparent
+
+    func testFindTransitiveParentCompounds_ReturnsParentAndGrandparent() {
+        // compB directly contains changedTask; compA contains compB
+        let children = [
+            child("compB", "changedTask", 0),
+            child("compA", "compB", 0),
+        ]
+        let result = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: "changedTask",
+            children: children
+        )
+        XCTAssertTrue(result.contains("compB"))
+        XCTAssertTrue(result.contains("compA"))
+        XCTAssertEqual(result.count, 2)
+    }
+
+    // MARK: - findTransitiveParentCompounds: soft-deleted filter
+
+    func testFindTransitiveParentCompounds_FiltersSoftDeletedLinks() {
+        // compA's link is soft-deleted; compB's link is active
+        let children = [
+            child("compA", "changedTask", 0, isDeleted: true),
+            child("compB", "changedTask", 0),
+        ]
+        let result = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: "changedTask",
+            children: children
+        )
+        XCTAssertEqual(result, ["compB"])
+        XCTAssertFalse(result.contains("compA"))
+    }
+
+    // MARK: - findTransitiveParentCompounds: cycle-safe
+
+    func testFindTransitiveParentCompounds_CycleSafe() {
+        // changedTask → compA → compB → compA (cycle)
+        let children = [
+            child("compA", "changedTask", 0),
+            child("compB", "compA", 0),
+            child("compA", "compB", 1), // cycle: compA also contains compB
+        ]
+        let result = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: "changedTask",
+            children: children
+        )
+        // Should terminate; both compA and compB should be included
+        XCTAssertTrue(result.contains("compA"))
+        XCTAssertTrue(result.contains("compB"))
+    }
+
+    // MARK: - findAffectedBoardIds: direct placement
+
+    func testFindAffectedBoardIds_ReturnsBoardWithChangedTask() {
+        let bts = [boardTask("boardA", "changedTask", 0, 0)]
+        let result = DerivationPass.findAffectedBoardIds(
+            changedTaskId: "changedTask",
+            parentCompounds: [],
+            boardTasks: bts
+        )
+        XCTAssertEqual(result, ["boardA"])
+    }
+
+    // MARK: - findAffectedBoardIds: parent-compound placement
+
+    func testFindAffectedBoardIds_ReturnsBoardWithParentCompound() {
+        let bts = [boardTask("boardA", "compA", 0, 0)]
+        let result = DerivationPass.findAffectedBoardIds(
+            changedTaskId: "changedTask",
+            parentCompounds: ["compA"],
+            boardTasks: bts
+        )
+        XCTAssertEqual(result, ["boardA"])
+    }
+
+    // MARK: - findAffectedBoardIds: union
+
+    func testFindAffectedBoardIds_ReturnsUnionOfBoards() {
+        let bts = [
+            boardTask("boardA", "changedTask", 0, 0),
+            boardTask("boardB", "compA", 1, 1),
+        ]
+        let result = DerivationPass.findAffectedBoardIds(
+            changedTaskId: "changedTask",
+            parentCompounds: ["compA"],
+            boardTasks: bts
+        )
+        XCTAssertEqual(result, ["boardA", "boardB"])
+    }
+
+    // MARK: - findAffectedBoardIds: empty
+
+    func testFindAffectedBoardIds_ReturnsEmptyWhenNoBoards() {
+        let bts = [boardTask("boardA", "unrelatedTask", 0, 0)]
+        let result = DerivationPass.findAffectedBoardIds(
+            changedTaskId: "changedTask",
+            parentCompounds: ["compA"],
+            boardTasks: bts
+        )
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    // MARK: - findAffectedBoardIds: dedup
+
+    func testFindAffectedBoardIds_DeduplicatesSameBoard() {
+        // Same board places both changedTask and parent compound
+        let bts = [
+            boardTask("boardA", "changedTask", 0, 0),
+            boardTask("boardA", "compA", 1, 1),
+        ]
+        let result = DerivationPass.findAffectedBoardIds(
+            changedTaskId: "changedTask",
+            parentCompounds: ["compA"],
+            boardTasks: bts
+        )
+        XCTAssertEqual(result, ["boardA"])
+        XCTAssertEqual(result.count, 1)
+    }
+
+    // MARK: - computeBoardStatsUpdate: primitive grid
+
+    func testComputeBoardStats_PrimitiveTaskCompletionCountedCorrectly() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let tDone = task("t1", isCompleted: true)
+        let tPending = task("t2", isCompleted: false)
+        let bts = [boardTask("b1", "t1", 0, 0), boardTask("b1", "t2", 0, 1)]
+        let taskById = ["t1": tDone, "t2": tPending]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: [:],
+            taskById: taskById
+        )
+        XCTAssertEqual(result.completedTasks, 1)
+        // row_0 not fully complete (t2 not done), no bingos
+        XCTAssertEqual(result.linesCompleted, 0)
+        XCTAssertEqual(result.completedLineIds, [])
+    }
+
+    // MARK: - computeBoardStatsUpdate: compound evaluated via evaluator (complete)
+
+    func testComputeBoardStats_CompoundAllChildrenCompleteCounts() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let comp = compoundTask("comp", operator: .and)
+        let child1 = task("c1", isCompleted: true)
+        let child2 = task("c2", isCompleted: true)
+        let bts = [boardTask("b1", "comp", 1, 1)]
+        let taskById = ["comp": comp, "c1": child1, "c2": child2]
+        let childrenByCompound = ["comp": [child("comp", "c1", 0), child("comp", "c2", 1)]]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById
+        )
+        XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    // MARK: - computeBoardStatsUpdate: compound with one incomplete child
+
+    func testComputeBoardStats_CompoundOneChildIncompleteNotCounted() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let comp = compoundTask("comp", operator: .and)
+        let child1 = task("c1", isCompleted: true)
+        let child2 = task("c2", isCompleted: false)
+        let bts = [boardTask("b1", "comp", 1, 1)]
+        let taskById = ["comp": comp, "c1": child1, "c2": child2]
+        let childrenByCompound = ["comp": [child("comp", "c1", 0), child("comp", "c2", 1)]]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    // MARK: - computeBoardStatsUpdate: linesCompleted matches BingoDetection
+
+    func testComputeBoardStats_LinesCompletedMatchesBingoDetection() {
+        // 3x3 board with row 0 fully complete
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let t0 = task("t0", isCompleted: true)
+        let t1 = task("t1", isCompleted: true)
+        let t2 = task("t2", isCompleted: true)
+        let bts = [
+            boardTask("b1", "t0", 0, 0),
+            boardTask("b1", "t1", 0, 1),
+            boardTask("b1", "t2", 0, 2),
+        ]
+        let taskById = ["t0": t0, "t1": t1, "t2": t2]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: [:],
+            taskById: taskById
+        )
+        XCTAssertEqual(result.linesCompleted, 1)
+        XCTAssertTrue(result.completedLineIds.contains("row_0"))
+    }
+
+    // MARK: - computeBoardStatsUpdate: new bingo diff
+
+    func testComputeBoardStats_NewBingosDiffedCorrectly() {
+        // pre-state: no bingos; post-state: row_0 completed
+        let b = board("b1", boardSize: 3, centerSquareType: .none, completedLineIds: [])
+        let t0 = task("t0", isCompleted: true)
+        let t1 = task("t1", isCompleted: true)
+        let t2 = task("t2", isCompleted: true)
+        let bts = [
+            boardTask("b1", "t0", 0, 0),
+            boardTask("b1", "t1", 0, 1),
+            boardTask("b1", "t2", 0, 2),
+        ]
+        let taskById = ["t0": t0, "t1": t1, "t2": t2]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: [:],
+            taskById: taskById
+        )
+        XCTAssertTrue(result.newBingos.contains("row_0"))
+        XCTAssertEqual(result.lostBingos, [])
+    }
+
+    // MARK: - computeBoardStatsUpdate: lost bingo diff
+
+    func testComputeBoardStats_LostBingosDiffedCorrectly() {
+        // pre-state: row_0 was complete; post-state: no tasks done → row_0 lost
+        let b = board("b1", boardSize: 3, centerSquareType: .none, completedLineIds: ["row_0"])
+        let t0 = task("t0", isCompleted: false)
+        let t1 = task("t1", isCompleted: false)
+        let t2 = task("t2", isCompleted: false)
+        let bts = [
+            boardTask("b1", "t0", 0, 0),
+            boardTask("b1", "t1", 0, 1),
+            boardTask("b1", "t2", 0, 2),
+        ]
+        let taskById = ["t0": t0, "t1": t1, "t2": t2]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: [:],
+            taskById: taskById
+        )
+        XCTAssertTrue(result.lostBingos.contains("row_0"))
+        XCTAssertEqual(result.newBingos, [])
+    }
+
+    // MARK: - computeBoardStatsUpdate: center auto-fill FREE
+
+    func testComputeBoardStats_CenterAutoFillFreeBoard() {
+        // 3x3 FREE board with no task at (1,1) — center treated as completed
+        let b = board("b1", boardSize: 3, centerSquareType: .free)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [],
+            childrenByCompound: [:],
+            taskById: [:]
+        )
+        XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    // MARK: - computeBoardStatsUpdate: center auto-fill CUSTOM_FREE
+
+    func testComputeBoardStats_CenterAutoFillCustomFreeBoard() {
+        let b = board("b1", boardSize: 3, centerSquareType: .customFree)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [],
+            childrenByCompound: [:],
+            taskById: [:]
+        )
+        XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    // MARK: - computeBoardStatsUpdate: no auto-fill on CHOSEN
+
+    func testComputeBoardStats_NoAutoFillForChosenCenter() {
+        let b = board("b1", boardSize: 3, centerSquareType: .chosen)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [],
+            childrenByCompound: [:],
+            taskById: [:]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    // MARK: - computeBoardStatsUpdate: no auto-fill on NONE
+
+    func testComputeBoardStats_NoAutoFillForNoneCenter() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [],
+            childrenByCompound: [:],
+            taskById: [:]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    // MARK: - computeBoardStatsUpdate: center auto-fill + bingo detection interaction
+
+    func testComputeBoardStats_CenterAutoFillTriggersExpectedBingos() {
+        // 3x3 FREE center; col 1 and main diagonal completed via auto-fill + placed tasks
+        let b = board("b1", boardSize: 3, centerSquareType: .free)
+        let t01 = task("t01", isCompleted: true)  // (0,1)
+        let t21 = task("t21", isCompleted: true)  // (2,1)
+        let t00 = task("t00", isCompleted: true)  // (0,0)
+        let t22 = task("t22", isCompleted: true)  // (2,2)
+        let bts = [
+            boardTask("b1", "t01", 0, 1),
+            boardTask("b1", "t21", 2, 1),
+            boardTask("b1", "t00", 0, 0),
+            boardTask("b1", "t22", 2, 2),
+        ]
+        let taskById = ["t01": t01, "t21": t21, "t00": t00, "t22": t22]
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: [:],
+            taskById: taskById
+        )
+        // auto-filled center counts + 4 explicit tasks
+        XCTAssertEqual(result.completedTasks, 5)
+        XCTAssertTrue(result.completedLineIds.contains("col_1"))
+        XCTAssertTrue(result.completedLineIds.contains("diag_main"))
+    }
+
+    // MARK: - computeBoardStatsUpdate: soft-deleted Task ignored
+
+    func testComputeBoardStats_SoftDeletedTaskIgnored() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let deletedTask = task("t1", isCompleted: true, isDeleted: true)
+        let bts = [boardTask("b1", "t1", 0, 0)]
+        let taskById = ["t1": deletedTask]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: [:],
+            taskById: taskById
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    // MARK: - computeBoardStatsUpdate: out-of-bounds row/col
+
+    func testComputeBoardStats_OutOfBoundsRowColSkippedDefensively() {
+        let b = board("myBoard", boardSize: 3, centerSquareType: .none)
+        let t = task("t1", isCompleted: true)
+        let stale = boardTask("myBoard", "t1", 99, 0) // row 99 is out of bounds for a 3x3 board
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [stale],
+            childrenByCompound: [:],
+            taskById: ["t1": t]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+        XCTAssertEqual(result.completedLineIds, [])
+    }
+
+    // MARK: - computeBoardStatsUpdate: board.completedLineIds nil → no crash
+
+    func testComputeBoardStats_NilCompletedLineIdsDoesNotCrash() {
+        let b = board("myBoard", boardSize: 3, centerSquareType: .none, completedLineIds: nil)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [],
+            childrenByCompound: [:],
+            taskById: [:]
+        )
+        XCTAssertEqual(result.newBingos, [])
+        XCTAssertEqual(result.lostBingos, [])
+    }
+
+    // MARK: - computeBoardStatsUpdate: boardId in result
+
+    func testComputeBoardStats_BoardIdPassedThrough() {
+        let b = board("myBoard", boardSize: 3, centerSquareType: .none)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [],
+            childrenByCompound: [:],
+            taskById: [:]
+        )
+        XCTAssertEqual(result.boardId, "myBoard")
+    }
+
+    // MARK: - computeBoardStatsUpdate: achievement square — progress >= count → complete
+
+    func testComputeBoardStats_AchievementSquareProgressMet_CellComplete() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let backingTask = task("ach1", isCompleted: false)
+        let bt = boardTask("b1", "ach1", 0, 0,
+            isAchievementSquare: true,
+            achievementCount: 3,
+            achievementProgress: 3
+        )
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": backingTask]
+        )
+        XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    // MARK: - computeBoardStatsUpdate: achievement square — progress < count → incomplete
+
+    func testComputeBoardStats_AchievementSquareProgressNotMet_CellIncomplete() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let backingTask = task("ach1", isCompleted: false)
+        let bt = boardTask("b1", "ach1", 0, 0,
+            isAchievementSquare: true,
+            achievementCount: 3,
+            achievementProgress: 2
+        )
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": backingTask]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    // MARK: - computeBoardStatsUpdate: achievement square — 0/0 guard → incomplete
+
+    func testComputeBoardStats_AchievementSquare_ZeroOverZero_Incomplete() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let backingTask = task("ach1", isCompleted: false)
+        let bt = boardTask("b1", "ach1", 0, 0,
+            isAchievementSquare: true,
+            achievementCount: 0,
+            achievementProgress: 0
+        )
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": backingTask]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    // MARK: - computeBoardStatsUpdate: achievement square ignores Task.isCompleted
+
+    func testComputeBoardStats_AchievementSquare_IgnoresBackingTaskIsCompleted() {
+        // Backing task is marked complete, but achievement progress hasn't reached count
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let backingTask = task("ach1", isCompleted: true)
+        let bt = boardTask("b1", "ach1", 0, 0,
+            isAchievementSquare: true,
+            achievementCount: 3,
+            achievementProgress: 0
+        )
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": backingTask]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+}

@@ -12,7 +12,8 @@ struct CompositeWizardReviewStepView: View {
     let threshold: Int
     let subtasks: [SubtaskItem]
     let libraryTasks: [OYBC.Task]
-    let libraryCompositeTasks: [CompositeTask]
+    /// Compound tasks (type=.compound && !isOrdered) available as nested children.
+    let libraryCompositeTasks: [OYBC.Task]
     let isSubmitting: Bool
     let errorMessage: String?
     let onBack: () -> Void

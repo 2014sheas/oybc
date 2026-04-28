@@ -3,10 +3,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
   TaskType,
-  generateCounterTaskTitle,
-  type CompositeTask,
+  type Task,
+  type BoardTask,
+  type CompoundChild,
+  type CreateCompoundChildEntry,
 } from '@oybc/shared';
 import { db } from '../../db/database';
+import { createCompound } from '../../db/operations/tasks';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from '../playground/playgroundUtils';
 import { type StepFormState, createEmptyStep } from '../progressStepUtils';
 import {
@@ -24,11 +27,16 @@ import {
 import type { LibraryDiff } from './LibraryPickerSheet';
 import styles from './CompositeTaskWizard.module.css';
 
+// Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
+const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
+const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
+
 export interface CompositeTaskWizardProps {
   /** User ID for task ownership. Defaults to playground user when omitted. */
   userId?: string;
-  /** Invoked with the newly created CompositeTask after a successful save. */
-  onCreated?: (compositeTask: CompositeTask) => void;
+  /** Invoked with the newly created compound Task after a successful save. */
+  onCreated?: (task: Task) => void;
 }
 
 function createExistingSubtask(id: string, kind: 'task' | 'composite'): ExistingSubtaskDraft {
@@ -55,9 +63,8 @@ function createEmptyInlineSubtask(): InlineSubtaskDraft {
 
 /**
  * CompositeTaskWizard — 3-step mini-wizard (Setup → Build → Review) that
- * replaces the legacy CompositeTaskForm monolith. Owns the full draft
- * state, step transitions, and the atomic submit transaction. Step
- * content is delegated to SetupStep / BuildStep / ReviewStep.
+ * creates compound tasks using the unified compound model (db.tasks +
+ * db.compoundChildren). Legacy composite/progress tables are no longer used.
  *
  * State is deliberately kept in one place rather than split across a
  * hook for stage 2 — simpler to read and reason about while the wizard
@@ -81,21 +88,38 @@ export function CompositeTaskWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  // Library feeds — live so a composite created elsewhere shows up here.
-  const allTasks = useLiveQuery(
-    () => db.tasks.where('[userId+isDeleted]').equals([resolvedUserId, 0]).toArray(),
-    [resolvedUserId],
-  ) ?? [];
-  const allCompositeTasks = useLiveQuery(
-    () => db.compositeTasks.where('[userId+isDeleted]').equals([resolvedUserId, 0]).toArray(),
-    [resolvedUserId],
-  ) ?? [];
 
-  // Usage hints for the existing-task picker — "on N boards" for tasks
-  // and "N subtasks" for composites. Queried here so the cards stay pure.
-  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? [];
-  const allCompositeNodes = useLiveQuery(() => db.compositeNodes.toArray(), []) ?? [];
-  const allTaskSteps = useLiveQuery(() => db.taskSteps.toArray(), []) ?? [];
+  // Library feeds — live so a task created elsewhere shows up here.
+  // Use JS-level .filter() (same pattern as the useTasks hook) so the boolean
+  // `isDeleted` matches across both new compound rows (stored as `false`) and
+  // legacy migrated rows (stored as `0`). Indexing-level `equals([..., 0])`
+  // breaks for new rows because Dexie compound-index match is strict-equal,
+  // and `false !== 0`.
+  const allTasks = useLiveQuery(
+    () =>
+      db.tasks
+        .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type !== TaskType.COMPOUND)
+        .toArray(),
+    [resolvedUserId],
+  ) ?? EMPTY_TASKS;
+
+  // Compound tasks in the library (formerly "compositeTasks").
+  const allCompoundTasks: Task[] = useLiveQuery(
+    () =>
+      db.tasks
+        .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type === TaskType.COMPOUND)
+        .toArray(),
+    [resolvedUserId],
+  ) ?? EMPTY_TASKS;
+
+  // Usage hints for the existing-task picker.
+  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+
+  // compoundChildren — used to compute child counts + leaf previews for compound tasks.
+  const allCompoundChildren: CompoundChild[] = useLiveQuery(
+    () => db.compoundChildren.filter((c) => !c.isDeleted).toArray(),
+    [],
+  ) ?? EMPTY_COMPOUND_CHILDREN;
 
   /** taskId → count of distinct board IDs it's placed on. */
   const taskBoardCounts = useMemo(() => {
@@ -113,66 +137,57 @@ export function CompositeTaskWizard({
     return counts;
   }, [allBoardTasks]);
 
-  /** compositeTaskId → count of non-deleted leaf nodes (how many
-   *  subtasks the composite has). */
-  const compositeSubtaskCounts = useMemo(() => {
+  /**
+   * compoundTaskId → count of non-deleted direct children.
+   * Replaces the legacy compositeSubtaskCounts (which counted composite nodes).
+   */
+  const compoundChildCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const node of allCompositeNodes) {
-      if (node.isDeleted) continue;
-      if (node.nodeType !== 'leaf') continue;
-      counts[node.compositeTaskId] = (counts[node.compositeTaskId] ?? 0) + 1;
+    for (const child of allCompoundChildren) {
+      counts[child.compoundTaskId] = (counts[child.compoundTaskId] ?? 0) + 1;
     }
     return counts;
-  }, [allCompositeNodes]);
+  }, [allCompoundChildren]);
 
-  /** taskId → number of non-deleted steps (progress tasks only). */
-  const taskStepCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const step of allTaskSteps) {
-      if (step.isDeleted) continue;
-      counts[step.taskId] = (counts[step.taskId] ?? 0) + 1;
-    }
-    return counts;
-  }, [allTaskSteps]);
-
-  /** compositeTaskId → first few leaf titles + total leaf count. Drives
-   *  the "Run 5km, Meditate, +2 more" subtitle in the picker so users
-   *  can preview a composite's contents without expanding it. */
-  const compositeLeafPreviews = useMemo(() => {
+  /**
+   * compoundTaskId → first few child task titles + total count.
+   * Drives the "Run 5km, Meditate, +2 more" subtitle in the picker.
+   * Progress-task step counts are no longer surfaced — progress tasks have
+   * been unified into the compound model and no longer carry taskSteps rows.
+   */
+  const compoundLeafPreviews = useMemo(() => {
     const previews: Record<string, { titles: string[]; totalLeaves: number }> = {};
     const taskTitleById = new Map<string, string>();
     for (const t of allTasks) taskTitleById.set(t.id, t.title);
-    const compositeTitleById = new Map<string, string>();
-    for (const ct of allCompositeTasks) compositeTitleById.set(ct.id, ct.title);
+    for (const ct of allCompoundTasks) taskTitleById.set(ct.id, ct.title);
 
-    // Group leaf nodes by composite; preserve nodeIndex ordering.
-    const leavesByComposite = new Map<string, typeof allCompositeNodes>();
-    for (const node of allCompositeNodes) {
-      if (node.isDeleted) continue;
-      if (node.nodeType !== 'leaf') continue;
-      const arr = leavesByComposite.get(node.compositeTaskId) ?? [];
-      arr.push(node);
-      leavesByComposite.set(node.compositeTaskId, arr);
+    // Group children by compound, ordered by childIndex.
+    const childrenByCompound = new Map<string, CompoundChild[]>();
+    for (const child of allCompoundChildren) {
+      const arr = childrenByCompound.get(child.compoundTaskId) ?? [];
+      arr.push(child);
+      childrenByCompound.set(child.compoundTaskId, arr);
     }
 
-    for (const [compositeId, leaves] of leavesByComposite) {
-      leaves.sort((a, b) => a.nodeIndex - b.nodeIndex);
+    for (const [compoundId, children] of childrenByCompound) {
+      children.sort((a, b) => a.childIndex - b.childIndex);
       const titles: string[] = [];
-      for (const leaf of leaves.slice(0, 3)) {
-        if (leaf.taskId) {
-          const t = taskTitleById.get(leaf.taskId);
-          if (t) titles.push(t);
-        } else if (leaf.childCompositeTaskId) {
-          const t = compositeTitleById.get(leaf.childCompositeTaskId);
-          if (t) titles.push(t);
-        }
+      for (const child of children.slice(0, 3)) {
+        const t = taskTitleById.get(child.childTaskId);
+        if (t) titles.push(t);
       }
-      previews[compositeId] = { titles, totalLeaves: leaves.length };
+      previews[compoundId] = { titles, totalLeaves: children.length };
     }
     return previews;
-  }, [allCompositeNodes, allTasks, allCompositeTasks]);
+  }, [allCompoundChildren, allTasks, allCompoundTasks]);
 
-  // ─── State helpers ────────────────────────────────────────────────────────
+  // taskStepCounts is no longer meaningful after the v5 migration (taskSteps
+  // table was dropped). Pass an empty map so downstream components compile;
+  // the "N steps" subtitle will simply not appear, which is correct — progress
+  // tasks are now compound tasks and their children appear via compoundChildren.
+  const taskStepCounts: Record<string, number> = {};
+
+  // ─── State helpers ────────────────────────────────────────────────────────────
 
   function addInlineSubtask(): void {
     setSubtasks((prev) => [...prev, createEmptyInlineSubtask()]);
@@ -241,192 +256,65 @@ export function CompositeTaskWizard({
     setErrorMessage(null);
   }
 
-  // ─── Submit ───────────────────────────────────────────────────────────────
+  // ─── Submit ───────────────────────────────────────────────────────────────────
 
+  /**
+   * Build a CreateCompoundTaskInput from the wizard's form state and delegate
+   * to createCompound() from db/operations/tasks.ts. That function writes
+   * everything atomically (tasks + compoundChildren) in one Dexie transaction.
+   *
+   * Inline progress-subtask creation is intentionally not supported here:
+   * CreateCompoundChildEntry.autoCreate only accepts 'normal' | 'counting',
+   * matching the current createCompound spec. Users should create an inner
+   * compound task first, then reference it as an existing child.
+   * TODO (Phase 5/8): revisit inline nested compound creation when the spec
+   * defines the UX for editing nested compounds.
+   */
   async function handleCreate(): Promise<void> {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const now = new Date().toISOString();
-      const compositeTaskId = crypto.randomUUID();
-      const rootNodeId = crypto.randomUUID();
-      const resolvedLeaves: Array<{ taskId?: string; childCompositeTaskId?: string }> = [];
+      const children: CreateCompoundChildEntry[] = subtasks.map((subtask) => {
+        if (subtask.mode === 'existing') {
+          return { childTaskId: subtask.selectedId };
+        }
 
-      await db.transaction(
-        'rw',
-        [db.tasks, db.taskSteps, db.compositeTasks, db.compositeNodes],
-        async () => {
-          for (const subtask of subtasks) {
-            if (subtask.mode === 'existing') {
-              if (subtask.selectionType === 'task') {
-                resolvedLeaves.push({ taskId: subtask.selectedId });
-              } else {
-                resolvedLeaves.push({ childCompositeTaskId: subtask.selectedId });
-              }
-              continue;
-            }
+        // Inline-created subtask — map to autoCreate shape.
+        // Progress inline subtasks are treated as 'normal' for now (see TODO above).
+        if (subtask.inlineType === 'counting') {
+          const maxCount = parseInt(subtask.maxCountStr, 10);
+          const trimmedAction = subtask.action.trim();
+          const trimmedUnit = subtask.unit.trim();
+          return {
+            autoCreate: {
+              type: TaskType.COUNTING,
+              title: subtask.title.trim(),
+              action: trimmedAction || undefined,
+              unit: trimmedUnit || undefined,
+              maxCount: Number.isFinite(maxCount) ? maxCount : undefined,
+            },
+          };
+        }
 
-            const newTaskId = crypto.randomUUID();
-            if (subtask.inlineType === 'normal') {
-              await db.tasks.add({
-                id: newTaskId,
-                userId: resolvedUserId,
-                title: subtask.title.trim(),
-                type: TaskType.NORMAL,
-                totalCompletions: 0,
-                totalInstances: 0,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-              });
-            } else if (subtask.inlineType === 'counting') {
-              const maxCount = parseInt(subtask.maxCountStr, 10);
-              const trimmedAction = subtask.action.trim();
-              const trimmedUnit = subtask.unit.trim();
-              const trimmedTitle = subtask.title.trim();
-              // Use the shared counter-title helper so the blank-title
-              // fallback stays in lock-step with the rest of the app if
-              // the format ever changes.
-              const resolvedTitle =
-                trimmedTitle.length > 0
-                  ? trimmedTitle
-                  : generateCounterTaskTitle(trimmedAction, maxCount, trimmedUnit);
-              await db.tasks.add({
-                id: newTaskId,
-                userId: resolvedUserId,
-                title: resolvedTitle,
-                type: TaskType.COUNTING,
-                action: trimmedAction,
-                unit: trimmedUnit,
-                maxCount,
-                totalCompletions: 0,
-                totalInstances: 0,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-              });
-            } else {
-              // progress
-              await db.tasks.add({
-                id: newTaskId,
-                userId: resolvedUserId,
-                title: subtask.title.trim(),
-                type: TaskType.PROGRESS,
-                totalCompletions: 0,
-                totalInstances: 0,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-              });
-              for (let i = 0; i < subtask.steps.length; i++) {
-                const step = subtask.steps[i];
-                const stepType = step.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL;
-                const trimmedStepTitle = step.title.trim();
-                const trimmedAction = step.type === 'counting' ? step.action.trim() : '';
-                const trimmedUnit = step.type === 'counting' ? step.unit.trim() : '';
-                const stepMaxCount = step.type === 'counting' ? parseInt(step.maxCount, 10) : undefined;
-                const resolvedStepTitle =
-                  step.type === 'counting' && !trimmedStepTitle
-                    ? generateCounterTaskTitle(trimmedAction, stepMaxCount!, trimmedUnit)
-                    : trimmedStepTitle;
-                const stepTaskId = crypto.randomUUID();
-                await db.tasks.add({
-                  id: stepTaskId,
-                  userId: resolvedUserId,
-                  title: resolvedStepTitle,
-                  type: stepType,
-                  action: step.type === 'counting' ? step.action.trim() || undefined : undefined,
-                  unit: step.type === 'counting' ? step.unit.trim() || undefined : undefined,
-                  maxCount: step.type === 'counting' ? parseInt(step.maxCount, 10) || undefined : undefined,
-                  totalCompletions: 0,
-                  totalInstances: 0,
-                  createdAt: now,
-                  updatedAt: now,
-                  version: 1,
-                  isDeleted: false,
-                });
-                await db.taskSteps.add({
-                  id: crypto.randomUUID(),
-                  taskId: newTaskId,
-                  stepIndex: i,
-                  title: resolvedStepTitle,
-                  type: stepType,
-                  action: step.type === 'counting' ? trimmedAction || undefined : undefined,
-                  unit: step.type === 'counting' ? trimmedUnit || undefined : undefined,
-                  maxCount: stepMaxCount,
-                  linkedTaskId: stepTaskId,
-                  createdAt: now,
-                  updatedAt: now,
-                  version: 1,
-                  isDeleted: false,
-                });
-              }
-            }
+        // 'normal' or 'progress' (progress falls back to normal — see TODO above)
+        return {
+          autoCreate: {
+            type: TaskType.NORMAL,
+            title: subtask.title.trim(),
+          },
+        };
+      });
 
-            resolvedLeaves.push({ taskId: newTaskId });
-          }
-
-          await db.compositeTasks.add({
-            id: compositeTaskId,
-            userId: resolvedUserId,
-            title: title.trim(),
-            description: undefined,
-            rootNodeId,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            isDeleted: false,
-          });
-          await db.compositeNodes.add({
-            id: rootNodeId,
-            compositeTaskId,
-            parentNodeId: undefined,
-            nodeIndex: 0,
-            nodeType: 'operator',
-            operatorType: operator,
-            threshold: operator === OperatorType.M_OF_N ? threshold : undefined,
-            taskId: undefined,
-            childCompositeTaskId: undefined,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            isDeleted: false,
-          });
-          for (let i = 0; i < resolvedLeaves.length; i++) {
-            await db.compositeNodes.add({
-              id: crypto.randomUUID(),
-              compositeTaskId,
-              parentNodeId: rootNodeId,
-              nodeIndex: i,
-              nodeType: 'leaf',
-              operatorType: undefined,
-              threshold: undefined,
-              taskId: resolvedLeaves[i].taskId,
-              childCompositeTaskId: resolvedLeaves[i].childCompositeTaskId,
-              createdAt: now,
-              updatedAt: now,
-              version: 1,
-              isDeleted: false,
-            });
-          }
-        },
-      );
+      const compound = await createCompound(resolvedUserId, {
+        title: title.trim(),
+        operator,
+        threshold: operator === OperatorType.M_OF_N ? threshold : undefined,
+        isOrdered: false,
+        children,
+      });
 
       setSuccessMessage('Composite task created!');
-      onCreated?.({
-        id: compositeTaskId,
-        userId: resolvedUserId,
-        title: title.trim(),
-        description: undefined,
-        rootNodeId,
-        createdAt: now,
-        updatedAt: now,
-        version: 1,
-        isDeleted: false,
-      });
+      onCreated?.(compound);
       resetForm();
       setTimeout(() => setSuccessMessage(null), SUCCESS_DISMISS_MS);
     } catch (err) {
@@ -436,7 +324,7 @@ export function CompositeTaskWizard({
     }
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className={styles.container}>
@@ -465,11 +353,11 @@ export function CompositeTaskWizard({
           threshold={threshold}
           onThresholdChange={setThreshold}
           allTasks={allTasks}
-          allCompositeTasks={allCompositeTasks}
+          allCompositeTasks={allCompoundTasks}
           taskBoardCounts={taskBoardCounts}
           taskStepCounts={taskStepCounts}
-          compositeSubtaskCounts={compositeSubtaskCounts}
-          compositeLeafPreviews={compositeLeafPreviews}
+          compositeSubtaskCounts={compoundChildCounts}
+          compositeLeafPreviews={compoundLeafPreviews}
           onUpdateSubtask={updateSubtask}
           onRemoveSubtask={removeSubtask}
           onStepFieldChange={updateInlineStep}
@@ -489,7 +377,7 @@ export function CompositeTaskWizard({
           threshold={threshold}
           subtasks={subtasks}
           allTasks={allTasks}
-          allCompositeTasks={allCompositeTasks}
+          allCompositeTasks={allCompoundTasks}
           isSubmitting={isSubmitting}
           errorMessage={errorMessage}
           onBack={() => setCurrentStep(2)}
