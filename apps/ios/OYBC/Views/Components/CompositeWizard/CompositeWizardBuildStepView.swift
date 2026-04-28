@@ -541,7 +541,8 @@ struct CompositeWizardBuildStepView: View {
                 return ""
             }
             return derived
-        case .progress:
+        case .compound where task.isOrdered == true:
+            // Former Progress = compound + isOrdered=true under the unified model.
             let n = stepCounts[task.id] ?? 0
             if n == 0 { return "" }
             return "\(n) step\(n == 1 ? "" : "s")"

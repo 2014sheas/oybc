@@ -62,7 +62,7 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
   const allTasks = await db.tasks.toArray();
   const progressTasks = allTasks.filter((t) => t.type === ('progress' as TaskType));
   for (const t of progressTasks) {
-    const updates = progressTaskToCompound(t);
+    const updates = progressTaskToCompound();
     await db.tasks.update(t.id, { ...updates, updatedAt: now });
     transformedTaskIds.add(t.id);
   }

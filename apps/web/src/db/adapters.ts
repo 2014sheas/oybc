@@ -54,20 +54,15 @@ export function taskToSquareData(
     };
   }
 
-  const type =
-    task.type === TaskType.COUNTING
-      ? 'counting'
-      : task.type === TaskType.PROGRESS
-        ? 'progress'
-        : 'normal';
+  // Post-unification: only NORMAL / COUNTING reach this branch (compound
+  // is handled above). The legacy 'progress' SquareData type is dead — its
+  // role is taken by 'compound' with isOrdered=true.
+  const type = task.type === TaskType.COUNTING ? 'counting' : 'normal';
 
-  const steps =
-    task.type === TaskType.PROGRESS
-      ? taskSteps
-          .filter((s) => s.taskId === task.id)
-          .sort((a, b) => a.stepIndex - b.stepIndex)
-          .map((s) => ({ id: s.id, label: s.title }))
-      : undefined;
+  // `taskSteps` is intentionally unused in the post-unification path; the
+  // legacy progress branch consumed it. Kept as a parameter so call sites
+  // don't need to change all at once. Will be removed in a follow-up sweep.
+  void taskSteps;
 
   return {
     id: task.id,
@@ -76,7 +71,6 @@ export function taskToSquareData(
     action: task.action ?? undefined,
     maxCount: task.maxCount ?? undefined,
     unit: task.unit ?? undefined,
-    steps,
   };
 }
 

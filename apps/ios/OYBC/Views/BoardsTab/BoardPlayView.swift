@@ -473,48 +473,6 @@ struct BoardPlayView: View {
                 }
             }
 
-        case .progress:
-            // Phase 5: step completion state will be tracked via Task.progressCounters.
-            // For now derive step count from TaskSteps; completed count stubbed at 0.
-            let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
-            let completedStepsCount = 0
-            let totalSteps = stepsForTask.isEmpty ? 1 : stepsForTask.count
-
-            ZStack {
-                InteractiveTaskSquareView(
-                    title: task?.title ?? "Unknown",
-                    taskType: .progress,
-                    isCompleted: isCompleted,
-                    completedSteps: completedStepsCount,
-                    totalSteps: totalSteps
-                )
-                // Transparent overlay captures taps — InteractiveTaskSquareView
-                // blocks its own onTap for .progress type.
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !isBoardLocked else { return }
-                        detailBoardTaskId = boardTask.id
-                    }
-            }
-            .frame(width: 90, height: 90)
-            .contextMenu {
-                Button("View Steps", systemImage: "list.bullet") {
-                    detailBoardTaskId = boardTask.id
-                }
-                Button("Mark All Complete", systemImage: "checkmark.circle.fill") {
-                    guard !isBoardLocked else { return }
-                    handleProgressCompleteAll(boardTask: boardTask)
-                }
-                .disabled(isCompleted || isProcessing || isBoardLocked)
-
-                Button("Mark Incomplete", systemImage: "xmark.circle") {
-                    guard !isBoardLocked else { return }
-                    handleProgressReset(boardTask: boardTask)
-                }
-                .disabled(!isCompleted || isProcessing || isBoardLocked)
-            }
-
         case .compound:
             let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
             let compoundChildCount = compoundLinks.count
@@ -595,8 +553,6 @@ struct BoardPlayView: View {
                         normalDetailContent(boardTask: bt)
                     case .counting:
                         countingDetailContent(boardTask: bt, task: task)
-                    case .progress:
-                        progressDetailContent(boardTask: bt, task: task)
                     case .compound:
                         compoundDetailContent(boardTask: bt, task: task)
                     }
@@ -615,7 +571,6 @@ struct BoardPlayView: View {
         switch type {
         case .normal:   return "Normal task"
         case .counting: return "Counting task"
-        case .progress: return "Progress task"
         case .compound: return "Compound task"
         }
     }

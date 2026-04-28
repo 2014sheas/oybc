@@ -9,7 +9,7 @@ import {
 } from '../../src/algorithms/migrationHelpers';
 import type { LegacyBoardTaskCompletion } from '../../src/algorithms/migrationHelpers';
 import { OperatorType, TaskType } from '../../src/constants/enums';
-import type { Task, TaskStep } from '../../src/types/task';
+import type { TaskStep } from '../../src/types/task';
 import type { CompositeTask, CompositeNode } from '../../src/types/compositeTask';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -17,23 +17,6 @@ import type { CompositeTask, CompositeNode } from '../../src/types/compositeTask
 const NOW = '2026-04-23T00:00:00.000Z';
 const EARLIER = '2026-01-01T00:00:00.000Z';
 const EARLIEST = '2025-12-01T00:00:00.000Z';
-
-function makeTask(overrides: Partial<Task> = {}): Task {
-  return {
-    id: 'task-1',
-    userId: 'user-1',
-    title: 'Test Task',
-    type: TaskType.PROGRESS,
-    isCompleted: false,
-    totalCompletions: 0,
-    totalInstances: 0,
-    createdAt: NOW,
-    updatedAt: NOW,
-    version: 1,
-    isDeleted: false,
-    ...overrides,
-  };
-}
 
 function makeStep(overrides: Partial<TaskStep> = {}): TaskStep {
   return {
@@ -108,16 +91,14 @@ function makeLegacyRow(overrides: Partial<LegacyBoardTaskCompletion> = {}): Lega
 
 describe('progressTaskToCompound', () => {
   it('returns type=COMPOUND, operator=AND, isOrdered=true', () => {
-    const t = makeTask({ id: 'pt-1', type: TaskType.PROGRESS });
-    const result = progressTaskToCompound(t);
+    const result = progressTaskToCompound();
     expect(result.type).toBe(TaskType.COMPOUND);
     expect(result.operator).toBe(OperatorType.AND);
     expect(result.isOrdered).toBe(true);
   });
 
   it('does not include threshold', () => {
-    const t = makeTask({ id: 'pt-1', type: TaskType.PROGRESS });
-    const result = progressTaskToCompound(t);
+    const result = progressTaskToCompound();
     expect(result).not.toHaveProperty('threshold');
   });
 });

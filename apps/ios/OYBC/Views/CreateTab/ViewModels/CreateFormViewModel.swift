@@ -63,13 +63,16 @@ final class CreateFormViewModel {
 
     // MARK: - Derived
 
-    /// Maps `taskType` to a concrete `TaskType`. `nil` for Composite
-    /// (which routes to a separate view).
+    /// Maps the form-level `taskType` to the resulting `TaskType` written
+    /// to GRDB. Progress submissions resolve to `.compound` (with
+    /// operator=AND + isOrdered=true set in `buildCreateTask`) — under the
+    /// unified compound model former Progress tasks are just a compound
+    /// shape. Composite returns `nil` because it routes to its own wizard.
     var selectedType: TaskType? {
         switch taskType {
         case .normal:    return .normal
         case .counting:  return .counting
-        case .progress:  return .progress
+        case .progress:  return .compound
         case .composite: return nil
         }
     }
@@ -118,39 +121,10 @@ final class CreateFormViewModel {
             break
 
         case .compound:
-            // Phase 5 will route compound creation through a dedicated editor
-            // (separate Progress + Composite forms calling createCompound).
-            // The legacy single-task form never reaches this case in practice;
-            // present it as an internal error if it does.
-            errorMessage = "Compound tasks are created via the dedicated wizard, not this form."
-            return
-
-        case .counting:
-            let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
-            let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let m = countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !a.isEmpty else {
-                errorMessage = "Action is required for Counting tasks"
-                return
-            }
-            guard a.count <= CreateFormLimits.action else {
-                errorMessage = "Action must be \(CreateFormLimits.action) characters or less"
-                return
-            }
-            guard !u.isEmpty else {
-                errorMessage = "Unit is required for Counting tasks"
-                return
-            }
-            guard u.count <= CreateFormLimits.unit else {
-                errorMessage = "Unit must be \(CreateFormLimits.unit) characters or less"
-                return
-            }
-            guard let v = Int(m), v > 0 else {
-                errorMessage = "Max Count must be a positive integer"
-                return
-            }
-
-        case .progress:
+            // Reached only for the Progress form mode (selectedType maps
+            // .progress → .compound). Composites are excluded by the
+            // earlier `guard let resolvedType = selectedType else` since
+            // selectedType returns nil for .composite.
             if progressSteps.isEmpty {
                 errorMessage = "Progress tasks require at least one step"
                 return
@@ -179,6 +153,32 @@ final class CreateFormViewModel {
                 errorMessage = "Please fix the errors below"
                 return
             }
+
+        case .counting:
+            let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
+            let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
+            let m = countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !a.isEmpty else {
+                errorMessage = "Action is required for Counting tasks"
+                return
+            }
+            guard a.count <= CreateFormLimits.action else {
+                errorMessage = "Action must be \(CreateFormLimits.action) characters or less"
+                return
+            }
+            guard !u.isEmpty else {
+                errorMessage = "Unit is required for Counting tasks"
+                return
+            }
+            guard u.count <= CreateFormLimits.unit else {
+                errorMessage = "Unit must be \(CreateFormLimits.unit) characters or less"
+                return
+            }
+            guard let v = Int(m), v > 0 else {
+                errorMessage = "Max Count must be a positive integer"
+                return
+            }
+
         }
 
         isSubmitting = true
@@ -212,7 +212,7 @@ final class CreateFormViewModel {
         // through `createCompound`.
         let progressChildTasks: [Task]
         let progressChildLinks: [CompoundChild]
-        if resolvedType == .progress {
+        if resolvedType == .compound {
             let pair = buildCompoundChildrenForProgress(parentId: taskId, userId: userId, now: now)
             progressChildTasks = pair.tasks
             progressChildLinks = pair.children
@@ -353,11 +353,12 @@ final class CreateFormViewModel {
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )
-        case .progress:
-            // Under the unified compound model, "Progress" is just a
-            // compound with `operator=.and` + `isOrdered=true`. The
-            // form's submit flow writes one CompoundChild row per
-            // step (linked to a primitive child Task).
+        case .compound:
+            // The Progress form mode resolves to `.compound` (selectedType
+            // maps .progress → .compound). Composite mode is excluded
+            // earlier (selectedType returns nil and the submit pipeline
+            // bails). So `.compound` here always means "Progress submit":
+            // operator=AND + isOrdered=true with one CompoundChild per step.
             return Task(
                 id: id, userId: userId, title: title, description: desc,
                 type: .compound,
@@ -367,12 +368,6 @@ final class CreateFormViewModel {
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )
-        case .compound:
-            // Defensive: validate() guards against the compound branch reaching
-            // submission via this legacy form (Phase 5 routes compounds through
-            // the dedicated wizard). preconditionFailure if execution
-            // somehow gets here.
-            preconditionFailure("Compound tasks must use the unified compound wizard, not buildCreateTask()")
         }
     }
 

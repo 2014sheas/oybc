@@ -8,9 +8,16 @@ import {
 } from '@oybc/shared';
 import { createTask, createCompound } from '../../db/operations/tasks';
 import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
-/** Union of TaskType values plus 'composite' for the Create-New tab type selector. */
-export type TaskTypeOrComposite = TaskType | 'composite';
+/**
+ * Union of TaskType values plus the form-only sentinels `'progress'` and
+ * `'composite'`. Both sentinels are submission strategies — neither exists
+ * in the runtime TaskType enum after the compound-tasks unification:
+ *   - `'progress'` → `createCompound({ operator: 'AND', isOrdered: true, ... })`
+ *   - `'composite'` → opens the dedicated `CompositeTaskWizard`
+ */
+export type TaskTypeOrComposite = TaskType | typeof PROGRESS_TYPE | typeof COMPOSITE_TYPE;
 export const COMPOSITE_TYPE = 'composite' as const;
+export const PROGRESS_TYPE = 'progress' as const;
 
 // ─── Constants (shared with the Create-tab UIs that consume this hook) ──────
 
@@ -41,7 +48,7 @@ export interface FormErrors {
  * flow) can validate without instantiating the hook.
  */
 export function validateForm(
-  type: TaskType,
+  type: TaskTypeOrComposite,
   title: string,
   description: string,
   action: string,
@@ -85,7 +92,7 @@ export function validateForm(
     }
   }
 
-  if (type === TaskType.PROGRESS) {
+  if (type === PROGRESS_TYPE) {
     const stepErrors: FormErrors['steps'] = {};
     let hasStepErrors = false;
 

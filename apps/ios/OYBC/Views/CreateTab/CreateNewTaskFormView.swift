@@ -78,8 +78,11 @@ struct CreateNewTaskFormView: View {
                     countingFields
                 }
 
-                // Progress-specific fields
-                if form.selectedType == .progress {
+                // Progress-specific fields. Detect via the form-level
+                // taskType — `selectedType` (TaskType?) maps .progress →
+                // .compound under the unified model since Progress writes
+                // a compound Task with isOrdered=true.
+                if form.taskType == .progress {
                     progressFields
                 }
 

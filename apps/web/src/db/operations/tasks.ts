@@ -57,12 +57,14 @@ export async function createTask(
   };
 
   // Post-unification: createTask is for primitives only (NORMAL / COUNTING).
-  // Progress + Composite both route through createCompound, which writes
-  // tasks + compound_children. The dropped task_steps table is no longer
-  // referenced here.
-  if (input.type === TaskType.PROGRESS || input.type === TaskType.COMPOUND) {
+  // Compound tasks (which include former Progress as `compound + isOrdered=true`)
+  // route through createCompound. The dropped task_steps table is no longer
+  // referenced here. The legacy 'progress' string check is defensive — old
+  // call sites or remote payloads that still emit type='progress' should
+  // surface here loudly instead of silently writing an invalid Task row.
+  if (input.type === TaskType.COMPOUND || (input.type as string) === 'progress') {
     throw new Error(
-      `createTask received type='${input.type}'. Compound and progress tasks must call createCompound (with isOrdered=true for progress).`
+      `createTask received type='${input.type}'. Compound (and former progress) tasks must call createCompound (with isOrdered=true for progress).`
     );
   }
 

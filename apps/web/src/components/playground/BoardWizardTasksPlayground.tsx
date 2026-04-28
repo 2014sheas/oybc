@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { TaskType } from '@oybc/shared';
-import { createTask } from '../../db/operations/tasks';
+import { TaskType, OperatorType } from '@oybc/shared';
+import { createTask, createCompound } from '../../db/operations/tasks';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { BoardWizardTasksStep } from '../wizard/BoardWizardTasksStep';
 import { PLAYGROUND_USER_ID } from './playgroundUtils';
@@ -55,7 +55,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
     setIsSeeding(true);
     setSeedStatus(null);
     try {
-      const samples = [
+      const primitiveSamples = [
         { type: TaskType.NORMAL, title: 'Run 5km' },
         { type: TaskType.NORMAL, title: 'Read 30 minutes' },
         { type: TaskType.NORMAL, title: 'Meditate' },
@@ -65,30 +65,37 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         { type: TaskType.COUNTING, title: '', action: 'Read', unit: 'pages', maxCount: 50 },
         { type: TaskType.COUNTING, title: '', action: 'Walk', unit: 'km', maxCount: 10 },
         { type: TaskType.COUNTING, title: '', action: 'Drink', unit: 'glasses of water', maxCount: 8 },
-        {
-          type: TaskType.PROGRESS,
-          title: 'Weekly workout',
-          steps: [
-            { title: 'Monday run', type: TaskType.NORMAL },
-            { title: 'Wednesday weights', type: TaskType.NORMAL },
-            { title: 'Friday yoga', type: TaskType.NORMAL },
-          ],
-        },
-        {
-          type: TaskType.PROGRESS,
-          title: 'Clean house',
-          steps: [
-            { title: 'Vacuum', type: TaskType.NORMAL },
-            { title: 'Dust', type: TaskType.NORMAL },
-            { title: 'Mop floors', type: TaskType.NORMAL },
-          ],
-        },
         { type: TaskType.NORMAL, title: 'Try a new recipe' },
+      ] as const;
+      // Former Progress tasks become compound + isOrdered=true under the
+      // unified model. Use createCompound with `autoCreate` children to
+      // mirror the legacy progress-task seed shape.
+      const compoundSamples = [
+        {
+          title: 'Weekly workout',
+          steps: ['Monday run', 'Wednesday weights', 'Friday yoga'],
+        },
+        {
+          title: 'Clean house',
+          steps: ['Vacuum', 'Dust', 'Mop floors'],
+        },
       ];
-      for (const def of samples) {
+      for (const def of primitiveSamples) {
         await createTask(PLAYGROUND_USER_ID, def);
       }
-      setSeedStatus(`Seeded ${samples.length} sample tasks.`);
+      for (const def of compoundSamples) {
+        await createCompound(PLAYGROUND_USER_ID, {
+          title: def.title,
+          operator: OperatorType.AND,
+          isOrdered: true,
+          children: def.steps.map((stepTitle) => ({
+            autoCreate: { type: TaskType.NORMAL, title: stepTitle },
+          })),
+        });
+      }
+      setSeedStatus(
+        `Seeded ${primitiveSamples.length + compoundSamples.length} sample tasks.`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setSeedStatus(`Seed failed: ${msg}`);

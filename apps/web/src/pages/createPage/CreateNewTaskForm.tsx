@@ -4,7 +4,7 @@ import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
 import { CountingTemplatePicker } from '../../components/wizard/CountingTemplatePicker';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
-import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
+import { COMPOSITE_TYPE, PROGRESS_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
 import {
   type UseCreateFormState,
   TITLE_MAX_LENGTH,
@@ -18,7 +18,7 @@ import styles from './CreateNewTaskForm.module.css';
 const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
-  { value: TaskType.PROGRESS, label: 'Progress' },
+  { value: PROGRESS_TYPE, label: 'Progress' },
   { value: COMPOSITE_TYPE, label: 'Composite' },
 ];
 
@@ -175,7 +175,7 @@ export function CreateNewTaskForm({
           )}
 
           {/* Progress steps */}
-          {form.taskType === TaskType.PROGRESS && (
+          {form.taskType === PROGRESS_TYPE && (
             <div className={styles.stepsSection}>
               <span className={styles.stepsHeader}>Steps</span>
               <div className={styles.stepsList}>

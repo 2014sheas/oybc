@@ -23,10 +23,14 @@ export interface LegacyBoardTaskCompletion {
  * Returns the partial Task fields to merge into a legacy progress Task row to
  * convert it into the unified compound shape. Caller does the actual update.
  *
- * @param progressTask - The legacy progress task row (only id + type needed).
+ * Takes no parameter — the conversion is constant per legacy progress row
+ * (every progress task becomes `compound + AND + isOrdered=true`). Earlier
+ * iterations took a Task argument for context but never read any field; the
+ * signature is now parameter-free for clarity.
+ *
  * @returns Partial Task fields to apply to the row (type, operator, isOrdered).
  */
-export function progressTaskToCompound(_progressTask: Pick<Task, 'id' | 'type'>): Partial<Task> {
+export function progressTaskToCompound(): Partial<Task> {
   return {
     type: TaskType.COMPOUND,
     operator: OperatorType.AND,

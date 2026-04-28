@@ -224,7 +224,9 @@ struct BoardWizardTasksPlayground: View {
                             id: parentId,
                             userId: playgroundUserId,
                             title: parentTitle,
-                            type: .progress,
+                            type: .compound,
+                            operatorType: .and,
+                            isOrdered: true,
                             totalCompletions: 0,
                             totalInstances: 0,
                             createdAt: now,
@@ -235,6 +237,10 @@ struct BoardWizardTasksPlayground: View {
                         try parentTask.save(db)
 
                         for (i, (stepTitle, stepType)) in steps.enumerated() {
+                            // Under the unified compound model, each step
+                            // becomes a primitive child Task plus a
+                            // CompoundChild link row (replaces the legacy
+                            // task_steps + linkedTaskId pattern).
                             let stepTaskId = AppDatabase.generateUUID()
                             let stepTask = Task(
                                 id: stepTaskId,
@@ -250,19 +256,19 @@ struct BoardWizardTasksPlayground: View {
                             )
                             try stepTask.save(db)
 
-                            var step = TaskStep(
+                            let link = CompoundChild(
                                 id: AppDatabase.generateUUID(),
-                                taskId: parentId,
-                                stepIndex: i,
-                                title: stepTitle,
-                                type: stepType,
+                                compoundTaskId: parentId,
+                                childTaskId: stepTaskId,
+                                childIndex: i,
                                 createdAt: now,
                                 updatedAt: now,
+                                lastSyncedAt: nil,
                                 version: 1,
-                                isDeleted: false
+                                isDeleted: false,
+                                deletedAt: nil
                             )
-                            step.linkedTaskId = stepTaskId
-                            try step.save(db)
+                            try link.save(db)
                         }
                     }
                 }
