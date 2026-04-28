@@ -144,14 +144,33 @@ describe('evaluateCompound — M_OF_N operator', () => {
     expect(evaluateCompound(parent, childrenByCompound, taskById)).toBe(false);
   });
 
-  it('returns true when threshold is missing (treats threshold as 0 — >= 0 always passes)', () => {
-    // Defensive: Zod should reject M_OF_N without threshold; this test pins the algorithm's fallback behavior.
+  it('treats a missing threshold as 1 (degenerate-OR), not as 0 (vacuous-true)', () => {
+    // Defensive: Zod should reject M_OF_N without threshold, but a malformed
+    // legacy composite migrated without a root threshold could land here. The
+    // algorithm floors at max(1, threshold ?? 1) so the worst case behaves
+    // like OR (one child satisfies it) rather than always-complete.
     const parent = compoundTask('parent', OperatorType.M_OF_N); // no threshold
     const a = task('a', { isCompleted: false });
     const childrenByCompound = { parent: [child('parent', 'a', 0)] };
     const taskById = { parent, a };
-    // compound.threshold ?? 0 → 0; filter(Boolean).length (0) >= 0 → true
-    expect(evaluateCompound(parent, childrenByCompound, taskById)).toBe(true);
+    // No completed children → cannot satisfy required=1 → false.
+    expect(evaluateCompound(parent, childrenByCompound, taskById)).toBe(false);
+
+    // One completed child → required=1 satisfied → true.
+    const aDone = task('a', { isCompleted: true });
+    expect(
+      evaluateCompound(parent, childrenByCompound, { parent, a: aDone })
+    ).toBe(true);
+  });
+
+  it('treats an explicit threshold=0 as 1 (no vacuous-true)', () => {
+    // Same defense applied to an explicit zero (e.g., a writer that emits 0
+    // for "any" semantics) — should not silently mark every M_OF_N complete.
+    const parent = compoundTask('parent', OperatorType.M_OF_N, { threshold: 0 });
+    const a = task('a', { isCompleted: false });
+    const childrenByCompound = { parent: [child('parent', 'a', 0)] };
+    const taskById = { parent, a };
+    expect(evaluateCompound(parent, childrenByCompound, taskById)).toBe(false);
   });
 });
 

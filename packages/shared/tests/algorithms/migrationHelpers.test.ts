@@ -311,14 +311,17 @@ describe('backfillTaskCompletion', () => {
     expect(result.completedAt).toBe(EARLIER);
   });
 
-  it('multiple complete rows → completedAt is the earliest', () => {
+  it('multiple complete rows → completedAt is the latest', () => {
+    // Under the global completion model, `Task.completedAt` reads as "when
+    // this task became globally complete" — the most recent completion
+    // anchors that semantic, especially for re-completed tasks.
     const rows = [
       makeLegacyRow({ isCompleted: true, completedAt: NOW }),
       makeLegacyRow({ isCompleted: true, completedAt: EARLIEST }),
       makeLegacyRow({ isCompleted: true, completedAt: EARLIER }),
     ];
     const result = backfillTaskCompletion(rows);
-    expect(result.completedAt).toBe(EARLIEST);
+    expect(result.completedAt).toBe(NOW);
   });
 
   it('mixed currentCount values → returns the max', () => {

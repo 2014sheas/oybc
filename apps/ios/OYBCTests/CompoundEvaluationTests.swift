@@ -180,17 +180,27 @@ final class CompoundEvaluationTests: XCTestCase {
         XCTAssertFalse(result)
     }
 
-    func testMOfNWithMissingThresholdDefensivelyPassesAtZero() {
-        // Defensive pin: Zod rejects M_OF_N without threshold before it reaches runtime.
-        // The algorithm falls back to threshold=0 (via ?? 0) → count >= 0 always passes.
+    func testMOfNWithMissingThresholdTreatsAsOneNotZero() {
+        // Defensive: Zod should reject M_OF_N without threshold, but a malformed
+        // legacy composite migrated without a root threshold could land here.
+        // The algorithm floors at max(1, threshold ?? 1) so the worst case
+        // behaves like OR (one child satisfies it) rather than always-complete.
         let parent = compoundTask("parent", operator: .mOfN) // no threshold
-        let a = task("a", isCompleted: false)
-        let result = CompoundEvaluation.evaluate(
+        let aIncomplete = task("a", isCompleted: false)
+        let resultIncomplete = CompoundEvaluation.evaluate(
             compound: parent,
             childrenByCompound: ["parent": [child("parent", "a", 0)]],
-            taskById: ["parent": parent, "a": a]
+            taskById: ["parent": parent, "a": aIncomplete]
         )
-        XCTAssertTrue(result)
+        XCTAssertFalse(resultIncomplete, "M_OF_N with no threshold + zero completed children must NOT be vacuously true")
+
+        let aComplete = task("a", isCompleted: true)
+        let resultComplete = CompoundEvaluation.evaluate(
+            compound: parent,
+            childrenByCompound: ["parent": [child("parent", "a", 0)]],
+            taskById: ["parent": parent, "a": aComplete]
+        )
+        XCTAssertTrue(resultComplete, "M_OF_N with no threshold + one completed child satisfies degenerate-OR semantics")
     }
 
     // MARK: - Nested compounds

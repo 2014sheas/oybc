@@ -64,11 +64,11 @@ export function BoardPlayPage(): React.ReactElement {
   const boardQuery = useBoard(id);
   const board = boardQuery === undefined ? undefined : (boardQuery ?? null);
   const boardTasks = useBoardTasks(id) ?? EMPTY_BOARD_TASKS;
-  const allTaskSteps: TaskStep[] =
-    useLiveQuery(
-      () => db.taskSteps.filter((s: TaskStep) => !s.isDeleted).toArray(),
-      []
-    ) ?? EMPTY_TASK_STEPS;
+  // Post-unification, taskSteps was dropped in Dexie v5. The adapter still
+  // accepts a steps array for the legacy progress branch, but every consumer
+  // here passes EMPTY_TASK_STEPS — the live query was needlessly hitting a
+  // deregistered store. The adapter's progress branch is itself dead code
+  // post-migration; Phase 8 will remove it.
 
   // Compound resolution data (all BoardTasks workspace-wide for child lookup).
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(user?.id);
@@ -182,25 +182,30 @@ export function BoardPlayPage(): React.ReactElement {
         // Child is not placed on any board, but the parent compound (on THIS
         // board, since the user is opening its detail sheet) still derives
         // through this child — so we must run the board cascade to recompute
-        // bingo state + denormalised board stats.
+        // bingo state + denormalised board stats. Wrap the Task update + sync
+        // enqueue + cascade in a single Dexie transaction so a downstream
+        // failure rolls back the partial writes; previously a crash between
+        // the task update and the cascade would leave the Task flipped but
+        // board stats stale forever.
         try {
           const now = new Date().toISOString();
-          await db.tasks.update(childTaskId, {
-            isCompleted: !childTask.isCompleted,
-            completedAt: !childTask.isCompleted ? now : undefined,
-            updatedAt: now,
-            version: childTask.version + 1,
-          });
-          // Enqueue sync so the toggle propagates to other devices.
-          // Mirrors the iOS fallback path which calls SyncQueueItem.save after updating.
-          const updated = await db.tasks.get(childTaskId);
-          if (updated) {
-            void addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
-          }
-          // Run cross-board derivation so every board containing a compound
-          // that transitively references this child gets stats + bingo
-          // recomputed. Mirrors iOS handleCompoundChildToggle Path B.
-          await runBoardCascadeForTask(childTaskId);
+          await db.transaction(
+            'rw',
+            [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+            async () => {
+              await db.tasks.update(childTaskId, {
+                isCompleted: !childTask.isCompleted,
+                completedAt: !childTask.isCompleted ? now : undefined,
+                updatedAt: now,
+                version: childTask.version + 1,
+              });
+              const updated = await db.tasks.get(childTaskId);
+              if (updated) {
+                await addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
+              }
+              await runBoardCascadeForTask(childTaskId);
+            },
+          );
         } catch (err) {
           console.error('Compound child toggle failed:', err);
           showFlash('Something went wrong', 'bingo');
@@ -311,7 +316,7 @@ export function BoardPlayPage(): React.ReactElement {
 
                 const taskChildren = compoundChildrenByCompound[task.id] ?? [];
                 const squareData = taskToSquareData(
-                  task, allTaskSteps, taskChildren, taskMap, compoundChildrenByCompound,
+                  task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
                 );
                 const squareState = taskToSquareState(
                   task, taskChildren, taskMap, compoundChildrenByCompound,
@@ -381,7 +386,7 @@ export function BoardPlayPage(): React.ReactElement {
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, allTaskSteps, taskChildren, taskMap, compoundChildrenByCompound,
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound,
@@ -428,7 +433,7 @@ export function BoardPlayPage(): React.ReactElement {
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, allTaskSteps, taskChildren, taskMap, compoundChildrenByCompound,
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound,

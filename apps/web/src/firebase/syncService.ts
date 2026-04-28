@@ -410,6 +410,26 @@ async function applyRemoteSubdoc(
     }
   }
 
+  // CompoundChild has no `userId` column — children scope through their
+  // parent compound's userId. A crafted Firestore doc with a `compoundTaskId`
+  // pointing at another user's compound would land in local Dexie with no
+  // direct check. Resolve the parent and reject on mismatch.
+  if (collectionName === 'compoundChildren') {
+    const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
+    if (typeof compoundTaskId !== 'string' || !compoundTaskId) {
+      return `Skipped compoundChildren/${validated.id}: missing compoundTaskId`;
+    }
+    const parentTask = await db.tasks.get(compoundTaskId);
+    if (!parentTask) {
+      // No local parent — could be a legitimate cross-device race. Defer:
+      // skip this pull cycle, the safety net will retry. Don't accept blind.
+      return `Skipped compoundChildren/${validated.id}: parent compound not yet present locally`;
+    }
+    if (parentTask.userId !== authenticatedUserId) {
+      return `Skipped compoundChildren/${validated.id}: parent userId mismatch`;
+    }
+  }
+
   const table = db.table(collectionName);
   const localData = (await table.get(validated.id)) as SyncableEntity | undefined;
 
@@ -442,25 +462,17 @@ async function applyRemoteSubdoc(
       // the compound's derived state had flipped. The cascade is idempotent
       // and small-N, so always running it is the safer + iOS-parity choice.
       if (collectionName === 'tasks') {
-        try {
-          await runBoardCascadeForTask(validated.id);
-        } catch (err) {
-          // Log but don't fail the pull — the next pull cycle will retry
-          // if the cascade left boards in an inconsistent state.
-          console.error(`[sync] board cascade failed for pulled task ${validated.id}:`, err);
-        }
+        // Let cascade errors propagate so the outer Dexie transaction rolls
+        // back the `table.put(validated)` that just landed. Pulling will retry
+        // on the next cycle. Previously this branch swallowed errors, which
+        // left the task applied locally but board stats stale forever — a
+        // silent divergence that no safety net resolved.
+        await runBoardCascadeForTask(validated.id);
       } else if (collectionName === 'compoundChildren') {
         // For a pulled CompoundChild, cascade via the parent compound task.
         const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
         if (typeof compoundTaskId === 'string' && compoundTaskId) {
-          try {
-            await runBoardCascadeForTask(compoundTaskId);
-          } catch (err) {
-            console.error(
-              `[sync] board cascade failed for pulled compoundChild (parent ${compoundTaskId}):`,
-              err,
-            );
-          }
+          await runBoardCascadeForTask(compoundTaskId);
         }
       }
     },

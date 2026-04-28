@@ -259,11 +259,16 @@ enum MigrationV7Helpers {
             guard !rows.isEmpty else { continue }
 
             let isCompleted = rows.contains { $0.isCompleted }
+            // Pick the LATEST completedAt across boards. Under the global
+            // completion model, `Task.completedAt` reads as "when this task
+            // became globally complete" — the most recent completion is the
+            // correct anchor, especially for tasks that were un-completed
+            // and re-completed across boards. Mirrors shared backfillTaskCompletion.
             let completedAt = rows
                 .filter { $0.isCompleted }
                 .compactMap { $0.completedAt }
                 .sorted()
-                .first  // earliest completion timestamp
+                .last
             let currentCount = rows.compactMap { $0.currentCount }.max()
 
             try db.execute(

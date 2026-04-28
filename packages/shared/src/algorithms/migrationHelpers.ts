@@ -89,6 +89,19 @@ export function compositeTaskToTask(
   if (!rootOperatorNode || rootOperatorNode.nodeType !== 'operator' || !rootOperatorNode.operatorType) {
     return null;
   }
+  // Defensive: M_OF_N requires a threshold. A legacy composite_tasks root with
+  // operatorType='M_OF_N' but a missing/null threshold would migrate into a
+  // Task row that fails the TaskSchema refine ("M_OF_N requires threshold")
+  // on the next pull validation — the task would be silently dropped on every
+  // device while its legacy DELETEs propagate. Skip here so the malformed row
+  // is left in legacy storage rather than corrupting the new schema. Caller
+  // sees the same `null` return as the missing-root case and logs/skips.
+  if (
+    rootOperatorNode.operatorType === OperatorType.M_OF_N &&
+    (rootOperatorNode.threshold === undefined || rootOperatorNode.threshold === null)
+  ) {
+    return null;
+  }
   return {
     id: ct.id,
     userId: ct.userId,
@@ -159,8 +172,12 @@ export interface CompletionBackfillResult {
  *
  * Rules:
  *   - isCompleted = true iff any input row has isCompleted=true.
- *   - completedAt = the earliest completedAt where isCompleted=true. Undefined
- *     if no row was ever complete.
+ *   - completedAt = the LATEST completedAt where isCompleted=true. Undefined
+ *     if no row was ever complete. Uses latest (not earliest) because under
+ *     the post-unification global model, `Task.completedAt` reads as "when
+ *     this task became globally complete" — the most recent completion is
+ *     the correct anchor for that semantic, especially for tasks that were
+ *     un-completed and re-completed across boards.
  *   - currentCount = MAX(currentCount) across all input rows; undefined if no
  *     input row has currentCount defined.
  *
@@ -173,14 +190,14 @@ export function backfillTaskCompletion(
   boardTaskRows: LegacyBoardTaskCompletion[],
 ): CompletionBackfillResult {
   let isCompleted = false;
-  let earliestCompletedAt: string | undefined;
+  let latestCompletedAt: string | undefined;
   let maxCount: number | undefined;
 
   for (const row of boardTaskRows) {
     if (row.isCompleted) {
       isCompleted = true;
-      if (row.completedAt && (!earliestCompletedAt || row.completedAt < earliestCompletedAt)) {
-        earliestCompletedAt = row.completedAt;
+      if (row.completedAt && (!latestCompletedAt || row.completedAt > latestCompletedAt)) {
+        latestCompletedAt = row.completedAt;
       }
     }
     if (row.currentCount !== undefined) {
@@ -190,7 +207,7 @@ export function backfillTaskCompletion(
 
   return {
     isCompleted,
-    completedAt: earliestCompletedAt,
+    completedAt: latestCompletedAt,
     currentCount: maxCount,
   };
 }

@@ -86,7 +86,14 @@ enum CompoundEvaluation {
         case .or:
             return childStates.contains(true)
         case .mOfN:
-            return childStates.filter { $0 }.count >= (compound.threshold ?? 0)
+            // Floor threshold at 1. A missing/null threshold (?? 0) or an
+            // explicit 0 would produce vacuous-true (`0 >= 0`) and silently
+            // mark the compound complete with zero work done — possible if a
+            // migrated legacy composite lacks an explicit M_OF_N threshold.
+            // `max(1, threshold ?? 1)` makes the worst-case behave like OR
+            // rather than always-complete. Mirrors the TS twin.
+            let required = max(1, compound.threshold ?? 1)
+            return childStates.filter { $0 }.count >= required
         case .none:
             // Operator missing on a compound row — treat as incomplete.
             // Swift / Zod validation should have rejected this upstream.

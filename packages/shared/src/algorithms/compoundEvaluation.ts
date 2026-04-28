@@ -71,8 +71,17 @@ function evaluateCompoundInner(
       return childStates.length === 0 || childStates.every(Boolean);
     case OperatorType.OR:
       return childStates.some(Boolean);
-    case OperatorType.M_OF_N:
-      return childStates.filter(Boolean).length >= (compound.threshold ?? 0);
+    case OperatorType.M_OF_N: {
+      // Floor threshold at 1. A missing/null threshold (?? 0) or an explicit 0
+      // would produce vacuous-true (`0 >= 0`) and silently mark the compound
+      // complete with zero work done — which can happen when migrated legacy
+      // composites lack an explicit M_OF_N threshold (see migrationHelpers
+      // skip path). Treat threshold as `max(1, threshold ?? 1)` so a malformed
+      // row at worst behaves like an OR (one child satisfies it) rather than
+      // always-complete.
+      const required = Math.max(1, compound.threshold ?? 1);
+      return childStates.filter(Boolean).length >= required;
+    }
     default:
       // Operator missing on a compound row — treat as incomplete (a Zod
       // validation error should have surfaced before we got here).

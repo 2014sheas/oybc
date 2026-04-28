@@ -313,6 +313,10 @@ struct CompositeTaskWizardView: View {
                 try AppDatabase.shared.write { db in
                     try compoundTask.save(db)
 
+                    // Sync items get inserted at the end of this same transaction so
+                    // entity writes + sync entries land atomically. A crash between
+                    // them previously left the new compound unreachable from any
+                    // other device — the legacy two-block pattern was unsafe.
                     for (index, item) in capturedSubtasks.enumerated() {
                         var childTaskId: String
 
@@ -405,10 +409,11 @@ struct CompositeTaskWizardView: View {
                             syncItems.append(("compound_children", childRow.id, p))
                         }
                     }
-                }
 
-                // Enqueue sync items OUTSIDE the transaction (matches createTask pattern).
-                try AppDatabase.shared.write { db in
+                    // Sync items inside the SAME transaction as the entity
+                    // writes — atomicity guarantees that either every entity
+                    // + every sync entry lands or nothing does. The legacy
+                    // two-block pattern dropped sync entries on a crash window.
                     for item in syncItems {
                         let syncItem = SyncQueueItem(
                             id: AppDatabase.generateUUID(),
