@@ -439,23 +439,27 @@ struct BoardWizardTasksStepView: View {
         if visibleTasks.isEmpty && visibleComposites.isEmpty {
             emptyState
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(visibleTasks.enumerated()), id: \.element.id) { index, task in
-                        taskRow(task)
-                        if index < visibleTasks.count - 1 || !visibleComposites.isEmpty {
-                            Divider().padding(.leading, 52)
-                        }
+            // No inner ScrollView — the parent (MainTabView's ScrollView,
+            // or the wizard host) owns scrolling. Wrapping a LazyVStack in
+            // its own ScrollView created a nested-scroll feel where the
+            // outer page and the inner list fought for the gesture.
+            // LazyVStack inside a parent ScrollView still lazy-loads rows
+            // as they enter the visible region, so we keep the perf win
+            // without the doubled chrome.
+            LazyVStack(spacing: 0) {
+                ForEach(Array(visibleTasks.enumerated()), id: \.element.id) { index, task in
+                    taskRow(task)
+                    if index < visibleTasks.count - 1 || !visibleComposites.isEmpty {
+                        Divider().padding(.leading, 52)
                     }
-                    ForEach(Array(visibleComposites.enumerated()), id: \.element.id) { index, ct in
-                        compositeRow(ct)
-                        if index < visibleComposites.count - 1 {
-                            Divider().padding(.leading, 52)
-                        }
+                }
+                ForEach(Array(visibleComposites.enumerated()), id: \.element.id) { index, ct in
+                    compositeRow(ct)
+                    if index < visibleComposites.count - 1 {
+                        Divider().padding(.leading, 52)
                     }
                 }
             }
-            .frame(maxHeight: 520)
         }
     }
 
