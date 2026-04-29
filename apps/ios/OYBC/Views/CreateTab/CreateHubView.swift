@@ -100,6 +100,11 @@ struct CreateHubView: View {
                 }
             )
         }
+        // Hub mode pads itself; wizard mode pads inside each step view.
+        // Padding moved off the parent ScrollView so the wizard's tasks
+        // step doesn't get double-padded (16pt outer + 16pt step + 12pt
+        // row chrome shrunk row content to ~78% of screen width).
+        .padding(16)
     }
 
     @ViewBuilder

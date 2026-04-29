@@ -48,6 +48,13 @@ struct MainTabView: View {
             NavigationStack {
                 ScrollView {
                     if let userId = authService.currentUser?.id {
+                        // No outer padding here — `CreateHubView` pads its
+                        // hub content internally, and the wizard's step
+                        // views each apply their own `.padding(16)`.
+                        // Wrapping at this level would double-pad the
+                        // wizard and visibly shrink its task rows
+                        // (~22% of screen width lost on iPhone-class
+                        // widths before this was removed).
                         CreateHubView(
                             userId: userId,
                             preferences: authService.userPreferences,
@@ -62,7 +69,6 @@ struct MainTabView: View {
                                 selectedTab = 0
                             }
                         )
-                        .padding(16)
                     }
                 }
             }
