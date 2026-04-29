@@ -1,0 +1,329 @@
+import Foundation
+import SwiftUI
+@testable import OYBC
+
+/// Builders for realistic mock data used across snapshot tests. Keeps
+/// the test files focused on render variants rather than wiring up
+/// model instances by hand each time.
+///
+/// Design choices:
+/// - Tasks / boards / compoundChildren are constructed in-memory; we
+///   do NOT round-trip through GRDB. The wizard step views read from a
+///   `TaskLibraryViewModel` whose @Observable properties can be set
+///   directly, which is faster and deterministic for snapshot runs.
+/// - `BoardPlayView` does GRDB queries — those snapshots seed an
+///   in-memory `AppDatabase.makeTestInstance()` and route reads through
+///   it (covered when its tests are added).
+/// - All ISO timestamps are pinned (`fixedTimestamp`) so snapshots
+///   don't change across runs.
+enum SnapshotFixtures {
+
+    /// Stable timestamp used everywhere — keeps snapshot output identical
+    /// across machines + days.
+    static let fixedTimestamp = "2026-04-01T12:00:00Z"
+
+    /// User id used by every fixture builder — matches the playground user
+    /// so seeded data stays distinguishable from real-account data.
+    static let userId = "snapshot-user-1"
+
+    // MARK: - Library states
+
+    enum LibraryState {
+        case empty
+        case dense        // mix of normal + counting + compound
+        case onlyNormal
+        case onlyCounting
+        case onlyCompound
+    }
+
+    /// Returns a `TaskLibraryViewModel` populated for a given render
+    /// state. All view-model properties are set directly — no DB,
+    /// no async load.
+    static func makeTaskLibrary(state: LibraryState) -> TaskLibraryViewModel {
+        let library = TaskLibraryViewModel()
+        switch state {
+        case .empty:
+            break
+        case .dense:
+            let (tasks, children) = denseTaskSet()
+            library.libraryTasks = tasks
+            library.allCompoundChildren = children
+            library.compoundChildrenByCompound = groupChildren(children)
+            library.allLibraryBoardTasks = sampleBoardTasks(taskIds: tasks.prefix(5).map { $0.id })
+        case .onlyNormal:
+            library.libraryTasks = normalTasks()
+        case .onlyCounting:
+            library.libraryTasks = countingTasks()
+        case .onlyCompound:
+            let (compounds, children) = compoundTasksWithChildren()
+            // Include leaves so child lookups in the row renderer succeed.
+            let leafTasks = childTasksForCompounds(children)
+            library.libraryTasks = compounds + leafTasks
+            library.allCompoundChildren = children
+            library.compoundChildrenByCompound = groupChildren(children)
+        }
+        return library
+    }
+
+    // MARK: - Task builders
+
+    static func makeTask(
+        id: String,
+        title: String,
+        type: TaskType,
+        action: String? = nil,
+        unit: String? = nil,
+        maxCount: Int? = nil,
+        operatorType: OperatorType? = nil,
+        threshold: Int? = nil,
+        isOrdered: Bool? = nil,
+        isCompleted: Bool = false
+    ) -> Task {
+        Task(
+            id: id,
+            userId: userId,
+            title: title,
+            description: nil,
+            type: type,
+            action: action,
+            unit: unit,
+            maxCount: maxCount,
+            operatorType: operatorType,
+            threshold: threshold,
+            isOrdered: isOrdered,
+            parentStepId: nil,
+            parentStepIndex: nil,
+            progressCounters: nil,
+            totalCompletions: 0,
+            totalInstances: 0,
+            isCompleted: isCompleted,
+            completedAt: nil,
+            currentCount: nil,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp,
+            lastSyncedAt: nil,
+            version: 1,
+            isDeleted: false,
+            deletedAt: nil
+        )
+    }
+
+    static func makeCompoundChild(
+        id: String,
+        compoundTaskId: String,
+        childTaskId: String,
+        childIndex: Int
+    ) -> CompoundChild {
+        CompoundChild(
+            id: id,
+            compoundTaskId: compoundTaskId,
+            childTaskId: childTaskId,
+            childIndex: childIndex,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp,
+            lastSyncedAt: nil,
+            version: 1,
+            isDeleted: false,
+            deletedAt: nil
+        )
+    }
+
+    static func makeBoardTask(
+        id: String,
+        boardId: String,
+        taskId: String,
+        row: Int,
+        col: Int,
+        isCenter: Bool = false
+    ) -> BoardTask {
+        BoardTask(
+            id: id,
+            boardId: boardId,
+            taskId: taskId,
+            row: row,
+            col: col,
+            isCenter: isCenter,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp,
+            version: 1
+        )
+    }
+
+    // MARK: - Wizard controller
+
+    /// Stage hint for the controller — Setup mostly empty, Tasks with a
+    /// few selections, Preview with a fully valid form.
+    enum WizardStage {
+        case setupBlank
+        case setupValid
+        case tasksSomeSelected
+        case previewReady
+    }
+
+    static func makeWizardController(stage: WizardStage = .setupBlank) -> BoardWizardViewModel {
+        let prefs = makeUserPreferences()
+        let controller = BoardWizardViewModel(preferences: prefs)
+        switch stage {
+        case .setupBlank:
+            break
+        case .setupValid:
+            controller.name = "April Reading Sprint"
+            controller.timeframe = .monthly
+        case .tasksSomeSelected:
+            controller.name = "April Reading Sprint"
+            controller.timeframe = .monthly
+            controller.currentStep = 2
+            // Seed a few selected ids — match denseTaskSet() ids so the
+            // wizard's "selected" tint shows on real rows.
+            controller.selectedTaskIds = ["t-normal-1", "t-counting-1", "t-compound-and"]
+        case .previewReady:
+            controller.name = "April Reading Sprint"
+            controller.timeframe = .monthly
+            controller.currentStep = 3
+            // Pin shuffle off — randomized placement breaks snapshot
+            // determinism (every render produces a different grid).
+            controller.isRandomized = false
+            controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
+        }
+        return controller
+    }
+
+    static func makeUserPreferences() -> UserPreferences {
+        UserPreferences.defaults
+    }
+
+    // MARK: - Internal builders
+
+    /// Returns realistic primitive (.normal) tasks. Titles match the
+    /// flavor of `generateSampleTaskTitles()` so renders feel natural.
+    private static func normalTasks() -> [Task] {
+        [
+            makeTask(id: "t-normal-1", title: "Morning workout", type: .normal),
+            makeTask(id: "t-normal-2", title: "Cook a meal at home", type: .normal),
+            makeTask(id: "t-normal-3", title: "Call a friend or family member", type: .normal),
+            makeTask(id: "t-normal-4", title: "Meditate for 10 minutes", type: .normal),
+            makeTask(id: "t-normal-5", title: "Write in a journal", type: .normal),
+        ]
+    }
+
+    private static func countingTasks() -> [Task] {
+        [
+            makeTask(
+                id: "t-counting-1",
+                title: "Read 100 pages",
+                type: .counting,
+                action: "Read",
+                unit: "pages",
+                maxCount: 100
+            ),
+            makeTask(
+                id: "t-counting-2",
+                title: "Run 20 miles",
+                type: .counting,
+                action: "Run",
+                unit: "miles",
+                maxCount: 20
+            ),
+            makeTask(
+                id: "t-counting-3",
+                title: "Drink 8 glasses",
+                type: .counting,
+                action: "Drink",
+                unit: "glasses",
+                maxCount: 8
+            ),
+        ]
+    }
+
+    /// Returns compound parent rows + their CompoundChild link rows.
+    /// Children themselves (the "leaves") are returned by
+    /// `childTasksForCompounds`.
+    private static func compoundTasksWithChildren() -> ([Task], [CompoundChild]) {
+        let compoundAnd = makeTask(
+            id: "t-compound-and",
+            title: "Daily wellness",
+            type: .compound,
+            operatorType: .and,
+            isOrdered: false
+        )
+        let compoundOrdered = makeTask(
+            id: "t-compound-ordered",
+            title: "Bake bread",
+            type: .compound,
+            operatorType: .and,
+            isOrdered: true
+        )
+        let compoundOr = makeTask(
+            id: "t-compound-or",
+            title: "Pick a hobby",
+            type: .compound,
+            operatorType: .or,
+            isOrdered: false
+        )
+        let compounds = [compoundAnd, compoundOrdered, compoundOr]
+
+        let children: [CompoundChild] = [
+            makeCompoundChild(id: "cc-and-1", compoundTaskId: compoundAnd.id, childTaskId: "t-leaf-water", childIndex: 0),
+            makeCompoundChild(id: "cc-and-2", compoundTaskId: compoundAnd.id, childTaskId: "t-leaf-stretch", childIndex: 1),
+            makeCompoundChild(id: "cc-and-3", compoundTaskId: compoundAnd.id, childTaskId: "t-leaf-vitamins", childIndex: 2),
+            makeCompoundChild(id: "cc-ord-1", compoundTaskId: compoundOrdered.id, childTaskId: "t-leaf-mix", childIndex: 0),
+            makeCompoundChild(id: "cc-ord-2", compoundTaskId: compoundOrdered.id, childTaskId: "t-leaf-rise", childIndex: 1),
+            makeCompoundChild(id: "cc-ord-3", compoundTaskId: compoundOrdered.id, childTaskId: "t-leaf-bake", childIndex: 2),
+            makeCompoundChild(id: "cc-or-1", compoundTaskId: compoundOr.id, childTaskId: "t-leaf-paint", childIndex: 0),
+            makeCompoundChild(id: "cc-or-2", compoundTaskId: compoundOr.id, childTaskId: "t-leaf-knit", childIndex: 1),
+        ]
+        return (compounds, children)
+    }
+
+    private static func childTasksForCompounds(_ children: [CompoundChild]) -> [Task] {
+        let titles: [String: String] = [
+            "t-leaf-water":    "Drink water",
+            "t-leaf-stretch":  "Stretch 5 min",
+            "t-leaf-vitamins": "Take vitamins",
+            "t-leaf-mix":      "Mix dough",
+            "t-leaf-rise":     "Let dough rise",
+            "t-leaf-bake":     "Bake the loaf",
+            "t-leaf-paint":    "Paint a small canvas",
+            "t-leaf-knit":     "Knit one row",
+        ]
+        let unique = Set(children.map { $0.childTaskId })
+        return unique.sorted().map { id in
+            makeTask(id: id, title: titles[id] ?? id, type: .normal)
+        }
+    }
+
+    /// Composite "everything" library — primitives + compounds + leaves.
+    private static func denseTaskSet() -> ([Task], [CompoundChild]) {
+        let normals = normalTasks()
+        let countings = countingTasks()
+        let (compounds, children) = compoundTasksWithChildren()
+        let leaves = childTasksForCompounds(children)
+        return (normals + countings + compounds + leaves, children)
+    }
+
+    private static func groupChildren(_ children: [CompoundChild]) -> [String: [CompoundChild]] {
+        var grouped: [String: [CompoundChild]] = [:]
+        for c in children {
+            grouped[c.compoundTaskId, default: []].append(c)
+        }
+        for id in grouped.keys {
+            grouped[id]?.sort { $0.childIndex < $1.childIndex }
+        }
+        return grouped
+    }
+
+    /// Sample BoardTasks pinned to a single board so the row "N boards"
+    /// usage hint shows non-zero values for the first few tasks.
+    private static func sampleBoardTasks(taskIds: [String]) -> [BoardTask] {
+        let boardId = "board-fixture-1"
+        return taskIds.enumerated().map { idx, taskId in
+            makeBoardTask(
+                id: "bt-\(taskId)",
+                boardId: boardId,
+                taskId: taskId,
+                row: idx / 5,
+                col: idx % 5
+            )
+        }
+    }
+}

@@ -51,6 +51,49 @@ The legacy 4-type model (Normal / Counting / Progress / Composite) is being unif
 - Use Jest for TypeScript tests and XCTest for Swift tests.
 - Tests should be deterministic and not rely on external services or network calls.
 
+### iOS snapshot tests (rapid UI verification)
+
+Snapshot tests are the fastest way to visually verify iOS UI changes — no simulator boot, no manual screenshots. Use them whenever a layout, color, typography, or component-rendering change might regress an existing surface.
+
+**Where to find them:**
+- Target: `OYBCSnapshotTests` (separate from `OYBCTests` so logic tests stay light)
+- Files: `apps/ios/OYBCSnapshotTests/*SnapshotTests.swift`
+- Fixtures: `apps/ios/OYBCSnapshotTests/SnapshotFixtures.swift` (mock data builders — reuse, don't duplicate)
+- Baselines: `apps/ios/OYBCSnapshotTests/__Snapshots__/<TestClassName>/<testName>.1.png`
+- Library: `pointfreeco/swift-snapshot-testing` v1.18+ via SPM
+
+**Workflow:**
+```bash
+cd apps/ios
+xcodegen generate    # only if you added new test files
+xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath /tmp/oybc-derived test
+```
+
+Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
+
+**On failure** (snapshot doesn't match baseline):
+- The failure message prints two `file://` URLs — the baseline and the new candidate.
+- Candidate lives under `~/Library/Developer/CoreSimulator/Devices/<device-id>/data/Containers/Data/Application/<app-id>/tmp/<TestClassName>/<testName>.1.png`.
+- Read both PNGs to compare. If the diff is intentional, delete the baseline and re-run with `record: .missing` to re-record. If unintentional, fix the regression.
+
+**Adding a new snapshot test:**
+1. Add a `*SnapshotTests.swift` file under `OYBCSnapshotTests/`.
+2. Reuse builders from `SnapshotFixtures.swift` (extend it before duplicating).
+3. Use `record: SnapshotTestingConfiguration.Record? = .missing` so first runs auto-record without manual flag-flipping.
+4. Render via `assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: <height>)), record: recordMode)`. Avoid `.device(config:)` — explicit fixed dimensions are more stable across machines.
+5. If the surface uses `BoardWizardViewModel`, set `controller.isRandomized = false` — randomized placement breaks snapshot determinism.
+6. `xcodegen generate` so the new file is picked up.
+7. Run once to record the baseline; re-run to confirm green.
+
+**Sharp edges:**
+- **iOS-version drift**: simulator iOS upgrades (e.g., 17 → 18) shift font kerning. Pin to one iOS version per CI run. Locally, snapshots may need re-recording after Xcode updates.
+- **`AppDatabase.shared`**: views that query the production database singleton (e.g., `BoardPlayView`) are not yet covered — they'd need either an injected database or per-test seeding of `.shared`. Until the harness is refactored, prefer snapshotting the leaf views (which take props) over containers that query the DB.
+- **`@EnvironmentObject AuthService`**: views that depend on auth state require either the `-bypassAuth` runtime arg or a stub injection via `.environmentObject(...)`. Easiest path is to snapshot inner step views directly rather than the auth-gated wrappers.
+- **Counter-suffixed filenames**: baselines use `<test>.1.png` (the `.1` is a per-test counter from swift-snapshot-testing). Don't strip the `.1` — the library uses the full filename to look up baselines.
+- **xcodebuild prints "TEST FAILED" on success**: a `simctl` PATH warning at process exit can produce a spurious "TEST FAILED" line even when all tests passed. Trust the per-test "passed (Xs)" lines, not the trailing message.
+
 ## Feature Implementation Guidelines
 
 **Playground-first, one feature at a time, user-driven.** Use `/feature` skill for the full workflow.
