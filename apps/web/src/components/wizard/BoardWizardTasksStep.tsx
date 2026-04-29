@@ -6,6 +6,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../../db/database';
+import { createTask } from '../../db/operations/tasks';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { TypeBadge } from '../TypeBadge';
 import { FilterTabs } from '../FilterTabs';
@@ -109,6 +110,11 @@ export function BoardWizardTasksStep({
   const [rowContextMenu, setRowContextMenu] = useState<
     { taskId: string; x: number; y: number } | null
   >(null);
+  /** Source counting task + draft new maxCount for the "derive smaller
+   *  version" quick action. Null when the deriver modal is closed. */
+  const [derivingFromTask, setDerivingFromTask] = useState<Task | null>(null);
+  const [deriveMaxCountInput, setDeriveMaxCountInput] = useState('');
+  const [deriveError, setDeriveError] = useState<string | null>(null);
 
   // Usage-hint data — "N boards" / "unused" / "N steps" / "N subtasks".
   // Matches the composite wizard's library row hints so the two
@@ -464,6 +470,8 @@ export function BoardWizardTasksStep({
           return null;
         }
         const isCompound = target.type === TaskType.COMPOUND;
+        const isCounting = target.type === TaskType.COUNTING
+          && target.action != null && target.unit != null && target.maxCount != null;
         const isSelected = selectedTaskIds.has(target.id);
         const isCenter = centerTaskId === target.id;
         const isExpanded = expandedCompositeId === target.id;
@@ -480,6 +488,18 @@ export function BoardWizardTasksStep({
                 glyph: isSelected ? '−' : '+',
                 action: () => { handleToggle(target.id); close(); },
               },
+              ...(isCounting
+                ? [{
+                    label: 'Derive smaller version…',
+                    glyph: '⇣',
+                    action: () => {
+                      setDerivingFromTask(target);
+                      setDeriveMaxCountInput('');
+                      setDeriveError(null);
+                      close();
+                    },
+                  }]
+                : []),
               ...(isCompound
                 ? [
                     {
@@ -504,6 +524,23 @@ export function BoardWizardTasksStep({
                           },
                         }]
                       : []),
+                    // Per-subtask quick-add — flat-listed so the user can
+                    // pick a single leaf without expanding the row first.
+                    // Already-selected leaves render as disabled checkmarks.
+                    ...leaves.map((leaf) => {
+                      const leafIsSelected = selectedTaskIds.has(leaf.id);
+                      return {
+                        label: leafIsSelected ? `✓ ${leaf.title}` : leaf.title,
+                        glyph: leafIsSelected ? '·' : '+',
+                        disabled: leafIsSelected,
+                        action: () => {
+                          if (!leafIsSelected) {
+                            handleToggle(leaf.id);
+                          }
+                          close();
+                        },
+                      };
+                    }),
                   ]
                 : []),
               ...(centerTaskMode && isSelected && !isCompound
@@ -517,6 +554,39 @@ export function BoardWizardTasksStep({
           />
         );
       })()}
+
+      {derivingFromTask && (
+        <DeriveCounterModal
+          source={derivingFromTask}
+          maxCountInput={deriveMaxCountInput}
+          onMaxCountChange={(v) => { setDeriveMaxCountInput(v); setDeriveError(null); }}
+          error={deriveError}
+          onCancel={() => setDerivingFromTask(null)}
+          onSave={async () => {
+            const parsed = parseInt(deriveMaxCountInput.trim(), 10);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+              setDeriveError('Max count must be a positive integer');
+              return;
+            }
+            const action = (derivingFromTask.action ?? '').trim();
+            const unit = (derivingFromTask.unit ?? '').trim();
+            const title = `${action} ${parsed} ${unit}`;
+            try {
+              const newTask = await createTask(userId, {
+                title,
+                type: TaskType.COUNTING,
+                action,
+                unit,
+                maxCount: parsed,
+              });
+              onTaskCreated(newTask);
+              setDerivingFromTask(null);
+            } catch (err) {
+              setDeriveError(err instanceof Error ? err.message : 'Failed to save');
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -527,6 +597,9 @@ interface RowContextMenuItem {
   label: string;
   glyph: string;
   action: () => void;
+  /** Render the item dimmed + non-clickable. Used for already-selected
+   *  subtask leaves under a compound's "Add a subtask" submenu. */
+  disabled?: boolean;
 }
 
 function RowContextMenu({
@@ -579,6 +652,7 @@ function RowContextMenu({
           type="button"
           role="menuitem"
           onClick={it.action}
+          disabled={it.disabled}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -589,16 +663,141 @@ function RowContextMenu({
             border: 0,
             color: 'inherit',
             font: 'inherit',
-            cursor: 'pointer',
+            cursor: it.disabled ? 'default' : 'pointer',
             textAlign: 'left',
+            opacity: it.disabled ? 0.5 : 1,
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'; }}
+          onMouseEnter={(e) => {
+            if (!it.disabled) {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)';
+            }
+          }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
         >
           <span aria-hidden="true" style={{ width: 16, textAlign: 'center', opacity: 0.7 }}>{it.glyph}</span>
           <span>{it.label}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+// ─── Derive smaller counter modal ─────────────────────────────────────────────
+
+function DeriveCounterModal({
+  source, maxCountInput, onMaxCountChange, error, onCancel, onSave,
+}: {
+  source: Task;
+  maxCountInput: string;
+  onMaxCountChange: (v: string) => void;
+  error: string | null;
+  onCancel: () => void;
+  onSave: () => void;
+}): React.ReactElement {
+  // Minimal modal — backdrop click + Escape dismiss. Single field for
+  // the new maxCount; action+unit are inherited from `source` so the
+  // user only enters the scaled-down target.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  const action = (source.action ?? '').trim();
+  const unit = (source.unit ?? '').trim();
+  const previewMax = parseInt(maxCountInput.trim(), 10);
+  const previewTitle =
+    Number.isFinite(previewMax) && previewMax > 0
+      ? `${action} ${previewMax} ${unit}`
+      : '';
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Derive smaller counter"
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1100,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-bg-elevated, #1c1c1e)',
+          color: 'inherit',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 12,
+          padding: 20,
+          minWidth: 320,
+          maxWidth: 420,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+        }}
+      >
+        <h3 style={{ margin: '0 0 12px', fontSize: 17 }}>Derive smaller version</h3>
+        <div style={{ marginBottom: 12, fontSize: 14, opacity: 0.75 }}>
+          From <strong>{source.title}</strong>
+          {source.maxCount != null && (
+            <span> — {action} {source.maxCount} {unit}</span>
+          )}
+        </div>
+        <label style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>
+          New max count
+        </label>
+        <input
+          type="number"
+          autoFocus
+          inputMode="numeric"
+          min={1}
+          value={maxCountInput}
+          onChange={(e) => onMaxCountChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            borderRadius: 6,
+            border: '1px solid rgba(255,255,255,0.15)',
+            background: 'rgba(255,255,255,0.04)',
+            color: 'inherit',
+            font: 'inherit',
+            boxSizing: 'border-box',
+          }}
+        />
+        {previewTitle && (
+          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.6 }}>
+            New title: <strong>{previewTitle}</strong>
+          </div>
+        )}
+        {error && (
+          <div style={{ marginTop: 8, fontSize: 13, color: '#ff6b6b' }}>{error}</div>
+        )}
+        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: '8px 14px', borderRadius: 6, background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.2)', color: 'inherit',
+              cursor: 'pointer', font: 'inherit',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            style={{
+              padding: '8px 14px', borderRadius: 6, background: '#0a84ff',
+              border: 0, color: '#fff', cursor: 'pointer', font: 'inherit',
+              fontWeight: 600,
+            }}
+          >
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

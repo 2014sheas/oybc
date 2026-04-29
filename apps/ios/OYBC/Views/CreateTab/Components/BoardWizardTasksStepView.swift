@@ -63,6 +63,11 @@ struct BoardWizardTasksStepView: View {
     @State private var activeFilter: LibraryFilter = .all
     @State private var expandedCompositeId: String? = nil
     @State private var isSheetPresented: Bool = false
+    /// Source task + draft max-count for the "derive smaller version"
+    /// quick action on counting rows. `nil` when the deriver sheet is
+    /// closed. Set by the contextMenu Button; cleared on save/cancel.
+    @State private var derivingFromTask: OYBC.Task? = nil
+    @State private var deriveMaxCountInput: String = ""
 
     // MARK: - Derived
 
@@ -209,6 +214,144 @@ struct BoardWizardTasksStepView: View {
                 onLibraryReloadRequested: onLibraryReloadRequested
             )
         }
+        // Quick "Derive smaller version" sheet — opened from a counting
+        // row's contextMenu. Two-field form (read-only summary + new
+        // maxCount) so the user can scale the source down to a sub-counter
+        // (e.g., "Read 100 pages" → "Read 20 pages") without bouncing
+        // through the full New Task form.
+        .sheet(item: derivePickerItemBinding) { _ in
+            deriveCounterSheet
+        }
+    }
+
+    /// `Identifiable` adapter wrapping `derivingFromTask` so we can use
+    /// `.sheet(item:)` (which auto-dismisses when nil and triggers a
+    /// fresh state on each open).
+    private var derivePickerItemBinding: Binding<DeriveCounterPayload?> {
+        Binding(
+            get: {
+                if let t = derivingFromTask { return DeriveCounterPayload(task: t) }
+                return nil
+            },
+            set: { newValue in
+                if newValue == nil { derivingFromTask = nil }
+            }
+        )
+    }
+
+    private struct DeriveCounterPayload: Identifiable {
+        let task: OYBC.Task
+        var id: String { task.id }
+    }
+
+    @ViewBuilder
+    private var deriveCounterSheet: some View {
+        if let source = derivingFromTask {
+            NavigationStack {
+                Form {
+                    Section("Derived from") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(source.title)
+                                .font(.headline)
+                            if let action = source.action,
+                               let unit = source.unit,
+                               let max = source.maxCount {
+                                Text("\(action) \(max) \(unit)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    Section("New target") {
+                        TextField("Max count", text: $deriveMaxCountInput)
+                            .keyboardType(.numberPad)
+                        if let action = source.action, let unit = source.unit,
+                           let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+                           parsed > 0 {
+                            Text("Title: \(action) \(parsed) \(unit)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .navigationTitle("Derive smaller version")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            derivingFromTask = nil
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            saveDerivedCounter(source: source)
+                        }
+                        .disabled(!isDeriveInputValid(source: source))
+                    }
+                }
+            }
+        }
+    }
+
+    private func isDeriveInputValid(source: OYBC.Task) -> Bool {
+        guard source.action != nil, source.unit != nil, source.maxCount != nil else { return false }
+        guard let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return parsed > 0
+    }
+
+    /// Atomically writes a new counting Task derived from `source` (same
+    /// action+unit, scaled-down maxCount), enqueues a sync entry, and adds
+    /// the new task id to the wizard's selection. Mirrors the iOS
+    /// CreateFormViewModel counting-create path but bypasses the form so
+    /// it's a single-tap quick action from the contextMenu.
+    private func saveDerivedCounter(source: OYBC.Task) {
+        guard let action = source.action,
+              let unit = source.unit,
+              let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+              parsed > 0
+        else { return }
+
+        let now = AppDatabase.currentTimestamp()
+        let newId = AppDatabase.generateUUID()
+        let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = "\(trimmedAction) \(parsed) \(trimmedUnit)"
+
+        let newTask = OYBC.Task(
+            id: newId,
+            userId: userId,
+            title: title,
+            description: nil,
+            type: .counting,
+            action: trimmedAction,
+            unit: trimmedUnit,
+            maxCount: parsed,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false
+        )
+        do {
+            try AppDatabase.shared.write { db in
+                try newTask.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: newId,
+                    operationType: .create,
+                    payload: newTask,
+                    now: now
+                ).save(db)
+            }
+            onTaskCreated(newId, title, "counting")
+            onLibraryReloadRequested()
+        } catch {
+            // Swallow + dismiss; the user can retry. A toast surface lives
+            // on the parent's wizard banner; threading it through here would
+            // require extra plumbing for an edge-case path.
+        }
+        derivingFromTask = nil
     }
 
     // MARK: - Header
@@ -385,14 +528,24 @@ struct BoardWizardTasksStepView: View {
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             // Long-press surfaces the same actions a tap performs (toggle
             // selection) plus center-task pinning when the wizard is in
-            // center-task mode. Same affordance pattern as BoardPlayView's
-            // .contextMenu modifiers.
+            // center-task mode. Counting rows additionally surface a
+            // "Derive smaller version…" shortcut so the user can spawn a
+            // sub-counter (e.g., "Read 20 pages" from "Read 100 pages")
+            // without leaving the wizard. Same affordance pattern as
+            // BoardPlayView's .contextMenu modifiers.
             .contextMenu {
                 Button(
                     isSelected ? "Remove from board" : "Add to board",
                     systemImage: isSelected ? "minus.circle" : "plus.circle"
                 ) {
                     toggleSelection(task.id)
+                }
+                if task.type == .counting,
+                   task.action != nil, task.unit != nil, task.maxCount != nil {
+                    Button("Derive smaller version…", systemImage: "scalemass") {
+                        derivingFromTask = task
+                        deriveMaxCountInput = ""
+                    }
                 }
                 if centerTaskMode && isSelected {
                     Button(
@@ -476,7 +629,8 @@ struct BoardWizardTasksStepView: View {
                 .accessibilityAddTraits(isCompoundSelected ? [.isSelected] : [])
                 // Long-press surfaces compound-specific shortcuts that a tap
                 // can't express: select the whole compound, expand the leaf
-                // list, or one-shot select every leaf into the board.
+                // list, one-shot select every leaf, or pick individual
+                // leaves via a submenu without expanding the row first.
                 .contextMenu {
                     Button(
                         isCompoundSelected ? "Remove from board" : "Add to board",
@@ -496,6 +650,23 @@ struct BoardWizardTasksStepView: View {
                                 if !selectedTaskIds.contains(leaf.id) {
                                     selectedTaskIds.insert(leaf.id)
                                 }
+                            }
+                        }
+                        // Per-subtask quick-add submenu — lets the user pick a
+                        // single leaf without expanding the row in the list.
+                        Menu("Add a subtask") {
+                            ForEach(leaves, id: \.id) { leaf in
+                                let leafIsSelected = selectedTaskIds.contains(leaf.id)
+                                Button(
+                                    leafIsSelected
+                                        ? "✓ \(leaf.title)"
+                                        : leaf.title
+                                ) {
+                                    if !leafIsSelected {
+                                        selectedTaskIds.insert(leaf.id)
+                                    }
+                                }
+                                .disabled(leafIsSelected)
                             }
                         }
                     }
