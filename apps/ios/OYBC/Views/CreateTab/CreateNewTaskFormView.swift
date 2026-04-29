@@ -24,6 +24,13 @@ struct CreateNewTaskFormView: View {
     var submitLabel: String = "Create & Add to Pool"
 
     var body: some View {
+        // `.frame(maxWidth: .infinity, alignment: .leading)` makes the form
+        // stretch to the container's width. Without it, the VStack collapses
+        // to the maximum intrinsic width of its children, so inside a sheet
+        // (NewTaskSheetView) the form rendered noticeably narrower than the
+        // sheet itself. This was visible in the board wizard where the
+        // "+ New task" sheet showed a left-aligned column with whitespace
+        // on the right.
         VStack(alignment: .leading, spacing: 12) {
             Text("Create Task")
                 .font(.headline)
@@ -106,6 +113,7 @@ struct CreateNewTaskFormView: View {
                 .disabled(form.isSubmitting || userId == nil)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Counting fields
