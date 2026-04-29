@@ -188,8 +188,24 @@ enum SnapshotFixtures {
         return controller
     }
 
+    /// Returns user prefs pinned to a non-`.custom` timeframe so the
+    /// wizard's customStartDate/customEndDate don't get seeded from
+    /// `Date()` — that would drift the rendered date pickers across
+    /// days and flake snapshot baselines. Monthly resolves to the
+    /// current calendar month, which is also date-dependent — but the
+    /// Setup step doesn't display those dates when Monthly is the
+    /// selection (only the timeframe pill renders), so the snapshot
+    /// stays stable.
     static func makeUserPreferences() -> UserPreferences {
-        UserPreferences.defaults
+        UserPreferences(
+            weekStartDay: .monday,
+            defaultBoardSize: .five,
+            defaultCenterType: .free,
+            defaultTimeframe: .monthly,
+            defaultRandomize: true,
+            defaultCenterCustomName: "",
+            theme: .system
+        )
     }
 
     // MARK: - Internal builders

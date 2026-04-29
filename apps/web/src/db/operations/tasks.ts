@@ -72,7 +72,7 @@ export async function createTask(
     await db.tasks.add(task);
   });
 
-  void addToSyncQueue('tasks', task.id, SyncOperationType.CREATE, task);
+  await addToSyncQueue('tasks', task.id, SyncOperationType.CREATE, task);
 
   return task;
 }
@@ -177,12 +177,12 @@ export async function createCompound(
   });
 
   // Enqueue sync entries OUTSIDE the transaction (matches createTask pattern).
-  void addToSyncQueue('tasks', compound.id, SyncOperationType.CREATE, compound);
+  await addToSyncQueue('tasks', compound.id, SyncOperationType.CREATE, compound);
   for (const { task: inlineTask, child: childRow } of childRowsToSync) {
     if (inlineTask) {
-      void addToSyncQueue('tasks', inlineTask.id, SyncOperationType.CREATE, inlineTask);
+      await addToSyncQueue('tasks', inlineTask.id, SyncOperationType.CREATE, inlineTask);
     }
-    void addToSyncQueue('compoundChildren', childRow.id, SyncOperationType.CREATE, childRow);
+    await addToSyncQueue('compoundChildren', childRow.id, SyncOperationType.CREATE, childRow);
   }
 
   return compound;
@@ -202,7 +202,7 @@ export async function updateTask(
     version: (existing?.version ?? 0) + 1,
   });
   const updated = await db.tasks.get(id);
-  if (updated) void addToSyncQueue('tasks', id, SyncOperationType.UPDATE, updated);
+  if (updated) await addToSyncQueue('tasks', id, SyncOperationType.UPDATE, updated);
 }
 
 /**
@@ -223,7 +223,7 @@ export async function deleteTask(id: string): Promise<void> {
     version: (existing.version ?? 0) + 1,
   });
   const task = await db.tasks.get(id);
-  if (task) void addToSyncQueue('tasks', id, SyncOperationType.DELETE, task);
+  if (task) await addToSyncQueue('tasks', id, SyncOperationType.DELETE, task);
 }
 
 /**
@@ -317,7 +317,7 @@ export async function deleteTaskStep(id: string): Promise<void> {
     version: (existing.version ?? 0) + 1,
   });
   const step = await db.taskSteps.get(id);
-  if (step) void addToSyncQueue('taskSteps', id, SyncOperationType.DELETE, step);
+  if (step) await addToSyncQueue('taskSteps', id, SyncOperationType.DELETE, step);
 }
 
 /**

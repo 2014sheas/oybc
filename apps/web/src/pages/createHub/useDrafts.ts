@@ -13,9 +13,15 @@ export interface DraftWithTaskCount {
  * automatically when the wizard saves or activates a draft.
  */
 export function useDrafts(userId: string | undefined): Board[] {
-  const boards = useBoards(userId) ?? [];
+  const boards = useBoards(userId);
   return useMemo(
-    () => boards.filter((b) => b.status === BoardStatus.DRAFT && !b.isDeleted),
+    () =>
+      (boards ?? [])
+        .filter((b) => b.status === BoardStatus.DRAFT && !b.isDeleted)
+        // ISO8601 strings sort lexicographically the same way they sort
+        // chronologically, so a plain string compare gives the right
+        // ordering — most recently updated first.
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [boards],
   );
 }

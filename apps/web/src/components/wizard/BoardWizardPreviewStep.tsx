@@ -156,7 +156,19 @@ export function BoardWizardPreviewStep({
       {/* Live preview using the existing BingoBoard in readOnly mode */}
       <div className={styles.previewWrapper}>
         <BingoBoard
-          key={`${controller.size}-${controller.centerType}-${selectionKey}`}
+          // BingoBoard snapshots taskNames into internal state on mount,
+          // so any field that affects placement must remount it via key.
+          // centerTaskId swaps which selection sits at the centre under
+          // CHOSEN; isRandomized re-shuffles the grid; centerCustomName
+          // is the displayed label for CUSTOM_FREE.
+          key={[
+            controller.size,
+            controller.centerType,
+            controller.centerTaskId ?? '',
+            controller.centerCustomName,
+            controller.isRandomized ? '1' : '0',
+            selectionKey,
+          ].join('|')}
           taskNames={taskNames}
           gridSize={controller.size}
           squareSize={84}

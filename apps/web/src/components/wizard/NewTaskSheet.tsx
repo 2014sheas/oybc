@@ -22,11 +22,11 @@ export interface NewTaskSheetProps {
  * NewTaskSheet — Modal wrapper around `CreateNewTaskForm` for use
  * inside the board-creation wizard's Tasks step.
  *
- * Owns its own `useCreateFormState` instance so the form state resets
- * cleanly each time the sheet opens. On successful submission the
- * sheet calls the parent's `onTaskCreated` (or `onCompositeCreated`)
- * and dismisses itself; the parent is responsible for auto-selecting
- * the new task in the wizard's selection set.
+ * The actual form lives in `NewTaskSheetBody`, which is only mounted
+ * while the sheet is open. That guarantees `useCreateFormState`
+ * unmounts on close and the form resets cleanly the next time the
+ * sheet opens — without it, the hook persists across opens and a
+ * half-typed title from a previous attempt would leak through.
  *
  * Click on the backdrop or press Escape to dismiss.
  */
@@ -37,14 +37,6 @@ export function NewTaskSheet({
   onTaskCreated,
   onCompositeCreated,
 }: NewTaskSheetProps): React.ReactElement | null {
-  const form = useCreateFormState({
-    userId,
-    onTaskCreated: (task) => {
-      onTaskCreated(task);
-      onClose();
-    },
-  });
-
   useEffect(() => {
     if (!isOpen) return;
     function onKey(e: KeyboardEvent): void {
@@ -55,6 +47,34 @@ export function NewTaskSheet({
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  return (
+    <NewTaskSheetBody
+      onClose={onClose}
+      userId={userId}
+      onTaskCreated={onTaskCreated}
+      onCompositeCreated={onCompositeCreated}
+    />
+  );
+}
+
+/**
+ * Inner body that owns `useCreateFormState`. Rendered only while the
+ * sheet is open so the hook tears down on close — see parent docstring.
+ */
+function NewTaskSheetBody({
+  onClose,
+  userId,
+  onTaskCreated,
+  onCompositeCreated,
+}: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
+  const form = useCreateFormState({
+    userId,
+    onTaskCreated: (task) => {
+      onTaskCreated(task);
+      onClose();
+    },
+  });
 
   return (
     <div

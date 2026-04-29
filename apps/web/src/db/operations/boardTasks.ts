@@ -36,7 +36,7 @@ export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
   const tasks = await db.boardTasks.where('boardId').equals(boardId).toArray();
   for (const bt of tasks) {
     await db.boardTasks.delete(bt.id);
-    void addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+    await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
   }
 }
 
@@ -95,7 +95,7 @@ export async function createBoardTask(
   };
 
   await db.boardTasks.add(boardTask);
-  void addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
+  await addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
   return boardTask;
 }
 

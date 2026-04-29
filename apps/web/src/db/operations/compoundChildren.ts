@@ -77,7 +77,7 @@ export async function createCompoundChild(input: CreateCompoundChildInput): Prom
     isDeleted: false,
   };
   await db.compoundChildren.add(row);
-  void addToSyncQueue('compoundChildren', row.id, SyncOperationType.CREATE, row);
+  await addToSyncQueue('compoundChildren', row.id, SyncOperationType.CREATE, row);
   return row;
 }
 
@@ -99,7 +99,7 @@ export async function softDeleteCompoundChild(id: string): Promise<void> {
     version: existing.version + 1,
   };
   await db.compoundChildren.update(id, update);
-  void addToSyncQueue('compoundChildren', id, SyncOperationType.UPDATE, { ...existing, ...update });
+  await addToSyncQueue('compoundChildren', id, SyncOperationType.UPDATE, { ...existing, ...update });
 }
 
 /**
@@ -132,7 +132,7 @@ export async function reorderCompoundChildren(
         version: existing.version + 1,
       };
       await db.compoundChildren.update(id, update);
-      void addToSyncQueue('compoundChildren', id, SyncOperationType.UPDATE, {
+      await addToSyncQueue('compoundChildren', id, SyncOperationType.UPDATE, {
         ...existing,
         ...update,
       });

@@ -87,9 +87,13 @@ final class BoardWizardViewModel {
                 self.customEndDate = String(d.board.endDate.prefix(10))
             }
         } else {
-            self.size = preferences.defaultBoardSize.rawValue
+            let initialSize = preferences.defaultBoardSize.rawValue
+            self.size = initialSize
             self.timeframe = Self.resolveTimeframe(preferences.defaultTimeframe)
-            self.centerType = Self.resolveCenterType(preferences.defaultCenterType)
+            self.centerType = Self.coerceCenterType(
+                size: initialSize,
+                desired: Self.resolveCenterType(preferences.defaultCenterType)
+            )
             self.centerCustomName = preferences.defaultCenterCustomName
             self.isRandomized = preferences.defaultRandomize
         }
@@ -100,6 +104,21 @@ final class BoardWizardViewModel {
         case .free: return .free
         case .none: return .none
         }
+    }
+
+    /// Returns a `centerType` consistent with `size`. Even boards have
+    /// no center concept — the form hides the center selector for
+    /// them, so a leaked FREE/CUSTOM_FREE from prefs would be
+    /// unfixable from the UI. Coerce to NONE in that case. Mirrors
+    /// the web `coerceCenterType` helper in `useBoardWizard.ts` and
+    /// the existing odd/even guard inside `updateSize`.
+    private static func coerceCenterType(
+        size: Int,
+        desired: CenterSquareType
+    ) -> CenterSquareType {
+        let isOdd = size % 2 != 0
+        if !isOdd { return .none }
+        return desired
     }
 
     private static func resolveTimeframe(_ value: DefaultTimeframe) -> Timeframe {
@@ -167,11 +186,17 @@ final class BoardWizardViewModel {
 
     func reset() {
         name = ""
-        size = initialPreferences.defaultBoardSize.rawValue
+        let nextSize = initialPreferences.defaultBoardSize.rawValue
+        size = nextSize
         timeframe = Self.resolveTimeframe(initialPreferences.defaultTimeframe)
         customStartDate = ""
         customEndDate = ""
-        centerType = Self.resolveCenterType(initialPreferences.defaultCenterType)
+        // Same coercion the initial factory uses, so reset can never
+        // reintroduce an even-board+FREE mismatch.
+        centerType = Self.coerceCenterType(
+            size: nextSize,
+            desired: Self.resolveCenterType(initialPreferences.defaultCenterType)
+        )
         centerCustomName = initialPreferences.defaultCenterCustomName
         isRandomized = initialPreferences.defaultRandomize
         selectedTaskIds = []

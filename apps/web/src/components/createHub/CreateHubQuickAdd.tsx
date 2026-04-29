@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Task } from '@oybc/shared';
 import { useCreateFormState } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
@@ -24,15 +24,38 @@ export interface CreateHubQuickAddProps {
  */
 export function CreateHubQuickAdd({ userId }: CreateHubQuickAddProps): React.ReactElement {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Tracks the active dismiss timer so back-to-back creates and
+  // unmounts don't leak handles or fire `setSuccessMessage(null)` on
+  // an unmounted component. A bare `setTimeout` was the original
+  // implementation — replaced after a Copilot review flagged the leak.
+  const dismissTimerRef = useRef<number | null>(null);
+
+  function showSuccess(message: string): void {
+    setSuccessMessage(message);
+    if (dismissTimerRef.current !== null) {
+      window.clearTimeout(dismissTimerRef.current);
+    }
+    dismissTimerRef.current = window.setTimeout(() => {
+      setSuccessMessage(null);
+      dismissTimerRef.current = null;
+    }, 3000);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current !== null) {
+        window.clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+    };
+  }, []);
 
   function onTaskCreated(task: Task): void {
-    setSuccessMessage(`Added "${task.title}" to your library.`);
-    window.setTimeout(() => setSuccessMessage(null), 3000);
+    showSuccess(`Added "${task.title}" to your library.`);
   }
 
   function onCompositeCreated(task: Task): void {
-    setSuccessMessage(`Added composite "${task.title}" to your library.`);
-    window.setTimeout(() => setSuccessMessage(null), 3000);
+    showSuccess(`Added composite "${task.title}" to your library.`);
   }
 
   const form = useCreateFormState({ userId, onTaskCreated });

@@ -29,6 +29,28 @@ export function tasksNeededFor(size: 3 | 4 | 5, centerType: CenterSquareType): n
   return size * size - (hasReservedCenter ? 1 : 0);
 }
 
+/**
+ * Returns a `centerType` that is internally consistent with `size`.
+ *
+ * Even boards have no center concept; the form hides the center
+ * selector for them, so any non-NONE leakage (from prefs, a malformed
+ * draft, or a stale reset) would be unfixable from the UI. Coerce to
+ * NONE in those cases.
+ *
+ * Used in three places that all need to converge on the same rule:
+ * the initial-state factory, `setSize`, and `reset`.
+ */
+function coerceCenterType(
+  size: 3 | 4 | 5,
+  desired: CenterSquareType,
+): CenterSquareType {
+  const isOdd = size % 2 !== 0;
+  if (!isOdd) return CenterSquareType.NONE;
+  // Odd boards: NONE is allowed but we usually want a visible default
+  // when prefs don't pick one. Honor whatever the caller asked for.
+  return desired;
+}
+
 /** All wizard state held by the controller. */
 export interface BoardWizardState {
   // Step 1 fields
@@ -154,8 +176,16 @@ export function useBoardWizard({
       ? draftBoard.endDate.slice(0, 10)
       : '',
   );
-  const [centerType, setCenterTypeRaw] = useState<CenterSquareType>(
-    () => draftBoard?.centerSquareType ?? preferences.defaultCenterType,
+  const [centerType, setCenterTypeRaw] = useState<CenterSquareType>(() =>
+    // Even-size boards have no center concept — the BoardSetupForm
+    // hides the center selector for them, so the user can't correct a
+    // FREE/CUSTOM_FREE that leaks in from prefs or a malformed draft.
+    // Coerce to NONE here so the initial state is internally consistent
+    // (matches the same guard in setSize).
+    coerceCenterType(
+      (draftBoard?.boardSize as 3 | 4 | 5 | undefined) ?? preferences.defaultBoardSize,
+      draftBoard?.centerSquareType ?? preferences.defaultCenterType,
+    ),
   );
   const [centerCustomName, setCenterCustomName] = useState(
     () => draftBoard?.centerSquareCustomName ?? preferences.defaultCenterCustomName,
@@ -234,11 +264,17 @@ export function useBoardWizard({
 
   const reset = useCallback(() => {
     setName('');
-    setSizeRaw(preferences.defaultBoardSize);
+    // Re-apply size + centerType through the same coercion the initial
+    // factory uses, so reset can never reintroduce an even-board+FREE
+    // mismatch. Going via `setSizeRaw` + `coerceCenterType` rather than
+    // calling `setSize` so the centerType honours the pref instead of
+    // always being normalised to FREE.
+    const nextSize = preferences.defaultBoardSize;
+    setSizeRaw(nextSize);
+    setCenterTypeRaw(coerceCenterType(nextSize, preferences.defaultCenterType));
     setTimeframe(preferences.defaultTimeframe);
     setCustomStartDate('');
     setCustomEndDate('');
-    setCenterTypeRaw(preferences.defaultCenterType);
     setCenterCustomName(preferences.defaultCenterCustomName);
     setIsRandomized(preferences.defaultRandomize);
     setSelectedTaskIds(new Set());
