@@ -383,6 +383,26 @@ struct BoardWizardTasksStepView: View {
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            // Long-press surfaces the same actions a tap performs (toggle
+            // selection) plus center-task pinning when the wizard is in
+            // center-task mode. Same affordance pattern as BoardPlayView's
+            // .contextMenu modifiers.
+            .contextMenu {
+                Button(
+                    isSelected ? "Remove from board" : "Add to board",
+                    systemImage: isSelected ? "minus.circle" : "plus.circle"
+                ) {
+                    toggleSelection(task.id)
+                }
+                if centerTaskMode && isSelected {
+                    Button(
+                        isCenter ? "Unset as center task" : "Set as center task",
+                        systemImage: isCenter ? "star.slash" : "star"
+                    ) {
+                        centerTaskId = isCenter ? nil : task.id
+                    }
+                }
+            }
 
             if centerTaskMode && isSelected {
                 Button {
@@ -454,6 +474,32 @@ struct BoardWizardTasksStepView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(isCompoundSelected ? [.isSelected] : [])
+                // Long-press surfaces compound-specific shortcuts that a tap
+                // can't express: select the whole compound, expand the leaf
+                // list, or one-shot select every leaf into the board.
+                .contextMenu {
+                    Button(
+                        isCompoundSelected ? "Remove from board" : "Add to board",
+                        systemImage: isCompoundSelected ? "minus.circle" : "plus.circle"
+                    ) {
+                        toggleSelection(ct.id)
+                    }
+                    Button(
+                        isExpanded ? "Collapse subtasks" : "Expand subtasks",
+                        systemImage: isExpanded ? "chevron.up" : "chevron.down"
+                    ) {
+                        expandedCompositeId = isExpanded ? nil : ct.id
+                    }
+                    if !leaves.isEmpty {
+                        Button("Add all subtasks to board", systemImage: "plus.square.on.square") {
+                            for leaf in leaves {
+                                if !selectedTaskIds.contains(leaf.id) {
+                                    selectedTaskIds.insert(leaf.id)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Disclosure button — separated by a hairline divider so
                 // tap targets are visually distinct.

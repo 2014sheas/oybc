@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   TaskType,
@@ -102,6 +102,13 @@ export function BoardWizardTasksStep({
   const [activeFilter, setActiveFilter] = useState<TasksFilter>('all');
   const [expandedCompositeId, setExpandedCompositeId] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  /** Right-click context menu state. Null when no menu is open. Stores
+   *  the target task's id + cursor position; actions are derived at render
+   *  time from the task's type (compound vs primitive). Mirrors the iOS
+   *  `.contextMenu` long-press affordance on `BoardWizardTasksStepView`. */
+  const [rowContextMenu, setRowContextMenu] = useState<
+    { taskId: string; x: number; y: number } | null
+  >(null);
 
   // Usage-hint data — "N boards" / "unused" / "N steps" / "N subtasks".
   // Matches the composite wizard's library row hints so the two
@@ -306,6 +313,10 @@ export function BoardWizardTasksStep({
                   task,
                   isSelected,
                   onToggle: () => handleToggle(task.id),
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    setRowContextMenu({ taskId: task.id, x: e.clientX, y: e.clientY });
+                  },
                   taskBoardCounts,
                   taskStepCounts,
                   showCenterStar: centerTaskMode && isSelected,
@@ -337,6 +348,10 @@ export function BoardWizardTasksStep({
                     type="button"
                     className={styles.row}
                     onClick={() => handleToggle(ct.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setRowContextMenu({ taskId: ct.id, x: e.clientX, y: e.clientY });
+                    }}
                     aria-pressed={isCompoundSelected}
                   >
                     <TypeBadge type="composite" size="small" letterOnly />
@@ -385,6 +400,10 @@ export function BoardWizardTasksStep({
                             task: leafTask,
                             isSelected,
                             onToggle: () => handleToggle(leafTask.id),
+                            onContextMenu: (e) => {
+                              e.preventDefault();
+                              setRowContextMenu({ taskId: leafTask.id, x: e.clientX, y: e.clientY });
+                            },
                             taskBoardCounts,
                             taskStepCounts,
                             showCenterStar: centerTaskMode && isSelected,
@@ -438,6 +457,148 @@ export function BoardWizardTasksStep({
           onCompositeCreated(ct);
         }}
       />
+
+      {rowContextMenu && (() => {
+        const target = library.taskMap[rowContextMenu.taskId];
+        if (!target) {
+          return null;
+        }
+        const isCompound = target.type === TaskType.COMPOUND;
+        const isSelected = selectedTaskIds.has(target.id);
+        const isCenter = centerTaskId === target.id;
+        const isExpanded = expandedCompositeId === target.id;
+        const leaves = compositeLeafTasks[target.id] ?? [];
+        const close = (): void => setRowContextMenu(null);
+        return (
+          <RowContextMenu
+            x={rowContextMenu.x}
+            y={rowContextMenu.y}
+            onClose={close}
+            items={[
+              {
+                label: isSelected ? 'Remove from board' : 'Add to board',
+                glyph: isSelected ? '−' : '+',
+                action: () => { handleToggle(target.id); close(); },
+              },
+              ...(isCompound
+                ? [
+                    {
+                      label: isExpanded ? 'Collapse subtasks' : 'Expand subtasks',
+                      glyph: isExpanded ? '▲' : '▼',
+                      action: () => {
+                        setExpandedCompositeId(isExpanded ? null : target.id);
+                        close();
+                      },
+                    },
+                    ...(leaves.length > 0
+                      ? [{
+                          label: 'Add all subtasks to board',
+                          glyph: '⧉',
+                          action: () => {
+                            for (const leaf of leaves) {
+                              if (!selectedTaskIds.has(leaf.id)) {
+                                handleToggle(leaf.id);
+                              }
+                            }
+                            close();
+                          },
+                        }]
+                      : []),
+                  ]
+                : []),
+              ...(centerTaskMode && isSelected && !isCompound
+                ? [{
+                    label: isCenter ? 'Unset as center task' : 'Set as center task',
+                    glyph: isCenter ? '☆' : '★',
+                    action: () => { handleCenterRadio(target.id); close(); },
+                  }]
+                : []),
+            ]}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
+// ─── Row context menu (right-click popover) ───────────────────────────────────
+
+interface RowContextMenuItem {
+  label: string;
+  glyph: string;
+  action: () => void;
+}
+
+function RowContextMenu({
+  x, y, items, onClose,
+}: {
+  x: number;
+  y: number;
+  items: RowContextMenuItem[];
+  onClose: () => void;
+}): React.ReactElement {
+  // Click-outside / Escape dismisses. Mirrors the FloatingContextMenu
+  // pattern from `InteractiveTaskSquare` so right-click feels consistent
+  // across the app.
+  useEffect(() => {
+    const onDocClick = (): void => onClose();
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
+    // Defer addEventListener by a frame so the click that opened the menu
+    // doesn't immediately trigger the close handler.
+    const id = window.setTimeout(() => {
+      document.addEventListener('click', onDocClick);
+      document.addEventListener('keydown', onKey);
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('click', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      role="menu"
+      style={{
+        position: 'fixed',
+        left: x,
+        top: y,
+        zIndex: 1000,
+        background: 'var(--color-bg-elevated, #1c1c1e)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 8,
+        padding: '4px 0',
+        minWidth: 180,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {items.map((it) => (
+        <button
+          key={it.label}
+          type="button"
+          role="menuitem"
+          onClick={it.action}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            width: '100%',
+            padding: '8px 14px',
+            background: 'transparent',
+            border: 0,
+            color: 'inherit',
+            font: 'inherit',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+        >
+          <span aria-hidden="true" style={{ width: 16, textAlign: 'center', opacity: 0.7 }}>{it.glyph}</span>
+          <span>{it.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -448,6 +609,10 @@ interface TaskRowProps {
   task: Task;
   isSelected: boolean;
   onToggle: () => void;
+  /** Right-click handler — surfaces the same actions as a tap (toggle)
+   *  plus center-task pinning when applicable. Mirrors iOS's
+   *  `.contextMenu` long-press affordance. */
+  onContextMenu?: (e: React.MouseEvent) => void;
   taskBoardCounts: Record<string, number>;
   taskStepCounts: Record<string, number>;
   showCenterStar: boolean;
@@ -459,6 +624,7 @@ function renderTaskRow({
   task,
   isSelected,
   onToggle,
+  onContextMenu,
   taskBoardCounts,
   taskStepCounts,
   showCenterStar,
@@ -474,6 +640,7 @@ function renderTaskRow({
         type="button"
         className={styles.row}
         onClick={onToggle}
+        onContextMenu={onContextMenu}
         aria-pressed={isSelected}
       >
         <TypeBadge type={task.type} size="small" letterOnly />
