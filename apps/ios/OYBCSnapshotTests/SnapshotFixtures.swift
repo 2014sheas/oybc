@@ -30,10 +30,9 @@ enum SnapshotFixtures {
 
     enum LibraryState {
         case empty
-        case dense        // mix of normal + counting + compound
-        case onlyNormal
-        case onlyCounting
-        case onlyCompound
+        /// Mix of normal + counting + compound. Add narrower states
+        /// (e.g. `onlyCounting`) when a test needs to isolate one type.
+        case dense
     }
 
     /// Returns a `TaskLibraryViewModel` populated for a given render
@@ -50,17 +49,6 @@ enum SnapshotFixtures {
             library.allCompoundChildren = children
             library.compoundChildrenByCompound = groupChildren(children)
             library.allLibraryBoardTasks = sampleBoardTasks(taskIds: tasks.prefix(5).map { $0.id })
-        case .onlyNormal:
-            library.libraryTasks = normalTasks()
-        case .onlyCounting:
-            library.libraryTasks = countingTasks()
-        case .onlyCompound:
-            let (compounds, children) = compoundTasksWithChildren()
-            // Include leaves so child lookups in the row renderer succeed.
-            let leafTasks = childTasksForCompounds(children)
-            library.libraryTasks = compounds + leafTasks
-            library.allCompoundChildren = children
-            library.compoundChildrenByCompound = groupChildren(children)
         }
         return library
     }
@@ -151,12 +139,13 @@ enum SnapshotFixtures {
 
     // MARK: - Wizard controller
 
-    /// Stage hint for the controller — Setup mostly empty, Tasks with a
-    /// few selections, Preview with a fully valid form.
+    /// Stage hint for the controller — Setup blank, Setup valid, or
+    /// Preview with a full selection. Add narrower stages when a test
+    /// needs to capture a partially-filled state (e.g. tasks step
+    /// halfway selected).
     enum WizardStage {
         case setupBlank
         case setupValid
-        case tasksSomeSelected
         case previewReady
     }
 
@@ -169,13 +158,6 @@ enum SnapshotFixtures {
         case .setupValid:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
-        case .tasksSomeSelected:
-            controller.name = "April Reading Sprint"
-            controller.timeframe = .monthly
-            controller.currentStep = 2
-            // Seed a few selected ids — match denseTaskSet() ids so the
-            // wizard's "selected" tint shows on real rows.
-            controller.selectedTaskIds = ["t-normal-1", "t-counting-1", "t-compound-and"]
         case .previewReady:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
