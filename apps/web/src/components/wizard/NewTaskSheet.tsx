@@ -79,14 +79,21 @@ function NewTaskSheetBody({
   return (
     <div
       className={styles.backdrop}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Create a new task"
       onClick={onClose}
     >
-      <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
+      {/* The dialog role + label live on the sheet itself, not the
+          backdrop. The backdrop is a click-to-dismiss overlay; screen
+          readers should announce the label when focus enters the
+          dialog content, which is the inner sheet div. */}
+      <div
+        className={styles.sheet}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-task-sheet-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.header}>
-          <h3 className={styles.title}>New task</h3>
+          <h3 id="new-task-sheet-title" className={styles.title}>New task</h3>
           <button
             type="button"
             className={styles.closeButton}

@@ -304,6 +304,11 @@ struct BoardWizardTasksStepView: View {
     /// the new task id to the wizard's selection. Mirrors the iOS
     /// CreateFormViewModel counting-create path but bypasses the form so
     /// it's a single-tap quick action from the contextMenu.
+    ///
+    /// Dispatches the GRDB write to a background queue and bounces the
+    /// success / dismiss callbacks back onto the main actor — matches
+    /// the pattern used by `persistWizardBoard` and friends so the tap
+    /// never blocks the UI on disk I/O.
     private func saveDerivedCounter(source: OYBC.Task) {
         guard let action = source.action,
               let unit = source.unit,
@@ -333,25 +338,35 @@ struct BoardWizardTasksStepView: View {
             version: 1,
             isDeleted: false
         )
-        do {
-            try AppDatabase.shared.write { db in
-                try newTask.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "tasks",
-                    entityId: newId,
-                    operationType: .create,
-                    payload: newTask,
-                    now: now
-                ).save(db)
-            }
-            onTaskCreated(newId, title, "counting")
-            onLibraryReloadRequested()
-        } catch {
-            // Swallow + dismiss; the user can retry. A toast surface lives
-            // on the parent's wizard banner; threading it through here would
-            // require extra plumbing for an edge-case path.
-        }
+
+        // Dismiss the sheet immediately on the main actor — the write
+        // is fast on SSD but the user still gets a snappier-feeling
+        // close while the background queue handles persistence.
         derivingFromTask = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try AppDatabase.shared.write { db in
+                    try newTask.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "tasks",
+                        entityId: newId,
+                        operationType: .create,
+                        payload: newTask,
+                        now: now
+                    ).save(db)
+                }
+                DispatchQueue.main.async {
+                    onTaskCreated(newId, title, "counting")
+                    onLibraryReloadRequested()
+                }
+            } catch {
+                // Swallow on background; the user can retry. A toast
+                // surface lives on the parent's wizard banner; threading
+                // it through here would require extra plumbing for an
+                // edge-case path.
+            }
+        }
     }
 
     // MARK: - Header

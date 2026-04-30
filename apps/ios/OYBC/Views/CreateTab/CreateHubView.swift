@@ -189,13 +189,14 @@ struct CreateHubView: View {
     private func reloadLibraryCount() {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
+                // Post-unification, compounds (formerly composite_tasks)
+                // live in the `tasks` table with type='compound', so
+                // `fetchTasks` already returns them. The previous
+                // implementation also queried the legacy `composite_tasks`
+                // table and added its row count, which double-counted
+                // every compound for any user that had one.
                 let tasks = try AppDatabase.shared.fetchTasks(userId: userId)
-                let composites = try AppDatabase.shared.read { db in
-                    try CompositeTask
-                        .filter(Column("userId") == userId && Column("isDeleted") == false)
-                        .fetchAll(db)
-                }
-                let total = tasks.count + composites.count
+                let total = tasks.count
                 DispatchQueue.main.async { libraryCount = total }
             } catch {
                 DispatchQueue.main.async { libraryCount = 0 }
