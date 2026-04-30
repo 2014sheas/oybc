@@ -30,25 +30,3 @@ export function useTask(taskId: string | undefined) {
     [taskId]
   );
 }
-
-/**
- * React hook to fetch task steps (reactive)
- */
-export function useTaskSteps(taskId: string | undefined) {
-  return useLiveQuery(
-    async () => {
-      if (!taskId) return [];
-
-      return db.taskSteps
-        .where('[taskId+stepIndex]')
-        // Dexie's compound-index range types are under-specified; the
-        // tuple shape is correct but the library's typing wants a
-        // `readonly unknown[]` here.
-        .between([taskId, 0] as readonly unknown[], [taskId, Infinity] as readonly unknown[])
-        .filter((s) => !s.isDeleted)
-        .toArray();
-    },
-    [taskId],
-    []
-  );
-}
