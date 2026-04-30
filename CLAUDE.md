@@ -51,6 +51,49 @@ The legacy 4-type model (Normal / Counting / Progress / Composite) is being unif
 - Use Jest for TypeScript tests and XCTest for Swift tests.
 - Tests should be deterministic and not rely on external services or network calls.
 
+### iOS snapshot tests (rapid UI verification)
+
+Snapshot tests are the fastest way to visually verify iOS UI changes — no simulator boot, no manual screenshots. Use them whenever a layout, color, typography, or component-rendering change might regress an existing surface.
+
+**Where to find them:**
+- Target: `OYBCSnapshotTests` (separate from `OYBCTests` so logic tests stay light)
+- Files: `apps/ios/OYBCSnapshotTests/*SnapshotTests.swift`
+- Fixtures: `apps/ios/OYBCSnapshotTests/SnapshotFixtures.swift` (mock data builders — reuse, don't duplicate)
+- Baselines: `apps/ios/OYBCSnapshotTests/__Snapshots__/<TestClassName>/<testName>.1.png`
+- Library: `pointfreeco/swift-snapshot-testing` v1.18+ via SPM
+
+**Workflow:**
+```bash
+cd apps/ios
+xcodegen generate    # only if you added new test files
+xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath /tmp/oybc-derived test
+```
+
+Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
+
+**On failure** (snapshot doesn't match baseline):
+- The failure message prints two `file://` URLs — the baseline and the new candidate.
+- Candidate lives under `~/Library/Developer/CoreSimulator/Devices/<device-id>/data/Containers/Data/Application/<app-id>/tmp/<TestClassName>/<testName>.1.png`.
+- Read both PNGs to compare. If the diff is intentional, delete the baseline and re-run with `record: .missing` to re-record. If unintentional, fix the regression.
+
+**Adding a new snapshot test:**
+1. Add a `*SnapshotTests.swift` file under `OYBCSnapshotTests/`.
+2. Reuse builders from `SnapshotFixtures.swift` (extend it before duplicating).
+3. Use `record: SnapshotTestingConfiguration.Record? = .missing` so first runs auto-record without manual flag-flipping.
+4. Render via `assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: <height>)), record: recordMode)`. Avoid `.device(config:)` — explicit fixed dimensions are more stable across machines.
+5. If the surface uses `BoardWizardViewModel`, set `controller.isRandomized = false` — randomized placement breaks snapshot determinism.
+6. `xcodegen generate` so the new file is picked up.
+7. Run once to record the baseline; re-run to confirm green.
+
+**Sharp edges:**
+- **iOS-version drift**: simulator iOS upgrades (e.g., 17 → 18) shift font kerning. Pin to one iOS version per CI run. Locally, snapshots may need re-recording after Xcode updates.
+- **`AppDatabase.shared`**: views that query the production database singleton (e.g., `BoardPlayView`) are not yet covered — they'd need either an injected database or per-test seeding of `.shared`. Until the harness is refactored, prefer snapshotting the leaf views (which take props) over containers that query the DB.
+- **`@EnvironmentObject AuthService`**: views that depend on auth state require either the `-bypassAuth` runtime arg or a stub injection via `.environmentObject(...)`. Easiest path is to snapshot inner step views directly rather than the auth-gated wrappers.
+- **Counter-suffixed filenames**: baselines use `<test>.1.png` (the `.1` is a per-test counter from swift-snapshot-testing). Don't strip the `.1` — the library uses the full filename to look up baselines.
+- **xcodebuild prints "TEST FAILED" on success**: a `simctl` PATH warning at process exit can produce a spurious "TEST FAILED" line even when all tests passed. Trust the per-test "passed (Xs)" lines, not the trailing message.
+
 ## Feature Implementation Guidelines
 
 **Playground-first, one feature at a time, user-driven.** Use `/feature` skill for the full workflow.
@@ -163,7 +206,8 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 ├── Home.tsx                      (dev-only)     (no iOS counterpart — auth-gate → MainTabView)
 ├── BoardsPage.tsx             ←→                Views/BoardsTab/BoardListView.swift
 ├── BoardPlayPage.tsx          ←→                Views/BoardsTab/BoardPlayView.swift
-├── CreatePage.tsx             ←→                Views/CreateTab/CreateView.swift
+├── CreateHubPage.tsx          ←→                Views/CreateTab/CreateHubView.swift
+├── BoardWizardPage.tsx        ←→                Views/CreateTab/BoardWizardView.swift
 ├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
 ├── BoardPreferencesPage.tsx   ←→                Views/ProfileTab/BoardPreferencesView.swift
 └── Playground.tsx             ←→                Views/PlaygroundView.swift
@@ -175,8 +219,14 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 - `TabBar.tsx` is an HTML `<nav>` + NavLinks; `MainTabView.swift` uses SwiftUI `TabView`. Same UX, platform-native implementation.
 - `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
 - `syncService.ts` uses module-level functions + a React hook for orchestration; iOS embeds orchestration in a `@MainActor ObservableObject` bound to `AuthService`'s lifecycle. Same push/pull/LWW rules, same collection list — when you change one, mirror the other in the same PR.
+- **Create Hub + board wizard** (feature):
+  - `components/wizard/{BoardSetupForm,BoardWizardStepper,BoardWizardSetupStep,BoardWizardTasksStep,BoardWizardPreviewStep,BoardWizardCancelDialog,NewTaskSheet,wizardPersist}.tsx/.ts` ←→ `Views/CreateTab/{BoardWizardPersist.swift}` + `Views/CreateTab/Components/{BoardSetupFormView,BoardWizardStepperView,BoardWizardSetupStepView,BoardWizardTasksStepView,BoardWizardPreviewStepView,BoardWizardCancelDialogView,NewTaskSheetView}.swift`.
+  - `components/createHub/{CreateHubBoardCTA,CreateHubDraftsList,CreateHubQuickAdd}.tsx` ←→ `Views/CreateTab/Components/{CreateHubBoardCTAView,CreateHubDraftsListView,CreateHubQuickAddView}.swift`.
+  - `pages/createHub/useBoardWizard.ts` ←→ `Views/CreateTab/ViewModels/BoardWizardViewModel.swift`.
+  - `pages/createHub/useDrafts.ts` has no dedicated iOS twin — iOS inlines the equivalent GRDB query in `CreateHubView.reloadDrafts()` because SwiftUI lacks a direct `useLiveQuery` analog; drafts reload explicitly on `.onAppear` and after wizard dismiss instead.
+  - `wizardPersist.ts` lives in `components/wizard/` on web (next to consumers). `BoardWizardPersist.swift` lives in `Views/CreateTab/` (not `Components/`) because it is a helper, not a view. Both export the same three helpers: `buildWizardPlacement`, `resolveWizardDates`, `persistWizardBoard`.
 - **Composite-task mini-wizard** (feature):
-  - `components/compositeWizard/{CompositeTaskWizard,CompositeWizardStepper,SetupStep,BuildStep,ReviewStep,SubtaskCard,LibraryPickerSheet,compositeSubtaskDraft}.tsx/.ts` ←→ `Views/Components/CompositeWizard/{CompositeTaskWizardView,CompositeWizardStepperView,CompositeWizardSetupStepView,CompositeWizardBuildStepView,CompositeWizardReviewStepView,CompositeSubtaskCardView,LibraryPickerSheetView,CompositeSubtaskItem}.swift`.
+  - `components/compositeWizard/{CompositeTaskWizard,CompositeWizardStepper,SetupStep,BuildStep,ReviewStep,SubtaskCard,compositeSubtaskDraft}.tsx/.ts` ←→ `Views/Components/CompositeWizard/{CompositeTaskWizardView,CompositeWizardStepperView,CompositeWizardSetupStepView,CompositeWizardBuildStepView,CompositeWizardReviewStepView,CompositeSubtaskCardView,CompositeSubtaskItem}.swift`. The Build step renders an always-visible inline library section (search + filter tabs + checkbox rows) — matching the board wizard's Tasks-step pattern; the earlier modal `LibraryPickerSheet` is retired.
   - Replaced the legacy ~850-line `CompositeTaskForm.tsx` / `CompositeTaskFormView.swift` monoliths with a 3-step Setup → Build → Review flow. Same data model + write path, better UX (live validation, type-switch confirm, threshold clamp toast, library callout).
 
 **Rules**:

@@ -66,7 +66,7 @@ struct InteractiveTaskSquareView: View {
 
     /// Whether a progress bar should be shown at the bottom of the square.
     private var showProgressBar: Bool {
-        taskType == .counting || taskType == .progress || taskType == .compound
+        taskType == .counting || taskType == .compound
     }
 
     /// Fraction (0–1) to fill the progress bar.
@@ -77,9 +77,6 @@ struct InteractiveTaskSquareView: View {
         case .counting:
             guard maxCount > 0 else { return 0 }
             return min(Double(currentCount) / Double(maxCount), 1.0)
-        case .progress:
-            guard totalSteps > 0 else { return 0 }
-            return min(Double(completedSteps) / Double(totalSteps), 1.0)
         case .compound:
             if compoundChildCount == 0 { return 0 }
             switch compoundOperator {
@@ -100,7 +97,6 @@ struct InteractiveTaskSquareView: View {
         switch taskType {
         case .normal:   return .green
         case .counting: return .orange
-        case .progress: return .purple
         case .compound: return Color(red: 0.39, green: 0.4, blue: 0.95)  // indigo, mirrors web's #6366f1
         }
     }
@@ -113,8 +109,6 @@ struct InteractiveTaskSquareView: View {
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"
             return "\(currentCount)/\(maxCount)\(unitText)"
-        case .progress:
-            return "\(completedSteps)/\(totalSteps) steps"
         case .compound:
             switch compoundOperator {
             case .or:
@@ -136,8 +130,10 @@ struct InteractiveTaskSquareView: View {
     /// Whether tapping the square should trigger the handler.
     private var isTappable: Bool {
         guard !isReadOnly, let _ = onTap else { return false }
-        // Progress tasks are not directly actionable from the grid; compound taps open the detail sheet.
-        return taskType != .progress
+        // Compound taps open the detail sheet via the parent's tap handler;
+        // they shouldn't toggle a global completion. Primitive types are
+        // directly actionable.
+        return taskType != .compound
     }
 
     // MARK: - Body
@@ -267,8 +263,6 @@ struct InteractiveTaskSquareView: View {
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"
             return "\(title) — \(currentCount) of \(maxCount)\(unitText)"
-        case .progress:
-            return "\(title) — \(completedSteps) of \(totalSteps) steps completed"
         case .compound:
             switch compoundOperator {
             case .or:
@@ -332,13 +326,14 @@ struct InteractiveTaskSquareView: View {
     .padding()
 }
 
-#Preview("Progress — Partial") {
+#Preview("Compound (ordered) — Partial") {
     InteractiveTaskSquareView(
         title: "Weekly Workout",
-        taskType: .progress,
+        taskType: .compound,
         isCompleted: false,
-        completedSteps: 1,
-        totalSteps: 3
+        compoundOperator: .and,
+        compoundChildCount: 3,
+        compoundDoneCount: 1
     )
     .padding()
 }
@@ -369,8 +364,8 @@ struct InteractiveTaskSquareView: View {
                                   currentCount: 3, maxCount: 5, unit: "km", onTap: {})
         InteractiveTaskSquareView(title: "Run 5km", taskType: .counting, isCompleted: true,
                                   currentCount: 5, maxCount: 5, unit: "km")
-        InteractiveTaskSquareView(title: "Clean House", taskType: .progress, isCompleted: false,
-                                  completedSteps: 2, totalSteps: 3)
+        InteractiveTaskSquareView(title: "Clean House", taskType: .compound, isCompleted: false,
+                                  compoundOperator: .and, compoundChildCount: 3, compoundDoneCount: 2)
     }
     .padding()
 }

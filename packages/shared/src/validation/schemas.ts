@@ -115,16 +115,10 @@ export const CreateTaskInputSchema = z.object({
     return true;
   },
   { message: 'Counting tasks must have action, unit, and maxCount' }
-).refine(
-  (data) => {
-    // Progress tasks must have steps
-    if (data.type === TaskType.PROGRESS) {
-      return data.steps && data.steps.length > 0;
-    }
-    return true;
-  },
-  { message: 'Progress tasks must have at least one step' }
 );
+// Note: post-unification, Progress tasks are created via
+// `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
+// only accepts NORMAL / COUNTING / COMPOUND — no Progress branch needed.
 
 export const UpdateTaskInputSchema = z.object({
   title: z.string().min(1).max(200).optional(),

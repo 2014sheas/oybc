@@ -1,3 +1,8 @@
+// Phase 4.5+ will rewrite this playground to support the unified compound
+// model. Until then, the file is gated to a placeholder so the iOS build
+// passes — the legacy implementation referenced TaskType.progress and the
+// pre-unification CompositeNode tree.
+#if false
 import SwiftUI
 import GRDB
 
@@ -180,9 +185,29 @@ struct SubtaskDerivationPlayground: View {
                         .font(.subheadline)
                 } else {
                     ForEach(boardPool, id: \.taskId) { entry in
-                        PoolItemView(title: entry.title, type: entry.type) {
-                            boardPool.removeAll { $0.taskId == entry.taskId }
+                        HStack(spacing: 8) {
+                            Text(entry.title)
+                                .font(.system(size: 13))
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            TypeBadgeView(type: entry.type, size: .small)
+                            Button {
+                                boardPool.removeAll { $0.taskId == entry.taskId }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 24, height: 24)
+                                    .background(Color(.systemGray5))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(entry.title) from pool")
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
                     }
 
                     Button("Clear Pool") {
@@ -584,5 +609,17 @@ struct SubtaskDerivationPlayground: View {
     private func addToPool(taskId: String, title: String, type: String) {
         guard !boardPool.contains(where: { $0.taskId == taskId }) else { return }
         boardPool.append((taskId: taskId, title: title, type: type))
+    }
+}
+#endif
+
+import SwiftUI
+
+/// Stub — the legacy implementation referenced dropped types.
+struct SubtaskDerivationPlayground: View {
+    var body: some View {
+        Text("Unavailable — awaiting Phase 5 rewrite (uses pre-unification schema).")
+            .foregroundColor(.secondary)
+            .padding()
     }
 }

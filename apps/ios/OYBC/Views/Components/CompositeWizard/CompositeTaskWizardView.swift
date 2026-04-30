@@ -81,7 +81,7 @@ struct CompositeTaskWizardView: View {
                     compositeSubtaskCounts: compositeSubtaskCounts,
                     compositeLeafPreviews: compositeLeafPreviews,
                     onRemove: { item in removeSubtask(item) },
-                    onCommitLibraryDiff: commitLibraryDiff,
+                    onToggleLibraryItem: toggleLibraryItem,
                     onAddInline: addInlineSubtask,
                     onBack: { currentStep = 1 },
                     onNext: { currentStep = 3 }
@@ -132,28 +132,34 @@ struct CompositeTaskWizardView: View {
         subtaskList.remove(where: { $0.id == item.id })
     }
 
-    /// Apply a LibraryPickerSheetView commit: drop existing-mode
-    /// subtasks whose selected id is in the remove set, then append
-    /// fresh existing-mode items for each add. Inline subtasks are
-    /// untouched. Threshold may shrink if the net count drops —
-    /// surface the clamp toast so the change is visible, matching
-    /// the per-row remove path.
-    private func commitLibraryDiff(_ diff: LibraryDiff) {
-        subtaskList.remove { item in
+    /// Toggle a single library item in/out of the composite. If an
+    /// existing-mode subtask already points at `id`, drop it;
+    /// otherwise append a fresh existing-mode item. Inline subtasks
+    /// are untouched. Threshold clamping is handled centrally by the
+    /// `.onChange(of: subtaskList.items.count)` hook on the Build
+    /// step.
+    private func toggleLibraryItem(_ id: String, _ kind: SubtaskItem.SelectionType) {
+        let alreadyPresent = subtaskList.items.contains { item in
             guard item.mode == .existing else { return false }
-            let id = item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
-            return diff.remove.contains(id)
+            let existingId = item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
+            return existingId == id
         }
-        for entry in diff.add {
-            let item = SubtaskItem(mode: .existing)
-            item.selectionType = entry.kind
-            if entry.kind == .task {
-                item.selectedTaskId = entry.id
-            } else {
-                item.selectedCompositeId = entry.id
+        if alreadyPresent {
+            subtaskList.remove { item in
+                guard item.mode == .existing else { return false }
+                let existingId = item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
+                return existingId == id
             }
-            subtaskList.append(item)
+            return
         }
+        let item = SubtaskItem(mode: .existing)
+        item.selectionType = kind
+        if kind == .task {
+            item.selectedTaskId = id
+        } else {
+            item.selectedCompositeId = id
+        }
+        subtaskList.append(item)
     }
 
     // MARK: - Reset

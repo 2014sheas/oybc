@@ -78,7 +78,8 @@
   color: var(--text-primary);
   padding: 6px;
   overflow: hidden;
-  word-break: break-word;
+  /* See BingoSquare.module.css — prefer word boundaries. */
+  overflow-wrap: break-word;
 }
 
 .taskSquareCompleted .taskName {

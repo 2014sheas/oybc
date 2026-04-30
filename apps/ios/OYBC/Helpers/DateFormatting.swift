@@ -21,9 +21,9 @@ enum DateFormatting {
     /// Parses an ISO8601 timestamp. Accepts both internet-style timestamps
     /// with a timezone suffix (Firestore sync payloads) and the local
     /// `yyyy-MM-dd'T'HH:mm:ss.SSS` / `yyyy-MM-dd'T'HH:mm:ss` shapes that
-    /// `BoardCreatorPanelView.toLocalISO(_:)` writes for calendar-bound
-    /// board start/end dates (intentionally timezone-less so boundaries
-    /// match the user's wall clock).
+    /// the board-creation wizard's `wizardLocalISOString(_:)` writes for
+    /// calendar-bound board start/end dates (intentionally timezone-less
+    /// so boundaries match the user's wall clock).
     ///
     /// `DateFormatter` is NOT thread-safe, so we instantiate the
     /// local-format parsers per call. Parse is rare enough (display-layer

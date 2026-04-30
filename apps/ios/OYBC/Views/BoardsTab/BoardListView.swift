@@ -64,9 +64,12 @@ struct BoardListView: View {
     private var boardList: some View {
         List {
             ForEach(filteredBoards, id: \.id) { board in
-                NavigationLink {
-                    BoardPlayView(boardId: board.id)
-                } label: {
+                // Value-based NavigationLink so cross-tab callers
+                // (CreateHubView.onBoardCompleted) can push onto the
+                // Boards tab's path programmatically. The
+                // `navigationDestination(for: String.self)` that maps
+                // the id to BoardPlayView lives on MainTabView.
+                NavigationLink(value: board.id) {
                     BoardListItemView(board: board)
                 }
             }

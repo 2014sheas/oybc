@@ -24,6 +24,11 @@ interface BingoBoardProps {
   centerSquareType?: CenterSquareType;
   /** Custom name for CUSTOM_FREE center square type */
   centerSquareCustomName?: string;
+  /** When true, the controls (Shuffle / Reset / Fill All) are hidden,
+   *  square toggling is disabled, and the bingo-detection message is
+   *  suppressed. Used by the wizard's preview step where the grid is a
+   *  visual-only artifact, not a playable surface. */
+  readOnly?: boolean;
 }
 
 /**
@@ -51,6 +56,7 @@ export function BingoBoard({
   squareSize = 80,
   centerSquareType = CenterSquareType.NONE,
   centerSquareCustomName,
+  readOnly = false,
 }: BingoBoardProps) {
   const totalSquares = gridSize * gridSize;
   const centerIndex = getCenterSquareIndex(gridSize);
@@ -72,6 +78,7 @@ export function BingoBoard({
    * @param index - The 0-based index of the square to toggle
    */
   const handleToggle = useCallback((index: number) => {
+    if (readOnly) return;
     if (index === centerIndex && autoCompleted) {
       return;
     }
@@ -84,7 +91,7 @@ export function BingoBoard({
       }
       return next;
     });
-  }, [centerIndex, autoCompleted]);
+  }, [centerIndex, autoCompleted, readOnly]);
 
   /**
    * Reset all squares to incomplete state.
@@ -204,8 +211,8 @@ export function BingoBoard({
         })}
       </div>
 
-      {/* Bingo detection message */}
-      {bingoMessage && (
+      {/* Bingo detection message — suppressed in readOnly preview mode */}
+      {!readOnly && bingoMessage && (
         <div
           className={`${styles.bingoMessage} ${bingoResult.isGreenlog ? styles.greenlog : ''}`}
           role="status"
@@ -215,35 +222,37 @@ export function BingoBoard({
         </div>
       )}
 
-      {/* Board info and controls */}
-      <div className={styles.controls}>
-        <span className={styles.progressText}>
-          {completedCount} / {totalSquares} completed
-        </span>
-        <div className={styles.buttonGroup}>
-          <button
-            className={styles.shuffleButton}
-            onClick={handleShuffle}
-            aria-label="Shuffle board task names and reset completion"
-          >
-            Shuffle Board
-          </button>
-          <button
-            className={styles.resetButton}
-            onClick={handleReset}
-            aria-label="Reset all squares to incomplete"
-          >
-            Reset Board
-          </button>
-          <button
-            className={styles.fillButton}
-            onClick={handleFillAll}
-            aria-label="Fill all squares as completed"
-          >
-            Fill All
-          </button>
+      {/* Board info and controls — hidden in readOnly preview mode */}
+      {!readOnly && (
+        <div className={styles.controls}>
+          <span className={styles.progressText}>
+            {completedCount} / {totalSquares} completed
+          </span>
+          <div className={styles.buttonGroup}>
+            <button
+              className={styles.shuffleButton}
+              onClick={handleShuffle}
+              aria-label="Shuffle board task names and reset completion"
+            >
+              Shuffle Board
+            </button>
+            <button
+              className={styles.resetButton}
+              onClick={handleReset}
+              aria-label="Reset all squares to incomplete"
+            >
+              Reset Board
+            </button>
+            <button
+              className={styles.fillButton}
+              onClick={handleFillAll}
+              aria-label="Fill all squares as completed"
+            >
+              Fill All
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

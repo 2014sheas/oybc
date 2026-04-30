@@ -33,7 +33,12 @@
   font-size: 0.85rem;
   font-weight: 600;
   text-align: center;
-  word-break: break-word;
+  /* Prefer word-boundary wraps so "Morning Meditation" breaks between
+   * the two words; only fall back to character-level breaking when a
+   * single word is too long to fit. Legacy `word-break: break-word`
+   * is alias for `overflow-wrap: anywhere`, which was producing
+   * ugly mid-word breaks ("Morning Meditatio n"). */
+  overflow-wrap: break-word;
   line-height: 1.2;
   color: var(--text-primary, #333);
 }

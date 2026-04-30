@@ -30,6 +30,12 @@ pnpm-debug.log*
 lerna-debug.log*
 .playwright-mcp/
 
+# Repo-root screenshot scratch — Playwright + ad-hoc verification PNGs
+# accumulate here from interactive sessions. The leading slash anchors
+# this rule to the repo root, so tracked snapshot baselines under
+# `apps/ios/OYBCSnapshotTests/__Snapshots__/` are unaffected.
+/*.png
+
 # Build artifacts
 **/*.tsbuildinfo
 

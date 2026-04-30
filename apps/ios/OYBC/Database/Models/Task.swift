@@ -265,13 +265,12 @@ struct TaskStep: Codable, FetchableRecord, PersistableRecord {
 enum TaskType: String, Codable, DatabaseValueConvertible {
     case normal
     case counting
-
-    /// Transitional: legacy progress type. Use `compound` with `isOrdered=true`
-    /// under the unified model. Kept so existing rows still parse; removed in
-    /// Phase 8 cleanup once all callers migrate.
-    case progress
-
     case compound
+    // Note: the legacy `.progress` case was removed post-unification. Former
+    // Progress tasks are now `.compound` with `isOrdered=true`. Migration
+    // helpers that need to recognise legacy `'progress'` rows in pre-migration
+    // storage compare against the literal string directly via
+    // `typeStr == "progress"` — there is no enum case for it.
 }
 
 struct TaskProgressCounter: Codable {

@@ -1215,29 +1215,25 @@ extension BoardTask {
         initialCurrentCount: Int? = nil,
         initialCompletedStepIds: [String]? = nil
     ) -> BoardTask {
-        var dict: [String: Any] = [
-            "id": UUID().uuidString.lowercased(),
-            "boardId": boardId,
-            "taskId": taskId,
-            "row": row,
-            "col": col,
-            "isCenter": isCenter,
-            "isCompleted": false,
-            "createdAt": now,
-            "updatedAt": now,
-            "version": 1
-        ]
-        if let count = initialCurrentCount {
-            dict["currentCount"] = count
-        }
-        if let stepIds = initialCompletedStepIds,
-           let data = try? JSONEncoder().encode(stepIds),
-           let jsonStr = String(data: data, encoding: .utf8) {
-            dict["completedStepIds"] = jsonStr
-        }
-        // Force-unwrap is intentional: a programming error in the dict should fail loudly.
-        let data = try! JSONSerialization.data(withJSONObject: dict) // swiftlint:disable:this force_try
-        return try! JSONDecoder().decode(BoardTask.self, from: data) // swiftlint:disable:this force_try
+        // Post-unification: BoardTask is placement-only (completion lives on
+        // Task). The legacy `initialCurrentCount` / `initialCompletedStepIds`
+        // parameters are retained for source-compat with existing call sites
+        // but are now ignored — caller should set Task.currentCount /
+        // compound_children rows separately. Uses the explicit memberwise
+        // init added in the compound-tasks-unification refactor.
+        _ = initialCurrentCount
+        _ = initialCompletedStepIds
+        return BoardTask(
+            id: UUID().uuidString.lowercased(),
+            boardId: boardId,
+            taskId: taskId,
+            row: row,
+            col: col,
+            isCenter: isCenter,
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+        )
     }
 }
 

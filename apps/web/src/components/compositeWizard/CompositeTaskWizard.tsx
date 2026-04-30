@@ -24,7 +24,6 @@ import {
   type ExistingSubtaskDraft,
   type InlineSubtaskDraft,
 } from './compositeSubtaskDraft';
-import type { LibraryDiff } from './LibraryPickerSheet';
 import styles from './CompositeTaskWizard.module.css';
 
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
@@ -193,17 +192,20 @@ export function CompositeTaskWizard({
     setSubtasks((prev) => [...prev, createEmptyInlineSubtask()]);
   }
 
-  /** Apply a LibraryPickerSheet commit: drop existing-mode drafts whose
-   *  selectedId is in the remove set, then append fresh drafts for each
-   *  new add. Inline drafts are untouched. Threshold clamping is handled
-   *  by the effect below — this stays a pure state update. */
-  function commitLibraryDiff(diff: LibraryDiff): void {
+  /** Toggle one library item in/out of the composite. If an
+   *  existing-mode draft already points at `id`, remove it; otherwise
+   *  append a fresh draft. Inline drafts are untouched. Threshold
+   *  clamping is handled by BuildStep's effect, so this stays a pure
+   *  state update. */
+  function toggleLibraryItem(id: string, kind: 'task' | 'composite'): void {
     setSubtasks((prev) => {
-      const kept = prev.filter(
-        (s) => !(s.mode === 'existing' && diff.remove.has(s.selectedId)),
+      const alreadyIdx = prev.findIndex(
+        (s) => s.mode === 'existing' && s.selectedId === id,
       );
-      const added = diff.add.map((a) => createExistingSubtask(a.id, a.kind));
-      return [...kept, ...added];
+      if (alreadyIdx !== -1) {
+        return prev.filter((_, i) => i !== alreadyIdx);
+      }
+      return [...prev, createExistingSubtask(id, kind)];
     });
   }
 
@@ -363,7 +365,7 @@ export function CompositeTaskWizard({
           onStepFieldChange={updateInlineStep}
           onAddStep={addStep}
           onRemoveStep={removeStep}
-          onCommitLibraryDiff={commitLibraryDiff}
+          onToggleLibraryItem={toggleLibraryItem}
           onAddInline={addInlineSubtask}
           onBack={() => setCurrentStep(1)}
           onNext={() => setCurrentStep(3)}

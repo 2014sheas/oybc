@@ -37,24 +37,28 @@ struct CompositeSubtaskCardView: View {
     @ViewBuilder
     private var existingFlatRow: some View {
         let row = resolveExistingRow()
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             if let row = row {
                 TypeBadgeView(type: row.typeLabel, size: .small, letterOnly: true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(row.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .lineLimit(1)
                     if !row.subtitle.isEmpty {
                         Text(row.subtitle)
-                            .font(.caption)
+                            .font(.footnote)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
                 }
                 Spacer()
+                // Usage hint on the selection row is intentionally
+                // de-emphasised (tertiary weight) — it's less relevant
+                // once the task is already in the composite, so it
+                // shouldn't visually compete with the title.
                 Text(row.usageHint)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.footnote)
+                    .foregroundColor(Color(.tertiaryLabel))
                     .fixedSize(horizontal: true, vertical: false)
             } else {
                 // Library target went missing (deleted elsewhere) —
@@ -62,25 +66,28 @@ struct CompositeSubtaskCardView: View {
                 // clean up.
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Unknown task")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                     Text("The selected library item is no longer available. Remove this row.")
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
             }
+            // Bigger tap target for the remove control — the previous
+            // 26pt hairline × was tap-hostile vs the 20pt checkboxes
+            // in the library rows below. 44pt is the iOS HIG minimum.
             Button(action: onRemove) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 26, height: 26)
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundColor(Color(.tertiaryLabel))
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
             .accessibilityLabel("Remove \(row?.title ?? "subtask")")
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
         .overlay(
             Rectangle()
                 .fill(Color(.systemGray5))
@@ -360,9 +367,12 @@ struct CompositeSubtaskCardView: View {
                 return nil
             }
             let boards = taskBoardCounts[task.id] ?? 0
+            // Short form — matches the library-row copy on the same
+            // screen. Long versions were pushing titles to truncate on
+            // iPhone.
             let usage = boards == 0
-                ? "not on any board"
-                : "on \(boards) board\(boards == 1 ? "" : "s")"
+                ? "unused"
+                : "\(boards) board\(boards == 1 ? "" : "s")"
             return ExistingRow(
                 title: task.title,
                 typeLabel: task.type.rawValue,
@@ -403,7 +413,8 @@ struct CompositeSubtaskCardView: View {
                 return ""
             }
             return derived
-        case .progress:
+        case .compound where task.isOrdered == true:
+            // Former Progress = compound + isOrdered=true under the unified model.
             let n = stepCounts[task.id] ?? 0
             if n == 0 { return "" }
             return "\(n) step\(n == 1 ? "" : "s")"

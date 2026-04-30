@@ -20,8 +20,17 @@ struct CreateNewTaskFormView: View {
     /// Parent uses this to flash "Created compound ... add subtasks
     /// from Existing Tasks" and reload the library.
     var onCompositeCreated: (OYBC.Task) -> Void
+    /// Label for the submit button. Defaults to the legacy pool-flow wording.
+    var submitLabel: String = "Create & Add to Pool"
 
     var body: some View {
+        // `.frame(maxWidth: .infinity, alignment: .leading)` makes the form
+        // stretch to the container's width. Without it, the VStack collapses
+        // to the maximum intrinsic width of its children, so inside a sheet
+        // (NewTaskSheetView) the form rendered noticeably narrower than the
+        // sheet itself. This was visible in the board wizard where the
+        // "+ New task" sheet showed a left-aligned column with whitespace
+        // on the right.
         VStack(alignment: .leading, spacing: 12) {
             Text("Create Task")
                 .font(.headline)
@@ -35,6 +44,11 @@ struct CreateNewTaskFormView: View {
             .pickerStyle(.segmented)
             .onChange(of: form.taskType) {
                 form.clearFeedback()
+                // Clear the template AND the action/unit/maxCount fields it
+                // populated — otherwise switching away from Counting and back
+                // leaves stale fields with the picker showing the "Use template"
+                // affordance, silently submitting another task's action+unit.
+                form.clearTemplate()
             }
 
             if form.taskType == .composite {
@@ -71,8 +85,11 @@ struct CreateNewTaskFormView: View {
                     countingFields
                 }
 
-                // Progress-specific fields
-                if form.selectedType == .progress {
+                // Progress-specific fields. Detect via the form-level
+                // taskType — `selectedType` (TaskType?) maps .progress →
+                // .compound under the unified model since Progress writes
+                // a compound Task with isOrdered=true.
+                if form.taskType == .progress {
                     progressFields
                 }
 
@@ -89,13 +106,14 @@ struct CreateNewTaskFormView: View {
                 }
 
                 // Submit
-                Button("Create & Add to Pool") {
+                Button(submitLabel) {
                     onSubmit()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(form.isSubmitting || userId == nil)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Counting fields
@@ -106,6 +124,16 @@ struct CreateNewTaskFormView: View {
             Text("Counting Details")
                 .font(.subheadline)
                 .fontWeight(.semibold)
+
+            // "Derive from existing" affordance — only shown when userId is available.
+            if let uid = userId {
+                CountingTemplatePickerView(
+                    userId: uid,
+                    selectedTemplate: form.countingDeriveFromTask,
+                    onSelect: { form.applyTemplate($0) },
+                    onClear: { form.clearTemplate() }
+                )
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Action (e.g. Run, Read)", text: $form.countingAction)

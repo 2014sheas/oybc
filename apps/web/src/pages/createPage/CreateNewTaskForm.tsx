@@ -2,8 +2,9 @@ import { TaskType, type Task } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
+import { CountingTemplatePicker } from '../../components/wizard/CountingTemplatePicker';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
-import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
+import { COMPOSITE_TYPE, PROGRESS_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
 import {
   type UseCreateFormState,
   TITLE_MAX_LENGTH,
@@ -12,12 +13,12 @@ import {
   UNIT_MAX_LENGTH,
   STEP_TITLE_MAX_LENGTH,
 } from './useCreateFormState';
-import styles from '../CreatePage.module.css';
+import styles from './CreateNewTaskForm.module.css';
 
 const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
-  { value: TaskType.PROGRESS, label: 'Progress' },
+  { value: PROGRESS_TYPE, label: 'Progress' },
   { value: COMPOSITE_TYPE, label: 'Composite' },
 ];
 
@@ -35,13 +36,17 @@ const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
 export interface CreateNewTaskFormProps {
   form: UseCreateFormState;
   userId: string | undefined;
+  /** Called with the newly-created compound Task when the user finishes the wizard. */
   onCompositeCreated: (task: Task) => void;
+  /** Label for the submit button. Defaults to the legacy pool-flow wording. */
+  submitLabel?: string;
 }
 
 export function CreateNewTaskForm({
   form,
   userId,
   onCompositeCreated,
+  submitLabel = 'Create & Add to Pool',
 }: CreateNewTaskFormProps): React.ReactElement {
   return (
     <div className={styles.modeSection}>
@@ -107,6 +112,18 @@ export function CreateNewTaskForm({
           {/* Counting fields */}
           {form.taskType === TaskType.COUNTING && (
             <div className={styles.countingFields}>
+              {/* "Derive from existing" affordance — only when userId is
+                 resolved. Rendering with `userId === undefined` shows a stale
+                 "No counting tasks yet" empty-state during auth load. */}
+              {userId != null && (
+                <CountingTemplatePicker
+                  userId={userId}
+                  selectedTemplate={form.deriveFromTask}
+                  onSelect={form.applyTemplate}
+                  onClear={form.clearTemplate}
+                />
+              )}
+
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-action">
                   Action<span className={styles.required}>*</span>
@@ -158,7 +175,7 @@ export function CreateNewTaskForm({
           )}
 
           {/* Progress steps */}
-          {form.taskType === TaskType.PROGRESS && (
+          {form.taskType === PROGRESS_TYPE && (
             <div className={styles.stepsSection}>
               <span className={styles.stepsHeader}>Steps</span>
               <div className={styles.stepsList}>
@@ -185,7 +202,7 @@ export function CreateNewTaskForm({
           {form.errors.general && <div className={styles.errorMessage}>{form.errors.general}</div>}
 
           <button type="submit" className={styles.submitButton} disabled={form.isSubmitting}>
-            {form.isSubmitting ? 'Creating...' : 'Create & Add to Pool'}
+            {form.isSubmitting ? 'Creating...' : submitLabel}
           </button>
         </form>
       )}

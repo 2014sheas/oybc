@@ -52,6 +52,13 @@ final class TaskLibraryViewModel {
     /// from re-grouping in their own renders.
     var compoundChildrenByCompound: [String: [CompoundChild]] = [:]
 
+    /// All BoardTasks across every board (any user). Used by
+    /// `BoardWizardTasksStepView` to compute the "N boards" usage hint per
+    /// task — parity with the composite wizard's library rows. BoardTask
+    /// has no `userId` or `isDeleted` columns under the unified model;
+    /// fetching the full table and tallying in-memory is fine at small N.
+    var allLibraryBoardTasks: [BoardTask] = []
+
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
@@ -82,16 +89,18 @@ final class TaskLibraryViewModel {
 
     // MARK: - Lifecycle
 
-    /// Reloads libraryTasks + allCompoundChildren from the local database.
-    /// Called on .onAppear of the consuming views and after each task
-    /// creation/edit so the library stays consistent.
+    /// Reloads libraryTasks + allCompoundChildren + allLibraryBoardTasks
+    /// from the local database. Called on .onAppear of the consuming views
+    /// and after each task creation/edit so the library stays consistent.
     func reload(userId: String) async {
         do {
             let tasks = try await Self.loadTasks(userId: userId)
             let children = try await Self.loadCompoundChildren()
+            let boardTasks = try await Self.loadAllBoardTasks()
             await MainActor.run {
                 self.libraryTasks = tasks
                 self.allCompoundChildren = children
+                self.allLibraryBoardTasks = boardTasks
                 var grouped: [String: [CompoundChild]] = [:]
                 for c in children {
                     grouped[c.compoundTaskId, default: []].append(c)
@@ -109,6 +118,14 @@ final class TaskLibraryViewModel {
         }
     }
 
+    /// Sync shim for view-side fire-and-forget callers (the board-wizard +
+    /// playgrounds use this from `.onAppear` and refresh callbacks where an
+    /// async context isn't readily available). Wraps `reload(userId:)` in a
+    /// detached `_Concurrency.Task`.
+    func loadLibrary(userId: String) {
+        _Concurrency.Task { await reload(userId: userId) }
+    }
+
     private static func loadTasks(userId: String) async throws -> [Task] {
         try await AppDatabase.shared.read { db in
             try Task
@@ -123,6 +140,12 @@ final class TaskLibraryViewModel {
             try CompoundChild
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
+        }
+    }
+
+    private static func loadAllBoardTasks() async throws -> [BoardTask] {
+        try await AppDatabase.shared.read { db in
+            try BoardTask.fetchAll(db)
         }
     }
 }

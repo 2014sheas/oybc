@@ -5,7 +5,7 @@ import { TypeBadge } from '../TypeBadge';
 import { CountingStepFields } from '../CountingStepFields';
 import { ProgressStepRow } from '../ProgressStepRow';
 import { type StepFormState, createEmptyStep } from '../progressStepUtils';
-import type { CompositeLeafPreview } from './LibraryPickerSheet';
+import type { CompositeLeafPreview } from './BuildStep';
 import {
   type SubtaskDraft,
   type ExistingSubtaskDraft,
@@ -86,7 +86,7 @@ function ExistingFlatRow({
         type: task.type as 'normal' | 'counting' | 'progress',
         title: task.title,
         subtitle: buildTaskSubtitle(task, taskStepCounts),
-        usageHint: boards === 0 ? 'not on any board' : `on ${boards} board${boards === 1 ? '' : 's'}`,
+        usageHint: boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`,
       };
     }
     const ct = allCompositeTasks.find((c) => c.id === draft.selectedId);
@@ -352,7 +352,8 @@ function buildTaskSubtitle(task: Task, taskStepCounts: Record<string, number>): 
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  if (task.type === TaskType.PROGRESS) {
+  // Former Progress = compound + isOrdered=true under the unified model.
+  if (task.type === TaskType.COMPOUND && task.isOrdered === true) {
     const n = taskStepCounts[task.id] ?? 0;
     if (n === 0) return '';
     return `${n} step${n === 1 ? '' : 's'}`;

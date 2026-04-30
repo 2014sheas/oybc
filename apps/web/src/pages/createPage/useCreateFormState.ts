@@ -8,11 +8,18 @@ import {
 } from '@oybc/shared';
 import { createTask, createCompound } from '../../db/operations/tasks';
 import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
-/** Union of TaskType values plus 'composite' for the Create-New tab type selector. */
-export type TaskTypeOrComposite = TaskType | 'composite';
+/**
+ * Union of TaskType values plus the form-only sentinels `'progress'` and
+ * `'composite'`. Both sentinels are submission strategies — neither exists
+ * in the runtime TaskType enum after the compound-tasks unification:
+ *   - `'progress'` → `createCompound({ operator: 'AND', isOrdered: true, ... })`
+ *   - `'composite'` → opens the dedicated `CompositeTaskWizard`
+ */
+export type TaskTypeOrComposite = TaskType | typeof PROGRESS_TYPE | typeof COMPOSITE_TYPE;
 export const COMPOSITE_TYPE = 'composite' as const;
+export const PROGRESS_TYPE = 'progress' as const;
 
-// ─── Constants (shared with CreatePage UI) ────────────────────────────────────
+// ─── Constants (shared with the Create-tab UIs that consume this hook) ──────
 
 export const TITLE_MAX_LENGTH = 200;
 export const DESCRIPTION_MAX_LENGTH = 1000;
@@ -41,7 +48,7 @@ export interface FormErrors {
  * flow) can validate without instantiating the hook.
  */
 export function validateForm(
-  type: TaskType,
+  type: TaskTypeOrComposite,
   title: string,
   description: string,
   action: string,
@@ -85,7 +92,7 @@ export function validateForm(
     }
   }
 
-  if (type === TaskType.PROGRESS) {
+  if (type === PROGRESS_TYPE) {
     const stepErrors: FormErrors['steps'] = {};
     let hasStepErrors = false;
 
@@ -157,6 +164,14 @@ export interface UseCreateFormState {
   errors: FormErrors;
   isSubmitting: boolean;
 
+  /**
+   * The counting Task currently used as a derivation template, or null.
+   * When set, the form's `action` and `unit` are pre-filled from this task
+   * and the banner shows the source title. Only relevant when taskType ===
+   * TaskType.COUNTING.
+   */
+  deriveFromTask: Task | null;
+
   // Setters (with inline error-clearing where appropriate)
   setTitle: (v: string) => void;
   setDescription: (v: string) => void;
@@ -164,6 +179,19 @@ export interface UseCreateFormState {
   setUnit: (v: string) => void;
   setMaxCountStr: (v: string) => void;
   handleTypeChange: (v: TaskTypeOrComposite) => void;
+
+  /**
+   * Applies a counting task as the derivation template: sets `action` and
+   * `unit` from the source task and clears `maxCountStr` so the user must
+   * enter a fresh count. Also clears any stale field errors for those fields.
+   */
+  applyTemplate: (source: Task) => void;
+
+  /**
+   * Clears the derivation template and resets `action`, `unit`, and
+   * `maxCountStr` back to empty strings so the form is fresh.
+   */
+  clearTemplate: () => void;
 
   // Step-array helpers
   updateStep: (stepId: string, field: keyof StepFormState, value: string) => void;
@@ -194,10 +222,11 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
   const [steps, setSteps] = useState<StepFormState[]>([createEmptyStep()]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deriveFromTask, setDeriveFromTask] = useState<Task | null>(null);
 
   /**
    * Wrap a plain setter so editing a field also clears its own error —
-   * matches the pattern the original CreatePage used inline for every
+   * matches the pattern the legacy Create tab used inline for every
    * input. Keeps the UX invariant that typing resolves the red state.
    */
   /**
@@ -233,6 +262,14 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
 
   const handleTypeChange = useCallback((newType: TaskTypeOrComposite) => {
     setTaskType(newType);
+    // Clear the template AND the fields it populated — otherwise switching
+    // away from Counting and back leaves stale `action` / `unit` populated
+    // with the picker showing the "Use template" affordance, silently
+    // submitting another task's action+unit.
+    setDeriveFromTask(null);
+    setAction('');
+    setUnit('');
+    setMaxCountStr('');
     setErrors((prev) => ({
       ...prev,
       action: undefined,
@@ -240,6 +277,22 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
       maxCount: undefined,
       steps: undefined,
     }));
+  }, []);
+
+  const applyTemplate = useCallback((source: Task) => {
+    setDeriveFromTask(source);
+    setAction(source.action ?? '');
+    setUnit(source.unit ?? '');
+    setMaxCountStr('');
+    setErrors((prev) => ({ ...prev, action: undefined, unit: undefined, maxCount: undefined }));
+  }, []);
+
+  const clearTemplate = useCallback(() => {
+    setDeriveFromTask(null);
+    setAction('');
+    setUnit('');
+    setMaxCountStr('');
+    setErrors((prev) => ({ ...prev, action: undefined, unit: undefined, maxCount: undefined }));
   }, []);
 
   const updateStep = useCallback((stepId: string, field: keyof StepFormState, value: string) => {
@@ -280,6 +333,7 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     setMaxCountStr('');
     setSteps([createEmptyStep()]);
     setErrors({});
+    setDeriveFromTask(null);
   }
 
   const handleSubmit = useCallback(
@@ -378,12 +432,15 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     steps,
     errors,
     isSubmitting,
+    deriveFromTask,
     setTitle: setTitleClearingError,
     setDescription: setDescriptionClearingError,
     setAction: setActionClearingError,
     setUnit: setUnitClearingError,
     setMaxCountStr: setMaxCountStrClearingError,
     handleTypeChange,
+    applyTemplate,
+    clearTemplate,
     updateStep,
     addStep,
     removeStep,

@@ -30,6 +30,12 @@ packages:
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     from: "8.0.0"
+  # Snapshot tests for SwiftUI views — used only by OYBCSnapshotTests.
+  # Render PNGs into __Snapshots__/ for autonomous CLI-driven UI
+  # verification (no simulator boot, no manual screenshots).
+  SnapshotTesting:
+    url: https://github.com/pointfreeco/swift-snapshot-testing
+    from: "1.18.0"
 
 targets:
   OYBC:
@@ -109,6 +115,25 @@ targets:
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
 
+  # Snapshot tests for SwiftUI surfaces. Separate from OYBCTests so the
+  # logic-test target stays light and we can run snapshots in isolation
+  # via `xcodebuild test -only-testing:OYBCSnapshotTests`. PNG baselines
+  # land in OYBCSnapshotTests/__Snapshots__/<TestClass>/<test>.png.
+  OYBCSnapshotTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - OYBCSnapshotTests
+    dependencies:
+      - target: OYBC
+      - package: SnapshotTesting
+        product: SnapshotTesting
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "com.oybc.OYBCSnapshotTests"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   OYBC:
     build:
@@ -126,3 +151,13 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  OYBCSnapshotTests:
+    build:
+      targets:
+        OYBC: all
+        OYBCSnapshotTests: all
+    test:
+      config: Debug
+      targets:
+        - OYBCSnapshotTests

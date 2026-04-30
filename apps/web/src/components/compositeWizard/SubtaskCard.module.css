@@ -135,21 +135,25 @@
 .flatUsage {
   flex: 0 0 auto;
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  /* Tertiary weight — the hint is less relevant once the task is
+   * already in the composite, so it shouldn't compete with the title. */
+  color: var(--text-tertiary, rgba(128, 128, 128, 0.75));
   white-space: nowrap;
 }
 
 .flatRemoveButton {
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  /* 44×44 matches iOS HIG; earlier 26×26 was tap-hostile next to the
+   * bigger library-row checkboxes. */
+  width: 44px;
+  height: 44px;
   padding: 0;
-  font-size: 1rem;
+  font-size: 1.15rem;
   line-height: 1;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 5px;
-  color: var(--text-secondary);
+  border-radius: 999px;
+  color: var(--text-tertiary, rgba(128, 128, 128, 0.7));
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s, border-color 0.15s;
 }
