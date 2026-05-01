@@ -29,10 +29,17 @@ concurrency:
 
 jobs:
   build-and-test:
-    # macos-15 runners ship with Xcode 16.x pre-installed, matching the
-    # Swift 5.9 / iOS 17 deployment target defined in project.yml.
+    # macos-15 runners ship multiple Xcodes; we pin to 26.3 (year-based
+    # versioning) so snapshot baselines recorded against a developer's
+    # local Xcode 26.3 + iOS 26.x simulator match what CI renders. The
+    # default xcode-select on macos-15 is 16.4 — too old for the iOS
+    # 26.x simulator and a Swift major behind local. DEVELOPER_DIR is
+    # set at job level so every step (including xcodegen + swift via
+    # xcrun) uses the same toolchain.
     runs-on: macos-15
     timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
 
     steps:
       - uses: actions/checkout@v6
@@ -42,11 +49,7 @@ jobs:
           sw_vers
           xcodebuild -version
           swift --version
-          # Temporary: list available Xcodes + iOS sim runtimes on this
-          # runner so we can pin the snapshot scheme to a version that
-          # matches local dev. Remove once a stable pin lands.
-          ls /Applications/ | grep -i Xcode || true
-          xcrun simctl list runtimes 2>/dev/null | grep -iE "ios" || true
+          xcrun simctl list runtimes | grep -iE "ios" || true
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -87,13 +90,14 @@ jobs:
           # forces real failure when a baseline is absent.
           SNAPSHOT_TESTING_RECORD: never
         run: |
-          # OS pinned (not `OS=latest`) so a future macos image bump that
-          # ships a newer iOS simulator doesn't silently drift snapshot
-          # baselines without warning. Bumping this number is a deliberate
-          # event — re-record baselines on the matching iOS, commit, push.
+          # OS=latest is deterministic given the Xcode pin above: it
+          # resolves to whichever iOS simulator ships with Xcode 26.3.
+          # Bumping the Xcode pin (e.g. to 26.4) is a deliberate event —
+          # re-record baselines on the matching local Xcode + iOS, commit,
+          # push.
           xcodebuild test \
             -scheme OYBCSnapshotTests \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=26.2' \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
             -resultBundlePath /tmp/snapshot-results.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO

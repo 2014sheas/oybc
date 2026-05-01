@@ -54,12 +54,13 @@ Snapshot tests are the fastest way to visually verify iOS UI changes — no simu
 ```bash
 cd apps/ios
 xcodegen generate    # only if you added new test files
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=26.2' \
+  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
   -derivedDataPath /tmp/oybc-derived test
 ```
 
-Pin the destination to the same `iPhone 16,OS=26.2` that CI uses (see ios.yml). Recording on a different simulator/iOS will produce baselines CI can't match.
+CI pins Xcode to **26.3** (`DEVELOPER_DIR=/Applications/Xcode_26.3.app/...` in `ios.yml`). Use the same Xcode major.minor locally — the runner image keeps multiple Xcodes around, so the precise build of 26.3 may differ slightly from your local 26.3, but the iOS simulator that ships with it is what `OS=latest` resolves to on both ends. If you have multiple Xcodes installed locally, run `sudo xcode-select -s /Applications/Xcode-26.3.app` (or set `DEVELOPER_DIR` per-command as above) so re-recordings happen against the matching toolchain.
 
 Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
 
@@ -78,7 +79,7 @@ Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build
 7. Run once to record the baseline; re-run to confirm green.
 
 **Sharp edges:**
-- **iOS-version drift**: simulator iOS upgrades (e.g., 17 → 18, or jumping to year-based 26.x) shift font kerning. Pin to one iOS version per CI run. CI runs on `macos-15` against `iPhone 16,OS=26.2` — the OS is pinned explicitly (not `OS=latest`) so a future macos image bump can't silently drift baselines without warning. Locally, install the matching iOS simulator runtime via Xcode → Settings → Components, then record/run against the same `OS=26.2` destination. Re-record after intentional UI changes with `SNAPSHOT_TESTING_RECORD=all xcodebuild test -scheme OYBCSnapshotTests -destination 'platform=iOS Simulator,name=iPhone 16,OS=26.2'` and commit the resulting PNGs. Bumping the pinned OS in CI is a deliberate event — change the number in `ios.yml`, re-record locally on the new version, commit both in one PR.
+- **Xcode/iOS drift**: simulator iOS upgrades (or jumping Xcode majors) shift font kerning + glyph metrics. CI pins Xcode 26.3 via `DEVELOPER_DIR` in `ios.yml`; `OS=latest` resolves deterministically to whichever iOS ships with that Xcode. Bumping the pin is a deliberate event — change the Xcode path in `ios.yml`, re-record baselines locally on the matching Xcode, commit both in one PR. Re-record locally with `xcodebuild test -scheme OYBCSnapshotTests -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'` after deleting the affected `__Snapshots__/.../*.png` and running `xcodegen generate` (the test target lists baselines as bundle resources — deleting them and re-running while leaving the project stale produces a hard build error).
 - **CI override of `record: .missing`**: `.github/workflows/ios.yml` sets `SNAPSHOT_TESTING_RECORD=never` before invoking the snapshot scheme. The library checks the env var ahead of any per-call `record:` setting, so an absent baseline fails loudly on CI instead of silently auto-recording an ephemeral PNG. Don't change this — the per-call `.missing` is the right local default; the env override is the right CI default. On CI failure the `xcresult` bundle is uploaded as the `snapshot-test-results` artifact (7-day retention) so the failure-candidate PNGs can be pulled and compared without re-running.
 - **`AppDatabase.shared`**: views that query the production database singleton (e.g., `BoardPlayView`) are not yet covered — they'd need either an injected database or per-test seeding of `.shared`. Until the harness is refactored, prefer snapshotting the leaf views (which take props) over containers that query the DB.
 - **`@EnvironmentObject AuthService`**: views that depend on auth state require either the `-bypassAuth` runtime arg or a stub injection via `.environmentObject(...)`. Easiest path is to snapshot inner step views directly rather than the auth-gated wrappers.
