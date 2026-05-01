@@ -45,7 +45,7 @@ jobs:
         # whatever pnpm major it ships with, which doesn't read our v9.0
         # lockfile cleanly ("expected a single document in the stream").
         # v4 honours the explicit version pin, which is what we want.
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9.15.4
 
