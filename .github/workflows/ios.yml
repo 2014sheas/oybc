@@ -42,6 +42,11 @@ jobs:
           sw_vers
           xcodebuild -version
           swift --version
+          # Temporary: list available Xcodes + iOS sim runtimes on this
+          # runner so we can pin the snapshot scheme to a version that
+          # matches local dev. Remove once a stable pin lands.
+          ls /Applications/ | grep -i Xcode || true
+          xcrun simctl list runtimes 2>/dev/null | grep -iE "ios" || true
 
       - name: Install xcodegen
         run: brew install xcodegen
