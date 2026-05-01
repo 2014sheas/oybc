@@ -55,9 +55,11 @@ Snapshot tests are the fastest way to visually verify iOS UI changes — no simu
 cd apps/ios
 xcodegen generate    # only if you added new test files
 xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 16,OS=26.2' \
   -derivedDataPath /tmp/oybc-derived test
 ```
+
+Pin the destination to the same `iPhone 16,OS=26.2` that CI uses (see ios.yml). Recording on a different simulator/iOS will produce baselines CI can't match.
 
 Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
 

@@ -69,6 +69,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO
 
       - name: Run snapshot tests
+        id: snapshot-tests
         working-directory: apps/ios
         env:
           # Force fail-on-missing in CI. Tests use `record: .missing`
@@ -93,9 +94,14 @@ jobs:
             CODE_SIGNING_REQUIRED=NO
 
       - name: Upload snapshot test results on failure
-        if: failure()
+        # Gated on the snapshot step specifically — without this, an
+        # earlier-step failure (e.g. main OYBC tests) would still trigger
+        # this upload even though /tmp/snapshot-results.xcresult was never
+        # written, masking the actual failure with a noisy artifact warning.
+        if: failure() && steps.snapshot-tests.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: snapshot-test-results
           path: /tmp/snapshot-results.xcresult
           retention-days: 7
+          if-no-files-found: warn
