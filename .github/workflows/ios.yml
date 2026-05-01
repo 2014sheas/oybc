@@ -81,9 +81,13 @@ jobs:
           # forces real failure when a baseline is absent.
           SNAPSHOT_TESTING_RECORD: never
         run: |
+          # OS pinned (not `OS=latest`) so a future macos image bump that
+          # ships a newer iOS simulator doesn't silently drift snapshot
+          # baselines without warning. Bumping this number is a deliberate
+          # event — re-record baselines on the matching iOS, commit, push.
           xcodebuild test \
             -scheme OYBCSnapshotTests \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=26.2' \
             -resultBundlePath /tmp/snapshot-results.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
