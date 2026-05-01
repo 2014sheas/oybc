@@ -67,3 +67,31 @@ jobs:
             -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
+
+      - name: Run snapshot tests
+        working-directory: apps/ios
+        env:
+          # Force fail-on-missing in CI. Tests use `record: .missing`
+          # locally so a first-run baseline auto-records — convenient
+          # on a dev machine but a silent-pass trap on CI: a new test
+          # class without committed PNGs would record an ephemeral
+          # baseline and pass green, hiding the fact that nothing is
+          # actually under version control. The library honours this
+          # env var ahead of any per-call setting, so `never` here
+          # forces real failure when a baseline is absent.
+          SNAPSHOT_TESTING_RECORD: never
+        run: |
+          xcodebuild test \
+            -scheme OYBCSnapshotTests \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -resultBundlePath /tmp/snapshot-results.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload snapshot test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-test-results
+          path: /tmp/snapshot-results.xcresult
+          retention-days: 7
