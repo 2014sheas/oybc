@@ -184,7 +184,6 @@ struct BoardPlayView: View {
     @State private var board: Board?
     @State private var boardTasks: [BoardTask] = []
     @State private var allTasks: [Task] = []
-    @State private var allTaskSteps: [TaskStep] = []
     @State private var allCompoundChildren: [CompoundChild] = []
 
     @State private var isProcessing = false
@@ -645,47 +644,6 @@ struct BoardPlayView: View {
         }
     }
 
-    @ViewBuilder
-    private func progressDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        // Phase 5: step completion IDs will come from Task.progressCounters or a dedicated table.
-        // Stubbed as empty until Phase 5 implements the progress-step completion model.
-        let completedIds: [String] = []
-        let stepsForTask = allTaskSteps.filter { $0.taskId == task.id }
-
-        Section("Steps") {
-            if stepsForTask.isEmpty {
-                Text("No steps found")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(stepsForTask, id: \.id) { step in
-                    let isDone = completedIds.contains(step.id)
-                    Button {
-                        handleProgressStepTap(boardTask: boardTask, step: step, isDone: isDone)
-                    } label: {
-                        HStack {
-                            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                .foregroundColor(isDone ? .green : .secondary)
-                            Text(step.title)
-                                .foregroundColor(.primary)
-                            Spacer()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isProcessing || isBoardLocked)
-                }
-            }
-        }
-
-        Section {
-            Label(
-                "\(completedIds.count) of \(stepsForTask.count) steps complete",
-                systemImage: "list.bullet"
-            )
-            .font(.caption)
-            .foregroundColor(.secondary)
-        }
-    }
-
     /// Detail sheet content for a compound task: shows each child with its current
     /// completion state and a tap handler that toggles the child's `Task.isCompleted`.
     ///
@@ -801,63 +759,6 @@ struct BoardPlayView: View {
         updatedTask.version += 1
 
         runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
-    }
-
-    /// Toggles a single progress step for a board task and recomputes task completion.
-    ///
-    /// Phase 5 will track completedStepIds on a dedicated table or Task.progressCounters.
-    /// This stub toggles Task.isCompleted when all steps are done, without tracking
-    /// individual step IDs.
-    ///
-    /// - Parameters:
-    ///   - boardTask: The progress task's `BoardTask` record.
-    ///   - step: The `TaskStep` being toggled.
-    ///   - isDone: Current state of the step (`true` = already complete, will be un-checked).
-    private func handleProgressStepTap(boardTask: BoardTask, step: TaskStep, isDone: Bool) {
-        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
-        let now = AppDatabase.currentTimestamp()
-
-        // Phase 5 TODO: track completedStepIds via Task.progressCounters or dedicated table.
-        // For now, toggling any step toggles overall task completion as a stub.
-        let stepsForTask = allTaskSteps.filter { $0.taskId == boardTask.taskId }
-        let newCompleted = isDone ? false : (stepsForTask.count <= 1)
-
-        task.isCompleted = newCompleted
-        task.completedAt = newCompleted ? now : nil
-        task.updatedAt = now
-        task.version += 1
-
-        runOrchestration(updatedTask: task, boardTask: boardTask)
-    }
-
-    /// Marks the progress task as complete (all steps done).
-    ///
-    /// - Parameter boardTask: The progress task's `BoardTask` record.
-    private func handleProgressCompleteAll(boardTask: BoardTask) {
-        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
-        let now = AppDatabase.currentTimestamp()
-
-        task.isCompleted = true
-        task.completedAt = now
-        task.updatedAt = now
-        task.version += 1
-
-        runOrchestration(updatedTask: task, boardTask: boardTask)
-    }
-
-    /// Clears progress task completion.
-    ///
-    /// - Parameter boardTask: The progress task's `BoardTask` record.
-    private func handleProgressReset(boardTask: BoardTask) {
-        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
-        let now = AppDatabase.currentTimestamp()
-
-        task.isCompleted = false
-        task.completedAt = nil
-        task.updatedAt = now
-        task.version += 1
-
-        runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
     /// Toggles a compound child's `Task.isCompleted` state.
@@ -1096,23 +997,18 @@ struct BoardPlayView: View {
         }
     }
 
-    /// Loads all tasks, task steps, and compound children for the authenticated user into memory.
-    ///
-    /// Task steps and compound children are fetched globally (not user-scoped) since
-    /// the AppDatabase helpers don't filter by userId for those tables.
+    /// Loads all tasks and compound children for the authenticated user
+    /// into memory. CompoundChildren are fetched globally (not user-scoped)
+    /// since the AppDatabase helper doesn't filter by userId for that table.
     private func loadTaskData() {
         let userId = authService.currentUser?.id
         _Concurrency.Task.detached(priority: .userInitiated) {
             let tasks = userId.flatMap { id in
                 try? AppDatabase.shared.fetchTasks(userId: id)
             } ?? []
-            let steps = userId.flatMap { id in
-                try? AppDatabase.shared.fetchAllTaskSteps(userId: id)
-            } ?? []
             let children = (try? AppDatabase.shared.fetchAllCompoundChildren()) ?? []
             await MainActor.run {
                 allTasks = tasks
-                allTaskSteps = steps
                 allCompoundChildren = children
             }
         }

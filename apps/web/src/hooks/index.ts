@@ -9,5 +9,4 @@ export * from './usePreferences';
 export * from './useLegacyPreferencesMigration';
 export * from './useAppliedTheme';
 export * from './useSyncStatus';
-export * from './useCompositeTasks';
 export * from './useSyncLoop';

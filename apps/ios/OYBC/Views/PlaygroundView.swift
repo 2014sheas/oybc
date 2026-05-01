@@ -25,7 +25,14 @@ struct PlaygroundView: View {
     /// weekStartDay.rawValue`; standalone previews get the default.
     var weekStartDay: String = UserPreferences.defaults.weekStartDay.rawValue
 
-    /// Features under test - new features will be added here (newest first)
+    /// Features under test — new features added here (newest first).
+    ///
+    /// The compound-tasks unification retired five playgrounds whose
+    /// implementations consumed pre-unification types
+    /// (TaskStep / CompositeTask / CompositeNode / TaskType.progress).
+    /// They were gated `#if false` during the merge and dropped in
+    /// Phase 8. New compound playgrounds will land as their own
+    /// entries when needed.
     private var features: [Feature] {
         [
         Feature(
@@ -46,38 +53,9 @@ struct PlaygroundView: View {
             })
         ),
         Feature(
-            id: "board-lifecycle",
-            title: "Board Lifecycle",
-            // BoardLifecyclePlayground gated out until Phase 5 rewrite (compound-tasks unification)
-            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
-        ),
-        Feature(
-            id: "cross-board-rollup",
-            title: "Cross-Board Progress Rollup",
-            // CrossBoardRollupPlayground gated out until Phase 5 rewrite (TaskType.compound)
-            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
-        ),
-        Feature(
-            id: "subtask-derivation",
-            title: "Subtask Derivation Engine",
-            content: AnyView(SubtaskDerivationPlayground())
-        ),
-        Feature(
             id: "task-square-actions",
             title: "Task Square Interactions",
             content: AnyView(TaskSquareActionsPlayground())
-        ),
-        Feature(
-            id: "board-generator",
-            title: "Board Generator",
-            // BoardGeneratorPlayground gated out until Phase 5 rewrite (compound-tasks unification)
-            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
-        ),
-        Feature(
-            id: "unified-task-creation",
-            title: "Task Creation (Unified)",
-            // UnifiedTaskCreatorPlayground gated out until Phase 5 rewrite (TaskType.compound)
-            content: AnyView(Text("Unavailable — awaiting Phase 5 rewrite").foregroundColor(.secondary).padding())
         ),
     ]
     }

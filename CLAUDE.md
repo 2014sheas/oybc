@@ -8,30 +8,18 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 **Core Architecture**: Local-first design where local databases (GRDB on iOS, Dexie on web) are the source of truth, with Firestore providing background sync for multi-device support only.
 
-## Active refactor: Compound Tasks Unification
+## Task model — Compound Tasks Unification (shipped)
 
-> Designed 2026-04-23, implementation in progress on `feature/compound-tasks-unification` (~75% complete: Phases 1-4 + 6 done; Phase 5 iOS UI + Phase 8 cleanup + Phase 9 verification remaining). Spec: [`docs/superpowers/specs/2026-04-23-compound-tasks-unification-design.md`](docs/superpowers/specs/2026-04-23-compound-tasks-unification-design.md). Doc target: [`docs/TASK_SYSTEM.md`](docs/TASK_SYSTEM.md).
+The task model is the unified 3-type one: **Normal / Counting / Compound**. Progress and Composite were collapsed onto Compound during the unification refactor (PR #43, PR #42, and the Phase 8 cleanup). Canonical doc: [`docs/TASK_SYSTEM.md`](docs/TASK_SYSTEM.md).
 
-The legacy 4-type model (Normal / Counting / Progress / Composite) is being unified into a 3-type model (Normal / Counting / **Compound**). Progress and Composite are functionally the same parent-children-with-completion-rule pattern; the unification collapses them onto a single schema:
+Schema shape:
 
 - `tasks` carries operator + threshold + isOrdered for compounds.
-- `compound_children` replaces `task_steps` AND `composite_nodes` (one row per child link, child can be any Task including another compound).
-- `composite_tasks` is dropped (composites move into `tasks` with `type='compound'`).
-- `BoardTask` loses its completion fields (`isCompleted`, `completedAt`, `currentCount`, `completedStepIds`) — completion becomes **global per Task**, never per-board.
-- The migration runs at first launch as iOS GRDB v6+v7 / web Dexie v4+v5. Pre-public-launch, so dev/test data backfill is automatic and non-destructive.
+- `compound_children` replaces the retired `task_steps` and `composite_nodes` tables (one row per parent-child link; the child can be any Task, including another compound).
+- `composite_tasks` is dropped at the model level; composites live in `tasks` with `type='compound'`.
+- `BoardTask` is a pure placement record — no `isCompleted` / `completedAt` / `currentCount` / `completedStepIds`. Completion is **global per Task**, not per-board.
 
-**Phase status on the feature branch:**
-
-- ✅ Phase 1 (shared types + Zod + algorithms + migration helpers): 11 commits, 435 tests passing.
-- ✅ Phase 2 (web data layer): 9 commits incl. hardening (compoundChildren CRUD + Dexie v4/v5 migration + orchestration with derivation pass + sync service).
-- ✅ Phase 3 (iOS data layer): 9 commits incl. unblock stubs (CompoundChild GRDB model + Task/BoardTask updates + GRDB v6/v7 migration + Swift twins of compoundEvaluation/derivationPass + sync service).
-- ✅ Phase 4 (web UI): 6 commits incl. hardening (useTaskLibrary unified + InteractiveTaskSquare compound rendering + interactive detail sheet + BingoBoard/BoardPlayPage Task-first reads + CompositeTaskWizard rewritten to call createCompound).
-- ✅ Phase 6 (Firestore rules): commit `8e6f355` — `compoundChildren` added to `isKnownCollection()`; cross-device manual test pending.
-- ⏳ Phase 5 (iOS UI rewrite): the equivalent of Phase 4 for iOS — BoardPlayView wired to runOrchestration with derivation pass + cascade, dedicated compound detail sheet, refresh of the iOS playgrounds currently `#if false`-gated.
-- ⏳ Phase 8 (cleanup): drop legacy enum aliases (TaskType.PROGRESS), delete legacy operations files, build the deferred CompoundTaskPlayground + GlobalCompletionPlayground, restore inline progress-subtask creation in CompositeTaskWizard, add "appears on: Board A, Board B" links to the compound detail sheet.
-- ⏳ Phase 9 (verification + PR): full clean build on both platforms, run all tests, Playwright + iOS sim screenshots, push, open PR against `dev`.
-
-**Until everything ships**, treat `TASK_SYSTEM.md` and the spec as the canonical model.
+The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables are still present in old migrations so first-launch backfill on dev/test devices works. They are read only by (a) the GRDB/Dexie first-launch migrations that backfill `compound_children`, and (b) the sync service's known-collections list, which lets the push loop drain DELETE tombstones to Firestore. No live UI reads, no live writes — once a device has migrated and drained, those rows are inert. Build deferred compound playgrounds (`CompoundTaskPlayground` / `GlobalCompletionPlayground`) when a future feature genuinely needs them — the snapshot test target (`OYBCSnapshotTests`) is the primary visual-verification surface today.
 
 ## Code Quality Standards
 
@@ -532,7 +520,6 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 
 ### Known follow-ups (not blockers for Phase 6)
 
-- **Compound Tasks Unification** (designed 2026-04-23): merge Progress + Composite into a single `compound` task type, adopt global per-Task completion, drop `BoardTask` completion fields. Spec: `docs/superpowers/specs/2026-04-23-compound-tasks-unification-design.md`. Big-bang on a single `feature/compound-tasks-unification` branch. Resolves the gap that composites can't currently be placed on boards even though the design treats them as tasks.
 - `CreatePage.tsx` (972 LOC) and `CreateView.swift` (1030 LOC) violate the "containers stay thin" rule. Tracked as future `refactor/create-page-hooks` + `refactor/create-view-viewmodels` branches — no sync/correctness impact, just makes adding form fields easier.
 - Web has no Jest/Vitest harness yet; `packages/shared` covers cross-platform logic. Adding web-layer tests is tracked for the next tooling pass.
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
