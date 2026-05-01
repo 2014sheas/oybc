@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -37,9 +37,9 @@ jobs:
           version: 9.15.4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 20
           cache: pnpm
 
       # Output goes into a workspace file rather than $GITHUB_OUTPUT so
@@ -64,7 +64,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          count=$(gh pr list --label dependencies --state open --base dev --json number --jq 'length')
+          # If `gh pr list` fails (auth/rate-limit/transient API failure)
+          # `count` ends up empty; default to 0 so the integer compare
+          # below doesn't blow the whole step on a transient API blip.
+          count=$(gh pr list --label dependencies --state open --base dev --json number --jq 'length' 2>/dev/null || echo 0)
+          count=${count:-0}
           if [ "$count" -eq 0 ]; then
             printf '%s\n' '_No open dependabot PRs targeting `dev`._' > /tmp/dependabot-prs.md
           else
@@ -72,20 +76,27 @@ jobs:
             # PR titles cannot escape into command interpretation. The
             # output is then written to a file and consumed by
             # `--body-file` later, so it never sees a shell again.
+            #
+            # The `pending` fallback uses an explicit length check
+            # because `join("")` on an empty array returns `""` (not
+            # `null`), so the `//` short-circuit wouldn't fire.
             gh pr list \
               --label dependencies \
               --state open \
               --base dev \
               --json number,title,statusCheckRollup,url \
-              --jq '.[] | "- [#\(.number)](\(.url)) — \(.title) — CI: \((.statusCheckRollup // []) | (map(.conclusion // .state) | unique | join(", ") // "pending"))"' \
+              --jq '.[] | . as $pr | (($pr.statusCheckRollup // []) | map(.conclusion // .state) | unique) as $vs | "- [#\($pr.number)](\($pr.url)) — \($pr.title) — CI: \(if ($vs | length) == 0 then "pending" else ($vs | join(", ")) end)"' \
               > /tmp/dependabot-prs.md
           fi
 
       - name: Compose issue body
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           today=$(date -u +%Y-%m-%d)
           {
-            printf 'Bi-weekly dependabot drift check fired by `.github/workflows/dependabot-sweep-reminder.yml`. Review the items below and merge what is safe per the recipe in [CLAUDE.md → Branching Strategy](../blob/dev/CLAUDE.md#branching-strategy).\n\n'
+            # Repo-absolute URL — relative `../blob/...` doesn't resolve from a GitHub Issue page.
+            printf 'Bi-weekly dependabot drift check fired by `.github/workflows/dependabot-sweep-reminder.yml`. Review the items below and merge what is safe per the recipe in [CLAUDE.md → Branching Strategy](%s/blob/dev/CLAUDE.md#branching-strategy).\n\n' "$REPO_URL"
             printf '## Open dependabot PRs targeting `dev`\n\n'
             cat /tmp/dependabot-prs.md
             printf '\n## Lockfile health\n\n'
