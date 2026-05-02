@@ -711,4 +711,20 @@ Offline-first architecture is **essential** for OYBC:
 
 The complexity is **worth it** for the dramatically better user experience. Firebase Auth and Firestore background sync are now implemented on both platforms (web and iOS), completing the offline-first architecture with multi-device support.
 
-**Next**: Read [CLAUDE_GUIDE.md](./CLAUDE_GUIDE.md) for implementation guidelines.
+---
+
+## Recurring Boards: lazy app-open detection (Phase 6 — planned)
+
+Recurring Boards intentionally avoids any background scheduling. Detection runs only when the user opens the Boards tab — no `BGTaskScheduler` on iOS, no service-worker scheduling on web. This keeps the offline-first invariant intact: the local DB remains the source of truth, and no ambient processes write to it without user action. A user who hasn't opened the app in three weeks comes back to a banner listing all the windows they missed; a user who hasn't opened the app at all gets no rows of unwanted state created on their behalf.
+
+The detection algorithm itself is a pure function over the local boards table + user preferences:
+
+```ts
+findPendingRecurringBoards(boards, prefs, now): PendingRecurringBoard[]
+```
+
+It runs on every Boards-tab mount and on every reactive change to boards or prefs (via `useLiveQuery` on web, observed-store dependency on iOS). No network. No background timer. No notification permission required. The cost is one O(B) iteration over the user's boards, where B is bounded by realistic usage (dozens, not thousands).
+
+This pattern is the canonical template for Recurring Boards Phase 2 (preset-pool boards) — that phase reuses the same hook, just adds a parallel iteration over `RecurringBoardTemplate` rows to spawn boards rather than surface banner entries. Phase 3 (board-completion-as-a-square) doesn't need detection at all — it piggybacks on the existing `runBoardCascadeForTask()` orchestration via an extension to the achievement-square fan-out.
+
+For the canonical design, see [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design).
