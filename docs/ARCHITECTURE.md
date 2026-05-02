@@ -666,7 +666,7 @@ export function getParentBoards(
 
 **`getParentBoards`** filters `allActiveBoards` to those whose `timeframe` is in `PARENT_TIMEFRAMES[childTimeframe]` AND whose window currently contains `now` (`isWithinTimeframe(now, b.startDate, b.endDate)`) AND `b.status === BoardStatus.ACTIVE`. Used by the wizard's "From parent boards" filter to surface candidate tasks.
 
-Both functions are pure and trivially unit-testable. Mirror the existing pattern in `packages/shared/src/algorithms/__tests__/calendarBoundaries.test.ts` — table-driven cases for each timeframe + edge dates (year boundary, leap year, week-start variation).
+Both functions are pure and trivially unit-testable. Mirror the existing pattern in `packages/shared/tests/algorithms/calendarBoundaries.test.ts` — table-driven cases for each timeframe + edge dates (year boundary, leap year, week-start variation).
 
 ##### UX flows
 
@@ -730,7 +730,7 @@ Both functions are pure and trivially unit-testable. Mirror the existing pattern
 | File | Action | Notes |
 | --- | --- | --- |
 | `packages/shared/src/algorithms/recurringBoards.ts` | CREATE | `PARENT_TIMEFRAMES`, `findPendingRecurringBoards`, `getParentBoards`, `PendingRecurringBoard` interface |
-| `packages/shared/src/algorithms/__tests__/recurringBoards.test.ts` | CREATE | Jest table-driven tests |
+| `packages/shared/tests/algorithms/recurringBoards.test.ts` | CREATE | Jest table-driven tests |
 | `packages/shared/src/types/user.ts` | MODIFY | 4 new fields on `UserPreferences`, default values, `mergeUserPreferences` validation |
 | `packages/shared/src/index.ts` | MODIFY | Export new symbols |
 | `apps/web/src/hooks/usePendingRecurringBoards.ts` | CREATE | useLiveQuery wrapper around `findPendingRecurringBoards` |
@@ -789,7 +789,7 @@ interface RecurringBoardTemplate {
 
 **UI**: new "Recurring templates" section on the Create tab (sibling to the manual board wizard). CRUD UI for templates: pick timeframe + name + size + pool strategy + seed tasks.
 
-**Sync**: new collection `users/{uid}/recurring_board_templates`. Versioning + LWW + soft-delete tombstones mirror `boards`. New collection added to the sync service's known-collections list.
+**Sync**: new Firestore subcollection `users/{uid}/recurringBoardTemplates` (camelCase, matching the existing convention used by `boardTasks` / `compoundChildren` — see `apps/web/src/firebase/syncService.ts`). The local SQLite table is `recurring_board_templates` (snake_case, matching `board_tasks` / `compound_children`). Versioning + LWW + soft-delete tombstones mirror `boards`. The new collection name is added to the sync service's known-collections list; no new conflict-resolution logic.
 
 **Reuses** verbatim from Phase 1: detection hook scaffolding, `getTimeframeBoundaries()`, banner-tab orchestration, sync infrastructure.
 

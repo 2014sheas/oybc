@@ -190,7 +190,7 @@ When a primitive Task's completion changes, a transaction-scoped derivation pass
 3. Resolves the set of affected boards: every board placing the changed task or any transitive parent compound.
 4. For each affected board, rebuilds the completion grid (reading Task states + recursively evaluating compounds), runs `detectBingos`, diffs against `boards.completedLineIds` for new/lost-bingo signals, writes board stats, and enqueues a Board sync entry.
 
-The full algorithm is documented in §5 of the [unification spec](./superpowers/specs/2026-04-23-compound-tasks-unification-design.md).
+The implementation lives in `packages/shared/src/algorithms/derivationPass.ts` (with platform wrappers in `apps/web/src/db/operations/orchestration.ts` and the iOS equivalent).
 
 ### Cross-board behavior — examples
 
@@ -698,7 +698,6 @@ When any approach triggers a "type action" on a square:
 
 ## See also
 
-- [`superpowers/specs/2026-04-23-compound-tasks-unification-design.md`](./superpowers/specs/2026-04-23-compound-tasks-unification-design.md) — full design spec for the unification + global-completion shift.
 - [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md) — push/pull/LWW reconciliation.
 - [`OFFLINE_FIRST.md`](./OFFLINE_FIRST.md) — local-first architecture.
-- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — overall system design.
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — overall system design (includes the Phase 6 Recurring Boards design that adds the planned specific-board reference mode to achievement squares).
