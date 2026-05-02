@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
-import { useBoards } from '../hooks';
+import { useBoards, usePendingRecurringBoards } from '../hooks';
 import { FilterTabs } from '../components/FilterTabs';
 import { BoardListItem } from '../components/BoardListItem';
+import { RecurringBoardsBanner } from '../components/RecurringBoardsBanner';
 import styles from './BoardsPage.module.css';
 
 const FILTER_TABS = [
@@ -23,6 +24,7 @@ export function BoardsPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
   const allBoards = useBoards(user?.id) ?? [];
+  const pendingRecurring = usePendingRecurringBoards(user?.id);
   const [activeFilter, setActiveFilter] = useState('all');
 
   const filteredBoards = allBoards.filter((b) => {
@@ -33,6 +35,8 @@ export function BoardsPage(): React.ReactElement {
   return (
     <div className={styles.container}>
       <h1 className={styles.header}>Boards</h1>
+
+      <RecurringBoardsBanner pending={pendingRecurring} />
 
       {allBoards.length > 0 && (
         <div className={styles.filterRow}>

@@ -4,6 +4,11 @@ import styles from './BoardWizardSetupStep.module.css';
 
 export interface BoardWizardSetupStepProps {
   controller: BoardWizardController;
+  /** When true, render the Timeframe field as a read-only chip rather
+   *  than the segmented selector. Used by the recurring-banner flow
+   *  (Phase 6.1) so the user can't accidentally pick a different
+   *  timeframe than the banner promised. */
+  lockTimeframe?: boolean;
   onCancel: () => void;
   onNext: () => void;
 }
@@ -16,6 +21,7 @@ export interface BoardWizardSetupStepProps {
  */
 export function BoardWizardSetupStep({
   controller,
+  lockTimeframe = false,
   onCancel,
   onNext,
 }: BoardWizardSetupStepProps): React.ReactElement {
@@ -50,6 +56,7 @@ export function BoardWizardSetupStep({
         onSizeChange={setSize}
         timeframe={timeframe}
         onTimeframeChange={setTimeframe}
+        timeframeLocked={lockTimeframe}
         customStartDate={customStartDate}
         onCustomStartDateChange={setCustomStartDate}
         customEndDate={customEndDate}
