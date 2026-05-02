@@ -21,6 +21,23 @@ Schema shape:
 
 The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables are still present in old migrations so first-launch backfill on dev/test devices works. They are read only by (a) the GRDB/Dexie first-launch migrations that backfill `compound_children`, and (b) the sync service's known-collections list, which lets the push loop drain DELETE tombstones to Firestore. No live UI reads, no live writes — once a device has migrated and drained, those rows are inert. Build deferred compound playgrounds (`CompoundTaskPlayground` / `GlobalCompletionPlayground`) when a future feature genuinely needs them — the snapshot test target (`OYBCSnapshotTests`) is the primary visual-verification surface today.
 
+## Recurring Boards (in design — Phase 6)
+
+Three-phase feature on deck. Phase 1 (timeframe-prompted recurring boards) is fully designed; Phases 2 and 3 are sketched. Canonical design: [`docs/ARCHITECTURE.md` §Phase 6](docs/ARCHITECTURE.md#phase-6-recurring-boards-in-design).
+
+Phase outline:
+
+- **Phase 1 — Timeframe-prompted boards (next).** App-open detection on the Boards tab surfaces a banner when a new daily/weekly/monthly/yearly window has begun and the user has the corresponding recurrence enabled in prefs. Tapping a banner entry opens the existing wizard prefilled with that timeframe + window dates. New "From parent boards" filter in the wizard's tasks step reuses tasks from currently-active longer-window boards.
+- **Phase 2 — Preset-pool recurring boards.** Introduces a `RecurringBoardTemplate` entity carrying a fixed task pool; lazy app-open spawn reuses Phase 1's detection hook. No banner entry; spawned boards appear directly in the list.
+- **Phase 3 — Board-completion-as-a-square.** Extends achievement squares with a `referencedBoardId` field on `BoardTask`, switching the existing aggregate-counter mechanism into a specific-board mode (e.g., a square that completes when the *Daily Wellness* board greenlogs). Same evaluation branch in `derivationPass.ts`, same fan-out wiring, no new task type. Cycle detection mandatory.
+
+Key invariants (so future contributors don't accidentally violate them):
+
+- **Shared task semantics**: a task placed on a daily and on a parent monthly is the *same Task*; completing it on the daily globally completes the monthly. This is intentional — derivation is a UI filter on the wizard's task picker, never a clone path. If a user wants an independent counter, the answer is a separately-named Task.
+- **No new schema for Phase 1**: only 4 boolean fields added to `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`). Detection is computed at read time from existing `Board.timeframe + startDate + endDate`. `mergeUserPreferences()` in `packages/shared/src/types/user.ts` and the iOS `UserPreferences.init(from:)` mirror must both be extended for forward-compatible decode.
+- **Lazy detection only**: no background scheduling, no notifications. Recurrence is observed when the user opens the Boards tab, never pushed. `BGTaskScheduler` (iOS) and service-worker scheduling (web) are explicit non-goals.
+- **No MVP custom-timeframe recurrence**: `Timeframe.CUSTOM` is excluded from Phase 1's `PARENT_TIMEFRAMES` map and from the recurrence toggles. Re-evaluate once Phase 1 ships.
+
 ## Code Quality Standards
 
 - Type hints and docstrings required for all functions and classes. Public APIs must document parameters, return values, and exceptions.
@@ -400,6 +417,8 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
 - **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline progress subtasks. **Post-unification**: this pattern stays but routes through `compound_children.childTaskId` instead of `TaskStep.linkedTaskId` — the inline-create-paired-Task transaction shape is unchanged.
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.
+- **Don't assume daily-derived tasks get an independent counter**: per the Recurring Boards design (ARCHITECTURE.md §Phase 6), the same `Task` is shared across boards. Completing once = completing globally, including on the parent monthly. If you find yourself wanting per-window independent state, the user wants a separately-named Task, not a clone.
+- **Don't background-schedule recurring board creation**: detection is intentionally lazy (Boards-tab open only). No `BGTaskScheduler` on iOS, no service-worker scheduling on web. The user opens the app → the banner appears. If a future feature genuinely needs background creation, that's a deliberate scope expansion, not an incremental add.
 
 ## Performance Targets
 
@@ -410,12 +429,12 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 
 ## Documentation
 
-- `docs/ARCHITECTURE.md` — Technical plan, development phases
+- `docs/ARCHITECTURE.md` — Technical plan, development phases (now includes **Phase 6: Recurring Boards** design)
 - `docs/OFFLINE_FIRST.md` — Offline-first design and data flow
-- `docs/superpowers/specs/` — Feature design specs (created during `/feature` planning phase)
-  - `2026-04-23-compound-tasks-unification-design.md` — In-flight refactor: unify Progress + Composite into Compound + adopt global completion. See top-of-doc callout.
 - `docs/SYNC_STRATEGY.md` — Conflict resolution patterns
-- `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (now reflects the planned unified compound model; old `COMPOSITE_TASKS.md` retired and merged into this file)
+- `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (Normal / Counting / Compound; cross-board square mechanisms live on `BoardTask`, see ARCHITECTURE.md §Phase 6)
+
+The `docs/superpowers/specs/` folder is **not in active use** — design docs for in-flight work live in CLAUDE.md and ARCHITECTURE.md instead. The legacy `2026-04-23-compound-tasks-unification-design.md` was the precursor for the unification work shipped in PR #43; the current canonical doc is `docs/TASK_SYSTEM.md`.
 
 **Not yet configured**: Prettier, SwiftLint.
 
@@ -528,6 +547,18 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 - Web has no Jest/Vitest harness yet; `packages/shared` covers cross-platform logic. Adding web-layer tests is tracked for the next tooling pass.
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
 - **iOS snapshot tests are advisory in CI** (`continue-on-error: true` on the snapshot step in `ios.yml`). The macos-15 runner ships Xcode 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3), while local dev uses iOS 26.3.x — pixel kerning differs across the iOS minor, so baselines recorded locally don't match CI byte-for-byte. The xcresult artifact still uploads on every snapshot diff, so a developer can pull it and re-record when convenient. To re-enable strict mode: either (a) wait for a macos-15 runner image refresh that ships iOS 26.3, then drop `continue-on-error`; or (b) install iOS 26.2 simulator runtime locally (~5 GB, requires freeing space on `/Library/Developer/CoreSimulator/Volumes/`), re-record on `OS=26.2`, commit baselines, drop `continue-on-error`.
+
+**Next Phase**: Phase 6 — Recurring Boards (design pass in progress; implementation begins once design docs merge)
+
+| Sub-phase | Scope | Status |
+| --- | --- | --- |
+| 6.0 | Design docs (this PR): CLAUDE.md callout, ARCHITECTURE.md §Phase 6, TASK_SYSTEM.md cross-board mechanisms note, SYNC_STRATEGY.md + OFFLINE_FIRST.md cross-references | IN PROGRESS |
+| 6.1a | Shared package: `findPendingRecurringBoards` + `getParentBoards` + `PARENT_TIMEFRAMES` constant + `UserPreferences` field additions + Jest tests | NOT STARTED |
+| 6.1b | Web: banner on Boards tab + wizard prefill via URL params + "From parent boards" filter + 4 toggles in Board Preferences + sync-mapping update | NOT STARTED |
+| 6.1c | iOS: mirror of 6.1b (banner view, wizard view-model args, filter chip, toggles) + GRDB column add for prefs + Swift `UserPreferences.init(from:)` mirror update | NOT STARTED |
+| 6.1d | Snapshot tests + Playwright validation + cross-platform parity verification | NOT STARTED |
+| 6.2 | Preset-pool recurring boards (`RecurringBoardTemplate` entity, lazy app-open spawn) | DEFERRED |
+| 6.3 | Board-completion-as-a-square (extend achievement squares with `referencedBoardId` + cross-board cascade + cycle detection) | DEFERRED |
 
 ## Branching Strategy
 

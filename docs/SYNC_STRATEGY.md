@@ -1450,3 +1450,17 @@ This section documents what was actually implemented for the sync layer (Phase 3
 - **TOCTOU race in push**: The read-then-write pattern during push is not atomic. Another device could write between the read and write. Production should use Firestore transactions to close this window.
 - **No schema validation on pulled data**: Remote documents are trusted as-is during pull. Malformed or unexpected fields are not validated before upserting into the local DB.
 - **`merge: true` can leave stale fields**: Using Firestore's `merge: true` option means deleted or renamed fields on the local side may persist in the remote document as stale data.
+
+---
+
+## Recurring Boards sync (Phase 6 — planned)
+
+Recurring Boards Phase 1 introduces **no new sync collections**. The 4 new boolean fields on `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`) ride the existing user-prefs sync — same LWW resolution, same conflict-resolution code path, same forward-compatible decoder pattern. Detection of pending recurring boards is computed at read time from existing `boards` data; no persistence required, no sync footprint.
+
+A peer running an older client decodes the user doc successfully (the new fields fall through to `false` defaults via `mergeUserPreferences()` and the Swift `UserPreferences.init(from:)` mirror). A write from the older client drops the new fields — no data loss, since absence implies the default value.
+
+**Phase 2 (preset-pool boards)** will add a new Firestore subcollection `users/{uid}/recurringBoardTemplates` (camelCase, matching the convention used by `boardTasks` / `compoundChildren`). The local SQLite table is `recurring_board_templates` (snake_case). Versioning, LWW resolution, and soft-delete tombstone semantics mirror `boards` exactly. The collection name is added to the sync service's known-collections list; no new conflict-resolution logic is required.
+
+**Phase 3 (board-completion-as-a-square)** extends achievement squares with one new optional field — `referencedBoardId` — on the existing `boardTasks` Firestore subcollection (local SQLite table: `board_tasks`). No new collection, no schema migration to a different table. Cross-board cascade fires inside the existing `runBoardCascadeForTask()` pipeline by adding a parallel fan-out for board_tasks rows with `referencedBoardId = this.id`; no new sync paths are added.
+
+For the canonical design, see [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design).
