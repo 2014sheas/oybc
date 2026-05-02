@@ -53,7 +53,15 @@ struct RecurringBoardsBannerView: View {
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 2)
 
-                ForEach(visible, id: \.startDate) { entry in
+                // `id: \.timeframe` is safe because each Timeframe appears at
+                // most once per detection pass (findPendingRecurringBoards
+                // iterates the four recurring timeframes deduped by enum).
+                // Using `\.startDate` would collapse entries on Jan 1 where
+                // yearly + monthly + daily all share the same start date.
+                ForEach(Array(visible.enumerated()), id: \.element.timeframe) { index, entry in
+                    if index > 0 {
+                        Divider()
+                    }
                     row(for: entry)
                 }
             }
@@ -75,8 +83,12 @@ struct RecurringBoardsBannerView: View {
 
     private func row(for entry: PendingRecurringBoard) -> some View {
         HStack(spacing: 10) {
-            Text(icon(for: entry.timeframe))
+            // SF Symbol — sharper than emoji at this size and renders
+            // correctly across simulator runtimes (some sim builds ship
+            // without AppleColorEmoji.ttc).
+            Image(systemName: icon(for: entry.timeframe))
                 .font(.title3)
+                .foregroundStyle(.tint)
                 .frame(width: 24)
                 .accessibilityHidden(true)
 
@@ -105,26 +117,17 @@ struct RecurringBoardsBannerView: View {
             .accessibilityLabel("Dismiss \(label(for: entry.timeframe)) prompt for this session")
         }
         .padding(.vertical, 4)
-        .overlay(alignment: .top) {
-            // Hairline divider between rows (skip the first one)
-            if entry.timeframe != visible.first?.timeframe || entry.startDate != visible.first?.startDate {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(height: 0.5)
-                    .offset(y: -4)
-            }
-        }
     }
 
     // MARK: - Display helpers
 
     private func icon(for timeframe: Timeframe) -> String {
         switch timeframe {
-        case .yearly:  return "🎯"
-        case .monthly: return "📆"
-        case .weekly:  return "🗓"
-        case .daily:   return "📅"
-        case .custom:  return "📌" // never reached in Phase 1
+        case .yearly:  return "calendar.badge.clock"
+        case .monthly: return "calendar"
+        case .weekly:  return "calendar.day.timeline.left"
+        case .daily:   return "sun.max"
+        case .custom:  return "pin" // never reached in Phase 1
         }
     }
 
