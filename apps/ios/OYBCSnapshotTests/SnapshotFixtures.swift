@@ -186,7 +186,11 @@ enum SnapshotFixtures {
             defaultTimeframe: .monthly,
             defaultRandomize: true,
             defaultCenterCustomName: "",
-            theme: .system
+            theme: .system,
+            recurringDailyEnabled: false,
+            recurringWeeklyEnabled: false,
+            recurringMonthlyEnabled: false,
+            recurringYearlyEnabled: false
         )
     }
 

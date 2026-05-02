@@ -66,12 +66,22 @@ final class BoardWizardViewModel {
     init(
         preferences: UserPreferences,
         initialStep: WizardStep = 1,
-        draft: (board: Board, boardTasks: [BoardTask])? = nil
+        draft: (board: Board, boardTasks: [BoardTask])? = nil,
+        prefilledRecurringTimeframe: Timeframe? = nil
     ) {
         self.initialPreferences = preferences
         self.weekStartDay = preferences.weekStartDay.rawValue
         self.currentStep = initialStep
         self.draftBoardId = draft?.board.id
+
+        // Recurring-banner prefill is suppressed when a draft is being
+        // resumed, and when the prefilled timeframe is .custom (the
+        // recurrence machinery excludes custom in Phase 1; defensive).
+        // Mirrors web's `effectivePrefill` rule in useBoardWizard.ts.
+        let effectivePrefill: Timeframe? =
+            (draft == nil && prefilledRecurringTimeframe != nil && prefilledRecurringTimeframe != .custom)
+                ? prefilledRecurringTimeframe
+                : nil
 
         if let d = draft {
             self.name = d.board.name
@@ -89,7 +99,25 @@ final class BoardWizardViewModel {
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
-            self.timeframe = Self.resolveTimeframe(preferences.defaultTimeframe)
+            // When prefilled from the recurring banner, the timeframe
+            // overrides the user's default. Name is also seeded with the
+            // human-readable label (e.g. "Today", "May 2026") — user can
+            // edit before saving.
+            if let timeframe = effectivePrefill {
+                self.timeframe = timeframe
+                if let window = computeTimeframeBoundaries(
+                    timeframe: timeframe,
+                    referenceDate: Date(),
+                    weekStartDay: preferences.weekStartDay.rawValue
+                ) {
+                    self.name = playgroundTimeframeLabel(
+                        timeframe: timeframe,
+                        startDate: window.start
+                    )
+                }
+            } else {
+                self.timeframe = Self.resolveTimeframe(preferences.defaultTimeframe)
+            }
             self.centerType = Self.coerceCenterType(
                 size: initialSize,
                 desired: Self.resolveCenterType(preferences.defaultCenterType)

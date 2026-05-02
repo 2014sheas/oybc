@@ -44,6 +44,11 @@ enum ThemePreference: String, Codable {
 
 /// Synced per-user preferences. Round-trips through Firestore as JSON and
 /// mirrors the TypeScript `UserPreferences` interface in `@oybc/shared`.
+///
+/// Storage note: the `preferences` column is a JSON TEXT blob, so adding
+/// new fields here does NOT require a GRDB migration — the JSON encoder
+/// handles new keys, and `init(from:)` below provides forward-compat
+/// fallbacks for older payloads missing them.
 struct UserPreferences: Codable, Equatable {
     var weekStartDay: WeekStartDay
     var defaultBoardSize: DefaultBoardSize
@@ -52,6 +57,15 @@ struct UserPreferences: Codable, Equatable {
     var defaultRandomize: Bool
     var defaultCenterCustomName: String
     var theme: ThemePreference
+    // Recurring boards (Phase 6.1) — when enabled, the Boards tab surfaces a
+    // banner inviting the user to create a board for the current window.
+    // Disabled by default so existing users see no behavior change until they
+    // opt in. Decoded with `false` fallbacks below for forward-compat with
+    // peers running pre-6.1 builds.
+    var recurringDailyEnabled: Bool
+    var recurringWeeklyEnabled: Bool
+    var recurringMonthlyEnabled: Bool
+    var recurringYearlyEnabled: Bool
 
     static let defaults = UserPreferences(
         weekStartDay: .monday,
@@ -60,7 +74,11 @@ struct UserPreferences: Codable, Equatable {
         defaultTimeframe: .custom,
         defaultRandomize: true,
         defaultCenterCustomName: "",
-        theme: .system
+        theme: .system,
+        recurringDailyEnabled: false,
+        recurringWeeklyEnabled: false,
+        recurringMonthlyEnabled: false,
+        recurringYearlyEnabled: false
     )
 
     /// Returns a complete preferences object by filling missing fields from
@@ -92,6 +110,14 @@ struct UserPreferences: Codable, Equatable {
             ?? Self.defaults.defaultCenterCustomName
         self.theme = (try? c.decode(ThemePreference.self, forKey: .theme))
             ?? Self.defaults.theme
+        self.recurringDailyEnabled = (try? c.decode(Bool.self, forKey: .recurringDailyEnabled))
+            ?? Self.defaults.recurringDailyEnabled
+        self.recurringWeeklyEnabled = (try? c.decode(Bool.self, forKey: .recurringWeeklyEnabled))
+            ?? Self.defaults.recurringWeeklyEnabled
+        self.recurringMonthlyEnabled = (try? c.decode(Bool.self, forKey: .recurringMonthlyEnabled))
+            ?? Self.defaults.recurringMonthlyEnabled
+        self.recurringYearlyEnabled = (try? c.decode(Bool.self, forKey: .recurringYearlyEnabled))
+            ?? Self.defaults.recurringYearlyEnabled
     }
 
     /// Memberwise initialiser preserved explicitly because adding a custom
@@ -103,7 +129,11 @@ struct UserPreferences: Codable, Equatable {
         defaultTimeframe: DefaultTimeframe,
         defaultRandomize: Bool,
         defaultCenterCustomName: String,
-        theme: ThemePreference
+        theme: ThemePreference,
+        recurringDailyEnabled: Bool,
+        recurringWeeklyEnabled: Bool,
+        recurringMonthlyEnabled: Bool,
+        recurringYearlyEnabled: Bool
     ) {
         self.weekStartDay = weekStartDay
         self.defaultBoardSize = defaultBoardSize
@@ -112,6 +142,10 @@ struct UserPreferences: Codable, Equatable {
         self.defaultRandomize = defaultRandomize
         self.defaultCenterCustomName = defaultCenterCustomName
         self.theme = theme
+        self.recurringDailyEnabled = recurringDailyEnabled
+        self.recurringWeeklyEnabled = recurringWeeklyEnabled
+        self.recurringMonthlyEnabled = recurringMonthlyEnabled
+        self.recurringYearlyEnabled = recurringYearlyEnabled
     }
 }
 

@@ -73,6 +73,10 @@ struct BoardWizardTasksPlayground: View {
                 centerTaskMode: centerTaskMode,
                 centerTaskId: $centerTaskId,
                 userId: playgroundUserId,
+                // Playground-only seed: .custom hides the new "From parent
+                // boards" filter chip (it has no parent timeframes), keeping
+                // the playground's existing behavior unchanged.
+                currentTimeframe: .custom,
                 onTaskCreated: { taskId, _, _ in
                     selectedTaskIds.insert(taskId)
                 },

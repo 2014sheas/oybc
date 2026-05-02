@@ -39,7 +39,11 @@ final class UserPreferencesCodableTests: XCTestCase {
             defaultTimeframe: .weekly,
             defaultRandomize: false,
             defaultCenterCustomName: "Wild Card",
-            theme: .dark
+            theme: .dark,
+            recurringDailyEnabled: true,
+            recurringWeeklyEnabled: false,
+            recurringMonthlyEnabled: true,
+            recurringYearlyEnabled: false
         )
         let encoded = try encoder.encode(original)
         let decoded = try decoder.decode(UserPreferences.self, from: encoded)
@@ -107,5 +111,73 @@ final class UserPreferencesCodableTests: XCTestCase {
             UserPreferences.defaults.defaultBoardSize,
             "Malformed defaultBoardSize should fall back without affecting valid siblings."
         )
+    }
+
+    // MARK: - Phase 6.1 recurring fields (forward-compat for pre-6.1 peers)
+
+    func testPre61PayloadDecodesRecurringFieldsAsFalse() throws {
+        // A user doc written by a pre-6.1 client has all the legacy fields
+        // but none of the recurring*Enabled keys. They must decode to false
+        // (matching the defaults) rather than failing the whole decode.
+        let json = """
+        {
+          "weekStartDay": "monday",
+          "defaultBoardSize": 5,
+          "defaultCenterType": "free",
+          "defaultTimeframe": "custom",
+          "defaultRandomize": true,
+          "defaultCenterCustomName": "",
+          "theme": "system"
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertFalse(decoded.recurringDailyEnabled)
+        XCTAssertFalse(decoded.recurringWeeklyEnabled)
+        XCTAssertFalse(decoded.recurringMonthlyEnabled)
+        XCTAssertFalse(decoded.recurringYearlyEnabled)
+    }
+
+    func testRecurringFieldsArePreservedWhenPresent() throws {
+        let json = """
+        {
+          "weekStartDay": "monday",
+          "defaultBoardSize": 5,
+          "defaultCenterType": "free",
+          "defaultTimeframe": "custom",
+          "defaultRandomize": true,
+          "defaultCenterCustomName": "",
+          "theme": "system",
+          "recurringDailyEnabled": true,
+          "recurringMonthlyEnabled": true
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertTrue(decoded.recurringDailyEnabled)
+        XCTAssertFalse(decoded.recurringWeeklyEnabled)  // missing → default false
+        XCTAssertTrue(decoded.recurringMonthlyEnabled)
+        XCTAssertFalse(decoded.recurringYearlyEnabled)  // missing → default false
+    }
+
+    func testMalformedRecurringFieldsFallBackToFalse() throws {
+        let json = """
+        {
+          "weekStartDay": "monday",
+          "defaultBoardSize": 5,
+          "defaultCenterType": "free",
+          "defaultTimeframe": "custom",
+          "defaultRandomize": true,
+          "defaultCenterCustomName": "",
+          "theme": "system",
+          "recurringDailyEnabled": "yes",
+          "recurringWeeklyEnabled": 1,
+          "recurringMonthlyEnabled": null,
+          "recurringYearlyEnabled": "true"
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertFalse(decoded.recurringDailyEnabled)
+        XCTAssertFalse(decoded.recurringWeeklyEnabled)
+        XCTAssertFalse(decoded.recurringMonthlyEnabled)
+        XCTAssertFalse(decoded.recurringYearlyEnabled)
     }
 }

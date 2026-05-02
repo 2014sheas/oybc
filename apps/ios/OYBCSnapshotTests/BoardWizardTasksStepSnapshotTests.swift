@@ -120,6 +120,9 @@ private struct TasksStepHost: View {
             centerTaskMode: centerTaskMode,
             centerTaskId: $centerTaskId,
             userId: SnapshotFixtures.userId,
+            // Snapshot fixture: .custom hides the new "From parent boards"
+            // filter chip (no parent timeframes), keeping baselines stable.
+            currentTimeframe: .custom,
             onTaskCreated: { _, _, _ in },
             onCompositeCreated: { _ in },
             onLibraryReloadRequested: { },

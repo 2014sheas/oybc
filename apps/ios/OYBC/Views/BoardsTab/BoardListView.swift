@@ -6,7 +6,22 @@ import SwiftUI
 /// list of `BoardListItemView` rows, each navigating to `BoardPlayView`.
 /// Boards are loaded from the local GRDB database on appear and filtered
 /// client-side — no network calls.
+///
+/// Phase 6.1: also renders a `RecurringBoardsBannerView` above the filter
+/// row when the user has recurring board prefs enabled and the current
+/// window has no covering board. Tapping a banner row invokes
+/// `onCreateRecurring` (set by MainTabView) which switches to the Create
+/// tab with the timeframe prefilled.
 struct BoardListView: View {
+
+    // MARK: - Inputs
+
+    /// Invoked when the user taps Create on a recurring-boards banner row.
+    /// MainTabView wires this to switch to the Create tab and stash the
+    /// timeframe for `CreateHubView` to consume. Optional for the playground
+    /// + #Preview path where cross-tab navigation isn't available — the
+    /// banner Create button no-ops in that case.
+    var onCreateRecurring: ((Timeframe) -> Void)?
 
     // MARK: - Dependencies
 
@@ -17,6 +32,7 @@ struct BoardListView: View {
     @State private var boards: [Board] = []
     @State private var activeFilter: String = "all"
     @State private var loadError: String?
+    @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
 
     // MARK: - Constants
 
@@ -33,6 +49,17 @@ struct BoardListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !pendingRecurringVM.pending.isEmpty {
+                RecurringBoardsBannerView(
+                    pending: pendingRecurringVM.pending,
+                    onCreate: { entry in
+                        onCreateRecurring?(entry.timeframe)
+                    }
+                )
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+
             filterPicker
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -47,7 +74,15 @@ struct BoardListView: View {
             }
         }
         .navigationTitle("Boards")
-        .onAppear { loadBoards() }
+        .onAppear {
+            loadBoards()
+            // Reload pending recurring boards alongside the board list so
+            // the banner stays in sync with creates/deletes that happened
+            // off-tab. Same pattern as `loadBoards()`.
+            if let userId = authService.currentUser?.id {
+                pendingRecurringVM.reloadAsync(userId: userId)
+            }
+        }
     }
 
     // MARK: - Subviews

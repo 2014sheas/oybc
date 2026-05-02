@@ -39,6 +39,12 @@ struct BoardWizardTasksStepView: View {
     /// Authenticated user id used by the inline new-task sheet.
     let userId: String
 
+    /// Phase 6.1: current wizard timeframe. Drives whether the "From
+    /// parent boards" filter chip is shown (only for daily/weekly/
+    /// monthly — yearly + custom hide it) and what timeframe to feed
+    /// `ParentBoardTasksViewModel`.
+    let currentTimeframe: Timeframe
+
     /// Fired after a non-composite task is created from the sheet —
     /// the wizard should auto-add the new id to `selectedTaskIds`.
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
@@ -63,6 +69,9 @@ struct BoardWizardTasksStepView: View {
     @State private var activeFilter: LibraryFilter = .all
     @State private var expandedCompositeId: String? = nil
     @State private var isSheetPresented: Bool = false
+    /// Phase 6.1: parent-board tasks for the "From parent boards" filter.
+    /// Reloaded on appear and whenever `currentTimeframe` changes.
+    @State private var parentTasksVM = ParentBoardTasksViewModel()
     /// Source task + draft max-count for the "derive smaller version"
     /// quick action on counting rows. `nil` when the deriver sheet is
     /// closed. Set by the contextMenu Button; cleared on save/cancel.
@@ -90,6 +99,11 @@ struct BoardWizardTasksStepView: View {
         case .counting:  pool = library.libraryTasks.filter { $0.type == .counting }
         case .progress:  pool = []
         case .composite: pool = []
+        // Phase 6.1: source is the parent-board-tasks query, not the
+        // user's library. Compounds surfaced through this filter render
+        // here too (no separate composites region) since the user is
+        // picking from an already-curated parent set.
+        case .fromParents: pool = parentTasksVM.tasks
         }
         return pool.filter { matches($0.title) }
     }
@@ -112,6 +126,10 @@ struct BoardWizardTasksStepView: View {
             return library.libraryTasks
                 .filter { $0.type == .compound && $0.isOrdered == true }
                 .filter { matches($0.title) }
+        // .fromParents: compounds surfaced through this filter render in
+        // the primitives region (visibleTasks), not as separate
+        // expandable composites — the user is picking from an
+        // already-curated parent set.
         default:
             return []
         }
@@ -202,6 +220,19 @@ struct BoardWizardTasksStepView: View {
         }
         .padding(16)
         .background(Color(.systemBackground))
+        .onAppear {
+            // Phase 6.1: load parent-board tasks for the wizard's current
+            // timeframe so the "From parent boards" filter chip has data
+            // ready when the user taps it. Cheap when there are no parents
+            // (the VM short-circuits to []).
+            parentTasksVM.reloadAsync(userId: userId, childTimeframe: currentTimeframe)
+        }
+        .onChange(of: currentTimeframe) { _, newTimeframe in
+            // If the user goes back to step 1 and changes the timeframe,
+            // refresh the parents list so a re-entry into step 2 sees the
+            // right candidates.
+            parentTasksVM.reloadAsync(userId: userId, childTimeframe: newTimeframe)
+        }
         .sheet(isPresented: $isSheetPresented) {
             NewTaskSheetView(
                 userId: userId,
@@ -431,8 +462,12 @@ struct BoardWizardTasksStepView: View {
             // Scrollable pill row instead of .segmented — matches the
             // composite wizard; avoids the "Composite" truncation on
             // narrow iPhones.
+            //
+            // Phase 6.1: append .fromParents only when the wizard's
+            // current timeframe has parent timeframes. yearly + custom
+            // hide the chip (it would always be empty).
             FilterTabsView(
-                tabs: LibraryFilter.allCases.map { FilterTab(value: $0.rawValue, label: $0.rawValue) },
+                tabs: visibleFilterTabs.map { FilterTab(value: $0.rawValue, label: $0.rawValue) },
                 activeTab: Binding(
                     get: { activeFilter.rawValue },
                     set: { newValue in
@@ -445,6 +480,13 @@ struct BoardWizardTasksStepView: View {
                 onTabChange: { _ in }
             )
         }
+    }
+
+    /// LibraryFilter cases visible in this wizard step. Excludes
+    /// `.fromParents` for child timeframes that have no parents.
+    private var visibleFilterTabs: [LibraryFilter] {
+        let hasParents = !(parentTimeframesByChild[currentTimeframe] ?? []).isEmpty
+        return LibraryFilter.allCases.filter { $0 != .fromParents || hasParents }
     }
 
     // MARK: - List
@@ -482,6 +524,12 @@ struct BoardWizardTasksStepView: View {
         VStack(spacing: 6) {
             if !trimmedQuery.isEmpty {
                 Text("No tasks match \"\(searchQuery)\".")
+            } else if activeFilter == .fromParents {
+                Text("No parent boards found.")
+                    .fontWeight(.medium)
+                Text("Create a longer-window board first (weekly/monthly/yearly) to surface its tasks here.")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
             } else {
                 Text("Your task library is empty.")
                     .fontWeight(.medium)
