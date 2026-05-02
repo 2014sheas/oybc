@@ -28,6 +28,13 @@ export interface UserPreferences {
   defaultRandomize: boolean;
   defaultCenterCustomName: string;
   theme: ThemePreference;
+  // Recurring boards (Phase 6.1) — when enabled, the Boards tab surfaces a
+  // banner inviting the user to create a board for the current window. Disabled
+  // by default so existing users see no behavior change until they opt in.
+  recurringDailyEnabled: boolean;
+  recurringWeeklyEnabled: boolean;
+  recurringMonthlyEnabled: boolean;
+  recurringYearlyEnabled: boolean;
 }
 
 /**
@@ -41,6 +48,10 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   defaultRandomize: true,
   defaultCenterCustomName: '',
   theme: 'system',
+  recurringDailyEnabled: false,
+  recurringWeeklyEnabled: false,
+  recurringMonthlyEnabled: false,
+  recurringYearlyEnabled: false,
 };
 
 /**
@@ -108,6 +119,26 @@ export function mergeUserPreferences(
       ? partial.theme
       : DEFAULT_USER_PREFERENCES.theme;
 
+  const recurringDailyEnabled: boolean =
+    typeof partial.recurringDailyEnabled === 'boolean'
+      ? partial.recurringDailyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringDailyEnabled;
+
+  const recurringWeeklyEnabled: boolean =
+    typeof partial.recurringWeeklyEnabled === 'boolean'
+      ? partial.recurringWeeklyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringWeeklyEnabled;
+
+  const recurringMonthlyEnabled: boolean =
+    typeof partial.recurringMonthlyEnabled === 'boolean'
+      ? partial.recurringMonthlyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringMonthlyEnabled;
+
+  const recurringYearlyEnabled: boolean =
+    typeof partial.recurringYearlyEnabled === 'boolean'
+      ? partial.recurringYearlyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringYearlyEnabled;
+
   return {
     weekStartDay,
     defaultBoardSize,
@@ -116,6 +147,10 @@ export function mergeUserPreferences(
     defaultRandomize,
     defaultCenterCustomName,
     theme,
+    recurringDailyEnabled,
+    recurringWeeklyEnabled,
+    recurringMonthlyEnabled,
+    recurringYearlyEnabled,
   };
 }
 

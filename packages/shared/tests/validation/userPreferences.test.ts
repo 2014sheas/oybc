@@ -28,14 +28,50 @@ describe('UserPreferencesSchema', () => {
     ).toThrow();
   });
 
-  it('requires every field to be present', () => {
-    // Iteratively omit each key from a valid object; every omission must reject.
-    const keys = Object.keys(DEFAULT_USER_PREFERENCES) as (keyof typeof DEFAULT_USER_PREFERENCES)[];
+  it('requires every legacy field to be present', () => {
+    // Iteratively omit each LEGACY key from a valid object; every omission
+    // must reject. The 4 recurring*Enabled fields are intentionally optional
+    // for forward-compat with peers that pre-date Phase 6.1 — they're tested
+    // separately below.
+    const optionalKeys = new Set([
+      'recurringDailyEnabled',
+      'recurringWeeklyEnabled',
+      'recurringMonthlyEnabled',
+      'recurringYearlyEnabled',
+    ]);
+    const keys = (Object.keys(DEFAULT_USER_PREFERENCES) as (keyof typeof DEFAULT_USER_PREFERENCES)[])
+      .filter((k) => !optionalKeys.has(k));
     for (const key of keys) {
       const partial = { ...DEFAULT_USER_PREFERENCES };
       delete (partial as Record<string, unknown>)[key];
       expect(() => UserPreferencesSchema.parse(partial)).toThrow();
     }
+  });
+
+  // The 4 recurring*Enabled fields are .optional() in the Zod schema so a
+  // peer running an older client (whose user-prefs doc pre-dates Phase 6.1)
+  // doesn't get its sync push rejected by safeParse on the pull path.
+  // mergeUserPreferences fills in the false defaults afterward.
+  it.each([
+    'recurringDailyEnabled',
+    'recurringWeeklyEnabled',
+    'recurringMonthlyEnabled',
+    'recurringYearlyEnabled',
+  ] as const)('treats %s as optional (forward-compat for older peers)', (key) => {
+    const partial = { ...DEFAULT_USER_PREFERENCES };
+    delete (partial as Record<string, unknown>)[key];
+    expect(() => UserPreferencesSchema.parse(partial)).not.toThrow();
+  });
+
+  it.each([
+    ['recurringDailyEnabled (string)', { recurringDailyEnabled: 'yes' }],
+    ['recurringWeeklyEnabled (number)', { recurringWeeklyEnabled: 1 }],
+    ['recurringMonthlyEnabled (null)', { recurringMonthlyEnabled: null }],
+    ['recurringYearlyEnabled (object)', { recurringYearlyEnabled: {} }],
+  ])('still rejects invalid type for %s when present', (_label, override) => {
+    expect(() =>
+      UserPreferencesSchema.parse({ ...DEFAULT_USER_PREFERENCES, ...override })
+    ).toThrow();
   });
 });
 
@@ -79,7 +115,7 @@ describe('mergeUserPreferences', () => {
     });
   });
 
-  it('preserves every new field when provided', () => {
+  it('preserves every field when provided', () => {
     const full = {
       weekStartDay: 'sunday' as const,
       defaultBoardSize: 4 as const,
@@ -88,8 +124,53 @@ describe('mergeUserPreferences', () => {
       defaultRandomize: false,
       defaultCenterCustomName: 'Wild Card',
       theme: 'dark' as const,
+      recurringDailyEnabled: true,
+      recurringWeeklyEnabled: true,
+      recurringMonthlyEnabled: true,
+      recurringYearlyEnabled: true,
     };
     expect(mergeUserPreferences(full)).toEqual(full);
+  });
+
+  // Forward-compat: a payload from a peer that pre-dates Phase 6.1 won't
+  // have the recurring*Enabled fields. mergeUserPreferences must fill them
+  // with the `false` defaults (matching DEFAULT_USER_PREFERENCES) so the
+  // local record is always complete.
+  it('fills missing recurring*Enabled with false defaults', () => {
+    const legacy = {
+      weekStartDay: 'monday' as const,
+      defaultBoardSize: 5 as const,
+      defaultCenterType: CenterSquareType.FREE as const,
+      defaultTimeframe: Timeframe.CUSTOM,
+      defaultRandomize: true,
+      defaultCenterCustomName: '',
+      theme: 'system' as const,
+    };
+    const merged = mergeUserPreferences(legacy);
+    expect(merged.recurringDailyEnabled).toBe(false);
+    expect(merged.recurringWeeklyEnabled).toBe(false);
+    expect(merged.recurringMonthlyEnabled).toBe(false);
+    expect(merged.recurringYearlyEnabled).toBe(false);
+  });
+
+  it('preserves recurring*Enabled true values (does not overwrite with default)', () => {
+    const merged = mergeUserPreferences({
+      recurringDailyEnabled: true,
+      recurringMonthlyEnabled: true,
+    });
+    expect(merged.recurringDailyEnabled).toBe(true);
+    expect(merged.recurringWeeklyEnabled).toBe(false);
+    expect(merged.recurringMonthlyEnabled).toBe(true);
+    expect(merged.recurringYearlyEnabled).toBe(false);
+  });
+
+  it('rejects non-boolean recurring*Enabled values and falls back to defaults', () => {
+    const merged = mergeUserPreferences({
+      recurringDailyEnabled: 'true' as unknown as boolean,
+      recurringWeeklyEnabled: 1 as unknown as boolean,
+    });
+    expect(merged.recurringDailyEnabled).toBe(false);
+    expect(merged.recurringWeeklyEnabled).toBe(false);
   });
 
   it('preserves falsy-but-valid values (empty string, false) instead of falling back to defaults', () => {

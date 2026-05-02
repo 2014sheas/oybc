@@ -520,6 +520,14 @@ export const UserPreferencesSchema = z.object({
   defaultRandomize: z.boolean(),
   defaultCenterCustomName: z.string().max(100),
   theme: ThemePreferenceSchema,
+  // Recurring boards (Phase 6.1): optional for forward-compat with older peers
+  // that wrote their user doc before these fields existed. mergeUserPreferences
+  // fills in the `false` defaults on the pull path; local writes always include
+  // them (DEFAULT_USER_PREFERENCES has them).
+  recurringDailyEnabled: z.boolean().optional(),
+  recurringWeeklyEnabled: z.boolean().optional(),
+  recurringMonthlyEnabled: z.boolean().optional(),
+  recurringYearlyEnabled: z.boolean().optional(),
 });
 
 export const UserSchema = z.object({
