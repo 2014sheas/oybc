@@ -1,5 +1,7 @@
 # OYBC Native Migration Plan - Offline-First Architecture
 
+> **Note (2026-04-30):** Sections describing the task data model (the "Schema Design" table list, the "Composite task system" bullet, the Phase 2 implementation checklists) pre-date the Compound Tasks Unification (PR #43, 2026-04-29). The current model is the unified 3-type one (Normal / Counting / Compound) with a `compound_children` junction table replacing `task_steps`/`composite_nodes`/`composite_tasks`, and per-`Task` (not per-`BoardTask`) completion. For the canonical schema and types, see [`TASK_SYSTEM.md`](TASK_SYSTEM.md). Tech-stack, sync, and architectural-principle sections of this doc remain accurate.
+
 ## Executive Summary
 
 Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first architecture**. Local databases are the source of truth (GRDB on iOS, Dexie on web), Firestore syncs in background for multi-device support.
@@ -78,20 +80,26 @@ User completes task → Update local DB immediately (< 10ms) → UI updates
 
 ### Schema Design (Ground-Up, No MVP Copy)
 
-**Tables** (identical structure on iOS SQLite and web IndexedDB):
+**Tables** (identical structure on iOS SQLite and web IndexedDB; current shape, post-unification):
 
 ```
 users                   -- Cached user profiles
 boards                  -- Board documents
-tasks                   -- Task definitions (reusable across boards)
-task_steps              -- Progress task steps (structure only, data in tasks table)
-board_tasks             -- Junction: board ↔ task (completion state per board)
-composite_tasks         -- Composite task definitions (tree roots)
-composite_nodes         -- Tree structure (operators + leaf references)
-board_composite_tasks   -- Junction: board ↔ composite task (completion state)
-bingo_lines             -- Completed lines (denormalized for performance)
-sync_queue              -- Pending Firestore operations
+tasks                   -- Task definitions (reusable across boards). Compounds carry
+                           operator + threshold + isOrdered here. Completion is
+                           global on the Task row (not per-board).
+compound_children       -- Parent-child links for compound tasks. One row per
+                           link; the child can be any Task, including another
+                           compound. Replaces the retired task_steps and
+                           composite_nodes tables.
+board_tasks             -- Junction: board ↔ task placement (no completion state —
+                           that lives on the Task itself post-unification).
+progress_counters       -- Counting-task progress state (per user × counter).
+bingo_lines             -- Completed lines (denormalized for performance).
+sync_queue              -- Pending Firestore operations.
 ```
+
+The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_composite_tasks` tables are still present in old migration scripts so first-launch backfill works on dev/test devices, but they receive no live writes and no UI reads. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the canonical schema.
 
 **Key Design Decisions**:
 - **UUID primary keys** (enable offline creation, no server-generated IDs)
@@ -99,8 +107,8 @@ sync_queue              -- Pending Firestore operations
 - **Version fields** (optimistic locking for conflict resolution)
 - **Soft deletes** (`isDeleted` flag, not hard delete - prevents data loss)
 - **Denormalized stats** (board.completedTasks stored directly for instant reads)
-- **All progress steps are tasks** (task_steps only stores structure/order, all data in tasks table)
-- **Cross-board task reusability** (same task can appear on multiple boards with independent completion)
+- **Global per-Task completion** (post-unification): a Task is either complete or not, regardless of how many boards reference it. `compound_children` rows record the parent-child structure; the parent's completion is derived from its children's completion via the operator/threshold on the parent Task.
+- **Cross-board task reusability** (same task can appear on multiple boards; completing it once propagates to every placement)
 
 **Example: Board Table**:
 ```sql

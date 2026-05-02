@@ -1,5 +1,7 @@
 # Offline-First Architecture
 
+> **Note (2026-04-30):** This doc was last revised before the Compound Tasks Unification (PR #43, 2026-04-29). The persistence and sync principles described here remain accurate, but task-model specifics (4-type model, `task_steps`, `composite_tasks`, per-`BoardTask` completion) have been retired. For the current task model see [`TASK_SYSTEM.md`](TASK_SYSTEM.md). Where this doc says "composite task" or "progress task", read it as **compound task**; where it shows `BoardTask.isCompleted`, completion is now stored on the parent `Task`, not the placement.
+
 This document explains the offline-first architecture of OYBC and why it's essential for the user experience.
 
 ## What is Offline-First?
@@ -249,12 +251,12 @@ UI updates (instant) ✨
 
 **Timeline**:
 - 0ms: User completes "Exercise"
-- 5ms: Local DB updated (board_tasks)
-- 8ms: Composite tree evaluated (< 50ms target)
-- 8ms: Composite task auto-completed
+- 5ms: Local DB updated (compound child completion on `tasks`)
+- 8ms: Compound rule evaluated (< 50ms target)
+- 8ms: Compound parent task auto-completed
 - 10ms: Board stats updated
-- 10ms: UI shows composite completion ✨
-- Later: Syncs entire composite task tree to Firestore
+- 10ms: UI shows compound completion ✨
+- Later: Syncs the parent + child task rows + compound_children edges to Firestore
 
 ### Multi-Device Sync
 
