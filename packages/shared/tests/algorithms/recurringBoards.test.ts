@@ -17,15 +17,18 @@ import type { Board } from '../../src/types/board';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
-const PREFS_ALL_ENABLED: UserPreferences = {
-  ...DEFAULT_USER_PREFERENCES,
-  recurringDailyEnabled: true,
-  recurringWeeklyEnabled: true,
-  recurringMonthlyEnabled: true,
-  recurringYearlyEnabled: true,
-};
+// Defaults are all-true post-6.1d, so PREFS_ALL_ENABLED is just the defaults
+// (kept as a named constant for test readability). PREFS_NONE_ENABLED is an
+// explicit override for the disabled-prefs test cases.
+const PREFS_ALL_ENABLED: UserPreferences = { ...DEFAULT_USER_PREFERENCES };
 
-const PREFS_NONE_ENABLED: UserPreferences = { ...DEFAULT_USER_PREFERENCES };
+const PREFS_NONE_ENABLED: UserPreferences = {
+  ...DEFAULT_USER_PREFERENCES,
+  recurringDailyEnabled: false,
+  recurringWeeklyEnabled: false,
+  recurringMonthlyEnabled: false,
+  recurringYearlyEnabled: false,
+};
 
 /** Build a Board whose `startDate`/`endDate` match the boundary helper for the
  * given timeframe + reference date. Used to seed "this window already has a

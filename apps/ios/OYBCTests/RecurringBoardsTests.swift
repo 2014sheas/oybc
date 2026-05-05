@@ -12,16 +12,19 @@ final class RecurringBoardsTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private let prefsAllEnabled: UserPreferences = {
+    // Defaults are all-true post-6.1d, so prefsAllEnabled is just .defaults
+    // (kept as a named constant for test readability). prefsNoneEnabled is an
+    // explicit override for the disabled-prefs test cases.
+    private let prefsAllEnabled: UserPreferences = .defaults
+
+    private let prefsNoneEnabled: UserPreferences = {
         var p = UserPreferences.defaults
-        p.recurringDailyEnabled = true
-        p.recurringWeeklyEnabled = true
-        p.recurringMonthlyEnabled = true
-        p.recurringYearlyEnabled = true
+        p.recurringDailyEnabled = false
+        p.recurringWeeklyEnabled = false
+        p.recurringMonthlyEnabled = false
+        p.recurringYearlyEnabled = false
         return p
     }()
-
-    private let prefsNoneEnabled: UserPreferences = .defaults
 
     private func date(_ year: Int, _ month: Int, _ day: Int, hour: Int = 12) -> Date {
         var c = DateComponents()

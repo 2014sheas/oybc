@@ -132,11 +132,12 @@ describe('mergeUserPreferences', () => {
     expect(mergeUserPreferences(full)).toEqual(full);
   });
 
-  // Forward-compat: a payload from a peer that pre-dates Phase 6.1 won't
-  // have the recurring*Enabled fields. mergeUserPreferences must fill them
-  // with the `false` defaults (matching DEFAULT_USER_PREFERENCES) so the
-  // local record is always complete.
-  it('fills missing recurring*Enabled with false defaults', () => {
+  // Forward-compat: a payload from a peer that pre-dates Phase 6.1 (or a
+  // user whose stored prefs are missing these fields entirely) auto-upgrades
+  // to the new defaults — `true` for all 4 — so core boards become
+  // discoverable on first open. Users who explicitly toggled them off keep
+  // their explicit choice (covered by the next test).
+  it('fills missing recurring*Enabled with the new true defaults', () => {
     const legacy = {
       weekStartDay: 'monday' as const,
       defaultBoardSize: 5 as const,
@@ -147,30 +148,30 @@ describe('mergeUserPreferences', () => {
       theme: 'system' as const,
     };
     const merged = mergeUserPreferences(legacy);
-    expect(merged.recurringDailyEnabled).toBe(false);
-    expect(merged.recurringWeeklyEnabled).toBe(false);
-    expect(merged.recurringMonthlyEnabled).toBe(false);
-    expect(merged.recurringYearlyEnabled).toBe(false);
-  });
-
-  it('preserves recurring*Enabled true values (does not overwrite with default)', () => {
-    const merged = mergeUserPreferences({
-      recurringDailyEnabled: true,
-      recurringMonthlyEnabled: true,
-    });
     expect(merged.recurringDailyEnabled).toBe(true);
-    expect(merged.recurringWeeklyEnabled).toBe(false);
+    expect(merged.recurringWeeklyEnabled).toBe(true);
     expect(merged.recurringMonthlyEnabled).toBe(true);
-    expect(merged.recurringYearlyEnabled).toBe(false);
+    expect(merged.recurringYearlyEnabled).toBe(true);
   });
 
-  it('rejects non-boolean recurring*Enabled values and falls back to defaults', () => {
+  it('preserves recurring*Enabled false values (explicit user opt-out wins over default)', () => {
+    const merged = mergeUserPreferences({
+      recurringDailyEnabled: false,
+      recurringMonthlyEnabled: false,
+    });
+    expect(merged.recurringDailyEnabled).toBe(false);
+    expect(merged.recurringWeeklyEnabled).toBe(true);  // missing → default true
+    expect(merged.recurringMonthlyEnabled).toBe(false);
+    expect(merged.recurringYearlyEnabled).toBe(true);  // missing → default true
+  });
+
+  it('rejects non-boolean recurring*Enabled values and falls back to the new true defaults', () => {
     const merged = mergeUserPreferences({
       recurringDailyEnabled: 'true' as unknown as boolean,
       recurringWeeklyEnabled: 1 as unknown as boolean,
     });
-    expect(merged.recurringDailyEnabled).toBe(false);
-    expect(merged.recurringWeeklyEnabled).toBe(false);
+    expect(merged.recurringDailyEnabled).toBe(true);
+    expect(merged.recurringWeeklyEnabled).toBe(true);
   });
 
   it('preserves falsy-but-valid values (empty string, false) instead of falling back to defaults', () => {

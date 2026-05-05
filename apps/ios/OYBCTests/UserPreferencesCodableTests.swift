@@ -115,10 +115,12 @@ final class UserPreferencesCodableTests: XCTestCase {
 
     // MARK: - Phase 6.1 recurring fields (forward-compat for pre-6.1 peers)
 
-    func testPre61PayloadDecodesRecurringFieldsAsFalse() throws {
+    func testPre61PayloadDecodesRecurringFieldsAsTrue() throws {
         // A user doc written by a pre-6.1 client has all the legacy fields
-        // but none of the recurring*Enabled keys. They must decode to false
-        // (matching the defaults) rather than failing the whole decode.
+        // but none of the recurring*Enabled keys. With the post-6.1d
+        // defaults, missing keys auto-upgrade to true so the core boards
+        // become discoverable on first open. Users who explicitly toggled
+        // them off keep their explicit choice (covered below).
         let json = """
         {
           "weekStartDay": "monday",
@@ -131,13 +133,17 @@ final class UserPreferencesCodableTests: XCTestCase {
         }
         """
         let decoded = try decode(json)
-        XCTAssertFalse(decoded.recurringDailyEnabled)
-        XCTAssertFalse(decoded.recurringWeeklyEnabled)
-        XCTAssertFalse(decoded.recurringMonthlyEnabled)
-        XCTAssertFalse(decoded.recurringYearlyEnabled)
+        XCTAssertTrue(decoded.recurringDailyEnabled)
+        XCTAssertTrue(decoded.recurringWeeklyEnabled)
+        XCTAssertTrue(decoded.recurringMonthlyEnabled)
+        XCTAssertTrue(decoded.recurringYearlyEnabled)
     }
 
-    func testRecurringFieldsArePreservedWhenPresent() throws {
+    func testExplicitFalseValuesArePreservedAcrossDefault() throws {
+        // Users who explicitly opted out of specific timeframes (toggled
+        // off on the prefs page) keep their explicit `false` even though
+        // the default is now `true`. Missing fields still upgrade to the
+        // new default.
         let json = """
         {
           "weekStartDay": "monday",
@@ -147,18 +153,18 @@ final class UserPreferencesCodableTests: XCTestCase {
           "defaultRandomize": true,
           "defaultCenterCustomName": "",
           "theme": "system",
-          "recurringDailyEnabled": true,
-          "recurringMonthlyEnabled": true
+          "recurringDailyEnabled": false,
+          "recurringMonthlyEnabled": false
         }
         """
         let decoded = try decode(json)
-        XCTAssertTrue(decoded.recurringDailyEnabled)
-        XCTAssertFalse(decoded.recurringWeeklyEnabled)  // missing → default false
-        XCTAssertTrue(decoded.recurringMonthlyEnabled)
-        XCTAssertFalse(decoded.recurringYearlyEnabled)  // missing → default false
+        XCTAssertFalse(decoded.recurringDailyEnabled)
+        XCTAssertTrue(decoded.recurringWeeklyEnabled)   // missing → default true
+        XCTAssertFalse(decoded.recurringMonthlyEnabled)
+        XCTAssertTrue(decoded.recurringYearlyEnabled)   // missing → default true
     }
 
-    func testMalformedRecurringFieldsFallBackToFalse() throws {
+    func testMalformedRecurringFieldsFallBackToTrue() throws {
         let json = """
         {
           "weekStartDay": "monday",
@@ -175,9 +181,9 @@ final class UserPreferencesCodableTests: XCTestCase {
         }
         """
         let decoded = try decode(json)
-        XCTAssertFalse(decoded.recurringDailyEnabled)
-        XCTAssertFalse(decoded.recurringWeeklyEnabled)
-        XCTAssertFalse(decoded.recurringMonthlyEnabled)
-        XCTAssertFalse(decoded.recurringYearlyEnabled)
+        XCTAssertTrue(decoded.recurringDailyEnabled)
+        XCTAssertTrue(decoded.recurringWeeklyEnabled)
+        XCTAssertTrue(decoded.recurringMonthlyEnabled)
+        XCTAssertTrue(decoded.recurringYearlyEnabled)
     }
 }

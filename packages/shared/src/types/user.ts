@@ -48,10 +48,15 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   defaultRandomize: true,
   defaultCenterCustomName: '',
   theme: 'system',
-  recurringDailyEnabled: false,
-  recurringWeeklyEnabled: false,
-  recurringMonthlyEnabled: false,
-  recurringYearlyEnabled: false,
+  // Phase 6.1: default to true so the core boards (daily/weekly/monthly/
+  // yearly) are immediately discoverable on a fresh account. Per the
+  // forward-compat decoder, users who already explicitly toggled these
+  // to false on the prefs page keep their explicit choice — only users
+  // whose stored prefs are missing these fields auto-upgrade to true.
+  recurringDailyEnabled: true,
+  recurringWeeklyEnabled: true,
+  recurringMonthlyEnabled: true,
+  recurringYearlyEnabled: true,
 };
 
 /**

@@ -187,6 +187,11 @@ enum SnapshotFixtures {
             defaultRandomize: true,
             defaultCenterCustomName: "",
             theme: .system,
+            // Snapshot fixtures pin the recurring*Enabled flags off so any
+            // existing snapshot baselines that render the wizard or hub
+            // surface stay byte-identical. New tests for the
+            // PendingCoreBoardsSection seed their own pending list directly
+            // and don't rely on this fixture's pref values.
             recurringDailyEnabled: false,
             recurringWeeklyEnabled: false,
             recurringMonthlyEnabled: false,
