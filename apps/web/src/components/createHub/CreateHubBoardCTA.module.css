@@ -54,3 +54,58 @@
   font-size: 1.75rem;
   opacity: 0.9;
 }
+
+/* ─── Secondary variant (Phase 6.1d) ─────────────────────────────────────── */
+/* Flatter, less visually loud than the primary card. Used as a fallback
+ * affordance below PendingCoreBoardsSection so the prominent core-boards
+ * section reads as the headline action. */
+
+.cardSecondary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--surface-elevated, transparent);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.cardSecondary:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.iconSecondary {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.titleSecondary {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subtitleSecondary {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.chevronSecondary {
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+}

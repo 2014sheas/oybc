@@ -4,10 +4,12 @@ import { Timeframe, type Board, type UserPreferences } from '@oybc/shared';
 import { fetchBoardTasks } from '../db/operations/boardTasks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useDrafts } from './createHub/useDrafts';
+import { usePendingRecurringBoards } from '../hooks';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
 import { CreateHubQuickAdd } from '../components/createHub/CreateHubQuickAdd';
+import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
 import type { BoardWizardDraft } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
 
@@ -79,6 +81,7 @@ export function CreateHubPage({
   const [searchParams, setSearchParams] = useSearchParams();
   const drafts = useDrafts(userId);
   const library = useTaskLibrary(userId);
+  const pendingRecurring = usePendingRecurringBoards(userId);
 
   // Recurring-banner deep link: `/create?recurringTimeframe=daily` opens
   // the wizard immediately with the timeframe prefilled + locked. We
@@ -141,13 +144,35 @@ export function CreateHubPage({
   // library count is just the size of allTasks (incl. compounds).
   const libraryCount = library.allTasks.length;
 
+  // Phase 6.1d: when there are pending core boards, they become the
+  // headline action and the "Start a new board" custom CTA is demoted to
+  // a smaller secondary affordance. When the section short-circuits to
+  // null (all 4 windows already covered, or all 4 prefs disabled), the
+  // custom CTA stays as the primary headline — back-compat for users
+  // who've created everything for the current period.
+  const hasPendingCoreBoards = pendingRecurring.length > 0;
+
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <h1 className={styles.title}>Create</h1>
       </header>
 
-      <CreateHubBoardCTA onClick={handleStartBoard} />
+      <PendingCoreBoardsSection
+        pending={pendingRecurring}
+        variant="create-tab"
+        onCreate={(entry) =>
+          // Skip the URL round-trip used by the Boards-tab variant — we're
+          // already on /create, so just flip mode directly. Same end state
+          // as consuming the URL param via the useEffect above.
+          setMode({ kind: 'wizard', prefilledRecurringTimeframe: entry.timeframe })
+        }
+      />
+
+      <CreateHubBoardCTA
+        onClick={handleStartBoard}
+        variant={hasPendingCoreBoards ? 'secondary' : 'primary'}
+      />
 
       {drafts.length > 0 && (
         <CreateHubDraftsList

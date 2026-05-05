@@ -50,8 +50,9 @@ struct BoardListView: View {
     var body: some View {
         VStack(spacing: 0) {
             if !pendingRecurringVM.pending.isEmpty {
-                RecurringBoardsBannerView(
+                PendingCoreBoardsSectionView(
                     pending: pendingRecurringVM.pending,
+                    variant: .boardsTab,
                     onCreate: { entry in
                         onCreateRecurring?(entry.timeframe)
                     }

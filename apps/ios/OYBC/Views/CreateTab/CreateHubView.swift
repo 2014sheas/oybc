@@ -48,6 +48,13 @@ struct CreateHubView: View {
     @State private var drafts: [DraftRowData] = []
     @State private var libraryCount: Int = 0
 
+    /// Phase 6.1d: pending core boards (daily/weekly/monthly/yearly) that
+    /// the user hasn't created yet for the current windows. When non-empty,
+    /// the prominent `PendingCoreBoardsSectionView` becomes the headline
+    /// action and the existing `CreateHubBoardCTAView` is demoted to a
+    /// secondary "Custom timeframe board" affordance below it.
+    @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
+
     var body: some View {
         switch mode {
         case .hub:
@@ -55,6 +62,7 @@ struct CreateHubView: View {
                 .onAppear {
                     reloadDrafts()
                     reloadLibraryCount()
+                    pendingRecurringVM.reloadAsync(userId: userId)
                     // Consume the recurring-banner deep link, if any.
                     // Same behavior as web's URL-param consumption +
                     // immediate clear in CreateHubPage.
@@ -104,15 +112,40 @@ struct CreateHubView: View {
 
     @ViewBuilder
     private var hubContent: some View {
+        let hasPendingCoreBoards = !pendingRecurringVM.pending.isEmpty
         VStack(alignment: .leading, spacing: 20) {
             Text("Create")
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            CreateHubBoardCTAView {
-                resumeDraft = nil
-                mode = .wizardFresh
-            }
+            // Phase 6.1d: when there are pending core boards (daily /
+            // weekly / monthly / yearly windows the user hasn't created
+            // yet), they become the headline action. The
+            // `CreateHubBoardCTAView` demotes to its secondary "custom
+            // timeframe" variant below. When `hasPendingCoreBoards` is
+            // false (everything created, or all 4 prefs disabled), the
+            // section short-circuits to nil and the existing primary CTA
+            // takes the headline slot — matching pre-6.1d behavior for
+            // back-compat.
+            PendingCoreBoardsSectionView(
+                pending: pendingRecurringVM.pending,
+                variant: .createTab,
+                onCreate: { entry in
+                    // Already on the Create tab — flip mode directly
+                    // rather than bouncing through MainTabView's
+                    // pendingRecurringTimeframe binding.
+                    resumeDraft = nil
+                    mode = .wizardRecurring(timeframe: entry.timeframe)
+                }
+            )
+
+            CreateHubBoardCTAView(
+                onTap: {
+                    resumeDraft = nil
+                    mode = .wizardFresh
+                },
+                variant: hasPendingCoreBoards ? .secondary : .primary
+            )
 
             if !drafts.isEmpty {
                 CreateHubDraftsListView(
@@ -168,6 +201,9 @@ struct CreateHubView: View {
         resumeDraft = nil
         reloadDrafts()
         reloadLibraryCount()
+        // Refresh pending core boards so a board the user just created
+        // disappears from the section without needing a tab-switch.
+        pendingRecurringVM.reloadAsync(userId: userId)
     }
 
     private func loadDraftAndEnterWizard(board: Board) {

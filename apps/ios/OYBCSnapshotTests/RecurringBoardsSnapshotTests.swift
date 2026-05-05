@@ -4,7 +4,8 @@ import SnapshotTesting
 @testable import OYBC
 
 /// Snapshot coverage for Phase 6.1's net-new visual surfaces:
-///   - `RecurringBoardsBannerView` (1-entry + 4-entry / Jan 1 case)
+///   - `PendingCoreBoardsSectionView` — boards-tab + create-tab variants,
+///     1-entry + 4-entry (Jan 1 case)
 ///   - `BoardSetupFormView` with `lockTimeframe: true`
 ///
 /// `BoardPreferencesView`'s new "Recurring Boards" section is not snapshotted
@@ -13,41 +14,78 @@ import SnapshotTesting
 /// is a straightforward `Section { Toggle… }` (low visual-regression risk).
 /// Add a dedicated test if AuthService gains a snapshot-friendly initializer.
 ///
-/// Banner fixtures use **fixed-date strings** rather than `Date()` so the
-/// suggested-name label ("May 2, 2026" / "May 2026" / "Week of …" / "2026")
+/// Section fixtures use **fixed-date strings** rather than `Date()` so the
+/// suggested-name label ("May 4, 2026" / "May 2026" / "Week of …" / "2026")
 /// stays stable across days.
 final class RecurringBoardsSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // MARK: - Banner
+    // MARK: - Section (Phase 6.1d — replaces the older banner)
 
-    /// Banner with a single Daily entry — the most common steady-state
+    /// Section with a single Daily entry — the most common steady-state
     /// case (user has daily-prompt enabled, opens the app on a new day,
-    /// no other windows are pending).
-    func testBannerSingleDailyEntry() {
+    /// no other windows are pending). Tests the `.boardsTab` variant.
+    func testSectionSingleDailyEntry() {
         let pending = [
             PendingRecurringBoard(
                 timeframe: .daily,
-                startDate: "2026-05-02T00:00:00.000",
-                endDate: "2026-05-02T23:59:59.999",
-                suggestedName: "May 2, 2026"
+                startDate: "2026-05-04T00:00:00.000",
+                endDate: "2026-05-04T23:59:59.999",
+                suggestedName: "May 4, 2026"
             )
         ]
-        let view = RecurringBoardsBannerView(pending: pending, onCreate: { _ in })
+        let view = PendingCoreBoardsSectionView(
+            pending: pending,
+            variant: .boardsTab,
+            onCreate: { _ in }
+        )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 140)),
+            as: .image(layout: .fixed(width: 393, height: 180)),
             record: recordMode
         )
     }
 
-    /// Banner with all four timeframes pending — the Jan 1 case where the
-    /// user opens the app on the first day of a new year/month/week/day
-    /// simultaneously. Order is load-bearing (longest-window-first) so the
-    /// wizard's "From parent boards" filter has a usable parent chain.
-    func testBannerAllFourEntriesJan1() {
-        let pending = [
+    /// Section with all four timeframes pending — the Jan 1 case where
+    /// the user opens the app on the first day of a new year/month/
+    /// week/day simultaneously. Order is load-bearing (longest-window-
+    /// first) so the wizard's "From parent boards" filter has a usable
+    /// parent chain. Tests the `.boardsTab` variant.
+    func testSectionAllFourEntriesJan1BoardsTab() {
+        let pending = jan1FourEntryFixture()
+        let view = PendingCoreBoardsSectionView(
+            pending: pending,
+            variant: .boardsTab,
+            onCreate: { _ in }
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 520)),
+            record: recordMode
+        )
+    }
+
+    /// Same fixture as the boards-tab variant but mounted on the Create
+    /// tab. Verifies the heading copy difference ("Get started with
+    /// today's boards" vs "Pending boards") and confirms the cards
+    /// themselves render identically across surfaces.
+    func testSectionAllFourEntriesJan1CreateTab() {
+        let pending = jan1FourEntryFixture()
+        let view = PendingCoreBoardsSectionView(
+            pending: pending,
+            variant: .createTab,
+            onCreate: { _ in }
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 520)),
+            record: recordMode
+        )
+    }
+
+    private func jan1FourEntryFixture() -> [PendingRecurringBoard] {
+        [
             PendingRecurringBoard(
                 timeframe: .yearly,
                 startDate: "2026-01-01T00:00:00.000",
@@ -73,12 +111,6 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
                 suggestedName: "Jan 1, 2026"
             ),
         ]
-        let view = RecurringBoardsBannerView(pending: pending, onCreate: { _ in })
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 320)),
-            record: recordMode
-        )
     }
 
     // MARK: - Wizard prefill (locked timeframe variant)
@@ -87,16 +119,20 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
     /// sees when they tapped Create on a banner row. Verifies the locked-
     /// chip variant (single disabled segmented button + hint copy) renders
     /// correctly in place of the full segmented selector.
-    func testSetupStepLockedDailyTimeframe() {
+    ///
+    /// Uses `.monthly` rather than `.daily` for the test fixture so the
+    /// rendered date display is stable across days within the calendar
+    /// month (daily would drift the snapshot every day; monthly only
+    /// drifts on the 1st of the month, matching the existing
+    /// `testSetupStepValid` pattern).
+    func testSetupStepLockedMonthlyTimeframe() {
         let prefs = SnapshotFixtures.makeUserPreferences()
         let controller = BoardWizardViewModel(
             preferences: prefs,
-            prefilledRecurringTimeframe: .daily
+            prefilledRecurringTimeframe: .monthly
         )
-        // Pin a stable name so the snapshot doesn't drift across days
-        // (the prefill seeds the name from formatTimeframeLabel which
-        // returns "Today" only on the same calendar day).
-        controller.name = "May 2, 2026"
+        // Pin a stable name so the snapshot doesn't drift across months.
+        controller.name = "May 2026"
 
         let view = BoardWizardSetupStepView(
             controller: controller,

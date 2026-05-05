@@ -4,7 +4,7 @@ import { useAuth } from '../firebase/useAuth';
 import { useBoards, usePendingRecurringBoards } from '../hooks';
 import { FilterTabs } from '../components/FilterTabs';
 import { BoardListItem } from '../components/BoardListItem';
-import { RecurringBoardsBanner } from '../components/RecurringBoardsBanner';
+import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
 import styles from './BoardsPage.module.css';
 
 const FILTER_TABS = [
@@ -36,7 +36,11 @@ export function BoardsPage(): React.ReactElement {
     <div className={styles.container}>
       <h1 className={styles.header}>Boards</h1>
 
-      <RecurringBoardsBanner pending={pendingRecurring} />
+      <PendingCoreBoardsSection
+        pending={pendingRecurring}
+        variant="boards-tab"
+        onCreate={(entry) => navigate(`/create?recurringTimeframe=${entry.timeframe}`)}
+      />
 
       {allBoards.length > 0 && (
         <div className={styles.filterRow}>
