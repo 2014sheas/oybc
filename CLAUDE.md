@@ -56,6 +56,22 @@ Key invariants (so future contributors don't accidentally violate them):
 - Use Jest for TypeScript tests and XCTest for Swift tests.
 - Tests should be deterministic and not rely on external services or network calls.
 
+### iOS verification: snapshot tests + relay-to-user, never sim-driving
+
+For iOS UI verification, the only two tools agents should reach for are:
+
+1. **Snapshot tests** (`OYBCSnapshotTests` target) — fast, deterministic, runnable from `xcodebuild`. The default surface for visual regression checks; see the section below.
+2. **`xcodebuild test`** for the logic-test scheme — also fine to run from any agent session.
+
+For anything else (interactive flows, real-device behavior, "does this actually work end-to-end on iPhone 16 sim"), **agents must NOT** drive the simulator from the CLI:
+
+- ❌ Don't run `xcrun simctl boot/install/launch` to spin up an interactive sim from this session.
+- ❌ Don't open `Simulator.app` and try to script taps via AppleScript / accessibility / `simctl ui`.
+- ❌ Don't loop "screenshot → ask user to tap → screenshot again" — the round-trips are slow and brittle.
+- ✅ Instead, **relay a numbered list of steps to the user** describing what to tap and what to observe at each step. The user already has Xcode open and can rebuild + interact in seconds (`-bypassAuth YES` arg avoids Firebase signin).
+
+Why: the iOS sim has no native tap CLI (`simctl` doesn't expose touch) and the install/launch overhead per iteration is much higher than just letting the user drive the sim window they're already looking at. The user established this convention explicitly during 6.1d testing.
+
 ### iOS snapshot tests (rapid UI verification)
 
 Snapshot tests are the fastest way to visually verify iOS UI changes — no simulator boot, no manual screenshots. Use them whenever a layout, color, typography, or component-rendering change might regress an existing surface.
