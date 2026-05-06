@@ -42,7 +42,7 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
         )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 180)),
+            as: .image(layout: .fixed(width: 393, height: 110)),
             record: recordMode
         )
     }
@@ -61,7 +61,7 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
         )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 520)),
+            as: .image(layout: .fixed(width: 393, height: 360)),
             record: recordMode
         )
     }
@@ -79,7 +79,7 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
         )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 520)),
+            as: .image(layout: .fixed(width: 393, height: 360)),
             record: recordMode
         )
     }

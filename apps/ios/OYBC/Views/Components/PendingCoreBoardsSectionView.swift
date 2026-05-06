@@ -68,9 +68,9 @@ struct PendingCoreBoardsSectionView: View {
 
     var body: some View {
         if !visible.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(heading)
-                    .font(.caption)
+                    .font(.caption2)
                     .fontWeight(.semibold)
                     .textCase(.uppercase)
                     .foregroundStyle(.secondary)
@@ -93,46 +93,53 @@ struct PendingCoreBoardsSectionView: View {
     // MARK: - Card
 
     private func card(for entry: PendingRecurringBoard) -> some View {
-        HStack(spacing: 14) {
+        // Compact card layout (Phase 6.1d follow-up): tightened padding +
+        // smaller icon/font/button than the initial 6.1d sizing so 4 cards
+        // (Jan 1 case) take roughly half the viewport instead of dominating
+        // it. Goal is "visually distinct + scannable" without reverting to
+        // the original 6.1b banner's caption-sized treatment.
+        HStack(spacing: 10) {
             Image(systemName: icon(for: entry.timeframe))
-                .font(.system(size: 26))
+                .font(.system(size: 18))
                 .foregroundStyle(.tint)
-                .frame(width: 40)
+                .frame(width: 28)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(label(for: entry.timeframe))
-                    .font(.headline)
-                    .fontWeight(.bold)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
                 Text(entry.suggestedName)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 4)
 
-            VStack(alignment: .trailing, spacing: 4) {
-                Button("Create") {
-                    onCreate(entry)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-
-                Button("Dismiss") {
-                    dismissedKeys.insert(key(for: entry))
-                }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Dismiss \(label(for: entry.timeframe)) prompt for this session")
+            Button("Create") {
+                onCreate(entry)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+
+            Button {
+                dismissedKeys.insert(key(for: entry))
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss \(label(for: entry.timeframe)) prompt for this session")
         }
-        .padding(14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(Color.accentColor.opacity(0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
                 )
         )
