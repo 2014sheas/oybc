@@ -75,7 +75,11 @@ struct BoardListView: View {
                 // No boards but we have pending core boards to surface — let
                 // the section be the entire content in a ScrollView so the
                 // user can act on it without an awkward "no boards" graphic
-                // below.
+                // below. `.frame(maxHeight: .infinity)` ensures the
+                // ScrollView fills the remaining vertical space below the
+                // filter picker; without it, on small-screen devices with
+                // 4 pending cards the last card can be obscured by the tab
+                // bar / home indicator with no way to scroll to it.
                 ScrollView {
                     PendingCoreBoardsSectionView(
                         pending: pendingRecurringVM.pending,
@@ -87,6 +91,7 @@ struct BoardListView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 boardList
             }

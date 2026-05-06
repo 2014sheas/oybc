@@ -23,6 +23,8 @@ import Foundation
 /// `.custom` is intentionally empty for Phase 1 — custom boards have user-
 /// specified dates rather than computed boundaries, so they don't fit the
 /// recurrence machinery.
+// Module-level `let` to mirror the TS-side `const PARENT_TIMEFRAMES`
+// — pure constant, never mutated.
 let parentTimeframesByChild: [Timeframe: [Timeframe]] = [
     .daily:   [.weekly, .monthly, .yearly],
     .weekly:  [.monthly, .yearly],
@@ -156,6 +158,16 @@ func getParentBoards(
     // `yyyy-MM-dd'T'HH:mm:ss.SSS`), so string ordering is identical to date
     // ordering — no need to allocate a DateFormatter and parse 2 dates per
     // board. Saves ~1 alloc + 2 parses per candidate.
+    //
+    // INVARIANT: every code path that writes `Board.startDate` / `endDate`
+    // MUST use the 23-char no-Z `yyyy-MM-dd'T'HH:mm:ss.SSS` format. iOS
+    // writers go through `wizardLocalISOString` (Utils/TimeframeBoundaries
+    // .swift) and web writers through `toLocalISO` (packages/shared/src/
+    // algorithms/calendarBoundaries.ts) which produce identical output.
+    // A trailing-Z ISO string (e.g. from `Date().toISOString()`) would
+    // sort *after* `T..S.SSS` and silently exclude the board from this
+    // result. If a future writer breaks this invariant, the comparison
+    // here breaks silently — there is no compile-time or runtime check.
     let nowISO = wizardLocalISOString(now)
 
     return allActiveBoards.filter { board in

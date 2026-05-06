@@ -230,7 +230,13 @@ struct BoardWizardTasksStepView: View {
         .onChange(of: currentTimeframe) { _, newTimeframe in
             // If the user goes back to step 1 and changes the timeframe,
             // refresh the parents list so a re-entry into step 2 sees the
-            // right candidates.
+            // right candidates. The reload is fire-and-forget; while it's
+            // in flight `parentTasksVM.tasks` still holds the previous
+            // timeframe's parent tasks. That stale window is safe because
+            // `visibleFilterTabs` excludes `.fromParents` whenever
+            // `hasParents` is false, so the user can't re-select the chip
+            // mid-reload — and when the chip IS visible the timeframes
+            // are both parent-having so the data is appropriate either way.
             parentTasksVM.reloadAsync(userId: userId, childTimeframe: newTimeframe)
 
             // Coerce the active filter back to .all if the user picked

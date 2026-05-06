@@ -121,6 +121,7 @@ struct PendingCoreBoardsSectionView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
+            .accessibilityLabel("Create \(label(for: entry.timeframe)) board")
 
             Button {
                 dismissedKeys.insert(key(for: entry))
