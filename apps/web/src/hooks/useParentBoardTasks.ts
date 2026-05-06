@@ -40,9 +40,14 @@ export function useParentBoardTasks(
         const parents = getParentBoards(childTimeframe, userBoards, new Date());
         if (parents.length === 0) return [];
 
-        const parentIds = new Set(parents.map((b) => b.id));
+        const parentIds = parents.map((b) => b.id);
+        // Use the boardId compound index (declared in db/database.ts) so
+        // Dexie scans only the relevant board_tasks rows rather than the
+        // whole table — important as the user accumulates more boards
+        // and placements over time. Mirror of the iOS GRDB perf fix.
         const parentBoardTasks = await db.boardTasks
-          .filter((bt) => parentIds.has(bt.boardId))
+          .where('boardId')
+          .anyOf(parentIds)
           .toArray();
 
         const taskIds = Array.from(

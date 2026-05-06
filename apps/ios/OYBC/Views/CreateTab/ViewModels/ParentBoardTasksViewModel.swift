@@ -58,9 +58,13 @@ final class ParentBoardTasksViewModel {
                 if parents.isEmpty { return [] }
 
                 let parentIds = Set(parents.map { $0.id })
+                // Push the boardId filter into SQLite rather than loading
+                // every BoardTask row and filtering in Swift — important
+                // as the user accumulates more boards and placements over
+                // time. Mirror of the web Dexie perf fix.
                 let parentBoardTasks = try BoardTask
+                    .filter(parentIds.contains(Column("boardId")))
                     .fetchAll(db)
-                    .filter { parentIds.contains($0.boardId) }
                 let taskIds = Set(parentBoardTasks.map { $0.taskId })
                 if taskIds.isEmpty { return [] }
 

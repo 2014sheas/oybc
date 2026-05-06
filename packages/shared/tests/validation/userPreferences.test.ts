@@ -51,7 +51,8 @@ describe('UserPreferencesSchema', () => {
   // The 4 recurring*Enabled fields are .optional() in the Zod schema so a
   // peer running an older client (whose user-prefs doc pre-dates Phase 6.1)
   // doesn't get its sync push rejected by safeParse on the pull path.
-  // mergeUserPreferences fills in the false defaults afterward.
+  // mergeUserPreferences fills in the post-6.1d `true` defaults afterward
+  // (auto-upgrading missing fields so the feature becomes discoverable).
   it.each([
     'recurringDailyEnabled',
     'recurringWeeklyEnabled',

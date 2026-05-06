@@ -131,6 +131,19 @@ export function BoardWizardTasksStep({
     [hasParentTimeframes]
   );
 
+  // Coerce the active filter back to 'all' if the user picked
+  // 'from-parents' on a timeframe with parents (e.g., daily) and then
+  // backed out to Step 1 and switched to a parentless timeframe (yearly /
+  // custom). Without this, the chip disappears from the tab row but
+  // `activeFilter` remains 'from-parents' — leaving no tab visually
+  // selected and showing the "No parent boards" empty state instead of
+  // the user's library.
+  useEffect(() => {
+    if (!hasParentTimeframes && activeFilter === 'from-parents') {
+      setActiveFilter('all');
+    }
+  }, [hasParentTimeframes, activeFilter]);
+
   // Reactive list of unique tasks placed on currently-active parent boards.
   // Always called (hooks rule) but returns [] when timeframe has no parents,
   // so it's effectively a no-op for yearly/custom.

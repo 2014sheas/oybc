@@ -150,24 +150,18 @@ func getParentBoards(
     if parentTimeframes.isEmpty { return [] }
     let parentSet = Set(parentTimeframes)
 
+    // Format `now` to a local ISO string once and compare lexicographically
+    // against the stored `startDate`/`endDate` strings. Both sides come from
+    // the same `wizardLocalISOString` formatter (year-first
+    // `yyyy-MM-dd'T'HH:mm:ss.SSS`), so string ordering is identical to date
+    // ordering — no need to allocate a DateFormatter and parse 2 dates per
+    // board. Saves ~1 alloc + 2 parses per candidate.
+    let nowISO = wizardLocalISOString(now)
+
     return allActiveBoards.filter { board in
         guard parentSet.contains(board.timeframe) else { return false }
         guard !board.isDeleted else { return false }
         guard board.status == .active else { return false }
-        return isWithinStoredWindow(now: now, startDate: board.startDate, endDate: board.endDate)
+        return board.startDate <= nowISO && nowISO <= board.endDate
     }
-}
-
-/// Checks whether `now` falls inside the stored `[startDate, endDate]` ISO
-/// window. Mirrors the shared TS `isWithinTimeframe`.
-private func isWithinStoredWindow(now: Date, startDate: String, endDate: String) -> Bool {
-    let f = DateFormatter()
-    f.calendar = Calendar.current
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = TimeZone.current
-    f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
-    guard let start = f.date(from: startDate), let end = f.date(from: endDate) else {
-        return false
-    }
-    return now >= start && now <= end
 }

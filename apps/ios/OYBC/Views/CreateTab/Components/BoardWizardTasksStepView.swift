@@ -232,6 +232,18 @@ struct BoardWizardTasksStepView: View {
             // refresh the parents list so a re-entry into step 2 sees the
             // right candidates.
             parentTasksVM.reloadAsync(userId: userId, childTimeframe: newTimeframe)
+
+            // Coerce the active filter back to .all if the user picked
+            // .fromParents on a timeframe with parents (e.g., daily) and
+            // then switched to a parentless timeframe (yearly / custom).
+            // Without this, the chip disappears from the tab row but
+            // activeFilter remains .fromParents — leaving no pill visually
+            // selected and showing the "No parent boards" empty state
+            // instead of the user's library.
+            let newHasParents = !(parentTimeframesByChild[newTimeframe] ?? []).isEmpty
+            if !newHasParents && activeFilter == .fromParents {
+                activeFilter = .all
+            }
         }
         .sheet(isPresented: $isSheetPresented) {
             NewTaskSheetView(

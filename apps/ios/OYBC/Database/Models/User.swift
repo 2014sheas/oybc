@@ -57,11 +57,13 @@ struct UserPreferences: Codable, Equatable {
     var defaultRandomize: Bool
     var defaultCenterCustomName: String
     var theme: ThemePreference
-    // Recurring boards (Phase 6.1) — when enabled, the Boards tab surfaces a
-    // banner inviting the user to create a board for the current window.
-    // Disabled by default so existing users see no behavior change until they
-    // opt in. Decoded with `false` fallbacks below for forward-compat with
-    // peers running pre-6.1 builds.
+    // Recurring boards (Phase 6.1) — when enabled, the Boards and Create tabs
+    // surface a prominent "core boards" section inviting the user to create a
+    // board for the current window. Default `true` so the feature is
+    // discoverable on a fresh account (opt-out semantics — see
+    // `defaults` below). Users who explicitly toggled them off keep their
+    // explicit choice via the `init(from:)` decoder, which falls back to the
+    // post-6.1d `true` defaults only when keys are *missing* from the payload.
     var recurringDailyEnabled: Bool
     var recurringWeeklyEnabled: Bool
     var recurringMonthlyEnabled: Bool

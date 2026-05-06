@@ -28,9 +28,13 @@ export interface UserPreferences {
   defaultRandomize: boolean;
   defaultCenterCustomName: string;
   theme: ThemePreference;
-  // Recurring boards (Phase 6.1) — when enabled, the Boards tab surfaces a
-  // banner inviting the user to create a board for the current window. Disabled
-  // by default so existing users see no behavior change until they opt in.
+  // Recurring boards (Phase 6.1) — when enabled, the Boards and Create tabs
+  // surface a prominent "core boards" section inviting the user to create a
+  // board for the current window. Default `true` so the feature is
+  // discoverable on a fresh account (opt-out semantics — see
+  // DEFAULT_USER_PREFERENCES below). Users who explicitly toggled them off
+  // keep their explicit choice via the forward-compat decoder in
+  // `mergeUserPreferences`.
   recurringDailyEnabled: boolean;
   recurringWeeklyEnabled: boolean;
   recurringMonthlyEnabled: boolean;
