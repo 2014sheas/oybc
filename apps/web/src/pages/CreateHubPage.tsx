@@ -1,14 +1,35 @@
-import { useCallback, useState } from 'react';
-import type { Board, UserPreferences } from '@oybc/shared';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Timeframe, type Board, type UserPreferences } from '@oybc/shared';
 import { fetchBoardTasks } from '../db/operations/boardTasks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useDrafts } from './createHub/useDrafts';
+import { usePendingRecurringBoards } from '../hooks';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
 import { CreateHubQuickAdd } from '../components/createHub/CreateHubQuickAdd';
+import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
 import type { BoardWizardDraft } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
+
+/**
+ * Parse the `recurringTimeframe` URL search param into a valid Timeframe
+ * (excluding CUSTOM, which Phase 1 doesn't support). Returns null when
+ * absent, malformed, or CUSTOM. Defensive — a hand-typed URL shouldn't
+ * crash the wizard.
+ */
+function parseRecurringTimeframeParam(value: string | null): Timeframe | null {
+  switch (value) {
+    case Timeframe.DAILY:
+    case Timeframe.WEEKLY:
+    case Timeframe.MONTHLY:
+    case Timeframe.YEARLY:
+      return value;
+    default:
+      return null;
+  }
+}
 
 export interface CreateHubPageProps {
   userId: string;
@@ -22,7 +43,14 @@ export interface CreateHubPageProps {
 
 type HubMode =
   | { kind: 'hub' }
-  | { kind: 'wizard'; draft?: BoardWizardDraft };
+  | {
+      kind: 'wizard';
+      draft?: BoardWizardDraft;
+      /** Set when the wizard was launched from the Boards-tab Recurring
+       *  Boards banner (`/create?recurringTimeframe=daily`). The setup
+       *  step locks the timeframe field to this value. */
+      prefilledRecurringTimeframe?: Timeframe;
+    };
 
 /**
  * CreateHubPage — Landing surface for the Create tab. iOS twin:
@@ -50,8 +78,31 @@ export function CreateHubPage({
   onBoardCompleted,
 }: CreateHubPageProps): React.ReactElement {
   const [mode, setMode] = useState<HubMode>({ kind: 'hub' });
+  const [searchParams, setSearchParams] = useSearchParams();
   const drafts = useDrafts(userId);
   const library = useTaskLibrary(userId);
+  const pendingRecurring = usePendingRecurringBoards(userId);
+
+  // Recurring-banner deep link: `/create?recurringTimeframe=daily` opens
+  // the wizard immediately with the timeframe prefilled + locked. We
+  // consume the param exactly once on mount (or whenever it appears /
+  // changes) and clear it from the URL so a wizard cancel + manual
+  // re-entry doesn't accidentally re-arm the prefill.
+  useEffect(() => {
+    const param = parseRecurringTimeframeParam(
+      searchParams.get('recurringTimeframe')
+    );
+    if (param === null) return;
+    setMode({ kind: 'wizard', prefilledRecurringTimeframe: param });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('recurringTimeframe');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [searchParams, setSearchParams]);
 
   const returnToHub = useCallback(() => setMode({ kind: 'hub' }), []);
 
@@ -81,6 +132,7 @@ export function CreateHubPage({
         userId={userId}
         preferences={preferences}
         draft={mode.draft}
+        prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
       />
@@ -92,13 +144,35 @@ export function CreateHubPage({
   // library count is just the size of allTasks (incl. compounds).
   const libraryCount = library.allTasks.length;
 
+  // Phase 6.1d: when there are pending core boards, they become the
+  // headline action and the "Start a new board" custom CTA is demoted to
+  // a smaller secondary affordance. When the section short-circuits to
+  // null (all 4 windows already covered, or all 4 prefs disabled), the
+  // custom CTA stays as the primary headline — back-compat for users
+  // who've created everything for the current period.
+  const hasPendingCoreBoards = pendingRecurring.length > 0;
+
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <h1 className={styles.title}>Create</h1>
       </header>
 
-      <CreateHubBoardCTA onClick={handleStartBoard} />
+      <PendingCoreBoardsSection
+        pending={pendingRecurring}
+        variant="create-tab"
+        onCreate={(entry) =>
+          // Skip the URL round-trip used by the Boards-tab variant — we're
+          // already on /create, so just flip mode directly. Same end state
+          // as consuming the URL param via the useEffect above.
+          setMode({ kind: 'wizard', prefilledRecurringTimeframe: entry.timeframe })
+        }
+      />
+
+      <CreateHubBoardCTA
+        onClick={handleStartBoard}
+        variant={hasPendingCoreBoards ? 'secondary' : 'primary'}
+      />
 
       {drafts.length > 0 && (
         <CreateHubDraftsList

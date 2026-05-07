@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
+  PARENT_TIMEFRAMES,
   TaskType,
+  Timeframe,
   generateCounterTaskTitle,
   type Task,
 } from '@oybc/shared';
 import { db } from '../../db/database';
 import { createTask } from '../../db/operations/tasks';
+import { useParentBoardTasks } from '../../hooks';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { TypeBadge } from '../TypeBadge';
 import { FilterTabs } from '../FilterTabs';
 import { NewTaskSheet } from './NewTaskSheet';
 import styles from './BoardWizardTasksStep.module.css';
 
-const FILTER_TABS: { value: TasksFilter; label: string }[] = [
+const BASE_FILTER_TABS: { value: TasksFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
@@ -25,7 +28,17 @@ const FILTER_TABS: { value: TasksFilter; label: string }[] = [
   { value: 'composite', label: 'Composite' },
 ];
 
-export type TasksFilter = 'all' | TaskType | 'progress' | 'composite';
+const FROM_PARENTS_TAB: { value: TasksFilter; label: string } = {
+  value: 'from-parents',
+  label: 'From parent boards',
+};
+
+export type TasksFilter =
+  | 'all'
+  | TaskType
+  | 'progress'
+  | 'composite'
+  | 'from-parents';
 
 export interface BoardWizardTasksStepProps {
   /** User's full task + composite library (from `useTaskLibrary`). */
@@ -49,6 +62,10 @@ export interface BoardWizardTasksStepProps {
 
   /** Authenticated user id used by the inline new-task sheet. */
   userId: string;
+  /** Current wizard timeframe. Drives whether the "From parent boards"
+   *  filter chip is shown (only for child timeframes — daily, weekly,
+   *  monthly) and what timeframe to feed `useParentBoardTasks`. */
+  currentTimeframe: Timeframe;
   /** Fired after a non-composite task is created from the sheet — the
    *  wizard should auto-add the new id to `selectedTaskIds`. */
   onTaskCreated: (task: Task) => void;
@@ -94,6 +111,7 @@ export function BoardWizardTasksStep({
   centerTaskId,
   onCenterTaskChange,
   userId,
+  currentTimeframe,
   onTaskCreated,
   onCompositeCreated,
   onBack,
@@ -101,6 +119,35 @@ export function BoardWizardTasksStep({
 }: BoardWizardTasksStepProps): React.ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<TasksFilter>('all');
+
+  // "From parent boards" filter chip is only meaningful when the current
+  // timeframe HAS parents — yearly has none; custom is excluded from
+  // recurrence. Hide the chip otherwise to avoid an always-empty filter.
+  const hasParentTimeframes = PARENT_TIMEFRAMES[currentTimeframe].length > 0;
+
+  const filterTabs = useMemo(
+    () =>
+      hasParentTimeframes ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB] : BASE_FILTER_TABS,
+    [hasParentTimeframes]
+  );
+
+  // Coerce the active filter back to 'all' if the user picked
+  // 'from-parents' on a timeframe with parents (e.g., daily) and then
+  // backed out to Step 1 and switched to a parentless timeframe (yearly /
+  // custom). Without this, the chip disappears from the tab row but
+  // `activeFilter` remains 'from-parents' — leaving no tab visually
+  // selected and showing the "No parent boards" empty state instead of
+  // the user's library.
+  useEffect(() => {
+    if (!hasParentTimeframes && activeFilter === 'from-parents') {
+      setActiveFilter('all');
+    }
+  }, [hasParentTimeframes, activeFilter]);
+
+  // Reactive list of unique tasks placed on currently-active parent boards.
+  // Always called (hooks rule) but returns [] when timeframe has no parents,
+  // so it's effectively a no-op for yearly/custom.
+  const parentBoardTasks = useParentBoardTasks(userId, currentTimeframe);
   const [expandedCompositeId, setExpandedCompositeId] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   /** Right-click context menu state. Null when no menu is open. Stores
@@ -199,6 +246,18 @@ export function BoardWizardTasksStep({
     const matches = (title: string): boolean =>
       q.length === 0 || title.toLowerCase().includes(q);
 
+    // "From parent boards" surfaces tasks already placed on currently-
+    // active longer-window parent boards (e.g. tasks on the active monthly
+    // when creating a daily). Per Phase 6.1's locked design, selecting one
+    // places the SAME task — completion is shared globally. Compounds
+    // surfaced through this filter render in the primitives region too:
+    // expanded leaves aren't useful here since the user is picking from
+    // an existing curated set.
+    if (activeFilter === 'from-parents') {
+      const filtered = parentBoardTasks.filter((t) => matches(t.title));
+      return { tasks: filtered, composites: [] };
+    }
+
     // Under the unified compound model:
     //   - "Progress" filter = type=COMPOUND && isOrdered=true  → show in composites region
     //   - "Composite" filter (and the composites region) = type=COMPOUND && isOrdered!=true
@@ -228,7 +287,7 @@ export function BoardWizardTasksStep({
             : [];
 
     return { tasks, composites };
-  }, [library, activeFilter, searchQuery]);
+  }, [library, activeFilter, searchQuery, parentBoardTasks]);
 
   const selectedCount = selectedTaskIds.size;
   const isCountSatisfied = selectedCount >= tasksRequired;
@@ -292,7 +351,7 @@ export function BoardWizardTasksStep({
         />
 
         <FilterTabs
-          tabs={FILTER_TABS}
+          tabs={filterTabs}
           activeTab={activeFilter}
           onTabChange={(value) => {
             setActiveFilter(value as TasksFilter);
@@ -306,7 +365,9 @@ export function BoardWizardTasksStep({
         <div className={styles.emptyState}>
           {searchQuery.trim().length > 0
             ? `No tasks match "${searchQuery}".`
-            : 'Your task library is empty. Tap "New task" above to create your first one.'}
+            : activeFilter === 'from-parents'
+              ? 'No parent boards found. Create a longer-window board first (weekly/monthly/yearly) to surface its tasks here.'
+              : 'Your task library is empty. Tap "New task" above to create your first one.'}
         </div>
       ) : (
         <ul className={styles.list}>

@@ -34,6 +34,33 @@ struct BoardPreferencesView: View {
                 randomizeRow
                 customCenterNameRow
             }
+
+            // Phase 6.1 — Recurring boards. Independent section because
+            // these toggles drive the Boards-tab banner, not new-board
+            // defaults.
+            Section {
+                Text("When enabled, the Boards tab will prompt you to create a board for each new window. Detection runs only when you open the app — no background notifications.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Recurring Boards")
+            }
+            .listRowBackground(Color.clear)
+
+            Section {
+                Toggle(isOn: bind(\.recurringDailyEnabled)) {
+                    Text("Prompt for daily board")
+                }
+                Toggle(isOn: bind(\.recurringWeeklyEnabled)) {
+                    Text("Prompt for weekly board")
+                }
+                Toggle(isOn: bind(\.recurringMonthlyEnabled)) {
+                    Text("Prompt for monthly board")
+                }
+                Toggle(isOn: bind(\.recurringYearlyEnabled)) {
+                    Text("Prompt for yearly board")
+                }
+            }
         }
         .navigationTitle("Board Preferences")
         .navigationBarTitleDisplayMode(.inline)

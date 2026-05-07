@@ -1,13 +1,44 @@
 import SwiftUI
 
-/// CreateHubBoardCTAView — Large landing-page card that invites the
-/// user to start a new board. Renders the primary action on the
-/// Create Hub; tapping it launches the 3-step board-creation wizard.
-/// iOS twin of web's `CreateHubBoardCTA`.
+/// Visual variant for `CreateHubBoardCTAView`.
+enum CreateHubBoardCTAVariant {
+    /// Large gradient card with sparkle icon. The original (and default)
+    /// presentation; used when the parent has no pending core boards to
+    /// surface above.
+    case primary
+    /// Smaller flat card with muted styling. Used when
+    /// `PendingCoreBoardsSectionView` is the headline action above this
+    /// CTA — Phase 6.1d demoted "start a new board" to a secondary
+    /// custom-board affordance once core boards became the headline.
+    case secondary
+}
+
+/// CreateHubBoardCTAView — Card that invites the user to start a new
+/// board. Renders the primary action on the Create Hub; tapping it
+/// launches the 3-step board-creation wizard. iOS twin of web's
+/// `CreateHubBoardCTA`.
+///
+/// Two variants:
+///   - `.primary` (default): large gradient card with sparkle icon.
+///   - `.secondary`: smaller flat card with reframed copy ("Custom
+///     timeframe board") for the demoted state below the prominent
+///     pending-core-boards section.
 struct CreateHubBoardCTAView: View {
     let onTap: () -> Void
+    var variant: CreateHubBoardCTAVariant = .primary
 
     var body: some View {
+        switch variant {
+        case .primary:
+            primaryButton
+        case .secondary:
+            secondaryButton
+        }
+    }
+
+    // MARK: - Primary
+
+    private var primaryButton: some View {
         Button(action: onTap) {
             HStack(spacing: 16) {
                 Text("✨")
@@ -41,5 +72,46 @@ struct CreateHubBoardCTAView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Start a new board")
+    }
+
+    // MARK: - Secondary
+
+    private var secondaryButton: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: "plus")
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Custom timeframe board")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text("For one-off goals that don't fit a recurring window.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Start a custom timeframe board")
     }
 }

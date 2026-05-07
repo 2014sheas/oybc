@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   CenterSquareType,
   Timeframe,
+  formatTimeframeLabel,
+  getTimeframeBoundaries,
   type Board,
   type BoardTask,
   type UserPreferences,
@@ -138,6 +140,17 @@ export interface UseBoardWizardArgs {
    *  subsequent Save / Activate actions update this record rather than
    *  creating a new one. */
   draft?: BoardWizardDraft;
+  /** When set, the wizard is opened from the Boards-tab Recurring
+   *  Boards banner. The timeframe is seeded from this value (overriding
+   *  `preferences.defaultTimeframe`) and a sensible default name is
+   *  precomputed via `formatTimeframeLabel`. The setup step locks the
+   *  timeframe field so the user can't accidentally pick a different
+   *  one — they can edit name/size/center as usual.
+   *
+   *  Mutually exclusive with `draft` (drafts already lock semantics by
+   *  hydrating the full record). When both are supplied, draft wins
+   *  (the user is resuming, not starting a recurring instance). */
+  prefilledRecurringTimeframe?: Timeframe;
 }
 
 /**
@@ -157,14 +170,41 @@ export function useBoardWizard({
   preferences,
   initialStep = 1,
   draft,
+  prefilledRecurringTimeframe,
 }: UseBoardWizardArgs): BoardWizardController {
   const draftBoard = draft?.board;
-  const [name, setName] = useState(() => draftBoard?.name ?? '');
+
+  // Recurring-banner prefill is suppressed when a draft is being resumed —
+  // drafts hydrate the full record, so honoring the prefill on top would
+  // confuse the user about which board they're editing. CUSTOM is also
+  // skipped (Phase 1's PARENT_TIMEFRAMES excludes it; defensive check
+  // here so a malformed URL param can't sneak through).
+  const effectivePrefill =
+    !draftBoard &&
+    prefilledRecurringTimeframe !== undefined &&
+    prefilledRecurringTimeframe !== Timeframe.CUSTOM
+      ? prefilledRecurringTimeframe
+      : null;
+
+  const [name, setName] = useState(() => {
+    if (draftBoard) return draftBoard.name;
+    if (effectivePrefill !== null) {
+      // Seed with a human-readable label like "Today" / "Week of May 4 – 10,
+      // 2026" / "May 2026" / "2026". User can edit before saving.
+      const { startDate } = getTimeframeBoundaries(
+        effectivePrefill,
+        new Date(),
+        preferences.weekStartDay,
+      );
+      return formatTimeframeLabel(effectivePrefill, startDate);
+    }
+    return '';
+  });
   const [size, setSizeRaw] = useState<3 | 4 | 5>(
     () => (draftBoard?.boardSize as 3 | 4 | 5 | undefined) ?? preferences.defaultBoardSize,
   );
   const [timeframe, setTimeframe] = useState<Timeframe>(
-    () => draftBoard?.timeframe ?? preferences.defaultTimeframe,
+    () => draftBoard?.timeframe ?? effectivePrefill ?? preferences.defaultTimeframe,
   );
   const [customStartDate, setCustomStartDate] = useState(() =>
     draftBoard?.timeframe === Timeframe.CUSTOM && draftBoard.startDate

@@ -38,6 +38,11 @@ export interface BoardSetupFormProps {
 
   timeframe: Timeframe;
   onTimeframeChange: (t: Timeframe) => void;
+  /** When true, the timeframe is rendered as a read-only chip (no
+   *  segmented selector). Used by the recurring-banner flow (Phase
+   *  6.1) so the user can't accidentally pick a different timeframe
+   *  than the banner promised. */
+  timeframeLocked?: boolean;
 
   customStartDate: string;
   onCustomStartDateChange: (d: string) => void;
@@ -74,6 +79,7 @@ export function BoardSetupForm({
   onSizeChange,
   timeframe,
   onTimeframeChange,
+  timeframeLocked = false,
   customStartDate,
   onCustomStartDateChange,
   customEndDate,
@@ -138,21 +144,45 @@ export function BoardSetupForm({
       {/* Timeframe */}
       <div className={styles.fieldGroup}>
         <span className={styles.label}>Timeframe</span>
-        <div className={styles.segmented}>
-          {TIMEFRAME_OPTIONS.map((opt) => (
+        {timeframeLocked ? (
+          <div className={styles.segmented}>
+            {/* Render only the locked timeframe — visually identical to a
+             *  selected segmented button but disabled, with a small hint
+             *  underneath explaining the lock came from the recurring
+             *  banner. Mirrors the iOS prefilled-chip variant. */}
             <button
-              key={opt.value}
               type="button"
-              className={`${styles.segmentedButton} ${
-                timeframe === opt.value ? styles.segmentedButtonActive : ''
-              }`}
-              onClick={() => onTimeframeChange(opt.value)}
-              aria-pressed={timeframe === opt.value}
+              className={`${styles.segmentedButton} ${styles.segmentedButtonActive}`}
+              disabled
+              aria-pressed
             >
-              {opt.label}
+              {TIMEFRAME_OPTIONS.find((o) => o.value === timeframe)?.label ??
+                String(timeframe)}
             </button>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className={styles.segmented}>
+            {TIMEFRAME_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`${styles.segmentedButton} ${
+                  timeframe === opt.value ? styles.segmentedButtonActive : ''
+                }`}
+                onClick={() => onTimeframeChange(opt.value)}
+                aria-pressed={timeframe === opt.value}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {timeframeLocked && (
+          <p className={styles.hint}>
+            Timeframe set from the recurring boards banner. Cancel and use
+            "Start a new board" to pick a different one.
+          </p>
+        )}
       </div>
 
       {/* Date display — auto for non-Custom, pickers for Custom */}

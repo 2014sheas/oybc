@@ -10,6 +10,11 @@ import SwiftUI
 /// site.
 struct BoardSetupFormView: View {
     @Bindable var controller: BoardWizardViewModel
+    /// Phase 6.1: when true, render the Timeframe field as a read-only
+    /// chip rather than the segmented selector. Used by the recurring-
+    /// banner flow so the user can't accidentally pick a different
+    /// timeframe than the banner promised.
+    var lockTimeframe: Bool = false
 
     /// `@State` mirrors of the controller's `yyyy-MM-dd` strings, used
     /// as `Date` bindings for `DatePicker`. Two-way synced with the
@@ -54,14 +59,35 @@ struct BoardSetupFormView: View {
                 Text("Timeframe")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                Picker("Timeframe", selection: $controller.timeframe) {
-                    Text("Daily").tag(Timeframe.daily)
-                    Text("Weekly").tag(Timeframe.weekly)
-                    Text("Monthly").tag(Timeframe.monthly)
-                    Text("Yearly").tag(Timeframe.yearly)
-                    Text("Custom").tag(Timeframe.custom)
+                if lockTimeframe {
+                    // Locked variant: show the selected timeframe as a
+                    // disabled chip with an explanatory hint. Mirrors web's
+                    // BoardSetupForm `timeframeLocked` branch.
+                    HStack {
+                        Text(timeframeLabel(controller.timeframe))
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.accentColor.opacity(0.15))
+                            .foregroundColor(.accentColor)
+                            .cornerRadius(6)
+                        Spacer()
+                    }
+                    Text("Timeframe set from the recurring boards banner. Cancel and use \"Start a new board\" to pick a different one.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .italic()
+                } else {
+                    Picker("Timeframe", selection: $controller.timeframe) {
+                        Text("Daily").tag(Timeframe.daily)
+                        Text("Weekly").tag(Timeframe.weekly)
+                        Text("Monthly").tag(Timeframe.monthly)
+                        Text("Yearly").tag(Timeframe.yearly)
+                        Text("Custom").tag(Timeframe.custom)
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
             }
 
             // ── Auto-calculated timeframe display ──
@@ -156,6 +182,18 @@ struct BoardSetupFormView: View {
             // ── Randomize toggle ──
             Toggle("Randomize task positions on the board", isOn: $controller.isRandomized)
                 .font(.subheadline)
+        }
+    }
+
+    // MARK: - Display helpers
+
+    private func timeframeLabel(_ timeframe: Timeframe) -> String {
+        switch timeframe {
+        case .daily:   return "Daily"
+        case .weekly:  return "Weekly"
+        case .monthly: return "Monthly"
+        case .yearly:  return "Yearly"
+        case .custom:  return "Custom"
         }
     }
 }

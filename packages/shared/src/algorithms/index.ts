@@ -75,3 +75,11 @@ export type {
   WeekStartDay,
   TimeframeBoundaries,
 } from './calendarBoundaries';
+
+export {
+  PARENT_TIMEFRAMES,
+  findPendingRecurringBoards,
+  getParentBoards,
+} from './recurringBoards';
+
+export type { PendingRecurringBoard } from './recurringBoards';

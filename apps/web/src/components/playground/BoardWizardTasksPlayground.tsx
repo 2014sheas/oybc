@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { TaskType, OperatorType } from '@oybc/shared';
+import { TaskType, OperatorType, Timeframe } from '@oybc/shared';
 import { createTask, createCompound } from '../../db/operations/tasks';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { BoardWizardTasksStep } from '../wizard/BoardWizardTasksStep';
@@ -173,6 +173,10 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         centerTaskId={centerTaskId}
         onCenterTaskChange={setCenterTaskId}
         userId={PLAYGROUND_USER_ID}
+        // Playground-only seed: CUSTOM hides the new "From parent
+        // boards" filter chip (it has no parent timeframes), keeping
+        // the playground's existing behavior unchanged.
+        currentTimeframe={Timeframe.CUSTOM}
         onTaskCreated={(task) => {
           setSelectedTaskIds((prev) => {
             const next = new Set(prev);

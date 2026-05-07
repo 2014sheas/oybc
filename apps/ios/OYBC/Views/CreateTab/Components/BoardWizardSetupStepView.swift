@@ -6,12 +6,17 @@ import SwiftUI
 /// `controller.isStep1Valid`.
 struct BoardWizardSetupStepView: View {
     @Bindable var controller: BoardWizardViewModel
+    /// Phase 6.1: when true, the Timeframe field renders as a read-only
+    /// chip rather than the segmented selector. Set when the wizard was
+    /// launched from the Boards-tab Recurring Boards banner. Forwarded
+    /// to `BoardSetupFormView`.
+    var lockTimeframe: Bool = false
     let onCancel: () -> Void
     let onNext: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            BoardSetupFormView(controller: controller)
+            BoardSetupFormView(controller: controller, lockTimeframe: lockTimeframe)
 
             Divider()
 

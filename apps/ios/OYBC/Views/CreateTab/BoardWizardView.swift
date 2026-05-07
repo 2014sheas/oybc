@@ -15,6 +15,12 @@ struct BoardWizardView: View {
     let userId: String
     let preferences: UserPreferences
     let draft: (board: Board, boardTasks: [BoardTask])?
+    /// Phase 6.1: when set, the wizard was launched from the Boards-
+    /// tab Recurring Boards banner. The setup step locks the timeframe
+    /// field to this value (see BoardWizardViewModel + BoardSetupForm).
+    /// Mutually exclusive with `draft` — drafts already lock semantics
+    /// by hydrating the full record.
+    let prefilledRecurringTimeframe: Timeframe?
     let onCancel: () -> Void
     let onComplete: (_ boardId: String, _ status: String) -> Void
 
@@ -24,19 +30,31 @@ struct BoardWizardView: View {
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
 
+    /// True when the timeframe field should render as a read-only chip.
+    /// Mirrors web's `lockTimeframe = prefilledRecurringTimeframe !== undefined && draft === undefined`.
+    private var lockTimeframe: Bool {
+        prefilledRecurringTimeframe != nil && draft == nil
+    }
+
     init(
         userId: String,
         preferences: UserPreferences,
         draft: (board: Board, boardTasks: [BoardTask])? = nil,
+        prefilledRecurringTimeframe: Timeframe? = nil,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void
     ) {
         self.userId = userId
         self.preferences = preferences
         self.draft = draft
+        self.prefilledRecurringTimeframe = prefilledRecurringTimeframe
         self.onCancel = onCancel
         self.onComplete = onComplete
-        _wizard = State(initialValue: BoardWizardViewModel(preferences: preferences, draft: draft))
+        _wizard = State(initialValue: BoardWizardViewModel(
+            preferences: preferences,
+            draft: draft,
+            prefilledRecurringTimeframe: prefilledRecurringTimeframe
+        ))
     }
 
     // MARK: - Cancel / save-draft helpers
@@ -175,6 +193,7 @@ struct BoardWizardView: View {
         case 1:
             BoardWizardSetupStepView(
                 controller: wizard,
+                lockTimeframe: lockTimeframe,
                 onCancel: handleCancelRequested,
                 onNext: { wizard.goNext() }
             )
@@ -186,6 +205,7 @@ struct BoardWizardView: View {
                 centerTaskMode: wizard.centerMode,
                 centerTaskId: $wizard.centerTaskId,
                 userId: userId,
+                currentTimeframe: wizard.timeframe,
                 onTaskCreated: { taskId, _, _ in
                     wizard.toggleTaskSelection(taskId)
                 },

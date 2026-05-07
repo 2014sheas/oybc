@@ -20,6 +20,13 @@ struct MainTabView: View {
 
     @State private var selectedTab: Int = 0
     @State private var boardsPath: NavigationPath = NavigationPath()
+    /// Phase 6.1: when the user taps Create on the Boards-tab Recurring
+    /// Boards banner, BoardListView calls back here to (a) switch to the
+    /// Create tab and (b) stash the timeframe. CreateHubView reads this
+    /// on appear, enters wizard mode with the timeframe prefilled, and
+    /// resets the binding to nil so a wizard cancel + manual re-entry
+    /// doesn't re-arm the prefill.
+    @State private var pendingRecurringTimeframe: Timeframe? = nil
 
     /// Resolves `preferences.theme` into the SwiftUI `preferredColorScheme`
     /// value. `system` returns `nil`, which yields OS appearance; any other
@@ -35,10 +42,19 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack(path: $boardsPath) {
-                BoardListView()
-                    .navigationDestination(for: String.self) { boardId in
-                        BoardPlayView(boardId: boardId)
+                BoardListView(
+                    onCreateRecurring: { timeframe in
+                        // Cross-tab: stash the timeframe and switch to
+                        // the Create tab. CreateHubView reads
+                        // `pendingRecurringTimeframe` on appear and
+                        // enters wizard mode with prefill.
+                        pendingRecurringTimeframe = timeframe
+                        selectedTab = 1
                     }
+                )
+                .navigationDestination(for: String.self) { boardId in
+                    BoardPlayView(boardId: boardId)
+                }
             }
             .tabItem {
                 Label("Boards", systemImage: "square.grid.3x3")
@@ -58,6 +74,7 @@ struct MainTabView: View {
                         CreateHubView(
                             userId: userId,
                             preferences: authService.userPreferences,
+                            pendingRecurringTimeframe: $pendingRecurringTimeframe,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
                                 // the user lands on the board they just
