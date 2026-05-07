@@ -86,6 +86,9 @@ export const BoardSchema = z.object({
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
+  // Phase 6.2 provenance — additive, optional. Pre-6.2 peers without
+  // this field decode unchanged; the spawn path sets it on insert.
+  spawnedFromTemplateId: z.string().uuid().optional(),
 });
 
 // ===== Task Schemas =====
@@ -489,6 +492,99 @@ export const CompositeNodeSchema = z.object({
   threshold: z.number().int().positive().optional(),
   taskId: z.string().uuid().optional(),
   childCompositeTaskId: z.string().uuid().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+});
+
+// ===== RecurringBoardTemplate Schemas (Phase 6.2) =====
+
+/**
+ * Templates exclude `Timeframe.CUSTOM` (no computed window) and
+ * `CenterSquareType.CHOSEN` (MVP scope — see types/recurringBoardTemplate.ts).
+ * The schema enforces both at the field level so a malformed pull payload
+ * is rejected before it reaches the spawn driver.
+ */
+const RecurringTimeframeSchema = z.union([
+  z.literal(Timeframe.DAILY),
+  z.literal(Timeframe.WEEKLY),
+  z.literal(Timeframe.MONTHLY),
+  z.literal(Timeframe.YEARLY),
+]);
+
+const RecurringCenterSquareTypeSchema = z.union([
+  z.literal(CenterSquareType.FREE),
+  z.literal(CenterSquareType.CUSTOM_FREE),
+  z.literal(CenterSquareType.NONE),
+]);
+
+const PoolStrategySchema = z.union([z.literal('all'), z.literal('random_subset')]);
+
+export const CreateRecurringBoardTemplateInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  timeframe: RecurringTimeframeSchema,
+  boardSize: BoardSizeSchema,
+  centerSquareType: RecurringCenterSquareTypeSchema,
+  centerSquareCustomName: z.string().max(100).optional(),
+  isRandomized: z.boolean(),
+  seedTaskIds: z.array(z.string().uuid()).min(1),
+  poolStrategy: PoolStrategySchema,
+  isActive: z.boolean(),
+}).refine(
+  (data) => {
+    if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
+      return (
+        data.centerSquareCustomName !== undefined &&
+        data.centerSquareCustomName.length > 0
+      );
+    }
+    return true;
+  },
+  { message: 'centerSquareCustomName is required when centerSquareType is custom_free' },
+).refine(
+  (data) => {
+    // No duplicate seedTaskIds — each pool entry must reference a distinct
+    // Task. The spawn path treats duplicates as an error class equivalent
+    // to "pool too small" (a 25-pool with 5 dups only places 20 unique tasks).
+    return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
+  },
+  { message: 'seedTaskIds must not contain duplicates' },
+);
+
+export const UpdateRecurringBoardTemplateInputSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  timeframe: RecurringTimeframeSchema.optional(),
+  boardSize: BoardSizeSchema.optional(),
+  centerSquareType: RecurringCenterSquareTypeSchema.optional(),
+  centerSquareCustomName: z.string().max(100).optional(),
+  isRandomized: z.boolean().optional(),
+  seedTaskIds: z.array(z.string().uuid()).min(1).optional(),
+  poolStrategy: PoolStrategySchema.optional(),
+  isActive: z.boolean().optional(),
+}).refine(
+  (data) => {
+    if (data.seedTaskIds === undefined) return true;
+    return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
+  },
+  { message: 'seedTaskIds must not contain duplicates' },
+);
+
+export const RecurringBoardTemplateSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  name: z.string().min(1).max(120),
+  timeframe: RecurringTimeframeSchema,
+  boardSize: BoardSizeSchema,
+  centerSquareType: RecurringCenterSquareTypeSchema,
+  centerSquareCustomName: z.string().max(100).optional(),
+  isRandomized: z.boolean(),
+  seedTaskIds: z.array(z.string().uuid()),
+  poolStrategy: PoolStrategySchema,
+  lastSpawnedWindowKey: z.string().nullable(),
+  isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),

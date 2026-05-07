@@ -83,3 +83,17 @@ export {
 } from './recurringBoards';
 
 export type { PendingRecurringBoard } from './recurringBoards';
+
+export {
+  findTemplatesPendingSpawn,
+  validateSpawnPool,
+  buildSpawnPlacement,
+  deriveSpawnedBoardName,
+} from './recurringBoardTemplates';
+
+export type {
+  PendingTemplateSpawn,
+  SpawnPoolValidation,
+  SpawnPoolFailureReason,
+  BuildSpawnPlacementArgs,
+} from './recurringBoardTemplates';
