@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Timeframe, type Board, type UserPreferences } from '@oybc/shared';
+import {
+  Timeframe,
+  validateSpawnPool,
+  type Board,
+  type UserPreferences,
+  type SpawnPoolFailureReason,
+} from '@oybc/shared';
 import { fetchBoardTasks } from '../db/operations/boardTasks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useDrafts } from './createHub/useDrafts';
@@ -10,6 +16,8 @@ import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
 import { CreateHubQuickAdd } from '../components/createHub/CreateHubQuickAdd';
 import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
+import { RecurringTemplatesSection } from '../components/recurringTemplates/RecurringTemplatesSection';
+import { useRecurringBoardTemplates } from '../hooks';
 import type { BoardWizardDraft } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
 
@@ -82,6 +90,25 @@ export function CreateHubPage({
   const drafts = useDrafts(userId);
   const library = useTaskLibrary(userId);
   const pendingRecurring = usePendingRecurringBoards(userId);
+  const recurringTemplates = useRecurringBoardTemplates(userId);
+
+  // Phase 6.2: precompute "needs attention" reasons per template by
+  // resolving each template's seedTaskIds against the library and running
+  // `validateSpawnPool` synchronously. Independent of the actual spawn
+  // driver (which only runs on the Boards tab) so the user gets immediate
+  // feedback while editing — and survives a Create-tab reload that hasn't
+  // visited Boards yet.
+  const templateAttention = useMemo<Record<string, SpawnPoolFailureReason>>(() => {
+    const out: Record<string, SpawnPoolFailureReason> = {};
+    for (const t of recurringTemplates) {
+      const pool = t.seedTaskIds
+        .map((id) => library.taskMap[id])
+        .filter((task): task is NonNullable<typeof task> => task !== undefined);
+      const v = validateSpawnPool(t, pool);
+      if (!v.ok) out[t.id] = v.reason;
+    }
+    return out;
+  }, [recurringTemplates, library.taskMap]);
 
   // Recurring-banner deep link: `/create?recurringTimeframe=daily` opens
   // the wizard immediately with the timeframe prefilled + locked. We
@@ -180,6 +207,13 @@ export function CreateHubPage({
           onResume={(d) => void handleResumeDraft(d)}
         />
       )}
+
+      <RecurringTemplatesSection
+        userId={userId}
+        templates={recurringTemplates}
+        libraryTasks={library.allTasks}
+        attentionByTemplateId={templateAttention}
+      />
 
       <section className={styles.librarySection}>
         <h3 className={styles.librarySectionHeading}>Your task library</h3>

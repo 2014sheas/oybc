@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
-import { useBoards, usePendingRecurringBoards } from '../hooks';
+import {
+  useBoards,
+  usePendingRecurringBoards,
+  useRecurringBoardSpawn,
+} from '../hooks';
 import { FilterTabs } from '../components/FilterTabs';
 import { BoardListItem } from '../components/BoardListItem';
 import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
@@ -25,6 +29,13 @@ export function BoardsPage(): React.ReactElement {
   const navigate = useNavigate();
   const allBoards = useBoards(user?.id) ?? [];
   const pendingRecurring = usePendingRecurringBoards(user?.id);
+  // Phase 6.2: fire template spawns on Boards-tab mount. The hook is
+  // structurally idempotent — repeated mounts are no-ops once
+  // `lastSpawnedWindowKey` is written. We don't currently consume the
+  // returned digest here; the Create-tab template list does its own
+  // synchronous validation against the library to surface "needs
+  // attention" badges (see CreateHubPage `templateAttention` memo).
+  useRecurringBoardSpawn(user?.id);
   const [activeFilter, setActiveFilter] = useState('all');
 
   const filteredBoards = allBoards.filter((b) => {
