@@ -29,16 +29,39 @@ final class ParentBoardTasksViewModel {
     /// is a soft, opt-in convenience filter).
     var loadError: String?
 
+    // MARK: - Race-condition guard
+    //
+    // The wizard's child timeframe can change faster than GRDB completes a
+    // read (e.g., the user toggles back to step 1 and switches daily →
+    // monthly within a frame). Both timeframes have parents, so the chip
+    // stays visible — but their parent SETS differ (daily's parents include
+    // weekly/monthly/yearly; monthly's parents are yearly only). Without a
+    // latest-wins guard, the earlier reload's results can land *after* the
+    // newer reload, overwriting `tasks` with weekly/monthly tasks that
+    // shouldn't appear on a monthly board.
+    //
+    // `latestSeq` is bumped on the main actor at the start of every reload;
+    // the result is committed only if no newer request has started in the
+    // meantime. `@ObservationIgnored` so SwiftUI doesn't track it and
+    // re-render on each bump.
+    @ObservationIgnored private var latestSeq: UInt64 = 0
+
     // MARK: - Loading
 
     /// Loads parents + their board_tasks + resolves to deduped Task[].
     /// Returns early with `tasks = []` for child timeframes that have
     /// no parents (yearly, custom).
     func reload(userId: String, childTimeframe: Timeframe) async {
+        let mySeq = await MainActor.run { () -> UInt64 in
+            latestSeq &+= 1
+            return latestSeq
+        }
+
         let now = Date()
         let parentTimeframes = parentTimeframesByChild[childTimeframe] ?? []
         if parentTimeframes.isEmpty {
             await MainActor.run {
+                guard mySeq == latestSeq else { return }
                 self.tasks = []
                 self.loadError = nil
             }
@@ -75,11 +98,13 @@ final class ParentBoardTasksViewModel {
             }
 
             await MainActor.run {
+                guard mySeq == latestSeq else { return }
                 self.tasks = result
                 self.loadError = nil
             }
         } catch {
             await MainActor.run {
+                guard mySeq == latestSeq else { return }
                 self.loadError = "Failed to load parent-board tasks: \(error.localizedDescription)"
                 self.tasks = []
             }

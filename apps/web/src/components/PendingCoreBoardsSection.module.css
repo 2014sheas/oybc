@@ -70,8 +70,8 @@
 }
 
 .createButton {
-  background: #0a84ff;
-  color: #fff;
+  background: var(--active-bg);
+  color: var(--active-text);
   border: 0;
   border-radius: 8px;
   padding: 9px 18px;
@@ -79,10 +79,11 @@
   font-weight: 600;
   cursor: pointer;
   min-width: 88px;
+  transition: opacity 0.2s;
 }
 
 .createButton:hover {
-  background: #0070d8;
+  opacity: 0.9;
 }
 
 .dismissButton {
