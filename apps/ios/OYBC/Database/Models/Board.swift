@@ -41,6 +41,12 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     var isDeleted: Bool
     var deletedAt: String? // ISO8601
 
+    // Phase 6.2 provenance — additive, optional. Set on insert by the
+    // template-spawn path; remains nil for manually-created boards.
+    // Forward-compatible: pre-6.2 peers without this column on disk
+    // get a NULL via the v8 ALTER TABLE.
+    var spawnedFromTemplateId: String?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "boards"
@@ -55,6 +61,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         case totalTasks, completedTasks, linesCompleted, completedLineIds
         case createdAt, updatedAt, completedAt
         case lastSyncedAt, version, isDeleted, deletedAt
+        case spawnedFromTemplateId
     }
 
     // Custom decoding for completedLineIds (stored as JSON string)
@@ -93,6 +100,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         version = try container.decode(Int.self, forKey: .version)
         isDeleted = try container.decode(Bool.self, forKey: .isDeleted)
         deletedAt = try container.decodeIfPresent(String.self, forKey: .deletedAt)
+        spawnedFromTemplateId = try container.decodeIfPresent(String.self, forKey: .spawnedFromTemplateId)
     }
 
     // Custom encoding for completedLineIds (store as JSON string)
@@ -130,6 +138,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         try container.encode(version, forKey: .version)
         try container.encode(isDeleted, forKey: .isDeleted)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+        try container.encodeIfPresent(spawnedFromTemplateId, forKey: .spawnedFromTemplateId)
     }
 }
 

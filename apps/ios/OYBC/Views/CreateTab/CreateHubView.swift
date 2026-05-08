@@ -55,6 +55,11 @@ struct CreateHubView: View {
     /// secondary "Custom timeframe board" affordance below it.
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
 
+    /// Phase 6.2: user's recurring board templates (preset-pool boards
+    /// that auto-spawn on Boards-tab open).
+    @State private var templatesVM = RecurringBoardTemplatesViewModel()
+    @State private var libraryTasks: [Task] = []
+
     var body: some View {
         switch mode {
         case .hub:
@@ -62,7 +67,9 @@ struct CreateHubView: View {
                 .onAppear {
                     reloadDrafts()
                     reloadLibraryCount()
+                    reloadLibraryTasks()
                     pendingRecurringVM.reloadAsync(userId: userId)
+                    templatesVM.reloadAsync(userId: userId)
                     // Consume the recurring-banner deep link, if any.
                     // Same behavior as web's URL-param consumption +
                     // immediate clear in CreateHubPage.
@@ -155,6 +162,16 @@ struct CreateHubView: View {
                     }
                 )
             }
+
+            RecurringTemplatesSectionView(
+                userId: userId,
+                templates: templatesVM.templates,
+                libraryTasks: libraryTasks,
+                attentionByTemplateId: templateAttention,
+                onTemplatesChanged: {
+                    templatesVM.reloadAsync(userId: userId)
+                }
+            )
 
             librarySection
 
@@ -270,5 +287,35 @@ struct CreateHubView: View {
                 DispatchQueue.main.async { libraryCount = 0 }
             }
         }
+    }
+
+    /// Phase 6.2: load the user's full task library so the
+    /// recurring-template form can render its pool picker. Mirrors the
+    /// web `useTaskLibrary().allTasks`.
+    private func reloadLibraryTasks() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let tasks = try AppDatabase.shared.fetchTasks(userId: userId)
+                DispatchQueue.main.async { libraryTasks = tasks }
+            } catch {
+                DispatchQueue.main.async { libraryTasks = [] }
+            }
+        }
+    }
+
+    /// Phase 6.2: synchronous validation of every template's pool against
+    /// the current library, surfacing "needs attention" badges immediately
+    /// after edits — mirrors the web `templateAttention` memo. Independent
+    /// of the actual spawn driver (which only runs on the Boards tab).
+    private var templateAttention: [String: SpawnPoolFailureReason] {
+        var out: [String: SpawnPoolFailureReason] = [:]
+        let tasksById = Dictionary(uniqueKeysWithValues: libraryTasks.map { ($0.id, $0) })
+        for t in templatesVM.templates {
+            let pool = t.seedTaskIds.compactMap { tasksById[$0] }
+            if case .failure(let reason) = validateSpawnPool(template: t, poolTasks: pool) {
+                out[t.id] = reason
+            }
+        }
+        return out
     }
 }

@@ -265,6 +265,46 @@ final class AppDatabase {
             try MigrationV7Helpers.run(db)
         }
 
+        // v8: Phase 6.2 — recurring board templates.
+        //
+        //   (a) recurring_board_templates table — user-curated task pools that
+        //       auto-spawn boards each window. seedTaskIds is stored as a JSON
+        //       string TEXT column (mirror of boards.completedLineIds) since
+        //       SQLite has no native array type.
+        //   (b) Add boards.spawnedFromTemplateId TEXT column with FK to the new
+        //       table (ON DELETE SET NULL — a deleted template doesn't cascade
+        //       to its spawned boards; per design they remain independent).
+        migrator.registerMigration("v8") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS recurring_board_templates (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    boardSize INTEGER NOT NULL,
+                    centerSquareType TEXT NOT NULL,
+                    centerSquareCustomName TEXT,
+                    isRandomized INTEGER NOT NULL DEFAULT 1,
+                    seedTaskIds TEXT NOT NULL DEFAULT '[]',
+                    poolStrategy TEXT NOT NULL DEFAULT 'all',
+                    lastSpawnedWindowKey TEXT,
+                    isActive INTEGER NOT NULL DEFAULT 1,
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_recurring_templates_user_active ON recurring_board_templates(userId, isActive)")
+            try db.execute(sql: "CREATE INDEX idx_recurring_templates_user_deleted ON recurring_board_templates(userId, isDeleted)")
+
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN spawnedFromTemplateId TEXT")
+        }
+
         return migrator
     }
 
@@ -429,6 +469,48 @@ extension AppDatabase {
                 .filter(Column("compoundTaskId") == compoundTaskId && Column("isDeleted") == false)
                 .order(Column("childIndex"))
                 .fetchAll(db)
+        }
+    }
+
+    // MARK: - RecurringBoardTemplates (Phase 6.2)
+
+    /// Fetch all non-deleted templates for a user, ordered by `updatedAt desc`.
+    func fetchRecurringBoardTemplates(userId: String) throws -> [RecurringBoardTemplate] {
+        return try read { db in
+            try RecurringBoardTemplate
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+        }
+    }
+
+    /// Fetch a single template by id (including soft-deleted, for completeness).
+    func fetchRecurringBoardTemplate(id: String) throws -> RecurringBoardTemplate? {
+        return try read { db in
+            try RecurringBoardTemplate.fetchOne(db, key: id)
+        }
+    }
+
+    /// Insert / update a template. The caller is responsible for bumping
+    /// `version` and `updatedAt` (mirror of `saveBoard`).
+    func saveRecurringBoardTemplate(_ template: RecurringBoardTemplate) throws {
+        try write { db in
+            try template.save(db)
+        }
+    }
+
+    /// Soft-delete a template. Spawned boards remain — they're independent
+    /// once spawned (per Phase 6.2 design). Bumps `version` so LWW treats
+    /// the deletion as later-wins.
+    func softDeleteRecurringBoardTemplate(id: String) throws {
+        try write { db in
+            guard var template = try RecurringBoardTemplate.fetchOne(db, key: id) else { return }
+            let now = ISO8601DateFormatter().string(from: Date())
+            template.isDeleted = true
+            template.deletedAt = now
+            template.updatedAt = now
+            template.version += 1
+            try template.update(db)
         }
     }
 
