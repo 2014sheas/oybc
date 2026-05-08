@@ -159,7 +159,17 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         }
 
         try container.encode(poolStrategy, forKey: .poolStrategy)
-        try container.encodeIfPresent(lastSpawnedWindowKey, forKey: .lastSpawnedWindowKey)
+        // `lastSpawnedWindowKey` is `String?` on iOS but `string | null`
+        // (NOT `string | undefined`) in the shared Zod schema. The default
+        // Optional encode behavior would *omit* the key when nil, which a
+        // web peer's RecurringBoardTemplateSchema parse would reject as a
+        // missing required field. Force-encode `null` so the wire payload
+        // matches the shared contract.
+        if let lastSpawnedWindowKey = lastSpawnedWindowKey {
+            try container.encode(lastSpawnedWindowKey, forKey: .lastSpawnedWindowKey)
+        } else {
+            try container.encodeNil(forKey: .lastSpawnedWindowKey)
+        }
         try container.encode(isActive, forKey: .isActive)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)

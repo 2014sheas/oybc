@@ -191,10 +191,10 @@ function buildSyncItem(
 }
 
 // Note: Dexie `bulkAdd` with the manually-shaped queue items above
-// bypasses `addToSyncQueue`'s playground-user short-circuit. The guard
-// exists to prevent the playground sandbox from bleeding into the user's
-// real sync path; the spawn path is only invoked by signed-in users from
-// the real Boards tab, and `template.userId` would have to literally be
-// `'playground-user-1'` for there to be cross-contamination — defensible
-// to skip here. If a future refactor extends the playground to host the
-// recurring-template surface, replicate the guard.
+// bypasses `addToSyncQueue`'s playground-user short-circuit. There is
+// no runtime assertion here that `template.userId !== 'playground-user-1'`
+// — this is a documented assumption, NOT an enforced invariant. The
+// spawn path is only invoked by signed-in users from the real Boards
+// tab, so the assumption holds today. If a future refactor extends the
+// playground to host the recurring-template surface, replicate the
+// guard or convert this comment into an explicit dev-only check.
