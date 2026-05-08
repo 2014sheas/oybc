@@ -272,6 +272,31 @@ describe('validateSpawnPool', () => {
     });
   });
 
+  it('duplicate task ids in the resolved pool → pool_too_small (defense for malformed remote payload)', () => {
+    // Even if a peer somehow lands a template with duplicate seedTaskIds
+    // (the create-input schema rejects them, but assume), the resolved
+    // pool would have <unique-count> items at <total-count> positions —
+    // buildSpawnPlacement would place the same Task on multiple cells.
+    // validateSpawnPool short-circuits to pool_too_small (semantically
+    // closer to the actionable user story than a separate reason).
+    const tpl = buildTemplate({
+      poolStrategy: 'all',
+      seedTaskIds: ['a', 'a', 'b', 'c'],
+      boardSize: 3,
+    });
+    // Resolve to four Tasks where two reference the same id ('a')
+    const pool: Task[] = [
+      buildTask('a'),
+      buildTask('a'),
+      buildTask('b'),
+      buildTask('c'),
+    ];
+    expect(validateSpawnPool(tpl, pool)).toEqual({
+      ok: false,
+      reason: 'pool_too_small',
+    });
+  });
+
   it('has_deleted_tasks takes precedence over pool_too_small (catch-soft-delete-first ordering)', () => {
     // 3 tasks total on a 3x3 (8 fillable cells) — pool is too small AND
     // has a deleted task. The validator should surface the deleted-task

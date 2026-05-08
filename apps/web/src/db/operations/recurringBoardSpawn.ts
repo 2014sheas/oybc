@@ -51,124 +51,145 @@ export async function spawnTemplateBoard(
 ): Promise<SpawnResult> {
   const { template, windowStart, windowEnd, suggestedName } = spawn;
 
-  // Resolve seedTaskIds → Task[]. Read outside the txn because Dexie
-  // doesn't lock tables on read; the txn below scopes only the writes.
-  // Tasks resolved here may end up soft-deleted between this read and the
-  // txn — `validateSpawnPool` re-checks inside.
-  const tasks = await db.tasks.where('id').anyOf(template.seedTaskIds).toArray();
-  // Order tasks to match `seedTaskIds` (anyOf doesn't guarantee order),
-  // dropping any ids that don't resolve. Drops are surfaced as
-  // `pool_too_small` by validateSpawnPool — same actionable failure as
-  // a literally-too-small pool.
-  const tasksById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
-  const orderedPool: Task[] = template.seedTaskIds
-    .map((id) => tasksById.get(id))
-    .filter((t): t is Task => t !== undefined);
-
-  if (orderedPool.length === 0) {
-    return { ok: false, templateId: template.id, reason: 'no_pool_tasks_resolved' };
-  }
-
-  const validation = validateSpawnPool(template, orderedPool);
-  if (!validation.ok) {
-    return { ok: false, templateId: template.id, reason: validation.reason };
-  }
-
-  const placement = buildSpawnPlacement({
-    template,
-    poolTasks: orderedPool,
-  });
-
   const boardId = generateUUID();
   const now = currentTimestamp();
 
-  // Pre-build the rows + sync queue items so the transaction body is
-  // synchronous (Dexie txns can host async work but keeping it tight
-  // reduces transaction-stuck-open hazards on Firefox).
-  const board: Board = {
-    id: boardId,
-    userId: template.userId,
-    name: suggestedName,
-    status: BoardStatus.ACTIVE,
-    boardSize: template.boardSize,
-    timeframe: template.timeframe,
-    startDate: windowStart,
-    endDate: windowEnd,
-    centerSquareType: template.centerSquareType,
-    centerSquareCustomName: template.centerSquareCustomName,
-    isRandomized: template.isRandomized,
-    totalTasks: template.boardSize * template.boardSize,
-    completedTasks: 0,
-    linesCompleted: 0,
-    completedLineIds: [],
-    createdAt: now,
-    updatedAt: now,
-    version: 1,
-    isDeleted: false,
-    spawnedFromTemplateId: template.id,
-  };
-
-  // For odd-sized boards, the center cell index is `floor(N²/2)`; for
-  // even-sized, no center exists. `placement` already encodes FREE /
-  // CUSTOM_FREE as `null` at the center, so we just check `t === null`
-  // below — no separate branch needed.
-  const centerCellIndex =
-    template.boardSize % 2 === 1
-      ? Math.floor((template.boardSize * template.boardSize) / 2)
-      : -1;
-
-  const boardTasks: BoardTask[] = [];
-  for (let cell = 0; cell < placement.length; cell++) {
-    const t = placement[cell];
-    if (t === null) continue; // auto-completed FREE / CUSTOM_FREE center
-    const row = Math.floor(cell / template.boardSize);
-    const col = cell % template.boardSize;
-    boardTasks.push({
-      id: generateUUID(),
-      boardId,
-      taskId: t.id,
-      row,
-      col,
-      isCenter: cell === centerCellIndex,
-      isAchievementSquare: false,
-      createdAt: now,
-      updatedAt: now,
-      version: 1,
-    });
-  }
-
-  const updatedTemplate: RecurringBoardTemplate = {
-    ...template,
-    lastSpawnedWindowKey: windowStart,
-    updatedAt: now,
-    version: (template.version ?? 0) + 1,
-  };
-
-  const queueItems: SyncQueueItem[] = [
-    buildSyncItem('boards', board.id, SyncOperationType.CREATE, board),
-    ...boardTasks.map((bt) =>
-      buildSyncItem('boardTasks', bt.id, SyncOperationType.CREATE, bt),
-    ),
-    buildSyncItem(
-      'recurringBoardTemplates',
-      updatedTemplate.id,
-      SyncOperationType.UPDATE,
-      updatedTemplate,
-    ),
-  ];
-
-  await db.transaction(
+  // Single transaction covers task resolution + pool validation +
+  // placement + writes. Folding the read inside the same txn closes
+  // the soft-delete race — without `db.tasks` in the scope, sync could
+  // soft-delete a seed task between the read and the writes, allowing
+  // a board to spawn against stale pool data.
+  //
+  // Returning a non-throwing skip outcome from within the txn requires
+  // a sentinel pattern (Dexie aborts a txn on thrown errors but we
+  // want to commit nothing AND return the structured failure cleanly).
+  // The closure resolves to a SpawnResult; abort outcomes return
+  // before reaching the writes.
+  return await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.recurringBoardTemplates, db.syncQueue],
-    async () => {
+    [
+      db.boards,
+      db.boardTasks,
+      db.tasks,
+      db.recurringBoardTemplates,
+      db.syncQueue,
+    ],
+    async (): Promise<SpawnResult> => {
+      // Resolve seedTaskIds → Task[] in seedTaskIds order. Drops any
+      // ids that don't resolve; the validator catches the resulting
+      // pool-too-small as `has_deleted_tasks` (caller responsibility:
+      // the create/update form rejects deleted refs at save time).
+      const tasks = await db.tasks
+        .where('id')
+        .anyOf(template.seedTaskIds)
+        .toArray();
+      const tasksById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
+      const orderedPool: Task[] = template.seedTaskIds
+        .map((id) => tasksById.get(id))
+        .filter((t): t is Task => t !== undefined);
+
+      if (orderedPool.length === 0) {
+        return {
+          ok: false,
+          templateId: template.id,
+          reason: 'no_pool_tasks_resolved',
+        };
+      }
+
+      const validation = validateSpawnPool(template, orderedPool);
+      if (!validation.ok) {
+        return {
+          ok: false,
+          templateId: template.id,
+          reason: validation.reason,
+        };
+      }
+
+      const placement = buildSpawnPlacement({
+        template,
+        poolTasks: orderedPool,
+      });
+
+      const board: Board = {
+        id: boardId,
+        userId: template.userId,
+        name: suggestedName,
+        status: BoardStatus.ACTIVE,
+        boardSize: template.boardSize,
+        timeframe: template.timeframe,
+        startDate: windowStart,
+        endDate: windowEnd,
+        centerSquareType: template.centerSquareType,
+        centerSquareCustomName: template.centerSquareCustomName,
+        isRandomized: template.isRandomized,
+        totalTasks: template.boardSize * template.boardSize,
+        completedTasks: 0,
+        linesCompleted: 0,
+        completedLineIds: [],
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        isDeleted: false,
+        spawnedFromTemplateId: template.id,
+      };
+
+      // For odd-sized boards, the center cell index is `floor(N²/2)`;
+      // for even-sized, no center exists. `placement` encodes FREE /
+      // CUSTOM_FREE as `null` at the center, so the `t === null`
+      // check below covers the "auto-completed center" case directly.
+      const centerCellIndex =
+        template.boardSize % 2 === 1
+          ? Math.floor((template.boardSize * template.boardSize) / 2)
+          : -1;
+
+      const boardTasks: BoardTask[] = [];
+      for (let cell = 0; cell < placement.length; cell++) {
+        const t = placement[cell];
+        if (t === null) continue; // auto-completed FREE / CUSTOM_FREE center
+        const row = Math.floor(cell / template.boardSize);
+        const col = cell % template.boardSize;
+        boardTasks.push({
+          id: generateUUID(),
+          boardId,
+          taskId: t.id,
+          row,
+          col,
+          isCenter: cell === centerCellIndex,
+          isAchievementSquare: false,
+          createdAt: now,
+          updatedAt: now,
+          version: 1,
+        });
+      }
+
+      const updatedTemplate: RecurringBoardTemplate = {
+        ...template,
+        lastSpawnedWindowKey: windowStart,
+        updatedAt: now,
+        version: (template.version ?? 0) + 1,
+      };
+
+      const queueItems: SyncQueueItem[] = [
+        buildSyncItem('boards', board.id, SyncOperationType.CREATE, board),
+        ...boardTasks.map((bt) =>
+          buildSyncItem('boardTasks', bt.id, SyncOperationType.CREATE, bt),
+        ),
+        buildSyncItem(
+          'recurringBoardTemplates',
+          updatedTemplate.id,
+          SyncOperationType.UPDATE,
+          updatedTemplate,
+        ),
+      ];
+
       await db.boards.add(board);
       if (boardTasks.length > 0) await db.boardTasks.bulkAdd(boardTasks);
       await db.recurringBoardTemplates.put(updatedTemplate);
       await db.syncQueue.bulkAdd(queueItems);
+
+      return { ok: true, boardId, templateId: template.id, windowStart };
     },
   );
-
-  return { ok: true, boardId, templateId: template.id, windowStart };
 }
 
 function buildSyncItem(

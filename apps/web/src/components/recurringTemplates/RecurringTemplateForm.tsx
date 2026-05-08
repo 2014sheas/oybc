@@ -27,12 +27,15 @@ import styles from './RecurringTemplateForm.module.css';
  *   so the template won't re-spawn the current window after a non-pool
  *   edit.
  *
- * Validation is layered:
- * - Field-level synchronous checks gate the Save button (disabled if
- *   any check fails).
- * - The schema-level Zod refinements in
- *   `CreateRecurringBoardTemplateInputSchema` are enforced by the DB
- *   operation as a defense-in-depth.
+ * Validation: field-level synchronous checks gate the Save button
+ * (disabled if any check fails). The DB operations
+ * (`createRecurringBoardTemplate` / `updateRecurringBoardTemplate`)
+ * trust their typed input — they don't run Zod themselves. The
+ * schema-level checks in `CreateRecurringBoardTemplateInputSchema` /
+ * `UpdateRecurringBoardTemplateInputSchema` are reused by the sync
+ * pull path (`applyRemoteSubdoc`) for defense-in-depth against
+ * malformed Firestore payloads, but local form input is gated only
+ * by this component.
  *
  * MVP scope (locked): supports FREE / CUSTOM_FREE / NONE only — CHOSEN
  * is excluded (the Zod schema would reject it anyway).

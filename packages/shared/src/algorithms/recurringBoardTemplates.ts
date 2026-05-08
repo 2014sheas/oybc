@@ -194,6 +194,21 @@ export function validateSpawnPool(
     return { ok: false, reason: 'has_deleted_tasks' };
   }
 
+  // Reject duplicate task ids in the resolved pool. The create/update
+  // input schemas already reject duplicates at form-input time, but a
+  // bad remote payload (e.g. an older client that didn't enforce
+  // uniqueness, or a hand-crafted Firestore doc) could still slip
+  // through. Without this guard `buildSpawnPlacement` would place the
+  // same Task on multiple cells, contradicting the pool semantics.
+  // We map this to `pool_too_small` because de-dup'd it IS too small —
+  // surfacing a "needs attention" badge with that copy is closer to the
+  // user-actionable story ("your pool has fewer unique tasks than this
+  // board needs") than a separate `pool_has_duplicates` reason would be.
+  const uniqueIds = new Set(poolTasks.map((t) => t.id));
+  if (uniqueIds.size !== poolTasks.length) {
+    return { ok: false, reason: 'pool_too_small' };
+  }
+
   const required = fillableCellCount(
     template.boardSize,
     template.centerSquareType,

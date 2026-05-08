@@ -307,11 +307,30 @@ struct CreateHubView: View {
     /// the current library, surfacing "needs attention" badges immediately
     /// after edits — mirrors the web `templateAttention` memo. Independent
     /// of the actual spawn driver (which only runs on the Boards tab).
+    ///
+    /// `libraryTasks` comes from `fetchTasks(userId:)` which filters out
+    /// soft-deleted tasks. A seedTaskId that fails to resolve in this map
+    /// almost certainly means the underlying Task was soft-deleted (the
+    /// form prevents adding non-existent IDs to a template) — flag it as
+    /// `.hasDeletedTasks` directly rather than letting the validator
+    /// mis-classify the trimmed pool as `.poolTooSmall`. The spawn driver
+    /// in `RecurringBoardSpawn.swift` reads the unfiltered `Task` table
+    /// inside its transaction and produces the authoritative reason; this
+    /// view-side map exists for immediate-feedback parity.
     private var templateAttention: [String: SpawnPoolFailureReason] {
         var out: [String: SpawnPoolFailureReason] = [:]
         let tasksById = Dictionary(uniqueKeysWithValues: libraryTasks.map { ($0.id, $0) })
         for t in templatesVM.templates {
-            let pool = t.seedTaskIds.compactMap { tasksById[$0] }
+            var pool: [Task] = []
+            var hasMissingFromLibrary = false
+            for id in t.seedTaskIds {
+                if let found = tasksById[id] { pool.append(found) }
+                else { hasMissingFromLibrary = true }
+            }
+            if hasMissingFromLibrary {
+                out[t.id] = .hasDeletedTasks
+                continue
+            }
             if case .failure(let reason) = validateSpawnPool(template: t, poolTasks: pool) {
                 out[t.id] = reason
             }

@@ -536,14 +536,17 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
 }).refine(
   (data) => {
     if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
+      // Trim before checking length so a whitespace-only label
+      // ('   ') doesn't slip through. The form input layer also
+      // trims, but this is the schema-level defense.
       return (
         data.centerSquareCustomName !== undefined &&
-        data.centerSquareCustomName.length > 0
+        data.centerSquareCustomName.trim().length > 0
       );
     }
     return true;
   },
-  { message: 'centerSquareCustomName is required when centerSquareType is custom_free' },
+  { message: 'centerSquareCustomName is required (and must be non-blank) when centerSquareType is custom_free' },
 ).refine(
   (data) => {
     // No duplicate seedTaskIds — each pool entry must reference a distinct
@@ -570,6 +573,22 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
     return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
   },
   { message: 'seedTaskIds must not contain duplicates' },
+).refine(
+  (data) => {
+    // When a partial update sets `centerSquareType` to CUSTOM_FREE, it must
+    // also include a non-blank `centerSquareCustomName` in the same patch.
+    // Otherwise a syncing peer or malicious client could land a
+    // CUSTOM_FREE template with no label, and the spawn path would create
+    // boards whose center cell has no displayable text. The schema can't
+    // see the existing record's name, so the conservative call is to
+    // require both fields to travel together — the form already does so.
+    if (data.centerSquareType !== CenterSquareType.CUSTOM_FREE) return true;
+    return (
+      data.centerSquareCustomName !== undefined &&
+      data.centerSquareCustomName.trim().length > 0
+    );
+  },
+  { message: 'Setting centerSquareType to custom_free requires a non-blank centerSquareCustomName in the same patch' },
 );
 
 export const RecurringBoardTemplateSchema = z.object({

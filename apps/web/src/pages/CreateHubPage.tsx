@@ -98,17 +98,36 @@ export function CreateHubPage({
   // driver (which only runs on the Boards tab) so the user gets immediate
   // feedback while editing — and survives a Create-tab reload that hasn't
   // visited Boards yet.
+  //
+  // `library.taskMap` is built from `useTasks(userId)` which filters out
+  // soft-deleted tasks. So a seed-task that the user has since deleted is
+  // missing from the map. The form prevents adding non-existent IDs to a
+  // template, so the only realistic reason a seedTaskId fails to resolve
+  // is that the underlying Task was soft-deleted — flag it as
+  // `has_deleted_tasks` directly rather than letting the validator
+  // mis-classify it as `pool_too_small`. The actual spawn driver
+  // (`recurringBoardSpawn.ts`) reads the unfiltered `db.tasks` table and
+  // produces the authoritative reason; this UI map exists for
+  // immediate-feedback parity.
   const templateAttention = useMemo<Record<string, SpawnPoolFailureReason>>(() => {
     const out: Record<string, SpawnPoolFailureReason> = {};
     for (const t of recurringTemplates) {
-      const pool = t.seedTaskIds
-        .map((id) => library.taskMap[id])
-        .filter((task): task is NonNullable<typeof task> => task !== undefined);
+      const pool: typeof library.allTasks = [];
+      let hasMissingFromLibrary = false;
+      for (const id of t.seedTaskIds) {
+        const found = library.taskMap[id];
+        if (found) pool.push(found);
+        else hasMissingFromLibrary = true;
+      }
+      if (hasMissingFromLibrary) {
+        out[t.id] = 'has_deleted_tasks';
+        continue;
+      }
       const v = validateSpawnPool(t, pool);
       if (!v.ok) out[t.id] = v.reason;
     }
     return out;
-  }, [recurringTemplates, library.taskMap]);
+  }, [recurringTemplates, library.taskMap, library.allTasks]);
 
   // Recurring-banner deep link: `/create?recurringTimeframe=daily` opens
   // the wizard immediately with the timeframe prefilled + locked. We

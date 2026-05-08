@@ -14,11 +14,43 @@ struct RecurringTemplateRowView: View {
     /// Tap-to-edit handler. The parent owns the form sheet presentation.
     let onEdit: () -> Void
 
+    /// Invoked after a successful toggle/delete commit so the parent can
+    /// reload `RecurringBoardTemplatesViewModel.templates` — without this,
+    /// the row's Toggle would snap back to the input prop's value because
+    /// the parent's snapshot doesn't reflect the just-written change. The
+    /// Section view threads `templatesVM.reloadAsync` through here.
+    let onTemplatesChanged: () -> Void
+
     // MARK: - State
 
     @State private var busy = false
     @State private var deleteError: String?
     @State private var showDeleteConfirm = false
+
+    /// Optimistic mirror of `template.isActive`. The Toggle binds to this
+    /// rather than the immutable input prop so a tap immediately reflects
+    /// in the UI; the async write commits in parallel and the parent
+    /// reload swaps in the canonical row a moment later. If the write
+    /// fails the optimistic flip stays — acceptable given the failure is
+    /// logged, and the next view re-render with fresh templates will
+    /// correct it. SwiftUI's `@State` initial-value capture only runs
+    /// once at row construction, but ForEach with `id: \.id` keys a new
+    /// state container per template id, so this stays in sync with the
+    /// data identity even when the parent reloads.
+    @State private var optimisticIsActive: Bool
+
+    init(
+        template: RecurringBoardTemplate,
+        attentionReason: SpawnPoolFailureReason? = nil,
+        onEdit: @escaping () -> Void,
+        onTemplatesChanged: @escaping () -> Void
+    ) {
+        self.template = template
+        self.attentionReason = attentionReason
+        self.onEdit = onEdit
+        self.onTemplatesChanged = onTemplatesChanged
+        self._optimisticIsActive = State(initialValue: template.isActive)
+    }
 
     // MARK: - Body
 
@@ -36,12 +68,12 @@ struct RecurringTemplateRowView: View {
                 }
                 Spacer()
                 Toggle("", isOn: Binding(
-                    get: { template.isActive },
+                    get: { optimisticIsActive },
                     set: { newValue in toggleActive(newValue) }
                 ))
                 .labelsHidden()
                 .disabled(busy)
-                .accessibilityLabel(template.isActive
+                .accessibilityLabel(optimisticIsActive
                                     ? "Pause \(template.name)"
                                     : "Activate \(template.name)")
             }
@@ -140,6 +172,9 @@ struct RecurringTemplateRowView: View {
 
     private func toggleActive(_ newValue: Bool) {
         guard !busy else { return }
+        // Optimistic flip — UI reflects intent immediately; the async
+        // write below commits in the background.
+        optimisticIsActive = newValue
         busy = true
         let now = AppDatabase.currentTimestamp()
         var updated = template
@@ -158,10 +193,19 @@ struct RecurringTemplateRowView: View {
                         now: now
                     ).insert(db)
                 }
+                await MainActor.run {
+                    busy = false
+                    onTemplatesChanged()
+                }
             } catch {
                 print("[recurring-template] toggleActive failed: \(error)")
+                await MainActor.run {
+                    // Roll back optimistic flip so the UI reflects the
+                    // committed state on failure.
+                    optimisticIsActive = template.isActive
+                    busy = false
+                }
             }
-            await MainActor.run { busy = false }
         }
     }
 
@@ -184,7 +228,10 @@ struct RecurringTemplateRowView: View {
                         ).insert(db)
                     }
                 }
-                await MainActor.run { busy = false }
+                await MainActor.run {
+                    busy = false
+                    onTemplatesChanged()
+                }
             } catch {
                 await MainActor.run {
                     busy = false

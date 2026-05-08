@@ -132,6 +132,13 @@ func validateSpawnPool(
         return .failure(.hasDeletedTasks)
     }
 
+    // Reject duplicate task ids in the resolved pool. Mirrors the
+    // TS-side validateSpawnPool dedupe check. See its rationale.
+    let uniqueIds = Set(poolTasks.map { $0.id })
+    if uniqueIds.count != poolTasks.count {
+        return .failure(.poolTooSmall)
+    }
+
     let required = recurringTemplateFillableCellCount(
         boardSize: template.boardSize,
         centerSquareType: template.centerSquareType

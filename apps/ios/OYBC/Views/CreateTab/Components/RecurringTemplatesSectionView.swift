@@ -64,7 +64,8 @@ struct RecurringTemplatesSectionView: View {
                         RecurringTemplateRowView(
                             template: tpl,
                             attentionReason: attentionByTemplateId[tpl.id],
-                            onEdit: { editingTemplate = tpl }
+                            onEdit: { editingTemplate = tpl },
+                            onTemplatesChanged: onTemplatesChanged
                         )
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
