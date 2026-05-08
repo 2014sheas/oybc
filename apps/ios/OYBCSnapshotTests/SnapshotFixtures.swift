@@ -137,6 +137,40 @@ enum SnapshotFixtures {
         )
     }
 
+    static func makeRecurringTemplate(
+        id: String,
+        name: String,
+        timeframe: Timeframe = .monthly,
+        boardSize: Int = 5,
+        centerSquareType: CenterSquareType = .free,
+        isRandomized: Bool = true,
+        seedTaskCount: Int = 24,
+        poolStrategy: PoolStrategy = .all,
+        isActive: Bool = true,
+        lastSpawnedWindowKey: String? = nil
+    ) -> RecurringBoardTemplate {
+        RecurringBoardTemplate(
+            id: id,
+            userId: userId,
+            name: name,
+            timeframe: timeframe,
+            boardSize: boardSize,
+            centerSquareType: centerSquareType,
+            centerSquareCustomName: nil,
+            isRandomized: isRandomized,
+            seedTaskIds: (0..<seedTaskCount).map { "\(id)-task-\($0)" },
+            poolStrategy: poolStrategy,
+            lastSpawnedWindowKey: lastSpawnedWindowKey,
+            isActive: isActive,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp,
+            lastSyncedAt: nil,
+            version: 1,
+            isDeleted: false,
+            deletedAt: nil
+        )
+    }
+
     // MARK: - Wizard controller
 
     /// Stage hint for the controller — Setup blank, Setup valid, or

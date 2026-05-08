@@ -23,7 +23,7 @@ struct PendingTemplateSpawn {
 }
 
 /// Outcome of `validateSpawnPool`. Mirrors the TS-side `SpawnPoolValidation`.
-enum SpawnPoolValidation {
+enum SpawnPoolValidation: Equatable {
     case ok
     case failure(SpawnPoolFailureReason)
 }

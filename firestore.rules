@@ -24,15 +24,18 @@ service cloud.firestore {
         return collection in [
           'boards', 'tasks', 'taskSteps',
           'boardTasks', 'compositeTasks', 'compositeNodes',
-          'compoundChildren'
+          'compoundChildren',
+          'recurringBoardTemplates'
         ];
       }
 
-      // Top-level entities (Board, Task, CompositeTask) carry a `userId`
-      // field in their payload. Child entities (TaskStep, BoardTask,
-      // CompositeNode) are scoped via their parent and do not.
+      // Top-level entities (Board, Task, CompositeTask, RecurringBoardTemplate)
+      // carry a `userId` field in their payload. Child entities (TaskStep,
+      // BoardTask, CompositeNode) are scoped via their parent and do not.
       function requiresUserIdField() {
-        return collection in ['boards', 'tasks', 'compositeTasks'];
+        return collection in [
+          'boards', 'tasks', 'compositeTasks', 'recurringBoardTemplates'
+        ];
       }
 
       // Enforces that a user-scoped entity's payload userId matches the
