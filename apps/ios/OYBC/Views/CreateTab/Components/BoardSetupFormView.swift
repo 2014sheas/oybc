@@ -133,18 +133,30 @@ struct BoardSetupFormView: View {
             }
 
             // ── Auto-calculated timeframe display ──
+            // Recurring boards show a cadence label ("Every week") with
+            // the first-spawn window as the caption, so the wizard makes
+            // the recurrence visible instead of looking identical to a
+            // one-off board for the same window.
             if controller.timeframe != .custom, let boundaries = controller.computedBoundaries {
                 VStack(alignment: .leading, spacing: 2) {
-                    if let label = controller.timeframeDisplayLabel {
-                        Text(label)
+                    let windowLabel = controller.timeframeDisplayLabel ?? ""
+                    if controller.isRecurring {
+                        Text(recurringCadenceLabel(timeframe: controller.timeframe))
                             .font(.subheadline)
                             .fontWeight(.semibold)
+                        Text("First spawn: \(windowLabel)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(windowLabel)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        let start = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
+                        let end = DateFormatter.localizedString(from: boundaries.end, dateStyle: .medium, timeStyle: .none)
+                        Text("\(start) – \(end)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
-                    let start = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
-                    let end = DateFormatter.localizedString(from: boundaries.end, dateStyle: .medium, timeStyle: .none)
-                    Text("\(start) – \(end)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
                 .padding(8)
                 .background(Color(.systemGray6))

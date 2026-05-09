@@ -69,6 +69,7 @@ export {
   isWithinTimeframe,
   isTimeframeExpired,
   formatTimeframeLabel,
+  formatRecurringCadence,
 } from './calendarBoundaries';
 
 export type {

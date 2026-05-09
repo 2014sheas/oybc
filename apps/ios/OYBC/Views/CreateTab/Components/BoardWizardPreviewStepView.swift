@@ -46,10 +46,15 @@ struct BoardWizardPreviewStepView: View {
             }
             return "Custom (no dates set)"
         }
-        if let b = controller.computedBoundaries {
-            return playgroundTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
+        guard let b = controller.computedBoundaries else { return "—" }
+        let windowLabel = playgroundTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
+        if controller.isRecurring {
+            // Recurring: lead with the cadence ("Every week") and show
+            // the first-spawn window after, so the row can't be confused
+            // with a one-off board for that single window.
+            return "\(recurringCadenceLabel(timeframe: controller.timeframe)) · first spawn \(windowLabel)"
         }
-        return "—"
+        return windowLabel
     }
 
     private var centerSummary: String {

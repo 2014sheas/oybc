@@ -1,6 +1,7 @@
 import {
   CenterSquareType,
   Timeframe,
+  formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
   type WeekStartDay,
@@ -246,13 +247,20 @@ export function BoardSetupForm({
         )}
       </div>
 
-      {/* Date display — auto for non-Custom, pickers for Custom */}
+      {/* Date display — auto for non-Custom, pickers for Custom.
+          Recurring boards show a cadence label ("Every week") with
+          the first-spawn window as the caption, so the wizard makes
+          the recurrence visible instead of looking identical to a
+          one-off board for the same window. */}
       {timeframe !== Timeframe.CUSTOM && computedBoundaries && (
         <div className={styles.dateDisplay}>
-          <span className={styles.dateDisplayLabel}>{timeframeLabel}</span>
+          <span className={styles.dateDisplayLabel}>
+            {isRecurring ? formatRecurringCadence(timeframe) : timeframeLabel}
+          </span>
           <span className={styles.dateDisplayRange}>
-            {computedBoundaries.startDate.split('T')[0]} to{' '}
-            {computedBoundaries.endDate.split('T')[0]}
+            {isRecurring
+              ? `First spawn: ${timeframeLabel}`
+              : `${computedBoundaries.startDate.split('T')[0]} to ${computedBoundaries.endDate.split('T')[0]}`}
           </span>
         </div>
       )}

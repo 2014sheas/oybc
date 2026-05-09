@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
   CenterSquareType,
   Timeframe,
+  formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
 } from '@oybc/shared';
@@ -93,12 +94,20 @@ export function BoardWizardPreviewStep({
       new Date(),
       controller.weekStartDay,
     );
-    return formatTimeframeLabel(controller.timeframe, b.startDate);
+    const windowLabel = formatTimeframeLabel(controller.timeframe, b.startDate);
+    if (controller.isRecurring) {
+      // Recurring: lead with the cadence ("Every week") and show the
+      // first-spawn window after, so the preview row can't be confused
+      // with a one-off board for that single window.
+      return `${formatRecurringCadence(controller.timeframe)} · first spawn ${windowLabel}`;
+    }
+    return windowLabel;
   }, [
     controller.timeframe,
     controller.customStartDate,
     controller.customEndDate,
     controller.weekStartDay,
+    controller.isRecurring,
   ]);
 
   const isOddBoard = controller.size % 2 !== 0;
