@@ -113,7 +113,7 @@ struct BoardSetupFormView: View {
                         Text("Make recurring")
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                        Text("Auto-spawn a fresh board each window from a task pool.")
+                        Text("automatically create a fresh board each window from a task pool.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

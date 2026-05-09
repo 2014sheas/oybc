@@ -1,10 +1,10 @@
-import { Timeframe, CenterSquareType } from '../constants/enums';
-import { BoardSize } from '../constants';
+import { Timeframe, CenterSquareType } from "../constants/enums";
+import { BoardSize } from "../constants";
 
 /**
  * RecurringBoardTemplate — Phase 6.2 (Preset-pool Recurring Boards)
  *
- * A user-curated task pool that auto-spawns a fresh board every window when
+ * A user-curated task pool that automatically creates a fresh board every window when
  * the user opens the Boards tab. Differs from Phase 6.1's
  * `findPendingRecurringBoards` (which surfaces a banner inviting the user to
  * *create* a board for the current window) — templates spawn boards
@@ -40,16 +40,16 @@ import { BoardSize } from '../constants';
  */
 export interface RecurringBoardTemplate {
   // Identity
-  id: string;                          // UUID (client-generated)
-  userId: string;                      // FK to users
+  id: string; // UUID (client-generated)
+  userId: string; // FK to users
 
   // Configuration
-  name: string;                        // Display name (1-120 chars after trim)
-  timeframe: Timeframe;                // DAILY / WEEKLY / MONTHLY / YEARLY (no CUSTOM)
-  boardSize: BoardSize;                // 3, 4, or 5
-  centerSquareType: CenterSquareType;  // FREE / CUSTOM_FREE / NONE (no CHOSEN in MVP)
-  centerSquareCustomName?: string;     // Required when centerSquareType is CUSTOM_FREE
-  isRandomized: boolean;               // Whether spawn shuffles seedTaskIds
+  name: string; // Display name (1-120 chars after trim)
+  timeframe: Timeframe; // DAILY / WEEKLY / MONTHLY / YEARLY (no CUSTOM)
+  boardSize: BoardSize; // 3, 4, or 5
+  centerSquareType: CenterSquareType; // FREE / CUSTOM_FREE / NONE (no CHOSEN in MVP)
+  centerSquareCustomName?: string; // Required when centerSquareType is CUSTOM_FREE
+  isRandomized: boolean; // Whether spawn shuffles seedTaskIds
   /**
    * Pool the spawn function draws from. Length must be ≥ the fillable
    * cell count (`boardSize² - (FREE ? 1 : 0)`); the spawn shuffles
@@ -64,17 +64,17 @@ export interface RecurringBoardTemplate {
 
   // Spawn state
   lastSpawnedWindowKey: string | null; // local ISO startDate of last spawn, or null
-  isActive: boolean;                   // User can pause/resume without deleting
+  isActive: boolean; // User can pause/resume without deleting
 
   // Timestamps
-  createdAt: string;                   // ISO8601
-  updatedAt: string;                   // ISO8601
+  createdAt: string; // ISO8601
+  updatedAt: string; // ISO8601
 
   // Sync metadata
-  lastSyncedAt?: string;               // ISO8601
-  version: number;                     // Optimistic locking (incremented on each update)
-  isDeleted: boolean;                  // Soft delete
-  deletedAt?: string;                  // ISO8601
+  lastSyncedAt?: string; // ISO8601
+  version: number; // Optimistic locking (incremented on each update)
+  isDeleted: boolean; // Soft delete
+  deletedAt?: string; // ISO8601
 }
 
 /**

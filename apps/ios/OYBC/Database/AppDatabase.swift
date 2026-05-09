@@ -268,7 +268,7 @@ final class AppDatabase {
         // v8: Phase 6.2 — recurring board templates.
         //
         //   (a) recurring_board_templates table — user-curated task pools that
-        //       auto-spawn boards each window. seedTaskIds is stored as a JSON
+        //       automatically create boards each window. seedTaskIds is stored as a JSON
         //       string TEXT column (mirror of boards.completedLineIds) since
         //       SQLite has no native array type.
         //   (b) Add boards.spawnedFromTemplateId TEXT column with FK to the new

@@ -3,7 +3,7 @@ import GRDB
 
 /// RecurringBoardTemplate — Phase 6.2 (Preset-pool Recurring Boards).
 ///
-/// User-curated task pool that auto-spawns a fresh board every window
+/// User-curated task pool that automatically creates a fresh board every window
 /// when the user opens the Boards tab. iOS twin of TypeScript
 /// `RecurringBoardTemplate` in `@oybc/shared`.
 ///
