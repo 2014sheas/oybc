@@ -32,7 +32,7 @@ import { test as base, type Page } from '@playwright/test';
  * in-app navigation keeps the bypass live until the browser context
  * tears down (sessionStorage is per-tab).
  */
-export const test = base.extend<{}>({
+export const test = base.extend<Record<string, never>>({
   page: async ({ page }, use) => {
     // Surface AuthContext's `[auth-bypass]` error logs in the test
     // runner's stdout when the bootstrap fails. Other console output
@@ -40,7 +40,6 @@ export const test = base.extend<{}>({
     // focused.
     page.on('console', (msg) => {
       if (msg.type() === 'error' && msg.text().includes('[auth-bypass]')) {
-        // eslint-disable-next-line no-console
         console.log(`[browser] ${msg.text()}`);
       }
     });
@@ -49,6 +48,11 @@ export const test = base.extend<{}>({
     // the param to sessionStorage immediately, so any in-app
     // navigation the test does keeps the bypass live.
     await page.goto('/?__oybc_test_bypass=1');
+    // `use` here is Playwright's fixture-yield callback
+    // (https://playwright.dev/docs/test-fixtures), not a React hook.
+    // The naming collision with React's `use` API is unavoidable
+    // without breaking from the framework's API.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     await use(page);
   },
 });
