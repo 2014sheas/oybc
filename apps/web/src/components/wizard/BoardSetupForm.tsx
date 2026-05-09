@@ -213,12 +213,6 @@ export function BoardSetupForm({
             "Start a new board" to pick a different one.
           </p>
         )}
-        {!timeframeLocked && isRecurring && (
-          <p className={styles.hint}>
-            Recurring boards use computed windows — Custom timeframe is
-            unavailable. Toggle "Make recurring" off to pick custom dates.
-          </p>
-        )}
       </div>
 
       {/* Recurring toggle (Phase 6.2). Rendered between Timeframe and
@@ -239,12 +233,6 @@ export function BoardSetupForm({
             </span>
           </span>
         </label>
-        {isRecurring && (
-          <p className={styles.hint}>
-            Pool can be larger than the board; the spawn picks a random
-            subset each window.
-          </p>
-        )}
       </div>
 
       {/* Date display — auto for non-Custom, pickers for Custom.

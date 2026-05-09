@@ -96,12 +96,6 @@ struct BoardSetupFormView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    if controller.isRecurring {
-                        Text("Recurring boards use computed windows — Custom timeframe is unavailable. Toggle \"Make recurring\" off to pick custom dates.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .italic()
-                    }
                 }
             }
 
@@ -123,12 +117,6 @@ struct BoardSetupFormView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                }
-                if controller.isRecurring {
-                    Text("Pool can be larger than the board; the spawn picks a random subset each window.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .italic()
                 }
             }
 

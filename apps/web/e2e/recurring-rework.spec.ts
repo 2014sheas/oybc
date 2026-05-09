@@ -23,7 +23,7 @@ import {
  */
 
 test.describe('Phase 6.2 rework', () => {
-  test('Setup-step toggle hides Custom timeframe + reveals random-subset hint', async ({ page }) => {
+  test('Setup-step toggle hides Custom timeframe', async ({ page }) => {
     // Open the wizard via the Create-tab CTA. Same matcher as the
     // baseline auth-gated test (handles both primary and secondary
     // CTA copy depending on whether pending recurring boards exist).
@@ -31,11 +31,9 @@ test.describe('Phase 6.2 rework', () => {
     await page.getByRole('button', { name: /start a new board/i }).click();
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
-    // Initial state: Custom is in the timeframe segmented selector,
-    // recurring hint is NOT visible.
+    // Initial state: Custom is in the timeframe segmented selector.
     const timeframeCustom = page.getByRole('button', { name: 'Custom', exact: true });
     await expect(timeframeCustom).toBeVisible();
-    await expect(page.getByText(/random subset each window/i)).not.toBeVisible();
 
     // Flip the "Make recurring" toggle. The label is rendered inside a
     // <label> wrapping the checkbox, so we click the checkbox by name.
@@ -43,19 +41,10 @@ test.describe('Phase 6.2 rework', () => {
     await toggle.check();
     await expect(toggle).toBeChecked();
 
-    // Recurring hint reveals — explains that the pool can be larger
-    // than the board (loose-fit; the spawn picks a random subset).
-    await expect(
-      page.getByText(/pool can be larger than the board/i),
-    ).toBeVisible();
-
     // Custom timeframe option disappears from the segmented selector
-    // (the recurring schema rejects it). The hint copy explaining
-    // why surfaces too.
+    // (the recurring schema rejects it — vanishing is the affordance,
+    // no explanatory hint).
     await expect(timeframeCustom).not.toBeVisible();
-    await expect(
-      page.getByText(/recurring boards use computed windows/i),
-    ).toBeVisible();
   });
 
   test('Setup-step toggle off restores Custom timeframe', async ({ page }) => {
@@ -66,11 +55,10 @@ test.describe('Phase 6.2 rework', () => {
     await toggle.check();
     await expect(page.getByRole('button', { name: 'Custom', exact: true })).not.toBeVisible();
 
-    // Toggle off — Custom returns and the recurring hint hides.
+    // Toggle off — Custom returns.
     await toggle.uncheck();
     await expect(toggle).not.toBeChecked();
     await expect(page.getByRole('button', { name: 'Custom', exact: true })).toBeVisible();
-    await expect(page.getByText(/pool can be larger than the board/i)).not.toBeVisible();
   });
 
   test('Profile templates page renders empty state when no templates exist', async ({ page }) => {
