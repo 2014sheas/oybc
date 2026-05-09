@@ -34,17 +34,12 @@ test.describe('auth-gated routes via bypass', () => {
     await page.getByRole('link', { name: /create/i }).click();
     await expect(page).toHaveURL(/\/create/);
 
-    // CreateHubBoardCTA renders one of two variants — primary ("Start
-    // a new board") or secondary ("Custom timeframe board") depending
-    // on whether pending recurring boards exist. The bypass user has
-    // no boards but DOES have all four recurring*Enabled prefs at
-    // default `true` (post-Phase-6.1d), so on app-open the
-    // PendingCoreBoardsSection surfaces 4 entries and the CTA renders
-    // its secondary "Custom timeframe board" variant. Match either
-    // copy so the test is robust to that UX branch.
-    const cta = page.getByRole('button', {
-      name: /(start a new board|custom timeframe board)/i,
-    });
+    // CreateHubBoardCTA renders one of two visual variants — primary
+    // (gradient card) or secondary (muted card) — depending on whether
+    // pending recurring boards exist above it. Post-Phase-6.2 rework
+    // both variants share the same "Start a new board" copy so this
+    // selector matches either visual presentation.
+    const cta = page.getByRole('button', { name: /start a new board/i });
     await expect(cta).toBeVisible();
     await cta.click();
 

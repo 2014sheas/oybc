@@ -28,9 +28,7 @@ test.describe('Phase 6.2 rework', () => {
     // baseline auth-gated test (handles both primary and secondary
     // CTA copy depending on whether pending recurring boards exist).
     await page.getByRole('link', { name: /create/i }).click();
-    await page
-      .getByRole('button', { name: /(start a new board|custom timeframe board)/i })
-      .click();
+    await page.getByRole('button', { name: /start a new board/i }).click();
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
     // Initial state: Custom is in the timeframe segmented selector,
@@ -62,9 +60,7 @@ test.describe('Phase 6.2 rework', () => {
 
   test('Setup-step toggle off restores Custom timeframe', async ({ page }) => {
     await page.getByRole('link', { name: /create/i }).click();
-    await page
-      .getByRole('button', { name: /(start a new board|custom timeframe board)/i })
-      .click();
+    await page.getByRole('button', { name: /start a new board/i }).click();
 
     const toggle = page.getByRole('checkbox', { name: /make recurring/i });
     await toggle.check();
