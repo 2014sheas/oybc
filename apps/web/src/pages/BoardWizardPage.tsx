@@ -44,8 +44,14 @@ export interface BoardWizardPageProps {
   onCancel: () => void;
   /** Called after a successful Activate or Save Draft, including a
    *  Save-Draft triggered from the cancel dialog. `status` reflects
-   *  the board's post-write status. */
+   *  the board's post-write status. In recurring mode this fires only
+   *  when the spawn produced a board to land on. */
   onComplete: (boardId: string, status: 'active' | 'draft') => void;
+  /** Phase 6.2: called when a recurring template was saved without a
+   *  spawnable board (skip or edit). Parent should navigate to the
+   *  Profile templates list. See `BoardWizardPreviewStep`'s prop docs
+   *  for why this isn't folded into `onComplete`. */
+  onTemplateComplete?: (templateId: string) => void;
 }
 
 /**
@@ -66,6 +72,7 @@ export function BoardWizardPage({
   editingTemplate,
   onCancel,
   onComplete,
+  onTemplateComplete,
 }: BoardWizardPageProps): React.ReactElement {
   const wizard = useBoardWizard({
     preferences,
@@ -206,6 +213,7 @@ export function BoardWizardPage({
             userId={userId}
             onBack={wizard.goBack}
             onComplete={onComplete}
+            onTemplateComplete={onTemplateComplete}
           />
         )}
       </div>

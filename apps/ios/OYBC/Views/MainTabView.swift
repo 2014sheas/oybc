@@ -92,6 +92,21 @@ struct MainTabView: View {
                                 boardsPath = NavigationPath()
                                 boardsPath.append(boardId)
                                 selectedTab = 0
+                            },
+                            onTemplateCompleted: { _ in
+                                // Phase 6.2: recurring-template completions
+                                // without a spawned board (skip OR edit) —
+                                // route the user to the Profile tab so they
+                                // land near the templates list. The earlier
+                                // contract overloaded `onBoardCompleted`
+                                // with the templateId, which got pushed onto
+                                // `boardsPath` and tried to render
+                                // `BoardPlayView` for a non-existent board.
+                                // Switching tabs is the minimal fix without
+                                // adding a separate Profile-tab navigation
+                                // path; the user is one tap from the
+                                // templates list (NavigationLink in ProfileView).
+                                selectedTab = 2
                             }
                         )
                     }

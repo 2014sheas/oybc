@@ -16,10 +16,10 @@ import {
  * detection on app-open" model — the spawn isn't background-scheduled,
  * it fires when the user opens the Boards tab.
  *
- * Returns the most recent batch's results so the Create-tab template
- * list can surface "needs attention" indicators on rows whose spawn
- * was skipped (e.g., a seed task got soft-deleted between save and
- * spawn).
+ * Returns the most recent batch's results so the Profile
+ * recurring-templates page can surface "needs attention" indicators on
+ * rows whose spawn was skipped (e.g., a seed task got soft-deleted
+ * between save and spawn).
  *
  * Implementation notes:
  *

@@ -45,6 +45,11 @@ export interface CreateHubPageProps {
    *  (`/boards/:id`) or lets the hub re-render with the updated
    *  drafts list. */
   onBoardCompleted?: (boardId: string, status: 'active' | 'draft') => void;
+  /** Phase 6.2: called when a recurring template was saved without a
+   *  spawnable board (skip or edit). Parent should navigate to the
+   *  Profile templates list (`/profile/recurring-templates`) rather
+   *  than `/boards/${id}`. */
+  onTemplateCompleted?: (templateId: string) => void;
 }
 
 type HubMode =
@@ -87,6 +92,7 @@ export function CreateHubPage({
   userId,
   preferences,
   onBoardCompleted,
+  onTemplateCompleted,
 }: CreateHubPageProps): React.ReactElement {
   const [mode, setMode] = useState<HubMode>({ kind: 'hub' });
   const [searchParams, setSearchParams] = useSearchParams();
@@ -167,6 +173,18 @@ export function CreateHubPage({
     [onBoardCompleted, returnToHub],
   );
 
+  // Phase 6.2: recurring-template-only completions (spawn skip OR
+  // edit) — the parent navigates to the Profile templates list. We
+  // still `returnToHub` first so the in-place transition resets, but
+  // the App-level handler then re-routes off this page entirely.
+  const handleTemplateComplete = useCallback(
+    (templateId: string): void => {
+      onTemplateCompleted?.(templateId);
+      returnToHub();
+    },
+    [onTemplateCompleted, returnToHub],
+  );
+
   if (mode.kind === 'wizard') {
     return (
       <BoardWizardPage
@@ -177,6 +195,7 @@ export function CreateHubPage({
         editingTemplate={mode.editingTemplate}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
+        onTemplateComplete={handleTemplateComplete}
       />
     );
   }

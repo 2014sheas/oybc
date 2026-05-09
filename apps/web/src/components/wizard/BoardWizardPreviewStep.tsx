@@ -29,8 +29,20 @@ export interface BoardWizardPreviewStepProps {
   /** Step navigation back to Tasks. */
   onBack: () => void;
   /** Called after the board record + all `BoardTask` rows have been
-   *  written. `status` reflects whether the record is ACTIVE or DRAFT. */
+   *  written. `status` reflects whether the record is ACTIVE or DRAFT.
+   *  In recurring mode this fires only when the spawn succeeded — the
+   *  parent navigates to `/boards/${boardId}` (web) / `boardsPath.append(boardId)`
+   *  (iOS), so passing a templateId here would land on a non-existent
+   *  board. Use `onTemplateComplete` for template-only outcomes. */
   onComplete: (boardId: string, status: CompletionStatus) => void;
+  /** Phase 6.2: called when a recurring template was saved without a
+   *  spawned board to show — either the spawn was skipped (e.g. a seed
+   *  task got soft-deleted) or this was a template edit (no spawn). The
+   *  parent should navigate somewhere template-relevant (the Profile
+   *  templates list) rather than `/boards/${id}`. Without this callback
+   *  the wizard would have to overload `onComplete` with a templateId,
+   *  which the parent would mistakenly route to a non-existent board. */
+  onTemplateComplete?: (templateId: string) => void;
 }
 
 /**
@@ -51,6 +63,7 @@ export function BoardWizardPreviewStep({
   userId,
   onBack,
   onComplete,
+  onTemplateComplete,
 }: BoardWizardPreviewStepProps): React.ReactElement {
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -141,13 +154,21 @@ export function BoardWizardPreviewStep({
       setIsCreating(true);
       try {
         const result = await persistRecurringTemplate({ controller, userId });
-        // Treat both spawn-success and spawn-skip as completion: the
-        // template is saved either way, and the user can fix a skip
-        // via the Profile templates list. Pass the spawned board's id
-        // when one exists (so cross-tab nav can land on the board);
-        // otherwise pass the template id so the parent can decide
-        // where to navigate.
-        onComplete(result.spawnedBoardId ?? result.templateId, status);
+        // Two completion paths so the parent doesn't have to guess
+        // which id it received:
+        //   - Spawn succeeded → `onComplete(boardId, status)` — parent
+        //     navigates to `/boards/${boardId}` as it would for a
+        //     one-off creation.
+        //   - Spawn skipped or template edit → `onTemplateComplete(templateId)`
+        //     — parent routes to `/profile/recurring-templates` so the
+        //     user lands on the templates list (with the attention
+        //     badge if it was a skip), not on a board id that doesn't
+        //     exist.
+        if (result.spawnedBoardId !== null) {
+          onComplete(result.spawnedBoardId, status);
+        } else {
+          onTemplateComplete?.(result.templateId);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error.';
         setErrorMessage(

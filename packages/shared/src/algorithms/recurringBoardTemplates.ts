@@ -55,8 +55,8 @@ export interface PendingTemplateSpawn {
 /**
  * Outcome of `validateSpawnPool`. The platform spawn driver branches on
  * `ok` — if `ok=false`, skip the spawn for this window AND surface the
- * `reason` via a "needs attention" indicator on the template's row in the
- * Create-tab template list.
+ * `reason` via a "needs attention" indicator on the template's row in
+ * the Profile recurring-templates list.
  */
 export type SpawnPoolValidation =
   | { ok: true }

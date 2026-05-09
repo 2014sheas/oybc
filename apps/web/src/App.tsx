@@ -44,6 +44,14 @@ function CreateRoute(): React.ReactElement | null {
       onBoardCompleted={(boardId) => {
         navigate(`/boards/${boardId}`);
       }}
+      onTemplateCompleted={() => {
+        // Phase 6.2: recurring-template completions without a spawned
+        // board (skip OR edit) land on the templates list so the user
+        // sees their newly-saved/edited template (with attention badge
+        // on skip). The earlier contract overloaded `onBoardCompleted`
+        // with templateId, navigating to /boards/<templateId> = 404.
+        navigate('/profile/recurring-templates');
+      }}
     />
   );
 }

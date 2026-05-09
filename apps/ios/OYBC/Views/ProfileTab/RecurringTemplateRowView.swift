@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// One row in the Create-tab recurring-templates list. Web twin:
+/// One row in the Profile recurring-templates list (rendered by
+/// `RecurringTemplatesView`). Web twin:
 /// `apps/web/src/components/recurringTemplates/RecurringTemplateRow.tsx`.
 struct RecurringTemplateRowView: View {
 

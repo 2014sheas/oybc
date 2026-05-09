@@ -18,7 +18,18 @@ struct BoardWizardPreviewStepView: View {
     let library: TaskLibraryViewModel
     let userId: String
     let onBack: () -> Void
+    /// Called after the board record + all `BoardTask` rows have been
+    /// written. In recurring mode this fires only when the spawn produced
+    /// a board — the parent appends `boardId` to its NavigationPath, so
+    /// passing a templateId here would navigate to a non-existent board.
+    /// Use `onTemplateComplete` for template-only outcomes.
     let onComplete: (_ boardId: String, _ status: WizardStatus) -> Void
+    /// Phase 6.2: called when a recurring template was saved without a
+    /// spawnable board (skip OR edit). The parent should switch to the
+    /// Profile tab so the user lands on the templates list, not on a
+    /// board id that doesn't exist. Optional so existing one-off call
+    /// sites that wire the old `onComplete` only continue to work.
+    var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
 
     @State private var isCreating: Bool = false
     @State private var errorMessage: String? = nil
@@ -218,14 +229,18 @@ struct BoardWizardPreviewStepView: View {
                         _ = templateId
                         onComplete(boardId, status)
                     case .createdSpawnSkipped(let templateId, _):
-                        // Template saved; the user will see the "needs
-                        // attention" badge in Profile templates. We pass
-                        // the template id back as a fallback navigation
-                        // target — the parent decides what to do (the
-                        // returnToHub path doesn't navigate by id today).
-                        onComplete(templateId, status)
+                        // Template saved; spawn skipped — route the user
+                        // to the Profile templates list (via the parent's
+                        // `onTemplateComplete`) so they see the attention
+                        // badge. Falling back to `onComplete(templateId, …)`
+                        // would push the templateId onto the boards
+                        // NavigationPath and try to render BoardPlayView
+                        // for a non-existent board.
+                        onTemplateComplete?(templateId)
                     case .updated(let templateId):
-                        onComplete(templateId, status)
+                        // Edit path — no spawn. Same routing as the skip
+                        // case so the user lands back on the templates list.
+                        onTemplateComplete?(templateId)
                     }
                 },
                 onError: { msg in

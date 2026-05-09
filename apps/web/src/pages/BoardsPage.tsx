@@ -32,9 +32,10 @@ export function BoardsPage(): React.ReactElement {
   // Phase 6.2: fire template spawns on Boards-tab mount. The hook is
   // structurally idempotent — repeated mounts are no-ops once
   // `lastSpawnedWindowKey` is written. We don't currently consume the
-  // returned digest here; the Create-tab template list does its own
-  // synchronous validation against the library to surface "needs
-  // attention" badges (see CreateHubPage `templateAttention` memo).
+  // returned digest here; the Profile recurring-templates page does its
+  // own synchronous validation against the library to surface "needs
+  // attention" badges (see `RecurringTemplatesPage` + the
+  // `templateAttention` memo it derives).
   useRecurringBoardSpawn(user?.id);
   const [activeFilter, setActiveFilter] = useState('all');
 

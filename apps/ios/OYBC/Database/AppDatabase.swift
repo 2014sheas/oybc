@@ -271,9 +271,14 @@ final class AppDatabase {
         //       automatically create boards each window. seedTaskIds is stored as a JSON
         //       string TEXT column (mirror of boards.completedLineIds) since
         //       SQLite has no native array type.
-        //   (b) Add boards.spawnedFromTemplateId TEXT column with FK to the new
-        //       table (ON DELETE SET NULL — a deleted template doesn't cascade
-        //       to its spawned boards; per design they remain independent).
+        //   (b) Add boards.spawnedFromTemplateId TEXT column. Plain TEXT,
+        //       no FK constraint — adding a FK to an existing table in
+        //       SQLite requires a full table rebuild, and the only
+        //       reason to want one (cascading delete behavior) doesn't
+        //       apply: templates are soft-deleted (isDeleted=true) and
+        //       never hard-deleted, so a FK's ON DELETE clause would
+        //       never fire. Spawned boards remain independent from the
+        //       template they came from by design.
         migrator.registerMigration("v8") { db in
             try db.execute(sql: """
                 CREATE TABLE IF NOT EXISTS recurring_board_templates (

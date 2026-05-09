@@ -38,6 +38,13 @@ struct CreateHubView: View {
     /// draft. Parent typically navigates to the created board; the
     /// hub itself always returns to its landing view.
     var onBoardCompleted: ((_ boardId: String, _ status: String) -> Void)? = nil
+    /// Phase 6.2: called when a recurring template was saved with no
+    /// spawnable board (skip OR edit). Parent should switch to the
+    /// Profile tab so the user lands on the templates list (with
+    /// attention badge if the spawn was skipped). Without this the
+    /// wizard would have to overload `onBoardCompleted` with a
+    /// templateId, navigating to a non-existent board.
+    var onTemplateCompleted: ((_ templateId: String) -> Void)? = nil
 
     private enum HubMode: Equatable {
         case hub
@@ -107,6 +114,10 @@ struct CreateHubView: View {
                 onComplete: { boardId, status in
                     onBoardCompleted?(boardId, status)
                     returnToHub()
+                },
+                onTemplateComplete: { templateId in
+                    onTemplateCompleted?(templateId)
+                    returnToHub()
                 }
             )
         case .wizardResume:
@@ -120,6 +131,10 @@ struct CreateHubView: View {
                 onComplete: { boardId, status in
                     onBoardCompleted?(boardId, status)
                     returnToHub()
+                },
+                onTemplateComplete: { templateId in
+                    onTemplateCompleted?(templateId)
+                    returnToHub()
                 }
             )
         case .wizardRecurring(let timeframe):
@@ -132,6 +147,10 @@ struct CreateHubView: View {
                 onCancel: { returnToHub() },
                 onComplete: { boardId, status in
                     onBoardCompleted?(boardId, status)
+                    returnToHub()
+                },
+                onTemplateComplete: { templateId in
+                    onTemplateCompleted?(templateId)
                     returnToHub()
                 }
             )
@@ -150,6 +169,10 @@ struct CreateHubView: View {
                     onCancel: { returnToHub() },
                     onComplete: { boardId, status in
                         onBoardCompleted?(boardId, status)
+                        returnToHub()
+                    },
+                    onTemplateComplete: { templateId in
+                        onTemplateCompleted?(templateId)
                         returnToHub()
                     }
                 )

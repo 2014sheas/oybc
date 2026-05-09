@@ -3,21 +3,20 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * Playwright config for the OYBC web app.
  *
- * **Scope (Phase 6.2 UX rework + future)**: today this only exercises the
- * unauthenticated `/playground` route, which validates the harness boots
- * cleanly but does NOT cover the rework's main paths (the wizard, Profile
- * templates page). Meaningful E2E coverage of the auth-gated flows
- * requires one of:
- *   1. A dev-only auth bypass (~30 lines in AuthGate; gated on
- *      `import.meta.env.DEV`). Unblocks all auth-gated tests with no
- *      backend dependencies.
- *   2. Firebase Auth/Firestore emulator suite. Heavier but matches
- *      production code paths exactly.
- *   3. Real test credentials in `.env.test`. Fragile (shared secrets,
- *      rate limits) and not a great fit for CI.
+ * **Scope**: covers the unauthenticated `/playground` route and the
+ * auth-gated flows (Boards / Create / Profile tabs, the wizard,
+ * the Profile recurring-templates page) via the dev-only auth bypass
+ * in `AuthContext` (gated on `import.meta.env.DEV` + a session-storage
+ * flag set by `e2e/_fixtures/bypass.ts`'s shared `test`). The bypass
+ * does NOT ship in production builds — Vite dead-strips `import.meta.env.DEV`
+ * branches at build time.
  *
- * Tracked as a follow-up; the choice should be deliberate, not bundled
- * into the Phase 6.2 UX rework PR.
+ * Two emulator-based options were considered but deferred:
+ *   - Firebase Auth/Firestore emulator suite — heavier, matches prod
+ *     code paths exactly. Worth revisiting once the bypass-based
+ *     coverage proves insufficient.
+ *   - Real test credentials in `.env.test` — fragile (shared secrets,
+ *     rate limits) and not a great fit for CI. Rejected.
  */
 export default defineConfig({
   testDir: './e2e',
