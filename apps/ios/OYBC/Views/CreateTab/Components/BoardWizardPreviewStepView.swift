@@ -196,6 +196,45 @@ struct BoardWizardPreviewStepView: View {
 
     private func performCreation(status: WizardStatus) {
         errorMessage = nil
+
+        // Recurring branch — persist the template and (for fresh creates)
+        // immediately spawn the current window's board. The status arg
+        // is ignored: recurring templates have no draft concept.
+        if controller.isRecurring {
+            isCreating = true
+            persistRecurringTemplate(
+                controller: controller,
+                userId: userId,
+                onSuccess: { outcome in
+                    isCreating = false
+                    switch outcome {
+                    case .createdAndSpawned(let templateId, let boardId):
+                        // Pass the spawned board id so cross-tab nav can
+                        // land on the actual board (matches web behavior).
+                        _ = templateId
+                        onComplete(boardId, status)
+                    case .createdSpawnSkipped(let templateId, _):
+                        // Template saved; the user will see the "needs
+                        // attention" badge in Profile templates. We pass
+                        // the template id back as a fallback navigation
+                        // target — the parent decides what to do (the
+                        // returnToHub path doesn't navigate by id today).
+                        onComplete(templateId, status)
+                    case .updated(let templateId):
+                        onComplete(templateId, status)
+                    }
+                },
+                onError: { msg in
+                    isCreating = false
+                    errorMessage = controller.editingTemplateId == nil
+                        ? "Failed to create recurring template: \(msg)"
+                        : "Failed to update recurring template: \(msg)"
+                }
+            )
+            return
+        }
+
+        // One-off branch — existing behavior unchanged.
         let resolved = resolveWizardDates(controller: controller)
         let dates: (start: String, end: String)
         switch resolved {

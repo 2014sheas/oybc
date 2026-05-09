@@ -10,6 +10,7 @@ import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { BingoBoard } from '../BingoBoard';
 import {
   buildWizardPlacement,
+  persistRecurringTemplate,
   persistWizardBoard,
   resolveWizardDates,
   type WizardPlacement,
@@ -123,6 +124,35 @@ export function BoardWizardPreviewStep({
 
   async function performCreation(status: CompletionStatus): Promise<void> {
     setErrorMessage(null);
+
+    // Recurring branch — persist the template and (for fresh creates)
+    // immediately spawn the current window's board. The status arg is
+    // ignored: recurring templates don't have a draft concept.
+    if (controller.isRecurring) {
+      setIsCreating(true);
+      try {
+        const result = await persistRecurringTemplate({ controller, userId });
+        // Treat both spawn-success and spawn-skip as completion: the
+        // template is saved either way, and the user can fix a skip
+        // via the Profile templates list. Pass the spawned board's id
+        // when one exists (so cross-tab nav can land on the board);
+        // otherwise pass the template id so the parent can decide
+        // where to navigate.
+        onComplete(result.spawnedBoardId ?? result.templateId, status);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error.';
+        setErrorMessage(
+          controller.editingTemplateId === null
+            ? `Failed to create recurring template: ${msg}`
+            : `Failed to update recurring template: ${msg}`,
+        );
+      } finally {
+        setIsCreating(false);
+      }
+      return;
+    }
+
+    // One-off branch — existing behavior unchanged.
     const dates = resolveWizardDates(controller);
     if ('error' in dates) {
       setErrorMessage(dates.error);
