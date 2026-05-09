@@ -178,7 +178,9 @@ enum SnapshotFixtures {
     enum WizardStage {
         case setupBlank
         case setupValid
+        case setupRecurring
         case previewReady
+        case previewRecurring
     }
 
     static func makeWizardController(stage: WizardStage = .setupBlank) -> BoardWizardViewModel {
@@ -190,6 +192,14 @@ enum SnapshotFixtures {
         case .setupValid:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
+        case .setupRecurring:
+            // User-toggled recurring path (NOT banner deep-link). Verifies
+            // the cadence card renders + Custom is hidden from the timeframe
+            // selector. Weekly chosen so the cadence label and the "Starting:
+            // Week of …" caption both differ from a daily/monthly variant.
+            controller.name = "Weekly Workout"
+            controller.timeframe = .weekly
+            controller.updateIsRecurring(true)
         case .previewReady:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
@@ -197,6 +207,13 @@ enum SnapshotFixtures {
             // Pin shuffle off — randomized placement breaks snapshot
             // determinism (every render produces a different grid).
             controller.isRandomized = false
+            controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
+        case .previewRecurring:
+            controller.name = "Weekly Workout"
+            controller.timeframe = .weekly
+            controller.currentStep = 3
+            controller.isRandomized = false
+            controller.updateIsRecurring(true)
             controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
         }
         return controller

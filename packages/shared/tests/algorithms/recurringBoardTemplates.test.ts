@@ -410,3 +410,125 @@ describe('buildSpawnPlacement', () => {
     expect(placement[12]).toBeNull();
   });
 });
+
+// ─── Multi-window spawn simulation ───────────────────────────────────────────
+//
+// Walks the spawn-update-respawn loop across multiple windows for both daily
+// and weekly templates. The platform spawn driver wraps Board insert + template
+// `lastSpawnedWindowKey` update + sync queue items in one transaction; we
+// simulate that here by manually appending the spawned Board and updating the
+// template after each "spawn", then re-invoking `findTemplatesPendingSpawn`.
+// This exercises BOTH suppression checks (lastSpawnedWindowKey match AND the
+// idempotency belt over existing boards), not just the algorithm in isolation.
+
+describe('multi-window spawn simulation', () => {
+  /// Helper — apply the same writes the platform spawn driver makes inside
+  /// its txn (insert spawned board + advance template's lastSpawnedWindowKey).
+  /// Returns the new board + template snapshot for the next iteration.
+  function simulateSpawn(
+    template: RecurringBoardTemplate,
+    windowStart: string,
+    windowEnd: string,
+    boardSeq: number,
+  ): { board: Board; template: RecurringBoardTemplate } {
+    const board = buildBoard({
+      id: `board-spawn-${boardSeq}`,
+      timeframe: template.timeframe,
+      startDate: windowStart,
+      endDate: windowEnd,
+      spawnedFromTemplateId: template.id,
+    });
+    const advanced: RecurringBoardTemplate = {
+      ...template,
+      lastSpawnedWindowKey: windowStart,
+    };
+    return { board, template: advanced };
+  }
+
+  it('daily template: pending → spawn → quiet same day → pending again next day', () => {
+    let tpl = buildTemplate({ timeframe: Timeframe.DAILY });
+    const day1 = new Date(2026, 4, 7, 9, 0, 0); // Thu May 7, 2026
+    const day1Window = getTimeframeBoundaries(Timeframe.DAILY, day1, 'monday');
+
+    // Initial: nothing spawned, nothing in board list → pending.
+    const before = findTemplatesPendingSpawn([tpl], [], 'monday', day1);
+    expect(before).toHaveLength(1);
+    expect(before[0].windowStart).toBe(day1Window.startDate);
+
+    // Simulate the spawn — append board + advance lastSpawnedWindowKey.
+    const spawn1 = simulateSpawn(tpl, day1Window.startDate, day1Window.endDate, 1);
+    tpl = spawn1.template;
+    const boards: Board[] = [spawn1.board];
+
+    // Same day, after spawn: both suppressors fire. The lastSpawnedWindowKey
+    // alone would block; the idempotency belt is the secondary safety net.
+    expect(findTemplatesPendingSpawn([tpl], boards, 'monday', day1)).toHaveLength(0);
+
+    // Next day → new window → pending again.
+    const day2 = new Date(2026, 4, 8, 9, 0, 0); // Fri May 8, 2026
+    const day2Window = getTimeframeBoundaries(Timeframe.DAILY, day2, 'monday');
+    expect(day2Window.startDate).not.toBe(day1Window.startDate);
+
+    const day2Pending = findTemplatesPendingSpawn([tpl], boards, 'monday', day2);
+    expect(day2Pending).toHaveLength(1);
+    expect(day2Pending[0].windowStart).toBe(day2Window.startDate);
+
+    // Spawn day 2 → both day-1 and day-2 boards in list, both suppressors
+    // pin to the day-2 window so a third re-check doesn't double-spawn.
+    const spawn2 = simulateSpawn(tpl, day2Window.startDate, day2Window.endDate, 2);
+    tpl = spawn2.template;
+    boards.push(spawn2.board);
+    expect(findTemplatesPendingSpawn([tpl], boards, 'monday', day2)).toHaveLength(0);
+  });
+
+  it('weekly template: pending → spawn → quiet within week → pending again next week', () => {
+    let tpl = buildTemplate({
+      timeframe: Timeframe.WEEKLY,
+      seedTaskIds: Array.from({ length: 24 }, (_, i) => `wk-${i}`),
+    });
+    // Wed in week of May 4-10, 2026 (Mon-Sun start).
+    const wk1Mid = new Date(2026, 4, 6, 9, 0, 0);
+    const wk1Window = getTimeframeBoundaries(Timeframe.WEEKLY, wk1Mid, 'monday');
+
+    expect(findTemplatesPendingSpawn([tpl], [], 'monday', wk1Mid)).toHaveLength(1);
+    const spawn1 = simulateSpawn(tpl, wk1Window.startDate, wk1Window.endDate, 1);
+    tpl = spawn1.template;
+    const boards: Board[] = [spawn1.board];
+
+    // Mid-week and end-of-week, after spawn → still suppressed.
+    expect(findTemplatesPendingSpawn([tpl], boards, 'monday', wk1Mid)).toHaveLength(0);
+    const wk1End = new Date(2026, 4, 10, 22, 0, 0); // Sun May 10
+    expect(findTemplatesPendingSpawn([tpl], boards, 'monday', wk1End)).toHaveLength(0);
+
+    // Cross into the next week (Mon May 11) → new weekly window → pending.
+    const wk2Start = new Date(2026, 4, 11, 9, 0, 0);
+    const wk2Window = getTimeframeBoundaries(Timeframe.WEEKLY, wk2Start, 'monday');
+    expect(wk2Window.startDate).not.toBe(wk1Window.startDate);
+
+    const wk2Pending = findTemplatesPendingSpawn([tpl], boards, 'monday', wk2Start);
+    expect(wk2Pending).toHaveLength(1);
+    expect(wk2Pending[0].windowStart).toBe(wk2Window.startDate);
+  });
+
+  it('idempotency belt alone (without lastSpawnedWindowKey advance) still suppresses re-spawn', () => {
+    // Belt-and-braces check: if a transaction races so the board insert
+    // commits but the template's lastSpawnedWindowKey advance gets lost
+    // (e.g., a future bug regresses the txn boundary), the belt over the
+    // existing board list still prevents a duplicate same-window spawn.
+    const tpl = buildTemplate({ timeframe: Timeframe.DAILY }); // lastSpawnedWindowKey=null
+    const day = new Date(2026, 4, 7, 9, 0, 0);
+    const win = getTimeframeBoundaries(Timeframe.DAILY, day, 'monday');
+    const board = buildBoard({
+      id: 'board-belt',
+      timeframe: Timeframe.DAILY,
+      startDate: win.startDate,
+      endDate: win.endDate,
+      spawnedFromTemplateId: tpl.id,
+    });
+
+    // Template still says "never spawned" but a matching board exists →
+    // belt suppresses. Without the belt, the user would see a duplicate
+    // spawn for that window on next Boards-tab open.
+    expect(findTemplatesPendingSpawn([tpl], [board], 'monday', day)).toHaveLength(0);
+  });
+});
