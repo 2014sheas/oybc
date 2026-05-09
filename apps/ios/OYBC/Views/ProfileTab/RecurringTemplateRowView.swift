@@ -9,7 +9,9 @@ struct RecurringTemplateRowView: View {
     let template: RecurringBoardTemplate
     /// Set when this template's last spawn (or its synchronous validation
     /// against the library) flagged a problem. Surfaces a banner row.
-    var attentionReason: SpawnPoolFailureReason?
+    /// Wider than `SpawnPoolFailureReason` because the spawn driver can
+    /// also report `noPoolTasksResolved` and `spawnFailed` outcomes.
+    var attentionReason: SpawnAttentionReason?
 
     /// Tap-to-edit handler. The parent owns the form sheet presentation.
     let onEdit: () -> Void
@@ -41,7 +43,7 @@ struct RecurringTemplateRowView: View {
 
     init(
         template: RecurringBoardTemplate,
-        attentionReason: SpawnPoolFailureReason? = nil,
+        attentionReason: SpawnAttentionReason? = nil,
         onEdit: @escaping () -> Void,
         onTemplatesChanged: @escaping () -> Void
     ) {
@@ -119,7 +121,7 @@ struct RecurringTemplateRowView: View {
         }
     }
 
-    private func attentionBanner(reason: SpawnPoolFailureReason) -> some View {
+    private func attentionBanner(reason: SpawnAttentionReason) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
@@ -147,7 +149,7 @@ struct RecurringTemplateRowView: View {
         return "\(tf) · \(size) · \(pool)"
     }
 
-    private func message(for reason: SpawnPoolFailureReason) -> String {
+    private func message(for reason: SpawnAttentionReason) -> String {
         switch reason {
         case .poolTooSmall:
             return "Pool is too small for the current configuration. Edit to add tasks."

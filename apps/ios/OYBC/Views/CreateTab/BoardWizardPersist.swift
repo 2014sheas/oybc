@@ -265,7 +265,7 @@ enum RecurringTemplatePersistOutcome {
     /// failure — e.g. a seed task got soft-deleted between save and
     /// spawn). The template is intact and the Boards-tab spawn driver
     /// will retry on next open. `reason` surfaces in the UI.
-    case createdSpawnSkipped(templateId: String, reason: SpawnPoolFailureReason)
+    case createdSpawnSkipped(templateId: String, reason: SpawnAttentionReason)
     /// Existing template was updated (no spawn). `templateId` for any
     /// follow-up navigation.
     case updated(templateId: String)
@@ -406,7 +406,7 @@ func persistRecurringTemplate(
                 template: template,
                 windowStart: wizardLocalISOString(window.start),
                 windowEnd: wizardLocalISOString(window.end),
-                suggestedName: deriveSpawnedBoardName(template: template, windowStart: window.start)
+                suggestedName: deriveSpawnedBoardName(template: template, windowStart: wizardLocalISOString(window.start))
             )
             let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn)
             switch outcome {

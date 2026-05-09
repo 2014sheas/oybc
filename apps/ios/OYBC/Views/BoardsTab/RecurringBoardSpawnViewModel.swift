@@ -23,8 +23,11 @@ final class RecurringBoardSpawnViewModel {
     /// Templates that successfully spawned a board in the most recent pass.
     var succeededTemplateIds: [String] = []
 
-    /// Templates whose spawn was skipped, keyed by template id.
-    var attentionByTemplateId: [String: SpawnPoolFailureReason] = [:]
+    /// Templates whose spawn was skipped, keyed by template id. Wider
+    /// than `SpawnPoolFailureReason` because the driver can also report
+    /// `noPoolTasksResolved` and `spawnFailed`, which aren't part of
+    /// the pure-validation contract.
+    var attentionByTemplateId: [String: SpawnAttentionReason] = [:]
 
     /// Most recent unhandled error during the spawn pass. Logged via
     /// `print` in `runSpawnPass` and surfaced here for completeness.
@@ -79,7 +82,7 @@ final class RecurringBoardSpawnViewModel {
             }
 
             var succeeded: [String] = []
-            var attention: [String: SpawnPoolFailureReason] = [:]
+            var attention: [String: SpawnAttentionReason] = [:]
             for spawn in pending {
                 do {
                     let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn)

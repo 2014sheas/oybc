@@ -12,10 +12,13 @@ import GRDB
 // pattern (Board has no memberwise init, so we round-trip through
 // JSONDecoder). Web twin: `apps/web/src/db/operations/recurringBoardSpawn.ts`.
 
-/// Single-spawn outcome.
+/// Single-spawn outcome. `reason` is `SpawnAttentionReason` (the wider
+/// driver-level union) so it can carry the driver-only outcomes
+/// (`noPoolTasksResolved`, `spawnFailed`) that are not part of the
+/// pure-validation `SpawnPoolFailureReason` contract.
 enum RecurringSpawnOutcome {
     case spawned(boardId: String, templateId: String, windowStart: String)
-    case skipped(templateId: String, reason: SpawnPoolFailureReason)
+    case skipped(templateId: String, reason: SpawnAttentionReason)
 }
 
 enum RecurringBoardSpawn {
@@ -64,7 +67,7 @@ enum RecurringBoardSpawn {
 
                 let validation = validateSpawnPool(template: template, poolTasks: orderedPool)
                 if case .failure(let reason) = validation {
-                    outcome = .skipped(templateId: template.id, reason: reason)
+                    outcome = .skipped(templateId: template.id, reason: SpawnAttentionReason(reason))
                     throw SpawnAbort.skip
                 }
 

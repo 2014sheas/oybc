@@ -28,13 +28,48 @@ enum SpawnPoolValidation: Equatable {
     case failure(SpawnPoolFailureReason)
 }
 
+/// Pure-validation failure reasons returned by `validateSpawnPool`.
+/// Strict mirror of TS `SpawnPoolFailureReason` in
+/// `packages/shared/src/algorithms/recurringBoardTemplates.ts`.
+///
+/// Driver-only outcomes (`noPoolTasksResolved`, `spawnFailed`) live on
+/// `SpawnAttentionReason` instead — keeping this enum a strict mirror
+/// of the shared contract means a future cross-platform schema check
+/// can compare the two enums as sets without filtering out platform
+/// drift.
 enum SpawnPoolFailureReason: String, Equatable {
+    case poolTooSmall = "pool_too_small"
+    case hasDeletedTasks = "has_deleted_tasks"
+    case unsupportedTimeframe = "unsupported_timeframe"
+    case unsupportedCenter = "unsupported_center"
+}
+
+/// Attention reason surfaced on a template row when the spawn driver
+/// skipped or failed for a particular template. Superset of
+/// `SpawnPoolFailureReason` plus the two driver-only outcomes:
+/// `noPoolTasksResolved` (the resolved pool was empty — every seed
+/// task got soft-deleted) and `spawnFailed` (the txn threw
+/// unexpectedly).
+///
+/// Mirrors the TS-side union
+/// `SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed'`
+/// used in `useRecurringBoardSpawn.ts`'s `RecurringSpawnDigest`.
+enum SpawnAttentionReason: String, Equatable {
     case poolTooSmall = "pool_too_small"
     case hasDeletedTasks = "has_deleted_tasks"
     case unsupportedTimeframe = "unsupported_timeframe"
     case unsupportedCenter = "unsupported_center"
     case noPoolTasksResolved = "no_pool_tasks_resolved"
     case spawnFailed = "spawn_failed"
+}
+
+extension SpawnAttentionReason {
+    /// Lifts a pure validation failure into the wider attention enum.
+    /// The wider enum is a strict superset, so the rawValue lookup is
+    /// non-failable in practice; the `!` is documenting that invariant.
+    init(_ failure: SpawnPoolFailureReason) {
+        self = SpawnAttentionReason(rawValue: failure.rawValue)!
+    }
 }
 
 /// Counts the cells that need a Task placement for a given board configuration.
@@ -101,7 +136,7 @@ func findTemplatesPendingSpawn(
             template: template,
             windowStart: startISO,
             windowEnd: endISO,
-            suggestedName: deriveSpawnedBoardName(template: template, windowStart: window.start)
+            suggestedName: deriveSpawnedBoardName(template: template, windowStart: startISO)
         ))
     }
 
@@ -109,9 +144,18 @@ func findTemplatesPendingSpawn(
 }
 
 /// "<template name> — <window label>" helper.
-func deriveSpawnedBoardName(template: RecurringBoardTemplate, windowStart: Date) -> String {
+///
+/// Takes the local ISO8601 string for parity with the TS counterpart
+/// (`packages/shared/src/algorithms/recurringBoardTemplates.ts`'s
+/// `deriveSpawnedBoardName(template, windowStart: string)`). Both
+/// platforms now consume the same wire shape — a future change to
+/// either side's date format won't silently desync the other.
+func deriveSpawnedBoardName(template: RecurringBoardTemplate, windowStart: String) -> String {
     let trimmed = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
-    let label = playgroundTimeframeLabel(timeframe: template.timeframe, startDate: windowStart)
+    guard let startDate = parseISO8601Date(windowStart) else {
+        return trimmed.isEmpty ? "" : trimmed
+    }
+    let label = playgroundTimeframeLabel(timeframe: template.timeframe, startDate: startDate)
     if trimmed.isEmpty { return label }
     return "\(trimmed) — \(label)"
 }

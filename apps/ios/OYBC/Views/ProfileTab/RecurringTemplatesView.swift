@@ -39,8 +39,8 @@ struct RecurringTemplatesView: View {
     /// `RecurringBoardSpawn.swift` produces the authoritative reason
     /// when it next runs; this is for immediate feedback while
     /// browsing the templates list.
-    private var attentionByTemplateId: [String: SpawnPoolFailureReason] {
-        var out: [String: SpawnPoolFailureReason] = [:]
+    private var attentionByTemplateId: [String: SpawnAttentionReason] {
+        var out: [String: SpawnAttentionReason] = [:]
         let tasksById = Dictionary(uniqueKeysWithValues: libraryTasks.map { ($0.id, $0) })
         for t in templatesVM.templates {
             var pool: [Task] = []
@@ -54,7 +54,7 @@ struct RecurringTemplatesView: View {
                 continue
             }
             if case .failure(let reason) = validateSpawnPool(template: t, poolTasks: pool) {
-                out[t.id] = reason
+                out[t.id] = SpawnAttentionReason(reason)
             }
         }
         return out
