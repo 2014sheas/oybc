@@ -74,7 +74,6 @@ export interface SeedTemplate {
   centerSquareCustomName?: string;
   isRandomized: boolean;
   seedTaskIds: string[];
-  poolStrategy: 'all' | 'random_subset';
   isActive: boolean;
   // Optional sync metadata; sensible defaults filled in below.
   lastSpawnedWindowKey?: string | null;

@@ -40,7 +40,10 @@ export interface RecurringSpawnDigest {
    * Templates whose spawn was skipped (validation or pool resolution
    * failure). Keyed by template id for O(1) row-level UI lookups.
    */
-  attentionByTemplateId: Record<string, SpawnPoolFailureReason | 'no_pool_tasks_resolved'>;
+  attentionByTemplateId: Record<
+    string,
+    SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed'
+  >;
 }
 
 const EMPTY_DIGEST: RecurringSpawnDigest = {
@@ -105,7 +108,7 @@ export function useRecurringBoardSpawn(
             results.push({
               ok: false,
               templateId: spawn.template.id,
-              reason: 'invalid_strategy',
+              reason: 'spawn_failed',
             });
           }
         }

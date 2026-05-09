@@ -91,7 +91,7 @@ final class RecurringBoardSpawnViewModel {
                     }
                 } catch {
                     print("[recurring-spawn] failed for template \(spawn.template.id): \(error)")
-                    attention[spawn.template.id] = .invalidStrategy
+                    attention[spawn.template.id] = .spawnFailed
                 }
             }
 

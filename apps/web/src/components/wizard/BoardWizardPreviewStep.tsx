@@ -290,11 +290,8 @@ export function BoardWizardPreviewStep({
             <span className={styles.summaryLabel}>Recurring</span>
             <span className={styles.summaryValue}>
               Spawns a new {controller.timeframe} board from a{' '}
-              {controller.selectedTaskIds.size}-task pool (
-              {controller.poolStrategy === 'all'
-                ? 'use every task'
-                : 'random subset'}
-              ).
+              {controller.selectedTaskIds.size}-task pool (random subset
+              each window).
             </span>
             <button
               type="button"

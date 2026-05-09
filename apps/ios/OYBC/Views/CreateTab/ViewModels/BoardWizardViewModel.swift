@@ -45,11 +45,11 @@ final class BoardWizardViewModel {
     var isRandomized: Bool
     /// Phase 6.2 — when true, the wizard saves a recurring template
     /// (and immediately spawns the current window's board) instead of
-    /// a one-off Board. Toggling reveals pool-strategy options and
-    /// hides Custom from the timeframe selector.
+    /// a one-off Board. Toggling hides Custom from the timeframe
+    /// selector (recurring schema rejects it). The pool is always
+    /// loose-fit; the spawn shuffles + slices, so any extras become
+    /// the random subset.
     var isRecurring: Bool = false
-    /// Phase 6.2 — only meaningful when `isRecurring`.
-    var poolStrategy: PoolStrategy = .all
     let weekStartDay: String
 
     // MARK: - Step 2 fields
@@ -127,7 +127,6 @@ final class BoardWizardViewModel {
             self.centerCustomName = t.centerSquareCustomName ?? ""
             self.isRandomized = t.isRandomized
             self.selectedTaskIds = Set(t.seedTaskIds)
-            self.poolStrategy = t.poolStrategy
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -282,7 +281,6 @@ final class BoardWizardViewModel {
         centerCustomName = initialPreferences.defaultCenterCustomName
         isRandomized = initialPreferences.defaultRandomize
         isRecurring = false
-        poolStrategy = .all
         selectedTaskIds = []
         centerTaskId = nil
         currentStep = 1
@@ -329,22 +327,15 @@ final class BoardWizardViewModel {
         return nil
     }
 
-    /// Pool-size enforcement matrix:
+    /// Pool-size enforcement is loose-fit on both branches:
     ///   - One-off (isRecurring=false): `count >= tasksRequired` (existing
     ///     behavior; extras are silently dropped by `BoardWizardPersist`).
-    ///   - Recurring + .all:             `count == tasksRequired` (NEW —
-    ///     schema requires exact-fit pools).
-    ///   - Recurring + .randomSubset:    `count >= tasksRequired` (same as
-    ///     default — spawn picks N each window from the larger pool).
-    var poolStrictExact: Bool { isRecurring && poolStrategy == .all }
-    var poolMinimumOnly: Bool { !poolStrictExact }
-
+    ///   - Recurring (isRecurring=true): `count >= tasksRequired`. The
+    ///     spawn shuffles + slices, so any extras become the random
+    ///     subset for each window. The earlier strict-fit "Use every
+    ///     task" branch was dropped during the Phase 6.2 UX rework.
     var isStep2Valid: Bool {
-        if poolStrictExact {
-            guard selectedTaskIds.count == tasksRequired else { return false }
-        } else {
-            guard selectedTaskIds.count >= tasksRequired else { return false }
-        }
+        guard selectedTaskIds.count >= tasksRequired else { return false }
         if centerMode {
             guard let id = centerTaskId, selectedTaskIds.contains(id) else { return false }
         }
@@ -352,14 +343,9 @@ final class BoardWizardViewModel {
     }
 
     var step2ValidationMessage: String? {
-        if poolStrictExact && selectedTaskIds.count > tasksRequired {
-            let over = selectedTaskIds.count - tasksRequired
-            return "Remove \(over) task\(over == 1 ? "" : "s") — recurring templates with \"Use every task\" require exactly \(tasksRequired)."
-        }
         let short = tasksRequired - selectedTaskIds.count
         if short > 0 {
             let noun = "task\(short == 1 ? "" : "s")"
-            if poolStrictExact { return "Pick \(short) more \(noun) (\(tasksRequired) exactly)." }
             if isRecurring { return "Pick \(short) more \(noun) (\(tasksRequired) minimum)." }
             return "Pick \(short) more \(noun)."
         }

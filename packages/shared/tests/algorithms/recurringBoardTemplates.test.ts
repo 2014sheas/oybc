@@ -13,10 +13,7 @@ import {
 } from '../../src/constants/enums';
 import type { Board } from '../../src/types/board';
 import type { Task } from '../../src/types/task';
-import type {
-  RecurringBoardTemplate,
-  PoolStrategy,
-} from '../../src/types/recurringBoardTemplate';
+import type { RecurringBoardTemplate } from '../../src/types/recurringBoardTemplate';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -30,7 +27,6 @@ function buildTemplate(overrides: Partial<RecurringBoardTemplate> = {}): Recurri
     centerSquareType: CenterSquareType.FREE,
     isRandomized: false,
     seedTaskIds: Array.from({ length: 24 }, (_, i) => `task-${i}`),
-    poolStrategy: 'all' as PoolStrategy,
     lastSpawnedWindowKey: null,
     isActive: true,
     createdAt: '2026-05-01T00:00:00.000Z',
@@ -208,17 +204,15 @@ describe('deriveSpawnedBoardName', () => {
 // ─── validateSpawnPool ────────────────────────────────────────────────────────
 
 describe('validateSpawnPool', () => {
-  it("'all' strict-fit (24 tasks, 5x5 with FREE center) → ok", () => {
+  it('exact-fit pool (24 tasks, 5x5 with FREE center) → ok', () => {
     const tpl = buildTemplate({
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 24 }, (_, i) => `t${i}`),
     });
     expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({ ok: true });
   });
 
-  it("'all' undersized → pool_too_small", () => {
+  it('undersized pool → pool_too_small', () => {
     const tpl = buildTemplate({
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 23 }, (_, i) => `t${i}`),
     });
     expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({
@@ -227,31 +221,8 @@ describe('validateSpawnPool', () => {
     });
   });
 
-  it("'all' oversized → pool_wrong_size (semantic distinction from too-small)", () => {
+  it('oversized pool → ok (extras become the random subset; the whole point of loose-fit)', () => {
     const tpl = buildTemplate({
-      poolStrategy: 'all',
-      seedTaskIds: Array.from({ length: 25 }, (_, i) => `t${i}`),
-    });
-    expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({
-      ok: false,
-      reason: 'pool_wrong_size',
-    });
-  });
-
-  it("'random_subset' undersized → pool_too_small", () => {
-    const tpl = buildTemplate({
-      poolStrategy: 'random_subset',
-      seedTaskIds: Array.from({ length: 10 }, (_, i) => `t${i}`),
-    });
-    expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({
-      ok: false,
-      reason: 'pool_too_small',
-    });
-  });
-
-  it("'random_subset' oversized → ok (the whole point of random_subset)", () => {
-    const tpl = buildTemplate({
-      poolStrategy: 'random_subset',
       seedTaskIds: Array.from({ length: 50 }, (_, i) => `t${i}`),
     });
     expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({ ok: true });
@@ -260,7 +231,6 @@ describe('validateSpawnPool', () => {
   it('soft-deleted task in the pool → has_deleted_tasks', () => {
     const tpl = buildTemplate({
       boardSize: 3,
-      poolStrategy: 'random_subset',
       seedTaskIds: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'],
     });
     const pool = tpl.seedTaskIds.map((id) =>
@@ -280,7 +250,6 @@ describe('validateSpawnPool', () => {
     // validateSpawnPool short-circuits to pool_too_small (semantically
     // closer to the actionable user story than a separate reason).
     const tpl = buildTemplate({
-      poolStrategy: 'all',
       seedTaskIds: ['a', 'a', 'b', 'c'],
       boardSize: 3,
     });
@@ -304,7 +273,6 @@ describe('validateSpawnPool', () => {
     // the task / replace the seed); a pure size mismatch is a harder fix.
     const tpl = buildTemplate({
       boardSize: 3,
-      poolStrategy: 'random_subset',
       seedTaskIds: ['a', 'b', 'c'],
     });
     const pool = tpl.seedTaskIds.map((id) =>
@@ -335,7 +303,6 @@ describe('validateSpawnPool', () => {
   it('NONE center on 5x5 → fillable count is 25 (no free space exclusion)', () => {
     const tpl = buildTemplate({
       centerSquareType: CenterSquareType.NONE,
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 25 }, (_, i) => `t${i}`),
     });
     expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({ ok: true });
@@ -345,7 +312,6 @@ describe('validateSpawnPool', () => {
     const tpl = buildTemplate({
       centerSquareType: CenterSquareType.CUSTOM_FREE,
       centerSquareCustomName: 'Win!',
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 24 }, (_, i) => `t${i}`),
     });
     expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({ ok: true });
@@ -355,7 +321,6 @@ describe('validateSpawnPool', () => {
     const tpl = buildTemplate({
       boardSize: 4,
       centerSquareType: CenterSquareType.FREE,
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 16 }, (_, i) => `t${i}`),
     });
     expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({ ok: true });
@@ -365,10 +330,9 @@ describe('validateSpawnPool', () => {
 // ─── buildSpawnPlacement ──────────────────────────────────────────────────────
 
 describe('buildSpawnPlacement', () => {
-  it("'all' non-randomized: order preserved, FREE center is null", () => {
+  it('non-randomized exact-fit: order preserved, FREE center is null', () => {
     const tpl = buildTemplate({
       isRandomized: false,
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 24 }, (_, i) => `t${i}`),
     });
     const placement = buildSpawnPlacement({ template: tpl, poolTasks: buildPool(tpl) });
@@ -379,10 +343,9 @@ describe('buildSpawnPlacement', () => {
     expect(placement[13]?.id).toBe('t12'); // skipped center
   });
 
-  it("'all' randomized + injected RNG: deterministic shuffle", () => {
+  it('randomized + injected RNG: deterministic shuffle', () => {
     const tpl = buildTemplate({
       isRandomized: true,
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 24 }, (_, i) => `t${i}`),
     });
     const a = buildSpawnPlacement({
@@ -398,9 +361,9 @@ describe('buildSpawnPlacement', () => {
     expect(a.map((t) => t?.id ?? '_')).toEqual(b.map((t) => t?.id ?? '_'));
   });
 
-  it("'random_subset' slices to fillable cell count", () => {
+  it('oversized pool slices to fillable cell count (extras dropped)', () => {
     const tpl = buildTemplate({
-      poolStrategy: 'random_subset',
+      isRandomized: true,
       seedTaskIds: Array.from({ length: 50 }, (_, i) => `t${i}`),
     });
     const placement = buildSpawnPlacement({
@@ -419,7 +382,6 @@ describe('buildSpawnPlacement', () => {
     const tpl = buildTemplate({
       centerSquareType: CenterSquareType.NONE,
       isRandomized: false,
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 25 }, (_, i) => `t${i}`),
     });
     const placement = buildSpawnPlacement({ template: tpl, poolTasks: buildPool(tpl) });
@@ -430,7 +392,6 @@ describe('buildSpawnPlacement', () => {
     const tpl = buildTemplate({
       boardSize: 4,
       isRandomized: false,
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 16 }, (_, i) => `t${i}`),
     });
     const placement = buildSpawnPlacement({ template: tpl, poolTasks: buildPool(tpl) });
@@ -443,7 +404,6 @@ describe('buildSpawnPlacement', () => {
       centerSquareType: CenterSquareType.CUSTOM_FREE,
       centerSquareCustomName: 'My center',
       isRandomized: false,
-      poolStrategy: 'all',
       seedTaskIds: Array.from({ length: 24 }, (_, i) => `t${i}`),
     });
     const placement = buildSpawnPlacement({ template: tpl, poolTasks: buildPool(tpl) });

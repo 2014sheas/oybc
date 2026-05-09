@@ -174,7 +174,7 @@ enum RecurringBoardSpawn {
             // before the throw. Fall through to the return below.
         }
 
-        return outcome ?? .skipped(templateId: template.id, reason: .invalidStrategy)
+        return outcome ?? .skipped(templateId: template.id, reason: .spawnFailed)
     }
 
     /// Sentinel used to abort the spawn write transaction cleanly when

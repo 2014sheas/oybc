@@ -50,17 +50,17 @@ export interface RecurringBoardTemplate {
   centerSquareType: CenterSquareType;  // FREE / CUSTOM_FREE / NONE (no CHOSEN in MVP)
   centerSquareCustomName?: string;     // Required when centerSquareType is CUSTOM_FREE
   isRandomized: boolean;               // Whether spawn shuffles seedTaskIds
-  seedTaskIds: string[];               // Task UUIDs to draw from on spawn
-
   /**
-   * How `seedTaskIds` map to grid cells:
-   * - `'all'`: pool length must exactly equal the fillable cell count
-   *   (`boardSize² - (FREE ? 1 : 0)`); placed in seedTaskIds order, optionally
-   *   shuffled when `isRandomized`.
-   * - `'random_subset'`: pool length must be ≥ fillable cell count; shuffled
-   *   then sliced to the cell count.
+   * Pool the spawn function draws from. Length must be ≥ the fillable
+   * cell count (`boardSize² - (FREE ? 1 : 0)`); the spawn shuffles
+   * (when `isRandomized`) and slices to the cell count, so any extras
+   * become the "random subset" pool. The earlier `poolStrategy` field
+   * — which let users choose between strict-fit and loose-fit — was
+   * dropped during the Phase 6.2 UX rework: strict-fit is just a
+   * special case of loose-fit where the user picked exactly N tasks,
+   * and the selector added friction without capability.
    */
-  poolStrategy: PoolStrategy;
+  seedTaskIds: string[];
 
   // Spawn state
   lastSpawnedWindowKey: string | null; // local ISO startDate of last spawn, or null
@@ -78,11 +78,6 @@ export interface RecurringBoardTemplate {
 }
 
 /**
- * Pool-to-grid mapping strategy. See `RecurringBoardTemplate.poolStrategy`.
- */
-export type PoolStrategy = 'all' | 'random_subset';
-
-/**
  * RecurringBoardTemplate creation input. Fields not listed are computed
  * client-side at insert: `id` (UUID), `lastSpawnedWindowKey` (null),
  * `createdAt`/`updatedAt` (now), `version` (1), `isDeleted` (false).
@@ -95,7 +90,6 @@ export interface CreateRecurringBoardTemplateInput {
   centerSquareCustomName?: string;
   isRandomized: boolean;
   seedTaskIds: string[];
-  poolStrategy: PoolStrategy;
   isActive: boolean;
 }
 
@@ -111,6 +105,5 @@ export interface UpdateRecurringBoardTemplateInput {
   centerSquareCustomName?: string;
   isRandomized?: boolean;
   seedTaskIds?: string[];
-  poolStrategy?: PoolStrategy;
   isActive?: boolean;
 }

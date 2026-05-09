@@ -48,7 +48,6 @@ final class RecurringTemplatesProfileSnapshotTests: XCTestCase {
             name: "Weekly Reading",
             timeframe: .monthly,
             boardSize: 5,
-            poolStrategy: .randomSubset,
             isActive: false
         )
         let view = NavigationStack {

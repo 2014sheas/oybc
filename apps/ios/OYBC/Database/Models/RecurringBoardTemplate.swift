@@ -36,7 +36,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     var centerSquareCustomName: String?
     var isRandomized: Bool
     var seedTaskIds: [String]
-    var poolStrategy: PoolStrategy
 
     // Spawn state
     var lastSpawnedWindowKey: String?
@@ -61,7 +60,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     enum CodingKeys: String, CodingKey {
         case id, userId, name, timeframe, boardSize
         case centerSquareType, centerSquareCustomName, isRandomized
-        case seedTaskIds, poolStrategy
+        case seedTaskIds
         case lastSpawnedWindowKey, isActive
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
@@ -77,7 +76,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         centerSquareCustomName: String? = nil,
         isRandomized: Bool,
         seedTaskIds: [String],
-        poolStrategy: PoolStrategy,
         lastSpawnedWindowKey: String? = nil,
         isActive: Bool,
         createdAt: String,
@@ -96,7 +94,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         self.centerSquareCustomName = centerSquareCustomName
         self.isRandomized = isRandomized
         self.seedTaskIds = seedTaskIds
-        self.poolStrategy = poolStrategy
         self.lastSpawnedWindowKey = lastSpawnedWindowKey
         self.isActive = isActive
         self.createdAt = createdAt
@@ -127,7 +124,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
             seedTaskIds = []
         }
 
-        poolStrategy = try container.decode(PoolStrategy.self, forKey: .poolStrategy)
         lastSpawnedWindowKey = try container.decodeIfPresent(String.self, forKey: .lastSpawnedWindowKey)
         isActive = try container.decode(Bool.self, forKey: .isActive)
         createdAt = try container.decode(String.self, forKey: .createdAt)
@@ -158,7 +154,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
             try container.encode("[]", forKey: .seedTaskIds)
         }
 
-        try container.encode(poolStrategy, forKey: .poolStrategy)
         // `lastSpawnedWindowKey` is `String?` on iOS but `string | null`
         // (NOT `string | undefined`) in the shared Zod schema. The default
         // Optional encode behavior would *omit* the key when nil, which a
@@ -178,10 +173,4 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         try container.encode(isDeleted, forKey: .isDeleted)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }
-}
-
-/// Pool-to-grid mapping strategy. Mirrors the TS-side `PoolStrategy` type.
-enum PoolStrategy: String, Codable, DatabaseValueConvertible {
-    case all
-    case randomSubset = "random_subset"
 }

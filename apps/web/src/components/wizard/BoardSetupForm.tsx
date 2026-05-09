@@ -3,7 +3,6 @@ import {
   Timeframe,
   formatTimeframeLabel,
   getTimeframeBoundaries,
-  type PoolStrategy,
   type WeekStartDay,
 } from '@oybc/shared';
 import styles from './BoardSetupForm.module.css';
@@ -43,11 +42,6 @@ const RECURRING_CENTER_TYPE_OPTIONS = CENTER_TYPE_OPTIONS.filter(
   (o) => o.value !== CenterSquareType.CHOSEN,
 );
 
-const POOL_STRATEGY_OPTIONS: { value: PoolStrategy; label: string; hint: string }[] = [
-  { value: 'all', label: 'Use every task', hint: 'Pool size must equal the cells to fill.' },
-  { value: 'random_subset', label: 'Random subset', hint: 'Pool can be larger; spawn picks N each window.' },
-];
-
 export interface BoardSetupFormProps {
   // Controlled state
   name: string;
@@ -79,14 +73,10 @@ export interface BoardSetupFormProps {
 
   /** Phase 6.2 — when true, the wizard saves a recurring template
    *  (and immediately spawns the current window's board) instead of
-   *  a one-off Board. Toggling reveals pool-strategy options and
-   *  hides Custom from the timeframe selector. */
+   *  a one-off Board. Toggling hides Custom from the timeframe
+   *  selector (recurring schema rejects it). */
   isRecurring: boolean;
   onIsRecurringChange: (b: boolean) => void;
-
-  /** Phase 6.2 — only meaningful when `isRecurring`. */
-  poolStrategy: PoolStrategy;
-  onPoolStrategyChange: (s: PoolStrategy) => void;
 
   weekStartDay: WeekStartDay;
 }
@@ -123,8 +113,6 @@ export function BoardSetupForm({
   onIsRandomizedChange,
   isRecurring,
   onIsRecurringChange,
-  poolStrategy,
-  onPoolStrategyChange,
   weekStartDay,
 }: BoardSetupFormProps): React.ReactElement {
   const isOddBoard = size % 2 !== 0;
@@ -232,10 +220,10 @@ export function BoardSetupForm({
         )}
       </div>
 
-      {/* Recurring toggle + pool strategy (Phase 6.2). The toggle is
-          rendered between Timeframe and Center cell so the user sees
-          recurrence affect the timeframe options visibly. When ON, the
-          pool-strategy radio reveals below. */}
+      {/* Recurring toggle (Phase 6.2). Rendered between Timeframe and
+          Center cell so the user sees recurrence affect the timeframe
+          options visibly. The pool is always loose-fit — extras become
+          the random subset for each spawn. */}
       <div className={styles.fieldGroup}>
         <label className={styles.checkboxRow}>
           <input
@@ -251,24 +239,10 @@ export function BoardSetupForm({
           </span>
         </label>
         {isRecurring && (
-          <div className={styles.recurringStrategy}>
-            <span className={styles.label}>Pool strategy</span>
-            {POOL_STRATEGY_OPTIONS.map((opt) => (
-              <label key={opt.value} className={styles.radioRow}>
-                <input
-                  type="radio"
-                  name="poolStrategy"
-                  value={opt.value}
-                  checked={poolStrategy === opt.value}
-                  onChange={() => onPoolStrategyChange(opt.value)}
-                />
-                <span>
-                  <strong>{opt.label}</strong>
-                  <span className={styles.checkboxSubtitle}> — {opt.hint}</span>
-                </span>
-              </label>
-            ))}
-          </div>
+          <p className={styles.hint}>
+            Pool can be larger than the board; the spawn picks a random
+            subset each window.
+          </p>
         )}
       </div>
 

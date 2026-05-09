@@ -18,20 +18,22 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = {
   [Timeframe.CUSTOM]: 'Custom',
 };
 
-const ATTENTION_COPY: Record<SpawnPoolFailureReason | 'no_pool_tasks_resolved', string> = {
+const ATTENTION_COPY: Record<
+  SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed',
+  string
+> = {
   pool_too_small: 'Pool is too small for the current configuration. Edit to add tasks.',
-  pool_wrong_size: "Pool doesn't fit the board size. Edit to adjust the task list.",
   has_deleted_tasks: 'A task in this template was deleted. Edit to refresh the pool.',
-  invalid_strategy: 'Pool strategy needs attention. Try editing this template.',
   unsupported_timeframe: "This template's timeframe is no longer supported.",
   unsupported_center: "This template's center cell is no longer supported.",
   no_pool_tasks_resolved: 'None of this template\'s tasks could be loaded. Edit to refresh the pool.',
+  spawn_failed: 'Spawn failed unexpectedly. Try editing this template to refresh.',
 };
 
 export interface RecurringTemplateRowProps {
   template: RecurringBoardTemplate;
   /** Set when this template's last spawn was skipped — surfaces a badge. */
-  attentionReason?: SpawnPoolFailureReason | 'no_pool_tasks_resolved';
+  attentionReason?: SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed';
   onEdit: (template: RecurringBoardTemplate) => void;
 }
 
@@ -75,9 +77,7 @@ export function RecurringTemplateRow({
         <div className={styles.rowMeta}>
           {TIMEFRAME_LABELS[template.timeframe]} ·{' '}
           {template.boardSize}×{template.boardSize} ·{' '}
-          {template.poolStrategy === 'all'
-            ? `${template.seedTaskIds.length} tasks`
-            : `${template.seedTaskIds.length}-task pool`}
+          {`${template.seedTaskIds.length}-task pool`}
         </div>
         {attentionReason && (
           <div className={styles.attentionBadge} role="status">

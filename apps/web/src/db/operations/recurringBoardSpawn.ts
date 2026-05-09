@@ -37,7 +37,7 @@ export type SpawnResult =
   | {
       ok: false;
       templateId: string;
-      reason: SpawnPoolFailureReason | 'no_pool_tasks_resolved';
+      reason: SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed';
     };
 
 /**

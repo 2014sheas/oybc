@@ -286,7 +286,6 @@ final class AppDatabase {
                     centerSquareCustomName TEXT,
                     isRandomized INTEGER NOT NULL DEFAULT 1,
                     seedTaskIds TEXT NOT NULL DEFAULT '[]',
-                    poolStrategy TEXT NOT NULL DEFAULT 'all',
                     lastSpawnedWindowKey TEXT,
                     isActive INTEGER NOT NULL DEFAULT 1,
 

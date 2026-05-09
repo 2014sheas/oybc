@@ -23,7 +23,7 @@ import {
  */
 
 test.describe('Phase 6.2 rework', () => {
-  test('Setup-step toggle reveals pool strategy + hides Custom timeframe', async ({ page }) => {
+  test('Setup-step toggle hides Custom timeframe + reveals random-subset hint', async ({ page }) => {
     // Open the wizard via the Create-tab CTA. Same matcher as the
     // baseline auth-gated test (handles both primary and secondary
     // CTA copy depending on whether pending recurring boards exist).
@@ -32,10 +32,10 @@ test.describe('Phase 6.2 rework', () => {
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
     // Initial state: Custom is in the timeframe segmented selector,
-    // pool-strategy radio is NOT visible.
+    // recurring hint is NOT visible.
     const timeframeCustom = page.getByRole('button', { name: 'Custom', exact: true });
     await expect(timeframeCustom).toBeVisible();
-    await expect(page.getByText(/use every task/i)).not.toBeVisible();
+    await expect(page.getByText(/random subset each window/i)).not.toBeVisible();
 
     // Flip the "Make recurring" toggle. The label is rendered inside a
     // <label> wrapping the checkbox, so we click the checkbox by name.
@@ -43,11 +43,11 @@ test.describe('Phase 6.2 rework', () => {
     await toggle.check();
     await expect(toggle).toBeChecked();
 
-    // Pool-strategy radio appears (matches the strategy hint copy
-    // from BoardSetupForm — "Pool size must equal" / "Pool can be
-    // larger").
-    await expect(page.getByText(/use every task/i)).toBeVisible();
-    await expect(page.getByText(/random subset/i)).toBeVisible();
+    // Recurring hint reveals — explains that the pool can be larger
+    // than the board (loose-fit; the spawn picks a random subset).
+    await expect(
+      page.getByText(/pool can be larger than the board/i),
+    ).toBeVisible();
 
     // Custom timeframe option disappears from the segmented selector
     // (the recurring schema rejects it). The hint copy explaining
@@ -66,11 +66,11 @@ test.describe('Phase 6.2 rework', () => {
     await toggle.check();
     await expect(page.getByRole('button', { name: 'Custom', exact: true })).not.toBeVisible();
 
-    // Toggle off — Custom returns and the pool-strategy radio hides.
+    // Toggle off — Custom returns and the recurring hint hides.
     await toggle.uncheck();
     await expect(toggle).not.toBeChecked();
     await expect(page.getByRole('button', { name: 'Custom', exact: true })).toBeVisible();
-    await expect(page.getByText(/use every task/i)).not.toBeVisible();
+    await expect(page.getByText(/pool can be larger than the board/i)).not.toBeVisible();
   });
 
   test('Profile templates page renders empty state when no templates exist', async ({ page }) => {
@@ -107,7 +107,6 @@ test.describe('Phase 6.2 rework', () => {
         // doesn't need real Tasks; only the spawn driver reads them.
         `aaaaaaaa-aaaa-aaaa-aaaa-${String(i).padStart(12, '0')}`,
       ),
-      poolStrategy: 'all',
       isActive: true,
     });
     await page.goto('/profile/recurring-templates?__oybc_test_bypass=1');

@@ -29,14 +29,10 @@ struct BoardWizardTasksStepView: View {
     /// Number of tasks the chosen board geometry requires.
     let tasksRequired: Int
 
-    /// Phase 6.2 — when true, the pool count must equal `tasksRequired`
-    /// exactly (recurring template + `.all` strategy). When false,
-    /// `>=` is enough (one-off boards or recurring + `.randomSubset`).
-    let poolStrictExact: Bool
-
     /// Phase 6.2 — true when the wizard is in recurring-template mode.
-    /// Drives the count-line suffix copy ("X / N min" vs "X / N exact"
-    /// vs "X / N").
+    /// Drives the count-line "min" suffix wording. The pool is always
+    /// loose-fit; the spawn shuffles + slices, so any extras become the
+    /// random subset for each window.
     let isRecurring: Bool
 
     /// When true, every selected row shows a star radio for picking the
@@ -146,9 +142,7 @@ struct BoardWizardTasksStepView: View {
     }
 
     private var selectedCount: Int { selectedTaskIds.count }
-    private var isCountSatisfied: Bool {
-        poolStrictExact ? selectedCount == tasksRequired : selectedCount >= tasksRequired
-    }
+    private var isCountSatisfied: Bool { selectedCount >= tasksRequired }
     private var isCenterSatisfied: Bool {
         if !centerTaskMode { return true }
         guard let id = centerTaskId else { return false }
@@ -156,12 +150,12 @@ struct BoardWizardTasksStepView: View {
     }
     private var canAdvance: Bool { isCountSatisfied && isCenterSatisfied }
 
-    /// Suffix on the count line: " exact" / " min" / "" — only shown
-    /// when isRecurring (one-off boards keep the bare count to preserve
-    /// existing copy).
+    /// Suffix on the count line: " min" / "" — only shown when
+    /// `isRecurring` (one-off boards keep the bare count to preserve
+    /// existing copy). The pool is always loose-fit; the spawn picks
+    /// N from the larger pool each window.
     private var countSuffix: String {
-        if !isRecurring { return "" }
-        return poolStrictExact ? " exact" : " min"
+        return isRecurring ? " min" : ""
     }
 
     // ── Usage-hint + leaf-preview data ───────────────────────────────

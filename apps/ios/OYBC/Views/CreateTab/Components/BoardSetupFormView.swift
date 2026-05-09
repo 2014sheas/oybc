@@ -105,10 +105,11 @@ struct BoardSetupFormView: View {
                 }
             }
 
-            // ── Recurring toggle + pool strategy (Phase 6.2) ──
+            // ── Recurring toggle (Phase 6.2) ──
             // Rendered between Timeframe and Center square so the user
-            // sees recurrence visibly affect the timeframe picker. When
-            // ON, the pool-strategy radio reveals below.
+            // sees recurrence visibly affect the timeframe picker. The
+            // pool is always loose-fit — extras become the random
+            // subset for each spawn.
             VStack(alignment: .leading, spacing: 8) {
                 Toggle(isOn: Binding(
                     get: { controller.isRecurring },
@@ -124,25 +125,10 @@ struct BoardSetupFormView: View {
                     }
                 }
                 if controller.isRecurring {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Pool strategy")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                        poolStrategyRow(
-                            label: "Use every task",
-                            hint: "Pool size must equal the cells to fill.",
-                            value: .all
-                        )
-                        poolStrategyRow(
-                            label: "Random subset",
-                            hint: "Pool can be larger; spawn picks N each window.",
-                            value: .randomSubset
-                        )
-                    }
-                    .padding(10)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    Text("Pool can be larger than the board; the spawn picks a random subset each window.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .italic()
                 }
             }
 
@@ -258,27 +244,4 @@ struct BoardSetupFormView: View {
         }
     }
 
-    @ViewBuilder
-    private func poolStrategyRow(label: String, hint: String, value: PoolStrategy) -> some View {
-        Button {
-            controller.poolStrategy = value
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: controller.poolStrategy == value ? "largecircle.fill.circle" : "circle")
-                    .foregroundColor(controller.poolStrategy == value ? .accentColor : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    Text(hint)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
 }

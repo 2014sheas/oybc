@@ -143,9 +143,7 @@ struct RecurringTemplateRowView: View {
     private var metaLine: String {
         let tf = template.timeframe.rawValue.capitalized
         let size = "\(template.boardSize)×\(template.boardSize)"
-        let pool = template.poolStrategy == .all
-            ? "\(template.seedTaskIds.count) tasks"
-            : "\(template.seedTaskIds.count)-task pool"
+        let pool = "\(template.seedTaskIds.count)-task pool"
         return "\(tf) · \(size) · \(pool)"
     }
 
@@ -153,18 +151,16 @@ struct RecurringTemplateRowView: View {
         switch reason {
         case .poolTooSmall:
             return "Pool is too small for the current configuration. Edit to add tasks."
-        case .poolWrongSize:
-            return "Pool doesn't fit the board size. Edit to adjust the task list."
         case .hasDeletedTasks:
             return "A task in this template was deleted. Edit to refresh the pool."
-        case .invalidStrategy:
-            return "Pool strategy needs attention. Try editing this template."
         case .unsupportedTimeframe:
             return "This template's timeframe is no longer supported."
         case .unsupportedCenter:
             return "This template's center cell is no longer supported."
         case .noPoolTasksResolved:
             return "None of this template's tasks could be loaded. Edit to refresh the pool."
+        case .spawnFailed:
+            return "Spawn failed unexpectedly. Try editing this template to refresh."
         }
     }
 

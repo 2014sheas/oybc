@@ -30,12 +30,11 @@ enum SpawnPoolValidation: Equatable {
 
 enum SpawnPoolFailureReason: String, Equatable {
     case poolTooSmall = "pool_too_small"
-    case poolWrongSize = "pool_wrong_size"
     case hasDeletedTasks = "has_deleted_tasks"
-    case invalidStrategy = "invalid_strategy"
     case unsupportedTimeframe = "unsupported_timeframe"
     case unsupportedCenter = "unsupported_center"
     case noPoolTasksResolved = "no_pool_tasks_resolved"
+    case spawnFailed = "spawn_failed"
 }
 
 /// Counts the cells that need a Task placement for a given board configuration.
@@ -117,7 +116,13 @@ func deriveSpawnedBoardName(template: RecurringBoardTemplate, windowStart: Date)
     return "\(trimmed) — \(label)"
 }
 
-/// Validates a template's pool against its `poolStrategy`.
+/// Validates a template's pool. Mirrors the TS-side `validateSpawnPool`.
+///
+/// Pool semantics: `poolTasks.count >= required`. The spawn shuffles +
+/// slices, so any extras become the random subset. The earlier
+/// strict-fit `.all` strategy was dropped during the Phase 6.2 UX
+/// rework — it was a special case of loose-fit where the user picked
+/// exactly `required`.
 func validateSpawnPool(
     template: RecurringBoardTemplate,
     poolTasks: [Task]
@@ -143,16 +148,8 @@ func validateSpawnPool(
         boardSize: template.boardSize,
         centerSquareType: template.centerSquareType
     )
-
-    switch template.poolStrategy {
-    case .all:
-        if poolTasks.count < required { return .failure(.poolTooSmall) }
-        if poolTasks.count > required { return .failure(.poolWrongSize) }
-        return .ok
-    case .randomSubset:
-        if poolTasks.count < required { return .failure(.poolTooSmall) }
-        return .ok
-    }
+    if poolTasks.count < required { return .failure(.poolTooSmall) }
+    return .ok
 }
 
 /// Builds the cell-by-cell placement for a spawn. Returns an array of
@@ -185,17 +182,10 @@ func buildSpawnPlacement(
         centerSquareType: template.centerSquareType
     )
 
-    let placed: [Task]
-    switch template.poolStrategy {
-    case .randomSubset:
-        // Always shuffle for random_subset — otherwise the slice would always
-        // pick the first N, defeating the random semantics.
-        placed = Array(fisherYatesShuffle(poolTasks, rng: rng).prefix(fillCount))
-    case .all:
-        placed = template.isRandomized
-            ? fisherYatesShuffle(poolTasks, rng: rng)
-            : Array(poolTasks.prefix(fillCount))
-    }
+    let ordered = template.isRandomized
+        ? fisherYatesShuffle(poolTasks, rng: rng)
+        : poolTasks
+    let placed = Array(ordered.prefix(fillCount))
 
     var placement: [Task?] = Array(repeating: nil, count: total)
     var nextTaskIdx = 0

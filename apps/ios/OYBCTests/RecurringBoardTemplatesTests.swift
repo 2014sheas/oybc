@@ -24,7 +24,6 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         centerSquareType: CenterSquareType = .free,
         isRandomized: Bool = false,
         seedTaskIds: [String]? = nil,
-        poolStrategy: PoolStrategy = .all,
         lastSpawnedWindowKey: String? = nil,
         isActive: Bool = true,
         isDeleted: Bool = false
@@ -39,7 +38,6 @@ final class RecurringBoardTemplatesTests: XCTestCase {
             centerSquareCustomName: nil,
             isRandomized: isRandomized,
             seedTaskIds: seedTaskIds ?? (0..<24).map { "task-\($0)" },
-            poolStrategy: poolStrategy,
             lastSpawnedWindowKey: lastSpawnedWindowKey,
             isActive: isActive,
             createdAt: "2026-05-01T00:00:00.000Z",
@@ -121,7 +119,6 @@ final class RecurringBoardTemplatesTests: XCTestCase {
     func testCodableRoundTrip_PreservesSeedTaskIdsAndAllFields() throws {
         let original = makeTemplate(
             seedTaskIds: ["a", "b", "c"],
-            poolStrategy: .randomSubset,
             lastSpawnedWindowKey: "2026-05-06T00:00:00.000",
             isActive: false
         )
@@ -131,7 +128,6 @@ final class RecurringBoardTemplatesTests: XCTestCase {
 
         XCTAssertEqual(decoded.id, original.id)
         XCTAssertEqual(decoded.seedTaskIds, ["a", "b", "c"])
-        XCTAssertEqual(decoded.poolStrategy, .randomSubset)
         XCTAssertEqual(decoded.lastSpawnedWindowKey, "2026-05-06T00:00:00.000")
         XCTAssertFalse(decoded.isActive)
     }
@@ -229,9 +225,13 @@ final class RecurringBoardTemplatesTests: XCTestCase {
     }
 
     // MARK: - validateSpawnPool
+    //
+    // Pool semantics post-rework: loose-fit only. `count >= required`
+    // is the single rule; extras become the random subset for each
+    // spawn. The earlier strict-fit `.all` strategy was dropped.
 
-    func testValidateSpawnPool_AllStrictFit_OK() {
-        let tpl = makeTemplate(seedTaskIds: (0..<24).map { "t\($0)" }, poolStrategy: .all)
+    func testValidateSpawnPool_ExactFit_OK() {
+        let tpl = makeTemplate(seedTaskIds: (0..<24).map { "t\($0)" })
         let pool = tpl.seedTaskIds.map { makeTask($0) }
         if case .ok = validateSpawnPool(template: tpl, poolTasks: pool) {
             // pass
@@ -240,26 +240,23 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         }
     }
 
-    func testValidateSpawnPool_AllUndersize_PoolTooSmall() {
-        let tpl = makeTemplate(seedTaskIds: (0..<23).map { "t\($0)" }, poolStrategy: .all)
+    func testValidateSpawnPool_Undersize_PoolTooSmall() {
+        let tpl = makeTemplate(seedTaskIds: (0..<23).map { "t\($0)" })
         let pool = tpl.seedTaskIds.map { makeTask($0) }
         XCTAssertEqual(validateSpawnPool(template: tpl, poolTasks: pool), .failure(.poolTooSmall))
     }
 
-    func testValidateSpawnPool_AllOversize_PoolWrongSize() {
-        let tpl = makeTemplate(seedTaskIds: (0..<25).map { "t\($0)" }, poolStrategy: .all)
+    func testValidateSpawnPool_Oversize_OK() {
+        // Extras become the random subset — no longer a "wrong size" failure.
+        let tpl = makeTemplate(seedTaskIds: (0..<25).map { "t\($0)" })
         let pool = tpl.seedTaskIds.map { makeTask($0) }
-        XCTAssertEqual(validateSpawnPool(template: tpl, poolTasks: pool), .failure(.poolWrongSize))
+        if case .ok = validateSpawnPool(template: tpl, poolTasks: pool) { } else {
+            XCTFail("expected ok")
+        }
     }
 
-    func testValidateSpawnPool_RandomSubsetUndersize_PoolTooSmall() {
-        let tpl = makeTemplate(seedTaskIds: (0..<10).map { "t\($0)" }, poolStrategy: .randomSubset)
-        let pool = tpl.seedTaskIds.map { makeTask($0) }
-        XCTAssertEqual(validateSpawnPool(template: tpl, poolTasks: pool), .failure(.poolTooSmall))
-    }
-
-    func testValidateSpawnPool_RandomSubsetOversize_OK() {
-        let tpl = makeTemplate(seedTaskIds: (0..<50).map { "t\($0)" }, poolStrategy: .randomSubset)
+    func testValidateSpawnPool_LargeOversize_OK() {
+        let tpl = makeTemplate(seedTaskIds: (0..<50).map { "t\($0)" })
         let pool = tpl.seedTaskIds.map { makeTask($0) }
         if case .ok = validateSpawnPool(template: tpl, poolTasks: pool) { } else {
             XCTFail("expected ok")
@@ -267,7 +264,7 @@ final class RecurringBoardTemplatesTests: XCTestCase {
     }
 
     func testValidateSpawnPool_HasDeletedTask_HasDeletedTasks() {
-        let tpl = makeTemplate(boardSize: 3, seedTaskIds: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"], poolStrategy: .randomSubset)
+        let tpl = makeTemplate(boardSize: 3, seedTaskIds: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"])
         let pool = tpl.seedTaskIds.map { makeTask($0, isDeleted: $0 == "c") }
         XCTAssertEqual(validateSpawnPool(template: tpl, poolTasks: pool), .failure(.hasDeletedTasks))
     }
@@ -286,11 +283,10 @@ final class RecurringBoardTemplatesTests: XCTestCase {
 
     // MARK: - buildSpawnPlacement
 
-    func testBuildSpawnPlacement_AllNonRandomized_OrderPreserved_FreeCenterIsNil() {
+    func testBuildSpawnPlacement_NonRandomized_OrderPreserved_FreeCenterIsNil() {
         let tpl = makeTemplate(
             isRandomized: false,
-            seedTaskIds: (0..<24).map { "t\($0)" },
-            poolStrategy: .all
+            seedTaskIds: (0..<24).map { "t\($0)" }
         )
         let pool = tpl.seedTaskIds.map { makeTask($0) }
         let placement = buildSpawnPlacement(template: tpl, poolTasks: pool)
@@ -302,15 +298,15 @@ final class RecurringBoardTemplatesTests: XCTestCase {
     }
 
     func testBuildSpawnPlacement_RandomizedDeterministic_StableUnderSeededRng() {
-        let tpl = makeTemplate(isRandomized: true, seedTaskIds: (0..<24).map { "t\($0)" }, poolStrategy: .all)
+        let tpl = makeTemplate(isRandomized: true, seedTaskIds: (0..<24).map { "t\($0)" })
         let pool = tpl.seedTaskIds.map { makeTask($0) }
         let a = buildSpawnPlacement(template: tpl, poolTasks: pool, rng: { 0.0 })
         let b = buildSpawnPlacement(template: tpl, poolTasks: pool, rng: { 0.0 })
         XCTAssertEqual(a.map { $0?.id ?? "_" }, b.map { $0?.id ?? "_" })
     }
 
-    func testBuildSpawnPlacement_RandomSubset_SlicesToFillableCells() {
-        let tpl = makeTemplate(seedTaskIds: (0..<50).map { "t\($0)" }, poolStrategy: .randomSubset)
+    func testBuildSpawnPlacement_OversizedPool_SlicesToFillableCells() {
+        let tpl = makeTemplate(isRandomized: true, seedTaskIds: (0..<50).map { "t\($0)" })
         let pool = tpl.seedTaskIds.map { makeTask($0) }
         let placement = buildSpawnPlacement(template: tpl, poolTasks: pool, rng: { 0.5 })
         XCTAssertEqual(placement.count, 25)
@@ -324,8 +320,7 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         let tpl = makeTemplate(
             centerSquareType: .none,
             isRandomized: false,
-            seedTaskIds: (0..<25).map { "t\($0)" },
-            poolStrategy: .all
+            seedTaskIds: (0..<25).map { "t\($0)" }
         )
         let pool = tpl.seedTaskIds.map { makeTask($0) }
         let placement = buildSpawnPlacement(template: tpl, poolTasks: pool)
@@ -363,7 +358,7 @@ final class RecurringBoardTemplatesTests: XCTestCase {
 
     func testTemplateInsertAndFetch_RoundTripsSeedTaskIds() throws {
         let testDb = try AppDatabase.makeTestInstance()
-        let original = makeTemplate(seedTaskIds: ["a", "b", "c", "d"], poolStrategy: .randomSubset)
+        let original = makeTemplate(seedTaskIds: ["a", "b", "c", "d"])
         try testDb.dbQueue.write { db in
             try original.insert(db)
         }
@@ -372,6 +367,5 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         }
         XCTAssertNotNil(fetched)
         XCTAssertEqual(fetched?.seedTaskIds, ["a", "b", "c", "d"])
-        XCTAssertEqual(fetched?.poolStrategy, .randomSubset)
     }
 }

@@ -521,8 +521,6 @@ const RecurringCenterSquareTypeSchema = z.union([
   z.literal(CenterSquareType.NONE),
 ]);
 
-const PoolStrategySchema = z.union([z.literal('all'), z.literal('random_subset')]);
-
 export const CreateRecurringBoardTemplateInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   timeframe: RecurringTimeframeSchema,
@@ -531,7 +529,6 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
   centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()).min(1),
-  poolStrategy: PoolStrategySchema,
   isActive: z.boolean(),
 }).refine(
   (data) => {
@@ -565,7 +562,6 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
   centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean().optional(),
   seedTaskIds: z.array(z.string().uuid()).min(1).optional(),
-  poolStrategy: PoolStrategySchema.optional(),
   isActive: z.boolean().optional(),
 }).refine(
   (data) => {
@@ -601,7 +597,6 @@ export const RecurringBoardTemplateSchema = z.object({
   centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()),
-  poolStrategy: PoolStrategySchema,
   lastSpawnedWindowKey: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),

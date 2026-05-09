@@ -183,7 +183,6 @@ export function BoardWizardPage({
             selectedTaskIds={wizard.selectedTaskIds}
             onToggleSelection={wizard.toggleTaskSelection}
             tasksRequired={wizard.tasksRequired}
-            poolStrictExact={wizard.isRecurring && wizard.poolStrategy === 'all'}
             isRecurring={wizard.isRecurring}
             centerTaskMode={wizard.centerMode}
             centerTaskId={wizard.centerTaskId}

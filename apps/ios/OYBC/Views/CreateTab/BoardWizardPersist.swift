@@ -302,7 +302,6 @@ func persistRecurringTemplate(
         : nil
     let isRandomized = controller.isRandomized
     let seedTaskIds = Array(controller.selectedTaskIds)
-    let poolStrategy = controller.poolStrategy
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()
@@ -327,7 +326,6 @@ func persistRecurringTemplate(
                     centerSquareCustomName: customCenterName,
                     isRandomized: isRandomized,
                     seedTaskIds: seedTaskIds,
-                    poolStrategy: poolStrategy,
                     // `isActive` isn't surfaced in the wizard form (the
                     // templates list owns the pause toggle), so preserve.
                     lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
@@ -364,7 +362,6 @@ func persistRecurringTemplate(
                 centerSquareCustomName: customCenterName,
                 isRandomized: isRandomized,
                 seedTaskIds: seedTaskIds,
-                poolStrategy: poolStrategy,
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,

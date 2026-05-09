@@ -57,7 +57,6 @@ export async function createRecurringBoardTemplate(
     centerSquareCustomName: input.centerSquareCustomName,
     isRandomized: input.isRandomized,
     seedTaskIds: [...input.seedTaskIds],
-    poolStrategy: input.poolStrategy,
     lastSpawnedWindowKey: null,
     isActive: input.isActive,
     createdAt: now,

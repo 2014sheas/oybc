@@ -29,7 +29,6 @@ function validTemplate(overrides: Record<string, unknown> = {}) {
     centerSquareType: CenterSquareType.FREE,
     isRandomized: true,
     seedTaskIds: Array.from({ length: 24 }, (_, i) => uuid(i + 1)),
-    poolStrategy: 'all' as const,
     lastSpawnedWindowKey: null,
     isActive: true,
     createdAt: '2026-05-01T00:00:00.000Z',
@@ -48,7 +47,6 @@ function validCreateInput(overrides: Record<string, unknown> = {}) {
     centerSquareType: CenterSquareType.FREE,
     isRandomized: true,
     seedTaskIds: Array.from({ length: 24 }, (_, i) => uuid(i + 1)),
-    poolStrategy: 'all' as const,
     isActive: true,
     ...overrides,
   };
@@ -108,20 +106,6 @@ describe('RecurringBoardTemplateSchema', () => {
         RecurringBoardTemplateSchema.parse(validTemplate({ centerSquareType: c })),
       ).not.toThrow();
     }
-  });
-
-  it('accepts both poolStrategy values', () => {
-    for (const s of ['all', 'random_subset'] as const) {
-      expect(() =>
-        RecurringBoardTemplateSchema.parse(validTemplate({ poolStrategy: s })),
-      ).not.toThrow();
-    }
-  });
-
-  it('rejects unknown poolStrategy', () => {
-    expect(() =>
-      RecurringBoardTemplateSchema.parse(validTemplate({ poolStrategy: 'shuffled' })),
-    ).toThrow();
   });
 
   it('lastSpawnedWindowKey accepts null OR an ISO-shaped string', () => {

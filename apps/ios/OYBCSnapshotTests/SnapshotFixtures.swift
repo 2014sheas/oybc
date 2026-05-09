@@ -145,7 +145,6 @@ enum SnapshotFixtures {
         centerSquareType: CenterSquareType = .free,
         isRandomized: Bool = true,
         seedTaskCount: Int = 24,
-        poolStrategy: PoolStrategy = .all,
         isActive: Bool = true,
         lastSpawnedWindowKey: String? = nil
     ) -> RecurringBoardTemplate {
@@ -159,7 +158,6 @@ enum SnapshotFixtures {
             centerSquareCustomName: nil,
             isRandomized: isRandomized,
             seedTaskIds: (0..<seedTaskCount).map { "\(id)-task-\($0)" },
-            poolStrategy: poolStrategy,
             lastSpawnedWindowKey: lastSpawnedWindowKey,
             isActive: isActive,
             createdAt: fixedTimestamp,

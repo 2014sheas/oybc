@@ -8,10 +8,10 @@
  *      this alongside Phase 6.1's `findPendingRecurringBoards`; templates
  *      spawn directly to the board list (no banner — locked design).
  *
- *   2. Validate that a template's pool is well-formed for the current
- *      `poolStrategy` (`validateSpawnPool`). Returns a structured failure
- *      reason so the platform spawn driver can surface a "needs attention"
- *      indicator on the template row instead of silently failing.
+ *   2. Validate that a template's pool is well-formed (`validateSpawnPool`).
+ *      Returns a structured failure reason so the platform spawn driver
+ *      can surface a "needs attention" indicator on the template row
+ *      instead of silently failing.
  *
  *   3. Build the cell-by-cell placement of `Task | null` for a spawn
  *      (`buildSpawnPlacement`). Mirrors the wizard's `buildWizardPlacement`
@@ -63,10 +63,8 @@ export type SpawnPoolValidation =
   | { ok: false; reason: SpawnPoolFailureReason };
 
 export type SpawnPoolFailureReason =
-  | 'pool_too_small'         // 'all': pool ≠ fillable cells; 'random_subset': pool < fillable cells
-  | 'pool_wrong_size'        // 'all' specifically when pool > fillable cells (semantic distinction)
+  | 'pool_too_small'         // pool < fillable cells
   | 'has_deleted_tasks'      // any task in the resolved pool has isDeleted=true
-  | 'invalid_strategy'       // unknown poolStrategy (forward-compat for older clients)
   | 'unsupported_timeframe'  // template.timeframe === CUSTOM (form should prevent this)
   | 'unsupported_center';    // centerSquareType === CHOSEN (MVP excludes this)
 
@@ -168,17 +166,21 @@ export function deriveSpawnedBoardName(
 }
 
 /**
- * Validates a template's pool against its `poolStrategy`. The platform
- * spawn driver passes the resolved `poolTasks` (looked up from
- * `seedTaskIds`); failures map to user-facing "needs attention" copy on
- * the template row.
+ * Validates a template's pool. The platform spawn driver passes the
+ * resolved `poolTasks` (looked up from `seedTaskIds`); failures map to
+ * user-facing "needs attention" copy on the template row.
+ *
+ * Pool semantics: `poolTasks.length >= fillableCellCount(...)`. The
+ * spawn shuffles + slices to the cell count, so any extras become the
+ * randomization pool. The earlier strict-fit `'all'` strategy was
+ * dropped during the Phase 6.2 UX rework — it was just a special case
+ * of the loose-fit semantics where the user happened to pick exactly
+ * the cell count.
  *
  * @param template - The template being validated.
  * @param poolTasks - Resolved Tasks corresponding to `template.seedTaskIds`.
- *                    Caller is responsible for the lookup; pass the array
- *                    in the same order as `seedTaskIds` for `'all'`-strategy
- *                    templates whose `isRandomized=false` (placement preserves
- *                    seedTaskIds order).
+ *                    Caller is responsible for the lookup; order doesn't
+ *                    matter (the spawn shuffles regardless).
  */
 export function validateSpawnPool(
   template: RecurringBoardTemplate,
@@ -213,24 +215,10 @@ export function validateSpawnPool(
     template.boardSize,
     template.centerSquareType,
   );
-
-  switch (template.poolStrategy) {
-    case 'all':
-      if (poolTasks.length < required) {
-        return { ok: false, reason: 'pool_too_small' };
-      }
-      if (poolTasks.length > required) {
-        return { ok: false, reason: 'pool_wrong_size' };
-      }
-      return { ok: true };
-    case 'random_subset':
-      if (poolTasks.length < required) {
-        return { ok: false, reason: 'pool_too_small' };
-      }
-      return { ok: true };
-    default:
-      return { ok: false, reason: 'invalid_strategy' };
+  if (poolTasks.length < required) {
+    return { ok: false, reason: 'pool_too_small' };
   }
+  return { ok: true };
 }
 
 export interface BuildSpawnPlacementArgs {
@@ -251,14 +239,16 @@ export interface BuildSpawnPlacementArgs {
 }
 
 /**
- * Builds the cell-by-cell placement for a spawn. Returns an array of length
- * `boardSize²` where each entry is a `Task` to place on that cell, or `null`
- * for the auto-completed FREE / CUSTOM_FREE center on odd-sized boards.
+ * Builds the cell-by-cell placement for a spawn. Returns an array of
+ * length `boardSize²` where each entry is a `Task` to place on that
+ * cell, or `null` for the auto-completed FREE / CUSTOM_FREE center on
+ * odd-sized boards.
  *
  * Placement order:
- *   1. If `poolStrategy === 'random_subset'` OR `template.isRandomized`,
- *      shuffle the pool via `fisherYatesShuffle(rng)`.
- *   2. For `'random_subset'`, slice to the fillable cell count.
+ *   1. If `template.isRandomized`, shuffle the pool via
+ *      `fisherYatesShuffle(rng)`. Otherwise preserve `seedTaskIds` order.
+ *   2. Slice to the fillable cell count (ignoring extras — that's the
+ *      whole point of the loose-fit pool).
  *   3. Walk cells 0..boardSize²-1 left-to-right, top-to-bottom. At the
  *      center cell (odd boards only), if FREE/CUSTOM_FREE, leave `null`;
  *      otherwise place the next pool task.
@@ -273,26 +263,15 @@ export function buildSpawnPlacement(
   const centerOmitsTask =
     hasCenter && isCenterAutoCompleted(template.centerSquareType);
 
-  // Step 1+2: build the placed-tasks array of length `fillableCellCount`.
   const fillCount = fillableCellCount(
     template.boardSize,
     template.centerSquareType,
   );
+  const ordered = template.isRandomized
+    ? fisherYatesShuffle(poolTasks, rng)
+    : poolTasks;
+  const placed = ordered.slice(0, fillCount);
 
-  let placed: Task[];
-  if (template.poolStrategy === 'random_subset') {
-    // Always shuffle for random_subset (otherwise the slice would always
-    // pick the first N — defeats the "random" semantics).
-    const shuffled = fisherYatesShuffle(poolTasks, rng);
-    placed = shuffled.slice(0, fillCount);
-  } else {
-    // 'all': preserve seedTaskIds order unless explicitly randomized.
-    placed = template.isRandomized
-      ? fisherYatesShuffle(poolTasks, rng)
-      : poolTasks.slice(0, fillCount);
-  }
-
-  // Step 3: walk cells.
   const placement: (Task | null)[] = new Array(total).fill(null);
   let nextTaskIdx = 0;
   for (let cell = 0; cell < total; cell++) {

@@ -6,7 +6,6 @@ import {
   getTimeframeBoundaries,
   type Board,
   type BoardTask,
-  type PoolStrategy,
   type RecurringBoardTemplate,
   type UserPreferences,
   type WeekStartDay,
@@ -71,9 +70,9 @@ export interface BoardWizardState {
   // Phase 6.2 — recurring template fields. When `isRecurring` is true,
   // the wizard saves a `RecurringBoardTemplate` (and immediately spawns
   // the current window's board); when false, it saves a plain Board as
-  // before. `poolStrategy` is only meaningful when isRecurring=true.
+  // before. The pool is always loose-fit (>= cell count); the spawn
+  // shuffles + slices, so any extras become the random subset.
   isRecurring: boolean;
-  poolStrategy: PoolStrategy;
 
   // Step 2 fields
   selectedTaskIds: Set<string>;
@@ -106,7 +105,6 @@ export interface BoardWizardActions {
   setCenterCustomName: (n: string) => void;
   setIsRandomized: (b: boolean) => void;
   setIsRecurring: (b: boolean) => void;
-  setPoolStrategy: (s: PoolStrategy) => void;
   toggleTaskSelection: (taskId: string) => void;
   setCenterTaskId: (id: string | null) => void;
   goToStep: (step: WizardStep) => void;
@@ -134,11 +132,6 @@ export interface BoardWizardDerived {
    *  is always `false`: closing a resumed draft is always a decision
    *  worth confirming. */
   isPristine: boolean;
-  /** True when Step 2's count check requires `>=` instead of `===`.
-   *  Only true when `isRecurring && poolStrategy === 'random_subset'`.
-   *  Step components use this to phrase the count line as "X / N min"
-   *  instead of "X / N". */
-  poolMinimumOnly: boolean;
 }
 
 export type BoardWizardController = BoardWizardState &
@@ -293,9 +286,6 @@ export function useBoardWizard({
       preferences.defaultRandomize,
   );
   const [isRecurring, setIsRecurringRaw] = useState<boolean>(initialIsRecurring);
-  const [poolStrategy, setPoolStrategy] = useState<PoolStrategy>(
-    () => effectiveTemplate?.poolStrategy ?? 'all',
-  );
   const weekStartDay = preferences.weekStartDay;
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
@@ -417,7 +407,6 @@ export function useBoardWizard({
     setCenterCustomName(preferences.defaultCenterCustomName);
     setIsRandomized(preferences.defaultRandomize);
     setIsRecurringRaw(false);
-    setPoolStrategy('all');
     setSelectedTaskIds(new Set());
     setCenterTaskIdRaw(null);
     setCurrentStep(1);
@@ -452,43 +441,27 @@ export function useBoardWizard({
     return null;
   }, [trimmedName, timeframe, customStartDate, customEndDate]);
 
-  // Pool-size enforcement matrix:
-  //   - One-off (isRecurring=false):      `selectedCount >= tasksRequired`
-  //     (existing wizard behavior — extras are silently dropped by
-  //     `buildWizardPlacement`).
-  //   - Recurring + poolStrategy='all':    `selectedCount === tasksRequired`
-  //     (NEW — schema requires exact-fit pools).
-  //   - Recurring + poolStrategy='random_subset': `selectedCount >= tasksRequired`
-  //     (same as default — spawn picks N each window from the larger pool).
-  //
-  // `poolMinimumOnly` drives the inline message wording: "X / N min" vs
-  // "X / N exactly" vs "X / N". Each step component reads it.
-  const poolStrictExact = isRecurring && poolStrategy === 'all';
-  const poolMinimumOnly = !poolStrictExact;
-
+  // Pool-size enforcement is loose-fit on both branches:
+  //   - One-off (isRecurring=false): `selectedCount >= tasksRequired`.
+  //     Extras are silently dropped by `buildWizardPlacement`.
+  //   - Recurring (isRecurring=true): `selectedCount >= tasksRequired`.
+  //     The spawn shuffles + slices, so extras become the random subset.
+  // The earlier strict-fit "Use every task" branch was dropped during
+  // the Phase 6.2 UX rework — it was a special case of loose-fit where
+  // the user picked exactly N.
   const isStep2Valid = useMemo(() => {
-    if (poolStrictExact) {
-      if (selectedTaskIds.size !== tasksRequired) return false;
-    } else {
-      if (selectedTaskIds.size < tasksRequired) return false;
-    }
+    if (selectedTaskIds.size < tasksRequired) return false;
     if (centerMode) {
       if (centerTaskId === null) return false;
       if (!selectedTaskIds.has(centerTaskId)) return false;
     }
     return true;
-  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId, poolStrictExact]);
+  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
 
   const step2ValidationMessage = useMemo<string | null>(() => {
-    if (poolStrictExact && selectedTaskIds.size > tasksRequired) {
-      const over = selectedTaskIds.size - tasksRequired;
-      const noun = `task${over === 1 ? '' : 's'}`;
-      return `Remove ${over} ${noun} — recurring templates with "Use every task" require exactly ${tasksRequired}.`;
-    }
     const short = tasksRequired - selectedTaskIds.size;
     if (short > 0) {
       const noun = `task${short === 1 ? '' : 's'}`;
-      if (poolStrictExact) return `Pick ${short} more ${noun} (${tasksRequired} exactly).`;
       if (isRecurring) return `Pick ${short} more ${noun} (${tasksRequired} minimum).`;
       return `Pick ${short} more ${noun}.`;
     }
@@ -496,7 +469,7 @@ export function useBoardWizard({
       return 'Mark one selected task as the center.';
     }
     return null;
-  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId, poolStrictExact, isRecurring]);
+  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId, isRecurring]);
 
   const isPristine = useMemo<boolean>(() => {
     if (draftBoardId !== null) return false;
@@ -517,7 +490,6 @@ export function useBoardWizard({
     centerCustomName,
     isRandomized,
     isRecurring,
-    poolStrategy,
     weekStartDay,
     selectedTaskIds,
     centerTaskId,
@@ -535,7 +507,6 @@ export function useBoardWizard({
     setCenterCustomName,
     setIsRandomized,
     setIsRecurring,
-    setPoolStrategy,
     toggleTaskSelection,
     setCenterTaskId,
     goToStep,
@@ -551,6 +522,5 @@ export function useBoardWizard({
     step1ValidationMessage,
     step2ValidationMessage,
     isPristine,
-    poolMinimumOnly,
   };
 }

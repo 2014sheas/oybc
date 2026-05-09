@@ -164,8 +164,7 @@ struct BoardWizardPreviewStepView: View {
     }
 
     private var recurringSummary: String {
-        let strategy = controller.poolStrategy == .all ? "use every task" : "random subset"
-        return "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (\(strategy))."
+        return "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (random subset each window)."
     }
 
     private var recurringPrimaryLabel: String {

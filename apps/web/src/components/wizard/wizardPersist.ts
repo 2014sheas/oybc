@@ -294,7 +294,6 @@ export async function persistRecurringTemplate({
       centerSquareCustomName: customName,
       isRandomized: controller.isRandomized,
       seedTaskIds,
-      poolStrategy: controller.poolStrategy,
       // `isActive` isn't surfaced in the wizard form (the templates
       // list owns the pause toggle), so leave it untouched on edit.
     });
@@ -310,7 +309,6 @@ export async function persistRecurringTemplate({
     centerSquareCustomName: customName,
     isRandomized: controller.isRandomized,
     seedTaskIds,
-    poolStrategy: controller.poolStrategy,
     isActive: true,
   });
 
