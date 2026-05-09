@@ -99,7 +99,7 @@ export function BoardWizardPreviewStep({
       // Recurring: lead with the cadence ("Every week") and show the
       // first-spawn window after, so the preview row can't be confused
       // with a one-off board for that single window.
-      return `${formatRecurringCadence(controller.timeframe)} · first spawn ${windowLabel}`;
+      return `${formatRecurringCadence(controller.timeframe)} · starting ${windowLabel}`;
     }
     return windowLabel;
   }, [

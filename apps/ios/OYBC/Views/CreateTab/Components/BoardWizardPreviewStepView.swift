@@ -52,7 +52,7 @@ struct BoardWizardPreviewStepView: View {
             // Recurring: lead with the cadence ("Every week") and show
             // the first-spawn window after, so the row can't be confused
             // with a one-off board for that single window.
-            return "\(recurringCadenceLabel(timeframe: controller.timeframe)) · first spawn \(windowLabel)"
+            return "\(recurringCadenceLabel(timeframe: controller.timeframe)) · starting \(windowLabel)"
         }
         return windowLabel
     }

@@ -259,7 +259,7 @@ export function BoardSetupForm({
           </span>
           <span className={styles.dateDisplayRange}>
             {isRecurring
-              ? `First spawn: ${timeframeLabel}`
+              ? `Starting: ${timeframeLabel}`
               : `${computedBoundaries.startDate.split('T')[0]} to ${computedBoundaries.endDate.split('T')[0]}`}
           </span>
         </div>

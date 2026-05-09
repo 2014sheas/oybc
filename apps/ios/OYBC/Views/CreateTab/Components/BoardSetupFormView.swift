@@ -144,7 +144,7 @@ struct BoardSetupFormView: View {
                         Text(recurringCadenceLabel(timeframe: controller.timeframe))
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                        Text("First spawn: \(windowLabel)")
+                        Text("Starting: \(windowLabel)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     } else {
