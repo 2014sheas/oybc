@@ -202,6 +202,8 @@ struct BoardWizardView: View {
                 library: library,
                 selectedTaskIds: $wizard.selectedTaskIds,
                 tasksRequired: wizard.tasksRequired,
+                poolStrictExact: wizard.poolStrictExact,
+                isRecurring: wizard.isRecurring,
                 centerTaskMode: wizard.centerMode,
                 centerTaskId: $wizard.centerTaskId,
                 userId: userId,

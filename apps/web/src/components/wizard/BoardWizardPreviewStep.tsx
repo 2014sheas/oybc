@@ -255,11 +255,36 @@ export function BoardWizardPreviewStep({
             Edit
           </button>
         </div>
+        {controller.isRecurring && (
+          <div className={styles.summaryRow}>
+            <span className={styles.summaryLabel}>Recurring</span>
+            <span className={styles.summaryValue}>
+              Spawns a new {controller.timeframe} board from a{' '}
+              {controller.selectedTaskIds.size}-task pool (
+              {controller.poolStrategy === 'all'
+                ? 'use every task'
+                : 'random subset'}
+              ).
+            </span>
+            <button
+              type="button"
+              className={styles.editLink}
+              onClick={() => controller.goToStep(1)}
+            >
+              Edit
+            </button>
+          </div>
+        )}
       </div>
 
       {errorMessage && <div className={styles.errorMessage}>{errorMessage}</div>}
 
-      {/* Footer */}
+      {/* Footer — three button-set variants:
+          - one-off: Save as Draft + Activate Board (existing)
+          - recurring create: single primary "Create template & spawn first board"
+          - recurring edit: single primary "Save changes" (no spawn)
+          The actual write branching lives in `wizardPersist` (see
+          Commit B); this component only chooses the label. */}
       <div className={styles.footer}>
         <button
           type="button"
@@ -270,22 +295,40 @@ export function BoardWizardPreviewStep({
           ‹ Back
         </button>
         <div className={styles.footerActions}>
-          <button
-            type="button"
-            className={styles.draftButton}
-            onClick={() => void performCreation('draft')}
-            disabled={isCreating}
-          >
-            {isCreating ? 'Saving…' : 'Save as Draft'}
-          </button>
-          <button
-            type="button"
-            className={styles.activateButton}
-            onClick={() => void performCreation('active')}
-            disabled={isCreating}
-          >
-            {isCreating ? 'Activating…' : 'Activate Board'}
-          </button>
+          {!controller.isRecurring && (
+            <>
+              <button
+                type="button"
+                className={styles.draftButton}
+                onClick={() => void performCreation('draft')}
+                disabled={isCreating}
+              >
+                {isCreating ? 'Saving…' : 'Save as Draft'}
+              </button>
+              <button
+                type="button"
+                className={styles.activateButton}
+                onClick={() => void performCreation('active')}
+                disabled={isCreating}
+              >
+                {isCreating ? 'Activating…' : 'Activate Board'}
+              </button>
+            </>
+          )}
+          {controller.isRecurring && (
+            <button
+              type="button"
+              className={styles.activateButton}
+              onClick={() => void performCreation('active')}
+              disabled={isCreating}
+            >
+              {isCreating
+                ? 'Saving…'
+                : controller.editingTemplateId !== null
+                  ? 'Save changes'
+                  : 'Create template & spawn first board'}
+            </button>
+          )}
         </div>
       </div>
     </div>

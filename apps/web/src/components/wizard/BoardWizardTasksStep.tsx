@@ -52,6 +52,17 @@ export interface BoardWizardTasksStepProps {
   /** Number of tasks the chosen board geometry requires. */
   tasksRequired: number;
 
+  /** When true, the pool count must equal `tasksRequired` exactly
+   *  (recurring template + 'all' strategy). When false, `>=` is
+   *  enough — the default for one-off boards and for recurring +
+   *  'random_subset' (the spawn driver picks N each window from the
+   *  larger pool). */
+  poolStrictExact: boolean;
+
+  /** True when the wizard is in recurring-template mode. Drives the
+   *  count-line suffix copy and the "minimum" wording. */
+  isRecurring: boolean;
+
   /** When true, every selected row shows a star radio for picking the
    *  center task. Driven by Step 1's center-type choice. */
   centerTaskMode: boolean;
@@ -107,6 +118,8 @@ export function BoardWizardTasksStep({
   selectedTaskIds,
   onToggleSelection,
   tasksRequired,
+  poolStrictExact,
+  isRecurring,
   centerTaskMode,
   centerTaskId,
   onCenterTaskChange,
@@ -290,7 +303,9 @@ export function BoardWizardTasksStep({
   }, [library, activeFilter, searchQuery, parentBoardTasks]);
 
   const selectedCount = selectedTaskIds.size;
-  const isCountSatisfied = selectedCount >= tasksRequired;
+  const isCountSatisfied = poolStrictExact
+    ? selectedCount === tasksRequired
+    : selectedCount >= tasksRequired;
   const isCenterSatisfied =
     !centerTaskMode || (centerTaskId !== null && selectedTaskIds.has(centerTaskId));
   const canAdvance = isCountSatisfied && isCenterSatisfied;
@@ -317,6 +332,13 @@ export function BoardWizardTasksStep({
               Selected:{' '}
               <span className={isCountSatisfied ? styles.countOk : styles.countShort}>
                 {selectedCount} / {tasksRequired}
+                {/* Suffix only in recurring mode: 'all' = exact-fit
+                    (new requirement); 'random_subset' = at-least-N
+                    (the spawn driver picks N from the larger pool
+                    each window). One-off boards keep the bare count
+                    to preserve existing copy. */}
+                {isRecurring && poolStrictExact ? ' exact' : null}
+                {isRecurring && !poolStrictExact ? ' min' : null}
               </span>
             </span>
             {centerTaskMode && (

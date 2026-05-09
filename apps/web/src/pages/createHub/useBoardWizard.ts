@@ -6,6 +6,8 @@ import {
   getTimeframeBoundaries,
   type Board,
   type BoardTask,
+  type PoolStrategy,
+  type RecurringBoardTemplate,
   type UserPreferences,
   type WeekStartDay,
 } from '@oybc/shared';
@@ -66,6 +68,13 @@ export interface BoardWizardState {
   isRandomized: boolean;
   weekStartDay: WeekStartDay;
 
+  // Phase 6.2 — recurring template fields. When `isRecurring` is true,
+  // the wizard saves a `RecurringBoardTemplate` (and immediately spawns
+  // the current window's board); when false, it saves a plain Board as
+  // before. `poolStrategy` is only meaningful when isRecurring=true.
+  isRecurring: boolean;
+  poolStrategy: PoolStrategy;
+
   // Step 2 fields
   selectedTaskIds: Set<string>;
   centerTaskId: string | null;
@@ -75,8 +84,15 @@ export interface BoardWizardState {
 
   /** Set when the wizard was hydrated from an existing draft board.
    *  Non-null means Save / Activate will update this record rather
-   *  than create a new one. */
+   *  than create a new one. Mutually exclusive with `editingTemplateId`. */
   draftBoardId: string | null;
+
+  /** Set when the wizard was hydrated from an existing recurring
+   *  template (Profile → Recurring templates → Edit). Save updates the
+   *  template (and does NOT retroactively edit previously-spawned
+   *  boards or trigger a fresh spawn). Mutually exclusive with
+   *  `draftBoardId`. */
+  editingTemplateId: string | null;
 }
 
 /** Mutators for each piece of state. */
@@ -89,6 +105,8 @@ export interface BoardWizardActions {
   setCenterType: (t: CenterSquareType) => void;
   setCenterCustomName: (n: string) => void;
   setIsRandomized: (b: boolean) => void;
+  setIsRecurring: (b: boolean) => void;
+  setPoolStrategy: (s: PoolStrategy) => void;
   toggleTaskSelection: (taskId: string) => void;
   setCenterTaskId: (id: string | null) => void;
   goToStep: (step: WizardStep) => void;
@@ -116,6 +134,11 @@ export interface BoardWizardDerived {
    *  is always `false`: closing a resumed draft is always a decision
    *  worth confirming. */
   isPristine: boolean;
+  /** True when Step 2's count check requires `>=` instead of `===`.
+   *  Only true when `isRecurring && poolStrategy === 'random_subset'`.
+   *  Step components use this to phrase the count line as "X / N min"
+   *  instead of "X / N". */
+  poolMinimumOnly: boolean;
 }
 
 export type BoardWizardController = BoardWizardState &
@@ -147,10 +170,21 @@ export interface UseBoardWizardArgs {
    *  timeframe field so the user can't accidentally pick a different
    *  one — they can edit name/size/center as usual.
    *
-   *  Mutually exclusive with `draft` (drafts already lock semantics by
-   *  hydrating the full record). When both are supplied, draft wins
-   *  (the user is resuming, not starting a recurring instance). */
+   *  Banner deep-links also turn ON `isRecurring` (since the user is
+   *  explicitly creating a recurring instance) so the persist path
+   *  saves a template + spawns the current window.
+   *
+   *  Mutually exclusive with `draft` and `editingTemplate` (drafts and
+   *  template-edits already lock semantics by hydrating the full
+   *  record). When more than one is supplied, the priority is:
+   *  draft > editingTemplate > prefilledRecurringTimeframe. */
   prefilledRecurringTimeframe?: Timeframe;
+  /** When set, the wizard is opened in template-edit mode (Profile →
+   *  Recurring templates → Edit). All fields hydrate from the template,
+   *  `isRecurring` is forced ON, and Save updates the template via
+   *  `updateRecurringBoardTemplate` rather than spawning a fresh
+   *  template + board. Mutually exclusive with `draft`. */
+  editingTemplate?: RecurringBoardTemplate;
 }
 
 /**
@@ -171,23 +205,31 @@ export function useBoardWizard({
   initialStep = 1,
   draft,
   prefilledRecurringTimeframe,
+  editingTemplate,
 }: UseBoardWizardArgs): BoardWizardController {
   const draftBoard = draft?.board;
 
-  // Recurring-banner prefill is suppressed when a draft is being resumed —
-  // drafts hydrate the full record, so honoring the prefill on top would
-  // confuse the user about which board they're editing. CUSTOM is also
-  // skipped (Phase 1's PARENT_TIMEFRAMES excludes it; defensive check
-  // here so a malformed URL param can't sneak through).
+  // Hydration priority: draft > editingTemplate > prefilledRecurringTimeframe.
+  // When a draft is being resumed we ignore the other two — drafts already
+  // hydrate the full record, so honoring extra prefills on top would
+  // confuse the user about which board they're editing. Editing a
+  // template wins over a banner-deep-link prefill since the template is
+  // a more-specific source.
+  const effectiveTemplate = !draftBoard ? editingTemplate ?? undefined : undefined;
   const effectivePrefill =
     !draftBoard &&
+    !effectiveTemplate &&
     prefilledRecurringTimeframe !== undefined &&
     prefilledRecurringTimeframe !== Timeframe.CUSTOM
       ? prefilledRecurringTimeframe
       : null;
 
+  // Banner deep-link AND template-edit both imply isRecurring=true.
+  const initialIsRecurring = effectiveTemplate !== undefined || effectivePrefill !== null;
+
   const [name, setName] = useState(() => {
     if (draftBoard) return draftBoard.name;
+    if (effectiveTemplate) return effectiveTemplate.name;
     if (effectivePrefill !== null) {
       // Seed with a human-readable label like "Today" / "Week of May 4 – 10,
       // 2026" / "May 2026" / "2026". User can edit before saving.
@@ -201,10 +243,17 @@ export function useBoardWizard({
     return '';
   });
   const [size, setSizeRaw] = useState<3 | 4 | 5>(
-    () => (draftBoard?.boardSize as 3 | 4 | 5 | undefined) ?? preferences.defaultBoardSize,
+    () =>
+      (draftBoard?.boardSize as 3 | 4 | 5 | undefined) ??
+      (effectiveTemplate?.boardSize as 3 | 4 | 5 | undefined) ??
+      preferences.defaultBoardSize,
   );
-  const [timeframe, setTimeframe] = useState<Timeframe>(
-    () => draftBoard?.timeframe ?? effectivePrefill ?? preferences.defaultTimeframe,
+  const [timeframe, setTimeframeRaw] = useState<Timeframe>(
+    () =>
+      draftBoard?.timeframe ??
+      effectiveTemplate?.timeframe ??
+      effectivePrefill ??
+      preferences.defaultTimeframe,
   );
   const [customStartDate, setCustomStartDate] = useState(() =>
     draftBoard?.timeframe === Timeframe.CUSTOM && draftBoard.startDate
@@ -223,27 +272,44 @@ export function useBoardWizard({
     // Coerce to NONE here so the initial state is internally consistent
     // (matches the same guard in setSize).
     coerceCenterType(
-      (draftBoard?.boardSize as 3 | 4 | 5 | undefined) ?? preferences.defaultBoardSize,
-      draftBoard?.centerSquareType ?? preferences.defaultCenterType,
+      (draftBoard?.boardSize as 3 | 4 | 5 | undefined) ??
+        (effectiveTemplate?.boardSize as 3 | 4 | 5 | undefined) ??
+        preferences.defaultBoardSize,
+      draftBoard?.centerSquareType ??
+        effectiveTemplate?.centerSquareType ??
+        preferences.defaultCenterType,
     ),
   );
   const [centerCustomName, setCenterCustomName] = useState(
-    () => draftBoard?.centerSquareCustomName ?? preferences.defaultCenterCustomName,
+    () =>
+      draftBoard?.centerSquareCustomName ??
+      effectiveTemplate?.centerSquareCustomName ??
+      preferences.defaultCenterCustomName,
   );
   const [isRandomized, setIsRandomized] = useState(
-    () => draftBoard?.isRandomized ?? preferences.defaultRandomize,
+    () =>
+      draftBoard?.isRandomized ??
+      effectiveTemplate?.isRandomized ??
+      preferences.defaultRandomize,
+  );
+  const [isRecurring, setIsRecurringRaw] = useState<boolean>(initialIsRecurring);
+  const [poolStrategy, setPoolStrategy] = useState<PoolStrategy>(
+    () => effectiveTemplate?.poolStrategy ?? 'all',
   );
   const weekStartDay = preferences.weekStartDay;
 
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
-    () => (draft ? new Set(draft.boardTasks.map((bt) => bt.taskId)) : new Set()),
-  );
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
+    if (draft) return new Set(draft.boardTasks.map((bt) => bt.taskId));
+    if (effectiveTemplate) return new Set(effectiveTemplate.seedTaskIds);
+    return new Set();
+  });
   const [centerTaskId, setCenterTaskIdRaw] = useState<string | null>(
     () => draftBoard?.centerTaskId ?? null,
   );
 
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const draftBoardId = draftBoard?.id ?? null;
+  const editingTemplateId = effectiveTemplate?.id ?? null;
 
   // ── Coupled setters ───────────────────────────────────────────────────
   // Changing size or center type can invalidate downstream selections;
@@ -267,6 +333,39 @@ export function useBoardWizard({
     setCenterTypeRaw(t);
     if (t !== CenterSquareType.CHOSEN) {
       setCenterTaskIdRaw(null);
+    }
+  }, []);
+
+  // Recurring templates exclude `Timeframe.CUSTOM` (no computed window)
+  // and `CenterSquareType.CHOSEN` (MVP scope; the schema rejects both).
+  // The setup form hides those options when isRecurring=true, but the
+  // setter also rejects them defensively so a stale call site or future
+  // refactor can't reintroduce an invalid combination.
+  const setTimeframe = useCallback(
+    (t: Timeframe) => {
+      if (isRecurring && t === Timeframe.CUSTOM) return;
+      setTimeframeRaw(t);
+    },
+    [isRecurring],
+  );
+
+  // Toggling Recurring=ON when timeframe is CUSTOM auto-coerces to
+  // DAILY (recurring requires one of the four computed-window
+  // timeframes). Surfaced via a one-line hint in the form. Toggling OFF
+  // doesn't touch any other state — the user keeps their pool, name,
+  // size, etc., and Save reverts to the one-off persist path.
+  const setIsRecurring = useCallback((b: boolean) => {
+    setIsRecurringRaw(b);
+    if (b) {
+      setTimeframeRaw((prev) => (prev === Timeframe.CUSTOM ? Timeframe.DAILY : prev));
+      // CHOSEN center is also excluded for recurring templates.
+      setCenterTypeRaw((prev) => {
+        if (prev === CenterSquareType.CHOSEN) {
+          setCenterTaskIdRaw(null);
+          return CenterSquareType.FREE;
+        }
+        return prev;
+      });
     }
   }, []);
 
@@ -312,11 +411,13 @@ export function useBoardWizard({
     const nextSize = preferences.defaultBoardSize;
     setSizeRaw(nextSize);
     setCenterTypeRaw(coerceCenterType(nextSize, preferences.defaultCenterType));
-    setTimeframe(preferences.defaultTimeframe);
+    setTimeframeRaw(preferences.defaultTimeframe);
     setCustomStartDate('');
     setCustomEndDate('');
     setCenterCustomName(preferences.defaultCenterCustomName);
     setIsRandomized(preferences.defaultRandomize);
+    setIsRecurringRaw(false);
+    setPoolStrategy('all');
     setSelectedTaskIds(new Set());
     setCenterTaskIdRaw(null);
     setCurrentStep(1);
@@ -351,25 +452,51 @@ export function useBoardWizard({
     return null;
   }, [trimmedName, timeframe, customStartDate, customEndDate]);
 
+  // Pool-size enforcement matrix:
+  //   - One-off (isRecurring=false):      `selectedCount >= tasksRequired`
+  //     (existing wizard behavior — extras are silently dropped by
+  //     `buildWizardPlacement`).
+  //   - Recurring + poolStrategy='all':    `selectedCount === tasksRequired`
+  //     (NEW — schema requires exact-fit pools).
+  //   - Recurring + poolStrategy='random_subset': `selectedCount >= tasksRequired`
+  //     (same as default — spawn picks N each window from the larger pool).
+  //
+  // `poolMinimumOnly` drives the inline message wording: "X / N min" vs
+  // "X / N exactly" vs "X / N". Each step component reads it.
+  const poolStrictExact = isRecurring && poolStrategy === 'all';
+  const poolMinimumOnly = !poolStrictExact;
+
   const isStep2Valid = useMemo(() => {
-    if (selectedTaskIds.size < tasksRequired) return false;
+    if (poolStrictExact) {
+      if (selectedTaskIds.size !== tasksRequired) return false;
+    } else {
+      if (selectedTaskIds.size < tasksRequired) return false;
+    }
     if (centerMode) {
       if (centerTaskId === null) return false;
       if (!selectedTaskIds.has(centerTaskId)) return false;
     }
     return true;
-  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
+  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId, poolStrictExact]);
 
   const step2ValidationMessage = useMemo<string | null>(() => {
+    if (poolStrictExact && selectedTaskIds.size > tasksRequired) {
+      const over = selectedTaskIds.size - tasksRequired;
+      const noun = `task${over === 1 ? '' : 's'}`;
+      return `Remove ${over} ${noun} — recurring templates with "Use every task" require exactly ${tasksRequired}.`;
+    }
     const short = tasksRequired - selectedTaskIds.size;
     if (short > 0) {
-      return `Pick ${short} more task${short === 1 ? '' : 's'}.`;
+      const noun = `task${short === 1 ? '' : 's'}`;
+      if (poolStrictExact) return `Pick ${short} more ${noun} (${tasksRequired} exactly).`;
+      if (isRecurring) return `Pick ${short} more ${noun} (${tasksRequired} minimum).`;
+      return `Pick ${short} more ${noun}.`;
     }
     if (centerMode && (centerTaskId === null || !selectedTaskIds.has(centerTaskId))) {
       return 'Mark one selected task as the center.';
     }
     return null;
-  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
+  }, [selectedTaskIds, tasksRequired, centerMode, centerTaskId, poolStrictExact, isRecurring]);
 
   const isPristine = useMemo<boolean>(() => {
     if (draftBoardId !== null) return false;
@@ -389,11 +516,14 @@ export function useBoardWizard({
     centerType,
     centerCustomName,
     isRandomized,
+    isRecurring,
+    poolStrategy,
     weekStartDay,
     selectedTaskIds,
     centerTaskId,
     currentStep,
     draftBoardId,
+    editingTemplateId,
 
     // Actions
     setName,
@@ -404,6 +534,8 @@ export function useBoardWizard({
     setCenterType,
     setCenterCustomName,
     setIsRandomized,
+    setIsRecurring,
+    setPoolStrategy,
     toggleTaskSelection,
     setCenterTaskId,
     goToStep,
@@ -419,5 +551,6 @@ export function useBoardWizard({
     step1ValidationMessage,
     step2ValidationMessage,
     isPristine,
+    poolMinimumOnly,
   };
 }

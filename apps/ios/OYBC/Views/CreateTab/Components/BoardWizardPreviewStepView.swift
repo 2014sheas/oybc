@@ -89,6 +89,13 @@ struct BoardWizardPreviewStepView: View {
                     jumpTo: 2
                 )
                 summaryRow(label: "Randomize", value: controller.isRandomized ? "Yes" : "No", jumpTo: 1)
+                if controller.isRecurring {
+                    summaryRow(
+                        label: "Recurring",
+                        value: recurringSummary,
+                        jumpTo: 1
+                    )
+                }
             }
             .padding(12)
             .background(Color(.systemGray6))
@@ -106,22 +113,35 @@ struct BoardWizardPreviewStepView: View {
 
             Divider()
 
+            // Three button-set variants — see web `BoardWizardPreviewStep`
+            // for parallel rationale. The actual write branching lives
+            // in `BoardWizardPersist` (see Commit B); this view only
+            // chooses the label.
             HStack {
                 Button("‹ Back", action: onBack)
                     .buttonStyle(.bordered)
                     .disabled(isCreating)
                 Spacer()
-                Button(isCreating ? "Saving…" : "Save as Draft") {
-                    performCreation(status: .draft)
+                if !controller.isRecurring {
+                    Button(isCreating ? "Saving…" : "Save as Draft") {
+                        performCreation(status: .draft)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isCreating)
+                    Button(isCreating ? "Activating…" : "Activate Board") {
+                        performCreation(status: .active)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(isCreating)
+                } else {
+                    Button(recurringPrimaryLabel) {
+                        performCreation(status: .active)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(isCreating)
                 }
-                .buttonStyle(.bordered)
-                .disabled(isCreating)
-                Button(isCreating ? "Activating…" : "Activate Board") {
-                    performCreation(status: .active)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .disabled(isCreating)
             }
         }
         .padding(16)
@@ -141,6 +161,17 @@ struct BoardWizardPreviewStepView: View {
         // Force re-mount on layout-affecting changes since BingoBoard
         // snapshots its task labels on first render.
         .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")-\(controller.isRandomized)")
+    }
+
+    private var recurringSummary: String {
+        let strategy = controller.poolStrategy == .all ? "use every task" : "random subset"
+        return "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (\(strategy))."
+    }
+
+    private var recurringPrimaryLabel: String {
+        if isCreating { return "Saving…" }
+        if controller.editingTemplateId != nil { return "Save changes" }
+        return "Create template & spawn first board"
     }
 
     @ViewBuilder

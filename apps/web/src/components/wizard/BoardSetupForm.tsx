@@ -3,6 +3,7 @@ import {
   Timeframe,
   formatTimeframeLabel,
   getTimeframeBoundaries,
+  type PoolStrategy,
   type WeekStartDay,
 } from '@oybc/shared';
 import styles from './BoardSetupForm.module.css';
@@ -21,11 +22,30 @@ const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
   { value: Timeframe.CUSTOM, label: 'Custom' },
 ];
 
+/** Subset of `TIMEFRAME_OPTIONS` shown when `isRecurring=true`. The
+ *  recurring template schema rejects `Timeframe.CUSTOM` (no computed
+ *  window), so the form hides it. */
+const RECURRING_TIMEFRAME_OPTIONS = TIMEFRAME_OPTIONS.filter(
+  (o) => o.value !== Timeframe.CUSTOM,
+);
+
 const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
   { value: CenterSquareType.FREE, label: 'Free Space' },
   { value: CenterSquareType.CUSTOM_FREE, label: 'Custom Name' },
   { value: CenterSquareType.CHOSEN, label: 'Pick one of my board tasks' },
   { value: CenterSquareType.NONE, label: 'None' },
+];
+
+/** Subset of `CENTER_TYPE_OPTIONS` shown when `isRecurring=true`. The
+ *  recurring template MVP excludes `CenterSquareType.CHOSEN` — adding
+ *  a per-template `centerTaskId` is a future extension. */
+const RECURRING_CENTER_TYPE_OPTIONS = CENTER_TYPE_OPTIONS.filter(
+  (o) => o.value !== CenterSquareType.CHOSEN,
+);
+
+const POOL_STRATEGY_OPTIONS: { value: PoolStrategy; label: string; hint: string }[] = [
+  { value: 'all', label: 'Use every task', hint: 'Pool size must equal the cells to fill.' },
+  { value: 'random_subset', label: 'Random subset', hint: 'Pool can be larger; spawn picks N each window.' },
 ];
 
 export interface BoardSetupFormProps {
@@ -56,6 +76,17 @@ export interface BoardSetupFormProps {
 
   isRandomized: boolean;
   onIsRandomizedChange: (b: boolean) => void;
+
+  /** Phase 6.2 — when true, the wizard saves a recurring template
+   *  (and immediately spawns the current window's board) instead of
+   *  a one-off Board. Toggling reveals pool-strategy options and
+   *  hides Custom from the timeframe selector. */
+  isRecurring: boolean;
+  onIsRecurringChange: (b: boolean) => void;
+
+  /** Phase 6.2 — only meaningful when `isRecurring`. */
+  poolStrategy: PoolStrategy;
+  onPoolStrategyChange: (s: PoolStrategy) => void;
 
   weekStartDay: WeekStartDay;
 }
@@ -90,9 +121,19 @@ export function BoardSetupForm({
   onCenterCustomNameChange,
   isRandomized,
   onIsRandomizedChange,
+  isRecurring,
+  onIsRecurringChange,
+  poolStrategy,
+  onPoolStrategyChange,
   weekStartDay,
 }: BoardSetupFormProps): React.ReactElement {
   const isOddBoard = size % 2 !== 0;
+  const visibleTimeframeOptions = isRecurring
+    ? RECURRING_TIMEFRAME_OPTIONS
+    : TIMEFRAME_OPTIONS;
+  const visibleCenterTypeOptions = isRecurring
+    ? RECURRING_CENTER_TYPE_OPTIONS
+    : CENTER_TYPE_OPTIONS;
 
   const computedBoundaries =
     timeframe !== Timeframe.CUSTOM
@@ -162,7 +203,7 @@ export function BoardSetupForm({
           </div>
         ) : (
           <div className={styles.segmented}>
-            {TIMEFRAME_OPTIONS.map((opt) => (
+            {visibleTimeframeOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -182,6 +223,52 @@ export function BoardSetupForm({
             Timeframe set from the recurring boards banner. Cancel and use
             "Start a new board" to pick a different one.
           </p>
+        )}
+        {!timeframeLocked && isRecurring && (
+          <p className={styles.hint}>
+            Recurring boards use computed windows — Custom timeframe is
+            unavailable. Toggle "Make recurring" off to pick custom dates.
+          </p>
+        )}
+      </div>
+
+      {/* Recurring toggle + pool strategy (Phase 6.2). The toggle is
+          rendered between Timeframe and Center cell so the user sees
+          recurrence affect the timeframe options visibly. When ON, the
+          pool-strategy radio reveals below. */}
+      <div className={styles.fieldGroup}>
+        <label className={styles.checkboxRow}>
+          <input
+            type="checkbox"
+            checked={isRecurring}
+            onChange={(e) => onIsRecurringChange(e.target.checked)}
+          />
+          <span>
+            <strong>Make recurring</strong>
+            <span className={styles.checkboxSubtitle}>
+              {' '}— auto-spawn a fresh board each window from a task pool.
+            </span>
+          </span>
+        </label>
+        {isRecurring && (
+          <div className={styles.recurringStrategy}>
+            <span className={styles.label}>Pool strategy</span>
+            {POOL_STRATEGY_OPTIONS.map((opt) => (
+              <label key={opt.value} className={styles.radioRow}>
+                <input
+                  type="radio"
+                  name="poolStrategy"
+                  value={opt.value}
+                  checked={poolStrategy === opt.value}
+                  onChange={() => onPoolStrategyChange(opt.value)}
+                />
+                <span>
+                  <strong>{opt.label}</strong>
+                  <span className={styles.checkboxSubtitle}> — {opt.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
         )}
       </div>
 
@@ -237,7 +324,7 @@ export function BoardSetupForm({
             value={centerType}
             onChange={(e) => onCenterTypeChange(e.target.value as CenterSquareType)}
           >
-            {CENTER_TYPE_OPTIONS.map((opt) => (
+            {visibleCenterTypeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>

@@ -169,6 +169,11 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         selectedTaskIds={selectedTaskIds}
         onToggleSelection={handleToggle}
         tasksRequired={tasksRequired}
+        // Playground simulates the default one-off behavior; the new
+        // recurring/strict-exact flags are wizard-state-driven and
+        // there's no harness state for them here.
+        poolStrictExact={false}
+        isRecurring={false}
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterTaskChange={setCenterTaskId}

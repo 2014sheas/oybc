@@ -42,6 +42,10 @@ export function BoardWizardSetupStep({
     setCenterCustomName,
     isRandomized,
     setIsRandomized,
+    isRecurring,
+    setIsRecurring,
+    poolStrategy,
+    setPoolStrategy,
     weekStartDay,
     isStep1Valid,
     step1ValidationMessage,
@@ -67,6 +71,10 @@ export function BoardWizardSetupStep({
         onCenterCustomNameChange={setCenterCustomName}
         isRandomized={isRandomized}
         onIsRandomizedChange={setIsRandomized}
+        isRecurring={isRecurring}
+        onIsRecurringChange={setIsRecurring}
+        poolStrategy={poolStrategy}
+        onPoolStrategyChange={setPoolStrategy}
         weekStartDay={weekStartDay}
       />
 

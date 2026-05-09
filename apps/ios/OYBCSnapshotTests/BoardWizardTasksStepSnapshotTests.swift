@@ -117,6 +117,10 @@ private struct TasksStepHost: View {
             library: library,
             selectedTaskIds: $selectedTaskIds,
             tasksRequired: 25,
+            // Snapshot fixture: keep one-off defaults (poolStrictExact=false,
+            // isRecurring=false) so existing baselines stay valid.
+            poolStrictExact: false,
+            isRecurring: false,
             centerTaskMode: centerTaskMode,
             centerTaskId: $centerTaskId,
             userId: SnapshotFixtures.userId,

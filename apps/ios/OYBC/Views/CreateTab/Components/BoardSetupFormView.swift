@@ -79,14 +79,70 @@ struct BoardSetupFormView: View {
                         .foregroundColor(.secondary)
                         .italic()
                 } else {
-                    Picker("Timeframe", selection: $controller.timeframe) {
+                    // When `isRecurring`, hide Custom (recurring templates
+                    // exclude `Timeframe.custom` — no computed window). The
+                    // `updateTimeframe` setter rejects CUSTOM defensively
+                    // even if the picker were to surface it.
+                    Picker("Timeframe", selection: Binding(
+                        get: { controller.timeframe },
+                        set: { controller.updateTimeframe($0) }
+                    )) {
                         Text("Daily").tag(Timeframe.daily)
                         Text("Weekly").tag(Timeframe.weekly)
                         Text("Monthly").tag(Timeframe.monthly)
                         Text("Yearly").tag(Timeframe.yearly)
-                        Text("Custom").tag(Timeframe.custom)
+                        if !controller.isRecurring {
+                            Text("Custom").tag(Timeframe.custom)
+                        }
                     }
                     .pickerStyle(.segmented)
+                    if controller.isRecurring {
+                        Text("Recurring boards use computed windows — Custom timeframe is unavailable. Toggle \"Make recurring\" off to pick custom dates.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .italic()
+                    }
+                }
+            }
+
+            // ── Recurring toggle + pool strategy (Phase 6.2) ──
+            // Rendered between Timeframe and Center square so the user
+            // sees recurrence visibly affect the timeframe picker. When
+            // ON, the pool-strategy radio reveals below.
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { controller.isRecurring },
+                    set: { controller.updateIsRecurring($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Make recurring")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("Auto-spawn a fresh board each window from a task pool.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                if controller.isRecurring {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Pool strategy")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        poolStrategyRow(
+                            label: "Use every task",
+                            hint: "Pool size must equal the cells to fill.",
+                            value: .all
+                        )
+                        poolStrategyRow(
+                            label: "Random subset",
+                            hint: "Pool can be larger; spawn picks N each window.",
+                            value: .randomSubset
+                        )
+                    }
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
                 }
             }
 
@@ -160,7 +216,12 @@ struct BoardSetupFormView: View {
                     )) {
                         Text("Free Space").tag(CenterSquareType.free)
                         Text("Custom Name").tag(CenterSquareType.customFree)
-                        Text("Pick one of my board tasks").tag(CenterSquareType.chosen)
+                        // CHOSEN center is excluded for recurring templates
+                        // (MVP scope — would require a per-template
+                        // `centerTaskId`).
+                        if !controller.isRecurring {
+                            Text("Pick one of my board tasks").tag(CenterSquareType.chosen)
+                        }
                         Text("None").tag(CenterSquareType.none)
                     }
                     .pickerStyle(.menu)
@@ -195,5 +256,29 @@ struct BoardSetupFormView: View {
         case .yearly:  return "Yearly"
         case .custom:  return "Custom"
         }
+    }
+
+    @ViewBuilder
+    private func poolStrategyRow(label: String, hint: String, value: PoolStrategy) -> some View {
+        Button {
+            controller.poolStrategy = value
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: controller.poolStrategy == value ? "largecircle.fill.circle" : "circle")
+                    .foregroundColor(controller.poolStrategy == value ? .accentColor : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
