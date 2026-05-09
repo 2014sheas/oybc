@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Timeframe,
-  validateSpawnPool,
   type Board,
+  type RecurringBoardTemplate,
   type UserPreferences,
-  type SpawnPoolFailureReason,
 } from '@oybc/shared';
 import { fetchBoardTasks } from '../db/operations/boardTasks';
+import { fetchRecurringBoardTemplate } from '../db/operations/recurringBoardTemplates';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useDrafts } from './createHub/useDrafts';
 import { usePendingRecurringBoards } from '../hooks';
@@ -16,8 +16,6 @@ import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
 import { CreateHubQuickAdd } from '../components/createHub/CreateHubQuickAdd';
 import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
-import { RecurringTemplatesSection } from '../components/recurringTemplates/RecurringTemplatesSection';
-import { useRecurringBoardTemplates } from '../hooks';
 import type { BoardWizardDraft } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
 
@@ -58,6 +56,11 @@ type HubMode =
        *  Boards banner (`/create?recurringTimeframe=daily`). The setup
        *  step locks the timeframe field to this value. */
       prefilledRecurringTimeframe?: Timeframe;
+      /** Set when the wizard was launched from Profile → Recurring
+       *  templates → Edit (`/create?editTemplate=<uuid>`). All fields
+       *  hydrate from the template, `isRecurring` is forced ON, and
+       *  Save updates the template instead of creating a new board. */
+      editingTemplate?: RecurringBoardTemplate;
     };
 
 /**
@@ -90,44 +93,6 @@ export function CreateHubPage({
   const drafts = useDrafts(userId);
   const library = useTaskLibrary(userId);
   const pendingRecurring = usePendingRecurringBoards(userId);
-  const recurringTemplates = useRecurringBoardTemplates(userId);
-
-  // Phase 6.2: precompute "needs attention" reasons per template by
-  // resolving each template's seedTaskIds against the library and running
-  // `validateSpawnPool` synchronously. Independent of the actual spawn
-  // driver (which only runs on the Boards tab) so the user gets immediate
-  // feedback while editing — and survives a Create-tab reload that hasn't
-  // visited Boards yet.
-  //
-  // `library.taskMap` is built from `useTasks(userId)` which filters out
-  // soft-deleted tasks. So a seed-task that the user has since deleted is
-  // missing from the map. The form prevents adding non-existent IDs to a
-  // template, so the only realistic reason a seedTaskId fails to resolve
-  // is that the underlying Task was soft-deleted — flag it as
-  // `has_deleted_tasks` directly rather than letting the validator
-  // mis-classify it as `pool_too_small`. The actual spawn driver
-  // (`recurringBoardSpawn.ts`) reads the unfiltered `db.tasks` table and
-  // produces the authoritative reason; this UI map exists for
-  // immediate-feedback parity.
-  const templateAttention = useMemo<Record<string, SpawnPoolFailureReason>>(() => {
-    const out: Record<string, SpawnPoolFailureReason> = {};
-    for (const t of recurringTemplates) {
-      const pool: typeof library.allTasks = [];
-      let hasMissingFromLibrary = false;
-      for (const id of t.seedTaskIds) {
-        const found = library.taskMap[id];
-        if (found) pool.push(found);
-        else hasMissingFromLibrary = true;
-      }
-      if (hasMissingFromLibrary) {
-        out[t.id] = 'has_deleted_tasks';
-        continue;
-      }
-      const v = validateSpawnPool(t, pool);
-      if (!v.ok) out[t.id] = v.reason;
-    }
-    return out;
-  }, [recurringTemplates, library.taskMap, library.allTasks]);
 
   // Recurring-banner deep link: `/create?recurringTimeframe=daily` opens
   // the wizard immediately with the timeframe prefilled + locked. We
@@ -148,6 +113,36 @@ export function CreateHubPage({
       },
       { replace: true }
     );
+  }, [searchParams, setSearchParams]);
+
+  // Profile → Recurring templates → Edit deep link:
+  // `/create?editTemplate=<uuid>` opens the wizard hydrated from the
+  // template, in template-edit mode. Mirrors the recurringTimeframe
+  // pattern above but consumes a different param. Cleared from the URL
+  // after the template is fetched so a wizard cancel + manual re-entry
+  // doesn't re-arm the edit.
+  useEffect(() => {
+    const id = searchParams.get('editTemplate');
+    if (id === null) return;
+    let cancelled = false;
+    void (async () => {
+      const template = await fetchRecurringBoardTemplate(id);
+      if (cancelled) return;
+      if (template !== undefined) {
+        setMode({ kind: 'wizard', editingTemplate: template });
+      }
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('editTemplate');
+          return next;
+        },
+        { replace: true },
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, setSearchParams]);
 
   const returnToHub = useCallback(() => setMode({ kind: 'hub' }), []);
@@ -179,6 +174,7 @@ export function CreateHubPage({
         preferences={preferences}
         draft={mode.draft}
         prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
+        editingTemplate={mode.editingTemplate}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
       />
@@ -226,13 +222,6 @@ export function CreateHubPage({
           onResume={(d) => void handleResumeDraft(d)}
         />
       )}
-
-      <RecurringTemplatesSection
-        userId={userId}
-        templates={recurringTemplates}
-        libraryTasks={library.allTasks}
-        attentionByTemplateId={templateAttention}
-      />
 
       <section className={styles.librarySection}>
         <h3 className={styles.librarySectionHeading}>Your task library</h3>

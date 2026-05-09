@@ -7,6 +7,7 @@ import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreateHubPage } from './pages/CreateHubPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
+import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
 import { Playground } from './pages/Playground';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -73,6 +74,10 @@ function AuthenticatedLayout(): React.ReactElement {
           <Route
             path="/profile/board-preferences"
             element={<BoardPreferencesPage />}
+          />
+          <Route
+            path="/profile/recurring-templates"
+            element={<RecurringTemplatesPage />}
           />
           <Route path="/" element={<Navigate to="/boards" replace />} />
           <Route path="*" element={<Navigate to="/boards" replace />} />

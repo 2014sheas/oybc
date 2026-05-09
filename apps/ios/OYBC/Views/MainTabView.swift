@@ -28,6 +28,13 @@ struct MainTabView: View {
     /// doesn't re-arm the prefill.
     @State private var pendingRecurringTimeframe: Timeframe? = nil
 
+    /// Phase 6.2 UX rework: cross-tab edit deep-link from the Profile
+    /// → Recurring templates page. RecurringTemplatesView writes the
+    /// template id and switches `selectedTab` to Create; CreateHubView
+    /// fetches + hydrates the wizard in template-edit mode, then clears
+    /// the binding. Same pattern as `pendingRecurringTimeframe`.
+    @State private var pendingEditTemplateId: String? = nil
+
     /// Resolves `preferences.theme` into the SwiftUI `preferredColorScheme`
     /// value. `system` returns `nil`, which yields OS appearance; any other
     /// value forces a specific scheme across the whole tab tree.
@@ -75,6 +82,7 @@ struct MainTabView: View {
                             userId: userId,
                             preferences: authService.userPreferences,
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
+                            pendingEditTemplateId: $pendingEditTemplateId,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
                                 // the user lands on the board they just
@@ -95,7 +103,17 @@ struct MainTabView: View {
             .tag(1)
 
             NavigationStack {
-                ProfileView()
+                ProfileView(
+                    onEditRecurringTemplate: { templateId in
+                        // Phase 6.2 UX rework: cross-tab edit. The
+                        // Profile tab's RecurringTemplatesView wires
+                        // its row Edit buttons here; we stash the id
+                        // and switch to Create. CreateHubView consumes
+                        // the binding and opens the wizard hydrated.
+                        pendingEditTemplateId = templateId
+                        selectedTab = 1
+                    }
+                )
             }
             .tabItem {
                 Label("Profile", systemImage: "person.circle")

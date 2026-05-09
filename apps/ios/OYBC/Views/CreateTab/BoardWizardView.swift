@@ -21,6 +21,11 @@ struct BoardWizardView: View {
     /// Mutually exclusive with `draft` — drafts already lock semantics
     /// by hydrating the full record.
     let prefilledRecurringTimeframe: Timeframe?
+    /// Phase 6.2 UX rework: when set, the wizard was launched from
+    /// Profile → Recurring templates → Edit. All fields hydrate from
+    /// the template, `isRecurring` is forced ON, and Save updates the
+    /// template instead of creating a new board.
+    let editingTemplate: RecurringBoardTemplate?
     let onCancel: () -> Void
     let onComplete: (_ boardId: String, _ status: String) -> Void
 
@@ -41,6 +46,7 @@ struct BoardWizardView: View {
         preferences: UserPreferences,
         draft: (board: Board, boardTasks: [BoardTask])? = nil,
         prefilledRecurringTimeframe: Timeframe? = nil,
+        editingTemplate: RecurringBoardTemplate? = nil,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void
     ) {
@@ -48,12 +54,14 @@ struct BoardWizardView: View {
         self.preferences = preferences
         self.draft = draft
         self.prefilledRecurringTimeframe = prefilledRecurringTimeframe
+        self.editingTemplate = editingTemplate
         self.onCancel = onCancel
         self.onComplete = onComplete
         _wizard = State(initialValue: BoardWizardViewModel(
             preferences: preferences,
             draft: draft,
-            prefilledRecurringTimeframe: prefilledRecurringTimeframe
+            prefilledRecurringTimeframe: prefilledRecurringTimeframe,
+            editingTemplate: editingTemplate
         ))
     }
 

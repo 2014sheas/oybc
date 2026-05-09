@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import type { Timeframe, UserPreferences } from '@oybc/shared';
+import type {
+  RecurringBoardTemplate,
+  Timeframe,
+  UserPreferences,
+} from '@oybc/shared';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useBoardWizard, type BoardWizardDraft } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
@@ -29,6 +33,11 @@ export interface BoardWizardPageProps {
    *  comes from `useBoardWizard`'s `prefilledRecurringTimeframe`).
    *  Phase 6.1 of the Recurring Boards feature. */
   prefilledRecurringTimeframe?: Timeframe;
+  /** When set, the wizard was opened from Profile → Recurring
+   *  templates → Edit. All fields hydrate from the template,
+   *  `isRecurring` is forced ON, and Save updates the template
+   *  instead of creating a new board. Phase 6.2 UX rework. */
+  editingTemplate?: RecurringBoardTemplate;
   /** Called when the user dismisses the wizard without persisting —
    *  either because they're in a pristine state (no edits) or they
    *  explicitly chose "Discard" in the smart-cancel dialog. */
@@ -54,6 +63,7 @@ export function BoardWizardPage({
   preferences,
   draft,
   prefilledRecurringTimeframe,
+  editingTemplate,
   onCancel,
   onComplete,
 }: BoardWizardPageProps): React.ReactElement {
@@ -61,6 +71,7 @@ export function BoardWizardPage({
     preferences,
     draft,
     prefilledRecurringTimeframe,
+    editingTemplate,
   });
   const library = useTaskLibrary(userId);
   // Lock the timeframe field only when (a) we have a prefill AND (b) we're

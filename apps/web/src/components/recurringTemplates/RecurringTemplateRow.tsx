@@ -8,7 +8,7 @@ import {
   softDeleteRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
-import styles from './RecurringTemplatesSection.module.css';
+import styles from '../../pages/RecurringTemplatesPage.module.css';
 
 const TIMEFRAME_LABELS: Record<Timeframe, string> = {
   [Timeframe.DAILY]: 'Daily',

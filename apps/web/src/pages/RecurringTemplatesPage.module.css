@@ -1,48 +1,51 @@
-.section {
-  margin: 0 16px 16px;
+.page {
+  padding: 16px;
+  max-width: 720px;
+  margin: 0 auto;
 }
 
-.heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin: 0 0 10px;
-  padding: 0 4px;
+.header {
+  margin-bottom: 16px;
 }
 
-.headingText {
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.backLink {
+  display: inline-block;
+  font-size: 14px;
   color: var(--text-secondary);
+  text-decoration: none;
+  margin-bottom: 8px;
+}
+
+.backLink:hover {
+  color: var(--text-primary);
+}
+
+.title {
   margin: 0;
-}
-
-.newButton {
-  background: transparent;
-  border: 1px solid var(--active-bg);
-  color: var(--active-bg);
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.newButton:hover {
-  background: var(--active-bg);
-  color: var(--active-text);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .emptyState {
-  margin: 0;
-  padding: 14px 16px;
+  padding: 18px 16px;
   background: var(--surface-elevated, rgba(0, 0, 0, 0.03));
   border: 1px dashed var(--border-color);
   border-radius: 10px;
+  text-align: center;
+}
+
+.emptyTitle {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.emptyBody {
+  margin: 0;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--text-secondary);
 }
 
@@ -51,6 +54,10 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* Row styles — reused by RecurringTemplateRow.tsx (was in
+   RecurringTemplatesSection.module.css before the Phase 6.2 UX rework
+   moved templates to Profile and deleted the section component). */
 
 .row {
   display: flex;
