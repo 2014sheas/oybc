@@ -8,8 +8,11 @@ enum CreateHubBoardCTAVariant {
     case primary
     /// Smaller flat card with muted styling. Used when
     /// `PendingCoreBoardsSectionView` is the headline action above this
-    /// CTA — Phase 6.1d demoted "start a new board" to a secondary
-    /// custom-board affordance once core boards became the headline.
+    /// CTA — Phase 6.1d demoted the headline once core boards became
+    /// the prominent option, but the wording was tightened in the
+    /// Phase 6.2 rework: the secondary CTA is no longer "custom-only"
+    /// (the wizard's recurring toggle means this entry can build
+    /// recurring boards too), so both variants share the same name.
     case secondary
 }
 
@@ -18,11 +21,11 @@ enum CreateHubBoardCTAVariant {
 /// launches the 3-step board-creation wizard. iOS twin of web's
 /// `CreateHubBoardCTA`.
 ///
-/// Two variants:
+/// Two variants — same destination, different visual weight:
 ///   - `.primary` (default): large gradient card with sparkle icon.
-///   - `.secondary`: smaller flat card with reframed copy ("Custom
-///     timeframe board") for the demoted state below the prominent
-///     pending-core-boards section.
+///   - `.secondary`: smaller flat card. Same copy as primary but
+///     muted, used when `PendingCoreBoardsSectionView` is the
+///     headline action above this CTA.
 struct CreateHubBoardCTAView: View {
     let onTap: () -> Void
     var variant: CreateHubBoardCTAVariant = .primary
@@ -90,11 +93,11 @@ struct CreateHubBoardCTAView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Custom timeframe board")
+                    Text("Start a new board")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
-                    Text("For one-off goals that don't fit a recurring window.")
+                    Text("Pick a timeframe, size, and tasks — optionally recurring.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -106,12 +109,20 @@ struct CreateHubBoardCTAView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(14)
+            // `.contentShape(Rectangle())` makes the entire padded card
+            // area tappable, not just the visible icon + text. The
+            // `.background(...).stroke(...)` below paints only the border;
+            // without `.contentShape` the empty interior of the card
+            // (between the icon and the chevron) is not opaque content
+            // and SwiftUI's hit-testing skips it, leaving most of the
+            // CTA non-tappable.
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Start a custom timeframe board")
+        .accessibilityLabel("Start a new board")
     }
 }

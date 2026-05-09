@@ -2,9 +2,11 @@ import {
   BoardStatus,
   CenterSquareType,
   Timeframe,
+  deriveSpawnedBoardName,
   fisherYatesShuffle,
   getTimeframeBoundaries,
   toLocalISO,
+  type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
 import { db } from '../../db/database';
@@ -17,6 +19,14 @@ import {
   createBoardTask,
   deleteBoardTasksForBoard,
 } from '../../db/operations/boardTasks';
+import {
+  createRecurringBoardTemplate,
+  updateRecurringBoardTemplate,
+} from '../../db/operations/recurringBoardTemplates';
+import {
+  spawnTemplateBoard,
+  type SpawnResult,
+} from '../../db/operations/recurringBoardSpawn';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 
@@ -220,4 +230,114 @@ export async function persistWizardBoard({
   );
 
   return boardId;
+}
+
+/** Outcome of a recurring-template persist. */
+export interface PersistRecurringTemplateResult {
+  templateId: string;
+  /** The boardId of the immediately-spawned current-window board, when
+   *  this was a fresh template create. `null` for edits (no spawn) and
+   *  for fresh creates where the spawn was skipped (validation
+   *  failure — the template is still saved and will retry on the next
+   *  Boards-tab open). */
+  spawnedBoardId: string | null;
+  /** Set when the spawn was skipped/failed. The template is saved
+   *  regardless; the user will see the "needs attention" badge in the
+   *  Profile templates list. */
+  spawnSkipReason?: SpawnResult extends infer T
+    ? T extends { ok: false; reason: infer R }
+      ? R
+      : never
+    : never;
+}
+
+export interface PersistRecurringTemplateArgs {
+  controller: BoardWizardController;
+  userId: string;
+}
+
+/**
+ * Persist path for `controller.isRecurring === true`. Branches on
+ * `editingTemplateId`:
+ *
+ * - **Fresh create** (no `editingTemplateId`): inserts the
+ *   `RecurringBoardTemplate` row, then immediately spawns the current
+ *   window's board via `spawnTemplateBoard`. The two writes are
+ *   sequential (each opens its own Dexie transaction); if the spawn
+ *   fails (e.g. soft-deleted task race), the template still exists
+ *   with `lastSpawnedWindowKey=null` and the next Boards-tab open
+ *   will retry. Locked decision: first-spawn timing = immediate.
+ *
+ * - **Edit** (`editingTemplateId` set): updates the template via
+ *   `updateRecurringBoardTemplate`. Does NOT spawn — edits don't
+ *   retroactively change previously-spawned boards, and the next
+ *   window's spawn will pick up the new pool naturally.
+ */
+export async function persistRecurringTemplate({
+  controller,
+  userId,
+}: PersistRecurringTemplateArgs): Promise<PersistRecurringTemplateResult> {
+  const trimmedName = controller.name.trim();
+  const customName =
+    controller.centerType === CenterSquareType.CUSTOM_FREE
+      ? controller.centerCustomName.trim() || undefined
+      : undefined;
+  const seedTaskIds = Array.from(controller.selectedTaskIds);
+
+  // Edit path: update + return. No spawn.
+  if (controller.editingTemplateId !== null) {
+    await updateRecurringBoardTemplate(controller.editingTemplateId, {
+      name: trimmedName,
+      timeframe: controller.timeframe,
+      boardSize: controller.size,
+      centerSquareType: controller.centerType,
+      centerSquareCustomName: customName,
+      isRandomized: controller.isRandomized,
+      seedTaskIds,
+      // `isActive` isn't surfaced in the wizard form (the templates
+      // list owns the pause toggle), so leave it untouched on edit.
+    });
+    return { templateId: controller.editingTemplateId, spawnedBoardId: null };
+  }
+
+  // Fresh create path: insert template, then spawn current window.
+  const template = await createRecurringBoardTemplate(userId, {
+    name: trimmedName,
+    timeframe: controller.timeframe,
+    boardSize: controller.size,
+    centerSquareType: controller.centerType,
+    centerSquareCustomName: customName,
+    isRandomized: controller.isRandomized,
+    seedTaskIds,
+    isActive: true,
+  });
+
+  // Compute the current window and spawn the board. `spawnTemplateBoard`
+  // opens its own atomic transaction (Board + BoardTasks + template
+  // lastSpawnedWindowKey + sync queue items). If it returns ok=false,
+  // the template is intact; the Boards-tab spawn driver retries.
+  const { startDate, endDate } = getTimeframeBoundaries(
+    controller.timeframe,
+    new Date(),
+    controller.weekStartDay,
+  );
+  const pendingSpawn: PendingTemplateSpawn = {
+    template,
+    windowStart: startDate,
+    windowEnd: endDate,
+    suggestedName: deriveSpawnedBoardName(template, startDate),
+  };
+
+  const result = await spawnTemplateBoard(pendingSpawn);
+  if (result.ok) {
+    return {
+      templateId: template.id,
+      spawnedBoardId: result.boardId,
+    };
+  }
+  return {
+    templateId: template.id,
+    spawnedBoardId: null,
+    spawnSkipReason: result.reason,
+  };
 }

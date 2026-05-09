@@ -52,6 +52,12 @@ export interface BoardWizardTasksStepProps {
   /** Number of tasks the chosen board geometry requires. */
   tasksRequired: number;
 
+  /** True when the wizard is in recurring-template mode. Drives the
+   *  count-line "min" suffix wording. The pool is always loose-fit;
+   *  the spawn shuffles + slices, so any extras become the random
+   *  subset. */
+  isRecurring: boolean;
+
   /** When true, every selected row shows a star radio for picking the
    *  center task. Driven by Step 1's center-type choice. */
   centerTaskMode: boolean;
@@ -107,6 +113,7 @@ export function BoardWizardTasksStep({
   selectedTaskIds,
   onToggleSelection,
   tasksRequired,
+  isRecurring,
   centerTaskMode,
   centerTaskId,
   onCenterTaskChange,
@@ -317,6 +324,11 @@ export function BoardWizardTasksStep({
               Selected:{' '}
               <span className={isCountSatisfied ? styles.countOk : styles.countShort}>
                 {selectedCount} / {tasksRequired}
+                {/* Suffix only in recurring mode — the spawn picks N
+                    from the larger pool each window, so the user can
+                    add more than N and the count is "min". One-off
+                    boards keep the bare count. */}
+                {isRecurring ? ' min' : null}
               </span>
             </span>
             {centerTaskMode && (

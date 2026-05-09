@@ -79,30 +79,72 @@ struct BoardSetupFormView: View {
                         .foregroundColor(.secondary)
                         .italic()
                 } else {
-                    Picker("Timeframe", selection: $controller.timeframe) {
+                    // When `isRecurring`, hide Custom (recurring templates
+                    // exclude `Timeframe.custom` — no computed window). The
+                    // `updateTimeframe` setter rejects CUSTOM defensively
+                    // even if the picker were to surface it.
+                    Picker("Timeframe", selection: Binding(
+                        get: { controller.timeframe },
+                        set: { controller.updateTimeframe($0) }
+                    )) {
                         Text("Daily").tag(Timeframe.daily)
                         Text("Weekly").tag(Timeframe.weekly)
                         Text("Monthly").tag(Timeframe.monthly)
                         Text("Yearly").tag(Timeframe.yearly)
-                        Text("Custom").tag(Timeframe.custom)
+                        if !controller.isRecurring {
+                            Text("Custom").tag(Timeframe.custom)
+                        }
                     }
                     .pickerStyle(.segmented)
                 }
             }
 
-            // ── Auto-calculated timeframe display ──
-            if controller.timeframe != .custom, let boundaries = controller.computedBoundaries {
-                VStack(alignment: .leading, spacing: 2) {
-                    if let label = controller.timeframeDisplayLabel {
-                        Text(label)
+            // ── Recurring toggle (Phase 6.2) ──
+            // Rendered between Timeframe and Center square so the user
+            // sees recurrence visibly affect the timeframe picker. The
+            // pool is always loose-fit — extras become the random
+            // subset for each spawn.
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { controller.isRecurring },
+                    set: { controller.updateIsRecurring($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Make recurring")
                             .font(.subheadline)
                             .fontWeight(.semibold)
+                        Text("automatically create a fresh board each window from a task pool.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
-                    let start = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
-                    let end = DateFormatter.localizedString(from: boundaries.end, dateStyle: .medium, timeStyle: .none)
-                    Text("\(start) – \(end)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                }
+            }
+
+            // ── Auto-calculated timeframe display ──
+            // Recurring boards show a cadence label ("Every week") with
+            // the first-spawn window as the caption, so the wizard makes
+            // the recurrence visible instead of looking identical to a
+            // one-off board for the same window.
+            if controller.timeframe != .custom, let boundaries = controller.computedBoundaries {
+                VStack(alignment: .leading, spacing: 2) {
+                    let windowLabel = controller.timeframeDisplayLabel ?? ""
+                    if controller.isRecurring {
+                        Text(recurringCadenceLabel(timeframe: controller.timeframe))
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("Starting: \(windowLabel)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(windowLabel)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        let start = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
+                        let end = DateFormatter.localizedString(from: boundaries.end, dateStyle: .medium, timeStyle: .none)
+                        Text("\(start) – \(end)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding(8)
                 .background(Color(.systemGray6))
@@ -160,7 +202,12 @@ struct BoardSetupFormView: View {
                     )) {
                         Text("Free Space").tag(CenterSquareType.free)
                         Text("Custom Name").tag(CenterSquareType.customFree)
-                        Text("Pick one of my board tasks").tag(CenterSquareType.chosen)
+                        // CHOSEN center is excluded for recurring templates
+                        // (MVP scope — would require a per-template
+                        // `centerTaskId`).
+                        if !controller.isRecurring {
+                            Text("Pick one of my board tasks").tag(CenterSquareType.chosen)
+                        }
                         Text("None").tag(CenterSquareType.none)
                     }
                     .pickerStyle(.menu)
@@ -196,4 +243,5 @@ struct BoardSetupFormView: View {
         case .custom:  return "Custom"
         }
     }
+
 }

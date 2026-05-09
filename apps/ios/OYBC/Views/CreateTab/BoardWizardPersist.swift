@@ -255,3 +255,174 @@ func persistWizardBoard(
         }
     }
 }
+
+/// Outcome of `persistRecurringTemplate`.
+enum RecurringTemplatePersistOutcome {
+    /// Fresh template created and the current window's board was spawned
+    /// inline. `boardId` is the spawned board for cross-tab navigation.
+    case createdAndSpawned(templateId: String, boardId: String)
+    /// Fresh template created but the spawn was skipped (validation
+    /// failure — e.g. a seed task got soft-deleted between save and
+    /// spawn). The template is intact and the Boards-tab spawn driver
+    /// will retry on next open. `reason` surfaces in the UI.
+    case createdSpawnSkipped(templateId: String, reason: SpawnAttentionReason)
+    /// Existing template was updated (no spawn). `templateId` for any
+    /// follow-up navigation.
+    case updated(templateId: String)
+}
+
+/// Persist path for `controller.isRecurring == true`. iOS twin of web
+/// `persistRecurringTemplate`.
+///
+/// Branches on `editingTemplateId`:
+///
+/// - **Fresh create** (no `editingTemplateId`): inserts the
+///   `RecurringBoardTemplate` row, then immediately spawns the current
+///   window's board via `RecurringBoardSpawn.spawnTemplateBoard`. The
+///   two writes are sequential GRDB transactions; if the spawn fails
+///   (e.g. soft-deleted task race), the template still exists with
+///   `lastSpawnedWindowKey=nil` and the next Boards-tab open will retry.
+/// - **Edit** (`editingTemplateId` set): updates the template via a
+///   direct `saveRecurringBoardTemplate`. Does NOT spawn — edits don't
+///   retroactively change previously-spawned boards.
+///
+/// Runs on a background queue; dispatches callbacks on the main queue.
+func persistRecurringTemplate(
+    controller: BoardWizardViewModel,
+    userId: String,
+    onSuccess: @escaping (RecurringTemplatePersistOutcome) -> Void,
+    onError: @escaping (_ message: String) -> Void
+) {
+    let trimmedName = controller.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let timeframe = controller.timeframe
+    let boardSize = controller.size
+    let centerType = controller.centerType
+    let customCenterName: String? = centerType == .customFree
+        ? controller.centerCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
+        : nil
+    let isRandomized = controller.isRandomized
+    let seedTaskIds = Array(controller.selectedTaskIds)
+    let editingTemplateId = controller.editingTemplateId
+    let weekStartDay = controller.weekStartDay
+    let now = AppDatabase.currentTimestamp()
+
+    DispatchQueue.global(qos: .userInitiated).async {
+        do {
+            // ── Edit path ─────────────────────────────────────────────
+            if let templateId = editingTemplateId {
+                guard let existing = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId) else {
+                    DispatchQueue.main.async {
+                        onError("Template no longer exists.")
+                    }
+                    return
+                }
+                let updated = RecurringBoardTemplate(
+                    id: existing.id,
+                    userId: existing.userId,
+                    name: trimmedName,
+                    timeframe: timeframe,
+                    boardSize: boardSize,
+                    centerSquareType: centerType,
+                    centerSquareCustomName: customCenterName,
+                    isRandomized: isRandomized,
+                    seedTaskIds: seedTaskIds,
+                    // `isActive` isn't surfaced in the wizard form (the
+                    // templates list owns the pause toggle), so preserve.
+                    lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
+                    isActive: existing.isActive,
+                    createdAt: existing.createdAt,
+                    updatedAt: now,
+                    lastSyncedAt: existing.lastSyncedAt,
+                    version: existing.version + 1,
+                    isDeleted: false,
+                    deletedAt: nil
+                )
+                try AppDatabase.shared.saveRecurringBoardTemplate(updated)
+                try AppDatabase.shared.write { db in
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "recurringBoardTemplates",
+                        entityId: updated.id,
+                        operationType: .update,
+                        payload: updated,
+                        now: now
+                    ).save(db)
+                }
+                DispatchQueue.main.async { onSuccess(.updated(templateId: updated.id)) }
+                return
+            }
+
+            // ── Fresh-create path ─────────────────────────────────────
+            let template = RecurringBoardTemplate(
+                id: AppDatabase.generateUUID(),
+                userId: userId,
+                name: trimmedName,
+                timeframe: timeframe,
+                boardSize: boardSize,
+                centerSquareType: centerType,
+                centerSquareCustomName: customCenterName,
+                isRandomized: isRandomized,
+                seedTaskIds: seedTaskIds,
+                lastSpawnedWindowKey: nil,
+                isActive: true,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+            try AppDatabase.shared.saveRecurringBoardTemplate(template)
+            try AppDatabase.shared.write { db in
+                try SyncQueueBuilder.makeItem(
+                    entityType: "recurringBoardTemplates",
+                    entityId: template.id,
+                    operationType: .create,
+                    payload: template,
+                    now: now
+                ).save(db)
+            }
+
+            // Compute current window + spawn. Mirrors web's
+            // `persistRecurringTemplate` second-step.
+            guard let window = computeTimeframeBoundaries(
+                timeframe: timeframe,
+                referenceDate: Date(),
+                weekStartDay: weekStartDay
+            ) else {
+                // Computed-window failure for a recurring timeframe
+                // shouldn't happen in practice (the form excludes
+                // CUSTOM); template is saved either way, surface a
+                // meaningful skip outcome.
+                DispatchQueue.main.async {
+                    onSuccess(.createdSpawnSkipped(
+                        templateId: template.id,
+                        reason: .unsupportedTimeframe
+                    ))
+                }
+                return
+            }
+
+            let spawn = PendingTemplateSpawn(
+                template: template,
+                windowStart: wizardLocalISOString(window.start),
+                windowEnd: wizardLocalISOString(window.end),
+                suggestedName: deriveSpawnedBoardName(template: template, windowStart: wizardLocalISOString(window.start))
+            )
+            let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn)
+            switch outcome {
+            case .spawned(let boardId, _, _):
+                DispatchQueue.main.async {
+                    onSuccess(.createdAndSpawned(templateId: template.id, boardId: boardId))
+                }
+            case .skipped(_, let reason):
+                DispatchQueue.main.async {
+                    onSuccess(.createdSpawnSkipped(templateId: template.id, reason: reason))
+                }
+            }
+        } catch {
+            DispatchQueue.main.async {
+                onError(error.localizedDescription)
+            }
+        }
+    }
+}

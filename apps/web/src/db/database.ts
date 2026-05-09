@@ -10,6 +10,7 @@ import type {
   CompositeTask,
   CompositeNode,
   CompoundChild,
+  RecurringBoardTemplate,
 } from '@oybc/shared';
 
 /**
@@ -29,6 +30,7 @@ export class AppDatabase extends Dexie {
   compositeTasks!: Table<CompositeTask, string>;
   compositeNodes!: Table<CompositeNode, string>;
   compoundChildren!: Table<CompoundChild, string>;
+  recurringBoardTemplates!: Table<RecurringBoardTemplate, string>;
 
   constructor() {
     super('oybc');
@@ -154,6 +156,21 @@ export class AppDatabase extends Dexie {
       compositeTasks: null,
       compositeNodes: null,
     });
+
+    // v6: Phase 6.2 — recurring board templates. New table; `Board` gains
+    // an `spawnedFromTemplateId` column on the type level (additive,
+    // optional, no IndexedDB schema change needed because Dexie stores
+    // the full Board object verbatim — only INDEX columns appear in
+    // `.stores()`. Add an index on `spawnedFromTemplateId` later if a
+    // query pattern requires it).
+    this.version(6).stores({
+      recurringBoardTemplates: `
+        id,
+        [userId+isActive],
+        [userId+isDeleted],
+        updatedAt
+      `,
+    });
   }
 }
 
@@ -189,4 +206,5 @@ export type {
   CompositeTask,
   CompositeNode,
   CompoundChild,
+  RecurringBoardTemplate,
 };

@@ -9,11 +9,12 @@ import FirebaseFirestore
 private let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
     ("boards", "boards"),
     ("tasks", "tasks"),
-    ("taskSteps", "task_steps"),              // legacy — kept so push can drain v7's DELETE sync ops
+    ("taskSteps", "task_steps"),                      // legacy — kept so push can drain v7's DELETE sync ops
     ("boardTasks", "board_tasks"),
-    ("compositeTasks", "composite_tasks"),    // legacy — same
-    ("compositeNodes", "composite_nodes"),    // legacy — same
-    ("compoundChildren", "compound_children"), // NEW
+    ("compositeTasks", "composite_tasks"),            // legacy — same
+    ("compositeNodes", "composite_nodes"),            // legacy — same
+    ("compoundChildren", "compound_children"),
+    ("recurringBoardTemplates", "recurring_board_templates"), // Phase 6.2
     // `users` is handled as the parent doc at `users/{userId}` (not a
     // subcollection child), but the GRDB table it writes back into is still
     // `users`, so it participates in the allowedGRDBTables whitelist.
@@ -28,7 +29,7 @@ private let allowedGRDBTables: Set<String> = Set(syncableCollections.map(\.grdbT
 /// authenticated user for these collections — defense-in-depth against
 /// a compromised peer that spoofs `userId` in its own writes.
 private let userScopedCollections: Set<String> = [
-    "boards", "tasks", "compositeTasks",
+    "boards", "tasks", "compositeTasks", "recurringBoardTemplates",
 ]
 
 /// Collections whose GRDB tables were dropped in the v7 data migration.

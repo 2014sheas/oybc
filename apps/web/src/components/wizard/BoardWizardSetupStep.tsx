@@ -42,6 +42,8 @@ export function BoardWizardSetupStep({
     setCenterCustomName,
     isRandomized,
     setIsRandomized,
+    isRecurring,
+    setIsRecurring,
     weekStartDay,
     isStep1Valid,
     step1ValidationMessage,
@@ -67,6 +69,8 @@ export function BoardWizardSetupStep({
         onCenterCustomNameChange={setCenterCustomName}
         isRandomized={isRandomized}
         onIsRandomizedChange={setIsRandomized}
+        isRecurring={isRecurring}
+        onIsRecurringChange={setIsRecurring}
         weekStartDay={weekStartDay}
       />
 

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Timeframe, type Board, type UserPreferences } from '@oybc/shared';
+import {
+  Timeframe,
+  type Board,
+  type RecurringBoardTemplate,
+  type UserPreferences,
+} from '@oybc/shared';
 import { fetchBoardTasks } from '../db/operations/boardTasks';
+import { fetchRecurringBoardTemplate } from '../db/operations/recurringBoardTemplates';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useDrafts } from './createHub/useDrafts';
 import { usePendingRecurringBoards } from '../hooks';
@@ -39,6 +45,11 @@ export interface CreateHubPageProps {
    *  (`/boards/:id`) or lets the hub re-render with the updated
    *  drafts list. */
   onBoardCompleted?: (boardId: string, status: 'active' | 'draft') => void;
+  /** Phase 6.2: called when a recurring template was saved without a
+   *  spawnable board (skip or edit). Parent should navigate to the
+   *  Profile templates list (`/profile/recurring-templates`) rather
+   *  than `/boards/${id}`. */
+  onTemplateCompleted?: (templateId: string) => void;
 }
 
 type HubMode =
@@ -50,6 +61,11 @@ type HubMode =
        *  Boards banner (`/create?recurringTimeframe=daily`). The setup
        *  step locks the timeframe field to this value. */
       prefilledRecurringTimeframe?: Timeframe;
+      /** Set when the wizard was launched from Profile → Recurring
+       *  templates → Edit (`/create?editTemplate=<uuid>`). All fields
+       *  hydrate from the template, `isRecurring` is forced ON, and
+       *  Save updates the template instead of creating a new board. */
+      editingTemplate?: RecurringBoardTemplate;
     };
 
 /**
@@ -76,6 +92,7 @@ export function CreateHubPage({
   userId,
   preferences,
   onBoardCompleted,
+  onTemplateCompleted,
 }: CreateHubPageProps): React.ReactElement {
   const [mode, setMode] = useState<HubMode>({ kind: 'hub' });
   const [searchParams, setSearchParams] = useSearchParams();
@@ -104,6 +121,36 @@ export function CreateHubPage({
     );
   }, [searchParams, setSearchParams]);
 
+  // Profile → Recurring templates → Edit deep link:
+  // `/create?editTemplate=<uuid>` opens the wizard hydrated from the
+  // template, in template-edit mode. Mirrors the recurringTimeframe
+  // pattern above but consumes a different param. Cleared from the URL
+  // after the template is fetched so a wizard cancel + manual re-entry
+  // doesn't re-arm the edit.
+  useEffect(() => {
+    const id = searchParams.get('editTemplate');
+    if (id === null) return;
+    let cancelled = false;
+    void (async () => {
+      const template = await fetchRecurringBoardTemplate(id);
+      if (cancelled) return;
+      if (template !== undefined) {
+        setMode({ kind: 'wizard', editingTemplate: template });
+      }
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('editTemplate');
+          return next;
+        },
+        { replace: true },
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, setSearchParams]);
+
   const returnToHub = useCallback(() => setMode({ kind: 'hub' }), []);
 
   const handleStartBoard = useCallback(() => {
@@ -126,6 +173,18 @@ export function CreateHubPage({
     [onBoardCompleted, returnToHub],
   );
 
+  // Phase 6.2: recurring-template-only completions (spawn skip OR
+  // edit) — the parent navigates to the Profile templates list. We
+  // still `returnToHub` first so the in-place transition resets, but
+  // the App-level handler then re-routes off this page entirely.
+  const handleTemplateComplete = useCallback(
+    (templateId: string): void => {
+      onTemplateCompleted?.(templateId);
+      returnToHub();
+    },
+    [onTemplateCompleted, returnToHub],
+  );
+
   if (mode.kind === 'wizard') {
     return (
       <BoardWizardPage
@@ -133,8 +192,10 @@ export function CreateHubPage({
         preferences={preferences}
         draft={mode.draft}
         prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
+        editingTemplate={mode.editingTemplate}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
+        onTemplateComplete={handleTemplateComplete}
       />
     );
   }

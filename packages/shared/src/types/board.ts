@@ -47,6 +47,12 @@ export interface Board {
   version: number;               // Optimistic locking (incremented on each update)
   isDeleted: boolean;            // Soft delete flag
   deletedAt?: string;            // ISO8601 (when deleted)
+
+  // Phase 6.2 provenance (additive). Set on insert by the template-spawn
+  // path; remains undefined for manually-created boards. Never mutated
+  // after insert. Forward-compatible: pre-6.2 peers without this field
+  // decode unchanged via Zod `.optional()`.
+  spawnedFromTemplateId?: string;
 }
 
 /**

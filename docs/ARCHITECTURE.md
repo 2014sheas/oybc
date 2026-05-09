@@ -9,6 +9,7 @@ Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first a
 **Timeline**: 14-16 weeks to production (includes composite task system)
 
 **Key Principles**:
+
 - ✅ **Local-first**: All reads from local DB (< 10ms), instant UX
 - ✅ **Offline by default**: Full functionality without network
 - ✅ **Background sync**: Firestore syncs when online, seamless multi-device
@@ -16,6 +17,7 @@ Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first a
 - ✅ **Future-proof**: Schema designed for recurring boards, templates
 
 **What Changed from MVP**:
+
 - ❌ No copying types, utilities, or code from MVP (fresh start)
 - ✅ Composite task system with logical operators (AND/OR/M-of-N)
 - ✅ Tree-based task composition for complex workflows
@@ -28,6 +30,7 @@ Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first a
 ## Tech Stack
 
 ### iOS
+
 - **UI**: SwiftUI
 - **Local DB**: **GRDB.swift** (SQLite + Swift type safety)
   - Best performance (< 10ms reads)
@@ -37,6 +40,7 @@ Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first a
 - **State**: Combine + @Observable
 
 ### Web
+
 - **Framework**: Next.js 14 (App Router)
 - **Local DB**: **Dexie.js** (IndexedDB wrapper)
   - Modern async/await API
@@ -47,11 +51,13 @@ Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first a
 - **Styling**: Tailwind CSS + shadcn/ui
 
 ### Shared
+
 - **Package**: `@oybc/shared` (TypeScript only)
 - **Contains**: Types, algorithms, validation (NO database code, NO Firebase code)
 - **Reuse**: 30-40% (pure logic only)
 
 ### Sync Backend
+
 - **Platform**: Firebase (new project)
 - **Role**: Sync layer ONLY (not primary storage)
 - **When**: Background, on reconnect, periodic
@@ -66,12 +72,14 @@ Build OYBC (On Your Bingo Card) from scratch with **offline-first, local-first a
 **Core Principle**: All operations hit local database first, sync to Firestore in background.
 
 **Read Flow**:
+
 ```
 User opens board → Read from local DB (< 10ms) → Display instantly
                  → (Background: Check Firestore for updates)
 ```
 
 **Write Flow**:
+
 ```
 User completes task → Update local DB immediately (< 10ms) → UI updates
                     → Add to sync queue
@@ -102,6 +110,7 @@ sync_queue              -- Pending Firestore operations.
 The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_composite_tasks` tables are still present in old migration scripts so first-launch backfill works on dev/test devices, but they receive no live writes and no UI reads. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the canonical schema.
 
 **Key Design Decisions**:
+
 - **UUID primary keys** (enable offline creation, no server-generated IDs)
 - **ISO8601 timestamps** (Firestore compatibility)
 - **Version fields** (optimistic locking for conflict resolution)
@@ -111,6 +120,7 @@ The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_compos
 - **Cross-board task reusability** (same task can appear on multiple boards; completing it once propagates to every placement)
 
 **Example: Board Table**:
+
 ```sql
 CREATE TABLE boards (
     id TEXT PRIMARY KEY,              -- UUID (offline-generated)
@@ -152,6 +162,7 @@ CREATE TABLE boards (
 **Goal**: Get local DBs working, NO sync yet
 
 **Week 1: iOS Database**
+
 - [ ] Install GRDB.swift via SPM
 - [ ] Define SQLite schema (boards, tasks, board_tasks, sync_queue tables)
 - [ ] Create GRDB models (Board, Task, BoardTask structs)
@@ -160,6 +171,7 @@ CREATE TABLE boards (
 - [ ] **Test**: Create board, add tasks, complete tasks (all offline, < 10ms)
 
 **Week 2: Web Database**
+
 - [ ] Install Dexie.js
 - [ ] Define IndexedDB schema (mirrors iOS)
 - [ ] Create TypeScript interfaces (Board, Task, BoardTask)
@@ -168,11 +180,13 @@ CREATE TABLE boards (
 - [ ] **Test**: Same operations as iOS (all offline, < 10ms)
 
 **Shared Package**:
+
 - [x] Design TypeScript interfaces from scratch (NO MVP copy)
 - [x] Create `@oybc/shared` package
 - [x] Define enums (BoardStatus, TaskType, Timeframe)
 
 **Success Criteria**:
+
 - ✅ iOS: Create board, add 9 tasks, complete 5 tasks (airplane mode, < 10ms each operation)
 - ✅ Web: Same operations as iOS
 - ✅ No network calls, no Firestore yet
@@ -187,6 +201,7 @@ CREATE TABLE boards (
 **Week 3: Board Creation UI**
 
 **iOS**:
+
 - [ ] `CreateBoardView.swift` (name, size, timeframe pickers)
 - [ ] `TaskEntryView.swift` (create/select tasks)
 - [ ] Calendar boundary logic (Swift implementation)
@@ -194,6 +209,7 @@ CREATE TABLE boards (
 - [ ] Save to GRDB → display in board list
 
 **Web**:
+
 - [ ] `app/boards/create/page.tsx` (form)
 - [ ] Task entry components
 - [ ] Calendar boundary logic (import from shared)
@@ -201,6 +217,7 @@ CREATE TABLE boards (
 - [ ] Save to Dexie → display in board list
 
 **Shared**:
+
 - [ ] Implement calendar boundaries algorithm (TypeScript)
 - [ ] Implement board randomization (Fisher-Yates TypeScript)
 - [ ] Write tests (Jest)
@@ -208,6 +225,7 @@ CREATE TABLE boards (
 **Week 4: Board Grid & Interaction**
 
 **iOS**:
+
 - [ ] `BoardGridView.swift` (LazyVGrid, 3x3/4x4/5x5)
 - [ ] `BoardSquareView.swift` (task display)
 - [ ] Tap gestures (single tap → modal, double tap → complete, long press → force complete)
@@ -215,6 +233,7 @@ CREATE TABLE boards (
 - [ ] Update local DB on completion → UI updates instantly
 
 **Web**:
+
 - [ ] `BoardGrid.tsx` (CSS Grid)
 - [ ] `BoardSquare.tsx`
 - [ ] Click handlers (single, double click)
@@ -224,6 +243,7 @@ CREATE TABLE boards (
 **Week 5: Bingo Detection & Celebrations**
 
 **iOS**:
+
 - [ ] Implement bingo detection (8 lines: 4 rows, 4 cols, 2 diagonals)
 - [ ] Insert into `bingo_lines` table on detection
 - [ ] `BingoCelebrationView.swift` (animation)
@@ -231,6 +251,7 @@ CREATE TABLE boards (
 - [ ] Update denormalized board stats (completedTasks, linesCompleted)
 
 **Web**:
+
 - [ ] Implement bingo detection (import from shared)
 - [ ] Insert into Dexie bingo_lines
 - [ ] `BingoCelebration.tsx` (CSS animations)
@@ -238,10 +259,12 @@ CREATE TABLE boards (
 - [ ] Update board stats in Dexie
 
 **Shared**:
+
 - [ ] Bingo detection algorithm (TypeScript)
 - [ ] Comprehensive tests (all 8 line types, edge cases, 3x3/4x4/5x5 boards)
 
 **Success Criteria** (Basic Game Loop):
+
 - ✅ Full game loop works on iOS (offline): create board, complete tasks, get bingos, greenlog
 - ✅ Full game loop works on web (offline)
 - ✅ All operations instant (< 10ms from local DB)
@@ -253,6 +276,7 @@ CREATE TABLE boards (
 **Goal**: Add database tables and evaluation algorithm for composite tasks
 
 **iOS**:
+
 - [ ] Add `composite_tasks`, `composite_nodes`, `board_composite_tasks` tables to Schema.sql
 - [ ] Create Swift models (CompositeTask, CompositeNode, BoardCompositeTask)
 - [ ] Implement GRDB migrations for new tables
@@ -260,12 +284,14 @@ CREATE TABLE boards (
 - [ ] Swift implementation of tree evaluation algorithm
 
 **Web**:
+
 - [ ] Add composite task tables to Dexie schema
 - [ ] TypeScript interfaces (import from `@oybc/shared`)
 - [ ] CRUD operations for composite tasks
 - [ ] Dexie queries and indexes for tree traversal
 
 **Shared**:
+
 - [ ] Define CompositeTask, CompositeNode TypeScript types
 - [ ] Define CompositeOperator enum (AND, OR, M_OF_N)
 - [ ] Implement `evaluateCompositeTask()` algorithm (recursive tree traversal)
@@ -274,6 +300,7 @@ CREATE TABLE boards (
 - [ ] 100+ unit tests for evaluation algorithm
 
 **Testing**:
+
 - [ ] Create composite task with AND operator (all children must complete)
 - [ ] Create composite task with OR operator (any child can complete)
 - [ ] Create composite task with M_OF_N operator (threshold-based)
@@ -286,6 +313,7 @@ CREATE TABLE boards (
 **Goal**: Build tree builder UI and integrate into main app
 
 **iOS Playground**:
+
 - [ ] Tree builder UI (nested operators and tasks)
 - [ ] Operator picker (AND/OR/M_OF_N)
 - [ ] Task reference selector (existing tasks)
@@ -297,6 +325,7 @@ CREATE TABLE boards (
 - [ ] Demo: Nested ("(Exercise OR Yoga) AND (2 of [tasks])")
 
 **Web Playground**:
+
 - [ ] Mirror iOS tree builder functionality
 - [ ] Drag-and-drop tree builder (optional enhancement)
 - [ ] Form-based tree construction
@@ -304,12 +333,14 @@ CREATE TABLE boards (
 - [ ] Same demo scenarios as iOS
 
 **Integration** (Both Platforms):
+
 - [ ] Add composite task option to board creation
 - [ ] Composite task completion UI (show tree structure)
 - [ ] Evaluation runs when sub-tasks complete
 - [ ] Auto-complete composite when all conditions met
 
 **Success Criteria** (Complete Task System):
+
 - ✅ Normal, Counting, Progress, and Composite tasks all work
 - ✅ Composite evaluation < 50ms for complex trees
 - ✅ Tree builder UI functional on both platforms
@@ -325,6 +356,7 @@ CREATE TABLE boards (
 **Week 8: Authentication**
 
 **iOS**:
+
 - [x] Install Firebase iOS SDK (Auth only for now)
 - [x] Create new Firebase project
 - [x] `AuthService.swift` (sign up, sign in, sign out)
@@ -332,6 +364,7 @@ CREATE TABLE boards (
 - [x] Store userId in local DB (associate boards/tasks with user)
 
 **Web**:
+
 - [x] Install Firebase JS SDK
 - [x] Auth service (sign up, sign in, sign out)
 - [x] Login/register pages
@@ -339,6 +372,7 @@ CREATE TABLE boards (
 - [x] Store userId in Dexie
 
 **Testing**:
+
 - [x] Sign up on iOS → account exists in Firebase console
 - [x] Sign in on web with same credentials
 - [x] User's boards isolated by userId (can't see other users' data)
@@ -346,6 +380,7 @@ CREATE TABLE boards (
 **Week 9: Sync Queue & Background Sync**
 
 **iOS**:
+
 - [x] Add Firebase Firestore SDK
 - [x] Implement `SyncService.swift`:
   - Read from `sync_queue` table
@@ -355,11 +390,13 @@ CREATE TABLE boards (
 - [x] Trigger sync: on app launch, on reconnect, every 5 min
 
 **Web**:
+
 - [x] Implement `SyncService.ts` (mirrors iOS)
 - [x] Same queue pattern
 - [x] Trigger sync: on load, on reconnect, periodic
 
 **Testing**:
+
 - [x] Create board on iOS (offline) → goes to sync_queue
 - [x] Connect to internet → sync processes → board appears in Firestore console
 - [x] Disconnect again → operations queue locally
@@ -368,6 +405,7 @@ CREATE TABLE boards (
 **Week 10: Pull Sync & Conflict Resolution**
 
 **iOS & Web**:
+
 - [x] Implement pull sync (fetch changes from Firestore since last sync)
 - [x] Query Firestore: `where('_syncedAt', '>', lastSyncedAt)` watermark approach
 - [x] For each remote change:
@@ -378,6 +416,7 @@ CREATE TABLE boards (
 - [x] Update `lastSyncedAt` timestamp
 
 **Testing**:
+
 - [x] Create board on iOS → syncs to Firestore
 - [x] Pull on web → board appears
 - [x] Complete task on web → syncs to Firestore
@@ -385,6 +424,7 @@ CREATE TABLE boards (
 - [x] **Conflict test**: Edit same board on both devices offline → reconnect → higher version wins
 
 **Success Criteria**: ALL MET
+
 - ✅ Create board on iOS → appears on web within 5 seconds
 - ✅ Complete task on web → updates on iOS within 5 seconds
 - ✅ Works offline, syncs when back online
@@ -449,6 +489,7 @@ oybc/                           # Monorepo root
 ## Next Steps
 
 ### Immediate (Today)
+
 - [x] Archive MVP codebase
 - [x] Create monorepo structure
 - [x] Set up shared package
@@ -456,6 +497,7 @@ oybc/                           # Monorepo root
 - [x] Create documentation
 
 ### Next Session (iOS Database)
+
 - [x] Create Xcode project (SwiftUI)
 - [x] Add GRDB.swift via SPM
 - [x] Define SQLite schema
@@ -463,6 +505,7 @@ oybc/                           # Monorepo root
 - [x] Test offline CRUD operations
 
 ### Following Session (Web Database)
+
 - [x] Create web project
 - [x] Set up Dexie.js
 - [x] Mirror iOS schema in IndexedDB
@@ -474,12 +517,14 @@ oybc/                           # Monorepo root
 ## Resources
 
 ### Documentation
+
 - [GRDB.swift](https://github.com/groue/GRDB.swift)
 - [Dexie.js](https://dexie.org/)
 - [Firebase iOS SDK](https://firebase.google.com/docs/ios/setup)
 - [Firebase JS SDK](https://firebase.google.com/docs/web/setup)
 
 ### MVP Reference (Algorithm Patterns Only)
+
 - Calendar boundaries: `oybc_v1.archive/src/utils/calendarBoundaries.ts`
 - Bingo detection: `oybc_v1.archive/src/services/firebase/boards.ts` (lines 696-778)
 - Board randomization: `oybc_v1.archive/src/utils/boardRandomization.ts`
@@ -491,11 +536,13 @@ oybc/                           # Monorepo root
 ## Success Metrics
 
 ### Phase 1 (Weeks 1-2)
+
 - ✅ Local DB operations < 10ms (measured)
 - ✅ Offline CRUD works on both platforms
 - ✅ Shared package builds without errors
 
 ### Phase 2 (Weeks 3-7)
+
 - ✅ Full game loop works offline
 - ✅ Bingo detection identical on iOS and web
 - ✅ All task types working (Normal, Counting, Progress, Composite)
@@ -503,6 +550,7 @@ oybc/                           # Monorepo root
 - ✅ All operations instant (no loading spinners)
 
 ### Phase 3 (Weeks 8-10)
+
 - ✅ Multi-device sync < 5 seconds
 - ✅ Conflicts resolve correctly (including composite tasks)
 - ✅ No data loss in offline scenarios
@@ -522,6 +570,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - [x] Phase 4.5: Profile + settings + polish (display-name edit, sync indicator, sign-out confirm, empty states)
 
 **Key files**:
+
 - `TabBar.tsx` ↔ `MainTabView.swift` — bottom tab navigation
 - `BoardsPage.tsx` ↔ `BoardListView.swift` — board list
 - `BoardPlayPage.tsx` ↔ `BoardPlayView.swift` — board play
@@ -535,6 +584,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 ### Phase 5: Polish & Launch — IN PROGRESS
 
 **CI/CD & repo automation** (complete):
+
 - [x] Web CI workflow (build + test + lint on PRs to dev)
 - [x] iOS CI workflow (build + test on PRs to dev)
 - [x] Firestore rules auto-deploy on merge to dev
@@ -546,6 +596,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - [x] pnpm 9 upgrade (8.15 deprecated)
 
 **Remaining**:
+
 - [ ] Cross-platform parity audit (manual side-by-side review)
 - [ ] Achievement squares and progress counters
 - [ ] TestFlight beta (5-10 users)
@@ -561,28 +612,28 @@ OYBC's primary use case is "user opens the app, creates a board for what they wa
 
 Today every board is a one-shot creation. The user must remember to spin up a fresh daily/weekly/monthly board at every transition; if they forget, the window passes without tracking. The friction is highest at exactly the moments the user most needs the prompt. Recurring Boards turns that friction into a banner: when the user opens Boards on a new day (or week/month/year), pending creations are listed, ranked longest-window-first so parent boards exist before children. Tapping a banner row opens the existing wizard prefilled with the right timeframe + window dates.
 
-The architecture investigation that preceded this design (April 2026) established that most of the infrastructure already exists post-Compound Tasks Unification: per-board `startDate`/`endDate`, the `getTimeframeBoundaries()` helper family, and the global per-Task completion model. The missing piece is *orchestration* — detecting elapsed windows and surfacing prompts. Phase 1 of the rollout adds only that orchestration. Phases 2 and 3 layer richer features (preset task pools, board-completion-as-a-task) on top, sharing the Phase 1 detection hook.
+The architecture investigation that preceded this design (April 2026) established that most of the infrastructure already exists post-Compound Tasks Unification: per-board `startDate`/`endDate`, the `getTimeframeBoundaries()` helper family, and the global per-Task completion model. The missing piece is _orchestration_ — detecting elapsed windows and surfacing prompts. Phase 1 of the rollout adds only that orchestration. Phases 2 and 3 layer richer features (preset task pools, board-completion-as-a-task) on top, sharing the Phase 1 detection hook.
 
 **Non-goals (Phase 1)**: no automatic background creation, no notifications, no reminders, no shared boards across users, no recurring custom-timeframe boards. Each is in scope for a later phase if real usage demands it; speculating now buys nothing.
 
 #### Three-phase vision
 
-| Phase | Scope | Net-new infrastructure | Status |
-| --- | --- | --- | --- |
-| 1 — Timeframe-prompted | Daily/weekly/monthly/yearly recurrence prompts via Boards-tab banner; wizard prefill; "From parent boards" wizard filter | 4 prefs fields, detection algorithm, banner UI, wizard prefill, parent-tasks filter | NEXT |
-| 2 — Preset-pool | Boards that auto-instantiate from a fixed task pool each window | `RecurringBoardTemplate` entity, lazy spawn on app-open (no banner) | DEFERRED |
-| 3 — Board-completion-as-square | Achievement squares with specific-board references (extends the existing aggregate-mode mechanism) | `BoardTask.referencedBoardId` field, board-status cascade extension, cycle detection | DEFERRED |
+| Phase                          | Scope                                                                                                                    | Net-new infrastructure                                                               | Status   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | -------- |
+| 1 — Timeframe-prompted         | Daily/weekly/monthly/yearly recurrence prompts via Boards-tab banner; wizard prefill; "From parent boards" wizard filter | 4 prefs fields, detection algorithm, banner UI, wizard prefill, parent-tasks filter  | NEXT     |
+| 2 — Preset-pool                | Boards that auto-instantiate from a fixed task pool each window                                                          | `RecurringBoardTemplate` entity, lazy spawn on app-open (no banner)                  | DEFERRED |
+| 3 — Board-completion-as-square | Achievement squares with specific-board references (extends the existing aggregate-mode mechanism)                       | `BoardTask.referencedBoardId` field, board-status cascade extension, cycle detection | DEFERRED |
 
 #### Phase 1 detailed design
 
 ##### Decisions captured (2026-05-01)
 
-| Decision | Choice | Implication |
-| --- | --- | --- |
-| Derivation semantics | Shared task across both boards | Completing a daily-derived task auto-completes it on the parent monthly. "Derive from parent" is a wizard filter, not a clone path. No new schema. |
-| MVP scope | Timeframe-prompted only first | Lowest-risk first ship; phase 2 + 3 wait for real usage data. |
-| Multi-window UX (e.g., Jan 1) | Non-blocking banner on Boards tab | Each pending entry has its own row; "Create" / "Dismiss" per row; permanent suppression via the corresponding pref toggle. |
-| Pool board trigger (Phase 2) | Lazy: spawn on next app-open | No background scheduling infrastructure; reuses Phase 1's detection hook verbatim. |
+| Decision                      | Choice                            | Implication                                                                                                                                        |
+| ----------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Derivation semantics          | Shared task across both boards    | Completing a daily-derived task auto-completes it on the parent monthly. "Derive from parent" is a wizard filter, not a clone path. No new schema. |
+| MVP scope                     | Timeframe-prompted only first     | Lowest-risk first ship; phase 2 + 3 wait for real usage data.                                                                                      |
+| Multi-window UX (e.g., Jan 1) | Non-blocking banner on Boards tab | Each pending entry has its own row; "Create" / "Dismiss" per row; permanent suppression via the corresponding pref toggle.                         |
+| Pool board trigger (Phase 2)  | Lazy: spawn on next app-open      | No background scheduling infrastructure; reuses Phase 1's detection hook verbatim.                                                                 |
 
 ##### Architecture readiness
 
@@ -616,10 +667,10 @@ The architecture investigation that preceded this design (April 2026) establishe
 ```ts
 export interface UserPreferences {
   // ...existing 7 fields...
-  recurringDailyEnabled: boolean;    // default false
-  recurringWeeklyEnabled: boolean;   // default false
-  recurringMonthlyEnabled: boolean;  // default false
-  recurringYearlyEnabled: boolean;   // default false
+  recurringDailyEnabled: boolean; // default false
+  recurringWeeklyEnabled: boolean; // default false
+  recurringMonthlyEnabled: boolean; // default false
+  recurringYearlyEnabled: boolean; // default false
 }
 ```
 
@@ -638,18 +689,18 @@ String equality on `startDate` is safe because both sides come from the same `to
 
 ```ts
 export const PARENT_TIMEFRAMES: Record<Timeframe, Timeframe[]> = {
-  [Timeframe.DAILY]:   [Timeframe.WEEKLY, Timeframe.MONTHLY, Timeframe.YEARLY],
-  [Timeframe.WEEKLY]:  [Timeframe.MONTHLY, Timeframe.YEARLY],
+  [Timeframe.DAILY]: [Timeframe.WEEKLY, Timeframe.MONTHLY, Timeframe.YEARLY],
+  [Timeframe.WEEKLY]: [Timeframe.MONTHLY, Timeframe.YEARLY],
   [Timeframe.MONTHLY]: [Timeframe.YEARLY],
-  [Timeframe.YEARLY]:  [],
-  [Timeframe.CUSTOM]:  [],  // intentionally empty for Phase 1
+  [Timeframe.YEARLY]: [],
+  [Timeframe.CUSTOM]: [], // intentionally empty for Phase 1
 };
 
 export interface PendingRecurringBoard {
   timeframe: Timeframe;
-  startDate: string;       // local ISO8601 from getTimeframeBoundaries()
-  endDate: string;         // local ISO8601 from getTimeframeBoundaries()
-  suggestedName: string;   // formatTimeframeLabel(timeframe, startDate)
+  startDate: string; // local ISO8601 from getTimeframeBoundaries()
+  endDate: string; // local ISO8601 from getTimeframeBoundaries()
+  suggestedName: string; // formatTimeframeLabel(timeframe, startDate)
 }
 
 // Note: findPendingRecurringBoards reads weekStartDay from `prefs` (it needs
@@ -725,66 +776,66 @@ Both functions are pure and trivially unit-testable. Mirror the existing pattern
 
 ##### Verification matrix
 
-| Layer | What to verify |
-| --- | --- |
-| Unit (shared) | `findPendingRecurringBoards`: enabled with no boards → all enabled timeframes pending; one daily exists for today → daily not pending; daily exists for yesterday's window → daily *is* pending; week-start variation (Monday vs Sunday); year-boundary edge (Dec 31 → Jan 1 ⇒ all four pending if all enabled). `getParentBoards`: daily → returns active weekly+monthly+yearly; yearly → returns empty; deleted parents excluded; archived parents excluded. `PARENT_TIMEFRAMES` snapshot test. |
-| Unit (web/iOS hooks) | Banner reactivity to board CRUD + pref changes; correct rerender on dismissal; cleanup of session-dismissal state on unmount. |
-| Snapshot (iOS) | `RecurringBoardsBannerView` with 0 / 1 / 3 / 4 entries (4 = Jan 1 case); wizard setup step with prefilled chip variant; tasks step with "From parents" filter active; `BoardPreferencesView` with the new toggles section. |
-| Playwright (web) | Empty banner with all prefs off; enable all four prefs → 4-entry banner; click "Create" on Daily → wizard opens prefilled → submit → banner shrinks to 3 entries; "From parents" filter returns expected tasks from active parents. |
-| Manual | Date-mock single rollover (`new Date(2026, 4, 2)` after creating a daily for May 1); year-boundary rollover; offline creation of a recurring board → reconnect → confirm sync push; cross-device banner update via two simulators. |
+| Layer                | What to verify                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit (shared)        | `findPendingRecurringBoards`: enabled with no boards → all enabled timeframes pending; one daily exists for today → daily not pending; daily exists for yesterday's window → daily _is_ pending; week-start variation (Monday vs Sunday); year-boundary edge (Dec 31 → Jan 1 ⇒ all four pending if all enabled). `getParentBoards`: daily → returns active weekly+monthly+yearly; yearly → returns empty; deleted parents excluded; archived parents excluded. `PARENT_TIMEFRAMES` snapshot test. |
+| Unit (web/iOS hooks) | Banner reactivity to board CRUD + pref changes; correct rerender on dismissal; cleanup of session-dismissal state on unmount.                                                                                                                                                                                                                                                                                                                                                                     |
+| Snapshot (iOS)       | `RecurringBoardsBannerView` with 0 / 1 / 3 / 4 entries (4 = Jan 1 case); wizard setup step with prefilled chip variant; tasks step with "From parents" filter active; `BoardPreferencesView` with the new toggles section.                                                                                                                                                                                                                                                                        |
+| Playwright (web)     | Empty banner with all prefs off; enable all four prefs → 4-entry banner; click "Create" on Daily → wizard opens prefilled → submit → banner shrinks to 3 entries; "From parents" filter returns expected tasks from active parents.                                                                                                                                                                                                                                                               |
+| Manual               | Date-mock single rollover (`new Date(2026, 4, 2)` after creating a daily for May 1); year-boundary rollover; offline creation of a recurring board → reconnect → confirm sync push; cross-device banner update via two simulators.                                                                                                                                                                                                                                                                |
 
 ##### Files to create + modify
 
-| File | Action | Notes |
-| --- | --- | --- |
-| `packages/shared/src/algorithms/recurringBoards.ts` | CREATE | `PARENT_TIMEFRAMES`, `findPendingRecurringBoards`, `getParentBoards`, `PendingRecurringBoard` interface |
-| `packages/shared/tests/algorithms/recurringBoards.test.ts` | CREATE | Jest table-driven tests |
-| `packages/shared/src/types/user.ts` | MODIFY | 4 new fields on `UserPreferences`, default values, `mergeUserPreferences` validation |
-| `packages/shared/src/index.ts` | MODIFY | Export new symbols |
-| `apps/web/src/hooks/usePendingRecurringBoards.ts` | CREATE | useLiveQuery wrapper around `findPendingRecurringBoards` |
-| `apps/web/src/hooks/useParentBoardTasks.ts` | CREATE | useLiveQuery wrapper around `getParentBoards` + task resolution |
-| `apps/web/src/components/RecurringBoardsBanner.tsx` | CREATE | Banner UI; per-row Create + Dismiss buttons; session-dismissal local state |
-| `apps/web/src/pages/BoardsPage.tsx` | MODIFY | Render `<RecurringBoardsBanner />` above the existing list when non-empty |
-| `apps/web/src/pages/BoardWizardPage.tsx` | MODIFY | Read `timeframe`, `start`, `end` URL params; pass into `useBoardWizard` initial state |
-| `apps/web/src/components/wizard/BoardWizardSetupStep.tsx` | MODIFY | Render read-only timeframe chip when prefilled |
-| `apps/web/src/components/wizard/BoardWizardTasksStep.tsx` | MODIFY | Add "From parent boards" filter chip; switch task source when active |
-| `apps/web/src/pages/BoardPreferencesPage.tsx` | MODIFY | New "Recurring boards" section with 4 toggle switches |
-| `apps/web/src/firebase/userMappers.ts` (or equivalent) | MODIFY | Include 4 new fields in user-prefs push/pull mapping |
-| `apps/ios/OYBC/Views/Components/RecurringBoardsBannerView.swift` | CREATE | Mirror of web banner |
-| `apps/ios/OYBC/Views/BoardsTab/PendingRecurringBoardsViewModel.swift` | CREATE | Observed query equivalent to `usePendingRecurringBoards` |
-| `apps/ios/OYBC/Views/CreateTab/ViewModels/ParentBoardTasksViewModel.swift` | CREATE | Mirror of `useParentBoardTasks` |
-| `apps/ios/OYBC/Views/BoardsTab/BoardListView.swift` | MODIFY | Render banner above list |
-| `apps/ios/OYBC/Views/CreateTab/BoardWizardView.swift` | MODIFY | Accept `prefilledTimeframe`, `prefilledStart`, `prefilledEnd` init args |
-| `apps/ios/OYBC/Views/CreateTab/ViewModels/BoardWizardViewModel.swift` | MODIFY | Accept matching init args; lock timeframe field when prefilled |
-| `apps/ios/OYBC/Views/CreateTab/Components/BoardWizardSetupStepView.swift` | MODIFY | Render read-only timeframe chip when prefilled |
-| `apps/ios/OYBC/Views/CreateTab/Components/BoardWizardTasksStepView.swift` | MODIFY | Add filter chip mirroring web |
-| `apps/ios/OYBC/Views/ProfileTab/BoardPreferencesView.swift` | MODIFY | New 4-toggle section |
-| `apps/ios/OYBC/Database/Models/User.swift` | MODIFY | 4 new boolean columns; GRDB migration; forward-compatible decoder |
-| `apps/ios/OYBC/Services/SyncService.swift` | MODIFY | Include 4 new fields in user-prefs push/pull mapping |
-| `apps/ios/OYBCSnapshotTests/RecurringBoardsBannerSnapshotTests.swift` | CREATE | 0/1/3/4-entry baselines |
-| `apps/ios/OYBCSnapshotTests/BoardWizardPrefillSnapshotTests.swift` | CREATE | Setup-step + tasks-step prefilled variants |
+| File                                                                       | Action | Notes                                                                                                   |
+| -------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/algorithms/recurringBoards.ts`                        | CREATE | `PARENT_TIMEFRAMES`, `findPendingRecurringBoards`, `getParentBoards`, `PendingRecurringBoard` interface |
+| `packages/shared/tests/algorithms/recurringBoards.test.ts`                 | CREATE | Jest table-driven tests                                                                                 |
+| `packages/shared/src/types/user.ts`                                        | MODIFY | 4 new fields on `UserPreferences`, default values, `mergeUserPreferences` validation                    |
+| `packages/shared/src/index.ts`                                             | MODIFY | Export new symbols                                                                                      |
+| `apps/web/src/hooks/usePendingRecurringBoards.ts`                          | CREATE | useLiveQuery wrapper around `findPendingRecurringBoards`                                                |
+| `apps/web/src/hooks/useParentBoardTasks.ts`                                | CREATE | useLiveQuery wrapper around `getParentBoards` + task resolution                                         |
+| `apps/web/src/components/RecurringBoardsBanner.tsx`                        | CREATE | Banner UI; per-row Create + Dismiss buttons; session-dismissal local state                              |
+| `apps/web/src/pages/BoardsPage.tsx`                                        | MODIFY | Render `<RecurringBoardsBanner />` above the existing list when non-empty                               |
+| `apps/web/src/pages/BoardWizardPage.tsx`                                   | MODIFY | Read `timeframe`, `start`, `end` URL params; pass into `useBoardWizard` initial state                   |
+| `apps/web/src/components/wizard/BoardWizardSetupStep.tsx`                  | MODIFY | Render read-only timeframe chip when prefilled                                                          |
+| `apps/web/src/components/wizard/BoardWizardTasksStep.tsx`                  | MODIFY | Add "From parent boards" filter chip; switch task source when active                                    |
+| `apps/web/src/pages/BoardPreferencesPage.tsx`                              | MODIFY | New "Recurring boards" section with 4 toggle switches                                                   |
+| `apps/web/src/firebase/userMappers.ts` (or equivalent)                     | MODIFY | Include 4 new fields in user-prefs push/pull mapping                                                    |
+| `apps/ios/OYBC/Views/Components/RecurringBoardsBannerView.swift`           | CREATE | Mirror of web banner                                                                                    |
+| `apps/ios/OYBC/Views/BoardsTab/PendingRecurringBoardsViewModel.swift`      | CREATE | Observed query equivalent to `usePendingRecurringBoards`                                                |
+| `apps/ios/OYBC/Views/CreateTab/ViewModels/ParentBoardTasksViewModel.swift` | CREATE | Mirror of `useParentBoardTasks`                                                                         |
+| `apps/ios/OYBC/Views/BoardsTab/BoardListView.swift`                        | MODIFY | Render banner above list                                                                                |
+| `apps/ios/OYBC/Views/CreateTab/BoardWizardView.swift`                      | MODIFY | Accept `prefilledTimeframe`, `prefilledStart`, `prefilledEnd` init args                                 |
+| `apps/ios/OYBC/Views/CreateTab/ViewModels/BoardWizardViewModel.swift`      | MODIFY | Accept matching init args; lock timeframe field when prefilled                                          |
+| `apps/ios/OYBC/Views/CreateTab/Components/BoardWizardSetupStepView.swift`  | MODIFY | Render read-only timeframe chip when prefilled                                                          |
+| `apps/ios/OYBC/Views/CreateTab/Components/BoardWizardTasksStepView.swift`  | MODIFY | Add filter chip mirroring web                                                                           |
+| `apps/ios/OYBC/Views/ProfileTab/BoardPreferencesView.swift`                | MODIFY | New 4-toggle section                                                                                    |
+| `apps/ios/OYBC/Database/Models/User.swift`                                 | MODIFY | 4 new boolean columns; GRDB migration; forward-compatible decoder                                       |
+| `apps/ios/OYBC/Services/SyncService.swift`                                 | MODIFY | Include 4 new fields in user-prefs push/pull mapping                                                    |
+| `apps/ios/OYBCSnapshotTests/RecurringBoardsBannerSnapshotTests.swift`      | CREATE | 0/1/3/4-entry baselines                                                                                 |
+| `apps/ios/OYBCSnapshotTests/BoardWizardPrefillSnapshotTests.swift`         | CREATE | Setup-step + tasks-step prefilled variants                                                              |
 
 After adding new Swift files, run `xcodegen generate` per CLAUDE.md.
 
 #### Phase 2 sketch — Preset-pool recurring boards
 
-A user-curated task pool that auto-spawns a fresh board every window without user intervention. Example: "daily workout" with a pool of 25 exercises, randomized into a 5×5 each morning when the user opens the app.
+A user-curated task pool that automatically creates a fresh board every window without user intervention. Example: "daily workout" with a pool of 25 exercises, randomized into a 5×5 each morning when the user opens the app.
 
 **New entity**: `RecurringBoardTemplate`
 
 ```ts
 interface RecurringBoardTemplate {
-  id: string;             // UUID
+  id: string; // UUID
   userId: string;
   name: string;
-  timeframe: Timeframe;   // DAILY / WEEKLY / MONTHLY / YEARLY (no CUSTOM)
+  timeframe: Timeframe; // DAILY / WEEKLY / MONTHLY / YEARLY (no CUSTOM)
   boardSize: BoardSize;
   centerSquareType: CenterSquareType;
   isRandomized: boolean;
-  seedTaskIds: string[];  // Pool to randomize/select from each window
-  poolStrategy: 'all' | 'random_subset';  // How seedTaskIds map to grid cells
-  lastSpawnedWindowKey: string | null;    // ISO startDate of last-spawned window
-  isActive: boolean;      // User can pause/resume without deleting
+  seedTaskIds: string[]; // Pool to randomize/select from each window
+  poolStrategy: "all" | "random_subset"; // How seedTaskIds map to grid cells
+  lastSpawnedWindowKey: string | null; // ISO startDate of last-spawned window
+  isActive: boolean; // User can pause/resume without deleting
   createdAt: string;
   updatedAt: string;
   version: number;
@@ -803,9 +854,9 @@ interface RecurringBoardTemplate {
 
 #### Phase 3 sketch — Extend achievement squares for specific-board references
 
-A square whose completion criterion is the **status of one named board**, not aggregate counts across a timeframe. Examples: "greenlog the *Daily Wellness* board" as a square on a separate daily board; "complete the *Q2 Planning* monthly board" as a square on a yearly board.
+A square whose completion criterion is the **status of one named board**, not aggregate counts across a timeframe. Examples: "greenlog the _Daily Wellness_ board" as a square on a separate daily board; "complete the _Q2 Planning_ monthly board" as a square on a yearly board.
 
-This is **not a new TaskType.** Achievement squares (the existing `BoardTask`-level mechanism with `isAchievementSquare + achievementType + achievementCount + achievementTimeframe + achievementProgress`) already cover the *aggregate* form ("any N boards of timeframe T satisfy condition X"). The Phase 3 work extends the same mechanism with a **specific-board reference** mode by adding one optional field — no new task type, no parallel mechanism, same evaluation branch in the derivation pass.
+This is **not a new TaskType.** Achievement squares (the existing `BoardTask`-level mechanism with `isAchievementSquare + achievementType + achievementCount + achievementTimeframe + achievementProgress`) already cover the _aggregate_ form ("any N boards of timeframe T satisfy condition X"). The Phase 3 work extends the same mechanism with a **specific-board reference** mode by adding one optional field — no new task type, no parallel mechanism, same evaluation branch in the derivation pass.
 
 **Schema delta**: one new optional field on `BoardTask`:
 
@@ -841,6 +892,7 @@ if (bt.isAchievementSquare) {
 **Cross-board cascade** (extension to the existing fan-out): when a board's status or `linesCompleted` changes (today: by `runBoardCascadeForTask` detecting greenlog or bingo), the orchestration layer additionally queries `board_tasks WHERE referencedBoardId = this.id AND isAchievementSquare = true AND !isDeleted` and reruns the board cascade for any boards holding those squares. Reuses the same fan-out pattern that already increments aggregate-mode `achievementProgress` — just a new event handler in the same orchestration step.
 
 **Constraints**:
+
 - **Cycle detection**: a board cannot place a specific-board achievement square that references itself, nor can a chain `A → B → A` (or longer) exist. Validated in shared code at placement time. Aggregate-mode squares (no `referencedBoardId`) don't participate in cycles. Starting algorithm sketch (refine during implementation):
   ```
   hasCycle(candidateBoardId, targetBoardId, allUserBoardTasks):
@@ -866,26 +918,27 @@ if (bt.isAchievementSquare) {
 - A square cannot be both specific-board and aggregate — `referencedBoardId` set ⇒ `achievementTimeframe` and `achievementCount` are ignored. Validation ensures the user-facing config form doesn't allow mixed input.
 - A specific-board square referencing a soft-deleted board evaluates to `false` (and the cascade ignores it on the target side).
 
-**UI**: square renders with a board-reference badge instead of a count progress bar (e.g., "📌 *Daily Wellness*" with a check or unchecked state). Aggregate-mode squares keep their existing "X / N" progress UI. The achievement-square config sheet gets a new toggle: *"Watch a specific board"* vs *"Count across timeframe"*.
+**UI**: square renders with a board-reference badge instead of a count progress bar (e.g., "📌 _Daily Wellness_" with a check or unchecked state). Aggregate-mode squares keep their existing "X / N" progress UI. The achievement-square config sheet gets a new toggle: _"Watch a specific board"_ vs _"Count across timeframe"_.
 
 **Why this beats inventing a new TaskType**:
-- Per-placement state is the right semantic — placing "greenlog Daily Wellness" on Monday's daily board and Tuesday's daily board should track *independently* per placement, not share global state. Achievement squares are already per-`BoardTask`; a global `Task`-level mechanism would have required carving out a per-placement override.
+
+- Per-placement state is the right semantic — placing "greenlog Daily Wellness" on Monday's daily board and Tuesday's daily board should track _independently_ per placement, not share global state. Achievement squares are already per-`BoardTask`; a global `Task`-level mechanism would have required carving out a per-placement override.
 - Reuses the existing `isAchievementSquare` branch in `derivationPass.ts:118` and the existing fan-out wiring; Phase 3 work is bounded to one new field, one new evaluation branch, one new event handler, and one new UI mode.
-- Keeps the task-type taxonomy stable at three (Normal / Counting / Compound) — these correspond to *user-facing concepts*, not implementation mechanics.
+- Keeps the task-type taxonomy stable at three (Normal / Counting / Compound) — these correspond to _user-facing concepts_, not implementation mechanics.
 
 #### Decisions log
 
-| Date | Decision | Why | Status |
-| --- | --- | --- | --- |
-| 2026-05-01 | Derivation = shared task across boards (no clone path) | Cheapest engineering path; user understands the implication that completing on daily auto-completes parent monthly | Locked |
-| 2026-05-01 | MVP = timeframe-prompted only; Phase 2 + 3 deferred | Lowest-risk first ship; learn from real usage before committing to template entity or achievement-square specific-board mode | Locked |
-| 2026-05-02 | Phase 3 = extend achievement squares (specific-board mode), **not** a new TaskType | Achievement squares already cover cross-board completion as a square criterion, with the right per-placement state semantics. Inventing TaskType.VIRTUAL would have created a parallel mechanism with global state semantics that don't fit (placing the same goal on Mon/Tue daily boards should track independently). Keeps TaskType taxonomy at user-facing concepts (Normal / Counting / Compound). | Locked |
-| 2026-05-01 | Multi-window UX = non-blocking banner on Boards tab | Lowest friction; user can dismiss individually or disable in prefs for permanent suppression | Locked |
-| 2026-05-01 | Pool trigger (Phase 2) = lazy on app-open | No background-task infrastructure; matches Phase 1 pattern | Locked (Phase 2) |
-| 2026-05-01 | Custom-timeframe recurrence excluded from Phase 1 | `Timeframe.CUSTOM` requires user-specified dates per board — incompatible with "compute current window automatically" detection | Locked (revisit if Phase 2 demands it) |
-| TBD | Permanent dismissal: should the banner offer "skip this window forever" alongside session-dismiss? | Risk of accidental clicks; current plan = session-only, prefs toggle for permanent | Open |
-| TBD | Phase 3 cycle-detection placement: shared algorithm or per-platform validator? | Shared package preferred for parity (walks `referencedBoardId` edges across `board_tasks`); not yet sketched | Open (Phase 3) |
-| TBD | Phase 2 `poolStrategy` semantics: how does `random_subset` interact with `boardSize²`? | Probably draw `boardSize² - centerCount` from `seedTaskIds` per spawn; not finalized | Open (Phase 2) |
+| Date       | Decision                                                                                           | Why                                                                                                                                                                                                                                                                                                                                                                                                     | Status                                 |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| 2026-05-01 | Derivation = shared task across boards (no clone path)                                             | Cheapest engineering path; user understands the implication that completing on daily auto-completes parent monthly                                                                                                                                                                                                                                                                                      | Locked                                 |
+| 2026-05-01 | MVP = timeframe-prompted only; Phase 2 + 3 deferred                                                | Lowest-risk first ship; learn from real usage before committing to template entity or achievement-square specific-board mode                                                                                                                                                                                                                                                                            | Locked                                 |
+| 2026-05-02 | Phase 3 = extend achievement squares (specific-board mode), **not** a new TaskType                 | Achievement squares already cover cross-board completion as a square criterion, with the right per-placement state semantics. Inventing TaskType.VIRTUAL would have created a parallel mechanism with global state semantics that don't fit (placing the same goal on Mon/Tue daily boards should track independently). Keeps TaskType taxonomy at user-facing concepts (Normal / Counting / Compound). | Locked                                 |
+| 2026-05-01 | Multi-window UX = non-blocking banner on Boards tab                                                | Lowest friction; user can dismiss individually or disable in prefs for permanent suppression                                                                                                                                                                                                                                                                                                            | Locked                                 |
+| 2026-05-01 | Pool trigger (Phase 2) = lazy on app-open                                                          | No background-task infrastructure; matches Phase 1 pattern                                                                                                                                                                                                                                                                                                                                              | Locked (Phase 2)                       |
+| 2026-05-01 | Custom-timeframe recurrence excluded from Phase 1                                                  | `Timeframe.CUSTOM` requires user-specified dates per board — incompatible with "compute current window automatically" detection                                                                                                                                                                                                                                                                         | Locked (revisit if Phase 2 demands it) |
+| TBD        | Permanent dismissal: should the banner offer "skip this window forever" alongside session-dismiss? | Risk of accidental clicks; current plan = session-only, prefs toggle for permanent                                                                                                                                                                                                                                                                                                                      | Open                                   |
+| TBD        | Phase 3 cycle-detection placement: shared algorithm or per-platform validator?                     | Shared package preferred for parity (walks `referencedBoardId` edges across `board_tasks`); not yet sketched                                                                                                                                                                                                                                                                                            | Open (Phase 3)                         |
+| TBD        | Phase 2 `poolStrategy` semantics: how does `random_subset` interact with `boardSize²`?             | Probably draw `boardSize² - centerCount` from `seedTaskIds` per spawn; not finalized                                                                                                                                                                                                                                                                                                                    | Open (Phase 2)                         |
 
 ---
 

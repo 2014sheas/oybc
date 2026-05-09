@@ -38,6 +38,11 @@ struct BoardListView: View {
     @State private var activeFilter: String = "all"
     @State private var loadError: String?
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
+    /// Phase 6.2: drives template-spawn detection + execution on tab open.
+    /// Idempotent — repeated mounts after the first successful spawn are
+    /// no-ops because `findTemplatesPendingSpawn` filters out templates
+    /// whose `lastSpawnedWindowKey` matches the current window.
+    @State private var spawnVM = RecurringBoardSpawnViewModel()
 
     // MARK: - Constants
 
@@ -104,6 +109,20 @@ struct BoardListView: View {
             // off-tab. Same pattern as `loadBoards()`.
             if let userId = authService.currentUser?.id {
                 pendingRecurringVM.reloadAsync(userId: userId)
+                // Phase 6.2: fire any pending template spawns. Idempotent
+                // — see VM doc. Reads weekStartDay from the user's
+                // preferences (defaults to .monday if the row is absent).
+                _Concurrency.Task {
+                    // `try?` on `fetchUser(id:)` gives `User??` — flatten + default.
+                    // `User.preferences` is a JSON-string column; `decodedPreferences`
+                    // parses it (or returns `.defaults` for missing/malformed rows).
+                    let user = (try? AppDatabase.shared.fetchUser(id: userId)) ?? nil
+                    let weekStartDay = user?.decodedPreferences.weekStartDay ?? .monday
+                    await spawnVM.runSpawnPass(userId: userId, weekStartDay: weekStartDay)
+                    // Re-load the visible boards after spawn so the new
+                    // boards appear without requiring a tab-switch.
+                    await MainActor.run { loadBoards() }
+                }
             }
         }
     }

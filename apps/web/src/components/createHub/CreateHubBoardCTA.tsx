@@ -19,12 +19,18 @@ export interface CreateHubBoardCTAProps {
  * Renders the primary action on the Create Hub; tapping it launches the
  * 3-step board-creation wizard. iOS twin: `CreateHubBoardCTAView`.
  *
- * Two visual variants:
+ * Two visual variants — same destination, different visual weight:
  *   - `primary` (default): large gradient card with sparkle icon. Used
  *     when the parent has no pending core boards to surface above.
- *   - `secondary`: smaller flat card with muted styling + reframed copy
- *     ("Custom timeframe board"). Used when `PendingCoreBoardsSection`
- *     is the headline action above this CTA.
+ *   - `secondary`: smaller flat card with muted styling. Same copy as
+ *     primary; used when `PendingCoreBoardsSection` is the headline
+ *     action above this CTA.
+ *
+ * The "Custom timeframe board" naming used pre-Phase-6.2-rework was
+ * accurate when recurring lived in a separate form; post-rework the
+ * wizard's Setup-step toggle handles both one-off and recurring, so
+ * "custom" mislabels what tapping this actually does. Both variants
+ * now share the universal "Start a new board" copy.
  */
 export function CreateHubBoardCTA({
   onClick,
@@ -37,9 +43,9 @@ export function CreateHubBoardCTA({
           +
         </div>
         <div className={styles.text}>
-          <span className={styles.titleSecondary}>Custom timeframe board</span>
+          <span className={styles.titleSecondary}>Start a new board</span>
           <span className={styles.subtitleSecondary}>
-            For one-off goals that don't fit a recurring window.
+            Pick a timeframe, size, and tasks — optionally recurring.
           </span>
         </div>
         <div className={styles.chevronSecondary} aria-hidden="true">

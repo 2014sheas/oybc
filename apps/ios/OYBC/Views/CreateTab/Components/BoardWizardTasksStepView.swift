@@ -29,6 +29,12 @@ struct BoardWizardTasksStepView: View {
     /// Number of tasks the chosen board geometry requires.
     let tasksRequired: Int
 
+    /// Phase 6.2 — true when the wizard is in recurring-template mode.
+    /// Drives the count-line "min" suffix wording. The pool is always
+    /// loose-fit; the spawn shuffles + slices, so any extras become the
+    /// random subset for each window.
+    let isRecurring: Bool
+
     /// When true, every selected row shows a star radio for picking the
     /// center task. Driven by Step 1's center-type choice.
     let centerTaskMode: Bool
@@ -143,6 +149,14 @@ struct BoardWizardTasksStepView: View {
         return selectedTaskIds.contains(id)
     }
     private var canAdvance: Bool { isCountSatisfied && isCenterSatisfied }
+
+    /// Suffix on the count line: " min" / "" — only shown when
+    /// `isRecurring` (one-off boards keep the bare count to preserve
+    /// existing copy). The pool is always loose-fit; the spawn picks
+    /// N from the larger pool each window.
+    private var countSuffix: String {
+        return isRecurring ? " min" : ""
+    }
 
     // ── Usage-hint + leaf-preview data ───────────────────────────────
     // Ported from the composite wizard so both surfaces agree.
@@ -430,7 +444,7 @@ struct BoardWizardTasksStepView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 +
-                Text("\(selectedCount) / \(tasksRequired)")
+                Text("\(selectedCount) / \(tasksRequired)\(countSuffix)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(isCountSatisfied ? .green : .orange)
