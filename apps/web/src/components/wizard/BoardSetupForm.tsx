@@ -5,21 +5,21 @@ import {
   formatTimeframeLabel,
   getTimeframeBoundaries,
   type WeekStartDay,
-} from '@oybc/shared';
-import styles from './BoardSetupForm.module.css';
+} from "@oybc/shared";
+import styles from "./BoardSetupForm.module.css";
 
 const SIZE_OPTIONS: { value: 3 | 4 | 5; label: string }[] = [
-  { value: 3, label: '3×3' },
-  { value: 4, label: '4×4' },
-  { value: 5, label: '5×5' },
+  { value: 3, label: "3×3" },
+  { value: 4, label: "4×4" },
+  { value: 5, label: "5×5" },
 ];
 
 const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
-  { value: Timeframe.DAILY, label: 'Daily' },
-  { value: Timeframe.WEEKLY, label: 'Weekly' },
-  { value: Timeframe.MONTHLY, label: 'Monthly' },
-  { value: Timeframe.YEARLY, label: 'Yearly' },
-  { value: Timeframe.CUSTOM, label: 'Custom' },
+  { value: Timeframe.DAILY, label: "Daily" },
+  { value: Timeframe.WEEKLY, label: "Weekly" },
+  { value: Timeframe.MONTHLY, label: "Monthly" },
+  { value: Timeframe.YEARLY, label: "Yearly" },
+  { value: Timeframe.CUSTOM, label: "Custom" },
 ];
 
 /** Subset of `TIMEFRAME_OPTIONS` shown when `isRecurring=true`. The
@@ -30,10 +30,10 @@ const RECURRING_TIMEFRAME_OPTIONS = TIMEFRAME_OPTIONS.filter(
 );
 
 const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
-  { value: CenterSquareType.FREE, label: 'Free Space' },
-  { value: CenterSquareType.CUSTOM_FREE, label: 'Custom Name' },
-  { value: CenterSquareType.CHOSEN, label: 'Pick one of my board tasks' },
-  { value: CenterSquareType.NONE, label: 'None' },
+  { value: CenterSquareType.FREE, label: "Free Space" },
+  { value: CenterSquareType.CUSTOM_FREE, label: "Custom Name" },
+  { value: CenterSquareType.CHOSEN, label: "Pick one of my board tasks" },
+  { value: CenterSquareType.NONE, label: "None" },
 ];
 
 /** Subset of `CENTER_TYPE_OPTIONS` shown when `isRecurring=true`. The
@@ -160,7 +160,7 @@ export function BoardSetupForm({
               key={opt.value}
               type="button"
               className={`${styles.segmentedButton} ${
-                size === opt.value ? styles.segmentedButtonActive : ''
+                size === opt.value ? styles.segmentedButtonActive : ""
               }`}
               onClick={() => onSizeChange(opt.value)}
               aria-pressed={size === opt.value}
@@ -197,7 +197,7 @@ export function BoardSetupForm({
                 key={opt.value}
                 type="button"
                 className={`${styles.segmentedButton} ${
-                  timeframe === opt.value ? styles.segmentedButtonActive : ''
+                  timeframe === opt.value ? styles.segmentedButtonActive : ""
                 }`}
                 onClick={() => onTimeframeChange(opt.value)}
                 aria-pressed={timeframe === opt.value}
@@ -229,7 +229,8 @@ export function BoardSetupForm({
           <span>
             <strong>Make recurring</strong>
             <span className={styles.checkboxSubtitle}>
-              {' '}— auto-spawn a fresh board each window from a task pool.
+              {" "}
+              — automatically create a fresh board each window from a task pool.
             </span>
           </span>
         </label>
@@ -248,7 +249,7 @@ export function BoardSetupForm({
           <span className={styles.dateDisplayRange}>
             {isRecurring
               ? `Starting: ${timeframeLabel}`
-              : `${computedBoundaries.startDate.split('T')[0]} to ${computedBoundaries.endDate.split('T')[0]}`}
+              : `${computedBoundaries.startDate.split("T")[0]} to ${computedBoundaries.endDate.split("T")[0]}`}
           </span>
         </div>
       )}
@@ -292,7 +293,9 @@ export function BoardSetupForm({
             id="bw-center-type"
             className={styles.input}
             value={centerType}
-            onChange={(e) => onCenterTypeChange(e.target.value as CenterSquareType)}
+            onChange={(e) =>
+              onCenterTypeChange(e.target.value as CenterSquareType)
+            }
           >
             {visibleCenterTypeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
