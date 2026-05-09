@@ -27,6 +27,29 @@ export interface BoardTask {
   achievementTimeframe?: Timeframe;        // Lower-level timeframe to count
   achievementProgress?: number;            // Current progress (denormalized)
 
+  /**
+   * Phase 6.3 — Specific-board mode. When set, the achievement square
+   * watches this single named board and completes when that board's
+   * `status === GREENLOGGED` (and `!isDeleted`). Mutually exclusive
+   * with `referencedTemplateId` — Zod refinement rejects rows that
+   * set both. When neither is set, the existing aggregate-mode logic
+   * (count across timeframe via `achievementType` + `achievementCount`)
+   * applies.
+   */
+  referencedBoardId?: string;
+
+  /**
+   * Phase 6.3 — Recurring-template mode. When set, the achievement
+   * square watches all spawns of this template whose `startDate` falls
+   * within the parent board's `[startDate, endDate]` window. Square
+   * completes when the in-window non-deleted spawn set is non-empty
+   * AND every member is `GREENLOGGED`. Use case: a monthly fitness
+   * board with a "Leg Day" square that completes when each weekly Leg
+   * Day spawn greenlogs across the month. Mutually exclusive with
+   * `referencedBoardId`.
+   */
+  referencedTemplateId?: string;
+
   // Timestamps
   createdAt: string;             // ISO8601
   updatedAt: string;             // ISO8601
@@ -49,5 +72,11 @@ export interface CreateBoardTaskInput {
   achievementType?: 'bingo' | 'full_completion';
   achievementCount?: number;
   achievementTimeframe?: Timeframe;
+  /** Phase 6.3 — see `BoardTask.referencedBoardId`. Mutually exclusive
+   *  with `referencedTemplateId`. */
+  referencedBoardId?: string;
+  /** Phase 6.3 — see `BoardTask.referencedTemplateId`. Mutually
+   *  exclusive with `referencedBoardId`. */
+  referencedTemplateId?: string;
 }
 

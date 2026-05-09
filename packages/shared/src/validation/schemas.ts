@@ -258,35 +258,63 @@ export const TaskStepSchema = z.object({
 
 // ===== BoardTask Schemas =====
 
-export const CreateBoardTaskInputSchema = z.object({
-  boardId: z.string().uuid(),
-  taskId: z.string().uuid(),
-  row: z.number().int().min(0),
-  col: z.number().int().min(0),
-  isCenter: z.boolean(),
-  isAchievementSquare: z.boolean().optional(),
-  achievementType: z.enum(['bingo', 'full_completion']).optional(),
-  achievementCount: z.number().int().positive().optional(),
-  achievementTimeframe: z.nativeEnum(Timeframe).optional(),
-});
+/**
+ * Phase 6.3 — `referencedBoardId` and `referencedTemplateId` are
+ * mutually exclusive on `BoardTask`. Both unset = aggregate-mode
+ * achievement square (or non-achievement square); exactly one set =
+ * specific-board or recurring-template mode. Both set is invalid: a
+ * malicious remote payload or older client could try to do this and
+ * the schema rejects it. Derivation has a defensive precedence rule
+ * (`referencedBoardId` wins) for the case where bad data slips
+ * through anyway.
+ */
+const referencedFieldsMutuallyExclusive = (data: {
+  referencedBoardId?: string;
+  referencedTemplateId?: string;
+}) => !(data.referencedBoardId && data.referencedTemplateId);
 
-export const BoardTaskSchema = z.object({
-  id: z.string().uuid(),
-  boardId: z.string().uuid(),
-  taskId: z.string().uuid(),
-  row: z.number().int().min(0),
-  col: z.number().int().min(0),
-  isCenter: z.boolean(),
-  isAchievementSquare: z.boolean().optional(),
-  achievementType: z.enum(['bingo', 'full_completion']).optional(),
-  achievementCount: z.number().int().positive().optional(),
-  achievementTimeframe: z.nativeEnum(Timeframe).optional(),
-  achievementProgress: z.number().int().min(0).optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  lastSyncedAt: z.string().datetime().optional(),
-  version: z.number().int().min(1),
-});
+const referencedFieldsMutuallyExclusiveMessage = {
+  message:
+    'BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set',
+};
+
+export const CreateBoardTaskInputSchema = z
+  .object({
+    boardId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    row: z.number().int().min(0),
+    col: z.number().int().min(0),
+    isCenter: z.boolean(),
+    isAchievementSquare: z.boolean().optional(),
+    achievementType: z.enum(['bingo', 'full_completion']).optional(),
+    achievementCount: z.number().int().positive().optional(),
+    achievementTimeframe: z.nativeEnum(Timeframe).optional(),
+    referencedBoardId: z.string().uuid().optional(),
+    referencedTemplateId: z.string().uuid().optional(),
+  })
+  .refine(referencedFieldsMutuallyExclusive, referencedFieldsMutuallyExclusiveMessage);
+
+export const BoardTaskSchema = z
+  .object({
+    id: z.string().uuid(),
+    boardId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    row: z.number().int().min(0),
+    col: z.number().int().min(0),
+    isCenter: z.boolean(),
+    isAchievementSquare: z.boolean().optional(),
+    achievementType: z.enum(['bingo', 'full_completion']).optional(),
+    achievementCount: z.number().int().positive().optional(),
+    achievementTimeframe: z.nativeEnum(Timeframe).optional(),
+    achievementProgress: z.number().int().min(0).optional(),
+    referencedBoardId: z.string().uuid().optional(),
+    referencedTemplateId: z.string().uuid().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    lastSyncedAt: z.string().datetime().optional(),
+    version: z.number().int().min(1),
+  })
+  .refine(referencedFieldsMutuallyExclusive, referencedFieldsMutuallyExclusiveMessage);
 
 // ===== CompoundChild Schemas =====
 

@@ -1,6 +1,6 @@
 import type { Task, CompoundChild, BoardTask, Board } from '../types';
 import { BoardSize } from '../constants';
-import { CenterSquareType, TaskType } from '../constants/enums';
+import { BoardStatus, CenterSquareType, TaskType } from '../constants/enums';
 import { detectBingos } from './bingoDetection';
 import { evaluateCompound } from './compoundEvaluation';
 
@@ -92,6 +92,14 @@ export interface BoardStatsUpdate {
  * @param boardTasksOnBoard  All BoardTask rows for this specific board.
  * @param childrenByCompound Map of compoundTaskId → list of CompoundChild rows.
  * @param taskById           Map of taskId → Task (all tasks in the workspace).
+ * @param allBoards          All non-deleted boards in the workspace. Required
+ *                           for Phase 6.3 specific-board / recurring-template
+ *                           achievement squares — they read another board's
+ *                           state directly. Pass `[]` when the caller has no
+ *                           cross-board context (will degrade those branches
+ *                           to "incomplete", matching the missing-reference
+ *                           semantic). One-off and aggregate-mode squares
+ *                           don't read this argument.
  * @returns A payload to MERGE into the board row. The caller is responsible
  *          for ALSO setting `board.updatedAt` (current timestamp) and
  *          incrementing `board.version` before persisting — those are
@@ -104,24 +112,91 @@ export function computeBoardStatsUpdate(
   boardTasksOnBoard: BoardTask[],
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
+  allBoards: Board[] = [],
 ): BoardStatsUpdate {
   const size = board.boardSize as BoardSize;
   const totalSquares = size * size;
   const grid: boolean[] = new Array(totalSquares).fill(false);
   let completedTasks = 0;
 
+  // Phase 6.3: index all non-deleted boards by id (specific-board mode)
+  // and by spawnedFromTemplateId (recurring-template mode). Built lazily —
+  // only allocated if at least one boardTask uses one of the new modes —
+  // so non-recurring boards pay no cost. `allBoards.length === 0` paths
+  // (no cross-board context supplied) skip both maps entirely.
+  let boardById: Map<string, Board> | null = null;
+  let boardsByTemplateId: Map<string, Board[]> | null = null;
+  const buildBoardIndexes = (): void => {
+    if (boardById !== null) return;
+    boardById = new Map();
+    boardsByTemplateId = new Map();
+    for (const b of allBoards) {
+      if (b.isDeleted) continue;
+      boardById.set(b.id, b);
+      if (b.spawnedFromTemplateId) {
+        const list = boardsByTemplateId.get(b.spawnedFromTemplateId) ?? [];
+        list.push(b);
+        boardsByTemplateId.set(b.spawnedFromTemplateId, list);
+      }
+    }
+  };
+
   for (const bt of boardTasksOnBoard) {
-    // Achievement squares: completion derives from achievementProgress reaching
-    // achievementCount on THIS board. The backing Task's isCompleted state is
-    // irrelevant — the square's semantic is "this cross-board goal is reached",
-    // tracked by achievementProgress / achievementCount on the BoardTask row.
+    // Achievement squares: completion derives from one of three modes,
+    // dispatched by which fields are set on the BoardTask row. Phase 6.3
+    // added the two specific-mode branches; aggregate mode is the
+    // pre-6.3 behavior (counter-driven via achievementProgress).
     if (bt.isAchievementSquare) {
-      const required = bt.achievementCount ?? 0;
-      const progress = bt.achievementProgress ?? 0;
       const idx = bt.row * size + bt.col;
       if (idx < 0 || idx >= totalSquares) continue;
-      // required > 0 guard: prevents a 0/0 achievement square from registering
-      // as complete before it has been configured.
+
+      // Precedence: `referencedBoardId` wins when both fields are set.
+      // The Zod refinement rejects rows that set both, but a malicious
+      // remote payload or older client could still produce one — pick
+      // the more specific reference deterministically so derivation is
+      // predictable.
+      if (bt.referencedBoardId) {
+        // Specific-board mode: square completes when the referenced
+        // board's stored status is COMPLETED (greenlog) AND the
+        // referenced board is non-deleted. Soft-deleted ⇒ incomplete
+        // (not crash; not silently ignore — UI can surface a "needs
+        // attention" badge separately).
+        buildBoardIndexes();
+        const ref = boardById!.get(bt.referencedBoardId);
+        if (ref && ref.status === BoardStatus.COMPLETED) {
+          grid[idx] = true;
+          completedTasks += 1;
+        }
+        continue;
+      }
+
+      if (bt.referencedTemplateId) {
+        // Recurring-template mode: square completes when the in-window
+        // non-deleted spawn set is non-empty AND every member is
+        // COMPLETED. Empty window ⇒ incomplete (NOT vacuously true —
+        // a future spawn must land for the square to ever satisfy).
+        // Window membership is inclusive on both ends.
+        buildBoardIndexes();
+        const spawns = boardsByTemplateId!.get(bt.referencedTemplateId) ?? [];
+        const inWindow = spawns.filter(
+          (b) => b.startDate >= board.startDate && b.startDate <= board.endDate,
+        );
+        if (inWindow.length > 0 && inWindow.every((b) => b.status === BoardStatus.COMPLETED)) {
+          grid[idx] = true;
+          completedTasks += 1;
+        }
+        continue;
+      }
+
+      // Aggregate mode (pre-6.3 behavior): completion derives from
+      // achievementProgress reaching achievementCount on THIS board.
+      // The backing Task's isCompleted state is irrelevant — the
+      // square's semantic is "this cross-board goal is reached",
+      // tracked by achievementProgress / achievementCount on the
+      // BoardTask row. `required > 0` guard prevents a 0/0 square
+      // from registering as complete before it has been configured.
+      const required = bt.achievementCount ?? 0;
+      const progress = bt.achievementProgress ?? 0;
       if (required > 0 && progress >= required) {
         grid[idx] = true;
         completedTasks += 1;

@@ -33,6 +33,14 @@ export {
 
 export type { BoardStatsUpdate } from './derivationPass';
 
+export { hasCycle } from './cycleDetection';
+
+export type {
+  CycleCheckCandidate,
+  CycleCheckContext,
+  CycleCheckResult,
+} from './cycleDetection';
+
 export {
   progressTaskToCompound,
   taskStepToCompoundChild,
