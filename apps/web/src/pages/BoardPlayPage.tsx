@@ -1,25 +1,34 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
+  BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  type Board,
+  type RecurringBoardTemplate,
   type TaskStep,
   type BoardTask,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
-import { useBoard, useBoardTasks } from '../hooks';
+import { useBoard, useBoardTasks, useBoards, useRecurringBoardTemplates } from '../hooks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
 import { addToSyncQueue } from '../db/operations/syncQueue';
+import { updateAchievementSquareConfig } from '../db/operations/boardTasks';
 import {
   InteractiveTaskSquare,
   DetailModal,
   FloatingContextMenu,
+  type AchievementSquareBadgeData,
 } from '../components/InteractiveTaskSquare';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
+import {
+  AchievementSquareConfigModal,
+  type AchievementSquareConfigPatch,
+} from '../components/achievementSquare/AchievementSquareConfigModal';
 import { BoardStatusBadge } from '../components/BoardStatusBadge';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
@@ -37,6 +46,11 @@ const FLASH_MS = 3000;
 // `T[]`, not `readonly T[]`; the runtime frozen array still throws on mutation.
 const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
 const EMPTY_TASK_STEPS = Object.freeze([]) as unknown as TaskStep[];
+// Phase 6.3 — frozen empty fallbacks for the workspace-wide board /
+// template hooks. Same pattern as EMPTY_BOARD_TASKS above (preserves
+// React Compiler memoization of downstream deps).
+const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
+const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,15 +87,29 @@ export function BoardPlayPage(): React.ReactElement {
   // Compound resolution data (all BoardTasks workspace-wide for child lookup).
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(user?.id);
 
-  // Workspace-wide BoardTask list for compound child toggle fallback.
+  // Workspace-wide BoardTask list for compound child toggle fallback +
+  // Phase 6.3 achievement-square cycle detection.
   const allBoardTasks: BoardTask[] =
     useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+
+  // Phase 6.3 — workspace data needed by the achievement-square config
+  // modal AND by the per-cell badge data computation. Reuses existing
+  // hooks; `useBoards` returns non-deleted boards for the user, and
+  // `useRecurringBoardTemplates` returns non-deleted templates.
+  const allBoards: Board[] = useBoards(user?.id) ?? EMPTY_BOARDS;
+  const allTemplates: RecurringBoardTemplate[] =
+    useRecurringBoardTemplates(user?.id) ?? EMPTY_TEMPLATES;
 
   // ── UI state ───────────────────────────────────────────────────────────
 
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Phase 6.3 — when set, the achievement-square config modal mounts
+  // for this BoardTask. Cleared on save or cancel. Independent of
+  // `selectedSquareId` (the detail modal's state) because both can
+  // potentially be open at the same time (different surfaces).
+  const [configuringSquareId, setConfiguringSquareId] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clean up flash timer on unmount
@@ -90,6 +118,70 @@ export function BoardPlayPage(): React.ReactElement {
   }, []);
 
   // ── Derived data ───────────────────────────────────────────────────────
+
+  // Phase 6.3 — per-cell achievement-square badge data, keyed by
+  // BoardTask.id. The badge labels what each cell is watching (or
+  // counting); the cell's actual completion state still comes from
+  // derivationPass.
+  //
+  // Build the lookup maps once per render (boardById, spawnsByTemplate)
+  // then loop cells to assemble the badge entries. This mirrors the
+  // performance optimization in `derivationPass.ts` — without the
+  // template index, each template-mode cell would re-scan all boards.
+  const achievementBadgesByBoardTaskId = useMemo<Record<string, AchievementSquareBadgeData>>(() => {
+    if (!board) return {};
+    const out: Record<string, AchievementSquareBadgeData> = {};
+    const boardById = new Map<string, Board>();
+    const spawnsByTemplate = new Map<string, Board[]>();
+    for (const b of allBoards) {
+      if (b.isDeleted) continue;
+      boardById.set(b.id, b);
+      if (b.spawnedFromTemplateId) {
+        const list = spawnsByTemplate.get(b.spawnedFromTemplateId) ?? [];
+        list.push(b);
+        spawnsByTemplate.set(b.spawnedFromTemplateId, list);
+      }
+    }
+    const templateById = new Map(allTemplates.map((t) => [t.id, t]));
+
+    for (const bt of boardTasks) {
+      if (!bt.isAchievementSquare) continue;
+      // Phase 6.3 precedence: referencedBoardId wins when both fields
+      // somehow get set. The Zod refinement should prevent this, but
+      // the badge stays predictable for bad-data payloads.
+      if (bt.referencedBoardId) {
+        const ref = boardById.get(bt.referencedBoardId);
+        out[bt.id] = {
+          mode: 'specificBoard',
+          referencedBoardName: ref?.name,
+          referencedBoardCompleted: ref?.status === BoardStatus.COMPLETED,
+        };
+        continue;
+      }
+      if (bt.referencedTemplateId) {
+        const t = templateById.get(bt.referencedTemplateId);
+        const spawns = spawnsByTemplate.get(bt.referencedTemplateId) ?? [];
+        const inWindow = spawns.filter(
+          (b) => b.startDate >= board.startDate && b.startDate <= board.endDate,
+        );
+        const completed = inWindow.filter((b) => b.status === BoardStatus.COMPLETED).length;
+        out[bt.id] = {
+          mode: 'recurringTemplate',
+          templateName: t?.name,
+          templateInWindowGreenlogged: completed,
+          templateInWindowTotal: inWindow.length,
+        };
+        continue;
+      }
+      // Aggregate mode (pre-6.3 behavior).
+      out[bt.id] = {
+        mode: 'aggregate',
+        achievementProgress: bt.achievementProgress ?? 0,
+        achievementCount: bt.achievementCount ?? 0,
+      };
+    }
+    return out;
+  }, [board, boardTasks, allBoards, allTemplates]);
 
   // taskMap is provided by useTaskLibrary — no need to rebuild it here.
 
@@ -329,6 +421,7 @@ export function BoardPlayPage(): React.ReactElement {
                     key={bt.id}
                     sq={squareData}
                     state={squareState}
+                    achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
                     onAct={() => {
                       if (isExpired) return;
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
@@ -468,6 +561,49 @@ export function BoardPlayPage(): React.ReactElement {
               setSelectedSquareId(bt.id);
               setContextMenu(null);
             }}
+            onConfigureAchievementSquare={() => {
+              // Phase 6.3 entry point — opens the achievement-square
+              // config modal for this BoardTask. The menu closes first
+              // so the modal isn't shown over a stale context-menu
+              // surface.
+              setConfiguringSquareId(bt.id);
+              setContextMenu(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* Phase 6.3 — Achievement-square config modal */}
+      {configuringSquareId && board && (() => {
+        const bt = boardTasks.find((b) => b.id === configuringSquareId);
+        if (!bt) return null;
+        const task = taskMap[bt.taskId];
+        const taskTitle = task?.title ?? '(unknown task)';
+        return (
+          <AchievementSquareConfigModal
+            boardTask={bt}
+            parentBoard={board}
+            allBoards={allBoards}
+            allBoardTasks={allBoardTasks}
+            allTemplates={allTemplates}
+            taskTitle={taskTitle}
+            onSave={async (patch: AchievementSquareConfigPatch) => {
+              await updateAchievementSquareConfig(bt.id, patch);
+              // Re-run derivation for the parent board so the cell's
+              // visual state catches up immediately (otherwise the
+              // user would have to refresh / wait for a write to fire
+              // the cascade naturally). The cascade key is the backing
+              // Task id — that lets derivationPass.findAffectedBoardIds
+              // pick up this very BoardTask along with any other cells
+              // backed by the same task.
+              if (task) {
+                await runBoardCascadeForTask(task.id).catch(() => {
+                  /* derivation re-runs are best-effort; the next
+                     authoritative write will recompute correctly */
+                });
+              }
+            }}
+            onClose={() => setConfiguringSquareId(null)}
           />
         );
       })()}

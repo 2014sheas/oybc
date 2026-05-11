@@ -30,6 +30,10 @@ interface ContextMenuProps {
   onMarkAllStepsComplete?: (id: string) => void;
   onMarkAllStepsIncomplete?: (id: string) => void;
   onViewDetails?: (id: string) => void;
+  /** Phase 6.3: opens the achievement-square config modal for this
+   *  cell. Always shown when provided so users can convert a regular
+   *  task cell into an achievement square (or revert it back). */
+  onConfigureAchievementSquare?: (id: string) => void;
 }
 
 /**
@@ -59,6 +63,7 @@ export function FloatingContextMenu({
   onMarkAllStepsComplete,
   onMarkAllStepsIncomplete,
   onViewDetails,
+  onConfigureAchievementSquare,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -208,12 +213,56 @@ export function FloatingContextMenu({
       >
         ⓘ View Details
       </button>
+
+      {/* Phase 6.3: achievement-square entry point. Always rendered
+          when the callback is wired so users can convert any cell
+          (regardless of task type) into an achievement square or
+          revert it back. The modal handles the off-toggle internally. */}
+      {onConfigureAchievementSquare && (
+        <button
+          className={styles.contextMenuItem}
+          onClick={() => {
+            onConfigureAchievementSquare(sq.id);
+            onClose();
+          }}
+        >
+          🎯 Configure as achievement square…
+        </button>
+      )}
       </>)}
     </div>
   );
 }
 
 // ─── InteractiveTaskSquare ────────────────────────────────────────────────────
+
+/**
+ * Phase 6.3 — Optional achievement-square badge data for a cell.
+ *
+ * Orthogonal to `TaskSquareData` (which is shaped around task type).
+ * The parent computes this from the `BoardTask` row's
+ * `isAchievementSquare` + mode-specific fields, plus a lookup against
+ * the workspace's boards / templates. When `undefined`, the cell
+ * renders as a regular task with no achievement-square indicator.
+ */
+export interface AchievementSquareBadgeData {
+  mode: 'aggregate' | 'specificBoard' | 'recurringTemplate';
+  /** Aggregate mode: M / N completion counter. */
+  achievementProgress?: number;
+  achievementCount?: number;
+  /** Specific-board mode: referenced board's display label + greenlog
+   *  status. Falls back to `(deleted board)` when the referenced board
+   *  was soft-deleted, so the cell makes clear why it's not completing. */
+  referencedBoardName?: string;
+  referencedBoardCompleted?: boolean;
+  /** Recurring-template mode: template name + M / N greenlogged spawns
+   *  within the parent board's window. Empty window renders as `0/0`
+   *  with the standard caption — derivation marks the cell incomplete
+   *  in that case. */
+  templateName?: string;
+  templateInWindowGreenlogged?: number;
+  templateInWindowTotal?: number;
+}
 
 interface InteractiveTaskSquareProps {
   sq: TaskSquareData;
@@ -222,6 +271,9 @@ interface InteractiveTaskSquareProps {
   onContextMenu?: (e: React.MouseEvent) => void;
   /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
   onCompoundChildToggle?: (childTaskId: string) => void;
+  /** Phase 6.3: when set, the cell renders an achievement-square badge
+   *  at the top-left indicating cross-board tracking. */
+  achievementBadge?: AchievementSquareBadgeData;
 }
 
 /**
@@ -241,6 +293,7 @@ export function InteractiveTaskSquare({
   state,
   onAct,
   onContextMenu,
+  achievementBadge,
 }: InteractiveTaskSquareProps) {
   const hasProgress = sq.type === 'counting' || sq.type === 'progress' || sq.type === 'compound';
   const fraction = progressFraction(sq, state);
@@ -281,8 +334,21 @@ export function InteractiveTaskSquare({
       {/* Checkmark (visible when completed) */}
       <span className={styles.checkmark}>✓</span>
 
-      {/* Compound badge (top-left, compound tasks only) */}
-      {sq.type === 'compound' && (
+      {/* Phase 6.3: achievement-square badge (top-left). Replaces the
+          compound badge when both apply — achievement-square semantics
+          override the task-type indicator for display purposes (the
+          cell still backs the task; the badge just signals cross-board
+          tracking). */}
+      {achievementBadge && (
+        <span className={styles.achievementBadge} title="Achievement square">
+          🎯 {formatAchievementBadgeLabel(achievementBadge)}
+        </span>
+      )}
+
+      {/* Compound badge (top-left, compound tasks only). Suppressed
+          when an achievement badge is already showing — see comment
+          above. */}
+      {!achievementBadge && sq.type === 'compound' && (
         <span className={styles.compoundBadge}>C</span>
       )}
 
@@ -543,4 +609,33 @@ export function DetailModal({
       </div>
     </div>
   );
+}
+
+// ─── Achievement-square badge label formatter ────────────────────────────────
+//
+// Compact, mode-aware label for the cell badge. Kept as a helper so the
+// modal's render branches stay declarative.
+//
+// - Aggregate: "M/N" (e.g. "3/5"). Falls back to "0/0" if numbers missing.
+// - Specific-board: "✓ Board name" when greenlogged, "Board name" otherwise.
+//   Empty board name (referenced board was deleted) becomes "(deleted)".
+// - Recurring-template: "M/N Template name". Empty template name → "(deleted)".
+function formatAchievementBadgeLabel(badge: AchievementSquareBadgeData): string {
+  switch (badge.mode) {
+    case 'aggregate': {
+      const p = badge.achievementProgress ?? 0;
+      const n = badge.achievementCount ?? 0;
+      return `${p}/${n}`;
+    }
+    case 'specificBoard': {
+      const name = badge.referencedBoardName?.trim() || '(deleted)';
+      return badge.referencedBoardCompleted ? `✓ ${name}` : name;
+    }
+    case 'recurringTemplate': {
+      const name = badge.templateName?.trim() || '(deleted)';
+      const g = badge.templateInWindowGreenlogged ?? 0;
+      const t = badge.templateInWindowTotal ?? 0;
+      return `${g}/${t} ${name}`;
+    }
+  }
 }
