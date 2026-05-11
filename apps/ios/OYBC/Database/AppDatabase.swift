@@ -503,6 +503,19 @@ extension AppDatabase {
         try write { db in
             guard var existing = try BoardTask.fetchOne(db, key: id) else { return }
 
+            // Mutual exclusion against the post-merge state, not just
+            // the inputs. The caller passes `nil` to clear, so a patch
+            // that clears `referencedBoardId` while setting
+            // `referencedTemplateId` is valid. But a caller that only
+            // sets one field (leaving the other untouched in the
+            // existing row) shouldn't be able to slip a both-set
+            // state past us. NOTE: this helper's API treats `nil` as
+            // "clear", so the merged state == the input args
+            // (existing values are always replaced). The guard is
+            // therefore equivalent to checking the inputs — but
+            // documenting the intent here means a future API change
+            // that introduces a "leave unchanged" sentinel won't
+            // accidentally regress the invariant.
             if referencedBoardId != nil && referencedTemplateId != nil {
                 throw DatabaseError(
                     message: "BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive"

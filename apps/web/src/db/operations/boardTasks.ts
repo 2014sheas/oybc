@@ -1,6 +1,6 @@
 import { db } from '../database';
 import type { BoardTask, CreateBoardTaskInput } from '@oybc/shared';
-import { SyncOperationType } from '@oybc/shared';
+import { SyncOperationType, SyncStatus } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -170,11 +170,34 @@ export async function updateAchievementSquareConfig(
     update.referencedTemplateId = patch.referencedTemplateId;
   }
 
-  await db.boardTasks.update(id, update);
-  const updated = await db.boardTasks.get(id);
-  if (updated) {
-    await addToSyncQueue('boardTasks', id, SyncOperationType.UPDATE, updated);
-  }
+  // Atomic update + sync queue enqueue. Without the transaction a
+  // crash between the row write and the queue insert would leave a
+  // locally-updated cell with no sync entry — silent divergence
+  // because the next push pass has nothing to send. Mirrors the iOS
+  // `AppDatabase.updateAchievementSquareConfig` GRDB `write { }` block.
+  await db.transaction('rw', [db.boardTasks, db.syncQueue], async () => {
+    await db.boardTasks.update(id, update);
+    const updated = await db.boardTasks.get(id);
+    if (!updated) return;
+    // Inline the sync-queue insert rather than calling addToSyncQueue
+    // — that helper uses its own implicit transaction, and Dexie
+    // doesn't let you nest transactions on the same connection.
+    if (import.meta.env.DEV) {
+      const userId = (updated as unknown as { userId?: string }).userId;
+      if (userId === 'playground-user-1') return;
+    }
+    await db.syncQueue.add({
+      id: generateUUID(),
+      entityType: 'boardTasks',
+      entityId: id,
+      operationType: SyncOperationType.UPDATE,
+      payload: JSON.stringify(updated),
+      status: SyncStatus.PENDING,
+      retryCount: 0,
+      createdAt: currentTimestamp(),
+      priority: 0,
+    });
+  });
 }
 
 /**

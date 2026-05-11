@@ -38,7 +38,7 @@ struct AchievementSquareConfigSheet: View {
         var description: String {
             switch self {
             case .aggregate:
-                return "Completes after N boards of the chosen timeframe meet the chosen condition."
+                return "Completes after N boards of the chosen timeframe meet the chosen condition (bingo or full completion)."
             case .specificBoard:
                 return "Completes when one named board greenlogs."
             case .recurringTemplate:
