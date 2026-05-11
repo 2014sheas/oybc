@@ -159,4 +159,142 @@ export async function clearTemplates(page: Page): Promise<void> {
   });
 }
 
+// ─── Phase 6.3 — Board / Task / BoardTask seed helpers ──────────────────────
+//
+// Same raw-IDB pattern as `seedTemplate` above. The Phase 6.3
+// achievement-square spec needs a parent board with a placed cell to
+// right-click, plus optional peer boards / templates for the modal's
+// pickers. Each helper takes a loosely-typed `Record` (avoids pulling
+// `@oybc/shared` into the e2e module graph) and writes one row.
+
+export interface SeedBoard {
+  id: string;
+  name: string;
+  boardSize: 3 | 4 | 5;
+  timeframe: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  status: 'active' | 'completed' | 'archived' | 'draft';
+  startDate: string;
+  endDate: string;
+  centerSquareType?: 'free' | 'custom_free' | 'none' | 'chosen';
+  isRandomized?: boolean;
+  totalTasks?: number;
+  completedTasks?: number;
+  linesCompleted?: number;
+  completedLineIds?: string[];
+  spawnedFromTemplateId?: string;
+}
+
+export async function seedBoard(page: Page, board: SeedBoard): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    userId: BYPASS_USER_ID,
+    centerSquareType: 'free',
+    isRandomized: false,
+    totalTasks: board.boardSize * board.boardSize,
+    completedTasks: 0,
+    linesCompleted: 0,
+    completedLineIds: [],
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+    ...board,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['boards'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('boards').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
+export interface SeedTask {
+  id: string;
+  title: string;
+  type: 'normal' | 'counting' | 'compound';
+}
+
+export async function seedTask(page: Page, task: SeedTask): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    userId: BYPASS_USER_ID,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+    ...task,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['tasks'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('tasks').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
+export interface SeedBoardTask {
+  id: string;
+  boardId: string;
+  taskId: string;
+  row: number;
+  col: number;
+  isCenter?: boolean;
+  isAchievementSquare?: boolean;
+  achievementType?: 'bingo' | 'full_completion';
+  achievementCount?: number;
+  achievementTimeframe?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  referencedBoardId?: string;
+  referencedTemplateId?: string;
+}
+
+export async function seedBoardTask(page: Page, boardTask: SeedBoardTask): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    isCenter: false,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    ...boardTask,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['boardTasks'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('boardTasks').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
 export { expect } from '@playwright/test';
