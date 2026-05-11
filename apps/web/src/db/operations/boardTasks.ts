@@ -74,10 +74,21 @@ export async function fetchBoardTasksForBoards(
 
 /**
  * Create a board task (add task to board)
+ *
+ * Phase 6.3: enforces mutual exclusion between `referencedBoardId` and
+ * `referencedTemplateId` defensively (Zod refinement is the primary
+ * guard; this is belt-and-braces). Cycle detection happens in the UI
+ * layer where the user can see the cyclePath; this helper assumes the
+ * caller has already cleared a cycle check.
  */
 export async function createBoardTask(
   input: CreateBoardTaskInput
 ): Promise<BoardTask> {
+  if (input.referencedBoardId && input.referencedTemplateId) {
+    throw new Error(
+      'BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive',
+    );
+  }
   const boardTask: BoardTask = {
     id: generateUUID(),
     boardId: input.boardId,
@@ -89,6 +100,8 @@ export async function createBoardTask(
     achievementType: input.achievementType,
     achievementCount: input.achievementCount,
     achievementTimeframe: input.achievementTimeframe,
+    referencedBoardId: input.referencedBoardId,
+    referencedTemplateId: input.referencedTemplateId,
     createdAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
     version: 1,
@@ -97,6 +110,71 @@ export async function createBoardTask(
   await db.boardTasks.add(boardTask);
   await addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
   return boardTask;
+}
+
+/**
+ * Phase 6.3: update an existing BoardTask's achievement-square config.
+ * The cycle-detection check lives in the UI layer (so the user gets the
+ * cyclePath surfaced); this helper just enforces mutual exclusion and
+ * persists the patch + sync queue entry.
+ *
+ * Pass `null` for either reference field to explicitly clear it (e.g.,
+ * switching from specific-board mode back to aggregate). Undefined
+ * leaves the existing value unchanged.
+ */
+export async function updateAchievementSquareConfig(
+  id: string,
+  patch: {
+    isAchievementSquare?: boolean;
+    achievementType?: 'bingo' | 'full_completion';
+    achievementCount?: number;
+    achievementTimeframe?: BoardTask['achievementTimeframe'];
+    referencedBoardId?: string | null;
+    referencedTemplateId?: string | null;
+  },
+): Promise<void> {
+  const existing = await db.boardTasks.get(id);
+  if (!existing) return;
+
+  const nextRefBoard =
+    patch.referencedBoardId === null
+      ? undefined
+      : patch.referencedBoardId ?? existing.referencedBoardId;
+  const nextRefTemplate =
+    patch.referencedTemplateId === null
+      ? undefined
+      : patch.referencedTemplateId ?? existing.referencedTemplateId;
+  if (nextRefBoard && nextRefTemplate) {
+    throw new Error(
+      'BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive',
+    );
+  }
+
+  const update: Partial<BoardTask> = {
+    updatedAt: currentTimestamp(),
+    version: (existing.version ?? 0) + 1,
+  };
+  if (patch.isAchievementSquare !== undefined) update.isAchievementSquare = patch.isAchievementSquare;
+  if (patch.achievementType !== undefined) update.achievementType = patch.achievementType;
+  if (patch.achievementCount !== undefined) update.achievementCount = patch.achievementCount;
+  if (patch.achievementTimeframe !== undefined) update.achievementTimeframe = patch.achievementTimeframe;
+  // `null` patch sentinel clears the field; `undefined` leaves it untouched.
+  if (patch.referencedBoardId === null) {
+    update.referencedBoardId = undefined;
+  } else if (patch.referencedBoardId !== undefined) {
+    update.referencedBoardId = patch.referencedBoardId;
+  }
+  if (patch.referencedTemplateId === null) {
+    update.referencedTemplateId = undefined;
+  } else if (patch.referencedTemplateId !== undefined) {
+    update.referencedTemplateId = patch.referencedTemplateId;
+  }
+
+  await db.boardTasks.update(id, update);
+  const updated = await db.boardTasks.get(id);
+  if (updated) {
+    await addToSyncQueue('boardTasks', id, SyncOperationType.UPDATE, updated);
+  }
 }
 
 /**

@@ -171,6 +171,18 @@ export class AppDatabase extends Dexie {
         updatedAt
       `,
     });
+
+    // v7: Phase 6.3 — board-completion-as-a-square. BoardTask gains two
+    // optional fields, `referencedBoardId` (specific-board mode) and
+    // `referencedTemplateId` (recurring-template mode). Neither is
+    // indexed (lookups are per-row inside `derivationPass`, not table-
+    // wide scans), so the `.stores()` call is intentionally empty —
+    // Dexie stores the full BoardTask object verbatim and the new
+    // fields ride along automatically. Bumping the version is what
+    // makes Dexie open the existing IDB at the new version number
+    // without erroring on the "downgrade" check; the schema string is
+    // unchanged from v1.
+    this.version(7).stores({});
   }
 }
 
