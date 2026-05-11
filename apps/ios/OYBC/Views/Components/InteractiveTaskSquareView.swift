@@ -55,6 +55,13 @@ struct InteractiveTaskSquareView: View {
     var onTap: (() -> Void)? = nil
     var isReadOnly: Bool = false
 
+    // Phase 6.3 — Optional achievement-square badge data. When set, the
+    // cell renders a 🎯-prefixed pill at the top-left indicating
+    // cross-board tracking. Replaces the "C" compound badge when both
+    // apply (achievement-square semantics override the task-type
+    // indicator for display purposes; the cell still backs the task).
+    var achievementBadge: AchievementSquareBadgeData? = nil
+
     // Size
     var size: CGFloat = 90
 
@@ -218,7 +225,9 @@ struct InteractiveTaskSquareView: View {
             }
 
             // ── "C" badge (top-left corner for compound squares) ──
-            if taskType == .compound {
+            // Suppressed when an achievement badge is rendering — the
+            // achievement-square indicator takes priority on display.
+            if taskType == .compound && achievementBadge == nil {
                 VStack {
                     HStack {
                         Text("C")
@@ -232,6 +241,37 @@ struct InteractiveTaskSquareView: View {
                     }
                     Spacer()
                 }
+            }
+
+            // ── Phase 6.3: achievement-square badge (top-left) ──
+            // Pill-shaped to carry the mode + counts label inline. Sits
+            // in the same top-left slot as the "C" badge; suppresses
+            // the "C" badge when both apply (see the compound branch
+            // above).
+            if let badge = achievementBadge {
+                VStack {
+                    HStack {
+                        HStack(spacing: 2) {
+                            Text("🎯")
+                                .font(.system(size: 8))
+                            Text(badge.displayLabel)
+                                .font(.system(size: 8, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(red: 0.39, green: 0.4, blue: 0.95).opacity(0.18))
+                        )
+                        .foregroundColor(isCompleted ? .white : .primary)
+                        .padding(4)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .accessibilityLabel("Achievement square — \(badge.displayLabel)")
             }
         }
         .frame(width: size, height: size)

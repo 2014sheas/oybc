@@ -91,6 +91,12 @@ private func bpvRunCrossBoardCascade(
         .fetchAll(db)
     let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
     let allTasks: [Task] = try Task.fetchAll(db)
+    // Phase 6.3 — DerivationPass.computeBoardStatsUpdate needs the
+    // workspace's boards to evaluate the specific-board / recurring-
+    // template achievement branches. Pre-6.3 calls omitted this and
+    // the algorithm defaults to []; on this cascade path we already
+    // have the data fetched, so use it.
+    let allBoards: [Board] = try Board.fetchAll(db)
 
     var taskById: [String: Task] = [:]
     for t in allTasks { taskById[t.id] = t }
@@ -117,7 +123,8 @@ private func bpvRunCrossBoardCascade(
             board: board,
             boardTasksOnBoard: boardTasksOnBoard,
             childrenByCompound: childrenByCompound,
-            taskById: taskById
+            taskById: taskById,
+            allBoards: allBoards
         )
 
         let totalSquares = board.boardSize * board.boardSize
@@ -185,10 +192,21 @@ struct BoardPlayView: View {
     @State private var boardTasks: [BoardTask] = []
     @State private var allTasks: [Task] = []
     @State private var allCompoundChildren: [CompoundChild] = []
+    // Phase 6.3 — workspace-wide boards + templates feed both the
+    // achievement-square config sheet (for the pickers) and the per-
+    // cell badge data computation. Refreshed alongside `loadTaskData`
+    // so the sheet always sees up-to-date data when opened.
+    @State private var allBoardsInWorkspace: [Board] = []
+    @State private var allTemplatesInWorkspace: [RecurringBoardTemplate] = []
+    @State private var allBoardTasksInWorkspace: [BoardTask] = []
 
     @State private var isProcessing = false
     @State private var bingoMessage: String?
     @State private var detailBoardTaskId: String?
+    /// Phase 6.3 — when set, the achievement-square config sheet
+    /// mounts for this BoardTask. Cleared on save or cancel. Lives
+    /// alongside `detailBoardTaskId` (independent surfaces).
+    @State private var configuringAchievementSquareId: String?
 
     // MARK: - Computed
 
@@ -297,6 +315,109 @@ struct BoardPlayView: View {
         )) {
             detailSheet
         }
+        // Phase 6.3 — Achievement-square config sheet. Mounted via its
+        // own binding (independent of the detail sheet above) so both
+        // surfaces can open without interfering.
+        .sheet(isPresented: Binding(
+            get: { configuringAchievementSquareId != nil },
+            set: { if !$0 { configuringAchievementSquareId = nil } }
+        )) {
+            achievementConfigSheet
+        }
+    }
+
+    // MARK: - Phase 6.3: achievement-square config sheet mount
+
+    @ViewBuilder
+    private var achievementConfigSheet: some View {
+        if let id = configuringAchievementSquareId,
+           let bt = boardTasks.first(where: { $0.id == id }),
+           let parent = board {
+            let title = taskMap[bt.taskId]?.title ?? "(unknown task)"
+            AchievementSquareConfigSheet(
+                boardTask: bt,
+                parentBoard: parent,
+                allBoards: allBoardsInWorkspace,
+                allBoardTasks: allBoardTasksInWorkspace,
+                allTemplates: allTemplatesInWorkspace,
+                taskTitle: title,
+                onSave: { patch in
+                    try AppDatabase.shared.updateAchievementSquareConfig(
+                        id: bt.id,
+                        isAchievementSquare: patch.isAchievementSquare,
+                        achievementType: patch.achievementType,
+                        achievementCount: patch.achievementCount,
+                        achievementTimeframe: patch.achievementTimeframe,
+                        referencedBoardId: patch.referencedBoardId,
+                        referencedTemplateId: patch.referencedTemplateId
+                    )
+                    // Re-run derivation so the cell's visual state
+                    // catches up immediately. Cascade is keyed off the
+                    // backing Task id — that lets DerivationPass pick
+                    // up this BoardTask along with any other cells
+                    // backed by the same task.
+                    _Concurrency.Task.detached {
+                        try? await AppDatabase.shared.dbQueue.write { db in
+                            _ = try bpvRunCrossBoardCascade(
+                                db: db,
+                                changedTaskId: bt.taskId,
+                                now: AppDatabase.currentTimestamp()
+                            )
+                        }
+                        await MainActor.run {
+                            loadBoard()
+                            loadBoardTasks()
+                            loadTaskData()
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    // MARK: - Phase 6.3: per-cell achievement-square badge data
+
+    /// Compute the achievement-square badge for one BoardTask. nil if
+    /// the cell is not an achievement square. Mirrors the TS-side
+    /// `achievementBadgesByBoardTaskId` memo in BoardPlayPage.tsx.
+    /// Called inline by `playSquare(boardTask:)` — cells with no
+    /// achievement-square fields skip the lookup entirely (early
+    /// return on the isAchievementSquare guard).
+    private func achievementBadge(for bt: BoardTask) -> AchievementSquareBadgeData? {
+        guard bt.isAchievementSquare == true else { return nil }
+        guard let parent = board else { return nil }
+        // Precedence: referencedBoardId wins when both somehow get set.
+        // Mirrors derivationPass's bad-data rule.
+        if let refBoardId = bt.referencedBoardId {
+            let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted })
+            return AchievementSquareBadgeData(
+                mode: .specificBoard,
+                referencedBoardName: ref?.name,
+                referencedBoardCompleted: ref?.status == .completed
+            )
+        }
+        if let refTemplateId = bt.referencedTemplateId {
+            let template = allTemplatesInWorkspace.first(where: { $0.id == refTemplateId })
+            let spawns = allBoardsInWorkspace.filter { b in
+                !b.isDeleted
+                    && b.spawnedFromTemplateId == refTemplateId
+                    && b.startDate >= parent.startDate
+                    && b.startDate <= parent.endDate
+            }
+            let completed = spawns.filter { $0.status == .completed }.count
+            return AchievementSquareBadgeData(
+                mode: .recurringTemplate,
+                templateName: template?.name,
+                templateInWindowGreenlogged: completed,
+                templateInWindowTotal: spawns.count
+            )
+        }
+        // Aggregate mode (pre-6.3 behavior).
+        return AchievementSquareBadgeData(
+            mode: .aggregate,
+            achievementProgress: bt.achievementProgress ?? 0,
+            achievementCount: bt.achievementCount ?? 0
+        )
     }
 
     // MARK: - Stats Bar
@@ -407,6 +528,8 @@ struct BoardPlayView: View {
             return task.isCompleted
         }()
 
+        let badge = achievementBadge(for: boardTask)
+
         switch taskType {
         case .normal:
             InteractiveTaskSquareView(
@@ -416,7 +539,8 @@ struct BoardPlayView: View {
                 onTap: {
                     guard !isBoardLocked else { return }
                     handleNormalTap(boardTask: boardTask)
-                }
+                },
+                achievementBadge: badge
             )
             .contextMenu {
                 Button(
@@ -430,6 +554,15 @@ struct BoardPlayView: View {
 
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
+                }
+
+                // Phase 6.3 — achievement-square entry point. Always
+                // available so any cell can be converted, regardless
+                // of task type or current achievement-square state
+                // (the sheet's "Treat as achievement square" toggle
+                // handles the off-state).
+                Button("Configure as achievement square…", systemImage: "target") {
+                    configuringAchievementSquareId = boardTask.id
                 }
             }
 
@@ -450,7 +583,8 @@ struct BoardPlayView: View {
                 onTap: {
                     guard !isBoardLocked else { return }
                     if let t = task { handleCountingTap(boardTask: boardTask, task: t) }
-                }
+                },
+                achievementBadge: badge
             )
             .contextMenu {
                 if let t = task {
@@ -469,6 +603,11 @@ struct BoardPlayView: View {
                     Button("View Details", systemImage: "info.circle") {
                         detailBoardTaskId = boardTask.id
                     }
+                }
+
+                // Phase 6.3 — see the .normal branch comment above.
+                Button("Configure as achievement square…", systemImage: "target") {
+                    configuringAchievementSquareId = boardTask.id
                 }
             }
 
@@ -499,7 +638,8 @@ struct BoardPlayView: View {
                     onTap: {
                         guard !isBoardLocked else { return }
                         detailBoardTaskId = boardTask.id
-                    }
+                    },
+                    achievementBadge: badge
                 )
                 // Transparent overlay ensures compound taps always open the detail sheet,
                 // matching the progress-square pattern.
@@ -514,6 +654,11 @@ struct BoardPlayView: View {
             .contextMenu {
                 Button("View Children", systemImage: "list.bullet") {
                     detailBoardTaskId = boardTask.id
+                }
+
+                // Phase 6.3 — see the .normal branch comment above.
+                Button("Configure as achievement square…", systemImage: "target") {
+                    configuringAchievementSquareId = boardTask.id
                 }
             }
         }
@@ -1007,9 +1152,24 @@ struct BoardPlayView: View {
                 try? AppDatabase.shared.fetchTasks(userId: id)
             } ?? []
             let children = (try? AppDatabase.shared.fetchAllCompoundChildren()) ?? []
+            // Phase 6.3 — workspace-wide boards + templates + board_tasks
+            // for the achievement-square config sheet (pickers) and the
+            // per-cell badge data computation. Same fetch pattern as
+            // tasks above — runs once per onAppear, refreshed alongside
+            // the spawn-driver pass.
+            let workspaceBoards = userId.flatMap { id in
+                try? AppDatabase.shared.fetchBoards(userId: id)
+            } ?? []
+            let workspaceTemplates = userId.flatMap { id in
+                try? AppDatabase.shared.fetchRecurringBoardTemplates(userId: id)
+            } ?? []
+            let workspaceBoardTasks = (try? AppDatabase.shared.fetchAllBoardTasks()) ?? []
             await MainActor.run {
                 allTasks = tasks
                 allCompoundChildren = children
+                allBoardsInWorkspace = workspaceBoards
+                allTemplatesInWorkspace = workspaceTemplates
+                allBoardTasksInWorkspace = workspaceBoardTasks
             }
         }
     }

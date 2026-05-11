@@ -468,6 +468,71 @@ extension AppDatabase {
         }
     }
 
+    /// Phase 6.3 — Apply an achievement-square config patch to a
+    /// BoardTask. iOS twin of web's `updateAchievementSquareConfig`
+    /// in `apps/web/src/db/operations/boardTasks.ts`.
+    ///
+    /// The patch fields are exactly the shape the
+    /// `AchievementSquareConfigSheet` builds. Nil means "clear this
+    /// field" (the sheet always writes every relevant field
+    /// explicitly so a prior mode's value can't bleed through). The
+    /// version bump + sync queue entry land inside a single GRDB
+    /// write transaction so a sync push observing this row sees a
+    /// consistent state.
+    ///
+    /// Enforces mutual exclusion between `referencedBoardId` and
+    /// `referencedTemplateId` against the merged final state (NOT
+    /// just the input — a patch that clears one while setting the
+    /// other is fine). Throws if both end up set.
+    ///
+    /// - Parameters:
+    ///   - id: BoardTask.id to update. No-op if the row doesn't exist.
+    ///   - isAchievementSquare: If non-nil, overwrites the field.
+    ///   - achievementType / achievementCount / achievementTimeframe:
+    ///     If non-nil, overwrite. Nil clears.
+    ///   - referencedBoardId / referencedTemplateId: Nil clears.
+    func updateAchievementSquareConfig(
+        id: String,
+        isAchievementSquare: Bool?,
+        achievementType: AchievementType?,
+        achievementCount: Int?,
+        achievementTimeframe: Timeframe?,
+        referencedBoardId: String?,
+        referencedTemplateId: String?
+    ) throws {
+        try write { db in
+            guard var existing = try BoardTask.fetchOne(db, key: id) else { return }
+
+            if referencedBoardId != nil && referencedTemplateId != nil {
+                throw DatabaseError(
+                    message: "BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive"
+                )
+            }
+
+            if let v = isAchievementSquare { existing.isAchievementSquare = v }
+            existing.achievementType = achievementType
+            existing.achievementCount = achievementCount
+            existing.achievementTimeframe = achievementTimeframe
+            existing.referencedBoardId = referencedBoardId
+            existing.referencedTemplateId = referencedTemplateId
+            existing.updatedAt = Self.currentTimestamp()
+            existing.version += 1
+
+            try existing.save(db)
+
+            // Enqueue sync. Inside the same write txn so a crash between
+            // the row write and the queue insert can't leave the local
+            // DB in an inconsistent state.
+            try SyncQueueBuilder.makeItem(
+                entityType: "boardTasks",
+                entityId: existing.id,
+                operationType: .update,
+                payload: existing,
+                now: existing.updatedAt
+            ).insert(db)
+        }
+    }
+
     /// Fetch every BoardTask in the workspace. Used by the derivation pass
     /// to find which boards contain a given task (directly or via a compound).
     /// Small-N: typical user has under a few thousand BoardTasks.
