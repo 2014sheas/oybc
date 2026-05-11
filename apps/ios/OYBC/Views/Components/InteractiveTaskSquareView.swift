@@ -247,13 +247,18 @@ struct InteractiveTaskSquareView: View {
             // Pill-shaped to carry the mode + counts label inline. Sits
             // in the same top-left slot as the "C" badge; suppresses
             // the "C" badge when both apply (see the compound branch
-            // above).
+            // above). Uses the SF Symbol `target` rather than a 🎯
+            // emoji so the badge renders deterministically across
+            // simulator runtimes — the snapshot harness's headless
+            // simulator lacks the Color Emoji font and would show a
+            // broken-glyph placeholder, locking that into committed
+            // baselines.
             if let badge = achievementBadge {
                 VStack {
                     HStack {
                         HStack(spacing: 2) {
-                            Text("🎯")
-                                .font(.system(size: 8))
+                            Image(systemName: "target")
+                                .font(.system(size: 8, weight: .semibold))
                             Text(badge.displayLabel)
                                 .font(.system(size: 8, weight: .semibold))
                                 .lineLimit(1)
