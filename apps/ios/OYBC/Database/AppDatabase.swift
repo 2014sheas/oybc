@@ -309,6 +309,34 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN spawnedFromTemplateId TEXT")
         }
 
+        // v9: Phase 6.3 — board-completion-as-a-square.
+        //
+        //   Add two optional columns to board_tasks for the new
+        //   achievement-square modes:
+        //     - referencedBoardId TEXT — specific-board mode. Square
+        //       completes when the named board's status is COMPLETED
+        //       and !isDeleted.
+        //     - referencedTemplateId TEXT — recurring-template mode.
+        //       Square completes when ALL in-window non-deleted spawns
+        //       of that template are COMPLETED.
+        //
+        //   Both fields are nullable, additive, and NOT indexed (lookups
+        //   happen inside derivationPass per-row, not via table scans).
+        //   No FK constraints — adding a FK to an existing table in
+        //   SQLite requires a full table rebuild, and templates/boards
+        //   are soft-deleted only so a FK ON DELETE clause would never
+        //   fire (mirrors the 6.2 spawnedFromTemplateId precedent).
+        //
+        //   Mutual exclusion (at most one set per row) is enforced at
+        //   the Zod refinement layer in the shared package; iOS does
+        //   not duplicate the constraint at the GRDB level because the
+        //   only producer is the (yet-to-build) achievement-square
+        //   config UI which has its own validation.
+        migrator.registerMigration("v9") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedBoardId TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedTemplateId TEXT")
+        }
+
         return migrator
     }
 

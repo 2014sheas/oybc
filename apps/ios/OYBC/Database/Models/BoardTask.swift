@@ -28,6 +28,24 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     var achievementTimeframe: Timeframe?
     var achievementProgress: Int?
 
+    /// Phase 6.3 — Specific-board mode. When set, the achievement
+    /// square watches this single named board and completes when the
+    /// referenced board's `status == .completed` (greenlog) and is
+    /// non-deleted. Mutually exclusive with `referencedTemplateId`;
+    /// Zod refinement on the wire schema rejects rows that set both,
+    /// and the shared `derivationPass` has a defensive precedence
+    /// rule (`referencedBoardId` wins) for the case where bad data
+    /// slips through anyway.
+    var referencedBoardId: String?
+
+    /// Phase 6.3 — Recurring-template mode. When set, the achievement
+    /// square watches all spawns of this template whose `startDate`
+    /// falls within the parent board's `[startDate, endDate]` window.
+    /// Completes when the in-window non-deleted spawn set is non-empty
+    /// AND every member is `.completed`. Mutually exclusive with
+    /// `referencedBoardId`.
+    var referencedTemplateId: String?
+
     // Timestamps
     var createdAt: String // ISO8601
     var updatedAt: String // ISO8601
@@ -61,6 +79,8 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         achievementCount: Int? = nil,
         achievementTimeframe: Timeframe? = nil,
         achievementProgress: Int? = nil,
+        referencedBoardId: String? = nil,
+        referencedTemplateId: String? = nil,
         createdAt: String,
         updatedAt: String,
         lastSyncedAt: String? = nil,
@@ -77,6 +97,8 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         self.achievementCount = achievementCount
         self.achievementTimeframe = achievementTimeframe
         self.achievementProgress = achievementProgress
+        self.referencedBoardId = referencedBoardId
+        self.referencedTemplateId = referencedTemplateId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastSyncedAt = lastSyncedAt
@@ -90,6 +112,7 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         case row, col, isCenter
         case isAchievementSquare, achievementType, achievementCount
         case achievementTimeframe, achievementProgress
+        case referencedBoardId, referencedTemplateId
         case createdAt, updatedAt
         case lastSyncedAt, version
     }
@@ -109,6 +132,8 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         achievementCount = try container.decodeIfPresent(Int.self, forKey: .achievementCount)
         achievementTimeframe = try container.decodeIfPresent(Timeframe.self, forKey: .achievementTimeframe)
         achievementProgress = try container.decodeIfPresent(Int.self, forKey: .achievementProgress)
+        referencedBoardId = try container.decodeIfPresent(String.self, forKey: .referencedBoardId)
+        referencedTemplateId = try container.decodeIfPresent(String.self, forKey: .referencedTemplateId)
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         lastSyncedAt = try container.decodeIfPresent(String.self, forKey: .lastSyncedAt)
@@ -130,6 +155,8 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         try container.encodeIfPresent(achievementCount, forKey: .achievementCount)
         try container.encodeIfPresent(achievementTimeframe, forKey: .achievementTimeframe)
         try container.encodeIfPresent(achievementProgress, forKey: .achievementProgress)
+        try container.encodeIfPresent(referencedBoardId, forKey: .referencedBoardId)
+        try container.encodeIfPresent(referencedTemplateId, forKey: .referencedTemplateId)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)
