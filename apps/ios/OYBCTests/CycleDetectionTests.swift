@@ -204,6 +204,29 @@ final class CycleDetectionTests: XCTestCase {
         XCTAssertEqual(result, .ok)
     }
 
+    func testHasCycle_MultiParentCandidate_Rejected() {
+        // Pre-existing: an achievement Task watching A placed on C.
+        // Candidate: an achievement Task watching C, placed on BOTH A and B.
+        // Adjacency A→C and B→C are added by the multi-parent edge-injection
+        // loop. The C→A edge already exists, so start=C → A (in parentSet)
+        // closes a cycle through parent A. Exercises the `for parentId in
+        // parentBoardIds` branch in CycleDetection.hasCycle.
+        let a = board("a")
+        let b = board("b")
+        let c = board("c")
+        let tCA = achievementTask("tCA", referencedBoardId: "a")
+        let pCA = placement("c", "tCA")
+        let result = CycleDetection.hasCycle(
+            candidate: CycleCheckCandidate(parentBoardIds: ["a", "b"], referencedBoardId: "c", referencedTemplateId: nil),
+            context: CycleCheckContext(allBoardTasks: [pCA], allTasks: [tCA], allBoards: [a, b, c])
+        )
+        if case .cycle = result {
+            // pass
+        } else {
+            XCTFail("expected cycle via multi-parent placement → C → A loop")
+        }
+    }
+
     func testHasCycle_NonAchievementTaskPlacement_ContributesNoEdges() {
         // A NORMAL Task placed on B has no reference → no edge contributed.
         // Candidate A→B is therefore safe.

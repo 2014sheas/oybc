@@ -57,6 +57,12 @@ struct CreateNewTaskFormView: View {
                 // leaves stale fields with the picker showing the "Use template"
                 // affordance, silently submitting another task's action+unit.
                 form.clearTemplate()
+                // Phase 6.3 — reset the achievement-mode picker so the user
+                // doesn't return to Achievement and find a stale
+                // recurringTemplate mode selected with an empty picker
+                // beneath. specificBoard is the default.
+                form.achievementMode = .specificBoard
+                form.achievementReferenceId = nil
             }
 
             if form.taskType == .composite {

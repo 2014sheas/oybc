@@ -173,6 +173,10 @@ enum CycleDetection {
 
     /// Iterative DFS — returns the path from `start` to any node in
     /// `targets` if reachable, or nil if not.
+    ///
+    /// The `visited` check runs BEFORE the `targets` hit-check so a node
+    /// we've already explored isn't reported as a fresh hit on its second
+    /// pop. Mirrors `dfsToAnyTarget` in the TypeScript twin.
     private static func dfsToAnyTarget(
         start: String,
         targets: Set<String>,
@@ -181,8 +185,8 @@ enum CycleDetection {
     ) -> [String]? {
         var stack: [(node: String, path: [String])] = [(start, [start])]
         while let frame = stack.popLast() {
-            if targets.contains(frame.node) { return frame.path }
             if visited.contains(frame.node) { continue }
+            if targets.contains(frame.node) { return frame.path }
             visited.insert(frame.node)
             guard let neighbors = adjacency[frame.node] else { continue }
             for next in neighbors where !visited.contains(next) {

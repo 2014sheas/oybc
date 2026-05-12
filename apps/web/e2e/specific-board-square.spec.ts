@@ -101,7 +101,11 @@ test.describe('Phase 6.3 achievement task creator', () => {
     await page.getByRole('button', { name: /^Achievement$/ }).click();
     // Fill title, leave the picker empty.
     await page.getByPlaceholder(/enter task title/i).fill('Watch wellness');
-    await page.getByRole('button', { name: /Create & Add to Pool/i }).click();
+    // The /create hub mounts CreateNewTaskForm via CreateHubQuickAdd, which
+    // overrides the submit label to "Add to library" (Vs the legacy
+    // "Create & Add to Pool"). Target both labels so this spec stays valid
+    // whether the hub or the wizard's NewTaskSheet hosts the form.
+    await page.getByRole('button', { name: /Add to library|Create & Add to Pool/i }).click();
     await expect(page.getByText(/Pick a board to watch/i)).toBeVisible();
   });
 
@@ -110,7 +114,11 @@ test.describe('Phase 6.3 achievement task creator', () => {
     await page.getByRole('button', { name: /^Achievement$/ }).click();
     await page.getByPlaceholder(/enter task title/i).fill('Watch Daily Wellness');
     await page.locator('#create-task-ach-board').selectOption(PEER_BOARD_ID);
-    await page.getByRole('button', { name: /Create & Add to Pool/i }).click();
+    // The /create hub mounts CreateNewTaskForm via CreateHubQuickAdd, which
+    // overrides the submit label to "Add to library" (Vs the legacy
+    // "Create & Add to Pool"). Target both labels so this spec stays valid
+    // whether the hub or the wizard's NewTaskSheet hosts the form.
+    await page.getByRole('button', { name: /Add to library|Create & Add to Pool/i }).click();
 
     // After submit, the form resets — the title field is empty again.
     await expect(page.getByPlaceholder(/enter task title/i)).toHaveValue('');

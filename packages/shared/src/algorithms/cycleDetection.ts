@@ -189,6 +189,15 @@ export function hasCycle(
  * Iterative DFS — returns the path from `start` to any node in `targets`
  * if reachable, or `null` if not. Visited-set prevents revisits (graph may
  * have cycles unrelated to the candidate).
+ *
+ * The `visited` check runs BEFORE the `targets` hit-check so a node we've
+ * already explored isn't reported as a fresh hit on its second pop. This
+ * matters for graphs where an intermediate node is also in `targets`:
+ * without the early-skip, the path returned would include the already-
+ * visited node at the end rather than being a clean reachability path.
+ * The self-reference guards in `hasCycle` already short-circuit the
+ * "start node is in targets" case, so the explicit hit check below is
+ * only reached for genuine traversal endpoints.
  */
 function dfsToAnyTarget(
   start: string,
@@ -200,8 +209,8 @@ function dfsToAnyTarget(
   const stack: Array<{ node: string; path: string[] }> = [{ node: start, path: [start] }];
   while (stack.length > 0) {
     const { node, path } = stack.pop()!;
-    if (targets.has(node)) return path;
     if (visited.has(node)) continue;
+    if (targets.has(node)) return path;
     visited.add(node);
     const neighbors = adjacency.get(node);
     if (!neighbors) continue;

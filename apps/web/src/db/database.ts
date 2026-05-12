@@ -74,6 +74,9 @@ export class AppDatabase extends Dexie {
       // BoardTask. The string is preserved here so legacy on-disk
       // databases match the originally-declared schema; Dexie diffs the
       // declared schema across versions to migrate.
+      // NOTE: indexes below marked /* legacy */ are intentionally kept
+      // here as the v1 baseline; live queries don't use them. v7 drops
+      // them from the actual schema (see further down).
       boardTasks: `
         id,
         [boardId+isCompleted],

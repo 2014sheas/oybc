@@ -172,12 +172,28 @@ export const CreateTaskInputSchema = z.object({
 export const UpdateTaskInputSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
+  /**
+   * Phase 6.3 — `type` is optional on update because callers usually
+   * patch other fields and leave the type alone. When present, the
+   * refinements below check `referencedBoardId` / `referencedTemplateId`
+   * against the patched type. When absent, the refinements skip the
+   * type-match check (the helper layer is expected to fetch the
+   * existing row and re-validate against its post-merge state — see
+   * `updateTask` in `apps/web/src/db/operations/tasks.ts`).
+   */
+  type: z.nativeEnum(TaskType).optional(),
   // `null` sentinel clears the field; `undefined` leaves it untouched.
   referencedBoardId: z.string().uuid().nullable().optional(),
   referencedTemplateId: z.string().uuid().nullable().optional(),
 }).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
+).refine(
+  achievementRequiresReference,
+  { message: "Achievement tasks must set exactly one of referencedBoardId or referencedTemplateId" },
+).refine(
+  referenceFieldsForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
 );
 
 // ===== Compound creation input =====

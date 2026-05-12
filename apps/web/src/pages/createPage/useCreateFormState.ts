@@ -311,8 +311,11 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     setAction('');
     setUnit('');
     setMaxCountStr('');
-    // Phase 6.3 — clear achievement-mode picker so switching to ACHIEVEMENT
-    // doesn't surface a stale reference id from a prior selection.
+    // Phase 6.3 — reset the achievement-mode picker fully (mode + ref id)
+    // so type-out-then-back-in doesn't surface a stale recurringTemplate
+    // selection with an empty picker beneath. specificBoard is the
+    // default mode.
+    setAchievementMode('specificBoard');
     setAchievementReferenceId(null);
     setErrors((prev) => ({
       ...prev,
