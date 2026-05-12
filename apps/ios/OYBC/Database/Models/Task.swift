@@ -35,6 +35,15 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
     var threshold: Int?
     var isOrdered: Bool?
 
+    // Phase 6.3 — Achievement-task cross-board references (only
+    // meaningful when type == .achievement). Mutually exclusive; the
+    // Zod refinement on shared TaskSchema rejects rows with both set,
+    // and derivation has a defensive precedence rule (`referencedBoardId`
+    // wins) for bad data that slips through anyway. Setting either
+    // field on a non-ACHIEVEMENT task is rejected at the write helper.
+    var referencedBoardId: String?
+    var referencedTemplateId: String?
+
     // Task linking (for tasks used as progress steps)
     var parentStepId: String?
     var parentStepIndex: Int?
@@ -82,6 +91,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         operatorType: OperatorType? = nil,
         threshold: Int? = nil,
         isOrdered: Bool? = nil,
+        referencedBoardId: String? = nil,
+        referencedTemplateId: String? = nil,
         parentStepId: String? = nil,
         parentStepIndex: Int? = nil,
         progressCounters: [TaskProgressCounter]? = nil,
@@ -108,6 +119,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         self.operatorType = operatorType
         self.threshold = threshold
         self.isOrdered = isOrdered
+        self.referencedBoardId = referencedBoardId
+        self.referencedTemplateId = referencedTemplateId
         self.parentStepId = parentStepId
         self.parentStepIndex = parentStepIndex
         self.progressCounters = progressCounters
@@ -131,6 +144,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         case action, unit, maxCount
         case operatorType = "operator"
         case threshold, isOrdered
+        case referencedBoardId, referencedTemplateId
         case parentStepId, parentStepIndex, progressCounters
         case totalCompletions, totalInstances
         case isCompleted, completedAt, currentCount
@@ -153,6 +167,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         operatorType = try container.decodeIfPresent(OperatorType.self, forKey: .operatorType)
         threshold = try container.decodeIfPresent(Int.self, forKey: .threshold)
         isOrdered = try container.decodeIfPresent(Bool.self, forKey: .isOrdered)
+        referencedBoardId = try container.decodeIfPresent(String.self, forKey: .referencedBoardId)
+        referencedTemplateId = try container.decodeIfPresent(String.self, forKey: .referencedTemplateId)
         parentStepId = try container.decodeIfPresent(String.self, forKey: .parentStepId)
         parentStepIndex = try container.decodeIfPresent(Int.self, forKey: .parentStepIndex)
 
@@ -192,6 +208,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         try container.encodeIfPresent(operatorType, forKey: .operatorType)
         try container.encodeIfPresent(threshold, forKey: .threshold)
         try container.encodeIfPresent(isOrdered, forKey: .isOrdered)
+        try container.encodeIfPresent(referencedBoardId, forKey: .referencedBoardId)
+        try container.encodeIfPresent(referencedTemplateId, forKey: .referencedTemplateId)
         try container.encodeIfPresent(parentStepId, forKey: .parentStepId)
         try container.encodeIfPresent(parentStepIndex, forKey: .parentStepIndex)
 
@@ -260,6 +278,10 @@ enum TaskType: String, Codable, DatabaseValueConvertible {
     case normal
     case counting
     case compound
+    /// Phase 6.3 — Cross-board watcher (specific board XOR recurring
+    /// template). Carries `referencedBoardId` / `referencedTemplateId`
+    /// on the Task row; BoardTask remains placement-only.
+    case achievement
     // Note: the legacy `.progress` case was removed post-unification. Former
     // Progress tasks are now `.compound` with `isOrdered=true`. Migration
     // helpers that need to recognise legacy `'progress'` rows in pre-migration

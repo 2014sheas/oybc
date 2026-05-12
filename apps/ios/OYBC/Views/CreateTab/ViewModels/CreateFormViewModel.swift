@@ -9,6 +9,15 @@ enum CreateTaskType: String, CaseIterable {
     case counting = "Counting"
     case progress = "Progress"
     case composite = "Composite"
+    /// Phase 6.3 — Achievement (cross-board watcher).
+    case achievement = "Achievement"
+}
+
+/// Phase 6.3 — Achievement-mode picker for the Create form. Mirrors
+/// the web `AchievementMode` union.
+enum AchievementMode: String, CaseIterable {
+    case specificBoard = "A specific board"
+    case recurringTemplate = "A recurring template"
 }
 
 /// Validation-length limits for the Create form. Exported so the
@@ -70,12 +79,25 @@ final class CreateFormViewModel {
     /// shape. Composite returns `nil` because it routes to its own wizard.
     var selectedType: TaskType? {
         switch taskType {
-        case .normal:    return .normal
-        case .counting:  return .counting
-        case .progress:  return .compound
-        case .composite: return nil
+        case .normal:      return .normal
+        case .counting:    return .counting
+        case .progress:    return .compound
+        case .composite:   return nil
+        case .achievement: return .achievement
         }
     }
+
+    // MARK: - Achievement (Phase 6.3)
+
+    /// Watch-mode for ACHIEVEMENT tasks. `specificBoard` is the default
+    /// because most users will likely watch a single named longer-running
+    /// board rather than a template's spawns.
+    var achievementMode: AchievementMode = .specificBoard
+    /// The picker-selected board id (when `achievementMode == .specificBoard`)
+    /// OR template id (when `achievementMode == .recurringTemplate`).
+    /// Serialized to `referencedBoardId` XOR `referencedTemplateId` on the
+    /// new Task at submit time.
+    var achievementReferenceId: String?
 
     // MARK: - Actions
 
@@ -179,6 +201,20 @@ final class CreateFormViewModel {
                 return
             }
 
+        case .achievement:
+            // Phase 6.3 — Achievement tasks must reference exactly one
+            // target. The form's submit pipeline serializes the picker
+            // selection into either `referencedBoardId` or
+            // `referencedTemplateId` on the new Task.
+            guard let _ = achievementReferenceId, !achievementReferenceId!.isEmpty else {
+                switch achievementMode {
+                case .specificBoard:
+                    errorMessage = "Pick a board to watch"
+                case .recurringTemplate:
+                    errorMessage = "Pick a recurring template to watch"
+                }
+                return
+            }
         }
 
         isSubmitting = true
@@ -299,6 +335,8 @@ final class CreateFormViewModel {
         countingDeriveFromTask = nil
         progressSteps = [ProgressStepFormState()]
         progressStepErrors = [:]
+        achievementMode = .specificBoard
+        achievementReferenceId = nil
     }
 
     /// Clears the transient error/success banners. Called on mode or
@@ -365,6 +403,18 @@ final class CreateFormViewModel {
                 operatorType: .and,
                 threshold: nil,
                 isOrdered: true,
+                totalCompletions: 0, totalInstances: 0,
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+            )
+        case .achievement:
+            // Phase 6.3 — Achievement task: serialise the picker
+            // selection into the appropriate reference field. Validation
+            // earlier ensures exactly one of the two ends up set.
+            return Task(
+                id: id, userId: userId, title: title, description: desc,
+                type: .achievement,
+                referencedBoardId: achievementMode == .specificBoard ? achievementReferenceId : nil,
+                referencedTemplateId: achievementMode == .recurringTemplate ? achievementReferenceId : nil,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )

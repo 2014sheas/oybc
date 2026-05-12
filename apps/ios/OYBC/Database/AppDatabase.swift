@@ -309,15 +309,36 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN spawnedFromTemplateId TEXT")
         }
 
-        // v9: Phase 6.3 — board-completion-as-a-square.
+        // v9: Phase 6.3 — original draft added `referencedBoardId` /
+        // `referencedTemplateId` columns to `board_tasks`. The refactor
+        // moves those fields to `Task` instead (see v10 below). v9 is
+        // kept around so dev installs that already migrated through it
+        // don't fail — the no-op columns it added to `board_tasks` are
+        // harmless (Swift's BoardTask model doesn't reference them
+        // post-refactor, so they're dead weight in storage).
         //
-        //   Add two optional columns to board_tasks for the new
-        //   achievement-square modes:
-        //     - referencedBoardId TEXT — specific-board mode. Square
+        // For fresh installs that have never run v9: the ALTER TABLE
+        // is still useful as a stepping stone toward v10 so the schema
+        // history is linear, but the columns it creates are not
+        // referenced anywhere in code. A future cleanup could drop the
+        // columns via a table rebuild; not worth doing for an unshipped
+        // feature.
+        migrator.registerMigration("v9") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedBoardId TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedTemplateId TEXT")
+        }
+
+        // v10: Phase 6.3 refactor — ACHIEVEMENT as a TaskType.
+        //
+        //   Add `referencedBoardId` and `referencedTemplateId` columns
+        //   to the `tasks` table (cross-board watcher fields now live
+        //   on Task, not BoardTask). Only ACHIEVEMENT-typed Tasks
+        //   populate them:
+        //     - referencedBoardId TEXT — specific-board mode. Cell
         //       completes when the named board's status is COMPLETED
         //       and !isDeleted.
         //     - referencedTemplateId TEXT — recurring-template mode.
-        //       Square completes when ALL in-window non-deleted spawns
+        //       Cell completes when ALL in-window non-deleted spawns
         //       of that template are COMPLETED.
         //
         //   Both fields are nullable, additive, and NOT indexed (lookups
@@ -328,13 +349,11 @@ final class AppDatabase {
         //   fire (mirrors the 6.2 spawnedFromTemplateId precedent).
         //
         //   Mutual exclusion (at most one set per row) is enforced at
-        //   the Zod refinement layer in the shared package; iOS does
-        //   not duplicate the constraint at the GRDB level because the
-        //   only producer is the (yet-to-build) achievement-square
-        //   config UI which has its own validation.
-        migrator.registerMigration("v9") { db in
-            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedBoardId TEXT")
-            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedTemplateId TEXT")
+        //   the Zod refinement layer in the shared package's TaskSchema,
+        //   plus a defensive check in the iOS task-write helpers.
+        migrator.registerMigration("v10") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN referencedBoardId TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN referencedTemplateId TEXT")
         }
 
         return migrator
@@ -465,84 +484,6 @@ extension AppDatabase {
     func saveBoardTask(_ boardTask: BoardTask) throws {
         try write { db in
             try boardTask.save(db)
-        }
-    }
-
-    /// Phase 6.3 — Apply an achievement-square config patch to a
-    /// BoardTask. iOS twin of web's `updateAchievementSquareConfig`
-    /// in `apps/web/src/db/operations/boardTasks.ts`.
-    ///
-    /// The patch fields are exactly the shape the
-    /// `AchievementSquareConfigSheet` builds. Nil means "clear this
-    /// field" (the sheet always writes every relevant field
-    /// explicitly so a prior mode's value can't bleed through). The
-    /// version bump + sync queue entry land inside a single GRDB
-    /// write transaction so a sync push observing this row sees a
-    /// consistent state.
-    ///
-    /// Enforces mutual exclusion between `referencedBoardId` and
-    /// `referencedTemplateId` against the merged final state (NOT
-    /// just the input — a patch that clears one while setting the
-    /// other is fine). Throws if both end up set.
-    ///
-    /// - Parameters:
-    ///   - id: BoardTask.id to update. No-op if the row doesn't exist.
-    ///   - isAchievementSquare: If non-nil, overwrites the field.
-    ///   - achievementType / achievementCount / achievementTimeframe:
-    ///     If non-nil, overwrite. Nil clears.
-    ///   - referencedBoardId / referencedTemplateId: Nil clears.
-    func updateAchievementSquareConfig(
-        id: String,
-        isAchievementSquare: Bool?,
-        achievementType: AchievementType?,
-        achievementCount: Int?,
-        achievementTimeframe: Timeframe?,
-        referencedBoardId: String?,
-        referencedTemplateId: String?
-    ) throws {
-        try write { db in
-            guard var existing = try BoardTask.fetchOne(db, key: id) else { return }
-
-            // Mutual exclusion against the post-merge state, not just
-            // the inputs. The caller passes `nil` to clear, so a patch
-            // that clears `referencedBoardId` while setting
-            // `referencedTemplateId` is valid. But a caller that only
-            // sets one field (leaving the other untouched in the
-            // existing row) shouldn't be able to slip a both-set
-            // state past us. NOTE: this helper's API treats `nil` as
-            // "clear", so the merged state == the input args
-            // (existing values are always replaced). The guard is
-            // therefore equivalent to checking the inputs — but
-            // documenting the intent here means a future API change
-            // that introduces a "leave unchanged" sentinel won't
-            // accidentally regress the invariant.
-            if referencedBoardId != nil && referencedTemplateId != nil {
-                throw DatabaseError(
-                    message: "BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive"
-                )
-            }
-
-            if let v = isAchievementSquare { existing.isAchievementSquare = v }
-            existing.achievementType = achievementType
-            existing.achievementCount = achievementCount
-            existing.achievementTimeframe = achievementTimeframe
-            existing.referencedBoardId = referencedBoardId
-            existing.referencedTemplateId = referencedTemplateId
-            existing.updatedAt = Self.currentTimestamp()
-            existing.version += 1
-
-            try existing.save(db)
-
-            // Enqueue sync. Inside the same write txn so a crash between
-            // the row write and the queue insert can't leave the local
-            // DB in an inconsistent state.
-            try SyncQueueBuilder.makeItem(
-                entityType: "boardTasks",
-                entityId: existing.id,
-                operationType: .update,
-                payload: existing,
-                now: existing.updatedAt
-            ).insert(db)
         }
     }
 
@@ -872,23 +813,6 @@ extension AppDatabase {
         }
     }
 
-    /// Find all boards with achievement squares
-    func fetchBoardsWithAchievements(userId: String) throws -> [Board] {
-        return try read { db in
-            // Find distinct board IDs with achievement squares
-            let boardIds = try String.fetchAll(db, sql: """
-                SELECT DISTINCT boardId 
-                FROM board_tasks 
-                WHERE isAchievementSquare = 1
-                """)
-
-            // Fetch boards
-            return try Board
-                .filter(keys: boardIds)
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .fetchAll(db)
-        }
-    }
 }
 
 // MARK: - Utilities

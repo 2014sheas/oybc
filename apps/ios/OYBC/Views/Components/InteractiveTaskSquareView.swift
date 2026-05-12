@@ -79,7 +79,10 @@ struct InteractiveTaskSquareView: View {
     /// Fraction (0–1) to fill the progress bar.
     private var fillFraction: Double {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
+            // ACHIEVEMENT cells render via InteractiveTaskSquareView with
+            // `taskType: .normal` in production (see BoardPlayView), but
+            // the switch must still be exhaustive over TaskType.
             return isCompleted ? 1.0 : 0.0
         case .counting:
             guard maxCount > 0 else { return 0 }
@@ -102,7 +105,7 @@ struct InteractiveTaskSquareView: View {
     /// Accent colour for the progress bar, matching TaskSquareActionsPlayground conventions.
     private var barColor: Color {
         switch taskType {
-        case .normal:   return .green
+        case .normal, .achievement: return .green
         case .counting: return .orange
         case .compound: return Color(red: 0.39, green: 0.4, blue: 0.95)  // indigo, mirrors web's #6366f1
         }
@@ -111,7 +114,7 @@ struct InteractiveTaskSquareView: View {
     /// Label text displayed inside the progress bar.
     private var barLabel: String {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
             return ""
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"
@@ -303,7 +306,7 @@ struct InteractiveTaskSquareView: View {
 
     private var accessibilityLabel: String {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
             return "\(title) — \(isCompleted ? "completed" : "incomplete")"
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"

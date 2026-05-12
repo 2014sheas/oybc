@@ -6,27 +6,21 @@ import Foundation
 /// Optional payload attached to an `InteractiveTaskSquareView` to label
 /// a cell as an achievement square. The cell's actual completion state
 /// still comes from `DerivationPass.computeBoardStatsUpdate`; this badge
-/// just labels what the cell is watching (or counting) so the user can
-/// see at a glance that the cell is cross-board-bound rather than
-/// task-bound.
+/// just labels what the cell is watching so the user can see at a glance
+/// that the cell is cross-board-bound rather than task-bound.
 ///
 /// Computed at render time by `BoardPlayView` from the workspace's
-/// boards + templates + this BoardTask's `referencedBoardId` /
-/// `referencedTemplateId`. Orthogonal to `TaskType` — any task type
-/// (normal / counting / compound) can be wrapped as an achievement
-/// square; the badge renders on top of the cell's existing visuals.
+/// boards + templates + the underlying `Task`'s reference fields
+/// (`type == .achievement` carrying `referencedBoardId` XOR
+/// `referencedTemplateId`). Only present when the backing Task is
+/// ACHIEVEMENT-typed.
 struct AchievementSquareBadgeData: Equatable {
     enum Mode: Equatable {
-        case aggregate
         case specificBoard
         case recurringTemplate
     }
 
     let mode: Mode
-
-    // Aggregate mode (pre-6.3 counter-driven behavior)
-    var achievementProgress: Int?
-    var achievementCount: Int?
 
     // Specific-board mode. `referencedBoardName` is nil when the
     // referenced board was soft-deleted; the label falls back to
@@ -46,8 +40,6 @@ struct AchievementSquareBadgeData: Equatable {
     /// for missing names so the cell makes clear why it's stuck.
     var displayLabel: String {
         switch mode {
-        case .aggregate:
-            return "\(achievementProgress ?? 0)/\(achievementCount ?? 0)"
         case .specificBoard:
             let trimmed = (referencedBoardName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let name = trimmed.isEmpty ? "(deleted)" : trimmed

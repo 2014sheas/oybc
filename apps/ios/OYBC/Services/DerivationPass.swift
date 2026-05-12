@@ -87,12 +87,13 @@ enum DerivationPass {
     /// payload. Those are deliberately omitted here because this layer has
     /// no clock access and no side-effect semantics.
     ///
-    /// **Achievement squares**: if `bt.isAchievementSquare == true`, the cell
-    /// completes when `bt.achievementProgress >= (bt.achievementCount ?? 0)`
-    /// AND `achievementCount > 0` (guard against 0/0 false-positives). The
-    /// backing Task's `isCompleted` is ignored for these rows — achievement
-    /// squares track per-board progress toward a cross-board goal, not the
-    /// task-global state.
+    /// **Achievement Tasks (Phase 6.3)**: when `task.type == .achievement`,
+    /// the cell's completion is derived from the Task's reference fields
+    /// (`referencedBoardId` for specific-board mode, `referencedTemplateId`
+    /// for recurring-template mode). BoardTask is a pure placement record;
+    /// only the Task type drives the dispatch. The backing Task's
+    /// `isCompleted` is irrelevant for achievement squares — derivation
+    /// reads the referenced state.
     ///
     /// **Center auto-fill**: for odd-sized boards (3 / 5) with no BoardTask at
     /// the centre AND centerSquareType == .free or .customFree, the center
@@ -104,13 +105,12 @@ enum DerivationPass {
     ///   - childrenByCompound: Map of compoundTaskId → list of CompoundChild rows.
     ///   - taskById: Map of taskId → Task (all tasks in the workspace).
     ///   - allBoards: All non-deleted boards in the workspace. Required for
-    ///                Phase 6.3 specific-board / recurring-template
-    ///                achievement squares — they read another board's
-    ///                state directly. Defaults to `[]`; callers that lack
+    ///                Phase 6.3 ACHIEVEMENT-typed Tasks — they read
+    ///                another board's (or template-spawn set's) state
+    ///                directly. Defaults to `[]`; callers that lack
     ///                cross-board context can omit, and those branches
     ///                degrade to "incomplete" (matching the missing-
-    ///                reference semantic). One-off and aggregate-mode
-    ///                squares don't read this argument.
+    ///                reference semantic).
     /// - Returns: A `BoardStatsUpdate` payload to merge into the board row.
     static func computeBoardStatsUpdate(
         board: Board,
@@ -146,23 +146,25 @@ enum DerivationPass {
         }
 
         for bt in boardTasksOnBoard {
-            // Achievement squares: completion derives from one of three
-            // modes, dispatched by which fields are set on the BoardTask
-            // row. Phase 6.3 added the two specific-mode branches;
-            // aggregate mode is the pre-6.3 behavior (counter-driven via
-            // achievementProgress).
-            if bt.isAchievementSquare == true {
-                let idx = bt.row * size + bt.col
-                if idx < 0 || idx >= totalSquares { continue }
+            guard let task = taskById[bt.taskId], !task.isDeleted else { continue }
+            let idx = bt.row * size + bt.col
+            if idx < 0 || idx >= totalSquares { continue }
 
+            // Phase 6.3 — ACHIEVEMENT-typed Tasks are cross-board watchers.
+            // The backing Task carries the reference fields (board XOR
+            // template); the BoardTask is a pure placement record.
+            // Dispatching on `task.type` here is the only point where
+            // derivation cares about the task type vs the simple-completion
+            // branch below.
+            if task.type == .achievement {
                 // Precedence: `referencedBoardId` wins when both fields
                 // are set. The Zod refinement rejects rows that set
                 // both, but a malicious remote payload or older client
                 // could still produce one — pick the more specific
                 // reference deterministically so derivation is
                 // predictable.
-                if let refBoardId = bt.referencedBoardId {
-                    // Specific-board mode: square completes when the
+                if let refBoardId = task.referencedBoardId {
+                    // Specific-board mode: cell completes when the
                     // referenced board's stored status is .completed
                     // (greenlog) AND the referenced board is non-deleted.
                     // Soft-deleted ⇒ incomplete (not crash; not silently
@@ -176,12 +178,12 @@ enum DerivationPass {
                     continue
                 }
 
-                if let refTemplateId = bt.referencedTemplateId {
-                    // Recurring-template mode: square completes when the
+                if let refTemplateId = task.referencedTemplateId {
+                    // Recurring-template mode: cell completes when the
                     // in-window non-deleted spawn set is non-empty AND
                     // every member is .completed. Empty window ⇒
                     // incomplete (NOT vacuously true — a future spawn
-                    // must land for the square to ever satisfy). Window
+                    // must land for the cell to ever satisfy). Window
                     // membership is inclusive on both ends.
                     buildBoardIndexes()
                     let spawns = boardsByTemplateId?[refTemplateId] ?? []
@@ -195,24 +197,12 @@ enum DerivationPass {
                     continue
                 }
 
-                // Aggregate mode (pre-6.3 behavior): completion derives
-                // from achievementProgress reaching achievementCount on
-                // THIS board. The backing Task's isCompleted state is
-                // irrelevant — the square's semantic is "this cross-
-                // board goal is reached", tracked by achievementProgress
-                // / achievementCount on the BoardTask row. `required > 0`
-                // guard prevents a 0/0 square from registering as
-                // complete before it has been configured.
-                let required = bt.achievementCount ?? 0
-                let progress = bt.achievementProgress ?? 0
-                if required > 0 && progress >= required {
-                    grid[idx] = true
-                    completedTasks += 1
-                }
-                continue // don't fall through to the Task.isCompleted branch
+                // No reference set → incomplete (achievement Task lacking
+                // the XOR value should have been rejected at write time;
+                // degrade safely).
+                continue
             }
 
-            guard let task = taskById[bt.taskId], !task.isDeleted else { continue }
             let isDone: Bool
             if task.type == .compound {
                 isDone = CompoundEvaluation.evaluate(
@@ -223,8 +213,6 @@ enum DerivationPass {
             } else {
                 isDone = task.isCompleted
             }
-            let idx = bt.row * size + bt.col
-            if idx < 0 || idx >= totalSquares { continue }
             if isDone {
                 grid[idx] = true
                 completedTasks += 1

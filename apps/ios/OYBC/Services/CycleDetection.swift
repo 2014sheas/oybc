@@ -1,44 +1,61 @@
 import Foundation
 
-/// Phase 6.3 — cycle detection for achievement-square cross-board references.
+/// Phase 6.3 — cycle detection for achievement-task cross-board references.
 ///
 /// iOS twin of TypeScript `packages/shared/src/algorithms/cycleDetection.ts`.
 /// When that changes, this must change in lockstep.
 ///
-/// Achievement squares can reference another board (`referencedBoardId`) or a
-/// recurring template (`referencedTemplateId`, which fans out to all of the
-/// template's spawned boards). Without a check, a user could create a chain
-/// that loops back on itself — Square on A → references B; Square on B →
-/// references A — leaving both boards stuck in a deadlock where neither can
+/// After the ACHIEVEMENT-as-TaskType refactor, achievement-task semantics
+/// live on `Task` (`type == .achievement` carrying `referencedBoardId` XOR
+/// `referencedTemplateId`). The same Task can be placed on multiple boards
+/// via `BoardTask` rows; each placement contributes one cycle edge:
+///
+///     placingBoardId → referencedBoardId
+///     placingBoardId → spawnId, for every in-template spawn
+///
+/// Without a check, a user could create a chain that loops back on itself —
+/// Achievement Task watching B placed on A, plus an Achievement Task watching
+/// A placed on B — leaving both boards stuck in a deadlock where neither can
 /// ever satisfy the other (derivation reads stored states, so no infinite
 /// loop, but the user-visible behavior is broken).
 ///
-/// `hasCycle` runs at placement time. Given a candidate placement, returns
-/// `.ok` if no cycle would form, or `.cycle(path:)` with the chain of board
-/// ids that closes the loop, suitable for surfacing in the UI.
+/// `hasCycle` runs at two points:
+///   1. Creating/editing an ACHIEVEMENT Task. Pass `parentBoardIds` =
+///      every board id currently placing that Task (empty on a brand-new
+///      Task path; non-empty when editing references on a placed Task).
+///   2. Placing an existing ACHIEVEMENT Task on a new board. Pass
+///      `parentBoardIds` = [newBoardId] (or include existing placements
+///      too; both are safe — the algorithm is idempotent).
 ///
 /// Cycle detection is best-effort, NOT a strict invariant: two devices
-/// concurrently placing achievement squares can each individually pass their
+/// concurrently writing achievement tasks can each individually pass their
 /// own check and still form a cycle once both writes settle. Derivation
 /// reads stored states (not recursive computations), so a post-sync cycle
 /// just leaves the involved boards stuck rather than crashing.
 
 /// Candidate placement under consideration.
 struct CycleCheckCandidate {
-    /// The board the achievement square sits on (the *parent* board).
-    let boardId: String
-    /// Optional: the specific board id the square would reference.
+    /// Every board id that places (or will place) the candidate ACHIEVEMENT
+    /// Task. Each contributes one edge: `parentBoardId → target`. The
+    /// cycle check passes only if NO parent is reachable from ANY target.
+    let parentBoardIds: [String]
+    /// Optional: the specific board id the candidate Task references.
     let referencedBoardId: String?
-    /// Optional: the recurring-template id the square would reference.
+    /// Optional: the recurring-template id the candidate Task references.
     let referencedTemplateId: String?
 }
 
 /// Read context for the check.
 struct CycleCheckContext {
-    /// All non-deleted board_tasks in the workspace (used to walk the graph).
+    /// All non-deleted board_tasks in the workspace (placements that
+    /// contribute edges when their Task is ACHIEVEMENT-typed).
     let allBoardTasks: [BoardTask]
+    /// All non-deleted Tasks in the workspace. Edges are only contributed
+    /// by BoardTasks whose Task is ACHIEVEMENT-typed; non-achievement
+    /// placements contribute nothing.
+    let allTasks: [Task]
     /// All non-deleted boards in the workspace (used to resolve template
-    /// spawns AND to check the parent's `spawnedFromTemplateId` for
+    /// spawns AND to check parents' `spawnedFromTemplateId` for
     /// template-self-reference).
     let allBoards: [Board]
 }
@@ -50,31 +67,45 @@ enum CycleCheckResult: Equatable {
 }
 
 enum CycleDetection {
-    /// Walks the reference graph from the candidate placement looking for a
-    /// path back to the candidate's own `boardId`. Self-reference of either
-    /// kind is a degenerate one-step cycle and short-circuits.
+    /// Walks the reference graph from the candidate's targets looking for
+    /// a path back to any of the candidate's parent boards. Self-reference
+    /// of either kind is a degenerate one-step cycle and short-circuits.
     static func hasCycle(
         candidate: CycleCheckCandidate,
         context: CycleCheckContext
     ) -> CycleCheckResult {
-        let boardId = candidate.boardId
+        let parentBoardIds = candidate.parentBoardIds
+        if parentBoardIds.isEmpty {
+            // No placements means the candidate doesn't contribute any
+            // edges yet (creating a brand-new achievement Task that hasn't
+            // been placed). Trivially safe — actual cycle is detected at
+            // placement time.
+            return .ok
+        }
+
+        let parentSet = Set(parentBoardIds)
 
         // ── Self-reference: degenerate cycle ──
-        if let refBoardId = candidate.referencedBoardId, refBoardId == boardId {
-            return .cycle(path: [boardId, boardId])
+        if let refBoardId = candidate.referencedBoardId, parentSet.contains(refBoardId) {
+            return .cycle(path: [refBoardId, refBoardId])
         }
         if let refTemplateId = candidate.referencedTemplateId {
-            // Template-self-reference: the parent board is itself a spawn of
-            // the template the square would watch. The square would
-            // (conceptually) wait on its own parent's status — degenerate.
-            if let parent = context.allBoards.first(where: { $0.id == boardId }),
-               parent.spawnedFromTemplateId == refTemplateId {
-                return .cycle(path: [boardId, boardId])
+            // Template-self-reference: any parent board is itself a spawn
+            // of the template the candidate would watch. Degenerate.
+            for parentId in parentBoardIds {
+                if let parent = context.allBoards.first(where: { $0.id == parentId }),
+                   parent.spawnedFromTemplateId == refTemplateId {
+                    return .cycle(path: [parentId, parentId])
+                }
             }
         }
 
-        // ── Build adjacency from existing board_tasks ──
-        var adjacency: [String: Set<String>] = [:]
+        // ── Build adjacency from existing achievement-task placements ──
+        var tasksById: [String: Task] = [:]
+        for t in context.allTasks {
+            if t.isDeleted { continue }
+            tasksById[t.id] = t
+        }
 
         // Index spawns once for template-fan-out edges.
         var spawnsByTemplate: [String: [String]] = [:]
@@ -85,25 +116,27 @@ enum CycleDetection {
             }
         }
 
+        var adjacency: [String: Set<String>] = [:]
         func addEdge(_ from: String, _ to: String) {
             if from == to { return } // self-edges don't contribute to a multi-step cycle
             adjacency[from, default: []].insert(to)
         }
 
         for bt in context.allBoardTasks {
-            if bt.isAchievementSquare != true { continue }
-            if let refBoardId = bt.referencedBoardId {
+            guard let t = tasksById[bt.taskId], t.type == .achievement else { continue }
+            if let refBoardId = t.referencedBoardId {
                 addEdge(bt.boardId, refBoardId)
-            } else if let refTemplateId = bt.referencedTemplateId {
+            } else if let refTemplateId = t.referencedTemplateId {
                 for target in spawnsByTemplate[refTemplateId] ?? [] {
                     addEdge(bt.boardId, target)
                 }
             }
         }
 
-        // Inject the candidate's prospective edges. The candidate is NOT yet
-        // in `allBoardTasks` (it's the row about to be written), so its
-        // outgoing edges must be added explicitly.
+        // Inject the candidate's prospective edges from each parent. The
+        // candidate (Task + its placements) may already be reflected in
+        // `allBoardTasks` (e.g., editing an existing Task) — re-adding
+        // identical edges is idempotent (Set semantics).
         var candidateTargets: Set<String> = []
         if let refBoardId = candidate.referencedBoardId {
             candidateTargets.insert(refBoardId)
@@ -113,37 +146,42 @@ enum CycleDetection {
                 candidateTargets.insert(target)
             }
         }
-        for target in candidateTargets {
-            addEdge(boardId, target)
+        for parentId in parentBoardIds {
+            for target in candidateTargets {
+                addEdge(parentId, target)
+            }
         }
 
-        // ── DFS from each candidate target looking for a path back to boardId ──
+        // ── DFS from each candidate target looking for a path back to any parent ──
         for start in candidateTargets {
             var visited: Set<String> = []
-            if let path = dfsToTarget(
+            if let path = dfsToAnyTarget(
                 start: start,
-                target: boardId,
+                targets: parentSet,
                 adjacency: adjacency,
                 visited: &visited
             ) {
-                return .cycle(path: [boardId] + path)
+                // The hit board id is the parent we landed on. Prepend it
+                // again so the cyclePath reads parent → … → back to parent.
+                let closingParent = path.last ?? start
+                return .cycle(path: [closingParent] + path)
             }
         }
 
         return .ok
     }
 
-    /// Iterative DFS — returns the path from `start` to `target` if
-    /// reachable, or nil if not. Visited-set prevents revisits.
-    private static func dfsToTarget(
+    /// Iterative DFS — returns the path from `start` to any node in
+    /// `targets` if reachable, or nil if not.
+    private static func dfsToAnyTarget(
         start: String,
-        target: String,
+        targets: Set<String>,
         adjacency: [String: Set<String>],
         visited: inout Set<String>
     ) -> [String]? {
         var stack: [(node: String, path: [String])] = [(start, [start])]
         while let frame = stack.popLast() {
-            if frame.node == target { return frame.path }
+            if targets.contains(frame.node) { return frame.path }
             if visited.contains(frame.node) { continue }
             visited.insert(frame.node)
             guard let neighbors = adjacency[frame.node] else { continue }
