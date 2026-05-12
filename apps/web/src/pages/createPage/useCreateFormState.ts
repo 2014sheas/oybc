@@ -29,12 +29,21 @@ export const STEP_TITLE_MAX_LENGTH = 200;
 
 // ─── Error shape ──────────────────────────────────────────────────────────────
 
+/** Phase 6.3 — mode picker for ACHIEVEMENT task creation. The form
+ *  tracks which mode is selected so the right picker renders; submit
+ *  serializes the choice into a single `referencedBoardId` OR
+ *  `referencedTemplateId` field on the new Task. */
+export type AchievementMode = 'specificBoard' | 'recurringTemplate';
+
 export interface FormErrors {
   title?: string;
   description?: string;
   action?: string;
   unit?: string;
   maxCount?: string;
+  /** Phase 6.3 — surfaces when an Achievement task lacks a picker
+   *  selection or fails cycle detection. */
+  achievementReference?: string;
   steps?: Record<string, { title?: string; action?: string; unit?: string; maxCount?: string }>;
   general?: string;
 }
@@ -46,6 +55,11 @@ export interface FormErrors {
  * field; empty object means "valid". Kept exported so an outside
  * caller (e.g. an integration test, or a future submit confirmation
  * flow) can validate without instantiating the hook.
+ *
+ * Phase 6.3 — When `type === ACHIEVEMENT`, the validator demands a
+ * picker selection that matches the chosen mode. The cycle-detection
+ * check happens in `handleSubmit` (it needs DB context the validator
+ * can't see).
  */
 export function validateForm(
   type: TaskTypeOrComposite,
@@ -54,7 +68,9 @@ export function validateForm(
   action: string,
   unit: string,
   maxCountStr: string,
-  steps: StepFormState[]
+  steps: StepFormState[],
+  achievementMode?: AchievementMode,
+  achievementReferenceId?: string | null,
 ): FormErrors {
   const errors: FormErrors = {};
 
@@ -89,6 +105,20 @@ export function validateForm(
       if (isNaN(parsed) || parsed <= 0) {
         errors.maxCount = 'Max count must be a positive integer';
       }
+    }
+  }
+
+  if (type === TaskType.ACHIEVEMENT) {
+    // Achievement tasks must reference exactly one target — the form's
+    // submit pipeline serializes the mode + reference id into either
+    // `referencedBoardId` or `referencedTemplateId` on the new Task.
+    if (!achievementMode) {
+      errors.achievementReference = 'Pick a mode (specific board or recurring template)';
+    } else if (!achievementReferenceId) {
+      errors.achievementReference =
+        achievementMode === 'specificBoard'
+          ? 'Pick a board to watch'
+          : 'Pick a recurring template to watch';
     }
   }
 
@@ -164,6 +194,12 @@ export interface UseCreateFormState {
   errors: FormErrors;
   isSubmitting: boolean;
 
+  // Phase 6.3 — Achievement-task fields.
+  achievementMode: AchievementMode;
+  achievementReferenceId: string | null;
+  setAchievementMode: (mode: AchievementMode) => void;
+  setAchievementReferenceId: (id: string | null) => void;
+
   /**
    * The counting Task currently used as a derivation template, or null.
    * When set, the form's `action` and `unit` are pre-filled from this task
@@ -223,6 +259,11 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deriveFromTask, setDeriveFromTask] = useState<Task | null>(null);
+  // Phase 6.3 — Achievement-task state. `specificBoard` is the default
+  // mode because most users will likely watch a single named board (a
+  // longer-running monthly/yearly) rather than a template's spawns.
+  const [achievementMode, setAchievementMode] = useState<AchievementMode>('specificBoard');
+  const [achievementReferenceId, setAchievementReferenceId] = useState<string | null>(null);
 
   /**
    * Wrap a plain setter so editing a field also clears its own error —
@@ -270,13 +311,34 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     setAction('');
     setUnit('');
     setMaxCountStr('');
+    // Phase 6.3 — clear achievement-mode picker so switching to ACHIEVEMENT
+    // doesn't surface a stale reference id from a prior selection.
+    setAchievementReferenceId(null);
     setErrors((prev) => ({
       ...prev,
       action: undefined,
       unit: undefined,
       maxCount: undefined,
+      achievementReference: undefined,
       steps: undefined,
     }));
+  }, []);
+
+  const handleAchievementModeChange = useCallback((mode: AchievementMode) => {
+    setAchievementMode(mode);
+    // Clear the picker selection — switching from `specificBoard` to
+    // `recurringTemplate` (or back) shouldn't keep an ineligible id.
+    setAchievementReferenceId(null);
+    setErrors((prev) =>
+      prev.achievementReference === undefined ? prev : { ...prev, achievementReference: undefined },
+    );
+  }, []);
+
+  const handleAchievementReferenceChange = useCallback((id: string | null) => {
+    setAchievementReferenceId(id);
+    setErrors((prev) =>
+      prev.achievementReference === undefined ? prev : { ...prev, achievementReference: undefined },
+    );
   }, []);
 
   const applyTemplate = useCallback((source: Task) => {
@@ -334,6 +396,8 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     setSteps([createEmptyStep()]);
     setErrors({});
     setDeriveFromTask(null);
+    setAchievementMode('specificBoard');
+    setAchievementReferenceId(null);
   }
 
   const handleSubmit = useCallback(
@@ -342,7 +406,17 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
 
       if (taskType === COMPOSITE_TYPE || !userId) return;
 
-      const validationErrors = validateForm(taskType, title, description, action, unit, maxCountStr, steps);
+      const validationErrors = validateForm(
+        taskType,
+        title,
+        description,
+        action,
+        unit,
+        maxCountStr,
+        steps,
+        achievementMode,
+        achievementReferenceId,
+      );
       setErrors(validationErrors);
       if (Object.keys(validationErrors).length > 0) return;
 
@@ -371,6 +445,25 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
             action: action.trim(),
             unit: unit.trim(),
             maxCount: parsedMaxCount,
+          });
+        } else if (taskType === TaskType.ACHIEVEMENT) {
+          // Phase 6.3 — Achievement task: serialise the mode + picker
+          // selection into the appropriate reference field. Cycle
+          // detection runs at placement time (BoardWizardTasksStep)
+          // because creating the Task itself doesn't place it on any
+          // board — there are no parents to form a cycle with yet.
+          newTask = await createTask(userId, {
+            title: title.trim(),
+            description: description.trim() || undefined,
+            type: TaskType.ACHIEVEMENT,
+            referencedBoardId:
+              achievementMode === 'specificBoard' && achievementReferenceId
+                ? achievementReferenceId
+                : undefined,
+            referencedTemplateId:
+              achievementMode === 'recurringTemplate' && achievementReferenceId
+                ? achievementReferenceId
+                : undefined,
           });
         } else {
           // Progress tasks: route through createCompound (compound + isOrdered=true).
@@ -419,7 +512,7 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated]
+    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, achievementMode, achievementReferenceId]
   );
 
   return {
@@ -433,6 +526,10 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     errors,
     isSubmitting,
     deriveFromTask,
+    achievementMode,
+    achievementReferenceId,
+    setAchievementMode: handleAchievementModeChange,
+    setAchievementReferenceId: handleAchievementReferenceChange,
     setTitle: setTitleClearingError,
     setDescription: setDescriptionClearingError,
     setAction: setActionClearingError,

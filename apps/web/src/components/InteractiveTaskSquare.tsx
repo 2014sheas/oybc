@@ -30,10 +30,6 @@ interface ContextMenuProps {
   onMarkAllStepsComplete?: (id: string) => void;
   onMarkAllStepsIncomplete?: (id: string) => void;
   onViewDetails?: (id: string) => void;
-  /** Phase 6.3: opens the achievement-square config modal for this
-   *  cell. Always shown when provided so users can convert a regular
-   *  task cell into an achievement square (or revert it back). */
-  onConfigureAchievementSquare?: (id: string) => void;
 }
 
 /**
@@ -63,7 +59,6 @@ export function FloatingContextMenu({
   onMarkAllStepsComplete,
   onMarkAllStepsIncomplete,
   onViewDetails,
-  onConfigureAchievementSquare,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -214,21 +209,6 @@ export function FloatingContextMenu({
         ⓘ View Details
       </button>
 
-      {/* Phase 6.3: achievement-square entry point. Always rendered
-          when the callback is wired so users can convert any cell
-          (regardless of task type) into an achievement square or
-          revert it back. The modal handles the off-toggle internally. */}
-      {onConfigureAchievementSquare && (
-        <button
-          className={styles.contextMenuItem}
-          onClick={() => {
-            onConfigureAchievementSquare(sq.id);
-            onClose();
-          }}
-        >
-          🎯 Configure as achievement square…
-        </button>
-      )}
       </>)}
     </div>
   );
@@ -240,16 +220,14 @@ export function FloatingContextMenu({
  * Phase 6.3 — Optional achievement-square badge data for a cell.
  *
  * Orthogonal to `TaskSquareData` (which is shaped around task type).
- * The parent computes this from the `BoardTask` row's
- * `isAchievementSquare` + mode-specific fields, plus a lookup against
- * the workspace's boards / templates. When `undefined`, the cell
- * renders as a regular task with no achievement-square indicator.
+ * The parent computes this from the underlying `Task`'s reference fields
+ * (`type === ACHIEVEMENT` carrying `referencedBoardId` XOR
+ * `referencedTemplateId`) plus a lookup against the workspace's boards /
+ * templates. When `undefined`, the cell renders as a regular task with
+ * no achievement-square indicator.
  */
 export interface AchievementSquareBadgeData {
-  mode: 'aggregate' | 'specificBoard' | 'recurringTemplate';
-  /** Aggregate mode: M / N completion counter. */
-  achievementProgress?: number;
-  achievementCount?: number;
+  mode: 'specificBoard' | 'recurringTemplate';
   /** Specific-board mode: referenced board's display label + greenlog
    *  status. Falls back to `(deleted board)` when the referenced board
    *  was soft-deleted, so the cell makes clear why it's not completing. */
@@ -622,11 +600,6 @@ export function DetailModal({
 // - Recurring-template: "M/N Template name". Empty template name → "(deleted)".
 function formatAchievementBadgeLabel(badge: AchievementSquareBadgeData): string {
   switch (badge.mode) {
-    case 'aggregate': {
-      const p = badge.achievementProgress ?? 0;
-      const n = badge.achievementCount ?? 0;
-      return `${p}/${n}`;
-    }
     case 'specificBoard': {
       const name = badge.referencedBoardName?.trim() || '(deleted)';
       return badge.referencedBoardCompleted ? `✓ ${name}` : name;
