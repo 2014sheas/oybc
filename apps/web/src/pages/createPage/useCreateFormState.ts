@@ -130,11 +130,11 @@ export function validateForm(
     if (achievementMode === 'recurringTemplate') {
       const trimmed = (achievementRequiredCountStr ?? '').trim();
       if (trimmed.length === 0) {
-        errors.requiredCount = 'Required count is required';
+        errors.requiredCount = 'Count is required';
       } else {
         const parsed = parseInt(trimmed, 10);
         if (isNaN(parsed) || parsed <= 0) {
-          errors.requiredCount = 'Required count must be a positive integer';
+          errors.requiredCount = 'Count must be a positive integer';
         }
       }
     }

@@ -14,10 +14,11 @@ enum CreateTaskType: String, CaseIterable {
 }
 
 /// Phase 6.3 — Achievement-mode picker for the Create form. Mirrors
-/// the web `AchievementMode` union.
+/// the web `AchievementMode` union. The rawValue strings are the
+/// segmented-picker labels — domain terms verbatim, no paraphrase.
 enum AchievementMode: String, CaseIterable {
-    case specificBoard = "A specific board"
-    case recurringTemplate = "A recurring template"
+    case specificBoard = "Board"
+    case recurringTemplate = "Template"
 }
 
 /// Validation-length limits for the Create form. Exported so the

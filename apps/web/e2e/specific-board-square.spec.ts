@@ -74,8 +74,8 @@ test.describe('Phase 6.3 achievement task creator', () => {
     await page.getByRole('button', { name: /^Achievement$/ }).click();
 
     // Watch-mode radios appear after the type switch.
-    await expect(page.getByRole('radio', { name: /A specific board/i })).toBeVisible();
-    await expect(page.getByRole('radio', { name: /A recurring template/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^Board$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^Template$/i })).toBeVisible();
 
     // Default mode is `specificBoard` — the board <select> should be visible.
     const boardSelect = page.locator('#create-task-ach-board');
@@ -87,7 +87,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
   test('switching mode to "recurring template" swaps the picker', async ({ page }) => {
     await page.goto('/create?__oybc_test_bypass=1');
     await page.getByRole('button', { name: /^Achievement$/ }).click();
-    await page.getByRole('radio', { name: /A recurring template/i }).check();
+    await page.getByRole('radio', { name: /^Template$/i }).check();
 
     // The board <select> goes away, the template <select> appears.
     await expect(page.locator('#create-task-ach-board')).toBeHidden();
@@ -174,15 +174,15 @@ test.describe('Phase 6.3 achievement task creator', () => {
   test('recurring-template mode requires a count + persists trigger & count', async ({ page }) => {
     await page.goto('/create?__oybc_test_bypass=1');
     await page.getByRole('button', { name: /^Achievement$/ }).click();
-    await page.getByRole('radio', { name: /A recurring template/i }).check();
+    await page.getByRole('radio', { name: /^Template$/i }).check();
     await page.getByPlaceholder(/enter task title/i).fill('3 Leg Days a month');
     await page.locator('#create-task-ach-template').selectOption(TEMPLATE_ID);
     // Flip the trigger to BINGO to verify the form serializes it.
-    await page.getByRole('radio', { name: /Any bingo line/i }).check();
+    await page.getByRole('radio', { name: /^Bingo$/i }).check();
 
     // Submitting without a count should surface the validation error.
     await page.getByRole('button', { name: /Add to library|Create & Add to Pool/i }).click();
-    await expect(page.getByText(/Required count is required/i)).toBeVisible();
+    await expect(page.getByText(/Count is required/i)).toBeVisible();
 
     // Fill the count and submit.
     await page.locator('#create-task-ach-count').fill('3');

@@ -135,7 +135,7 @@ export function CreateNewTaskForm({
                     checked={form.achievementMode === 'specificBoard'}
                     onChange={() => form.setAchievementMode('specificBoard')}
                   />
-                  A specific board
+                  Board
                 </label>
                 <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'normal' }}>
                   <input
@@ -145,7 +145,7 @@ export function CreateNewTaskForm({
                     checked={form.achievementMode === 'recurringTemplate'}
                     onChange={() => form.setAchievementMode('recurringTemplate')}
                   />
-                  A recurring template
+                  Template
                 </label>
               </div>
               {form.achievementMode === 'specificBoard' ? (
@@ -194,11 +194,11 @@ export function CreateNewTaskForm({
                 <span className={styles.fieldError}>{form.errors.achievementReference}</span>
               )}
 
-              {/* Trigger picker (Phase 6.3) — what "done" means for the
-                  watched target. Default GREENLOG matches the pre-
-                  trigger shipped behavior. */}
+              {/* Trigger picker (Phase 6.3). Domain terms verbatim:
+                  "Greenlog" / "Bingo". Default GREENLOG matches the
+                  pre-trigger shipped behavior. */}
               <label className={styles.label} style={{ marginTop: '0.75rem' }}>
-                Complete when
+                Trigger
               </label>
               <div className={styles.modeSection}>
                 <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', marginRight: '1rem', fontWeight: 'normal' }}>
@@ -209,7 +209,7 @@ export function CreateNewTaskForm({
                     checked={form.achievementTrigger === AchievementTrigger.GREENLOG}
                     onChange={() => form.setAchievementTrigger(AchievementTrigger.GREENLOG)}
                   />
-                  Full board complete
+                  Greenlog
                 </label>
                 <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'normal' }}>
                   <input
@@ -219,17 +219,16 @@ export function CreateNewTaskForm({
                     checked={form.achievementTrigger === AchievementTrigger.BINGO}
                     onChange={() => form.setAchievementTrigger(AchievementTrigger.BINGO)}
                   />
-                  Any bingo line
+                  Bingo
                 </label>
               </div>
 
-              {/* Required-count input (template mode only, Phase 6.3).
-                  Specific-board mode is implicitly count=1 — the field
-                  doesn't render. */}
+              {/* Count input (template mode only). Specific-board mode
+                  is implicitly count=1. */}
               {form.achievementMode === 'recurringTemplate' && (
                 <>
                   <label className={styles.label} htmlFor="create-task-ach-count" style={{ marginTop: '0.75rem' }}>
-                    Required count
+                    Count
                     <span className={styles.required}>*</span>
                   </label>
                   <input
@@ -241,9 +240,6 @@ export function CreateNewTaskForm({
                     onChange={(e) => form.setAchievementRequiredCountStr(e.target.value)}
                     placeholder="e.g. 3"
                   />
-                  <span className={styles.label} style={{ display: 'block', fontWeight: 'normal', fontSize: '0.85em', marginTop: '0.25rem' }}>
-                    How many in-window spawns must hit the trigger?
-                  </span>
                   {form.errors.requiredCount && (
                     <span className={styles.fieldError}>{form.errors.requiredCount}</span>
                   )}
