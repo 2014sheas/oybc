@@ -3,7 +3,7 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Phase 6.3 — Snapshot coverage for the achievement-square badge
+/// Phase 6.3 — Snapshot coverage for the achievement-task badge
 /// variants rendered by `InteractiveTaskSquareView`. The plain (no
 /// badge) and per-task-type variants are already covered indirectly
 /// by `BoardWizardStepsSnapshotTests/testPreviewStepReady`; this file
@@ -13,31 +13,12 @@ import SnapshotTesting
 /// Layout-wise the badge sits in the top-left slot that the "C"
 /// compound badge previously owned; the compound branch is
 /// suppressed when both apply (see `InteractiveTaskSquareView.swift`).
-/// One of the four cases below exercises that priority by combining
-/// `taskType=.compound` with an aggregate badge.
+/// The compound+badge case below exercises that priority rule.
 final class InteractiveTaskSquareBadgeSnapshotTests: XCTestCase {
 
     /// Auto-record missing baselines; the env var SNAPSHOT_TESTING_RECORD=never
     /// (set in CI by ios.yml) overrides this to enforce strict-match.
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
-
-    func testBadge_AggregateMode() {
-        let view = renderCell(
-            title: "Read 100 pages",
-            taskType: .normal,
-            isCompleted: false,
-            badge: AchievementSquareBadgeData(
-                mode: .aggregate,
-                achievementProgress: 3,
-                achievementCount: 5
-            )
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 120, height: 120)),
-            record: recordMode
-        )
-    }
 
     func testBadge_SpecificBoardCompleted() {
         let view = renderCell(
@@ -76,19 +57,20 @@ final class InteractiveTaskSquareBadgeSnapshotTests: XCTestCase {
         )
     }
 
-    /// Compound task with an aggregate-mode achievement badge. Verifies
-    /// the "C" badge is suppressed (achievement-square priority rule
-    /// in InteractiveTaskSquareView.swift). Without that rule the
-    /// top-left slot would render both badges stacked.
+    /// Compound task with an achievement badge. Verifies the "C" badge
+    /// is suppressed (achievement-task priority rule in
+    /// InteractiveTaskSquareView.swift). Without that rule the top-left
+    /// slot would render both badges stacked. Post-refactor: aggregate
+    /// mode is gone, so this case uses a specific-board reference.
     func testBadge_CompoundTask_SuppressesCBadge() {
         let view = renderCell(
             title: "Weekly habits",
             taskType: .compound,
             isCompleted: false,
             badge: AchievementSquareBadgeData(
-                mode: .aggregate,
-                achievementProgress: 1,
-                achievementCount: 3
+                mode: .specificBoard,
+                referencedBoardName: "Quarterly OKRs",
+                referencedBoardCompleted: false
             ),
             compoundChildCount: 4,
             compoundDoneCount: 1,

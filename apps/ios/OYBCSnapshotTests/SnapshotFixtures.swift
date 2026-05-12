@@ -122,14 +122,7 @@ enum SnapshotFixtures {
         taskId: String,
         row: Int,
         col: Int,
-        isCenter: Bool = false,
-        isAchievementSquare: Bool? = nil,
-        achievementType: AchievementType? = nil,
-        achievementCount: Int? = nil,
-        achievementTimeframe: Timeframe? = nil,
-        achievementProgress: Int? = nil,
-        referencedBoardId: String? = nil,
-        referencedTemplateId: String? = nil
+        isCenter: Bool = false
     ) -> BoardTask {
         BoardTask(
             id: id,
@@ -138,13 +131,6 @@ enum SnapshotFixtures {
             row: row,
             col: col,
             isCenter: isCenter,
-            isAchievementSquare: isAchievementSquare,
-            achievementType: achievementType,
-            achievementCount: achievementCount,
-            achievementTimeframe: achievementTimeframe,
-            achievementProgress: achievementProgress,
-            referencedBoardId: referencedBoardId,
-            referencedTemplateId: referencedTemplateId,
             createdAt: fixedTimestamp,
             updatedAt: fixedTimestamp,
             version: 1

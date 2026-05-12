@@ -66,37 +66,48 @@ final class DerivationPassTests: XCTestCase {
         )
     }
 
-    /// Build a BoardTask using JSON round-trip (BoardTask has no memberwise init due
-    /// to its custom Codable decoder).
+    /// Build a BoardTask (pure placement record post-Phase-6.3 refactor).
     private func boardTask(
         _ boardId: String,
         _ taskId: String,
         _ row: Int,
-        _ col: Int,
-        isAchievementSquare: Bool? = nil,
-        achievementCount: Int? = nil,
-        achievementProgress: Int? = nil,
+        _ col: Int
+    ) -> BoardTask {
+        return BoardTask(
+            id: "\(boardId)-\(taskId)",
+            boardId: boardId,
+            taskId: taskId,
+            row: row,
+            col: col,
+            isCenter: false,
+            createdAt: "2026-04-23T00:00:00.000Z",
+            updatedAt: "2026-04-23T00:00:00.000Z",
+            version: 1
+        )
+    }
+
+    /// Build an ACHIEVEMENT-typed Task carrying the given references.
+    /// Phase 6.3: achievement-task semantics live on Task, not BoardTask.
+    private func achievementTask(
+        _ id: String,
         referencedBoardId: String? = nil,
         referencedTemplateId: String? = nil
-    ) -> BoardTask {
-        var dict: [String: Any] = [
-            "id": "\(boardId)-\(taskId)",
-            "boardId": boardId,
-            "taskId": taskId,
-            "row": row,
-            "col": col,
-            "isCenter": false,
-            "createdAt": "2026-04-23T00:00:00.000Z",
-            "updatedAt": "2026-04-23T00:00:00.000Z",
-            "version": 1,
-        ]
-        if let v = isAchievementSquare { dict["isAchievementSquare"] = v }
-        if let v = achievementCount { dict["achievementCount"] = v }
-        if let v = achievementProgress { dict["achievementProgress"] = v }
-        if let v = referencedBoardId { dict["referencedBoardId"] = v }
-        if let v = referencedTemplateId { dict["referencedTemplateId"] = v }
-        let data = try! JSONSerialization.data(withJSONObject: dict)
-        return try! JSONDecoder().decode(BoardTask.self, from: data)
+    ) -> Task {
+        return Task(
+            id: id,
+            userId: "u",
+            title: id,
+            type: .achievement,
+            referencedBoardId: referencedBoardId,
+            referencedTemplateId: referencedTemplateId,
+            totalCompletions: 0,
+            totalInstances: 0,
+            isCompleted: false,
+            createdAt: "2026-04-23T00:00:00.000Z",
+            updatedAt: "2026-04-23T00:00:00.000Z",
+            version: 1,
+            isDeleted: false
+        )
     }
 
     /// Build a Board using JSON round-trip (Board has no memberwise init due to
@@ -563,151 +574,101 @@ final class DerivationPassTests: XCTestCase {
         XCTAssertEqual(result.boardId, "myBoard")
     }
 
-    // MARK: - computeBoardStatsUpdate: achievement square — progress >= count → complete
+    // MARK: - Phase 6.3: ACHIEVEMENT Task completion (refactored)
+    //
+    // Achievement-task semantics live on Task (`type == .achievement` +
+    // reference fields). BoardTask is a pure placement record — the same
+    // achievement Task on multiple boards is just multiple placement rows
+    // evaluated against the same Task definition. Aggregate mode is gone
+    // (no `achievementType` / `achievementCount` / `achievementProgress`).
 
-    func testComputeBoardStats_AchievementSquareProgressMet_CellComplete() {
+    func testComputeBoardStats_AchievementTask_NoReference_CellIncomplete() {
         let b = board("b1", boardSize: 3, centerSquareType: .none)
-        let backingTask = task("ach1", isCompleted: false)
-        let bt = boardTask("b1", "ach1", 0, 0,
-            isAchievementSquare: true,
-            achievementCount: 3,
-            achievementProgress: 3
-        )
+        // Achievement-typed Task lacking BOTH refs (should be rejected at
+        // write time; derivation degrades safely to incomplete).
+        let ach = achievementTask("ach1")
+        let bt = boardTask("b1", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: b,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backingTask]
-        )
-        XCTAssertEqual(result.completedTasks, 1)
-    }
-
-    // MARK: - computeBoardStatsUpdate: achievement square — progress < count → incomplete
-
-    func testComputeBoardStats_AchievementSquareProgressNotMet_CellIncomplete() {
-        let b = board("b1", boardSize: 3, centerSquareType: .none)
-        let backingTask = task("ach1", isCompleted: false)
-        let bt = boardTask("b1", "ach1", 0, 0,
-            isAchievementSquare: true,
-            achievementCount: 3,
-            achievementProgress: 2
-        )
-        let result = DerivationPass.computeBoardStatsUpdate(
-            board: b,
-            boardTasksOnBoard: [bt],
-            childrenByCompound: [:],
-            taskById: ["ach1": backingTask]
+            taskById: ["ach1": ach]
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
 
-    // MARK: - computeBoardStatsUpdate: achievement square — 0/0 guard → incomplete
-
-    func testComputeBoardStats_AchievementSquare_ZeroOverZero_Incomplete() {
+    func testComputeBoardStats_AchievementTask_IgnoresOwnIsCompleted() {
+        // Even if a stale write set isCompleted=true on the achievement
+        // Task row, derivation cares about the *reference*, not the field.
         let b = board("b1", boardSize: 3, centerSquareType: .none)
-        let backingTask = task("ach1", isCompleted: false)
-        let bt = boardTask("b1", "ach1", 0, 0,
-            isAchievementSquare: true,
-            achievementCount: 0,
-            achievementProgress: 0
-        )
+        var ach = achievementTask("ach1")
+        ach.isCompleted = true
+        let bt = boardTask("b1", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: b,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backingTask]
-        )
-        XCTAssertEqual(result.completedTasks, 0)
-    }
-
-    // MARK: - computeBoardStatsUpdate: achievement square ignores Task.isCompleted
-
-    func testComputeBoardStats_AchievementSquare_IgnoresBackingTaskIsCompleted() {
-        // Backing task is marked complete, but achievement progress hasn't reached count
-        let b = board("b1", boardSize: 3, centerSquareType: .none)
-        let backingTask = task("ach1", isCompleted: true)
-        let bt = boardTask("b1", "ach1", 0, 0,
-            isAchievementSquare: true,
-            achievementCount: 3,
-            achievementProgress: 0
-        )
-        let result = DerivationPass.computeBoardStatsUpdate(
-            board: b,
-            boardTasksOnBoard: [bt],
-            childrenByCompound: [:],
-            taskById: ["ach1": backingTask]
+            taskById: ["ach1": ach]
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
 
     // MARK: - Phase 6.3: specific-board mode
 
-    func testComputeBoardStats_ReferencedBoard_Completed_SquareCompletes() {
+    func testComputeBoardStats_ReferencedBoard_Completed_CellCompletes() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let ref = board("ref", status: "completed")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedBoardId: "ref"
-        )
+        let ach = achievementTask("ach1", referencedBoardId: "ref")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, ref]
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
 
-    func testComputeBoardStats_ReferencedBoard_Active_SquareIncomplete() {
+    func testComputeBoardStats_ReferencedBoard_Active_CellIncomplete() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let ref = board("ref", status: "active")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedBoardId: "ref"
-        )
+        let ach = achievementTask("ach1", referencedBoardId: "ref")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, ref]
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
 
-    func testComputeBoardStats_ReferencedBoard_SoftDeleted_SquareIncomplete() {
+    func testComputeBoardStats_ReferencedBoard_SoftDeleted_CellIncomplete() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let ref = board("ref", status: "completed", isDeleted: true)
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedBoardId: "ref"
-        )
+        let ach = achievementTask("ach1", referencedBoardId: "ref")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, ref]
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
 
-    func testComputeBoardStats_ReferencedBoard_Missing_SquareIncomplete() {
+    func testComputeBoardStats_ReferencedBoard_Missing_CellIncomplete() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedBoardId: "missing"
-        )
+        let ach = achievementTask("ach1", referencedBoardId: "missing")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent]
         )
         XCTAssertEqual(result.completedTasks, 0)
@@ -715,97 +676,82 @@ final class DerivationPassTests: XCTestCase {
 
     // MARK: - Phase 6.3: recurring-template mode
 
-    func testComputeBoardStats_TemplateAllInWindowCompleted_SquareCompletes() {
+    func testComputeBoardStats_TemplateAllInWindowCompleted_CellCompletes() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s2 = board("s2", status: "completed", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedTemplateId: "t1"
-        )
+        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, s1, s2]
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
 
-    func testComputeBoardStats_TemplateOneInWindowActive_SquareIncomplete() {
+    func testComputeBoardStats_TemplateOneInWindowActive_CellIncomplete() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s2 = board("s2", status: "active", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedTemplateId: "t1"
-        )
+        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, s1, s2]
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
 
-    func testComputeBoardStats_TemplateEmptyWindow_SquareIncomplete() {
+    func testComputeBoardStats_TemplateEmptyWindow_CellIncomplete() {
         // Empty window ⇒ NOT vacuously complete (locked rule).
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedTemplateId: "t1"
-        )
+        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent]
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
 
-    func testComputeBoardStats_TemplateOutOfWindow_SquareIncomplete() {
+    func testComputeBoardStats_TemplateOutOfWindow_CellIncomplete() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-03-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedTemplateId: "t1"
-        )
+        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, s1]
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
 
-    func testComputeBoardStats_TemplatePartialDelete_SquareCompletesIfRemainingAllCompleted() {
-        // 4 spawns, 3 COMPLETED + 1 pending soft-deleted → square completes.
+    func testComputeBoardStats_TemplatePartialDelete_CellCompletesIfRemainingAllCompleted() {
+        // 4 spawns, 3 COMPLETED + 1 pending soft-deleted → cell completes.
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s2 = board("s2", status: "completed", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s3 = board("s3", status: "completed", startDate: "2026-04-22T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s4 = board("s4", status: "active", startDate: "2026-04-29T00:00:00.000Z", spawnedFromTemplateId: "t1", isDeleted: true)
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedTemplateId: "t1"
-        )
+        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, s1, s2, s3, s4]
         )
         XCTAssertEqual(result.completedTasks, 1)
@@ -814,16 +760,13 @@ final class DerivationPassTests: XCTestCase {
     func testComputeBoardStats_TemplateBoundary_StartDateEqualsParentStart_Counts() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-01T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedTemplateId: "t1"
-        )
+        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, s1]
         )
         XCTAssertEqual(result.completedTasks, 1)
@@ -832,16 +775,13 @@ final class DerivationPassTests: XCTestCase {
     func testComputeBoardStats_TemplateBoundary_StartDateEqualsParentEnd_Counts() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-30T23:59:59.000Z", spawnedFromTemplateId: "t1")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
-            referencedTemplateId: "t1"
-        )
+        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, s1]
         )
         XCTAssertEqual(result.completedTasks, 1)
@@ -855,17 +795,17 @@ final class DerivationPassTests: XCTestCase {
         // be deterministic: the more-specific reference wins.
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let ref = board("ref", status: "completed")
-        let backing = task("ach1")
-        let bt = boardTask("parent", "ach1", 0, 0,
-            isAchievementSquare: true,
+        let ach = achievementTask(
+            "ach1",
             referencedBoardId: "ref",
             referencedTemplateId: "t1"
         )
+        let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": backing],
+            taskById: ["ach1": ach],
             allBoards: [parent, ref]
         )
         XCTAssertEqual(result.completedTasks, 1)
