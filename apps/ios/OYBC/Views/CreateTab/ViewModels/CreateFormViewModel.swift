@@ -98,6 +98,12 @@ final class CreateFormViewModel {
     /// Serialized to `referencedBoardId` XOR `referencedTemplateId` on the
     /// new Task at submit time.
     var achievementReferenceId: String?
+    /// Completion trigger. Default `.greenlog` matches the pre-trigger
+    /// shipped behavior; user can flip to `.bingo` via the picker.
+    var achievementTrigger: AchievementTrigger = .greenlog
+    /// Required spawn count for template mode. Stored as string so the
+    /// input field can be empty (no auto-zero); parsed at submit time.
+    var achievementRequiredCountStr: String = ""
 
     // MARK: - Actions
 
@@ -214,6 +220,15 @@ final class CreateFormViewModel {
                     errorMessage = "Pick a recurring template to watch"
                 }
                 return
+            }
+            // Recurring-template mode requires a positive count.
+            if achievementMode == .recurringTemplate {
+                let trimmed = achievementRequiredCountStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let parsed = Int(trimmed), parsed > 0 else {
+                    errorMessage = "Required count must be a positive integer"
+                    return
+                }
+                _ = parsed
             }
         }
 
@@ -337,6 +352,8 @@ final class CreateFormViewModel {
         progressStepErrors = [:]
         achievementMode = .specificBoard
         achievementReferenceId = nil
+        achievementTrigger = .greenlog
+        achievementRequiredCountStr = ""
     }
 
     /// Clears the transient error/success banners. Called on mode or
@@ -408,13 +425,20 @@ final class CreateFormViewModel {
             )
         case .achievement:
             // Phase 6.3 — Achievement task: serialise the picker
-            // selection into the appropriate reference field. Validation
-            // earlier ensures exactly one of the two ends up set.
+            // selection + trigger + count into the Task. Validation
+            // earlier ensures exactly one reference and (template
+            // mode) a positive count.
+            let isTemplateMode = (achievementMode == .recurringTemplate)
+            let parsedCount: Int? = isTemplateMode
+                ? Int(achievementRequiredCountStr.trimmingCharacters(in: .whitespacesAndNewlines))
+                : nil
             return Task(
                 id: id, userId: userId, title: title, description: desc,
                 type: .achievement,
                 referencedBoardId: achievementMode == .specificBoard ? achievementReferenceId : nil,
-                referencedTemplateId: achievementMode == .recurringTemplate ? achievementReferenceId : nil,
+                referencedTemplateId: isTemplateMode ? achievementReferenceId : nil,
+                achievementTrigger: achievementTrigger,
+                requiredCount: parsedCount,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false
             )

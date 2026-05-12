@@ -237,6 +237,34 @@ struct CreateNewTaskFormView: View {
                     .pickerStyle(.navigationLink)
                 }
             }
+
+            // Trigger picker (Phase 6.3) — what "done" means for the
+            // watched target. Default `.greenlog` matches the pre-
+            // trigger shipped behavior.
+            Text("Complete when")
+                .font(.subheadline)
+                .padding(.top, 6)
+            Picker("Trigger", selection: $form.achievementTrigger) {
+                Text("Full board complete").tag(AchievementTrigger.greenlog)
+                Text("Any bingo line").tag(AchievementTrigger.bingo)
+            }
+            .pickerStyle(.segmented)
+
+            // Required-count input (template mode only). Specific-board
+            // mode is implicitly count=1 — the field doesn't render.
+            if form.achievementMode == .recurringTemplate {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Required count")
+                        .font(.subheadline)
+                        .padding(.top, 6)
+                    TextField("e.g. 3", text: $form.achievementRequiredCountStr)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                    Text("How many in-window spawns must hit the trigger?")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .padding(8)
         .background(Color(.systemGray5))

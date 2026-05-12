@@ -90,3 +90,22 @@ export enum OperatorType {
   OR = 'OR',         // Any child must be complete
   M_OF_N = 'M_OF_N' // M of N children must be complete (requires threshold)
 }
+
+/**
+ * Phase 6.3 — Achievement-task completion trigger.
+ *
+ * Determines what counts as the watched board (or spawn) being "done":
+ *   - BINGO: at least one bingo line on the watched board (`linesCompleted > 0`)
+ *   - GREENLOG: full board completion (`status === BoardStatus.COMPLETED`)
+ *
+ * For specific-board mode, the trigger is evaluated against the single
+ * referenced board. For recurring-template mode, the trigger is
+ * evaluated against each in-window spawn and combined with
+ * `Task.requiredCount` (cell completes when N spawns each meet the
+ * trigger). Default when unset is GREENLOG (matches the pre-trigger
+ * shipped behavior).
+ */
+export enum AchievementTrigger {
+  BINGO = 'bingo',
+  GREENLOG = 'greenlog',
+}

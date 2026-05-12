@@ -1,4 +1,4 @@
-import { TaskType, type Board, type RecurringBoardTemplate, type Task } from '@oybc/shared';
+import { AchievementTrigger, TaskType, type Board, type RecurringBoardTemplate, type Task } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
@@ -192,6 +192,62 @@ export function CreateNewTaskForm({
               )}
               {form.errors.achievementReference && (
                 <span className={styles.fieldError}>{form.errors.achievementReference}</span>
+              )}
+
+              {/* Trigger picker (Phase 6.3) — what "done" means for the
+                  watched target. Default GREENLOG matches the pre-
+                  trigger shipped behavior. */}
+              <label className={styles.label} style={{ marginTop: '0.75rem' }}>
+                Complete when
+              </label>
+              <div className={styles.modeSection}>
+                <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', marginRight: '1rem', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="create-task-achievement-trigger"
+                    value={AchievementTrigger.GREENLOG}
+                    checked={form.achievementTrigger === AchievementTrigger.GREENLOG}
+                    onChange={() => form.setAchievementTrigger(AchievementTrigger.GREENLOG)}
+                  />
+                  Full board complete
+                </label>
+                <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="create-task-achievement-trigger"
+                    value={AchievementTrigger.BINGO}
+                    checked={form.achievementTrigger === AchievementTrigger.BINGO}
+                    onChange={() => form.setAchievementTrigger(AchievementTrigger.BINGO)}
+                  />
+                  Any bingo line
+                </label>
+              </div>
+
+              {/* Required-count input (template mode only, Phase 6.3).
+                  Specific-board mode is implicitly count=1 — the field
+                  doesn't render. */}
+              {form.achievementMode === 'recurringTemplate' && (
+                <>
+                  <label className={styles.label} htmlFor="create-task-ach-count" style={{ marginTop: '0.75rem' }}>
+                    Required count
+                    <span className={styles.required}>*</span>
+                  </label>
+                  <input
+                    id="create-task-ach-count"
+                    type="number"
+                    min="1"
+                    className={`${styles.input} ${form.errors.requiredCount ? styles.inputError : ''}`}
+                    value={form.achievementRequiredCountStr}
+                    onChange={(e) => form.setAchievementRequiredCountStr(e.target.value)}
+                    placeholder="e.g. 3"
+                  />
+                  <span className={styles.label} style={{ display: 'block', fontWeight: 'normal', fontSize: '0.85em', marginTop: '0.25rem' }}>
+                    How many in-window spawns must hit the trigger?
+                  </span>
+                  {form.errors.requiredCount && (
+                    <span className={styles.fieldError}>{form.errors.requiredCount}</span>
+                  )}
+                </>
               )}
             </div>
           )}

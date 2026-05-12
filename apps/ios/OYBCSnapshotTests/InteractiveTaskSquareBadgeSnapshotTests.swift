@@ -46,8 +46,8 @@ final class InteractiveTaskSquareBadgeSnapshotTests: XCTestCase {
             badge: AchievementSquareBadgeData(
                 mode: .recurringTemplate,
                 templateName: "Leg Day",
-                templateInWindowGreenlogged: 2,
-                templateInWindowTotal: 4
+                templateInWindowMet: 2,
+                templateRequiredCount: 4
             )
         )
         assertSnapshot(

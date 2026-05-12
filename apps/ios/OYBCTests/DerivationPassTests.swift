@@ -91,7 +91,9 @@ final class DerivationPassTests: XCTestCase {
     private func achievementTask(
         _ id: String,
         referencedBoardId: String? = nil,
-        referencedTemplateId: String? = nil
+        referencedTemplateId: String? = nil,
+        achievementTrigger: AchievementTrigger? = nil,
+        requiredCount: Int? = nil
     ) -> Task {
         return Task(
             id: id,
@@ -100,6 +102,8 @@ final class DerivationPassTests: XCTestCase {
             type: .achievement,
             referencedBoardId: referencedBoardId,
             referencedTemplateId: referencedTemplateId,
+            achievementTrigger: achievementTrigger,
+            requiredCount: requiredCount,
             totalCompletions: 0,
             totalInstances: 0,
             isCompleted: false,
@@ -680,7 +684,7 @@ final class DerivationPassTests: XCTestCase {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s2 = board("s2", status: "completed", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 2)
         let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
@@ -696,7 +700,8 @@ final class DerivationPassTests: XCTestCase {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s2 = board("s2", status: "active", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        // requiredCount=2 means both spawns must meet trigger; only 1 does.
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 2)
         let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
@@ -711,7 +716,7 @@ final class DerivationPassTests: XCTestCase {
     func testComputeBoardStats_TemplateEmptyWindow_CellIncomplete() {
         // Empty window ⇒ NOT vacuously complete (locked rule).
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
-        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 1)
         let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
@@ -726,7 +731,7 @@ final class DerivationPassTests: XCTestCase {
     func testComputeBoardStats_TemplateOutOfWindow_CellIncomplete() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-03-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 1)
         let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
@@ -745,7 +750,7 @@ final class DerivationPassTests: XCTestCase {
         let s2 = board("s2", status: "completed", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s3 = board("s3", status: "completed", startDate: "2026-04-22T00:00:00.000Z", spawnedFromTemplateId: "t1")
         let s4 = board("s4", status: "active", startDate: "2026-04-29T00:00:00.000Z", spawnedFromTemplateId: "t1", isDeleted: true)
-        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 3)
         let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
@@ -760,7 +765,7 @@ final class DerivationPassTests: XCTestCase {
     func testComputeBoardStats_TemplateBoundary_StartDateEqualsParentStart_Counts() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-01T00:00:00.000Z", spawnedFromTemplateId: "t1")
-        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 1)
         let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
@@ -775,7 +780,7 @@ final class DerivationPassTests: XCTestCase {
     func testComputeBoardStats_TemplateBoundary_StartDateEqualsParentEnd_Counts() {
         let parent = board("parent", boardSize: 3, centerSquareType: .none)
         let s1 = board("s1", status: "completed", startDate: "2026-04-30T23:59:59.000Z", spawnedFromTemplateId: "t1")
-        let ach = achievementTask("ach1", referencedTemplateId: "t1")
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 1)
         let bt = boardTask("parent", "ach1", 0, 0)
         let result = DerivationPass.computeBoardStatsUpdate(
             board: parent,
@@ -785,6 +790,121 @@ final class DerivationPassTests: XCTestCase {
             allBoards: [parent, s1]
         )
         XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    // MARK: - Phase 6.3: trigger + count
+
+    func testComputeBoardStats_BingoTrigger_OnSpecificBoard_LinesCompletedSuffices() {
+        // trigger=bingo on specific board: cell completes when the
+        // referenced board has linesCompleted>0 (no need for full
+        // greenlog).
+        let parent = board("parent", boardSize: 3, centerSquareType: .none)
+        let ref = boardWithLinesCompleted("ref", status: "active", linesCompleted: 1)
+        let ach = achievementTask("ach1", referencedBoardId: "ref", achievementTrigger: .bingo)
+        let bt = boardTask("parent", "ach1", 0, 0)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: parent,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": ach],
+            allBoards: [parent, ref]
+        )
+        XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    func testComputeBoardStats_BingoTrigger_OnSpecificBoard_NoBingoMeansIncomplete() {
+        let parent = board("parent", boardSize: 3, centerSquareType: .none)
+        let ref = boardWithLinesCompleted("ref", status: "active", linesCompleted: 0)
+        let ach = achievementTask("ach1", referencedBoardId: "ref", achievementTrigger: .bingo)
+        let bt = boardTask("parent", "ach1", 0, 0)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: parent,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": ach],
+            allBoards: [parent, ref]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    func testComputeBoardStats_BingoTrigger_OnTemplate_CountsSpawnsWithLinesCompleted() {
+        // 2 spawns, both have linesCompleted>0 → met=2 >= required=2 → complete.
+        let parent = board("parent", boardSize: 3, centerSquareType: .none)
+        let s1 = boardWithLinesCompleted("s1", status: "active", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1", linesCompleted: 1)
+        let s2 = boardWithLinesCompleted("s2", status: "active", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1", linesCompleted: 2)
+        let ach = achievementTask(
+            "ach1",
+            referencedTemplateId: "t1",
+            achievementTrigger: .bingo,
+            requiredCount: 2
+        )
+        let bt = boardTask("parent", "ach1", 0, 0)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: parent,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": ach],
+            allBoards: [parent, s1, s2]
+        )
+        XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    func testComputeBoardStats_RequiredCountGreaterThanInWindow_CellIncomplete() {
+        // User asked for 3 bingos but only 2 spawns exist — cell stays
+        // incomplete until a 3rd spawn lands AND hits the trigger.
+        let parent = board("parent", boardSize: 3, centerSquareType: .none)
+        let s1 = boardWithLinesCompleted("s1", status: "completed", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1", linesCompleted: 1)
+        let s2 = boardWithLinesCompleted("s2", status: "completed", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1", linesCompleted: 1)
+        let ach = achievementTask(
+            "ach1",
+            referencedTemplateId: "t1",
+            achievementTrigger: .bingo,
+            requiredCount: 3
+        )
+        let bt = boardTask("parent", "ach1", 0, 0)
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: parent,
+            boardTasksOnBoard: [bt],
+            childrenByCompound: [:],
+            taskById: ["ach1": ach],
+            allBoards: [parent, s1, s2]
+        )
+        XCTAssertEqual(result.completedTasks, 0)
+    }
+
+    /// Helper for trigger-bingo tests: the default `board()` helper
+    /// doesn't override `linesCompleted`. Inline a richer builder.
+    private func boardWithLinesCompleted(
+        _ id: String,
+        status: String,
+        startDate: String = "2026-04-01T00:00:00.000Z",
+        spawnedFromTemplateId: String? = nil,
+        linesCompleted: Int
+    ) -> Board {
+        var dict: [String: Any] = [
+            "id": id,
+            "userId": "u",
+            "name": id,
+            "status": status,
+            "boardSize": 3,
+            "timeframe": "monthly",
+            "startDate": startDate,
+            "endDate": "2026-04-30T23:59:59.000Z",
+            "centerSquareType": "none",
+            "isRandomized": false,
+            "totalTasks": 9,
+            "completedTasks": 0,
+            "linesCompleted": linesCompleted,
+            "createdAt": "2026-04-23T00:00:00.000Z",
+            "updatedAt": "2026-04-23T00:00:00.000Z",
+            "version": 1,
+            "isDeleted": false,
+        ]
+        if let tid = spawnedFromTemplateId { dict["spawnedFromTemplateId"] = tid }
+        let jsonData = try! JSONEncoder().encode([String]())
+        dict["completedLineIds"] = String(data: jsonData, encoding: .utf8)!
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
     }
 
     // MARK: - Phase 6.3: bad-data precedence

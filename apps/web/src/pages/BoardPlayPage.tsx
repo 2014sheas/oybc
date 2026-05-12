@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
+  AchievementTrigger,
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
@@ -137,6 +138,11 @@ export function BoardPlayPage(): React.ReactElement {
     for (const bt of boardTasks) {
       const t = taskMap[bt.taskId];
       if (!t || t.type !== TaskType.ACHIEVEMENT) continue;
+      const trigger = t.achievementTrigger ?? AchievementTrigger.GREENLOG;
+      const meets = (b: Board): boolean =>
+        trigger === AchievementTrigger.BINGO
+          ? (b.linesCompleted ?? 0) > 0
+          : b.status === BoardStatus.COMPLETED;
       // Phase 6.3 precedence: referencedBoardId wins when both fields
       // somehow get set. The Zod refinement should prevent this, but
       // the badge stays predictable for bad-data payloads.
@@ -145,7 +151,7 @@ export function BoardPlayPage(): React.ReactElement {
         out[bt.id] = {
           mode: 'specificBoard',
           referencedBoardName: ref?.name,
-          referencedBoardCompleted: ref?.status === BoardStatus.COMPLETED,
+          referencedBoardCompleted: ref ? meets(ref) : false,
         };
         continue;
       }
@@ -155,12 +161,12 @@ export function BoardPlayPage(): React.ReactElement {
         const inWindow = spawns.filter(
           (b) => b.startDate >= board.startDate && b.startDate <= board.endDate,
         );
-        const completed = inWindow.filter((b) => b.status === BoardStatus.COMPLETED).length;
+        const met = inWindow.filter(meets).length;
         out[bt.id] = {
           mode: 'recurringTemplate',
           templateName: tmpl?.name,
-          templateInWindowGreenlogged: completed,
-          templateInWindowTotal: inWindow.length,
+          templateInWindowMet: met,
+          templateRequiredCount: t.requiredCount ?? 0,
         };
       }
       // No reference set on an ACHIEVEMENT task: skip the badge entirely

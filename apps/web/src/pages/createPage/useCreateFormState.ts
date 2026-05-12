@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
+  AchievementTrigger,
   TaskType,
   OperatorType,
   generateCounterTaskTitle,
@@ -44,6 +45,9 @@ export interface FormErrors {
   /** Phase 6.3 — surfaces when an Achievement task lacks a picker
    *  selection or fails cycle detection. */
   achievementReference?: string;
+  /** Phase 6.3 — surfaces when the required-count input is missing
+   *  or non-positive in recurring-template mode. */
+  requiredCount?: string;
   steps?: Record<string, { title?: string; action?: string; unit?: string; maxCount?: string }>;
   general?: string;
 }
@@ -71,6 +75,7 @@ export function validateForm(
   steps: StepFormState[],
   achievementMode?: AchievementMode,
   achievementReferenceId?: string | null,
+  achievementRequiredCountStr?: string,
 ): FormErrors {
   const errors: FormErrors = {};
 
@@ -119,6 +124,19 @@ export function validateForm(
         achievementMode === 'specificBoard'
           ? 'Pick a board to watch'
           : 'Pick a recurring template to watch';
+    }
+    // Recurring-template mode also requires a positive count.
+    // Specific-board mode ignores the count input entirely.
+    if (achievementMode === 'recurringTemplate') {
+      const trimmed = (achievementRequiredCountStr ?? '').trim();
+      if (trimmed.length === 0) {
+        errors.requiredCount = 'Required count is required';
+      } else {
+        const parsed = parseInt(trimmed, 10);
+        if (isNaN(parsed) || parsed <= 0) {
+          errors.requiredCount = 'Required count must be a positive integer';
+        }
+      }
     }
   }
 
@@ -197,8 +215,12 @@ export interface UseCreateFormState {
   // Phase 6.3 — Achievement-task fields.
   achievementMode: AchievementMode;
   achievementReferenceId: string | null;
+  achievementTrigger: AchievementTrigger;
+  achievementRequiredCountStr: string;
   setAchievementMode: (mode: AchievementMode) => void;
   setAchievementReferenceId: (id: string | null) => void;
+  setAchievementTrigger: (trigger: AchievementTrigger) => void;
+  setAchievementRequiredCountStr: (v: string) => void;
 
   /**
    * The counting Task currently used as a derivation template, or null.
@@ -264,6 +286,12 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
   // longer-running monthly/yearly) rather than a template's spawns.
   const [achievementMode, setAchievementMode] = useState<AchievementMode>('specificBoard');
   const [achievementReferenceId, setAchievementReferenceId] = useState<string | null>(null);
+  // Default trigger is GREENLOG (matches the pre-trigger shipped
+  // behavior); user can flip to BINGO via the picker.
+  const [achievementTrigger, setAchievementTrigger] = useState<AchievementTrigger>(AchievementTrigger.GREENLOG);
+  // Stored as string so the input field can be empty (no auto-zero);
+  // parsed at validation + submit time.
+  const [achievementRequiredCountStr, setAchievementRequiredCountStrState] = useState('');
 
   /**
    * Wrap a plain setter so editing a field also clears its own error —
@@ -311,18 +339,20 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     setAction('');
     setUnit('');
     setMaxCountStr('');
-    // Phase 6.3 — reset the achievement-mode picker fully (mode + ref id)
-    // so type-out-then-back-in doesn't surface a stale recurringTemplate
-    // selection with an empty picker beneath. specificBoard is the
-    // default mode.
+    // Phase 6.3 — reset the achievement-mode picker fully (mode + ref id
+    // + trigger + count) so type-out-then-back-in doesn't surface stale
+    // state. specificBoard + GREENLOG are the defaults.
     setAchievementMode('specificBoard');
     setAchievementReferenceId(null);
+    setAchievementTrigger(AchievementTrigger.GREENLOG);
+    setAchievementRequiredCountStrState('');
     setErrors((prev) => ({
       ...prev,
       action: undefined,
       unit: undefined,
       maxCount: undefined,
       achievementReference: undefined,
+      requiredCount: undefined,
       steps: undefined,
     }));
   }, []);
@@ -332,15 +362,31 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     // Clear the picker selection — switching from `specificBoard` to
     // `recurringTemplate` (or back) shouldn't keep an ineligible id.
     setAchievementReferenceId(null);
-    setErrors((prev) =>
-      prev.achievementReference === undefined ? prev : { ...prev, achievementReference: undefined },
-    );
+    // Reset the count input when leaving template mode so it doesn't
+    // resurface stale state if the user comes back. Specific-board
+    // mode ignores the count, but clearing keeps the form tidy.
+    if (mode === 'specificBoard') {
+      setAchievementRequiredCountStrState('');
+    }
+    setErrors((prev) => {
+      let next = prev;
+      if (next.achievementReference !== undefined) next = { ...next, achievementReference: undefined };
+      if (next.requiredCount !== undefined) next = next === prev ? { ...prev, requiredCount: undefined } : { ...next, requiredCount: undefined };
+      return next;
+    });
   }, []);
 
   const handleAchievementReferenceChange = useCallback((id: string | null) => {
     setAchievementReferenceId(id);
     setErrors((prev) =>
       prev.achievementReference === undefined ? prev : { ...prev, achievementReference: undefined },
+    );
+  }, []);
+
+  const setAchievementRequiredCountStr = useCallback((v: string) => {
+    setAchievementRequiredCountStrState(v);
+    setErrors((prev) =>
+      prev.requiredCount === undefined ? prev : { ...prev, requiredCount: undefined },
     );
   }, []);
 
@@ -401,6 +447,8 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     setDeriveFromTask(null);
     setAchievementMode('specificBoard');
     setAchievementReferenceId(null);
+    setAchievementTrigger(AchievementTrigger.GREENLOG);
+    setAchievementRequiredCountStrState('');
   }
 
   const handleSubmit = useCallback(
@@ -419,6 +467,7 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
         steps,
         achievementMode,
         achievementReferenceId,
+        achievementRequiredCountStr,
       );
       setErrors(validationErrors);
       if (Object.keys(validationErrors).length > 0) return;
@@ -451,10 +500,13 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
           });
         } else if (taskType === TaskType.ACHIEVEMENT) {
           // Phase 6.3 — Achievement task: serialise the mode + picker
-          // selection into the appropriate reference field. Cycle
-          // detection runs at placement time (BoardWizardTasksStep)
-          // because creating the Task itself doesn't place it on any
-          // board — there are no parents to form a cycle with yet.
+          // selection into the appropriate reference field. Trigger
+          // + count come from the form state. Cycle detection runs at
+          // placement time (BoardWizardTasksStep) because creating the
+          // Task itself doesn't place it on any board — there are no
+          // parents to form a cycle with yet.
+          const isTemplateMode = achievementMode === 'recurringTemplate';
+          const parsedCount = parseInt(achievementRequiredCountStr, 10);
           newTask = await createTask(userId, {
             title: title.trim(),
             description: description.trim() || undefined,
@@ -464,9 +516,11 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
                 ? achievementReferenceId
                 : undefined,
             referencedTemplateId:
-              achievementMode === 'recurringTemplate' && achievementReferenceId
+              isTemplateMode && achievementReferenceId
                 ? achievementReferenceId
                 : undefined,
+            achievementTrigger,
+            requiredCount: isTemplateMode ? parsedCount : undefined,
           });
         } else {
           // Progress tasks: route through createCompound (compound + isOrdered=true).
@@ -515,7 +569,7 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, achievementMode, achievementReferenceId]
+    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr]
   );
 
   return {
@@ -531,8 +585,12 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
     deriveFromTask,
     achievementMode,
     achievementReferenceId,
+    achievementTrigger,
+    achievementRequiredCountStr,
     setAchievementMode: handleAchievementModeChange,
     setAchievementReferenceId: handleAchievementReferenceChange,
+    setAchievementTrigger,
+    setAchievementRequiredCountStr,
     setTitle: setTitleClearingError,
     setDescription: setDescriptionClearingError,
     setAction: setActionClearingError,

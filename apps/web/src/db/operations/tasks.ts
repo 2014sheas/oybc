@@ -6,7 +6,7 @@ import type {
   CreateCompoundTaskInput,
   CompoundChild,
 } from '@oybc/shared';
-import { SyncOperationType, SyncStatus, TaskType, OperatorType } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, SyncStatus, TaskType, OperatorType } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -57,10 +57,35 @@ export async function createTask(
         'Achievement tasks must set exactly one of referencedBoardId or referencedTemplateId',
       );
     }
-  } else if (input.referencedBoardId || input.referencedTemplateId) {
-    throw new Error(
-      'Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId',
-    );
+    // Recurring-template mode demands a positive requiredCount.
+    // Specific-board mode ignores it.
+    if (input.referencedTemplateId) {
+      if (input.requiredCount === undefined || input.requiredCount <= 0) {
+        throw new Error(
+          'Achievement tasks in recurring-template mode require a positive requiredCount',
+        );
+      }
+    } else if (input.requiredCount !== undefined) {
+      throw new Error(
+        'requiredCount is only meaningful in recurring-template mode',
+      );
+    }
+  } else {
+    if (input.referencedBoardId || input.referencedTemplateId) {
+      throw new Error(
+        'Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId',
+      );
+    }
+    if (input.achievementTrigger !== undefined) {
+      throw new Error(
+        'Only ACHIEVEMENT tasks may set achievementTrigger',
+      );
+    }
+    if (input.requiredCount !== undefined) {
+      throw new Error(
+        'Only ACHIEVEMENT tasks may set requiredCount',
+      );
+    }
   }
 
   const task: Task = {
@@ -75,6 +100,14 @@ export async function createTask(
     currentCount: input.type === TaskType.COUNTING ? 0 : undefined,
     referencedBoardId: input.referencedBoardId,
     referencedTemplateId: input.referencedTemplateId,
+    // Default ACHIEVEMENT tasks to GREENLOG when the caller doesn't
+    // specify — matches both the schema's defensive decode behavior
+    // and derivation's read-time default.
+    achievementTrigger:
+      input.type === TaskType.ACHIEVEMENT
+        ? input.achievementTrigger ?? AchievementTrigger.GREENLOG
+        : undefined,
+    requiredCount: input.requiredCount,
     isCompleted: false,
     totalCompletions: 0,
     totalInstances: 0,
@@ -238,6 +271,8 @@ export async function updateTask(
   updates: Partial<Task> & {
     referencedBoardId?: string | null;
     referencedTemplateId?: string | null;
+    achievementTrigger?: AchievementTrigger | null;
+    requiredCount?: number | null;
   },
 ): Promise<void> {
   const existing = await db.tasks.get(id);
@@ -263,6 +298,14 @@ export async function updateTask(
     updates.referencedTemplateId === null
       ? undefined
       : updates.referencedTemplateId ?? existing.referencedTemplateId;
+  const nextTrigger =
+    updates.achievementTrigger === null
+      ? undefined
+      : updates.achievementTrigger ?? existing.achievementTrigger;
+  const nextRequiredCount =
+    updates.requiredCount === null
+      ? undefined
+      : updates.requiredCount ?? existing.requiredCount;
 
   // Rule 1: mutual exclusion.
   if (nextRefBoard && nextRefTpl) {
@@ -282,6 +325,24 @@ export async function updateTask(
       'Only ACHIEVEMENT tasks may have referencedBoardId or referencedTemplateId',
     );
   }
+  // Rule 4: trigger only on ACHIEVEMENT.
+  if (nextType !== TaskType.ACHIEVEMENT && nextTrigger !== undefined) {
+    throw new Error(
+      'Only ACHIEVEMENT tasks may have achievementTrigger',
+    );
+  }
+  // Rule 5: requiredCount required for template mode, forbidden otherwise.
+  if (nextType === TaskType.ACHIEVEMENT && nextRefTpl) {
+    if (nextRequiredCount === undefined || nextRequiredCount <= 0) {
+      throw new Error(
+        'Recurring-template ACHIEVEMENT tasks must keep a positive requiredCount',
+      );
+    }
+  } else if (nextRequiredCount !== undefined) {
+    throw new Error(
+      'requiredCount is only meaningful for recurring-template ACHIEVEMENT tasks',
+    );
+  }
 
   const patch: Partial<Task> = {
     ...updates,
@@ -291,6 +352,8 @@ export async function updateTask(
   // Translate `null` sentinel → `undefined` (Dexie stores absence).
   if (updates.referencedBoardId === null) patch.referencedBoardId = undefined;
   if (updates.referencedTemplateId === null) patch.referencedTemplateId = undefined;
+  if (updates.achievementTrigger === null) patch.achievementTrigger = undefined;
+  if (updates.requiredCount === null) patch.requiredCount = undefined;
 
   await db.transaction('rw', [db.tasks, db.syncQueue], async () => {
     await db.tasks.update(id, patch);

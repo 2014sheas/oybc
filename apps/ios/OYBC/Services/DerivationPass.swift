@@ -157,6 +157,19 @@ enum DerivationPass {
             // derivation cares about the task type vs the simple-completion
             // branch below.
             if task.type == .achievement {
+                // Trigger selects what "done" means for the watched
+                // target. Default .greenlog matches the pre-trigger
+                // shipped behavior so older payloads decode safely.
+                let trigger = task.achievementTrigger ?? .greenlog
+                let meets: (Board) -> Bool = { b in
+                    switch trigger {
+                    case .bingo:
+                        return (b.linesCompleted ?? 0) > 0
+                    case .greenlog:
+                        return b.status == .completed
+                    }
+                }
+
                 // Precedence: `referencedBoardId` wins when both fields
                 // are set. The Zod refinement rejects rows that set
                 // both, but a malicious remote payload or older client
@@ -165,13 +178,11 @@ enum DerivationPass {
                 // predictable.
                 if let refBoardId = task.referencedBoardId {
                     // Specific-board mode: cell completes when the
-                    // referenced board's stored status is .completed
-                    // (greenlog) AND the referenced board is non-deleted.
-                    // Soft-deleted ⇒ incomplete (not crash; not silently
-                    // ignore — UI can surface a "needs attention" badge
-                    // separately).
+                    // referenced board meets the trigger AND is
+                    // non-deleted. requiredCount is ignored here (the
+                    // named board is either done or not).
                     buildBoardIndexes()
-                    if let ref = boardById?[refBoardId], ref.status == .completed {
+                    if let ref = boardById?[refBoardId], meets(ref) {
                         grid[idx] = true
                         completedTasks += 1
                     }
@@ -179,18 +190,20 @@ enum DerivationPass {
                 }
 
                 if let refTemplateId = task.referencedTemplateId {
-                    // Recurring-template mode: cell completes when the
-                    // in-window non-deleted spawn set is non-empty AND
-                    // every member is .completed. Empty window ⇒
-                    // incomplete (NOT vacuously true — a future spawn
-                    // must land for the cell to ever satisfy). Window
-                    // membership is inclusive on both ends.
+                    // Recurring-template mode: count how many in-window
+                    // spawns meet the trigger, then compare against
+                    // `requiredCount`. Empty in-window set => incomplete
+                    // (matches the locked rule). Window membership is
+                    // inclusive on both ends.
                     buildBoardIndexes()
                     let spawns = boardsByTemplateId?[refTemplateId] ?? []
                     let inWindow = spawns.filter {
                         $0.startDate >= board.startDate && $0.startDate <= board.endDate
                     }
-                    if !inWindow.isEmpty && inWindow.allSatisfy({ $0.status == .completed }) {
+                    if inWindow.isEmpty { continue }
+                    let metCount = inWindow.filter(meets).count
+                    let required = task.requiredCount ?? 0
+                    if required > 0 && metCount >= required {
                         grid[idx] = true
                         completedTasks += 1
                     }

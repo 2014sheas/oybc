@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus, OperatorType } from '../constants/enums';
+import { AchievementTrigger, BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus, OperatorType } from '../constants/enums';
 
 /**
  * Validation schemas using Zod
@@ -136,6 +136,44 @@ const referenceFieldsForbiddenOnNonAchievement = (data: {
   return !(data.referencedBoardId || data.referencedTemplateId);
 };
 
+/**
+ * Phase 6.3 — `achievementTrigger` is only valid on ACHIEVEMENT tasks.
+ * (Setting it on NORMAL/COUNTING/COMPOUND is rejected.) When `type` is
+ * absent from the patch, skip the check — helper-layer re-validation
+ * covers the post-merge state.
+ */
+const triggerForbiddenOnNonAchievement = (data: {
+  type?: TaskType;
+  achievementTrigger?: AchievementTrigger | null;
+}): boolean => {
+  if (data.type === undefined || data.type === TaskType.ACHIEVEMENT) return true;
+  return data.achievementTrigger == null;
+};
+
+/**
+ * Phase 6.3 — `requiredCount` is only meaningful on ACHIEVEMENT tasks
+ * in recurring-template mode. Specific-board mode and non-ACHIEVEMENT
+ * types must leave it unset. Recurring-template ACHIEVEMENT MUST set
+ * it (positive integer; the count field itself constrains > 0 via the
+ * schema). When `type` is absent from the patch, skip — helper layer
+ * re-validates merged state.
+ */
+const requiredCountRulesOk = (data: {
+  type?: TaskType;
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+  requiredCount?: number | null;
+}): boolean => {
+  if (data.type === undefined) return true;
+  if (data.type !== TaskType.ACHIEVEMENT) return data.requiredCount == null;
+  // ACHIEVEMENT: must be set iff template mode.
+  if (data.referencedTemplateId != null && data.referencedTemplateId !== '') {
+    return data.requiredCount != null && data.requiredCount > 0;
+  }
+  // specific-board mode or no reference yet: requiredCount must be unset.
+  return data.requiredCount == null;
+};
+
 export const CreateTaskInputSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
@@ -146,6 +184,8 @@ export const CreateTaskInputSchema = z.object({
   steps: z.array(CreateTaskStepInputSchema).optional(),
   referencedBoardId: z.string().uuid().optional(),
   referencedTemplateId: z.string().uuid().optional(),
+  achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
+  requiredCount: z.number().int().positive().optional(),
 }).refine(
   (data) => {
     // Counting tasks must have action, unit, and maxCount
@@ -164,6 +204,12 @@ export const CreateTaskInputSchema = z.object({
 ).refine(
   referenceFieldsForbiddenOnNonAchievement,
   { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
+).refine(
+  triggerForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set achievementTrigger" },
+).refine(
+  requiredCountRulesOk,
+  { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
 );
 // Note: post-unification, Progress tasks are created via
 // `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
@@ -185,6 +231,8 @@ export const UpdateTaskInputSchema = z.object({
   // `null` sentinel clears the field; `undefined` leaves it untouched.
   referencedBoardId: z.string().uuid().nullable().optional(),
   referencedTemplateId: z.string().uuid().nullable().optional(),
+  achievementTrigger: z.nativeEnum(AchievementTrigger).nullable().optional(),
+  requiredCount: z.number().int().positive().nullable().optional(),
 }).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -194,6 +242,12 @@ export const UpdateTaskInputSchema = z.object({
 ).refine(
   referenceFieldsForbiddenOnNonAchievement,
   { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
+).refine(
+  triggerForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set achievementTrigger" },
+).refine(
+  requiredCountRulesOk,
+  { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
 );
 
 // ===== Compound creation input =====
@@ -274,6 +328,16 @@ export const TaskSchema = z.object({
   // calls this schema and rejects bad rows before they hit the local DB.
   referencedBoardId: z.string().uuid().optional(),
   referencedTemplateId: z.string().uuid().optional(),
+  // Phase 6.3 — completion trigger. Optional at the schema layer so
+  // non-ACHIEVEMENT rows can omit the field; derivation defaults to
+  // `GREENLOG` at read time when undefined (matches the pre-trigger
+  // shipped behavior + the iOS Codable defensive decode).
+  achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
+  // Phase 6.3 — required count of in-window spawns hitting the
+  // trigger. Required (positive integer) when `referencedTemplateId`
+  // is set, forbidden otherwise. Enforced by the `requiredCountRulesOk`
+  // refinement below.
+  requiredCount: z.number().int().positive().optional(),
   parentStepId: z.string().uuid().optional(),
   parentStepIndex: z.number().int().min(0).optional(),
   progressCounters: z.array(TaskProgressCounterSchema).optional(),
@@ -321,6 +385,12 @@ export const TaskSchema = z.object({
 ).refine(
   referenceFieldsForbiddenOnNonAchievement,
   { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
+).refine(
+  triggerForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set achievementTrigger" },
+).refine(
+  requiredCountRulesOk,
+  { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
 );
 
 export const TaskStepSchema = z.object({

@@ -1,6 +1,6 @@
 import type { Task, CompoundChild, BoardTask, Board } from '../types';
 import { BoardSize } from '../constants';
-import { BoardStatus, CenterSquareType, TaskType } from '../constants/enums';
+import { AchievementTrigger, BoardStatus, CenterSquareType, TaskType } from '../constants/enums';
 import { detectBingos } from './bingoDetection';
 import { evaluateCompound } from './compoundEvaluation';
 
@@ -153,6 +153,15 @@ export function computeBoardStatsUpdate(
     // is the only point where derivation cares about the task type vs the
     // simple-completion branch below.
     if (t.type === TaskType.ACHIEVEMENT) {
+      // Trigger selects what "done" means for the watched target.
+      // Default GREENLOG matches the pre-trigger shipped behavior so
+      // older payloads decode safely (the Zod schema also defaults).
+      const trigger = t.achievementTrigger ?? AchievementTrigger.GREENLOG;
+      const meets = (b: Board): boolean =>
+        trigger === AchievementTrigger.BINGO
+          ? (b.linesCompleted ?? 0) > 0
+          : b.status === BoardStatus.COMPLETED;
+
       // Precedence: `referencedBoardId` wins when both fields are set.
       // The Zod refinement rejects rows that set both, but a malicious
       // remote payload or older client could still produce one — pick
@@ -160,13 +169,13 @@ export function computeBoardStatsUpdate(
       // predictable.
       if (t.referencedBoardId) {
         // Specific-board mode: square completes when the referenced
-        // board's stored status is COMPLETED (greenlog) AND the
-        // referenced board is non-deleted. Soft-deleted ⇒ incomplete
-        // (not crash; not silently ignore — UI can surface a "needs
-        // attention" badge separately).
+        // board meets the trigger AND is non-deleted. Soft-deleted ⇒
+        // incomplete (not crash; not silently ignore — UI can surface
+        // a "needs attention" badge separately). `requiredCount` is
+        // ignored in this mode (the named board is either done or not).
         buildBoardIndexes();
         const ref = boardById!.get(t.referencedBoardId);
-        if (ref && ref.status === BoardStatus.COMPLETED) {
+        if (ref && meets(ref)) {
           grid[idx] = true;
           completedTasks += 1;
         }
@@ -174,17 +183,26 @@ export function computeBoardStatsUpdate(
       }
 
       if (t.referencedTemplateId) {
-        // Recurring-template mode: square completes when the in-window
-        // non-deleted spawn set is non-empty AND every member is
-        // COMPLETED. Empty window ⇒ incomplete (NOT vacuously true —
-        // a future spawn must land for the square to ever satisfy).
-        // Window membership is inclusive on both ends.
+        // Recurring-template mode: count how many in-window spawns
+        // meet the trigger, then compare against `requiredCount`.
+        // The cell completes when:
+        //   - the in-window non-deleted spawn set is non-empty
+        //     (matches the locked "empty window = incomplete, NOT
+        //     vacuously true" rule), AND
+        //   - the number of in-window spawns meeting the trigger is
+        //     >= `requiredCount`.
+        // When fewer in-window spawns exist than `requiredCount`
+        // requires, the cell stays incomplete and waits for future
+        // spawns. Window membership is inclusive on both ends.
         buildBoardIndexes();
         const spawns = boardsByTemplateId!.get(t.referencedTemplateId) ?? [];
         const inWindow = spawns.filter(
           (b) => b.startDate >= board.startDate && b.startDate <= board.endDate,
         );
-        if (inWindow.length > 0 && inWindow.every((b) => b.status === BoardStatus.COMPLETED)) {
+        if (inWindow.length === 0) continue;
+        const metCount = inWindow.filter(meets).length;
+        const required = t.requiredCount ?? 0;
+        if (required > 0 && metCount >= required) {
           grid[idx] = true;
           completedTasks += 1;
         }

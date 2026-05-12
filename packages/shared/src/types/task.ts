@@ -1,4 +1,4 @@
-import { OperatorType, TaskType } from '../constants/enums';
+import { AchievementTrigger, OperatorType, TaskType } from '../constants/enums';
 
 /**
  * Task - Reusable task definition
@@ -54,6 +54,32 @@ export interface Task {
    * `referencedBoardId`.
    */
   referencedTemplateId?: string;
+
+  /**
+   * Phase 6.3 — Completion trigger for the watched target. Defines what
+   * counts as the referenced board (or each in-window spawn for template
+   * mode) being "done":
+   *   - `BINGO`: target has at least one bingo line (`linesCompleted > 0`)
+   *   - `GREENLOG`: target's status is `BoardStatus.COMPLETED`
+   *
+   * Only meaningful when `type === TaskType.ACHIEVEMENT`. Defaults to
+   * `GREENLOG` when unset (matches the pre-trigger shipped behavior).
+   * Setting this field on a non-ACHIEVEMENT task is rejected by Zod.
+   */
+  achievementTrigger?: AchievementTrigger;
+  /**
+   * Phase 6.3 — Required count of in-window spawns that must meet the
+   * `achievementTrigger` for the cell to complete. Only meaningful when
+   * `type === TaskType.ACHIEVEMENT` AND `referencedTemplateId` is set
+   * (recurring-template mode). For specific-board mode the count is
+   * implicitly 1 (a named board either hit the trigger or didn't);
+   * this field is ignored.
+   *
+   * Must be a positive integer. When the in-window spawn set has fewer
+   * spawns than `requiredCount`, the cell stays incomplete (mirrors the
+   * locked "empty window = incomplete, NOT vacuously true" rule).
+   */
+  requiredCount?: number;
 
   // Task linking (for tasks used as progress steps)
   parentStepId?: string;         // References TaskStep.id in parent task
@@ -148,6 +174,13 @@ export interface CreateTaskInput {
   /** Phase 6.3 — required (XOR with `referencedBoardId`) when
    *  `type === TaskType.ACHIEVEMENT`. Forbidden on all other types. */
   referencedTemplateId?: string;
+  /** Phase 6.3 — completion trigger (default `GREENLOG`). Only
+   *  meaningful when `type === TaskType.ACHIEVEMENT`. */
+  achievementTrigger?: AchievementTrigger;
+  /** Phase 6.3 — required count of in-window spawns hitting the trigger.
+   *  Required (positive integer) when `referencedTemplateId` is set;
+   *  ignored for specific-board mode and rejected on non-ACHIEVEMENT. */
+  requiredCount?: number;
 }
 
 /**
@@ -177,6 +210,13 @@ export interface UpdateTaskInput {
   referencedBoardId?: string | null;
   /** See `referencedBoardId`. Mutually exclusive. */
   referencedTemplateId?: string | null;
+  /** Phase 6.3 — completion trigger. `null` clears (caller almost
+   *  never wants this since the field is required when ACHIEVEMENT;
+   *  helper-layer re-validation will reject the cleared state). */
+  achievementTrigger?: AchievementTrigger | null;
+  /** Phase 6.3 — required spawn count. `null` clears. Only meaningful
+   *  in recurring-template mode. */
+  requiredCount?: number | null;
 }
 
 /**

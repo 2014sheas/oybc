@@ -228,18 +228,19 @@ export function FloatingContextMenu({
  */
 export interface AchievementSquareBadgeData {
   mode: 'specificBoard' | 'recurringTemplate';
-  /** Specific-board mode: referenced board's display label + greenlog
+  /** Specific-board mode: referenced board's display label + trigger-met
    *  status. Falls back to `(deleted board)` when the referenced board
    *  was soft-deleted, so the cell makes clear why it's not completing. */
   referencedBoardName?: string;
   referencedBoardCompleted?: boolean;
-  /** Recurring-template mode: template name + M / N greenlogged spawns
-   *  within the parent board's window. Empty window renders as `0/0`
-   *  with the standard caption — derivation marks the cell incomplete
-   *  in that case. */
+  /** Recurring-template mode: template name + M / N spawns meeting the
+   *  trigger within the parent board's window. `templateRequiredCount`
+   *  is the user-set required N; `templateInWindowMet` is how many
+   *  in-window spawns currently satisfy the trigger. Empty window
+   *  renders as `0/N` and derivation marks the cell incomplete. */
   templateName?: string;
-  templateInWindowGreenlogged?: number;
-  templateInWindowTotal?: number;
+  templateInWindowMet?: number;
+  templateRequiredCount?: number;
 }
 
 interface InteractiveTaskSquareProps {
@@ -606,9 +607,9 @@ function formatAchievementBadgeLabel(badge: AchievementSquareBadgeData): string 
     }
     case 'recurringTemplate': {
       const name = badge.templateName?.trim() || '(deleted)';
-      const g = badge.templateInWindowGreenlogged ?? 0;
-      const t = badge.templateInWindowTotal ?? 0;
-      return `${g}/${t} ${name}`;
+      const met = badge.templateInWindowMet ?? 0;
+      const required = badge.templateRequiredCount ?? 0;
+      return `${met}/${required} ${name}`;
     }
   }
 }

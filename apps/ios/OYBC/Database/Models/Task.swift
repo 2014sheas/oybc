@@ -44,6 +44,18 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
     var referencedBoardId: String?
     var referencedTemplateId: String?
 
+    /// Phase 6.3 — Completion trigger for the watched target. Defaults
+    /// to `.greenlog` on decode when absent (matches the pre-trigger
+    /// shipped behavior + the shared TS twin). Setting this on a
+    /// non-ACHIEVEMENT task is rejected at the write helper.
+    var achievementTrigger: AchievementTrigger?
+
+    /// Phase 6.3 — Required count of in-window spawns hitting the
+    /// trigger (recurring-template mode only). Required positive
+    /// integer when `referencedTemplateId` is set; ignored for
+    /// specific-board mode and forbidden on non-ACHIEVEMENT.
+    var requiredCount: Int?
+
     // Task linking (for tasks used as progress steps)
     var parentStepId: String?
     var parentStepIndex: Int?
@@ -93,6 +105,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         isOrdered: Bool? = nil,
         referencedBoardId: String? = nil,
         referencedTemplateId: String? = nil,
+        achievementTrigger: AchievementTrigger? = nil,
+        requiredCount: Int? = nil,
         parentStepId: String? = nil,
         parentStepIndex: Int? = nil,
         progressCounters: [TaskProgressCounter]? = nil,
@@ -121,6 +135,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         self.isOrdered = isOrdered
         self.referencedBoardId = referencedBoardId
         self.referencedTemplateId = referencedTemplateId
+        self.achievementTrigger = achievementTrigger
+        self.requiredCount = requiredCount
         self.parentStepId = parentStepId
         self.parentStepIndex = parentStepIndex
         self.progressCounters = progressCounters
@@ -145,6 +161,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         case operatorType = "operator"
         case threshold, isOrdered
         case referencedBoardId, referencedTemplateId
+        case achievementTrigger, requiredCount
         case parentStepId, parentStepIndex, progressCounters
         case totalCompletions, totalInstances
         case isCompleted, completedAt, currentCount
@@ -169,6 +186,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         isOrdered = try container.decodeIfPresent(Bool.self, forKey: .isOrdered)
         referencedBoardId = try container.decodeIfPresent(String.self, forKey: .referencedBoardId)
         referencedTemplateId = try container.decodeIfPresent(String.self, forKey: .referencedTemplateId)
+        achievementTrigger = try container.decodeIfPresent(AchievementTrigger.self, forKey: .achievementTrigger)
+        requiredCount = try container.decodeIfPresent(Int.self, forKey: .requiredCount)
         parentStepId = try container.decodeIfPresent(String.self, forKey: .parentStepId)
         parentStepIndex = try container.decodeIfPresent(Int.self, forKey: .parentStepIndex)
 
@@ -210,6 +229,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         try container.encodeIfPresent(isOrdered, forKey: .isOrdered)
         try container.encodeIfPresent(referencedBoardId, forKey: .referencedBoardId)
         try container.encodeIfPresent(referencedTemplateId, forKey: .referencedTemplateId)
+        try container.encodeIfPresent(achievementTrigger, forKey: .achievementTrigger)
+        try container.encodeIfPresent(requiredCount, forKey: .requiredCount)
         try container.encodeIfPresent(parentStepId, forKey: .parentStepId)
         try container.encodeIfPresent(parentStepIndex, forKey: .parentStepIndex)
 
@@ -293,4 +314,12 @@ struct TaskProgressCounter: Codable {
     var counterId: String
     var targetValue: Double
     var unit: String?
+}
+
+/// Phase 6.3 — Achievement-task completion trigger. Mirrors the TS
+/// `AchievementTrigger` enum from `@oybc/shared`. Stored as the raw
+/// string `"bingo"` / `"greenlog"` to match the wire format.
+enum AchievementTrigger: String, Codable, DatabaseValueConvertible {
+    case bingo
+    case greenlog
 }

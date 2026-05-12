@@ -321,6 +321,15 @@ struct BoardPlayView: View {
     private func achievementBadge(for bt: BoardTask) -> AchievementSquareBadgeData? {
         guard let task = taskMap[bt.taskId], task.type == .achievement else { return nil }
         guard let parent = board else { return nil }
+        let trigger = task.achievementTrigger ?? .greenlog
+        let meets: (Board) -> Bool = { b in
+            switch trigger {
+            case .bingo:
+                return (b.linesCompleted ?? 0) > 0
+            case .greenlog:
+                return b.status == .completed
+            }
+        }
         // Precedence: referencedBoardId wins when both somehow get set.
         // Mirrors derivationPass's bad-data rule.
         if let refBoardId = task.referencedBoardId {
@@ -328,7 +337,7 @@ struct BoardPlayView: View {
             return AchievementSquareBadgeData(
                 mode: .specificBoard,
                 referencedBoardName: ref?.name,
-                referencedBoardCompleted: ref?.status == .completed
+                referencedBoardCompleted: ref.map(meets) ?? false
             )
         }
         if let refTemplateId = task.referencedTemplateId {
@@ -339,12 +348,12 @@ struct BoardPlayView: View {
                     && b.startDate >= parent.startDate
                     && b.startDate <= parent.endDate
             }
-            let completed = spawns.filter { $0.status == .completed }.count
+            let metCount = spawns.filter(meets).count
             return AchievementSquareBadgeData(
                 mode: .recurringTemplate,
                 templateName: template?.name,
-                templateInWindowGreenlogged: completed,
-                templateInWindowTotal: spawns.count
+                templateInWindowMet: metCount,
+                templateRequiredCount: task.requiredCount ?? 0
             )
         }
         // No reference set: no badge (cell renders as regular task).
@@ -610,10 +619,20 @@ struct BoardPlayView: View {
     /// have to round-trip through DerivationPass on every render.
     private func achievementCellIsCompleted(for task: Task) -> Bool {
         guard let parent = board else { return false }
-        if let refBoardId = task.referencedBoardId {
-            return allBoardsInWorkspace.contains { b in
-                b.id == refBoardId && !b.isDeleted && b.status == .completed
+        let trigger = task.achievementTrigger ?? .greenlog
+        let meets: (Board) -> Bool = { b in
+            switch trigger {
+            case .bingo:
+                return (b.linesCompleted ?? 0) > 0
+            case .greenlog:
+                return b.status == .completed
             }
+        }
+        if let refBoardId = task.referencedBoardId {
+            guard let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted }) else {
+                return false
+            }
+            return meets(ref)
         }
         if let refTemplateId = task.referencedTemplateId {
             let spawns = allBoardsInWorkspace.filter { b in
@@ -622,7 +641,10 @@ struct BoardPlayView: View {
                     && b.startDate >= parent.startDate
                     && b.startDate <= parent.endDate
             }
-            return !spawns.isEmpty && spawns.allSatisfy { $0.status == .completed }
+            if spawns.isEmpty { return false }
+            let metCount = spawns.filter(meets).count
+            let required = task.requiredCount ?? 0
+            return required > 0 && metCount >= required
         }
         return false
     }

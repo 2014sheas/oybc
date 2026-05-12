@@ -25,15 +25,18 @@ struct AchievementSquareBadgeData: Equatable {
     // Specific-board mode. `referencedBoardName` is nil when the
     // referenced board was soft-deleted; the label falls back to
     // "(deleted)" so the user sees why the cell isn't completing.
+    // `referencedBoardCompleted` indicates whether the referenced
+    // board currently meets the Task's `achievementTrigger`.
     var referencedBoardName: String?
     var referencedBoardCompleted: Bool?
 
-    // Recurring-template mode. Empty window ⇒ both counters are 0,
-    // which renders as "0/0" with the standard caption — derivation
-    // still treats this as incomplete (locked rule, see Phase 6.3 plan).
+    // Recurring-template mode. `templateInWindowMet` is the number of
+    // in-window spawns currently meeting the trigger;
+    // `templateRequiredCount` is the user-set required N. Cell
+    // completes when met >= required AND inWindow is non-empty.
     var templateName: String?
-    var templateInWindowGreenlogged: Int?
-    var templateInWindowTotal: Int?
+    var templateInWindowMet: Int?
+    var templateRequiredCount: Int?
 
     /// Compact, mode-aware label for the cell badge. Mirrors the
     /// TS-side `formatAchievementBadgeLabel`. Falls back to "(deleted)"
@@ -47,9 +50,9 @@ struct AchievementSquareBadgeData: Equatable {
         case .recurringTemplate:
             let trimmed = (templateName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let name = trimmed.isEmpty ? "(deleted)" : trimmed
-            let g = templateInWindowGreenlogged ?? 0
-            let t = templateInWindowTotal ?? 0
-            return "\(g)/\(t) \(name)"
+            let met = templateInWindowMet ?? 0
+            let required = templateRequiredCount ?? 0
+            return "\(met)/\(required) \(name)"
         }
     }
 }

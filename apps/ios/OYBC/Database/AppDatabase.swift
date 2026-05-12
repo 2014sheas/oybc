@@ -356,6 +356,24 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN referencedTemplateId TEXT")
         }
 
+        // v11: Phase 6.3 — Achievement trigger + required count.
+        //
+        //   Adds two optional columns to `tasks`:
+        //     - achievementTrigger TEXT — 'bingo' or 'greenlog'. When
+        //       null, derivation defaults to 'greenlog' at read time
+        //       (matches the pre-trigger shipped behavior and the
+        //       shared Zod schema's defensive decode).
+        //     - requiredCount INTEGER — positive integer required when
+        //       referencedTemplateId is set; null otherwise. Forbidden
+        //       on non-ACHIEVEMENT tasks.
+        //
+        //   No indexes; lookups happen per-row inside DerivationPass.
+        //   Both fields are nullable + additive so back-fill is a no-op.
+        migrator.registerMigration("v11") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN achievementTrigger TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN requiredCount INTEGER")
+        }
+
         return migrator
     }
 

@@ -126,9 +126,10 @@ test.describe('Phase 6.3 achievement task creator', () => {
     // Verify the Task landed in Dexie. We re-open the connection and look
     // up the new row by title; the assertion is that exactly one task
     // matches and its type is ACHIEVEMENT + referencedBoardId is the
-    // peer board id.
+    // peer board id. Also verify the trigger defaults to 'greenlog'
+    // (the form's default radio state).
     const result = await page.evaluate(async ({ userId }) => {
-      return new Promise<{ count: number; type?: string; refBoard?: string }>((resolve, reject) => {
+      return new Promise<{ count: number; type?: string; refBoard?: string; trigger?: string; requiredCount?: number }>((resolve, reject) => {
         const openReq = indexedDB.open('oybc');
         openReq.onerror = () => reject(openReq.error);
         openReq.onsuccess = () => {
@@ -153,6 +154,8 @@ test.describe('Phase 6.3 achievement task creator', () => {
               count: matches.length,
               type: m.type as string,
               refBoard: m.referencedBoardId as string,
+              trigger: m.achievementTrigger as string,
+              requiredCount: m.requiredCount as number | undefined,
             });
           };
           req.onerror = () => reject(req.error);
@@ -163,5 +166,72 @@ test.describe('Phase 6.3 achievement task creator', () => {
     expect(result.count).toBe(1);
     expect(result.type).toBe('achievement');
     expect(result.refBoard).toBe(PEER_BOARD_ID);
+    // Default trigger is GREENLOG; specific-board mode ignores requiredCount.
+    expect(result.trigger).toBe('greenlog');
+    expect(result.requiredCount).toBeUndefined();
+  });
+
+  test('recurring-template mode requires a count + persists trigger & count', async ({ page }) => {
+    await page.goto('/create?__oybc_test_bypass=1');
+    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.getByRole('radio', { name: /A recurring template/i }).check();
+    await page.getByPlaceholder(/enter task title/i).fill('3 Leg Days a month');
+    await page.locator('#create-task-ach-template').selectOption(TEMPLATE_ID);
+    // Flip the trigger to BINGO to verify the form serializes it.
+    await page.getByRole('radio', { name: /Any bingo line/i }).check();
+
+    // Submitting without a count should surface the validation error.
+    await page.getByRole('button', { name: /Add to library|Create & Add to Pool/i }).click();
+    await expect(page.getByText(/Required count is required/i)).toBeVisible();
+
+    // Fill the count and submit.
+    await page.locator('#create-task-ach-count').fill('3');
+    await page.getByRole('button', { name: /Add to library|Create & Add to Pool/i }).click();
+
+    // After submit, the form resets — title cleared.
+    await expect(page.getByPlaceholder(/enter task title/i)).toHaveValue('');
+
+    // Read back the persisted Task and assert the trigger + count
+    // landed correctly.
+    const result = await page.evaluate(async ({ userId }) => {
+      return new Promise<{ count: number; type?: string; refTemplate?: string; trigger?: string; requiredCount?: number }>((resolve, reject) => {
+        const openReq = indexedDB.open('oybc');
+        openReq.onerror = () => reject(openReq.error);
+        openReq.onsuccess = () => {
+          const db = openReq.result;
+          const tx = db.transaction(['tasks'], 'readonly');
+          const store = tx.objectStore('tasks');
+          const req = store.getAll();
+          req.onsuccess = () => {
+            const matches = (req.result as Array<Record<string, unknown>>).filter(
+              (t) =>
+                t.userId === userId &&
+                t.title === '3 Leg Days a month' &&
+                !t.isDeleted,
+            );
+            db.close();
+            if (matches.length === 0) {
+              resolve({ count: 0 });
+              return;
+            }
+            const m = matches[0];
+            resolve({
+              count: matches.length,
+              type: m.type as string,
+              refTemplate: m.referencedTemplateId as string,
+              trigger: m.achievementTrigger as string,
+              requiredCount: m.requiredCount as number,
+            });
+          };
+          req.onerror = () => reject(req.error);
+        };
+      });
+    }, { userId: BYPASS_USER_ID });
+
+    expect(result.count).toBe(1);
+    expect(result.type).toBe('achievement');
+    expect(result.refTemplate).toBe(TEMPLATE_ID);
+    expect(result.trigger).toBe('bingo');
+    expect(result.requiredCount).toBe(3);
   });
 });
