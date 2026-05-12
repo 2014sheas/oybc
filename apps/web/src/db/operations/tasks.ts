@@ -219,13 +219,19 @@ export async function createCompound(
 /**
  * Update a task.
  *
- * Phase 6.3 — When the caller patches `referencedBoardId` /
- * `referencedTemplateId` on an ACHIEVEMENT task, we defensively re-check
- * the mutual-exclusion rule. Pass the `null` sentinel as the patch value
- * to explicitly clear a field (Dexie treats `undefined` in a `Partial`
- * as "don't change", so a separate clear path is needed); `undefined`
- * leaves the existing value untouched. The atomic update + sync-queue
- * write keeps the local DB consistent under a mid-write crash.
+ * Phase 6.3 — Pass the `null` sentinel as the patch value to explicitly
+ * clear a reference field (Dexie treats `undefined` in a `Partial` as
+ * "don't change", so a separate clear path is needed); `undefined`
+ * leaves the existing value untouched.
+ *
+ * Defensive re-validation of the merged state happens here rather than
+ * relying on `UpdateTaskInputSchema` alone — the schema's type-match
+ * refines only fire when `type` is in the patch, but callers usually
+ * omit it (type is immutable post-creation). To prevent a partial
+ * update from sneaking an invalid shape into the local DB, we compute
+ * the post-merge {type, refs} and re-check all three Phase 6.3 rules
+ * before writing. The atomic update + sync-queue write keeps the local
+ * DB consistent under a mid-write crash.
  */
 export async function updateTask(
   id: string,
@@ -237,7 +243,18 @@ export async function updateTask(
   const existing = await db.tasks.get(id);
   if (!existing) return;
 
-  // Resolve the post-patch reference values to validate mutual exclusion.
+  // `type` is immutable post-creation (the public `UpdateTaskInput`
+  // type doesn't expose it). An internal `Partial<Task>`-typed caller
+  // could still pass `updates.type` — reject loudly rather than
+  // silently writing the change.
+  if (updates.type !== undefined && updates.type !== existing.type) {
+    throw new Error(
+      `Task.type is immutable after creation (got '${updates.type}', existing '${existing.type}')`,
+    );
+  }
+
+  // Resolve the post-patch values for the rules below.
+  const nextType = existing.type;
   const nextRefBoard =
     updates.referencedBoardId === null
       ? undefined
@@ -246,9 +263,23 @@ export async function updateTask(
     updates.referencedTemplateId === null
       ? undefined
       : updates.referencedTemplateId ?? existing.referencedTemplateId;
+
+  // Rule 1: mutual exclusion.
   if (nextRefBoard && nextRefTpl) {
     throw new Error(
       'Task.referencedBoardId and referencedTemplateId are mutually exclusive',
+    );
+  }
+  // Rule 2: ACHIEVEMENT tasks must keep exactly one reference.
+  if (nextType === TaskType.ACHIEVEMENT && !nextRefBoard && !nextRefTpl) {
+    throw new Error(
+      'Achievement tasks must keep exactly one of referencedBoardId or referencedTemplateId',
+    );
+  }
+  // Rule 3: non-ACHIEVEMENT tasks may not have references.
+  if (nextType !== TaskType.ACHIEVEMENT && (nextRefBoard || nextRefTpl)) {
+    throw new Error(
+      'Only ACHIEVEMENT tasks may have referencedBoardId or referencedTemplateId',
     );
   }
 

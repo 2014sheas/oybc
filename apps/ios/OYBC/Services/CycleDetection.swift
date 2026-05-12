@@ -106,13 +106,40 @@ enum CycleDetection {
             if t.isDeleted { continue }
             tasksById[t.id] = t
         }
-
-        // Index spawns once for template-fan-out edges.
-        var spawnsByTemplate: [String: [String]] = [:]
+        var boardsById: [String: Board] = [:]
         for b in context.allBoards {
             if b.isDeleted { continue }
+            boardsById[b.id] = b
+        }
+
+        // Index spawns once for template-fan-out edges. Holds full Board
+        // objects (not just ids) so the window-filter below can read each
+        // spawn's `startDate` without a second lookup. All values are
+        // non-deleted (filtered through `boardsById`).
+        var spawnsByTemplate: [String: [Board]] = [:]
+        for b in boardsById.values {
             if let tid = b.spawnedFromTemplateId {
-                spawnsByTemplate[tid, default: []].append(b.id)
+                spawnsByTemplate[tid, default: []].append(b)
+            }
+        }
+
+        /// Return the in-window spawns of `templateId` for the given
+        /// placing board. Mirrors the window filter in
+        /// `DerivationPass.computeBoardStatsUpdate` so cycle edges match
+        /// the spawn set derivation actually evaluates. If the placing
+        /// board is missing (sync race / soft-deleted) we conservatively
+        /// skip the fan-out — no edges added.
+        ///
+        /// Without this filter the cycle check over-approximates and
+        /// rejects legitimate placements: e.g., a May spawn referencing
+        /// back to an April parent doesn't contribute to April's
+        /// evaluation, so it shouldn't contribute to cycle adjacency
+        /// from April either.
+        func inWindowSpawns(placingBoardId: String, templateId: String) -> [Board] {
+            guard let placing = boardsById[placingBoardId] else { return [] }
+            let all = spawnsByTemplate[templateId] ?? []
+            return all.filter {
+                $0.startDate >= placing.startDate && $0.startDate <= placing.endDate
             }
         }
 
@@ -127,8 +154,8 @@ enum CycleDetection {
             if let refBoardId = t.referencedBoardId {
                 addEdge(bt.boardId, refBoardId)
             } else if let refTemplateId = t.referencedTemplateId {
-                for target in spawnsByTemplate[refTemplateId] ?? [] {
-                    addEdge(bt.boardId, target)
+                for target in inWindowSpawns(placingBoardId: bt.boardId, templateId: refTemplateId) {
+                    addEdge(bt.boardId, target.id)
                 }
             }
         }
@@ -136,24 +163,26 @@ enum CycleDetection {
         // Inject the candidate's prospective edges from each parent. The
         // candidate (Task + its placements) may already be reflected in
         // `allBoardTasks` (e.g., editing an existing Task) — re-adding
-        // identical edges is idempotent (Set semantics).
-        var candidateTargets: Set<String> = []
-        if let refBoardId = candidate.referencedBoardId {
-            candidateTargets.insert(refBoardId)
-        }
-        if let refTemplateId = candidate.referencedTemplateId {
-            for target in spawnsByTemplate[refTemplateId] ?? [] {
-                candidateTargets.insert(target)
-            }
-        }
+        // identical edges is idempotent (Set semantics). Template fan-out
+        // is window-aware per parent: a candidate placed on two boards
+        // with different windows gets different in-window spawn sets per
+        // placement.
+        var allCandidateTargets: Set<String> = []
         for parentId in parentBoardIds {
-            for target in candidateTargets {
-                addEdge(parentId, target)
+            if let refBoardId = candidate.referencedBoardId {
+                addEdge(parentId, refBoardId)
+                allCandidateTargets.insert(refBoardId)
+            }
+            if let refTemplateId = candidate.referencedTemplateId {
+                for target in inWindowSpawns(placingBoardId: parentId, templateId: refTemplateId) {
+                    addEdge(parentId, target.id)
+                    allCandidateTargets.insert(target.id)
+                }
             }
         }
 
         // ── DFS from each candidate target looking for a path back to any parent ──
-        for start in candidateTargets {
+        for start in allCandidateTargets {
             var visited: Set<String> = []
             if let path = dfsToAnyTarget(
                 start: start,

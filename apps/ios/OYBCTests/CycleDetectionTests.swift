@@ -330,6 +330,94 @@ final class CycleDetectionTests: XCTestCase {
         XCTAssertEqual(result, .ok)
     }
 
+    func testHasCycle_WindowAwareFanOut_OutOfWindowSpawnDoesNotCloseCycle() {
+        // Parent P (April). Template T has spawns in April + May. The May
+        // spawn places an achievement task watching P. Without window-
+        // aware fan-out, the cycle check would build May→P AND P→May (via
+        // template fan-out from candidate), reporting a false-positive
+        // cycle. Derivation only counts in-window spawns for P, so the
+        // May spawn never contributes — the cycle doesn't exist
+        // semantically. The post-fix algorithm filters May out of P's
+        // template fan-out.
+        let parent = board("p")
+        let aprilSpawn = boardWithDate(
+            "apr",
+            spawnedFromTemplateId: "t1",
+            startDate: "2026-04-15T00:00:00.000Z",
+            endDate: "2026-04-15T23:59:59.000Z"
+        )
+        let maySpawn = boardWithDate(
+            "may",
+            spawnedFromTemplateId: "t1",
+            startDate: "2026-05-15T00:00:00.000Z",
+            endDate: "2026-05-15T23:59:59.000Z"
+        )
+        let tBack = achievementTask("tBack", referencedBoardId: "p")
+        let pBack = placement("may", "tBack")
+        let result = CycleDetection.hasCycle(
+            candidate: CycleCheckCandidate(parentBoardIds: ["p"], referencedBoardId: nil, referencedTemplateId: "t1"),
+            context: CycleCheckContext(allBoardTasks: [pBack], allTasks: [tBack], allBoards: [parent, aprilSpawn, maySpawn])
+        )
+        XCTAssertEqual(result, .ok)
+    }
+
+    func testHasCycle_WindowAwareFanOut_InWindowSpawnDoesCloseCycle() {
+        // Mirror of the test above but the cycle-closing spawn is IN P's
+        // window — so the cycle is real and must be rejected.
+        let parent = board("p")
+        let aprilSpawn = boardWithDate(
+            "apr",
+            spawnedFromTemplateId: "t1",
+            startDate: "2026-04-15T00:00:00.000Z",
+            endDate: "2026-04-15T23:59:59.000Z"
+        )
+        let tBack = achievementTask("tBack", referencedBoardId: "p")
+        let pBack = placement("apr", "tBack")
+        let result = CycleDetection.hasCycle(
+            candidate: CycleCheckCandidate(parentBoardIds: ["p"], referencedBoardId: nil, referencedTemplateId: "t1"),
+            context: CycleCheckContext(allBoardTasks: [pBack], allTasks: [tBack], allBoards: [parent, aprilSpawn])
+        )
+        if case .cycle = result {
+            // pass
+        } else {
+            XCTFail("expected cycle through in-window spawn → parent")
+        }
+    }
+
+    // Helper for window-aware tests: overrides the default startDate/
+    // endDate. The default `board()` helper uses fixed April dates.
+    private func boardWithDate(
+        _ id: String,
+        spawnedFromTemplateId: String? = nil,
+        startDate: String,
+        endDate: String,
+        isDeleted: Bool = false
+    ) -> Board {
+        var dict: [String: Any] = [
+            "id": id,
+            "userId": "u",
+            "name": id,
+            "status": "active",
+            "boardSize": 3,
+            "timeframe": "monthly",
+            "startDate": startDate,
+            "endDate": endDate,
+            "centerSquareType": "none",
+            "isRandomized": false,
+            "totalTasks": 9,
+            "completedTasks": 0,
+            "linesCompleted": 0,
+            "completedLineIds": "[]",
+            "createdAt": "2026-04-23T00:00:00.000Z",
+            "updatedAt": "2026-04-23T00:00:00.000Z",
+            "version": 1,
+            "isDeleted": isDeleted,
+        ]
+        if let tid = spawnedFromTemplateId { dict["spawnedFromTemplateId"] = tid }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
     func testHasCycle_SoftDeletedAchievementTask_ContributesNoEdges() {
         // A deleted achievement Task is filtered out of tasksById, so
         // its placement contributes no edge to the graph.

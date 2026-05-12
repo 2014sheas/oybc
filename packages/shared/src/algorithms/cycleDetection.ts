@@ -125,17 +125,45 @@ export function hasCycle(
     if (t.isDeleted) continue;
     tasksById.set(t.id, t);
   }
-
-  // Index spawns once for template-fan-out edges.
-  const spawnsByTemplate = new Map<string, string[]>();
+  const boardsById = new Map<string, Board>();
   for (const b of allBoards) {
     if (b.isDeleted) continue;
+    boardsById.set(b.id, b);
+  }
+
+  // Index spawns once for template-fan-out edges. Holds full Board
+  // objects (not just ids) so the window-filter below can read each
+  // spawn's `startDate` without a second lookup. All values are
+  // non-deleted (filtered through `boardsById`).
+  const spawnsByTemplate = new Map<string, Board[]>();
+  for (const b of boardsById.values()) {
     if (b.spawnedFromTemplateId) {
       const list = spawnsByTemplate.get(b.spawnedFromTemplateId) ?? [];
-      list.push(b.id);
+      list.push(b);
       spawnsByTemplate.set(b.spawnedFromTemplateId, list);
     }
   }
+
+  /**
+   * Return the in-window spawns of `templateId` for the given placing
+   * board. Mirrors the window filter in `derivationPass.ts` so cycle
+   * edges match the set of spawns derivation actually evaluates. If
+   * the placing board is missing (sync race / soft-deleted) we
+   * conservatively skip the fan-out — no edges added.
+   *
+   * Without this filter the cycle check over-approximates and rejects
+   * legitimate placements: e.g., a May spawn referencing back to an
+   * April parent doesn't contribute to April's evaluation, so it
+   * shouldn't contribute to cycle adjacency from April either.
+   */
+  const inWindowSpawns = (placingBoardId: string, templateId: string): Board[] => {
+    const placing = boardsById.get(placingBoardId);
+    if (!placing) return [];
+    const all = spawnsByTemplate.get(templateId) ?? [];
+    return all.filter(
+      (s) => s.startDate >= placing.startDate && s.startDate <= placing.endDate,
+    );
+  };
 
   const adjacency = new Map<string, Set<string>>();
   const addEdge = (from: string, to: string): void => {
@@ -151,27 +179,34 @@ export function hasCycle(
     if (t.referencedBoardId) {
       addEdge(bt.boardId, t.referencedBoardId);
     } else if (t.referencedTemplateId) {
-      const targets = spawnsByTemplate.get(t.referencedTemplateId) ?? [];
-      for (const target of targets) addEdge(bt.boardId, target);
+      for (const target of inWindowSpawns(bt.boardId, t.referencedTemplateId)) {
+        addEdge(bt.boardId, target.id);
+      }
     }
   }
 
   // Inject the candidate's prospective edges from each parent. The candidate
   // (Task + its placements) may already be reflected in `allBoardTasks`
   // (e.g., editing an existing Task) — re-adding identical edges is
-  // idempotent (Set semantics).
-  const candidateTargets = new Set<string>();
-  if (referencedBoardId) candidateTargets.add(referencedBoardId);
-  if (referencedTemplateId) {
-    const targets = spawnsByTemplate.get(referencedTemplateId) ?? [];
-    for (const target of targets) candidateTargets.add(target);
-  }
+  // idempotent (Set semantics). Template fan-out is window-aware per
+  // parent: a candidate placed on two boards with different windows gets
+  // different in-window spawn sets per placement.
+  const allCandidateTargets = new Set<string>();
   for (const parentId of parentBoardIds) {
-    for (const target of candidateTargets) addEdge(parentId, target);
+    if (referencedBoardId) {
+      addEdge(parentId, referencedBoardId);
+      allCandidateTargets.add(referencedBoardId);
+    }
+    if (referencedTemplateId) {
+      for (const target of inWindowSpawns(parentId, referencedTemplateId)) {
+        addEdge(parentId, target.id);
+        allCandidateTargets.add(target.id);
+      }
+    }
   }
 
   // ── DFS from each candidate target looking for a path back to any parent ──
-  for (const start of candidateTargets) {
+  for (const start of allCandidateTargets) {
     const path = dfsToAnyTarget(start, parentSet, adjacency, new Set<string>());
     if (path !== null) {
       // The hit board id (`path[path.length - 1]`) is the parent we landed

@@ -315,6 +315,71 @@ describe('hasCycle — referencedTemplateId edges', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('window-aware fan-out: out-of-window spawn reachable back to parent does NOT report a cycle', () => {
+    // Parent P is monthly (April 1-30). Template T has two spawns:
+    //   - April spawn (in P's window)
+    //   - May spawn (out of P's window)
+    // The May spawn places an achievement task that watches P. Without
+    // window-aware fan-out, the cycle check would build edge May→P AND
+    // add candidate edges P→April AND P→May, then DFS would find
+    // May→P → cycle. But derivation only counts in-window spawns, so
+    // the May spawn never contributes to P's evaluation — the cycle
+    // doesn't exist semantically. The post-fix algorithm filters May
+    // out of P's template fan-out, breaking the false-positive path.
+    const parent = board('p', {
+      startDate: '2026-04-01T00:00:00.000Z',
+      endDate: '2026-04-30T23:59:59.000Z',
+    });
+    const aprilSpawn = board('apr', {
+      spawnedFromTemplateId: 't1',
+      startDate: '2026-04-15T00:00:00.000Z',
+      endDate: '2026-04-15T23:59:59.000Z',
+    });
+    const maySpawn = board('may', {
+      spawnedFromTemplateId: 't1',
+      startDate: '2026-05-15T00:00:00.000Z',
+      endDate: '2026-05-15T23:59:59.000Z',
+    });
+    // May spawn places an achievement task watching P.
+    const tBack = achievementTask('tBack', { referencedBoardId: 'p' });
+    const pBack = placement('may', 'tBack');
+    // Candidate: P places an achievement task watching template t1.
+    const result = hasCycle(
+      { parentBoardIds: ['p'], referencedTemplateId: 't1' },
+      {
+        allBoardTasks: [pBack],
+        allTasks: [tBack],
+        allBoards: [parent, aprilSpawn, maySpawn],
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('window-aware fan-out: in-window spawn reachable back to parent DOES report a cycle', () => {
+    // Mirror of the test above but the cycle-closing spawn is IN P's
+    // window — so the cycle is real and must be rejected.
+    const parent = board('p', {
+      startDate: '2026-04-01T00:00:00.000Z',
+      endDate: '2026-04-30T23:59:59.000Z',
+    });
+    const aprilSpawn = board('apr', {
+      spawnedFromTemplateId: 't1',
+      startDate: '2026-04-15T00:00:00.000Z',
+      endDate: '2026-04-15T23:59:59.000Z',
+    });
+    const tBack = achievementTask('tBack', { referencedBoardId: 'p' });
+    const pBack = placement('apr', 'tBack');
+    const result = hasCycle(
+      { parentBoardIds: ['p'], referencedTemplateId: 't1' },
+      {
+        allBoardTasks: [pBack],
+        allTasks: [tBack],
+        allBoards: [parent, aprilSpawn],
+      },
+    );
+    expect(result.ok).toBe(false);
+  });
+
   it('soft-deleted achievement Task does NOT contribute a cycle edge → ok', () => {
     const a = board('a');
     const b = board('b');
