@@ -1,6 +1,6 @@
 import { db } from '../database';
 import type { BoardTask, CreateBoardTaskInput } from '@oybc/shared';
-import { SyncOperationType, SyncStatus } from '@oybc/shared';
+import { SyncOperationType } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -73,22 +73,17 @@ export async function fetchBoardTasksForBoards(
 }
 
 /**
- * Create a board task (add task to board)
+ * Create a board task (add task to board).
  *
- * Phase 6.3: enforces mutual exclusion between `referencedBoardId` and
- * `referencedTemplateId` defensively (Zod refinement is the primary
- * guard; this is belt-and-braces). Cycle detection happens in the UI
- * layer where the user can see the cyclePath; this helper assumes the
- * caller has already cleared a cycle check.
+ * Phase 6.3 — BoardTask is a pure placement record. Achievement-square
+ * configuration moved to `Task` (`type === ACHIEVEMENT` + reference
+ * fields); see `apps/web/src/db/operations/tasks.ts` for the achievement
+ * task creation path. Cycle detection for ACHIEVEMENT tasks happens at
+ * the UI layer before this helper runs.
  */
 export async function createBoardTask(
   input: CreateBoardTaskInput
 ): Promise<BoardTask> {
-  if (input.referencedBoardId && input.referencedTemplateId) {
-    throw new Error(
-      'BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive',
-    );
-  }
   const boardTask: BoardTask = {
     id: generateUUID(),
     boardId: input.boardId,
@@ -96,12 +91,6 @@ export async function createBoardTask(
     row: input.row,
     col: input.col,
     isCenter: input.isCenter,
-    isAchievementSquare: input.isAchievementSquare,
-    achievementType: input.achievementType,
-    achievementCount: input.achievementCount,
-    achievementTimeframe: input.achievementTimeframe,
-    referencedBoardId: input.referencedBoardId,
-    referencedTemplateId: input.referencedTemplateId,
     createdAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
     version: 1,
@@ -110,135 +99,6 @@ export async function createBoardTask(
   await db.boardTasks.add(boardTask);
   await addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
   return boardTask;
-}
-
-/**
- * Phase 6.3: update an existing BoardTask's achievement-square config.
- * The cycle-detection check lives in the UI layer (so the user gets the
- * cyclePath surfaced); this helper just enforces mutual exclusion and
- * persists the patch + sync queue entry.
- *
- * Pass `null` for either reference field to explicitly clear it (e.g.,
- * switching from specific-board mode back to aggregate). Undefined
- * leaves the existing value unchanged.
- */
-export async function updateAchievementSquareConfig(
-  id: string,
-  patch: {
-    isAchievementSquare?: boolean;
-    achievementType?: 'bingo' | 'full_completion';
-    achievementCount?: number;
-    achievementTimeframe?: BoardTask['achievementTimeframe'];
-    referencedBoardId?: string | null;
-    referencedTemplateId?: string | null;
-  },
-): Promise<void> {
-  const existing = await db.boardTasks.get(id);
-  if (!existing) return;
-
-  const nextRefBoard =
-    patch.referencedBoardId === null
-      ? undefined
-      : patch.referencedBoardId ?? existing.referencedBoardId;
-  const nextRefTemplate =
-    patch.referencedTemplateId === null
-      ? undefined
-      : patch.referencedTemplateId ?? existing.referencedTemplateId;
-  if (nextRefBoard && nextRefTemplate) {
-    throw new Error(
-      'BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive',
-    );
-  }
-
-  const update: Partial<BoardTask> = {
-    updatedAt: currentTimestamp(),
-    version: (existing.version ?? 0) + 1,
-  };
-  if (patch.isAchievementSquare !== undefined) update.isAchievementSquare = patch.isAchievementSquare;
-  if (patch.achievementType !== undefined) update.achievementType = patch.achievementType;
-  if (patch.achievementCount !== undefined) update.achievementCount = patch.achievementCount;
-  if (patch.achievementTimeframe !== undefined) update.achievementTimeframe = patch.achievementTimeframe;
-  // `null` patch sentinel clears the field; `undefined` leaves it untouched.
-  if (patch.referencedBoardId === null) {
-    update.referencedBoardId = undefined;
-  } else if (patch.referencedBoardId !== undefined) {
-    update.referencedBoardId = patch.referencedBoardId;
-  }
-  if (patch.referencedTemplateId === null) {
-    update.referencedTemplateId = undefined;
-  } else if (patch.referencedTemplateId !== undefined) {
-    update.referencedTemplateId = patch.referencedTemplateId;
-  }
-
-  // Atomic update + sync queue enqueue. Without the transaction a
-  // crash between the row write and the queue insert would leave a
-  // locally-updated cell with no sync entry — silent divergence
-  // because the next push pass has nothing to send. Mirrors the iOS
-  // `AppDatabase.updateAchievementSquareConfig` GRDB `write { }` block.
-  await db.transaction('rw', [db.boardTasks, db.syncQueue], async () => {
-    await db.boardTasks.update(id, update);
-    const updated = await db.boardTasks.get(id);
-    if (!updated) return;
-    // Inline the sync-queue insert rather than calling addToSyncQueue
-    // — that helper uses its own implicit transaction, and Dexie
-    // doesn't let you nest transactions on the same connection.
-    if (import.meta.env.DEV) {
-      const userId = (updated as unknown as { userId?: string }).userId;
-      if (userId === 'playground-user-1') return;
-    }
-    await db.syncQueue.add({
-      id: generateUUID(),
-      entityType: 'boardTasks',
-      entityId: id,
-      operationType: SyncOperationType.UPDATE,
-      payload: JSON.stringify(updated),
-      status: SyncStatus.PENDING,
-      retryCount: 0,
-      createdAt: currentTimestamp(),
-      priority: 0,
-    });
-  });
-}
-
-/**
- * Update achievement square progress
- */
-export async function updateAchievementProgress(
-  id: string,
-  progress: number
-): Promise<void> {
-  const boardTask = await db.boardTasks.get(id);
-  if (!boardTask || !boardTask.isAchievementSquare) return;
-
-  await db.boardTasks.update(id, {
-    achievementProgress: progress,
-    updatedAt: currentTimestamp(),
-    version: (boardTask.version ?? 0) + 1,
-  });
-}
-
-/**
- * Find all achievement squares across all boards
- */
-export async function fetchAchievementSquares(): Promise<BoardTask[]> {
-  // Dexie types `.equals()` against `IndexableType` which excludes
-  // booleans, but IndexedDB coerces booleans to 1/0 at runtime.
-  return db.boardTasks.where('isAchievementSquare').equals(true as unknown as string).toArray();
-}
-
-/**
- * Find achievement squares for a specific timeframe
- */
-export async function fetchAchievementSquaresByTimeframe(
-  timeframe: string
-): Promise<BoardTask[]> {
-  return db.boardTasks
-    .where('[isAchievementSquare+achievementTimeframe]')
-    // Dexie's `.equals()` doesn't model compound-index tuples in its
-    // type signature (only scalar IndexableType).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .equals([true, timeframe] as any)
-    .toArray();
 }
 
 /**

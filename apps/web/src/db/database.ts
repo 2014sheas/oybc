@@ -67,7 +67,13 @@ export class AppDatabase extends Dexie {
         [isDeleted+taskId]
       `,
 
-      // BoardTasks junction table
+      // BoardTasks junction table.
+      // v1 declared `[boardId+isCompleted]` and the `isAchievementSquare`
+      // / `[isAchievementSquare+achievementTimeframe]` indexes — both
+      // dropped at v7 once their underlying fields stopped existing on
+      // BoardTask. The string is preserved here so legacy on-disk
+      // databases match the originally-declared schema; Dexie diffs the
+      // declared schema across versions to migrate.
       boardTasks: `
         id,
         [boardId+isCompleted],
@@ -172,17 +178,26 @@ export class AppDatabase extends Dexie {
       `,
     });
 
-    // v7: Phase 6.3 — board-completion-as-a-square. BoardTask gains two
-    // optional fields, `referencedBoardId` (specific-board mode) and
-    // `referencedTemplateId` (recurring-template mode). Neither is
-    // indexed (lookups are per-row inside `derivationPass`, not table-
-    // wide scans), so the `.stores()` call is intentionally empty —
-    // Dexie stores the full BoardTask object verbatim and the new
-    // fields ride along automatically. Bumping the version is what
-    // makes Dexie open the existing IDB at the new version number
-    // without erroring on the "downgrade" check; the schema string is
-    // unchanged from v1.
-    this.version(7).stores({});
+    // v7: Phase 6.3 — ACHIEVEMENT-as-TaskType. Achievement-square config
+    // moved from `BoardTask` to `Task` (a new `TaskType.ACHIEVEMENT` task
+    // type with `referencedBoardId` / `referencedTemplateId` fields).
+    //
+    // `boardTasks` is now a pure placement table — the pre-unification
+    // `[boardId+isCompleted]` index (over a field that no longer exists)
+    // and the never-shipped `isAchievementSquare` /
+    // `[isAchievementSquare+achievementTimeframe]` indexes are all
+    // dropped here, leaving only the FK lookups (`boardId`, `taskId`).
+    // The new `Task` reference fields are intentionally NOT indexed
+    // (lookups happen per-row inside `derivationPass`, not as table-wide
+    // scans). Dexie stores the full object verbatim, so the new
+    // optional `Task` fields ride along automatically.
+    this.version(7).stores({
+      boardTasks: `
+        id,
+        boardId,
+        taskId
+      `,
+    });
   }
 }
 
