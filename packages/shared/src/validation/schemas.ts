@@ -101,6 +101,41 @@ export const CreateTaskStepInputSchema = z.object({
   maxCount: z.number().int().positive().optional(),
 });
 
+/**
+ * Phase 6.3 — `referencedBoardId` and `referencedTemplateId` rules on Task:
+ *   1. Both unset OR exactly one set; never both. (Mutually exclusive.)
+ *   2. When `type === ACHIEVEMENT`: exactly one MUST be set.
+ *   3. When `type !== ACHIEVEMENT`: neither may be set.
+ * `derivationPass.ts` has a defensive precedence rule (`referencedBoardId`
+ * wins) for the case where bad data slips through anyway.
+ */
+const referencedFieldsOnTaskMutuallyExclusive = (data: {
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+}): boolean => !(data.referencedBoardId && data.referencedTemplateId);
+
+const achievementRequiresReference = (data: {
+  type?: TaskType;
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+}): boolean => {
+  if (data.type !== TaskType.ACHIEVEMENT) return true;
+  // Treat `null` as "explicitly cleared" — same as absent. The XOR demands
+  // *some* truthy value on one side.
+  const hasBoard = data.referencedBoardId != null && data.referencedBoardId !== '';
+  const hasTpl = data.referencedTemplateId != null && data.referencedTemplateId !== '';
+  return hasBoard || hasTpl;
+};
+
+const referenceFieldsForbiddenOnNonAchievement = (data: {
+  type?: TaskType;
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+}): boolean => {
+  if (data.type === undefined || data.type === TaskType.ACHIEVEMENT) return true;
+  return !(data.referencedBoardId || data.referencedTemplateId);
+};
+
 export const CreateTaskInputSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
@@ -109,6 +144,8 @@ export const CreateTaskInputSchema = z.object({
   unit: z.string().max(50).optional(),
   maxCount: z.number().int().positive().optional(),
   steps: z.array(CreateTaskStepInputSchema).optional(),
+  referencedBoardId: z.string().uuid().optional(),
+  referencedTemplateId: z.string().uuid().optional(),
 }).refine(
   (data) => {
     // Counting tasks must have action, unit, and maxCount
@@ -118,15 +155,30 @@ export const CreateTaskInputSchema = z.object({
     return true;
   },
   { message: 'Counting tasks must have action, unit, and maxCount' }
+).refine(
+  referencedFieldsOnTaskMutuallyExclusive,
+  { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
+).refine(
+  achievementRequiresReference,
+  { message: "Achievement tasks must set exactly one of referencedBoardId or referencedTemplateId" },
+).refine(
+  referenceFieldsForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
 );
 // Note: post-unification, Progress tasks are created via
 // `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
-// only accepts NORMAL / COUNTING / COMPOUND — no Progress branch needed.
+// only accepts NORMAL / COUNTING / COMPOUND / ACHIEVEMENT — no Progress branch needed.
 
 export const UpdateTaskInputSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
-});
+  // `null` sentinel clears the field; `undefined` leaves it untouched.
+  referencedBoardId: z.string().uuid().nullable().optional(),
+  referencedTemplateId: z.string().uuid().nullable().optional(),
+}).refine(
+  referencedFieldsOnTaskMutuallyExclusive,
+  { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
+);
 
 // ===== Compound creation input =====
 
@@ -198,6 +250,14 @@ export const TaskSchema = z.object({
   operator: z.nativeEnum(OperatorType).optional(),
   threshold: z.number().int().positive().optional(),
   isOrdered: z.boolean().optional(),
+  // Phase 6.3 — Achievement-task cross-board references. Only meaningful
+  // when `type === ACHIEVEMENT`. Mutually exclusive and required-XOR'd on
+  // achievement tasks; forbidden on every other type. The refinements at
+  // the bottom of the schema enforce all three rules — when a remote
+  // payload arrives via the sync pull, the pull validator (PR Phase 3.5)
+  // calls this schema and rejects bad rows before they hit the local DB.
+  referencedBoardId: z.string().uuid().optional(),
+  referencedTemplateId: z.string().uuid().optional(),
   parentStepId: z.string().uuid().optional(),
   parentStepIndex: z.number().int().min(0).optional(),
   progressCounters: z.array(TaskProgressCounterSchema).optional(),
@@ -236,6 +296,15 @@ export const TaskSchema = z.object({
     return true;
   },
   { message: "Task with operator='M_OF_N' must have a threshold" },
+).refine(
+  referencedFieldsOnTaskMutuallyExclusive,
+  { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
+).refine(
+  achievementRequiresReference,
+  { message: "Achievement tasks must set exactly one of referencedBoardId or referencedTemplateId" },
+).refine(
+  referenceFieldsForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
 );
 
 export const TaskStepSchema = z.object({
@@ -257,64 +326,34 @@ export const TaskStepSchema = z.object({
 });
 
 // ===== BoardTask Schemas =====
+//
+// Phase 6.3 — BoardTask is a pure placement record. The pre-refactor
+// achievement-square fields (`isAchievementSquare`, `achievementType`,
+// `achievementCount`, `achievementTimeframe`, `achievementProgress`,
+// `referencedBoardId`, `referencedTemplateId`) moved to `Task` as part
+// of the ACHIEVEMENT-as-TaskType refactor — placements just record where
+// the task lives on a board, the rest is derived from the Task itself.
 
-/**
- * Phase 6.3 — `referencedBoardId` and `referencedTemplateId` are
- * mutually exclusive on `BoardTask`. Both unset = aggregate-mode
- * achievement square (or non-achievement square); exactly one set =
- * specific-board or recurring-template mode. Both set is invalid: a
- * malicious remote payload or older client could try to do this and
- * the schema rejects it. Derivation has a defensive precedence rule
- * (`referencedBoardId` wins) for the case where bad data slips
- * through anyway.
- */
-const referencedFieldsMutuallyExclusive = (data: {
-  referencedBoardId?: string;
-  referencedTemplateId?: string;
-}) => !(data.referencedBoardId && data.referencedTemplateId);
+export const CreateBoardTaskInputSchema = z.object({
+  boardId: z.string().uuid(),
+  taskId: z.string().uuid(),
+  row: z.number().int().min(0),
+  col: z.number().int().min(0),
+  isCenter: z.boolean(),
+});
 
-const referencedFieldsMutuallyExclusiveMessage = {
-  message:
-    'BoardTask.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set',
-};
-
-export const CreateBoardTaskInputSchema = z
-  .object({
-    boardId: z.string().uuid(),
-    taskId: z.string().uuid(),
-    row: z.number().int().min(0),
-    col: z.number().int().min(0),
-    isCenter: z.boolean(),
-    isAchievementSquare: z.boolean().optional(),
-    achievementType: z.enum(['bingo', 'full_completion']).optional(),
-    achievementCount: z.number().int().positive().optional(),
-    achievementTimeframe: z.nativeEnum(Timeframe).optional(),
-    referencedBoardId: z.string().uuid().optional(),
-    referencedTemplateId: z.string().uuid().optional(),
-  })
-  .refine(referencedFieldsMutuallyExclusive, referencedFieldsMutuallyExclusiveMessage);
-
-export const BoardTaskSchema = z
-  .object({
-    id: z.string().uuid(),
-    boardId: z.string().uuid(),
-    taskId: z.string().uuid(),
-    row: z.number().int().min(0),
-    col: z.number().int().min(0),
-    isCenter: z.boolean(),
-    isAchievementSquare: z.boolean().optional(),
-    achievementType: z.enum(['bingo', 'full_completion']).optional(),
-    achievementCount: z.number().int().positive().optional(),
-    achievementTimeframe: z.nativeEnum(Timeframe).optional(),
-    achievementProgress: z.number().int().min(0).optional(),
-    referencedBoardId: z.string().uuid().optional(),
-    referencedTemplateId: z.string().uuid().optional(),
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-    lastSyncedAt: z.string().datetime().optional(),
-    version: z.number().int().min(1),
-  })
-  .refine(referencedFieldsMutuallyExclusive, referencedFieldsMutuallyExclusiveMessage);
+export const BoardTaskSchema = z.object({
+  id: z.string().uuid(),
+  boardId: z.string().uuid(),
+  taskId: z.string().uuid(),
+  row: z.number().int().min(0),
+  col: z.number().int().min(0),
+  isCenter: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+});
 
 // ===== CompoundChild Schemas =====
 

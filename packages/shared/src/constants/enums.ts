@@ -16,14 +16,21 @@ export enum BoardStatus {
  * task is a COMPOUND with `operator='AND'` + `isOrdered=true`; a Composite
  * is a COMPOUND with `operator='AND'/'OR'/'M_OF_N'` + `isOrdered=false`.
  *
+ * ACHIEVEMENT (Phase 6.3) is a cross-board watcher: the Task carries a
+ * `referencedBoardId` XOR `referencedTemplateId` and completes when the
+ * referenced board (or every in-window spawn of the referenced template)
+ * is greenlogged. Achievement tasks are placed via the wizard like any
+ * other type — `BoardTask` remains a pure placement record.
+ *
  * Migration helpers and pull-path validators that need to recognise legacy
  * `'progress'` rows from pre-unification storage compare against the literal
  * string `'progress'` directly — there is no enum value for it.
  */
 export enum TaskType {
-  NORMAL = 'normal',         // Simple completion task
-  COUNTING = 'counting',     // Tasks with counts (e.g., "Read 100 pages")
-  COMPOUND = 'compound'      // Compound task: multi-child with operator (AND/OR/M_OF_N) and ordering
+  NORMAL = 'normal',           // Simple completion task
+  COUNTING = 'counting',       // Tasks with counts (e.g., "Read 100 pages")
+  COMPOUND = 'compound',       // Compound task: multi-child with operator (AND/OR/M_OF_N) and ordering
+  ACHIEVEMENT = 'achievement', // Phase 6.3 cross-board watcher (specific board XOR recurring template)
 }
 
 /**

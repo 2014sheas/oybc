@@ -1,8 +1,12 @@
 import { hasCycle } from '../../src/algorithms/cycleDetection';
-import { BoardStatus, CenterSquareType, Timeframe } from '../../src/constants/enums';
-import type { Board, BoardTask } from '../../src';
+import { BoardStatus, CenterSquareType, TaskType, Timeframe } from '../../src/constants/enums';
+import type { Board, BoardTask, Task } from '../../src';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+//
+// Phase 6.3 refactor: achievement-task cross-board references live on Task,
+// not BoardTask. Each helper builds the smallest valid shape needed to drive
+// the cycle-detection graph.
 
 function board(id: string, overrides: Partial<Board> = {}): Board {
   return {
@@ -28,32 +32,34 @@ function board(id: string, overrides: Partial<Board> = {}): Board {
   };
 }
 
-function squareReferencingBoard(boardId: string, refBoardId: string, idx = 0): BoardTask {
+function achievementTask(
+  id: string,
+  refs: { referencedBoardId?: string; referencedTemplateId?: string },
+): Task {
   return {
-    id: `bt-${boardId}-${refBoardId}-${idx}`,
-    boardId,
-    taskId: `task-${idx}`,
-    row: 0,
-    col: idx,
-    isCenter: false,
-    isAchievementSquare: true,
-    referencedBoardId: refBoardId,
+    id,
+    userId: 'u',
+    title: id,
+    type: TaskType.ACHIEVEMENT,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
     createdAt: '2026-04-23T00:00:00.000Z',
     updatedAt: '2026-04-23T00:00:00.000Z',
     version: 1,
+    isDeleted: false,
+    ...refs,
   };
 }
 
-function squareReferencingTemplate(boardId: string, refTemplateId: string, idx = 0): BoardTask {
+function placement(boardId: string, taskId: string, idx = 0): BoardTask {
   return {
-    id: `bt-${boardId}-${refTemplateId}-${idx}`,
+    id: `bt-${boardId}-${taskId}-${idx}`,
     boardId,
-    taskId: `task-${idx}`,
+    taskId,
     row: 0,
     col: idx,
     isCenter: false,
-    isAchievementSquare: true,
-    referencedTemplateId: refTemplateId,
     createdAt: '2026-04-23T00:00:00.000Z',
     updatedAt: '2026-04-23T00:00:00.000Z',
     version: 1,
@@ -63,11 +69,20 @@ function squareReferencingTemplate(boardId: string, refTemplateId: string, idx =
 // ─── Direct (referencedBoardId) cycles ───────────────────────────────────────
 
 describe('hasCycle — referencedBoardId edges', () => {
-  it('self-reference (boardId === referencedBoardId) → degenerate cycle', () => {
+  it('no parents → trivially safe (achievement Task not yet placed)', () => {
     const a = board('a');
     const result = hasCycle(
-      { boardId: 'a', referencedBoardId: 'a' },
-      { allBoardTasks: [], allBoards: [a] },
+      { parentBoardIds: [], referencedBoardId: 'a' },
+      { allBoardTasks: [], allTasks: [], allBoards: [a] },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('self-reference (parentBoardId === referencedBoardId) → degenerate cycle', () => {
+    const a = board('a');
+    const result = hasCycle(
+      { parentBoardIds: ['a'], referencedBoardId: 'a' },
+      { allBoardTasks: [], allTasks: [], allBoards: [a] },
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -78,17 +93,20 @@ describe('hasCycle — referencedBoardId edges', () => {
   it('two-cycle A→B→A: candidate is the closing edge → rejected with path', () => {
     const a = board('a');
     const b = board('b');
-    // Pre-existing edge: B's square references A.
-    const existing = [squareReferencingBoard('b', 'a')];
-    // Candidate: A's square would reference B → closes the loop A→B→A.
+    // Pre-existing: an achievement Task watching A is placed on B.
+    const existingTask = achievementTask('ach-b→a', { referencedBoardId: 'a' });
+    const existingPlacement = placement('b', 'ach-b→a');
+    // Candidate: a NEW achievement Task watching B, about to be placed on A.
     const result = hasCycle(
-      { boardId: 'a', referencedBoardId: 'b' },
-      { allBoardTasks: existing, allBoards: [a, b] },
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [existingPlacement],
+        allTasks: [existingTask],
+        allBoards: [a, b],
+      },
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      // Path starts with the candidate's parent, walks to the target,
-      // and ends back at the parent.
       expect(result.cyclePath[0]).toBe('a');
       expect(result.cyclePath[result.cyclePath.length - 1]).toBe('a');
       expect(result.cyclePath).toContain('b');
@@ -99,14 +117,17 @@ describe('hasCycle — referencedBoardId edges', () => {
     const a = board('a');
     const b = board('b');
     const c = board('c');
-    const existing = [
-      squareReferencingBoard('b', 'c'), // B → C
-      squareReferencingBoard('c', 'a'), // C → A
-    ];
-    // Candidate: A → B closes the loop.
+    const t1 = achievementTask('t1', { referencedBoardId: 'c' }); // B → C
+    const p1 = placement('b', 't1');
+    const t2 = achievementTask('t2', { referencedBoardId: 'a' }); // C → A
+    const p2 = placement('c', 't2');
     const result = hasCycle(
-      { boardId: 'a', referencedBoardId: 'b' },
-      { allBoardTasks: existing, allBoards: [a, b, c] },
+      { parentBoardIds: ['a'], referencedBoardId: 'b' }, // A → B (candidate)
+      {
+        allBoardTasks: [p1, p2],
+        allTasks: [t1, t2],
+        allBoards: [a, b, c],
+      },
     );
     expect(result.ok).toBe(false);
   });
@@ -115,10 +136,15 @@ describe('hasCycle — referencedBoardId edges', () => {
     const a = board('a');
     const b = board('b');
     const c = board('c');
-    const existing = [squareReferencingBoard('a', 'c')]; // A → C (existing)
+    const t1 = achievementTask('t1', { referencedBoardId: 'c' });
+    const p1 = placement('a', 't1');
     const result = hasCycle(
-      { boardId: 'a', referencedBoardId: 'b' }, // A → B (candidate)
-      { allBoardTasks: existing, allBoards: [a, b, c] },
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [p1],
+        allTasks: [t1],
+        allBoards: [a, b, c],
+      },
     );
     expect(result.ok).toBe(true);
   });
@@ -127,8 +153,8 @@ describe('hasCycle — referencedBoardId edges', () => {
     const a = board('a');
     const b = board('b');
     const result = hasCycle(
-      { boardId: 'a', referencedBoardId: 'b' },
-      { allBoardTasks: [], allBoards: [a, b] },
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      { allBoardTasks: [], allTasks: [], allBoards: [a, b] },
     );
     expect(result.ok).toBe(true);
   });
@@ -139,16 +165,70 @@ describe('hasCycle — referencedBoardId edges', () => {
     const c = board('c');
     const d = board('d');
     // Pre-existing cycle B↔C (placed in the past, possibly via a sync race).
-    const existing = [
-      squareReferencingBoard('b', 'c'),
-      squareReferencingBoard('c', 'b'),
-    ];
+    const tBC = achievementTask('tBC', { referencedBoardId: 'c' });
+    const pBC = placement('b', 'tBC');
+    const tCB = achievementTask('tCB', { referencedBoardId: 'b' });
+    const pCB = placement('c', 'tCB');
     // Candidate A→D doesn't touch the cycle → ok.
     const result = hasCycle(
-      { boardId: 'a', referencedBoardId: 'd' },
-      { allBoardTasks: existing, allBoards: [a, b, c, d] },
+      { parentBoardIds: ['a'], referencedBoardId: 'd' },
+      {
+        allBoardTasks: [pBC, pCB],
+        allTasks: [tBC, tCB],
+        allBoards: [a, b, c, d],
+      },
     );
     expect(result.ok).toBe(true);
+  });
+
+  it('non-achievement Task placements do NOT contribute edges → ok', () => {
+    const a = board('a');
+    const b = board('b');
+    // A normal Task placed on B — has no reference at all (not an achievement).
+    // Adjacency should ignore this placement.
+    const normalTask: Task = {
+      id: 'norm',
+      userId: 'u',
+      title: 'norm',
+      type: TaskType.NORMAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: '2026-04-23T00:00:00.000Z',
+      updatedAt: '2026-04-23T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    };
+    const result = hasCycle(
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [placement('b', 'norm')],
+        allTasks: [normalTask],
+        allBoards: [a, b],
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('multi-parent candidate: same achievement Task placed on A and B, candidate target loops to A → rejected', () => {
+    // Pre-existing: an achievement Task watching A placed on C.
+    const a = board('a');
+    const b = board('b');
+    const c = board('c');
+    const tCA = achievementTask('tCA', { referencedBoardId: 'a' });
+    const pCA = placement('c', 'tCA');
+    // Candidate: an achievement Task watching C, placed on BOTH A and B.
+    // Adjacency A→C and B→C are added. The C→A edge already exists, so
+    // start=C → A (in parentSet) closes a cycle through parent A.
+    const result = hasCycle(
+      { parentBoardIds: ['a', 'b'], referencedBoardId: 'c' },
+      {
+        allBoardTasks: [pCA],
+        allTasks: [tCA],
+        allBoards: [a, b, c],
+      },
+    );
+    expect(result.ok).toBe(false);
   });
 });
 
@@ -158,8 +238,8 @@ describe('hasCycle — referencedTemplateId edges', () => {
   it('template-self-reference: parent board\'s spawnedFromTemplateId === referencedTemplateId → degenerate cycle', () => {
     const parent = board('p', { spawnedFromTemplateId: 't1' });
     const result = hasCycle(
-      { boardId: 'p', referencedTemplateId: 't1' },
-      { allBoardTasks: [], allBoards: [parent] },
+      { parentBoardIds: ['p'], referencedTemplateId: 't1' },
+      { allBoardTasks: [], allTasks: [], allBoards: [parent] },
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -167,16 +247,21 @@ describe('hasCycle — referencedTemplateId edges', () => {
     }
   });
 
-  it('candidate template fans out to spawns; one spawn has a square referencing back to candidate → rejected', () => {
+  it('candidate template fans out to spawns; one spawn has a square referencing back to candidate parent → rejected', () => {
     const parent = board('parent');
     const spawn = board('spawn-1', { spawnedFromTemplateId: 't1' });
-    // Existing edge: spawn-1 has a square referencing parent.
-    const existing = [squareReferencingBoard('spawn-1', 'parent')];
-    // Candidate: parent's square would reference template t1.
+    // Existing: achievement Task watching parent placed on spawn-1.
+    const tBack = achievementTask('tBack', { referencedBoardId: 'parent' });
+    const pBack = placement('spawn-1', 'tBack');
+    // Candidate: achievement Task watching template t1, placed on parent.
     // Adjacency: parent → spawn-1 (via template fan-out) → parent → cycle.
     const result = hasCycle(
-      { boardId: 'parent', referencedTemplateId: 't1' },
-      { allBoardTasks: existing, allBoards: [parent, spawn] },
+      { parentBoardIds: ['parent'], referencedTemplateId: 't1' },
+      {
+        allBoardTasks: [pBack],
+        allTasks: [tBack],
+        allBoards: [parent, spawn],
+      },
     );
     expect(result.ok).toBe(false);
   });
@@ -184,8 +269,8 @@ describe('hasCycle — referencedTemplateId edges', () => {
   it('candidate references template with zero spawns yet → no cycle possible (fan-out is empty) → ok', () => {
     const parent = board('parent');
     const result = hasCycle(
-      { boardId: 'parent', referencedTemplateId: 't1' },
-      { allBoardTasks: [], allBoards: [parent] },
+      { parentBoardIds: ['parent'], referencedTemplateId: 't1' },
+      { allBoardTasks: [], allTasks: [], allBoards: [parent] },
     );
     expect(result.ok).toBe(true);
   });
@@ -195,14 +280,19 @@ describe('hasCycle — referencedTemplateId edges', () => {
     //   - Board A is a spawn of templateU.
     //   - Board B is a spawn of templateT.
     //   - B has a square that references templateU (which fans out to A).
-    //   - Candidate: A's square references templateT (which fans out to B).
+    //   - Candidate: A's achievement Task references templateT (fans out to B).
     // Closes: A → B → A.
     const a = board('a', { spawnedFromTemplateId: 'tu' });
     const b = board('b', { spawnedFromTemplateId: 'tt' });
-    const existing = [squareReferencingTemplate('b', 'tu')];
+    const tB = achievementTask('tB', { referencedTemplateId: 'tu' });
+    const pB = placement('b', 'tB');
     const result = hasCycle(
-      { boardId: 'a', referencedTemplateId: 'tt' },
-      { allBoardTasks: existing, allBoards: [a, b] },
+      { parentBoardIds: ['a'], referencedTemplateId: 'tt' },
+      {
+        allBoardTasks: [pB],
+        allTasks: [tB],
+        allBoards: [a, b],
+      },
     );
     expect(result.ok).toBe(false);
   });
@@ -212,10 +302,34 @@ describe('hasCycle — referencedTemplateId edges', () => {
     const spawn = board('spawn-1', { spawnedFromTemplateId: 't1', isDeleted: true });
     // Even though the soft-deleted spawn has a square pointing back at parent,
     // the deleted board doesn't contribute to the adjacency (it's filtered).
-    const existing = [squareReferencingBoard('spawn-1', 'parent')];
+    const tBack = achievementTask('tBack', { referencedBoardId: 'parent' });
+    const pBack = placement('spawn-1', 'tBack');
     const result = hasCycle(
-      { boardId: 'parent', referencedTemplateId: 't1' },
-      { allBoardTasks: existing, allBoards: [parent, spawn] },
+      { parentBoardIds: ['parent'], referencedTemplateId: 't1' },
+      {
+        allBoardTasks: [pBack],
+        allTasks: [tBack],
+        allBoards: [parent, spawn],
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('soft-deleted achievement Task does NOT contribute a cycle edge → ok', () => {
+    const a = board('a');
+    const b = board('b');
+    // Achievement Task watching A is soft-deleted; placement still exists,
+    // but the deleted Task is filtered out of `tasksById` so no edge.
+    const tDel = achievementTask('tDel', { referencedBoardId: 'a' });
+    tDel.isDeleted = true;
+    const pDel = placement('b', 'tDel');
+    const result = hasCycle(
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [pDel],
+        allTasks: [tDel],
+        allBoards: [a, b],
+      },
     );
     expect(result.ok).toBe(true);
   });

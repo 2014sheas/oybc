@@ -36,6 +36,25 @@ export interface Task {
   threshold?: number;            // Required when operator === 'M_OF_N'
   isOrdered?: boolean;           // Display hint: true → progress-style ordered step list
 
+  /**
+   * Phase 6.3 — Achievement-task cross-board reference (specific board).
+   * Only meaningful when `type === TaskType.ACHIEVEMENT`. Mutually exclusive
+   * with `referencedTemplateId` — Zod refinement on `TaskSchema` rejects
+   * rows that set both, and derivation has a defensive precedence rule
+   * (board wins) for bad data that slips through anyway. Setting either
+   * reference field on a non-ACHIEVEMENT task is rejected at the schema
+   * boundary.
+   */
+  referencedBoardId?: string;
+  /**
+   * Phase 6.3 — Achievement-task cross-board reference (recurring template).
+   * Only meaningful when `type === TaskType.ACHIEVEMENT`. Watches every
+   * non-deleted spawn of this template whose `startDate` falls within the
+   * parent board's `[startDate, endDate]` window. Mutually exclusive with
+   * `referencedBoardId`.
+   */
+  referencedTemplateId?: string;
+
   // Task linking (for tasks used as progress steps)
   parentStepId?: string;         // References TaskStep.id in parent task
   parentStepIndex?: number;      // Position of step in parent task (0-based)
@@ -123,6 +142,12 @@ export interface CreateTaskInput {
   unit?: string;
   maxCount?: number;
   steps?: CreateTaskStepInput[]; // Only for progress tasks
+  /** Phase 6.3 — required (XOR with `referencedTemplateId`) when
+   *  `type === TaskType.ACHIEVEMENT`. Forbidden on all other types. */
+  referencedBoardId?: string;
+  /** Phase 6.3 — required (XOR with `referencedBoardId`) when
+   *  `type === TaskType.ACHIEVEMENT`. Forbidden on all other types. */
+  referencedTemplateId?: string;
 }
 
 /**
@@ -143,6 +168,15 @@ export interface UpdateTaskInput {
   title?: string;
   description?: string;
   // Note: Can't change type after creation
+  /**
+   * Phase 6.3 — only meaningful when the underlying Task is ACHIEVEMENT.
+   * `null` sentinel clears the field; `undefined` leaves it unchanged.
+   * Mutual exclusion with `referencedTemplateId` is enforced at the
+   * write helper / Zod refinement layer.
+   */
+  referencedBoardId?: string | null;
+  /** See `referencedBoardId`. Mutually exclusive. */
+  referencedTemplateId?: string | null;
 }
 
 /**

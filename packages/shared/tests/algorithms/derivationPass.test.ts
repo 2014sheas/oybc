@@ -395,105 +395,80 @@ describe('computeBoardStatsUpdate', () => {
     expect(result.lostBingos).toEqual([]);
   });
 
-  // ─── Achievement square completion ───────────────────────────────────────────
+  // ─── Achievement-typed Task completion (Phase 6.3) ─────────────────────────
+  //
+  // Achievement Tasks carry the cross-board reference (`referencedBoardId`
+  // XOR `referencedTemplateId`); BoardTask is a pure placement record. The
+  // pre-refactor "aggregate mode" (achievementCount / achievementProgress)
+  // was dropped — achievement Tasks must reference SOMETHING. A reference-less
+  // achievement Task degrades safely (incomplete) but should never reach the
+  // DB because Zod rejects it.
 
-  it('achievement square with progress >= count registers as complete and increments completedTasks', () => {
+  it('achievement Task with no reference set → cell incomplete (degrades safely)', () => {
     const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
-    const backingTask = task('ach1', { isCompleted: false });
-    const bt = boardTask('b1', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      achievementCount: 3,
-      achievementProgress: 3,
-    });
-    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
-    expect(result.completedTasks).toBe(1);
-  });
-
-  it('achievement square with progress < count is NOT complete', () => {
-    const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
-    const backingTask = task('ach1', { isCompleted: false });
-    const bt = boardTask('b1', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      achievementCount: 3,
-      achievementProgress: 2,
-    });
-    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
+    const ach = task('ach1', { type: TaskType.ACHIEVEMENT });
+    const bt = boardTask('b1', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: ach });
     expect(result.completedTasks).toBe(0);
   });
 
-  it('achievement square with progress=0 and count=0 is NOT complete (0/0 guard)', () => {
+  it('achievement Task ignores its own isCompleted — Task with isCompleted=true and no ref still incomplete', () => {
     const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
-    const backingTask = task('ach1', { isCompleted: false });
-    const bt = boardTask('b1', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      achievementCount: 0,
-      achievementProgress: 0,
-    });
-    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
-    expect(result.completedTasks).toBe(0);
-  });
-
-  it('achievement square ignores backing Task.isCompleted — Task done but progress=0 means cell incomplete', () => {
-    const b = board('b1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
-    // Backing task is marked complete, but achievement progress hasn't reached count
-    const backingTask = task('ach1', { isCompleted: true });
-    const bt = boardTask('b1', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      achievementCount: 3,
-      achievementProgress: 0,
-    });
-    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: backingTask });
+    // Even if a stale write set isCompleted=true on the achievement Task
+    // row, derivation cares about the *reference*, not the field.
+    const ach = task('ach1', { type: TaskType.ACHIEVEMENT, isCompleted: true });
+    const bt = boardTask('b1', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(b, [bt], {}, { ach1: ach });
     expect(result.completedTasks).toBe(0);
   });
 });
 
-// ─── Phase 6.3: specific-board + recurring-template achievement squares ────
+// ─── Phase 6.3: specific-board + recurring-template achievement tasks ──────
+//
+// Achievement-typed Tasks carry the cross-board reference fields. BoardTask
+// is a pure placement record — the same achievement Task on three boards is
+// just three placement rows, each evaluated against the same Task definition.
+
+function achievementTask(
+  id: string,
+  refs: { referencedBoardId?: string; referencedTemplateId?: string },
+): Task {
+  return task(id, { type: TaskType.ACHIEVEMENT, ...refs });
+}
 
 describe('computeBoardStatsUpdate — Phase 6.3 specific-board mode', () => {
-  it('referencedBoardId pointing at COMPLETED non-deleted board → square completes', () => {
+  it('referencedBoardId pointing at COMPLETED non-deleted board → cell completes', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const ref = board('ref', { status: BoardStatus.COMPLETED });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedBoardId: 'ref',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, ref]);
+    const ach = achievementTask('ach1', { referencedBoardId: 'ref' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, ref]);
     expect(result.completedTasks).toBe(1);
   });
 
-  it('referencedBoardId pointing at ACTIVE board → square incomplete', () => {
+  it('referencedBoardId pointing at ACTIVE board → cell incomplete', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const ref = board('ref', { status: BoardStatus.ACTIVE });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedBoardId: 'ref',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, ref]);
+    const ach = achievementTask('ach1', { referencedBoardId: 'ref' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, ref]);
     expect(result.completedTasks).toBe(0);
   });
 
-  it('referencedBoardId pointing at soft-deleted board → square incomplete (no crash)', () => {
+  it('referencedBoardId pointing at soft-deleted board → cell incomplete (no crash)', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const ref = board('ref', { status: BoardStatus.COMPLETED, isDeleted: true });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedBoardId: 'ref',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, ref]);
+    const ach = achievementTask('ach1', { referencedBoardId: 'ref' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, ref]);
     expect(result.completedTasks).toBe(0);
   });
 
-  it('referencedBoardId pointing at a board not in allBoards → square incomplete', () => {
+  it('referencedBoardId pointing at a board not in allBoards → cell incomplete', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedBoardId: 'missing',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent]);
+    const ach = achievementTask('ach1', { referencedBoardId: 'missing' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent]);
     expect(result.completedTasks).toBe(0);
   });
 });
@@ -502,7 +477,7 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
   // Parent monthly window: April 1 – April 30, 2026 (the default `board()` shape).
   // Spawns we craft below all use the parent's `spawnedFromTemplateId` lookup.
 
-  it('all in-window spawns COMPLETED → square completes', () => {
+  it('all in-window spawns COMPLETED → cell completes', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const s1 = board('s1', {
       spawnedFromTemplateId: 't1',
@@ -514,16 +489,13 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
       startDate: '2026-04-15T00:00:00.000Z',
       status: BoardStatus.COMPLETED,
     });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedTemplateId: 't1',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, s1, s2]);
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, s1, s2]);
     expect(result.completedTasks).toBe(1);
   });
 
-  it('one in-window spawn ACTIVE → square incomplete (ALL must complete)', () => {
+  it('one in-window spawn ACTIVE → cell incomplete (ALL must complete)', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const s1 = board('s1', {
       spawnedFromTemplateId: 't1',
@@ -535,43 +507,34 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
       startDate: '2026-04-15T00:00:00.000Z',
       status: BoardStatus.ACTIVE,
     });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedTemplateId: 't1',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, s1, s2]);
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, s1, s2]);
     expect(result.completedTasks).toBe(0);
   });
 
-  it('empty in-window spawn set → square incomplete (NOT vacuously complete)', () => {
+  it('empty in-window spawn set → cell incomplete (NOT vacuously complete)', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedTemplateId: 't1',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent]);
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent]);
     expect(result.completedTasks).toBe(0);
   });
 
-  it('out-of-window spawn ignored — only spawn is BEFORE parent.startDate → square incomplete', () => {
+  it('out-of-window spawn ignored — only spawn is BEFORE parent.startDate → cell incomplete', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const s1 = board('s1', {
       spawnedFromTemplateId: 't1',
       startDate: '2026-03-15T00:00:00.000Z', // March, before parent April window
       status: BoardStatus.COMPLETED,
     });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedTemplateId: 't1',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, s1]);
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, s1]);
     expect(result.completedTasks).toBe(0);
   });
 
-  it('partial-delete: 4 spawns, 3 COMPLETED + 1 pending soft-deleted → square completes (only non-deleted in-window count)', () => {
+  it('partial-delete: 4 spawns, 3 COMPLETED + 1 pending soft-deleted → cell completes (only non-deleted in-window count)', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const s1 = board('s1', {
       spawnedFromTemplateId: 't1',
@@ -594,12 +557,9 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
       status: BoardStatus.ACTIVE,
       isDeleted: true,
     });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedTemplateId: 't1',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, s1, s2, s3, s4]);
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, s1, s2, s3, s4]);
     expect(result.completedTasks).toBe(1);
   });
 
@@ -610,12 +570,9 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
       startDate: '2026-04-01T00:00:00.000Z', // exactly parent.startDate
       status: BoardStatus.COMPLETED,
     });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedTemplateId: 't1',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, s1]);
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, s1]);
     expect(result.completedTasks).toBe(1);
   });
 
@@ -626,18 +583,15 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
       startDate: '2026-04-30T23:59:59.000Z', // exactly parent.endDate
       status: BoardStatus.COMPLETED,
     });
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
-      referencedTemplateId: 't1',
-    });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, s1]);
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1' });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, s1]);
     expect(result.completedTasks).toBe(1);
   });
 });
 
 describe('computeBoardStatsUpdate — Phase 6.3 bad-data precedence', () => {
-  it('both referencedBoardId AND referencedTemplateId set → referencedBoardId wins', () => {
+  it('both referencedBoardId AND referencedTemplateId set on Task → referencedBoardId wins', () => {
     // Zod refinement rejects rows with both set, but a malicious remote
     // payload or older client could still produce one. Derivation must
     // be deterministic: the more-specific reference wins.
@@ -645,13 +599,12 @@ describe('computeBoardStatsUpdate — Phase 6.3 bad-data precedence', () => {
     const ref = board('ref', { status: BoardStatus.COMPLETED });
     // Template branch would say "incomplete" here (no spawns at all),
     // but referencedBoardId branch wins → COMPLETED → cell completes.
-    const backing = task('ach1');
-    const bt = boardTask('parent', 'ach1', 0, 0, {
-      isAchievementSquare: true,
+    const ach = achievementTask('ach1', {
       referencedBoardId: 'ref',
       referencedTemplateId: 't1', // would lose to referencedBoardId precedence
     });
-    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: backing }, [parent, ref]);
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, ref]);
     expect(result.completedTasks).toBe(1);
   });
 });
