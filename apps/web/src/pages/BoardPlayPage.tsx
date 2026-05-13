@@ -197,14 +197,21 @@ export function BoardPlayPage(): React.ReactElement {
 
   // ── Flash message helper ───────────────────────────────────────────────
 
-  function showFlash(text: string, variant: FlashMessage['variant']): void {
+  // Wrapped in useCallback so the function reference is stable across
+  // renders. `flashTimerRef` is a stable ref so empty deps is correct.
+  // The body writes the ref's `current` to track the active setTimeout
+  // handle for cleanup — the `react-hooks/refs` rule
+  // (eslint-plugin-react-hooks v7.1+) is conservative about ref access
+  // chains; useCallback makes the function's role explicit (event-time,
+  // never during render) so the analyzer doesn't flag the call sites.
+  const showFlash = useCallback((text: string, variant: FlashMessage['variant']): void => {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     const msg = { text, variant };
     setFlashMessage(msg);
     flashTimerRef.current = setTimeout(() => {
       setFlashMessage((current) => current === msg ? null : current);
     }, FLASH_MS);
-  }
+  }, []);
 
   // ── Completion handler ─────────────────────────────────────────────────
 
@@ -241,7 +248,7 @@ export function BoardPlayPage(): React.ReactElement {
       }
     },
 
-    [id]
+    [id, showFlash]
   );
 
   /**
@@ -301,7 +308,7 @@ export function BoardPlayPage(): React.ReactElement {
         }
       }
     },
-    [isExpired, taskMap, boardTasks, allBoardTasks, handleComplete]
+    [isExpired, taskMap, boardTasks, allBoardTasks, handleComplete, showFlash]
   );
 
   // ── Board not found ────────────────────────────────────────────────────
@@ -490,6 +497,14 @@ export function BoardPlayPage(): React.ReactElement {
             onClose={() => setSelectedSquareId(null)}
             onToggleComplete={() => {
               if (isExpired) return;
+              // `handleComplete` transitively calls `showFlash`, which
+              // writes `flashTimerRef.current`. The `react-hooks/refs`
+              // rule (v7.1+) traces that ref-access chain and flags this
+              // call site as "ref accessed during render" — but this
+              // callback is the DetailModal's onToggleComplete prop,
+              // invoked from the modal's click handler well after
+              // render commits. False positive; disabled per-site.
+              // eslint-disable-next-line react-hooks/refs
               void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
             }}
             onIncrementCount={() => {
