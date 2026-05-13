@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CenterSquareType,
   Timeframe,
@@ -86,8 +86,17 @@ export function BoardWizardPreviewStep({
     ],
   );
 
+  // Keep a ref synchronized with the latest `placement` so the async
+  // save handler (line ~190) reads the current value rather than a
+  // stale closure. Use an effect rather than writing during render —
+  // `react-hooks/refs` (eslint-plugin-react-hooks v7.1+) flags the
+  // in-render write and the lint signal is correct: an effect-driven
+  // sync runs after commit, which is what the async handler needs
+  // anyway (the user clicks Save well after render completes).
   const placementRef = useRef<WizardPlacement>(placement);
-  placementRef.current = placement;
+  useEffect(() => {
+    placementRef.current = placement;
+  }, [placement]);
 
   const taskNames = useMemo<string[]>(
     () => placement.map((t) => (t === null ? '' : t.title)),
