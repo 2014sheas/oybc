@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useState } from 'react';
 import {
-  Timeframe,
   type Board,
   type RecurringBoardTemplate,
+  type Timeframe,
   type UserPreferences,
 } from '@oybc/shared';
-import { fetchBoardTasks } from '../db/operations/boardTasks';
-import { fetchRecurringBoardTemplate } from '../db/operations/recurringBoardTemplates';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useDrafts } from './createHub/useDrafts';
+import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframeParam';
+import { useEditTemplateParam } from './createHub/useEditTemplateParam';
+import { useResumableDraft } from './createHub/useResumableDraft';
 import { usePendingRecurringBoards } from '../hooks';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
@@ -18,24 +18,6 @@ import { CreateHubQuickAdd } from '../components/createHub/CreateHubQuickAdd';
 import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
 import type { BoardWizardDraft } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
-
-/**
- * Parse the `recurringTimeframe` URL search param into a valid Timeframe
- * (excluding CUSTOM, which Phase 1 doesn't support). Returns null when
- * absent, malformed, or CUSTOM. Defensive — a hand-typed URL shouldn't
- * crash the wizard.
- */
-function parseRecurringTimeframeParam(value: string | null): Timeframe | null {
-  switch (value) {
-    case Timeframe.DAILY:
-    case Timeframe.WEEKLY:
-    case Timeframe.MONTHLY:
-    case Timeframe.YEARLY:
-      return value;
-    default:
-      return null;
-  }
-}
 
 export interface CreateHubPageProps {
   userId: string;
@@ -87,6 +69,12 @@ type HubMode =
  * in-place. Dismissing the wizard (Cancel / Activate / Save Draft)
  * returns to the hub; the reactive `useDrafts` hook ensures any
  * newly-saved draft appears immediately in the list.
+ *
+ * Two deep-link entry points are handled by dedicated hooks:
+ * - `?recurringTimeframe=daily` → `useRecurringTimeframeParam`
+ * - `?editTemplate=<uuid>` → `useEditTemplateParam`
+ * Each consumes its param exactly once and clears it from the URL so a
+ * wizard cancel + manual re-entry doesn't re-arm the prefill.
  */
 export function CreateHubPage({
   userId,
@@ -95,61 +83,22 @@ export function CreateHubPage({
   onTemplateCompleted,
 }: CreateHubPageProps): React.ReactElement {
   const [mode, setMode] = useState<HubMode>({ kind: 'hub' });
-  const [searchParams, setSearchParams] = useSearchParams();
   const drafts = useDrafts(userId);
   const library = useTaskLibrary(userId);
   const pendingRecurring = usePendingRecurringBoards(userId);
+  const resolveDraft = useResumableDraft();
 
-  // Recurring-banner deep link: `/create?recurringTimeframe=daily` opens
-  // the wizard immediately with the timeframe prefilled + locked. We
-  // consume the param exactly once on mount (or whenever it appears /
-  // changes) and clear it from the URL so a wizard cancel + manual
-  // re-entry doesn't accidentally re-arm the prefill.
-  useEffect(() => {
-    const param = parseRecurringTimeframeParam(
-      searchParams.get('recurringTimeframe')
-    );
-    if (param === null) return;
-    setMode({ kind: 'wizard', prefilledRecurringTimeframe: param });
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('recurringTimeframe');
-        return next;
-      },
-      { replace: true }
-    );
-  }, [searchParams, setSearchParams]);
+  useRecurringTimeframeParam(
+    useCallback((timeframe: Timeframe) => {
+      setMode({ kind: 'wizard', prefilledRecurringTimeframe: timeframe });
+    }, []),
+  );
 
-  // Profile → Recurring templates → Edit deep link:
-  // `/create?editTemplate=<uuid>` opens the wizard hydrated from the
-  // template, in template-edit mode. Mirrors the recurringTimeframe
-  // pattern above but consumes a different param. Cleared from the URL
-  // after the template is fetched so a wizard cancel + manual re-entry
-  // doesn't re-arm the edit.
-  useEffect(() => {
-    const id = searchParams.get('editTemplate');
-    if (id === null) return;
-    let cancelled = false;
-    void (async () => {
-      const template = await fetchRecurringBoardTemplate(id);
-      if (cancelled) return;
-      if (template !== undefined) {
-        setMode({ kind: 'wizard', editingTemplate: template });
-      }
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete('editTemplate');
-          return next;
-        },
-        { replace: true },
-      );
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams, setSearchParams]);
+  useEditTemplateParam(
+    useCallback((template: RecurringBoardTemplate) => {
+      setMode({ kind: 'wizard', editingTemplate: template });
+    }, []),
+  );
 
   const returnToHub = useCallback(() => setMode({ kind: 'hub' }), []);
 
@@ -159,10 +108,10 @@ export function CreateHubPage({
 
   const handleResumeDraft = useCallback(
     async (board: Board): Promise<void> => {
-      const boardTasks = await fetchBoardTasks(board.id);
-      setMode({ kind: 'wizard', draft: { board, boardTasks } });
+      const draft = await resolveDraft(board);
+      setMode({ kind: 'wizard', draft });
     },
-    [],
+    [resolveDraft],
   );
 
   const handleWizardComplete = useCallback(
@@ -225,7 +174,8 @@ export function CreateHubPage({
         onCreate={(entry) =>
           // Skip the URL round-trip used by the Boards-tab variant — we're
           // already on /create, so just flip mode directly. Same end state
-          // as consuming the URL param via the useEffect above.
+          // as consuming the URL param via the useRecurringTimeframeParam
+          // hook above.
           setMode({ kind: 'wizard', prefilledRecurringTimeframe: entry.timeframe })
         }
       />
