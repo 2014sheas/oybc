@@ -1,18 +1,60 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider } from './firebase/AuthContext';
 import { AuthGate } from './components/AuthGate';
 import { TabBar } from './components/TabBar';
 import { BoardsPage } from './pages/BoardsPage';
 import { BoardPlayPage } from './pages/BoardPlayPage';
-import { CreatePage } from './pages/CreatePage';
+import { CreateHubPage } from './pages/CreateHubPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
+import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
 import { Playground } from './pages/Playground';
+import { useAuth } from './firebase/useAuth';
 import {
   useSyncLoop,
   useLegacyPreferencesMigration,
   useAppliedTheme,
+  usePreferences,
 } from './hooks';
+
+// ─── Create tab route wrapper ─────────────────────────────────────────────────
+
+/**
+ * Route-level wrapper that pulls the authenticated user id and
+ * synced preferences out of the auth / preferences hooks and hands
+ * them to `CreateHubPage` as props. `CreateHubPage` itself stays
+ * pure so it remains easy to mount from the playground with test
+ * values.
+ */
+function CreateRoute(): React.ReactElement | null {
+  const { user } = useAuth();
+  const [preferences, , preferencesReady] = usePreferences();
+  const navigate = useNavigate();
+
+  // Defer rendering until both auth and preferences have resolved —
+  // mounting the hub with placeholder preferences would seed the
+  // wizard's defaults with the wrong values and flicker on first
+  // paint when the live values arrive.
+  if (!user?.id || !preferencesReady) return null;
+
+  return (
+    <CreateHubPage
+      userId={user.id}
+      preferences={preferences}
+      onBoardCompleted={(boardId) => {
+        navigate(`/boards/${boardId}`);
+      }}
+      onTemplateCompleted={() => {
+        // Phase 6.2: recurring-template completions without a spawned
+        // board (skip OR edit) land on the templates list so the user
+        // sees their newly-saved/edited template (with attention badge
+        // on skip). The earlier contract overloaded `onBoardCompleted`
+        // with templateId, navigating to /boards/<templateId> = 404.
+        navigate('/profile/recurring-templates');
+      }}
+    />
+  );
+}
 
 // ─── Authenticated Layout ─────────────────────────────────────────────────────
 
@@ -35,11 +77,15 @@ function AuthenticatedLayout(): React.ReactElement {
         <Routes>
           <Route path="/boards" element={<BoardsPage />} />
           <Route path="/boards/:id" element={<BoardPlayPage />} />
-          <Route path="/create" element={<CreatePage />} />
+          <Route path="/create" element={<CreateRoute />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/profile/board-preferences"
             element={<BoardPreferencesPage />}
+          />
+          <Route
+            path="/profile/recurring-templates"
+            element={<RecurringTemplatesPage />}
           />
           <Route path="/" element={<Navigate to="/boards" replace />} />
           <Route path="*" element={<Navigate to="/boards" replace />} />

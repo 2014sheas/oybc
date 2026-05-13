@@ -1,0 +1,367 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  background-color: var(--card-bg);
+  border-radius: var(--radius-card);
+  padding: var(--spacing-xl);
+  /* No outer border — card-bg against page background already delimits
+   * the step. Matches the composite wizard's Build step. */
+}
+
+/* ── Header ── */
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.countRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.countGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.countLabel {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.countOk {
+  color: var(--success-text);
+  font-weight: 600;
+}
+
+.countShort {
+  color: var(--warning-text);
+  font-weight: 600;
+}
+
+.centerBadgeOk,
+.centerBadgeWarn {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.centerBadgeOk {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  border: 1px solid var(--success-border);
+}
+
+.centerBadgeWarn {
+  background-color: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
+}
+
+.search {
+  width: 100%;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--active-bg);
+}
+
+/* ── List ──
+ *
+ * Rows used to be individually boxed (per-row border + rounded
+ * corners). Matches the composite wizard now: a flat list inside the
+ * step body, hairline dividers between rows, leading 3pt blue bar
+ * + tinted fill for the selected state. No scroll container border. */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.list > li {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.list > li:last-child {
+  border-bottom: none;
+}
+
+.rowWrap,
+.rowSelectedWrap {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  background-color: var(--bg-primary);
+  transition: background-color 0.15s;
+}
+
+.rowSelectedWrap {
+  background-color: var(--active-bg-subtle, rgba(59, 130, 246, 0.12));
+}
+
+.row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  min-width: 0;
+  transition: background-color 0.15s;
+}
+
+.row:hover {
+  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
+}
+
+/* The row is a flex button; we use its ::before to draw the leading bar
+ * without altering the inner geometry. Selected state is signaled by
+ * rowSelectedWrap tinted background + the ::before blue bar below. */
+.row {
+  position: relative;
+}
+
+.row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: transparent;
+  transition: background-color 0.15s;
+}
+
+.rowSelectedWrap .row::before {
+  background-color: var(--active-bg);
+}
+
+/* .checkbox and .checkboxOn removed — selection is indicated by the
+ * row-level highlight (rowSelectedWrap tint + ::before leading bar)
+ * rather than a per-row checkbox element. */
+
+/* Disclosure button — sits at the trailing edge of a compound row,
+ * independent of the row-body select tap target. */
+.disclosureButton {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-color);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background-color 0.15s, color 0.15s;
+  align-self: stretch;
+}
+
+.disclosureButton:hover {
+  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
+  color: var(--text-primary);
+}
+
+.chevron,
+.chevronOpen {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  transition: transform 0.15s;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.rowCenter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rowTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowSubtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowUsage {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.centerRadio {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.3rem;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  transition: color 0.15s;
+}
+
+.centerRadio:hover {
+  color: var(--warning-text);
+}
+
+.centerRadioOn {
+  color: var(--warning-text);
+}
+
+/* ── Composite expansion — leaves rendered as indented task rows ──
+ *
+ * Replaces the old CompositeDerivationPanel (which had its own mini
+ * UI with an Operator row + per-leaf "+ Add" buttons). Leaves now
+ * use the same task-row rendering as top-level tasks, indented so
+ * hierarchy is clear. Keeps the visual language consistent. */
+
+.leafList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-secondary);
+}
+
+.leafItem {
+  border-top: 1px solid var(--border-color);
+  /* Indent via padding on the wrap so the leading bar + checkbox line
+   * up inside the child row. */
+  padding-left: 2rem;
+}
+
+.leafEmpty {
+  padding: 0.75rem 1rem 0.75rem 2rem;
+  font-size: 0.88rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+/* ── Empty state ── */
+
+.emptyState {
+  text-align: center;
+  padding: var(--spacing-2xl);
+  color: var(--text-secondary);
+  font-style: italic;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.newTaskButton {
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border: 1px solid var(--active-bg);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, box-shadow 0.15s, transform 0.05s;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.25);
+}
+
+.newTaskButton:hover {
+  filter: brightness(0.94);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+}
+
+.newTaskButton:active {
+  transform: translateY(1px);
+}
+
+/* ── Footer ── */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.backButton,
+.nextButton {
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.15s, opacity 0.15s;
+}
+
+.backButton {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.backButton:hover {
+  background-color: var(--button-hover-bg);
+}
+
+.nextButton {
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border-color: var(--active-bg);
+}
+
+.nextButton:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+.nextButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

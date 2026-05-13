@@ -11,13 +11,26 @@ export { styles as interactiveTaskSquareStyles };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** The three interaction modes a task square can have. */
-export type SquareTaskType = 'normal' | 'counting' | 'progress';
+/** The four interaction modes a task square can have. */
+export type SquareTaskType = 'normal' | 'counting' | 'progress' | 'compound';
 
 /** A single step within a progress-type task. */
 export interface ProgressStep {
   id: string;
   label: string;
+}
+
+/**
+ * A pre-resolved child task for compound squares.
+ *
+ * @property taskId - ID of the child Task record
+ * @property title - Display name of the child task
+ * @property isCompleted - Whether the child task is currently complete
+ */
+export interface CompoundChild {
+  taskId: string;
+  title: string;
+  isCompleted: boolean;
 }
 
 /**
@@ -31,6 +44,10 @@ export interface ProgressStep {
  * @property maxCount - Counting tasks only: target count for completion
  * @property unit - Counting tasks only: unit label (e.g. "km")
  * @property steps - Progress tasks only: ordered list of sub-steps
+ * @property operator - Compound tasks only: completion operator ('AND' | 'OR' | 'M_OF_N')
+ * @property threshold - Compound tasks only: required count for M_OF_N operator
+ * @property isOrdered - Compound tasks only: whether children must be completed in order
+ * @property children - Compound tasks only: pre-resolved child tasks (resolved by the caller)
  */
 export interface TaskSquareData {
   id: string;
@@ -43,6 +60,11 @@ export interface TaskSquareData {
   unit?: string;
   /** progress only */
   steps?: ProgressStep[];
+  /** compound only */
+  operator?: 'AND' | 'OR' | 'M_OF_N';
+  threshold?: number;
+  isOrdered?: boolean;
+  children?: CompoundChild[];
 }
 
 /**
@@ -80,6 +102,7 @@ export interface ContextMenuState {
  * - normal: toggle completion
  * - counting: increment count (caps at maxCount, marks complete at max)
  * - progress: no grid-level action (callers should open modal instead)
+ * - compound: no grid-level action (callers should open modal instead)
  */
 export function applyAction(sq: TaskSquareData, prev: SquareState): SquareState {
   if (sq.type === 'normal') {
@@ -90,11 +113,18 @@ export function applyAction(sq: TaskSquareData, prev: SquareState): SquareState 
     const next = Math.min(prev.currentCount + 1, max);
     return { ...prev, currentCount: next, isCompleted: next >= max };
   }
-  // progress — no grid-level action; callers should open modal instead
+  // progress and compound — no grid-level action; callers should open modal instead
   return prev;
 }
 
-/** Compute the progress fraction in [0, 1] for a square. */
+/**
+ * Compute the progress fraction in [0, 1] for a square.
+ *
+ * Compound: operator-aware fill.
+ *   - AND: done / total children
+ *   - OR: 0 or 1 (any-complete = full)
+ *   - M_OF_N: done / threshold (clamped to 1.0)
+ */
 export function progressFraction(sq: TaskSquareData, state: SquareState): number {
   if (sq.type === 'counting') {
     const max = sq.maxCount ?? 1;
@@ -105,10 +135,28 @@ export function progressFraction(sq: TaskSquareData, state: SquareState): number
     if (total === 0) return 0;
     return state.completedStepIds.size / total;
   }
+  if (sq.type === 'compound') {
+    const children = sq.children ?? [];
+    const total = children.length;
+    const done = children.filter((c) => c.isCompleted).length;
+    if (total === 0) return 0;
+    if (sq.operator === 'OR') return done > 0 ? 1 : 0;
+    if (sq.operator === 'M_OF_N') {
+      const threshold = sq.threshold ?? 0;
+      if (threshold === 0) return 0;
+      return Math.min(done / threshold, 1);
+    }
+    // AND (default)
+    return done / total;
+  }
   return 0;
 }
 
-/** Build the label shown inside the progress bar. */
+/**
+ * Build the label shown inside the progress bar.
+ *
+ * Compound bar label: 'X/Y' for AND, 'X/T threshold' for M_OF_N, 'any 1 of Y' for OR.
+ */
 export function progressBarLabel(sq: TaskSquareData, state: SquareState): string {
   if (sq.type === 'counting') {
     return `${state.currentCount}/${sq.maxCount} ${sq.unit ?? ''}`.trim();
@@ -116,6 +164,14 @@ export function progressBarLabel(sq: TaskSquareData, state: SquareState): string
   if (sq.type === 'progress') {
     const total = sq.steps?.length ?? 0;
     return `${state.completedStepIds.size}/${total} steps`;
+  }
+  if (sq.type === 'compound') {
+    const children = sq.children ?? [];
+    const done = children.filter((c) => c.isCompleted).length;
+    const total = children.length;
+    if (sq.operator === 'OR') return done > 0 ? 'complete' : `0 of ${total}`;
+    if (sq.operator === 'M_OF_N') return `${done}/${sq.threshold ?? '?'}`;
+    return `${done}/${total}`;
   }
   return '';
 }

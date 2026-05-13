@@ -2,10 +2,11 @@ import SwiftUI
 
 /// A reusable interactive bingo square that adapts its appearance and behavior to the task type.
 ///
-/// Supports all three task types with type-specific visual indicators:
+/// Supports all task types with type-specific visual indicators:
 /// - **Normal**: Tap toggles completion. Checkmark overlay when complete.
 /// - **Counting**: Tap increments count. Shows "X / max unit" progress bar and a "+1 unit" hint.
 /// - **Progress**: Read-only in the grid (steps are managed elsewhere). Shows "X / Y steps" progress bar.
+/// - **Compound**: Tap opens the compound detail sheet. Shows operator-aware fill bar and a "C" badge.
 ///
 /// The square is 90 × 90 pt by default (matching the web `InteractiveTaskSquare`) and can be
 /// made read-only by omitting `onTap` or setting `isReadOnly = true`.
@@ -19,6 +20,10 @@ import SwiftUI
 ///   - unit: Unit label for counting tasks (e.g. "pages", "km").
 ///   - completedSteps: Number of completed steps for progress tasks.
 ///   - totalSteps: Total number of steps for progress tasks.
+///   - compoundOperator: Logical operator for compound tasks (.and / .or / .mOfN).
+///   - compoundThreshold: M threshold for .mOfN compound tasks.
+///   - compoundChildCount: Total number of active children for compound tasks.
+///   - compoundDoneCount: Number of completed children for compound tasks.
 ///   - onTap: Optional tap handler. When nil the square is not interactive (unless `isReadOnly`
 ///     is explicitly set). Progress tasks ignore `onTap` from the grid.
 ///   - isReadOnly: Suppresses tap handling even when `onTap` is provided (used for Board A).
@@ -40,9 +45,22 @@ struct InteractiveTaskSquareView: View {
     var completedSteps: Int = 0
     var totalSteps: Int = 0
 
+    // Compound-specific (only meaningful when taskType == .compound)
+    var compoundOperator: OperatorType? = nil
+    var compoundThreshold: Int? = nil
+    var compoundChildCount: Int = 0
+    var compoundDoneCount: Int = 0
+
     // Interaction
     var onTap: (() -> Void)? = nil
     var isReadOnly: Bool = false
+
+    // Phase 6.3 — Optional achievement-square badge data. When set, the
+    // cell renders a 🎯-prefixed pill at the top-left indicating
+    // cross-board tracking. Replaces the "C" compound badge when both
+    // apply (achievement-square semantics override the task-type
+    // indicator for display purposes; the cell still backs the task).
+    var achievementBadge: AchievementSquareBadgeData? = nil
 
     // Size
     var size: CGFloat = 90
@@ -55,42 +73,61 @@ struct InteractiveTaskSquareView: View {
 
     /// Whether a progress bar should be shown at the bottom of the square.
     private var showProgressBar: Bool {
-        taskType == .counting || taskType == .progress
+        taskType == .counting || taskType == .compound
     }
 
     /// Fraction (0–1) to fill the progress bar.
     private var fillFraction: Double {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
+            // ACHIEVEMENT cells render via InteractiveTaskSquareView with
+            // `taskType: .normal` in production (see BoardPlayView), but
+            // the switch must still be exhaustive over TaskType.
             return isCompleted ? 1.0 : 0.0
         case .counting:
             guard maxCount > 0 else { return 0 }
             return min(Double(currentCount) / Double(maxCount), 1.0)
-        case .progress:
-            guard totalSteps > 0 else { return 0 }
-            return min(Double(completedSteps) / Double(totalSteps), 1.0)
+        case .compound:
+            if compoundChildCount == 0 { return 0 }
+            switch compoundOperator {
+            case .or:
+                return compoundDoneCount > 0 ? 1.0 : 0.0
+            case .mOfN:
+                let threshold = compoundThreshold ?? 0
+                if threshold == 0 { return 0 }
+                return min(Double(compoundDoneCount) / Double(threshold), 1.0)
+            case .and, .none:
+                return Double(compoundDoneCount) / Double(compoundChildCount)
+            }
         }
     }
 
     /// Accent colour for the progress bar, matching TaskSquareActionsPlayground conventions.
     private var barColor: Color {
         switch taskType {
-        case .normal:   return .green
+        case .normal, .achievement: return .green
         case .counting: return .orange
-        case .progress: return .purple
+        case .compound: return Color(red: 0.39, green: 0.4, blue: 0.95)  // indigo, mirrors web's #6366f1
         }
     }
 
     /// Label text displayed inside the progress bar.
     private var barLabel: String {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
             return ""
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"
             return "\(currentCount)/\(maxCount)\(unitText)"
-        case .progress:
-            return "\(completedSteps)/\(totalSteps) steps"
+        case .compound:
+            switch compoundOperator {
+            case .or:
+                return compoundDoneCount > 0 ? "complete" : "0 of \(compoundChildCount)"
+            case .mOfN:
+                return "\(compoundDoneCount)/\(compoundThreshold ?? 0)"
+            case .and, .none:
+                return "\(compoundDoneCount)/\(compoundChildCount)"
+            }
         }
     }
 
@@ -103,8 +140,10 @@ struct InteractiveTaskSquareView: View {
     /// Whether tapping the square should trigger the handler.
     private var isTappable: Bool {
         guard !isReadOnly, let _ = onTap else { return false }
-        // Progress tasks are not directly actionable from the grid.
-        return taskType != .progress
+        // Compound taps open the detail sheet via the parent's tap handler;
+        // they shouldn't toggle a global completion. Primitive types are
+        // directly actionable.
+        return taskType != .compound
     }
 
     // MARK: - Body
@@ -187,6 +226,61 @@ struct InteractiveTaskSquareView: View {
                     Spacer()
                 }
             }
+
+            // ── "C" badge (top-left corner for compound squares) ──
+            // Suppressed when an achievement badge is rendering — the
+            // achievement-square indicator takes priority on display.
+            if taskType == .compound && achievementBadge == nil {
+                VStack {
+                    HStack {
+                        Text("C")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 16, height: 16)
+                            .background(Color(red: 0.39, green: 0.4, blue: 0.95))
+                            .clipShape(Circle())
+                            .padding(4)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
+
+            // ── Phase 6.3: achievement-square badge (top-left) ──
+            // Pill-shaped to carry the mode + counts label inline. Sits
+            // in the same top-left slot as the "C" badge; suppresses
+            // the "C" badge when both apply (see the compound branch
+            // above). Uses the SF Symbol `target` rather than a 🎯
+            // emoji so the badge renders deterministically across
+            // simulator runtimes — the snapshot harness's headless
+            // simulator lacks the Color Emoji font and would show a
+            // broken-glyph placeholder, locking that into committed
+            // baselines.
+            if let badge = achievementBadge {
+                VStack {
+                    HStack {
+                        HStack(spacing: 2) {
+                            Image(systemName: "target")
+                                .font(.system(size: 8, weight: .semibold))
+                            Text(badge.displayLabel)
+                                .font(.system(size: 8, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(red: 0.39, green: 0.4, blue: 0.95).opacity(0.18))
+                        )
+                        .foregroundColor(isCompleted ? .white : .primary)
+                        .padding(4)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .accessibilityLabel("Achievement square — \(badge.displayLabel)")
+            }
         }
         .frame(width: size, height: size)
         .scaleEffect(isPressed ? 0.93 : 1.0)
@@ -212,13 +306,20 @@ struct InteractiveTaskSquareView: View {
 
     private var accessibilityLabel: String {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
             return "\(title) — \(isCompleted ? "completed" : "incomplete")"
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"
             return "\(title) — \(currentCount) of \(maxCount)\(unitText)"
-        case .progress:
-            return "\(title) — \(completedSteps) of \(totalSteps) steps completed"
+        case .compound:
+            switch compoundOperator {
+            case .or:
+                return "\(title) — compound task, \(compoundDoneCount > 0 ? "complete" : "0 of \(compoundChildCount) children done")"
+            case .mOfN:
+                return "\(title) — compound task, \(compoundDoneCount) of \(compoundThreshold ?? 0) required children done"
+            case .and, .none:
+                return "\(title) — compound task, \(compoundDoneCount) of \(compoundChildCount) children done"
+            }
         }
     }
 
@@ -273,13 +374,14 @@ struct InteractiveTaskSquareView: View {
     .padding()
 }
 
-#Preview("Progress — Partial") {
+#Preview("Compound (ordered) — Partial") {
     InteractiveTaskSquareView(
         title: "Weekly Workout",
-        taskType: .progress,
+        taskType: .compound,
         isCompleted: false,
-        completedSteps: 1,
-        totalSteps: 3
+        compoundOperator: .and,
+        compoundChildCount: 3,
+        compoundDoneCount: 1
     )
     .padding()
 }
@@ -310,8 +412,8 @@ struct InteractiveTaskSquareView: View {
                                   currentCount: 3, maxCount: 5, unit: "km", onTap: {})
         InteractiveTaskSquareView(title: "Run 5km", taskType: .counting, isCompleted: true,
                                   currentCount: 5, maxCount: 5, unit: "km")
-        InteractiveTaskSquareView(title: "Clean House", taskType: .progress, isCompleted: false,
-                                  completedSteps: 2, totalSteps: 3)
+        InteractiveTaskSquareView(title: "Clean House", taskType: .compound, isCompleted: false,
+                                  compoundOperator: .and, compoundChildCount: 3, compoundDoneCount: 2)
     }
     .padding()
 }

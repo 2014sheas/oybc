@@ -1,5 +1,7 @@
 # OYBC Sync Strategy Documentation
 
+> **Note (2026-04-30):** Sections #4 (Progress Task Step Sync) and #6 (Composite Task Sync) describe the **pre-unification** sync model. After the Compound Tasks Unification (PR #43, 2026-04-29) those two patterns collapsed into one: parent-child relationships live in a single `compound_children` table (with `compoundTaskId` for the parent and `childTaskId` for the child), and the parent's completion derives from its children via the operator/threshold stored on the parent `Task`. The `task_steps` and `composite_tasks`/`composite_nodes` tables still appear in old schema migrations so first-launch backfill works on dev/test devices, but receive no live writes and are not read by any UI. The LWW + version + ProgressCounter + Achievement Square + Bingo Line + User Preferences + Real-Time + Performance sections (everything else in this doc) remain accurate. For the current task model see [`TASK_SYSTEM.md`](TASK_SYSTEM.md).
+
 ## Overview
 
 This document details the synchronization strategies for complex features in OYBC, including conflict resolution, cross-board tracking, and performance optimization for offline-first architecture.
@@ -11,7 +13,7 @@ This document details the synchronization strategies for complex features in OYB
 1. [ProgressCounter Conflict Resolution](#progresscounter-conflict-resolution)
 2. [Achievement Square Auto-Completion](#achievement-square-auto-completion)
 3. [Cross-Board Queries](#cross-board-queries)
-4. [Task Step Linking Sync](#task-step-linking-sync)
+4. [Progress Task Step Sync](#progress-task-step-sync)
 5. [Bingo Line Detection Sync](#bingo-line-detection-sync)
 6. [Composite Task Sync](#composite-task-sync)
 7. [User Preferences Sync](#user-preferences-sync)
@@ -558,6 +560,8 @@ CREATE INDEX idx_task_steps_deleted ON task_steps(isDeleted, taskId);
 
 ## Progress Task Step Sync
 
+> **Pre-unification (2026-04-30):** This entire section describes the legacy `task_steps` table and the per-`BoardTask` completion model. Both have been retired. In the current model, parent-child links live in `compound_children`; completion is global on the parent `Task`. The "all steps are tasks" principle below still holds — children of a compound parent are themselves rows in the `tasks` table — but the linking happens via `compound_children.compoundTaskId` + `childTaskId`, not via `task_steps.progressTaskId` + `stepTaskId`. Sync is unchanged: child Tasks and parent Tasks both go through the standard LWW path on `tasks`; `compound_children` rows sync independently. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the current schema.
+
 ### Key Design: All Steps Are Tasks
 
 **Critical**: Progress task steps are NOT embedded data - they are **always tasks** in the `tasks` table. The `task_steps` table only stores structure (order and relationships).
@@ -871,6 +875,8 @@ function detectBingoLines(boardSize: number, boardTasks: BoardTask[]): string[] 
 ---
 
 ## Composite Task Sync
+
+> **Pre-unification (2026-04-30):** This entire section describes the legacy `composite_tasks` + `composite_nodes` + `board_composite_tasks` model. After the Compound Tasks Unification (PR #43, 2026-04-29) compounds live as ordinary `tasks` rows (`type='compound'`, with `operator` + `threshold` + `isOrdered` columns) and parent-child links live in `compound_children`. The "tree integrity" concern below largely dissolves: there is no separate root vs. node distinction, no separate junction table for board-level placement, and completion is global per `Task` rather than per-board. Sync is the standard LWW path on `tasks` plus independent LWW on `compound_children`. The conflict-resolution patterns below are preserved as historical reference for how the legacy tree-based sync worked. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the current schema.
 
 ### Problem Statement
 
@@ -1444,3 +1450,17 @@ This section documents what was actually implemented for the sync layer (Phase 3
 - **TOCTOU race in push**: The read-then-write pattern during push is not atomic. Another device could write between the read and write. Production should use Firestore transactions to close this window.
 - **No schema validation on pulled data**: Remote documents are trusted as-is during pull. Malformed or unexpected fields are not validated before upserting into the local DB.
 - **`merge: true` can leave stale fields**: Using Firestore's `merge: true` option means deleted or renamed fields on the local side may persist in the remote document as stale data.
+
+---
+
+## Recurring Boards sync (Phase 6 — planned)
+
+Recurring Boards Phase 1 introduces **no new sync collections**. The 4 new boolean fields on `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`) ride the existing user-prefs sync — same LWW resolution, same conflict-resolution code path, same forward-compatible decoder pattern. Detection of pending recurring boards is computed at read time from existing `boards` data; no persistence required, no sync footprint.
+
+A peer running an older client decodes the user doc successfully (the new fields fall through to `false` defaults via `mergeUserPreferences()` and the Swift `UserPreferences.init(from:)` mirror). A write from the older client drops the new fields — no data loss, since absence implies the default value.
+
+**Phase 2 (preset-pool boards)** will add a new Firestore subcollection `users/{uid}/recurringBoardTemplates` (camelCase, matching the convention used by `boardTasks` / `compoundChildren`). The local SQLite table is `recurring_board_templates` (snake_case). Versioning, LWW resolution, and soft-delete tombstone semantics mirror `boards` exactly. The collection name is added to the sync service's known-collections list; no new conflict-resolution logic is required.
+
+**Phase 3 (board-completion-as-a-square)** extends achievement squares with one new optional field — `referencedBoardId` — on the existing `boardTasks` Firestore subcollection (local SQLite table: `board_tasks`). No new collection, no schema migration to a different table. Cross-board cascade fires inside the existing `runBoardCascadeForTask()` pipeline by adding a parallel fan-out for board_tasks rows with `referencedBoardId = this.id`; no new sync paths are added.
+
+For the canonical design, see [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design).

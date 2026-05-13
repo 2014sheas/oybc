@@ -1,0 +1,129 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.required {
+  color: var(--danger-bg);
+}
+
+.input {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  width: 100%;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--active-bg);
+}
+
+.segmented {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.segmentedButton {
+  flex: 1;
+  min-width: 60px;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.segmentedButton:hover {
+  background-color: var(--button-hover-bg);
+}
+
+.segmentedButtonActive {
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border-color: var(--active-bg);
+}
+
+.segmentedButtonActive:hover {
+  background-color: var(--active-bg);
+  filter: brightness(0.95);
+}
+
+.dateDisplay {
+  display: flex;
+  flex-direction: column;
+  padding: 0.55rem 0.85rem;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  gap: 2px;
+}
+
+.dateDisplayLabel {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dateDisplayRange {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.dateRow {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.dateRow .fieldGroup {
+  flex: 1;
+  min-width: 140px;
+}
+
+.hint {
+  margin: 4px 0 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.checkboxSubtitle {
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+

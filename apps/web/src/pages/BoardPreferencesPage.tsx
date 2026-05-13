@@ -170,6 +170,81 @@ export function BoardPreferencesPage(): React.ReactElement {
           />
         </div>
       </div>
+
+      {/* Recurring boards (Phase 6.1) — independent of the defaults above
+       *  because these toggles drive the Boards-tab banner, not new-board
+       *  defaults. When enabled, the Boards tab prompts the user to
+       *  create a board for each new window (daily/weekly/monthly/yearly)
+       *  on first open inside that window. */}
+      <h2 className={styles.header} style={{ fontSize: 20, paddingTop: 8 }}>
+        Recurring boards
+      </h2>
+      <p className={styles.subPageIntro}>
+        When enabled, the Boards tab will prompt you to create a board for
+        each new window. Detection runs only when you open the app — no
+        background notifications.
+      </p>
+      <div className={styles.card}>
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-recurring-daily">
+            Prompt for daily board
+          </label>
+          <label className={styles.toggleSwitch}>
+            <input
+              id="pref-recurring-daily"
+              type="checkbox"
+              checked={prefs.recurringDailyEnabled}
+              onChange={(e) => set('recurringDailyEnabled', e.target.checked)}
+            />
+            <span className={styles.toggleTrack} />
+          </label>
+        </div>
+
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-recurring-weekly">
+            Prompt for weekly board
+          </label>
+          <label className={styles.toggleSwitch}>
+            <input
+              id="pref-recurring-weekly"
+              type="checkbox"
+              checked={prefs.recurringWeeklyEnabled}
+              onChange={(e) => set('recurringWeeklyEnabled', e.target.checked)}
+            />
+            <span className={styles.toggleTrack} />
+          </label>
+        </div>
+
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-recurring-monthly">
+            Prompt for monthly board
+          </label>
+          <label className={styles.toggleSwitch}>
+            <input
+              id="pref-recurring-monthly"
+              type="checkbox"
+              checked={prefs.recurringMonthlyEnabled}
+              onChange={(e) => set('recurringMonthlyEnabled', e.target.checked)}
+            />
+            <span className={styles.toggleTrack} />
+          </label>
+        </div>
+
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-recurring-yearly">
+            Prompt for yearly board
+          </label>
+          <label className={styles.toggleSwitch}>
+            <input
+              id="pref-recurring-yearly"
+              type="checkbox"
+              checked={prefs.recurringYearlyEnabled}
+              onChange={(e) => set('recurringYearlyEnabled', e.target.checked)}
+            />
+            <span className={styles.toggleTrack} />
+          </label>
+        </div>
+      </div>
     </div>
   );
 }

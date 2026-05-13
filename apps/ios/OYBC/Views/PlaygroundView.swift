@@ -7,15 +7,6 @@ struct Feature: Identifiable {
     let content: AnyView
 }
 
-/// PreferenceKey for communicating pool count from a child playground up to PlaygroundView.
-/// Used by BoardTaskSelectionPlayground to float a persistent pool indicator outside the ScrollView.
-struct PoolCountPreferenceKey: PreferenceKey {
-    static var defaultValue: Int = 0
-    static func reduce(value: inout Int, nextValue: () -> Int) {
-        value = nextValue()
-    }
-}
-
 private enum ClearStatus: Equatable {
     case idle
     case success
@@ -34,9 +25,26 @@ struct PlaygroundView: View {
     /// weekStartDay.rawValue`; standalone previews get the default.
     var weekStartDay: String = UserPreferences.defaults.weekStartDay.rawValue
 
-    /// Features under test - new features will be added here (newest first)
+    /// Features under test — new features added here (newest first).
+    ///
+    /// The compound-tasks unification retired five playgrounds whose
+    /// implementations consumed pre-unification types
+    /// (TaskStep / CompositeTask / CompositeNode / TaskType.progress).
+    /// They were gated `#if false` during the merge and dropped in
+    /// Phase 8. New compound playgrounds will land as their own
+    /// entries when needed.
     private var features: [Feature] {
         [
+        Feature(
+            id: "create-hub",
+            title: "Create Hub — full flow (hub + wizard)",
+            content: AnyView(CreateHubPlayground())
+        ),
+        Feature(
+            id: "board-wizard-tasks",
+            title: "Board Wizard — Tasks Step (spike)",
+            content: AnyView(BoardWizardTasksPlayground())
+        ),
         Feature(
             id: "auth-test",
             title: "Authentication & Sync",
@@ -45,46 +53,15 @@ struct PlaygroundView: View {
             })
         ),
         Feature(
-            id: "board-lifecycle",
-            title: "Board Lifecycle",
-            content: AnyView(BoardLifecyclePlayground(weekStartDay: weekStartDay))
-        ),
-        Feature(
-            id: "board-task-selection",
-            title: "Board Task Selection",
-            content: AnyView(BoardTaskSelectionPlayground())
-        ),
-        Feature(
-            id: "cross-board-rollup",
-            title: "Cross-Board Progress Rollup",
-            content: AnyView(CrossBoardRollupPlayground())
-        ),
-        Feature(
-            id: "subtask-derivation",
-            title: "Subtask Derivation Engine",
-            content: AnyView(SubtaskDerivationPlayground())
-        ),
-        Feature(
             id: "task-square-actions",
             title: "Task Square Interactions",
             content: AnyView(TaskSquareActionsPlayground())
-        ),
-        Feature(
-            id: "board-generator",
-            title: "Board Generator",
-            content: AnyView(BoardGeneratorPlayground())
-        ),
-        Feature(
-            id: "unified-task-creation",
-            title: "Task Creation (Unified)",
-            content: AnyView(UnifiedTaskCreatorPlayground())
         ),
     ]
     }
 
     @State private var expandedFeatureIds: Set<String> = []
     @State private var clearStatus: ClearStatus = .idle
-    @State private var floatingPoolCount: Int = 0
     @Environment(\.dismiss) private var dismiss
 
     private func clearTestData() {
@@ -194,23 +171,6 @@ struct PlaygroundView: View {
                 .padding(12)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onPreferenceChange(PoolCountPreferenceKey.self) { count in
-                floatingPoolCount = count
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if floatingPoolCount > 0 && expandedFeatureIds.contains("board-task-selection") {
-                    Text("Pool: \(floatingPoolCount)")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                        .padding(16)
-                }
-            }
             .navigationTitle("Playground")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

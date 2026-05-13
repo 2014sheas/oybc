@@ -78,7 +78,8 @@
   color: var(--text-primary);
   padding: 6px;
   overflow: hidden;
-  word-break: break-word;
+  /* See BingoSquare.module.css — prefer word boundaries. */
+  overflow-wrap: break-word;
 }
 
 .taskSquareCompleted .taskName {
@@ -133,6 +134,10 @@
 
 .progressBarFillProgress {
   background-color: #af52de;
+}
+
+.progressBarFillCompound {
+  background-color: var(--task-compound-color, #6366f1); /* indigo accent */
 }
 
 .progressBarLabel {
@@ -219,6 +224,10 @@
 
 .modalProgressFillProgress {
   background-color: #af52de;
+}
+
+.modalProgressFillCompound {
+  background-color: var(--task-compound-color, #6366f1);
 }
 
 .modalProgressLabel {
@@ -345,6 +354,109 @@
 
 .modalCloseButton:hover {
   color: var(--text-primary);
+}
+
+/* ── Compound badge (grid square, top-left) ──────────────── */
+
+.compoundBadge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: var(--task-compound-color, #6366f1);
+  color: #ffffff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  line-height: 1;
+}
+
+/* ── Achievement-square badge (Phase 6.3, top-left) ───────── */
+/* Pill-shaped so it can carry the mode + counts label inline. Sits in
+   the same top-left slot as the compound badge but is wider; the
+   compound badge is suppressed when this is rendered (see the
+   InteractiveTaskSquare render branch). */
+.achievementBadge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  max-width: calc(100% - 26px); /* leave room for the checkmark */
+  padding: 2px 6px;
+  border-radius: 9px;
+  background-color: var(--achievement-badge-bg, rgba(99, 102, 241, 0.18));
+  color: var(--achievement-badge-text, var(--text-primary));
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 2;
+}
+
+/* ── Compound detail sheet ────────────────────────────────── */
+
+.compoundOperatorCaption {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #6b7280);
+  margin: 0 0 12px;
+}
+
+.compoundChildList {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.compoundChildItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.1s;
+}
+
+.compoundChildItem:last-child {
+  border-bottom: none;
+}
+
+.compoundChildItem:hover {
+  background-color: var(--hover-bg, rgba(0, 0, 0, 0.03));
+}
+
+.compoundChildCheck {
+  font-size: 1.1rem;
+  color: var(--task-compound-color, #6366f1);
+  flex-shrink: 0;
+  width: 1.2rem;
+  text-align: center;
+}
+
+.compoundChildLabel {
+  flex: 1;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.compoundChildLabelDone {
+  text-decoration: line-through;
+  color: var(--text-secondary, #6b7280);
+}
+
+.compoundFooter {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+  text-align: center;
+  margin-top: 12px;
+  font-style: italic;
 }
 
 /* ── Context menu ─────────────────────────────────────────── */

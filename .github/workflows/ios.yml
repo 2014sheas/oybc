@@ -29,10 +29,17 @@ concurrency:
 
 jobs:
   build-and-test:
-    # macos-15 runners ship with Xcode 16.x pre-installed, matching the
-    # Swift 5.9 / iOS 17 deployment target defined in project.yml.
+    # macos-15 runners ship multiple Xcodes; we pin to 26.3 (year-based
+    # versioning) so snapshot baselines recorded against a developer's
+    # local Xcode 26.3 + iOS 26.x simulator match what CI renders. The
+    # default xcode-select on macos-15 is 16.4 — too old for the iOS
+    # 26.x simulator and a Swift major behind local. DEVELOPER_DIR is
+    # set at job level so every step (including xcodegen + swift via
+    # xcrun) uses the same toolchain.
     runs-on: macos-15
     timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
 
     steps:
       - uses: actions/checkout@v6
@@ -42,6 +49,7 @@ jobs:
           sw_vers
           xcodebuild -version
           swift --version
+          xcrun simctl list runtimes | grep -iE "ios" || true
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -67,3 +75,59 @@ jobs:
             -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
+
+      - name: Run snapshot tests
+        id: snapshot-tests
+        # Advisory in CI for now: the runner's macos-15 image has Xcode
+        # 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3 yet), while
+        # local dev machines typically have iOS 26.3.x — so snapshots
+        # recorded locally won't match CI's pixel-for-pixel until either
+        # (a) a runner image refresh ships iOS 26.3, or (b) a developer
+        # frees disk space and installs iOS 26.2 sim runtime locally to
+        # re-record baselines on the matching iOS.
+        #
+        # The xcresult artifact still uploads on failure (see next step),
+        # so a developer can always pull the diff and decide whether to
+        # re-record. Catastrophic breakage (build errors, view crashes)
+        # would also surface in this step's logs even when the job stays
+        # green — review CI logs, not just the green check.
+        continue-on-error: true
+        working-directory: apps/ios
+        env:
+          # Force fail-on-missing in CI. Tests use `record: .missing`
+          # locally so a first-run baseline auto-records — convenient
+          # on a dev machine but a silent-pass trap on CI: a new test
+          # class without committed PNGs would record an ephemeral
+          # baseline and pass green, hiding the fact that nothing is
+          # actually under version control. The library honours this
+          # env var ahead of any per-call setting, so `never` here
+          # forces real failure when a baseline is absent.
+          SNAPSHOT_TESTING_RECORD: never
+        run: |
+          # OS=latest is deterministic given the Xcode pin above: it
+          # resolves to whichever iOS simulator ships with Xcode 26.3.
+          # Bumping the Xcode pin (e.g. to 26.4) is a deliberate event —
+          # re-record baselines on the matching local Xcode + iOS, commit,
+          # push.
+          xcodebuild test \
+            -scheme OYBCSnapshotTests \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -resultBundlePath /tmp/snapshot-results.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload snapshot test results on failure
+        # Gated on the snapshot step's outcome rather than job-level
+        # `failure()` because the snapshot step uses
+        # `continue-on-error: true` — that converts a step failure to
+        # a `success` conclusion at the job level, so `failure()` would
+        # return false and this upload would skip even when there's a
+        # diff worth inspecting. Outcome reflects what actually happened
+        # in the step.
+        if: steps.snapshot-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-test-results
+          path: /tmp/snapshot-results.xcresult
+          retention-days: 7
+          if-no-files-found: warn

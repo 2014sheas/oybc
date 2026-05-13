@@ -36,6 +36,12 @@ struct BingoBoard: View {
     /// Custom name for customFree center square type
     var centerSquareCustomName: String? = nil
 
+    /// When true, the controls (Shuffle / Reset / Fill All) are hidden,
+    /// square toggling is disabled, and the bingo-detection message is
+    /// suppressed. Used by the wizard's preview step where the grid is
+    /// a visual-only artifact, not a playable surface.
+    var readOnly: Bool = false
+
     /// Tracks which squares are completed by index
     @State private var completedSquares: Set<Int> = []
 
@@ -149,8 +155,8 @@ struct BingoBoard: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(gridSize) by \(gridSize) bingo board, \(completedCount) of \(totalSquares) completed")
 
-            // Bingo detection message
-            if let message = bingoMessage {
+            // Bingo detection message — suppressed in readOnly preview mode
+            if !readOnly, let message = bingoMessage {
                 Text(message)
                     .font(bingoResult.isGreenlog ? .title2 : .headline)
                     .fontWeight(.bold)
@@ -175,7 +181,8 @@ struct BingoBoard: View {
                     .accessibilityLabel(message)
             }
 
-            // Controls
+            // Controls — hidden in readOnly preview mode
+            if !readOnly {
             VStack(spacing: 12) {
                 Text("\(completedCount) / \(totalSquares) completed")
                     .font(.subheadline)
@@ -231,6 +238,7 @@ struct BingoBoard: View {
                     .accessibilityLabel("Fill all squares as completed")
                 }
             }
+            }  // end if !readOnly controls
         }
         .onAppear {
             if !hasInitialized {
@@ -248,6 +256,7 @@ struct BingoBoard: View {
     ///
     /// - Parameter index: The 0-based index of the square to toggle
     private func toggleSquare(_ index: Int) {
+        if readOnly { return }
         if index == centerIndex && isAutoCompleted {
             return
         }

@@ -1,0 +1,122 @@
+name: Dependabot sweep reminder
+
+# Opens a tracking issue every 2 weeks reminding the maintainer to
+# review open dependabot PRs and verify the pnpm lockfile still
+# resolves with --frozen-lockfile. Issue body includes the live PR
+# list + a green/red lockfile verdict so the reviewer can decide
+# in-flow.
+#
+# This replaces an in-memory CronCreate job that lived only as long
+# as a Claude session — moving the reminder into GHA makes it
+# durable. SPM (iOS deps) is intentionally out of scope; dependabot
+# does not cover it.
+
+on:
+  schedule:
+    # 14:23 UTC on the 1st and 15th of every month — roughly bi-weekly.
+    # Off the :00 minute mark to avoid the GHA fleet alignment that
+    # produces job-runner contention at the top of the hour.
+    - cron: "23 14 1,15 * *"
+  workflow_dispatch: {} # manual trigger for testing
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+jobs:
+  open-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        # v6 reads the version from `package.json#packageManager`
+        # (pinned to 9.15.4) and ignores any `version:` input here.
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Output goes into a workspace file rather than $GITHUB_OUTPUT so
+      # later steps can pass the list to `gh issue create --body-file`
+      # without re-evaluating PR titles in shell. Dependabot titles are
+      # usually tame, but never re-interpret untrusted input.
+      - name: Verify lockfile still resolves
+        id: lockfile
+        run: |
+          if pnpm install --frozen-lockfile; then
+            printf '%s\n' \
+              ':white_check_mark: `pnpm install --frozen-lockfile` succeeded — lock is in sync.' \
+              > /tmp/lockfile-verdict.md
+          else
+            printf '%s\n' \
+              ':warning: `pnpm install --frozen-lockfile` **failed** — package.json has drifted from pnpm-lock.yaml. Regenerate the lock with `pnpm install` on `dev` and push.' \
+              > /tmp/lockfile-verdict.md
+          fi
+        continue-on-error: true
+
+      - name: List open dependabot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # If `gh pr list` fails (auth/rate-limit/transient API failure)
+          # `count` ends up empty; default to 0 so the integer compare
+          # below doesn't blow the whole step on a transient API blip.
+          count=$(gh pr list --label dependencies --state open --base dev --json number --jq 'length' 2>/dev/null || echo 0)
+          count=${count:-0}
+          if [ "$count" -eq 0 ]; then
+            printf '%s\n' '_No open dependabot PRs targeting `dev`._' > /tmp/dependabot-prs.md
+          else
+            # `--jq` is invoked inside `gh` (jq context), not shell —
+            # PR titles cannot escape into command interpretation. The
+            # output is then written to a file and consumed by
+            # `--body-file` later, so it never sees a shell again.
+            #
+            # The `pending` fallback uses an explicit length check
+            # because `join("")` on an empty array returns `""` (not
+            # `null`), so the `//` short-circuit wouldn't fire.
+            gh pr list \
+              --label dependencies \
+              --state open \
+              --base dev \
+              --json number,title,statusCheckRollup,url \
+              --jq '.[] | . as $pr | (($pr.statusCheckRollup // []) | map(.conclusion // .state) | unique) as $vs | "- [#\($pr.number)](\($pr.url)) — \($pr.title) — CI: \(if ($vs | length) == 0 then "pending" else ($vs | join(", ")) end)"' \
+              > /tmp/dependabot-prs.md
+          fi
+
+      - name: Compose issue body
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          {
+            # Repo-absolute URL — relative `../blob/...` doesn't resolve from a GitHub Issue page.
+            printf 'Bi-weekly dependabot drift check fired by `.github/workflows/dependabot-sweep-reminder.yml`. Review the items below and merge what is safe per the recipe in [CLAUDE.md → Branching Strategy](%s/blob/dev/CLAUDE.md#branching-strategy).\n\n' "$REPO_URL"
+            printf '## Open dependabot PRs targeting `dev`\n\n'
+            cat /tmp/dependabot-prs.md
+            printf '\n## Lockfile health\n\n'
+            cat /tmp/lockfile-verdict.md
+            printf '\n## Resolution recipe\n\n'
+            printf '1. For each PR: confirm CI is green, skim the changelog, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).\n'
+            printf '2. If a PR has lockfile conflicts, run `git checkout --theirs pnpm-lock.yaml && pnpm install` on the branch and push.\n'
+            printf '3. Pushing to a dependabot branch puts it in manual-rebase mode — subsequent merges need `gh pr merge --squash` or a manual rebase.\n'
+            printf '4. Close this issue once the queue is drained or accepted-for-now.\n\n'
+            printf '_SPM (iOS deps) is intentionally out of scope here; dependabot does not cover it._\n'
+          } > /tmp/issue-body.md
+          # Title is plain ASCII (no PR titles) so direct env-var pass is safe.
+          printf '%s\n' "Dependabot sweep — $today" > /tmp/issue-title.txt
+
+      - name: Open tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title=$(cat /tmp/issue-title.txt)
+          gh issue create \
+            --title "$title" \
+            --body-file /tmp/issue-body.md \
+            --label "chore,dependencies"

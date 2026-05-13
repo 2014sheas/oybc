@@ -5,7 +5,8 @@ import { BoardGeneratorPlayground } from '../components/playground/BoardGenerato
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
 import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
 import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
-import { BoardTaskSelectionPlayground } from '../components/playground/BoardTaskSelectionPlayground';
+import { BoardWizardTasksPlayground } from '../components/playground/BoardWizardTasksPlayground';
+import { CreateHubPlayground } from '../components/playground/CreateHubPlayground';
 import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import styles from './Playground.module.css';
@@ -36,6 +37,16 @@ export function Playground() {
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
     {
+      id: 'create-hub',
+      title: 'Create Hub — full flow (hub + wizard)',
+      content: <CreateHubPlayground />,
+    },
+    {
+      id: 'board-wizard-tasks',
+      title: 'Board Wizard — Tasks Step (spike)',
+      content: <BoardWizardTasksPlayground />,
+    },
+    {
       id: 'sync-simulation',
       title: 'Sync & Authentication',
       content: <SyncSimulationPlayground />,
@@ -44,11 +55,6 @@ export function Playground() {
       id: 'board-lifecycle',
       title: 'Board Lifecycle',
       content: <BoardLifecyclePlayground />,
-    },
-    {
-      id: 'board-task-selection',
-      title: 'Board Task Selection',
-      content: <BoardTaskSelectionPlayground />,
     },
     {
       id: 'cross-board-rollup',

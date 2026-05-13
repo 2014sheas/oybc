@@ -1,0 +1,361 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: var(--card-bg, var(--bg-primary));
+  /* No border — the background-color contrast against the page
+   * surface already delimits the step. The stroke was the outermost
+   * of three stacked rectangles that boxed in the library picker. */
+  border-radius: 10px;
+}
+
+/* ─── Status banner (replaces quiet top-right caption) ───────────────────── */
+
+.statusBannerReady,
+.statusBannerWait {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.92rem;
+}
+
+.statusBannerReady {
+  color: var(--success-text, #166534);
+  background-color: rgba(34, 197, 94, 0.12);
+  font-weight: 600;
+}
+
+.statusBannerWait {
+  color: var(--text-primary);
+  background-color: rgba(251, 146, 60, 0.10);
+}
+
+.statusBannerIcon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* ─── Paired section headers ─── */
+
+.sectionHeading {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.selectionsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.subtaskList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.emptyState {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.thresholdRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.thresholdLabel {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.addRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.addButton,
+.addButtonPrimary {
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s, filter 0.15s;
+}
+
+.addButton {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.addButton:hover {
+  background-color: var(--button-hover-bg);
+}
+
+.addButtonPrimary {
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border: 1px solid var(--active-bg);
+  font-weight: 600;
+}
+
+.addButtonPrimary:hover {
+  filter: brightness(0.94);
+}
+
+/* ─── Always-visible library (flat — no box-in-a-box) ───────────────────────
+ * The step container already provides the outer frame. The library sits
+ * directly inside it as a flat section separated by whitespace + a small
+ * heading. Only the scrollable row list has a subtle border, so the eye
+ * sees step-frame → rows, not step-frame → panel → inner-frame → rows. */
+
+.librarySection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.libraryHeaderRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.libraryHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.newTaskButton {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border: 1px solid var(--active-bg);
+  transition: filter 0.15s;
+}
+
+.newTaskButton:hover {
+  filter: brightness(0.94);
+}
+
+.librarySubheading {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.searchRow {
+  display: flex;
+}
+
+.searchInput {
+  flex: 1;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.libraryList {
+  max-height: 340px;
+  overflow-y: auto;
+  /* No outer stroke — rows are delimited by hairline dividers (via
+   * `border-bottom` on each row). Native iOS list pattern; matches
+   * the plan-mode decision to stop stacking rectangles. */
+  background-color: var(--bg-primary);
+}
+
+.libraryEmptyState {
+  padding: 1.5rem 0.75rem;
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.rowList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.libraryRow,
+.libraryRowChecked {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  background-color: var(--bg-primary);
+  border: none;
+  /* Hairline separator between rows; the last row's is suppressed
+   * via `:last-child` below so we don't draw a line with no row under it. */
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+
+.rowList li:last-child .libraryRow,
+.rowList li:last-child .libraryRowChecked {
+  border-bottom: none;
+}
+
+.libraryRow:hover {
+  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
+}
+
+.libraryRowChecked {
+  background-color: var(--active-bg-subtle, rgba(59, 130, 246, 0.12));
+  /* Leading accent bar via inset box-shadow — replaces the full
+   * border stroke that was the third stacked rectangle on the
+   * picker. Reads as a single "selected" cue without re-boxing. */
+  box-shadow: inset 3px 0 0 var(--active-bg);
+}
+
+.checkbox,
+.checkboxChecked {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  background-color: var(--bg-primary);
+  color: transparent;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.checkboxChecked {
+  background-color: var(--active-bg);
+  border-color: var(--active-bg);
+  color: var(--active-text, #fff);
+}
+
+.libraryRowCenter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.libraryRowTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.libraryRowSubtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.libraryRowUsage {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ─── Footer ─── */
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.backButton,
+.nextButton {
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.15s, opacity 0.15s, filter 0.15s;
+}
+
+.backButton {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.backButton:hover {
+  background-color: var(--button-hover-bg);
+}
+
+.nextButton {
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border-color: var(--active-bg);
+  font-weight: 600;
+}
+
+.nextButton:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.nextButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

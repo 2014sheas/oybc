@@ -1,82 +1,67 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { TaskType, type Task, type TaskStep, type CompositeTask, type CompositeNode } from '@oybc/shared';
+import { TaskType, type Task, type CompoundChild } from '@oybc/shared';
 import { db } from '../../db/database';
 import { useTasks } from '../../hooks';
-import { useCompositeTasks } from '../../hooks/useCompositeTasks';
 
-export const COMPOSITE_TYPE = 'composite' as const;
-export type TaskTypeOrComposite = TaskType | typeof COMPOSITE_TYPE;
-export type ExistingFilter = 'all' | TaskTypeOrComposite;
+export type ExistingFilter = 'all' | 'normal' | 'counting' | 'progress' | 'composite';
+
+// Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
+const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
+const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
 
 /**
- * Loads the full task/composite library for the authenticated user and
- * exposes both raw lists and indexed lookup maps for O(1) id→entity
- * resolution. Keeps the Create page's container free of data-layer
- * plumbing.
+ * Loads the user's task library — unified under the compound model.
  *
- * - `allTasks` / `allCompositeTasks` — reactive (`dexie-react-hooks`)
- *   lists scoped to `userId`.
- * - `allCompositeNodes` — scoped by parent `compositeTaskId` set.
- *   `CompositeNode` has no `userId` of its own, so we filter by the
- *   user's composite ids.
- * - `allTaskSteps` — scoped by parent `taskId` set; same story.
- * - `taskMap` / `compositeTaskMap` — identity indexes rebuilt whenever
- *   the underlying list changes.
+ * Compounds live in `tasks` with `type='compound'`. The legacy
+ * `composite_tasks` / `composite_nodes` tables were dropped in Dexie v5;
+ * the only collections this hook touches now are `tasks` and the new
+ * `compoundChildren`.
  *
- * The joined-key dependency (e.g. `compositeIds.join(',')`) is the
- * same memoisation handle the original inline `useLiveQuery` used —
- * the list-identity comparison avoids re-querying on every render.
+ * - `allTasks` — every non-deleted Task for the user (all four types
+ *   represented as TaskType.NORMAL / .COUNTING / .COMPOUND, plus the
+ *   deprecated TaskType.PROGRESS alias for legacy rows).
+ * - `allCompoundChildren` — every non-deleted compoundChildren row in the
+ *   workspace. Small-N: one row per parent-child link, typically under
+ *   a few hundred per user.
+ * - `taskMap` — id → Task lookup, rebuilt whenever the list changes.
+ * - `compoundChildrenByCompound` — pre-grouped lookup keyed by parent
+ *   compoundTaskId. Consumers (BoardWizardTasksStep, BingoBoard, the
+ *   compound detail sheet) build this same map in their own renders;
+ *   exposing it here saves duplicate work.
  */
 export interface TaskLibrary {
   allTasks: Task[];
-  allCompositeTasks: CompositeTask[];
-  allCompositeNodes: CompositeNode[];
-  allTaskSteps: TaskStep[];
+  allCompoundChildren: CompoundChild[];
   taskMap: Record<string, Task>;
-  compositeTaskMap: Record<string, CompositeTask>;
+  compoundChildrenByCompound: Record<string, CompoundChild[]>;
 }
 
 export function useTaskLibrary(userId: string | undefined): TaskLibrary {
-  const allTasks = useTasks(userId) ?? [];
-  const allCompositeTasks = useCompositeTasks(userId) ?? [];
+  const allTasks = useTasks(userId) ?? EMPTY_TASKS;
 
-  // NOTE: the `[compositeTaskId+isDeleted]` and `[isDeleted+taskId]`
-  // compound indexes are defined on these tables, but Dexie/IndexedDB
-  // rejects JavaScript booleans as key values ("Invalid key provided.
-  // Keys must be of type string, number, Date or Array"). Using those
-  // indexes would require coercing `isDeleted` to `0`/`1` on every
-  // write throughout the codebase, which is out of scope here. The
-  // single-field `compositeTaskId` / `taskId` lookup plus a JS-side
-  // `.and(!isDeleted)` filter is fast enough at realistic list sizes
-  // (tens to hundreds of rows per user).
-  const compositeIds = allCompositeTasks.map((ct) => ct.id);
-  const allCompositeNodes =
+  // CompoundChild has no userId column (children scope to a parent Task),
+  // so a workspace-wide query would leak rows from a previous user across an
+  // account switch on the same device (signOut only clears the sync queue,
+  // not entity tables). Live-query the workspace then filter to the current
+  // user's compound parents in JS — small-N, single-pass — so cross-account
+  // pollution can't influence grouping/evaluation/cascade work.
+  const userCompoundIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const t of allTasks) {
+      if (t.type === TaskType.COMPOUND) ids.add(t.id);
+    }
+    return ids;
+  }, [allTasks]);
+  const allCompoundChildrenWorkspace =
     useLiveQuery(
-      async () => {
-        if (compositeIds.length === 0) return [] as CompositeNode[];
-        return db.compositeNodes
-          .where('compositeTaskId')
-          .anyOf(compositeIds)
-          .and((n: CompositeNode) => !n.isDeleted)
-          .toArray();
-      },
-      [compositeIds.join(',')]
-    ) ?? [];
-
-  const userTaskIds = allTasks.map((t) => t.id);
-  const allTaskSteps: TaskStep[] =
-    useLiveQuery(
-      async () => {
-        if (userTaskIds.length === 0) return [] as TaskStep[];
-        return db.taskSteps
-          .where('taskId')
-          .anyOf(userTaskIds)
-          .and((s: TaskStep) => !s.isDeleted)
-          .toArray();
-      },
-      [userTaskIds.join(',')]
-    ) ?? [];
+      () => db.compoundChildren.filter((c: CompoundChild) => !c.isDeleted).toArray(),
+      [],
+    ) ?? EMPTY_COMPOUND_CHILDREN;
+  const allCompoundChildren = useMemo(
+    () => allCompoundChildrenWorkspace.filter((c) => userCompoundIds.has(c.compoundTaskId)),
+    [allCompoundChildrenWorkspace, userCompoundIds],
+  );
 
   const taskMap = useMemo(() => {
     const m: Record<string, Task> = {};
@@ -84,40 +69,58 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     return m;
   }, [allTasks]);
 
-  const compositeTaskMap = useMemo(() => {
-    const m: Record<string, CompositeTask> = {};
-    for (const ct of allCompositeTasks) m[ct.id] = ct;
+  const compoundChildrenByCompound = useMemo(() => {
+    const m: Record<string, CompoundChild[]> = {};
+    for (const c of allCompoundChildren) {
+      (m[c.compoundTaskId] ??= []).push(c);
+    }
+    // Sort each parent's children by childIndex so consumers don't have to.
+    for (const id of Object.keys(m)) {
+      m[id].sort((a, b) => a.childIndex - b.childIndex);
+    }
     return m;
-  }, [allCompositeTasks]);
+  }, [allCompoundChildren]);
 
   return {
     allTasks,
-    allCompositeTasks,
-    allCompositeNodes,
-    allTaskSteps,
+    allCompoundChildren,
     taskMap,
-    compositeTaskMap,
+    compoundChildrenByCompound,
   };
 }
 
 /**
- * Apply the Existing-Tasks filter to the library. Pulled out of the
- * hook so callers can re-derive with different filters without
- * re-running the underlying live queries.
+ * Apply the Existing-Tasks filter to the library. Five user-facing tabs
+ * map onto two underlying classifications:
+ *   - 'all'       — every task
+ *   - 'normal'    — type=normal
+ *   - 'counting'  — type=counting
+ *   - 'progress'  — type=compound && isOrdered=true   (former Progress UX)
+ *   - 'composite' — type=compound && isOrdered=false  (former Composite UX)
+ *
+ * Returns a single flat list (no separate composite array — the legacy
+ * `filteredCompositeTasks` field is gone). Consumers iterate `filteredTasks`
+ * and inspect `task.type` + `task.isOrdered` to render appropriately.
  */
 export function filterLibraryForDisplay(
   library: TaskLibrary,
-  filter: ExistingFilter
-): { filteredTasks: Task[]; filteredCompositeTasks: CompositeTask[] } {
-  const filteredTasks: Task[] =
-    filter === 'all'
-      ? library.allTasks
-      : filter === COMPOSITE_TYPE
-        ? []
-        : library.allTasks.filter((t) => t.type === filter);
-
-  const filteredCompositeTasks: CompositeTask[] =
-    filter === 'all' || filter === COMPOSITE_TYPE ? library.allCompositeTasks : [];
-
-  return { filteredTasks, filteredCompositeTasks };
+  filter: ExistingFilter,
+): { filteredTasks: Task[] } {
+  const filtered = library.allTasks.filter((t) => {
+    switch (filter) {
+      case 'all':
+        return true;
+      case 'normal':
+        return t.type === TaskType.NORMAL;
+      case 'counting':
+        return t.type === TaskType.COUNTING;
+      case 'progress':
+        return t.type === TaskType.COMPOUND && t.isOrdered === true;
+      case 'composite':
+        return t.type === TaskType.COMPOUND && t.isOrdered !== true;
+      default:
+        return false;
+    }
+  });
+  return { filteredTasks: filtered };
 }

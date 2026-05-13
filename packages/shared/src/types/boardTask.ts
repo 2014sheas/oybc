@@ -1,14 +1,16 @@
-import { Timeframe } from '../constants/enums';
-
 /**
  * BoardTask - Junction table linking boards and tasks
  *
  * Design principles:
- * - Per-board completion state for each task
- * - Grid position (row, col) for board layout
- * - Progress data stored as array of completed step IDs (queryable)
- * - UUID primary key (offline creation)
- * - Achievement squares for cross-board goals
+ * - Pure placement record. No completion state, no cross-board reference,
+ *   no achievement-square config. Completion lives globally on Task (see
+ *   `Task.isCompleted` and the compound-tasks-unification spec).
+ * - Phase 6.3 moved the cross-board reference fields (`referencedBoardId`,
+ *   `referencedTemplateId`) onto `Task` and made ACHIEVEMENT a first-class
+ *   `TaskType`, leaving `BoardTask` placement-only — see `Task` and
+ *   `TaskType` in this package for details.
+ * - Grid position (row, col) for board layout.
+ * - UUID primary key (offline creation).
  */
 export interface BoardTask {
   // Identity
@@ -20,21 +22,6 @@ export interface BoardTask {
   row: number;                   // Row index (0-based)
   col: number;                   // Column index (0-based)
   isCenter: boolean;             // True if center square (for odd-sized boards)
-
-  // Per-board completion state
-  isCompleted: boolean;          // Completion status for this board
-  completedAt?: string;          // ISO8601 (when completed on this board)
-
-  // Task type-specific data
-  currentCount?: number;         // Current count (for counting tasks)
-  completedStepIds?: string[];   // Array of TaskStep.id (for progress tasks)
-
-  // Achievement square data (for cross-board goals)
-  isAchievementSquare?: boolean;           // True if this is a cross-board goal
-  achievementType?: 'bingo' | 'full_completion'; // What triggers completion
-  achievementCount?: number;               // How many required (e.g., 3 monthly bingos)
-  achievementTimeframe?: Timeframe;        // Lower-level timeframe to count
-  achievementProgress?: number;            // Current progress (denormalized)
 
   // Timestamps
   createdAt: string;             // ISO8601
@@ -54,18 +41,4 @@ export interface CreateBoardTaskInput {
   row: number;
   col: number;
   isCenter: boolean;
-  isAchievementSquare?: boolean;
-  achievementType?: 'bingo' | 'full_completion';
-  achievementCount?: number;
-  achievementTimeframe?: Timeframe;
-}
-
-/**
- * BoardTask completion update
- */
-export interface UpdateBoardTaskCompletionInput {
-  isCompleted: boolean;
-  currentCount?: number;
-  completedStepIds?: string[];
-  achievementProgress?: number;
 }
