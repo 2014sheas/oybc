@@ -204,7 +204,7 @@ final class CreateFormViewModel {
                 return
             }
             guard let v = Int(m), v > 0 else {
-                errorMessage = "Max Count must be a positive integer"
+                errorMessage = "Max must be a positive integer"
                 return
             }
 

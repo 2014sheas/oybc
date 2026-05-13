@@ -209,8 +209,7 @@ export function BoardSetupForm({
         )}
         {timeframeLocked && (
           <p className={styles.hint}>
-            Timeframe set from the recurring boards banner. Cancel and use
-            "Start a new board" to pick a different one.
+            Timeframe set from recurring banner. Cancel to pick a different one.
           </p>
         )}
       </div>
@@ -230,7 +229,7 @@ export function BoardSetupForm({
             <strong>Make recurring</strong>
             <span className={styles.checkboxSubtitle}>
               {" "}
-              — automatically create a fresh board each window from a task pool.
+              — automatically spawn a fresh board each window from a pool.
             </span>
           </span>
         </label>
@@ -305,7 +304,7 @@ export function BoardSetupForm({
           </select>
           {centerType === CenterSquareType.CHOSEN && (
             <p className={styles.hint}>
-              You'll mark which selected task is the center in the next step.
+              You'll pick the center in the next step.
             </p>
           )}
         </div>

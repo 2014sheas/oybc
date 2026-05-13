@@ -162,7 +162,7 @@ struct CreateNewTaskFormView: View {
                     .foregroundColor(form.countingAction.count > CreateFormLimits.action ? .red : .secondary)
             }
 
-            TextField("Max Count (positive integer)", text: $form.countingMaxCount)
+            TextField("Max (positive integer)", text: $form.countingMaxCount)
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.numberPad)
 

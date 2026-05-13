@@ -159,7 +159,7 @@ export function CreateNewTaskForm({
                 >
                   <option value="">
                     {boards.length === 0
-                      ? 'No boards yet — create one first'
+                      ? 'No boards'
                       : 'Select a board…'}
                   </option>
                   {boards.map((b) => (
@@ -179,8 +179,8 @@ export function CreateNewTaskForm({
                 >
                   <option value="">
                     {templates.length === 0
-                      ? 'No recurring templates yet — create one first'
-                      : 'Select a recurring template…'}
+                      ? 'No templates'
+                      : 'Select a template…'}
                   </option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -281,7 +281,7 @@ export function CreateNewTaskForm({
 
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-maxcount">
-                  Max Count<span className={styles.required}>*</span>
+                  Max<span className={styles.required}>*</span>
                 </label>
                 <input
                   id="create-task-maxcount"
