@@ -104,9 +104,10 @@ struct CreateHubView: View {
     }
 
     /// Single source of truth for how the wizard is wired into the hub.
-    /// Cancellation + completion always route through the view-model so
-    /// the hub-side cleanup (mode reset, drafts reload, pending-recurring
-    /// refresh) lives in exactly one place.
+    /// Cancellation + completion always route through `handleHubReturn`
+    /// so the hub-side cleanup lives in exactly one place: view-model
+    /// reset (mode + drafts + library count) plus the
+    /// pending-recurring refresh that's intentionally view-owned.
     @ViewBuilder
     private func wizard(
         draft: (board: Board, boardTasks: [BoardTask])?,
