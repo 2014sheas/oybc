@@ -342,11 +342,17 @@ struct BoardPlayView: View {
         }
         if let refTemplateId = task.referencedTemplateId {
             let template = allTemplatesInWorkspace.first(where: { $0.id == refTemplateId })
+            // Use the timestamp-based window helper rather than
+            // lexicographic string compare — Board dates can be local-ISO
+            // or UTC-with-`Z` and the two don't sort correctly as strings.
             let spawns = allBoardsInWorkspace.filter { b in
                 !b.isDeleted
                     && b.spawnedFromTemplateId == refTemplateId
-                    && b.startDate >= parent.startDate
-                    && b.startDate <= parent.endDate
+                    && DateFormatting.isWithinTimeframe(
+                        b.startDate,
+                        startDate: parent.startDate,
+                        endDate: parent.endDate
+                    )
             }
             let metCount = spawns.filter(meets).count
             return AchievementSquareBadgeData(
@@ -638,8 +644,11 @@ struct BoardPlayView: View {
             let spawns = allBoardsInWorkspace.filter { b in
                 !b.isDeleted
                     && b.spawnedFromTemplateId == refTemplateId
-                    && b.startDate >= parent.startDate
-                    && b.startDate <= parent.endDate
+                    && DateFormatting.isWithinTimeframe(
+                        b.startDate,
+                        startDate: parent.startDate,
+                        endDate: parent.endDate
+                    )
             }
             if spawns.isEmpty { return false }
             let metCount = spawns.filter(meets).count
@@ -833,19 +842,36 @@ struct BoardPlayView: View {
 
     /// Phase 6.3 — detail content for an ACHIEVEMENT-typed Task.
     /// Surfaces the cross-board target's current state so the user can
-    /// understand why the cell is (or isn't) complete.
+    /// understand why the cell is (or isn't) complete. Uses the same
+    /// trigger-aware `meets` predicate as `achievementBadge(for:)` and
+    /// `achievementCellIsCompleted(for:)` so the three surfaces never
+    /// drift on completion semantics.
     @ViewBuilder
     private func achievementDetailContent(task: Task) -> some View {
+        let trigger = task.achievementTrigger ?? .greenlog
+        let meets: (Board) -> Bool = { b in
+            switch trigger {
+            case .bingo:
+                return (b.linesCompleted ?? 0) > 0
+            case .greenlog:
+                return b.status == .completed
+            }
+        }
+
         if let refBoardId = task.referencedBoardId {
             let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId })
             Section("Watching board") {
                 if let ref {
                     HStack {
-                        Image(systemName: ref.status == .completed ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(ref.status == .completed ? .green : .secondary)
+                        let isMet = meets(ref)
+                        Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(isMet ? .green : .secondary)
                         Text(ref.name)
                             .foregroundColor(.primary)
                         Spacer()
+                        Text(trigger == .bingo ? "Bingo" : "Greenlog")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 } else {
                     Text("(referenced board unavailable)")
@@ -860,11 +886,15 @@ struct BoardPlayView: View {
                 return allBoardsInWorkspace.filter { b in
                     !b.isDeleted
                         && b.spawnedFromTemplateId == refTemplateId
-                        && b.startDate >= parent.startDate
-                        && b.startDate <= parent.endDate
+                        && DateFormatting.isWithinTimeframe(
+                            b.startDate,
+                            startDate: parent.startDate,
+                            endDate: parent.endDate
+                        )
                 }
             }()
-            let completed = spawns.filter { $0.status == .completed }.count
+            let metCount = spawns.filter(meets).count
+            let required = task.requiredCount ?? 0
             Section("Watching template") {
                 HStack {
                     Image(systemName: "rectangle.stack")
@@ -872,10 +902,21 @@ struct BoardPlayView: View {
                     Text(template?.name ?? "(referenced template unavailable)")
                         .foregroundColor(.primary)
                     Spacer()
-                    Text("\(completed) / \(spawns.count)")
+                    // Format `met / required` — derivation requires
+                    // metCount >= requiredCount on a non-empty in-window
+                    // set, so this is the actual completion fraction.
+                    // `(N in window)` aside tells the user how many
+                    // spawns currently exist vs. how many they need.
+                    Text("\(metCount) / \(required)")
                         .foregroundColor(.secondary)
                         .font(.subheadline.monospacedDigit())
+                    Text(trigger == .bingo ? "Bingo" : "Greenlog")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                Text("\(spawns.count) in-window spawn\(spawns.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         } else {
             Section {
@@ -884,7 +925,7 @@ struct BoardPlayView: View {
             }
         }
         Section {
-            Text("Completion is derived from the referenced board (or template's in-window spawns). The cell cannot be toggled directly.")
+            Text("Derived from the watched target; the cell cannot be toggled directly.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }

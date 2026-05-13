@@ -221,7 +221,18 @@ export async function seedBoard(page: Page, board: SeedBoard): Promise<void> {
 export interface SeedTask {
   id: string;
   title: string;
-  type: 'normal' | 'counting' | 'compound';
+  type: 'normal' | 'counting' | 'compound' | 'achievement';
+  /** Phase 6.3 — Achievement-task reference (specific-board mode).
+   *  Mutually exclusive with `referencedTemplateId`; only valid when
+   *  `type === 'achievement'`. */
+  referencedBoardId?: string;
+  /** Phase 6.3 — Achievement-task reference (recurring-template mode). */
+  referencedTemplateId?: string;
+  /** Phase 6.3 — completion trigger (default 'greenlog'). */
+  achievementTrigger?: 'bingo' | 'greenlog';
+  /** Phase 6.3 — required count of in-window spawns hitting the
+   *  trigger. Positive integer; required for template mode. */
+  requiredCount?: number;
 }
 
 export async function seedTask(page: Page, task: SeedTask): Promise<void> {
@@ -262,12 +273,10 @@ export interface SeedBoardTask {
   row: number;
   col: number;
   isCenter?: boolean;
-  isAchievementSquare?: boolean;
-  achievementType?: 'bingo' | 'full_completion';
-  achievementCount?: number;
-  achievementTimeframe?: 'daily' | 'weekly' | 'monthly' | 'yearly';
-  referencedBoardId?: string;
-  referencedTemplateId?: string;
+  // Phase 6.3 — `BoardTask` is now a pure placement record. The
+  // achievement-square config moved to `Task` (`type='achievement'`
+  // + `referencedBoardId` / `referencedTemplateId` / `achievementTrigger`
+  // / `requiredCount`) — see `SeedTask` above.
 }
 
 export async function seedBoardTask(page: Page, boardTask: SeedBoardTask): Promise<void> {

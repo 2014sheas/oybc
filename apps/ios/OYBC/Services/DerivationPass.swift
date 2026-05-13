@@ -197,8 +197,17 @@ enum DerivationPass {
                     // inclusive on both ends.
                     buildBoardIndexes()
                     let spawns = boardsByTemplateId?[refTemplateId] ?? []
+                    // Use the timestamp-based helper rather than
+                    // lexicographic string compare — `Board.startDate`/
+                    // `endDate` may be local-ISO or UTC-with-`Z` (sync
+                    // round-trips), and the two encodings don't compare
+                    // correctly as strings. Mirrors the shared TS fix.
                     let inWindow = spawns.filter {
-                        $0.startDate >= board.startDate && $0.startDate <= board.endDate
+                        DateFormatting.isWithinTimeframe(
+                            $0.startDate,
+                            startDate: board.startDate,
+                            endDate: board.endDate
+                        )
                     }
                     if inWindow.isEmpty { continue }
                     let metCount = inWindow.filter(meets).count

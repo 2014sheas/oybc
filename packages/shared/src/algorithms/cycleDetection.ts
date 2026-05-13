@@ -1,5 +1,6 @@
 import type { Board, BoardTask, Task } from '../types';
 import { TaskType } from '../constants/enums';
+import { isWithinTimeframe } from './calendarBoundaries';
 
 /**
  * Phase 6.3 — cycle detection for achievement-task cross-board references.
@@ -160,8 +161,12 @@ export function hasCycle(
     const placing = boardsById.get(placingBoardId);
     if (!placing) return [];
     const all = spawnsByTemplate.get(templateId) ?? [];
-    return all.filter(
-      (s) => s.startDate >= placing.startDate && s.startDate <= placing.endDate,
+    // Use the shared timestamp-based helper rather than lexicographic
+    // string compare — `Board.startDate`/`endDate` may be either
+    // local-ISO (no zone) or UTC-with-`Z` (sync round-trip), and the
+    // two encodings don't compare correctly as strings.
+    return all.filter((s) =>
+      isWithinTimeframe(s.startDate, placing.startDate, placing.endDate),
     );
   };
 

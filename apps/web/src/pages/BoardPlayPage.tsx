@@ -7,6 +7,7 @@ import {
   CenterSquareType,
   SyncOperationType,
   TaskType,
+  isWithinTimeframe,
   type Board,
   type RecurringBoardTemplate,
   type TaskStep,
@@ -158,8 +159,12 @@ export function BoardPlayPage(): React.ReactElement {
       if (t.referencedTemplateId) {
         const tmpl = templateById.get(t.referencedTemplateId);
         const spawns = spawnsByTemplate.get(t.referencedTemplateId) ?? [];
-        const inWindow = spawns.filter(
-          (b) => b.startDate >= board.startDate && b.startDate <= board.endDate,
+        // Parse to timestamps via the shared helper — `Board.startDate`/
+        // `endDate` may be local-ISO (no zone) or UTC-with-`Z` (sync
+        // round-trips), and the two encodings don't compare correctly
+        // as strings. Same fix as derivationPass.ts.
+        const inWindow = spawns.filter((b) =>
+          isWithinTimeframe(b.startDate, board.startDate, board.endDate),
         );
         const met = inWindow.filter(meets).length;
         out[bt.id] = {

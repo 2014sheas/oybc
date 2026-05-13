@@ -138,8 +138,16 @@ enum CycleDetection {
         func inWindowSpawns(placingBoardId: String, templateId: String) -> [Board] {
             guard let placing = boardsById[placingBoardId] else { return [] }
             let all = spawnsByTemplate[templateId] ?? []
+            // Use the timestamp-based helper rather than lexicographic
+            // string compare — `Board.startDate`/`endDate` may be either
+            // local-ISO or UTC-with-`Z` (sync round-trip), and the two
+            // encodings don't compare correctly as strings.
             return all.filter {
-                $0.startDate >= placing.startDate && $0.startDate <= placing.endDate
+                DateFormatting.isWithinTimeframe(
+                    $0.startDate,
+                    startDate: placing.startDate,
+                    endDate: placing.endDate
+                )
             }
         }
 

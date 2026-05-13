@@ -2,6 +2,7 @@ import type { Task, CompoundChild, BoardTask, Board } from '../types';
 import { BoardSize } from '../constants';
 import { AchievementTrigger, BoardStatus, CenterSquareType, TaskType } from '../constants/enums';
 import { detectBingos } from './bingoDetection';
+import { isWithinTimeframe } from './calendarBoundaries';
 import { evaluateCompound } from './compoundEvaluation';
 
 /**
@@ -196,8 +197,13 @@ export function computeBoardStatsUpdate(
         // spawns. Window membership is inclusive on both ends.
         buildBoardIndexes();
         const spawns = boardsByTemplateId!.get(t.referencedTemplateId) ?? [];
-        const inWindow = spawns.filter(
-          (b) => b.startDate >= board.startDate && b.startDate <= board.endDate,
+        // Parse to timestamps via the shared helper rather than
+        // lexicographic string compare — `Board.startDate`/`endDate`
+        // may be either local-ISO (no zone) or UTC-with-`Z` (sync
+        // round-trips Firestore Timestamps), and the two encodings
+        // don't compare correctly as strings.
+        const inWindow = spawns.filter((b) =>
+          isWithinTimeframe(b.startDate, board.startDate, board.endDate),
         );
         if (inWindow.length === 0) continue;
         const metCount = inWindow.filter(meets).length;
