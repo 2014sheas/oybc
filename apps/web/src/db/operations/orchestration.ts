@@ -7,6 +7,7 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  type Board,
   type Task,
   type CompoundChild,
   type BoardStatsUpdate,
@@ -115,7 +116,11 @@ export async function runBoardCascadeForTask(
     let boardCompleted = false;
     let boardReactivated = false;
 
-    const boardUpdate: Record<string, unknown> = {
+    // Typed as `Partial<Board>` (not `Record<string, unknown>`) so Dexie
+    // 4's stricter `UpdateSpec<T>` accepts it. Dexie 4 narrowed the
+    // `Table.update` signature to require key-mapped types — the old
+    // permissive `Record<string, unknown>` was rejected.
+    const boardUpdate: Partial<Board> = {
       completedTasks: stats.completedTasks,
       linesCompleted: stats.linesCompleted,
       completedLineIds: stats.completedLineIds,
