@@ -41,13 +41,11 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Setup pnpm
-        # Pinned to v4 — v6 ignores the `version` input and self-installs
-        # whatever pnpm major it ships with, which doesn't read our v9.0
-        # lockfile cleanly ("expected a single document in the stream").
-        # v4 honours the explicit version pin, which is what we want.
+        # v6 reads the pnpm version from `package.json#packageManager`
+        # (pinned to 9.15.4 at the repo root) and ignores any `version:`
+        # input here — so we omit it. To change the pnpm major used in
+        # CI, bump the `packageManager` field, not this workflow.
         uses: pnpm/action-setup@v6
-        with:
-          version: 9.15.4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
