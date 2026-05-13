@@ -235,6 +235,8 @@ export function CreateNewTaskForm({
                     id="create-task-ach-count"
                     type="number"
                     min="1"
+                    step="1"
+                    inputMode="numeric"
                     className={`${styles.input} ${form.errors.requiredCount ? styles.inputError : ''}`}
                     value={form.achievementRequiredCountStr}
                     onChange={(e) => form.setAchievementRequiredCountStr(e.target.value)}

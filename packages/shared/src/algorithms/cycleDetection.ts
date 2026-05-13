@@ -181,9 +181,20 @@ export function hasCycle(
   for (const bt of allBoardTasks) {
     const t = tasksById.get(bt.taskId);
     if (!t || t.type !== TaskType.ACHIEVEMENT) continue;
+    // Skip placements on a deleted/missing board — derivation ignores
+    // them, and including their edges in the graph yields false-positive
+    // cycle rejections. (Soft-deleted boards filtered out of
+    // `boardsById` above.)
+    if (!boardsById.has(bt.boardId)) continue;
     if (t.referencedBoardId) {
+      // Skip edges pointing at a deleted/missing referenced board.
+      // Same reasoning: derivation never evaluates those targets, so
+      // the edge can't participate in a real cycle.
+      if (!boardsById.has(t.referencedBoardId)) continue;
       addEdge(bt.boardId, t.referencedBoardId);
     } else if (t.referencedTemplateId) {
+      // `inWindowSpawns` already filters to non-deleted spawns (it
+      // iterates `boardsById.values()`), so no extra guard needed here.
       for (const target of inWindowSpawns(bt.boardId, t.referencedTemplateId)) {
         addEdge(bt.boardId, target.id);
       }
@@ -196,11 +207,22 @@ export function hasCycle(
   // idempotent (Set semantics). Template fan-out is window-aware per
   // parent: a candidate placed on two boards with different windows gets
   // different in-window spawn sets per placement.
+  //
+  // Skip parents that don't resolve to a non-deleted board (mirrors the
+  // existing-placement guard above). Pre-resolve the candidate's
+  // `referencedBoardId` to a known non-deleted board id so a deleted
+  // reference doesn't contribute any edges — derivation wouldn't
+  // evaluate it either, so no real cycle can run through it.
+  const refBoardResolved =
+    referencedBoardId && boardsById.has(referencedBoardId)
+      ? referencedBoardId
+      : undefined;
   const allCandidateTargets = new Set<string>();
   for (const parentId of parentBoardIds) {
-    if (referencedBoardId) {
-      addEdge(parentId, referencedBoardId);
-      allCandidateTargets.add(referencedBoardId);
+    if (!boardsById.has(parentId)) continue;
+    if (refBoardResolved) {
+      addEdge(parentId, refBoardResolved);
+      allCandidateTargets.add(refBoardResolved);
     }
     if (referencedTemplateId) {
       for (const target of inWindowSpawns(parentId, referencedTemplateId)) {

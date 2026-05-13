@@ -234,4 +234,14 @@ test.describe('Phase 6.3 achievement task creator', () => {
     expect(result.trigger).toBe('bingo');
     expect(result.requiredCount).toBe(3);
   });
+
 });
+
+// Note: a Playwright test for non-integer count input would be
+// redundant — the input's `min="1"` + `step="1"` attrs make the
+// browser block both "0" and decimals at native validation, so
+// neither reaches the JS validator via the UI. The validator's
+// `Number.isInteger` guard is a defensive backstop for programmatic
+// callers (and sync-pull payloads) bypassing the form; the shared
+// Zod refine (`z.number().int().positive()`) is the authoritative
+// check on the pull path.

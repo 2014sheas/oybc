@@ -159,9 +159,18 @@ enum CycleDetection {
 
         for bt in context.allBoardTasks {
             guard let t = tasksById[bt.taskId], t.type == .achievement else { continue }
+            // Skip placements on a deleted/missing board — derivation
+            // ignores them; including their edges yields false-positive
+            // cycle rejections.
+            guard boardsById[bt.boardId] != nil else { continue }
             if let refBoardId = t.referencedBoardId {
+                // Skip edges pointing at a deleted/missing referenced
+                // board (same reasoning).
+                guard boardsById[refBoardId] != nil else { continue }
                 addEdge(bt.boardId, refBoardId)
             } else if let refTemplateId = t.referencedTemplateId {
+                // `inWindowSpawns` already filters via `boardsById`, so
+                // no extra guard needed here.
                 for target in inWindowSpawns(placingBoardId: bt.boardId, templateId: refTemplateId) {
                     addEdge(bt.boardId, target.id)
                 }
@@ -175,9 +184,19 @@ enum CycleDetection {
         // is window-aware per parent: a candidate placed on two boards
         // with different windows gets different in-window spawn sets per
         // placement.
+        //
+        // Skip parents that don't resolve to a non-deleted board, and
+        // pre-resolve the candidate's `referencedBoardId` to a known
+        // non-deleted board id (deleted refs contribute no edges —
+        // derivation wouldn't evaluate them).
+        let refBoardResolved: String? = {
+            guard let id = candidate.referencedBoardId, boardsById[id] != nil else { return nil }
+            return id
+        }()
         var allCandidateTargets: Set<String> = []
         for parentId in parentBoardIds {
-            if let refBoardId = candidate.referencedBoardId {
+            guard boardsById[parentId] != nil else { continue }
+            if let refBoardId = refBoardResolved {
                 addEdge(parentId, refBoardId)
                 allCandidateTargets.insert(refBoardId)
             }

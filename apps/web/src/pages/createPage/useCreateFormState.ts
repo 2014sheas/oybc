@@ -132,8 +132,12 @@ export function validateForm(
       if (trimmed.length === 0) {
         errors.requiredCount = 'Count is required';
       } else {
-        const parsed = parseInt(trimmed, 10);
-        if (isNaN(parsed) || parsed <= 0) {
+        // `Number(...)` + `Number.isInteger` rather than `parseInt`:
+        // parseInt silently truncates decimals ("3.5" → 3) and accepts
+        // trailing garbage ("3abc" → 3). The stricter check rejects
+        // both — Count is a positive integer.
+        const parsed = Number(trimmed);
+        if (!Number.isInteger(parsed) || parsed <= 0) {
           errors.requiredCount = 'Count must be a positive integer';
         }
       }
@@ -506,7 +510,11 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
           // Task itself doesn't place it on any board — there are no
           // parents to form a cycle with yet.
           const isTemplateMode = achievementMode === 'recurringTemplate';
-          const parsedCount = parseInt(achievementRequiredCountStr, 10);
+          // Use Number / Number.isInteger to match the stricter
+          // validator above — parseInt would accept "3.5" and "3abc".
+          // Validation has already cleared this branch (template
+          // mode demands a positive integer), so the parse is safe.
+          const parsedCount = Number(achievementRequiredCountStr);
           newTask = await createTask(userId, {
             title: title.trim(),
             description: description.trim() || undefined,

@@ -418,6 +418,37 @@ final class CycleDetectionTests: XCTestCase {
         return try! JSONDecoder().decode(Board.self, from: data)
     }
 
+    func testHasCycle_PlacementOnSoftDeletedBoard_ContributesNoEdges() {
+        // Derivation ignores tasks placed on soft-deleted boards; cycle
+        // adjacency should match. Without the boardsById guard, the
+        // edge from the deleted board could close a false-positive cycle.
+        let a = board("a")
+        let b = board("b")
+        let cDeleted = board("c", isDeleted: true)
+        let tCA = achievementTask("tCA", referencedBoardId: "a")
+        let pCA = placement("c", "tCA")
+        let result = CycleDetection.hasCycle(
+            candidate: CycleCheckCandidate(parentBoardIds: ["a"], referencedBoardId: "b", referencedTemplateId: nil),
+            context: CycleCheckContext(allBoardTasks: [pCA], allTasks: [tCA], allBoards: [a, b, cDeleted])
+        )
+        XCTAssertEqual(result, .ok)
+    }
+
+    func testHasCycle_CandidateReferencingSoftDeletedBoard_ContributesNoEdges() {
+        // Mirror: the deleted endpoint is on the candidate side. Even
+        // if the deleted board has a back-edge to a parent, the
+        // candidate edge into it should be skipped.
+        let a = board("a")
+        let bDeleted = board("b", isDeleted: true)
+        let tBA = achievementTask("tBA", referencedBoardId: "a")
+        let pBA = placement("b", "tBA")
+        let result = CycleDetection.hasCycle(
+            candidate: CycleCheckCandidate(parentBoardIds: ["a"], referencedBoardId: "b", referencedTemplateId: nil),
+            context: CycleCheckContext(allBoardTasks: [pBA], allTasks: [tBA], allBoards: [a, bDeleted])
+        )
+        XCTAssertEqual(result, .ok)
+    }
+
     func testHasCycle_SoftDeletedAchievementTask_ContributesNoEdges() {
         // A deleted achievement Task is filtered out of tasksById, so
         // its placement contributes no edge to the graph.

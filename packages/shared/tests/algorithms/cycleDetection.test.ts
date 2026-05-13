@@ -380,6 +380,46 @@ describe('hasCycle — referencedTemplateId edges', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('placement on a soft-deleted board does NOT contribute an edge → ok', () => {
+    // Derivation ignores tasks placed on soft-deleted boards; cycle
+    // adjacency should match. Without the boardsById guard, the edge
+    // from the deleted board could close a false-positive cycle.
+    const a = board('a');
+    const b = board('b');
+    const cDeleted = board('c', { isDeleted: true });
+    const tCA = achievementTask('tCA', { referencedBoardId: 'a' });
+    const pCA = placement('c', 'tCA');
+    const result = hasCycle(
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [pCA],
+        allTasks: [tCA],
+        allBoards: [a, b, cDeleted],
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('candidate referencing a soft-deleted board does NOT contribute an edge → ok', () => {
+    // Mirror of the test above but the DELETED endpoint is on the
+    // candidate side: A's candidate watches a soft-deleted B. Even
+    // if B has a back-edge to A (its placement still exists), the
+    // candidate edge into B should be skipped.
+    const a = board('a');
+    const bDeleted = board('b', { isDeleted: true });
+    const tBA = achievementTask('tBA', { referencedBoardId: 'a' });
+    const pBA = placement('b', 'tBA');
+    const result = hasCycle(
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [pBA],
+        allTasks: [tBA],
+        allBoards: [a, bDeleted],
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
   it('soft-deleted achievement Task does NOT contribute a cycle edge → ok', () => {
     const a = board('a');
     const b = board('b');
