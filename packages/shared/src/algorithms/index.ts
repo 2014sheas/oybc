@@ -33,6 +33,14 @@ export {
 
 export type { BoardStatsUpdate } from './derivationPass';
 
+export { hasCycle } from './cycleDetection';
+
+export type {
+  CycleCheckCandidate,
+  CycleCheckContext,
+  CycleCheckResult,
+} from './cycleDetection';
+
 export {
   progressTaskToCompound,
   taskStepToCompoundChild,
@@ -69,9 +77,32 @@ export {
   isWithinTimeframe,
   isTimeframeExpired,
   formatTimeframeLabel,
+  formatRecurringCadence,
 } from './calendarBoundaries';
 
 export type {
   WeekStartDay,
   TimeframeBoundaries,
 } from './calendarBoundaries';
+
+export {
+  PARENT_TIMEFRAMES,
+  findPendingRecurringBoards,
+  getParentBoards,
+} from './recurringBoards';
+
+export type { PendingRecurringBoard } from './recurringBoards';
+
+export {
+  findTemplatesPendingSpawn,
+  validateSpawnPool,
+  buildSpawnPlacement,
+  deriveSpawnedBoardName,
+} from './recurringBoardTemplates';
+
+export type {
+  PendingTemplateSpawn,
+  SpawnPoolValidation,
+  SpawnPoolFailureReason,
+  BuildSpawnPlacementArgs,
+} from './recurringBoardTemplates';

@@ -7,3 +7,4 @@ export * from './compoundChild';
 export * from './progressCounter';
 export * from './syncQueue';
 export * from './compositeTask';
+export * from './recurringBoardTemplate';

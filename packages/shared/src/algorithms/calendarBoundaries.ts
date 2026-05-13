@@ -225,3 +225,28 @@ export function formatTimeframeLabel(timeframe: Timeframe, startDate: string): s
       return 'Custom';
   }
 }
+
+/**
+ * Cadence label for a recurring board template — communicates that the
+ * board re-spawns each window rather than referring to a single window.
+ *
+ * Pair this with `formatTimeframeLabel(timeframe, startDate)` (which
+ * still describes the *first* spawn window) to produce a label like
+ * `"Every week · first spawn Week of May 4 – 10, 2026"`. Without this
+ * helper the wizard's date-card and preview-row labels were identical
+ * for one-off and recurring boards, hiding the recurrence from the
+ * user.
+ *
+ * `Timeframe.CUSTOM` is excluded from recurring template creation by
+ * design (no computed window), so this returns `"Custom"` defensively
+ * but production code never hits that branch.
+ */
+export function formatRecurringCadence(timeframe: Timeframe): string {
+  switch (timeframe) {
+    case Timeframe.DAILY:   return 'Every day';
+    case Timeframe.WEEKLY:  return 'Every week';
+    case Timeframe.MONTHLY: return 'Every month';
+    case Timeframe.YEARLY:  return 'Every year';
+    case Timeframe.CUSTOM:  return 'Custom';
+  }
+}

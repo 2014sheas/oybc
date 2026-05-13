@@ -15,6 +15,13 @@ enum LibraryFilter: String, CaseIterable {
     case counting = "Counting"
     case progress = "Progress"
     case composite = "Composite"
+    /// Phase 6.1: tasks placed on currently-active longer-window parent
+    /// boards. Only surfaced in the board wizard's tasks step (and only
+    /// when the wizard's timeframe has parents — daily/weekly/monthly).
+    /// `filteredTasks` returns [] for this case because the source isn't
+    /// the user's library — it's a separate `ParentBoardTasksViewModel`
+    /// query, special-cased in BoardWizardTasksStepView.
+    case fromParents = "From parent boards"
 }
 
 /// Owns the user's task library + derive-panel working set under the
@@ -78,6 +85,11 @@ final class TaskLibraryViewModel {
             return libraryTasks.filter { $0.type == .compound && $0.isOrdered == true }
         case .composite:
             return libraryTasks.filter { $0.type == .compound && $0.isOrdered != true }
+        case .fromParents:
+            // Source is a separate ParentBoardTasksViewModel — see
+            // BoardWizardTasksStepView. Returning [] here is correct;
+            // generic library consumers shouldn't see anything for this filter.
+            return []
         }
     }
 

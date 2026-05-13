@@ -10,6 +10,7 @@ import type {
   CompositeTask,
   CompositeNode,
   CompoundChild,
+  RecurringBoardTemplate,
 } from '@oybc/shared';
 
 /**
@@ -29,6 +30,7 @@ export class AppDatabase extends Dexie {
   compositeTasks!: Table<CompositeTask, string>;
   compositeNodes!: Table<CompositeNode, string>;
   compoundChildren!: Table<CompoundChild, string>;
+  recurringBoardTemplates!: Table<RecurringBoardTemplate, string>;
 
   constructor() {
     super('oybc');
@@ -65,7 +67,16 @@ export class AppDatabase extends Dexie {
         [isDeleted+taskId]
       `,
 
-      // BoardTasks junction table
+      // BoardTasks junction table.
+      // v1 declared `[boardId+isCompleted]` and the `isAchievementSquare`
+      // / `[isAchievementSquare+achievementTimeframe]` indexes — both
+      // dropped at v7 once their underlying fields stopped existing on
+      // BoardTask. The string is preserved here so legacy on-disk
+      // databases match the originally-declared schema; Dexie diffs the
+      // declared schema across versions to migrate.
+      // NOTE: indexes below marked /* legacy */ are intentionally kept
+      // here as the v1 baseline; live queries don't use them. v7 drops
+      // them from the actual schema (see further down).
       boardTasks: `
         id,
         [boardId+isCompleted],
@@ -154,6 +165,42 @@ export class AppDatabase extends Dexie {
       compositeTasks: null,
       compositeNodes: null,
     });
+
+    // v6: Phase 6.2 — recurring board templates. New table; `Board` gains
+    // an `spawnedFromTemplateId` column on the type level (additive,
+    // optional, no IndexedDB schema change needed because Dexie stores
+    // the full Board object verbatim — only INDEX columns appear in
+    // `.stores()`. Add an index on `spawnedFromTemplateId` later if a
+    // query pattern requires it).
+    this.version(6).stores({
+      recurringBoardTemplates: `
+        id,
+        [userId+isActive],
+        [userId+isDeleted],
+        updatedAt
+      `,
+    });
+
+    // v7: Phase 6.3 — ACHIEVEMENT-as-TaskType. Achievement-square config
+    // moved from `BoardTask` to `Task` (a new `TaskType.ACHIEVEMENT` task
+    // type with `referencedBoardId` / `referencedTemplateId` fields).
+    //
+    // `boardTasks` is now a pure placement table — the pre-unification
+    // `[boardId+isCompleted]` index (over a field that no longer exists)
+    // and the never-shipped `isAchievementSquare` /
+    // `[isAchievementSquare+achievementTimeframe]` indexes are all
+    // dropped here, leaving only the FK lookups (`boardId`, `taskId`).
+    // The new `Task` reference fields are intentionally NOT indexed
+    // (lookups happen per-row inside `derivationPass`, not as table-wide
+    // scans). Dexie stores the full object verbatim, so the new
+    // optional `Task` fields ride along automatically.
+    this.version(7).stores({
+      boardTasks: `
+        id,
+        boardId,
+        taskId
+      `,
+    });
   }
 }
 
@@ -189,4 +236,5 @@ export type {
   CompositeTask,
   CompositeNode,
   CompoundChild,
+  RecurringBoardTemplate,
 };

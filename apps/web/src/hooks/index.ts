@@ -10,3 +10,7 @@ export * from './useLegacyPreferencesMigration';
 export * from './useAppliedTheme';
 export * from './useSyncStatus';
 export * from './useSyncLoop';
+export * from './usePendingRecurringBoards';
+export * from './useParentBoardTasks';
+export * from './useRecurringBoardTemplates';
+export * from './useRecurringBoardSpawn';

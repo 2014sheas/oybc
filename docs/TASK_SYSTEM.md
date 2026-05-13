@@ -1,6 +1,6 @@
 # OYBC Task System
 
-> **Reflects the planned unified compound model** introduced by the v6 (iOS GRDB) / v4 (web Dexie) migration documented in [`superpowers/specs/2026-04-23-compound-tasks-unification-design.md`](./superpowers/specs/2026-04-23-compound-tasks-unification-design.md). Code in `apps/web` and `apps/ios` will match this shape after the migration lands. Until then, the implementation still runs the legacy 4-type model — treat this doc as the **target** when reviewing in-flight changes.
+> **Canonical reference for the unified 3-type model** shipped by the Compound Tasks Unification (PR #43, PR #42, and the Phase 8 cleanup). The implementations in `apps/web` and `apps/ios` match this shape today. Cross-board square mechanisms (achievement squares + the planned specific-board extension for Phase 6.3) live on `BoardTask`, not on `Task` — see [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design) for the cross-board design.
 
 ## Overview
 
@@ -116,6 +116,8 @@ Children live in `compound_children`:
 
 A child can be **any Task** — Normal, Counting, or another Compound. Nesting is natural; depth is bounded by user behavior (typically ≤ 2 in practice).
 
+> **Cross-board square mechanisms are not task types.** Achievement squares (today: aggregate-counter form via `isAchievementSquare + achievementType + achievementCount + achievementTimeframe + achievementProgress` on `BoardTask`; Phase 6.3 will add a specific-board reference mode via `referencedBoardId`) live on the placement record, not on `Task`. They can co-exist with any task type at any cell. See [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design) for the planned extension.
+
 ---
 
 ## Compounds in depth
@@ -188,7 +190,7 @@ When a primitive Task's completion changes, a transaction-scoped derivation pass
 3. Resolves the set of affected boards: every board placing the changed task or any transitive parent compound.
 4. For each affected board, rebuilds the completion grid (reading Task states + recursively evaluating compounds), runs `detectBingos`, diffs against `boards.completedLineIds` for new/lost-bingo signals, writes board stats, and enqueues a Board sync entry.
 
-The full algorithm is documented in §5 of the [unification spec](./superpowers/specs/2026-04-23-compound-tasks-unification-design.md).
+The implementation lives in `packages/shared/src/algorithms/derivationPass.ts` (with platform wrappers in `apps/web/src/db/operations/orchestration.ts` and the iOS equivalent).
 
 ### Cross-board behavior — examples
 
@@ -696,7 +698,6 @@ When any approach triggers a "type action" on a square:
 
 ## See also
 
-- [`superpowers/specs/2026-04-23-compound-tasks-unification-design.md`](./superpowers/specs/2026-04-23-compound-tasks-unification-design.md) — full design spec for the unification + global-completion shift.
 - [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md) — push/pull/LWW reconciliation.
 - [`OFFLINE_FIRST.md`](./OFFLINE_FIRST.md) — local-first architecture.
-- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — overall system design.
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — overall system design (includes the Phase 6 Recurring Boards design that adds the planned specific-board reference mode to achievement squares).

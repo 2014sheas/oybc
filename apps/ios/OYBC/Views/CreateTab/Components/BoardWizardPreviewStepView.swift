@@ -18,7 +18,18 @@ struct BoardWizardPreviewStepView: View {
     let library: TaskLibraryViewModel
     let userId: String
     let onBack: () -> Void
+    /// Called after the board record + all `BoardTask` rows have been
+    /// written. In recurring mode this fires only when the spawn produced
+    /// a board — the parent appends `boardId` to its NavigationPath, so
+    /// passing a templateId here would navigate to a non-existent board.
+    /// Use `onTemplateComplete` for template-only outcomes.
     let onComplete: (_ boardId: String, _ status: WizardStatus) -> Void
+    /// Phase 6.2: called when a recurring template was saved without a
+    /// spawnable board (skip OR edit). The parent should switch to the
+    /// Profile tab so the user lands on the templates list, not on a
+    /// board id that doesn't exist. Optional so existing one-off call
+    /// sites that wire the old `onComplete` only continue to work.
+    var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
 
     @State private var isCreating: Bool = false
     @State private var errorMessage: String? = nil
@@ -46,10 +57,15 @@ struct BoardWizardPreviewStepView: View {
             }
             return "Custom (no dates set)"
         }
-        if let b = controller.computedBoundaries {
-            return playgroundTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
+        guard let b = controller.computedBoundaries else { return "—" }
+        let windowLabel = playgroundTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
+        if controller.isRecurring {
+            // Recurring: lead with the cadence ("Every week") and show
+            // the first-spawn window after, so the row can't be confused
+            // with a one-off board for that single window.
+            return "\(recurringCadenceLabel(timeframe: controller.timeframe)) · starting \(windowLabel)"
         }
-        return "—"
+        return windowLabel
     }
 
     private var centerSummary: String {
@@ -89,6 +105,13 @@ struct BoardWizardPreviewStepView: View {
                     jumpTo: 2
                 )
                 summaryRow(label: "Randomize", value: controller.isRandomized ? "Yes" : "No", jumpTo: 1)
+                if controller.isRecurring {
+                    summaryRow(
+                        label: "Recurring",
+                        value: recurringSummary,
+                        jumpTo: 1
+                    )
+                }
             }
             .padding(12)
             .background(Color(.systemGray6))
@@ -106,22 +129,35 @@ struct BoardWizardPreviewStepView: View {
 
             Divider()
 
+            // Three button-set variants — see web `BoardWizardPreviewStep`
+            // for parallel rationale. The actual write branching lives
+            // in `BoardWizardPersist` (see Commit B); this view only
+            // chooses the label.
             HStack {
                 Button("‹ Back", action: onBack)
                     .buttonStyle(.bordered)
                     .disabled(isCreating)
                 Spacer()
-                Button(isCreating ? "Saving…" : "Save as Draft") {
-                    performCreation(status: .draft)
+                if !controller.isRecurring {
+                    Button(isCreating ? "Saving…" : "Save as Draft") {
+                        performCreation(status: .draft)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isCreating)
+                    Button(isCreating ? "Activating…" : "Activate Board") {
+                        performCreation(status: .active)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(isCreating)
+                } else {
+                    Button(recurringPrimaryLabel) {
+                        performCreation(status: .active)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(isCreating)
                 }
-                .buttonStyle(.bordered)
-                .disabled(isCreating)
-                Button(isCreating ? "Activating…" : "Activate Board") {
-                    performCreation(status: .active)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .disabled(isCreating)
             }
         }
         .padding(16)
@@ -141,6 +177,16 @@ struct BoardWizardPreviewStepView: View {
         // Force re-mount on layout-affecting changes since BingoBoard
         // snapshots its task labels on first render.
         .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")-\(controller.isRandomized)")
+    }
+
+    private var recurringSummary: String {
+        return "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (random subset each window)."
+    }
+
+    private var recurringPrimaryLabel: String {
+        if isCreating { return "Saving…" }
+        if controller.editingTemplateId != nil { return "Save changes" }
+        return "Create template & spawn first board"
     }
 
     @ViewBuilder
@@ -165,6 +211,49 @@ struct BoardWizardPreviewStepView: View {
 
     private func performCreation(status: WizardStatus) {
         errorMessage = nil
+
+        // Recurring branch — persist the template and (for fresh creates)
+        // immediately spawn the current window's board. The status arg
+        // is ignored: recurring templates have no draft concept.
+        if controller.isRecurring {
+            isCreating = true
+            persistRecurringTemplate(
+                controller: controller,
+                userId: userId,
+                onSuccess: { outcome in
+                    isCreating = false
+                    switch outcome {
+                    case .createdAndSpawned(let templateId, let boardId):
+                        // Pass the spawned board id so cross-tab nav can
+                        // land on the actual board (matches web behavior).
+                        _ = templateId
+                        onComplete(boardId, status)
+                    case .createdSpawnSkipped(let templateId, _):
+                        // Template saved; spawn skipped — route the user
+                        // to the Profile templates list (via the parent's
+                        // `onTemplateComplete`) so they see the attention
+                        // badge. Falling back to `onComplete(templateId, …)`
+                        // would push the templateId onto the boards
+                        // NavigationPath and try to render BoardPlayView
+                        // for a non-existent board.
+                        onTemplateComplete?(templateId)
+                    case .updated(let templateId):
+                        // Edit path — no spawn. Same routing as the skip
+                        // case so the user lands back on the templates list.
+                        onTemplateComplete?(templateId)
+                    }
+                },
+                onError: { msg in
+                    isCreating = false
+                    errorMessage = controller.editingTemplateId == nil
+                        ? "Failed to create recurring template: \(msg)"
+                        : "Failed to update recurring template: \(msg)"
+                }
+            )
+            return
+        }
+
+        // One-off branch — existing behavior unchanged.
         let resolved = resolveWizardDates(controller: controller)
         let dates: (start: String, end: String)
         switch resolved {

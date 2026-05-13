@@ -114,10 +114,16 @@
 
 .checkboxRow {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   cursor: pointer;
   font-size: 0.9rem;
   color: var(--text-primary);
   user-select: none;
 }
+
+.checkboxSubtitle {
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+

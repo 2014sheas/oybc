@@ -14,6 +14,13 @@ struct ProfileView: View {
     @State private var showNameEdit = false
     @State private var editNameValue = ""
 
+    /// Phase 6.2 UX rework: cross-tab edit handler. Tapping Edit on a
+    /// row in `RecurringTemplatesView` calls back here, which in turn
+    /// calls back to `MainTabView` to switch tabs. Optional so the
+    /// SwiftUI `#Preview` and any tests that mount ProfileView in
+    /// isolation don't need cross-tab plumbing.
+    var onEditRecurringTemplate: ((String) -> Void)? = nil
+
     private var preferences: UserPreferences { authService.userPreferences }
 
     var body: some View {
@@ -85,6 +92,11 @@ struct ProfileView: View {
                 BoardPreferencesView()
             } label: {
                 Label("Board preferences", systemImage: "square.grid.3x3")
+            }
+            NavigationLink {
+                RecurringTemplatesView(onEditTemplate: onEditRecurringTemplate)
+            } label: {
+                Label("Recurring templates", systemImage: "calendar.badge.clock")
             }
         }
     }

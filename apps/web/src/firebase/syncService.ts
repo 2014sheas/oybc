@@ -34,6 +34,7 @@ import {
   CompositeTaskSchema,
   CompositeNodeSchema,
   CompoundChildSchema,
+  RecurringBoardTemplateSchema,
   mergeUserPreferences,
   type User,
 } from '@oybc/shared';
@@ -48,11 +49,12 @@ import { runBoardCascadeForTask } from '../db/operations/orchestration';
 const SYNCABLE_COLLECTIONS = [
   'boards',
   'tasks',
-  'taskSteps',           // legacy — kept so push can drain DELETE ops from migration v4
+  'taskSteps',                // legacy — kept so push can drain DELETE ops from migration v4
   'boardTasks',
-  'compositeTasks',      // legacy — kept so push can drain DELETE ops from migration v4
-  'compositeNodes',      // legacy — kept so push can drain DELETE ops from migration v4
-  'compoundChildren',    // NEW
+  'compositeTasks',           // legacy — kept so push can drain DELETE ops from migration v4
+  'compositeNodes',           // legacy — kept so push can drain DELETE ops from migration v4
+  'compoundChildren',
+  'recurringBoardTemplates',  // Phase 6.2
 ] as const;
 
 type SyncCollection = (typeof SYNCABLE_COLLECTIONS)[number];
@@ -85,6 +87,7 @@ const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   compositeTasks: CompositeTaskSchema,
   compositeNodes: CompositeNodeSchema,
   compoundChildren: CompoundChildSchema,
+  recurringBoardTemplates: RecurringBoardTemplateSchema,
 };
 
 /**
@@ -99,6 +102,7 @@ const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
   'boards',
   'tasks',
   'compositeTasks',
+  'recurringBoardTemplates',
 ]);
 
 /**

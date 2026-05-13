@@ -1,0 +1,259 @@
+import Foundation
+
+// MARK: - Recurring board templates — Phase 6.2 (Preset-pool)
+//
+// Pure functions over `RecurringBoardTemplate[]` + `Board[]` + `Task[]`
+// that mirror `packages/shared/src/algorithms/recurringBoardTemplates.ts`.
+// No persistence, no platform-specific code beyond Foundation. Both
+// platforms must keep these in lockstep — when the TS version changes,
+// mirror it here in the same PR.
+//
+// Canonical design: docs/ARCHITECTURE.md §Phase 6.2.
+
+/// One pending template + the window it's pending for. Consumed by the
+/// platform spawn driver.
+struct PendingTemplateSpawn {
+    let template: RecurringBoardTemplate
+    /// Local ISO8601 from `wizardLocalISOString(window.start)`.
+    let windowStart: String
+    /// Local ISO8601 from `wizardLocalISOString(window.end)`.
+    let windowEnd: String
+    /// Default name for the spawned board: "<template name> — <window label>".
+    let suggestedName: String
+}
+
+/// Outcome of `validateSpawnPool`. Mirrors the TS-side `SpawnPoolValidation`.
+enum SpawnPoolValidation: Equatable {
+    case ok
+    case failure(SpawnPoolFailureReason)
+}
+
+/// Pure-validation failure reasons returned by `validateSpawnPool`.
+/// Strict mirror of TS `SpawnPoolFailureReason` in
+/// `packages/shared/src/algorithms/recurringBoardTemplates.ts`.
+///
+/// Driver-only outcomes (`noPoolTasksResolved`, `spawnFailed`) live on
+/// `SpawnAttentionReason` instead — keeping this enum a strict mirror
+/// of the shared contract means a future cross-platform schema check
+/// can compare the two enums as sets without filtering out platform
+/// drift.
+enum SpawnPoolFailureReason: String, Equatable {
+    case poolTooSmall = "pool_too_small"
+    case hasDeletedTasks = "has_deleted_tasks"
+    case unsupportedTimeframe = "unsupported_timeframe"
+    case unsupportedCenter = "unsupported_center"
+}
+
+/// Attention reason surfaced on a template row when the spawn driver
+/// skipped or failed for a particular template. Superset of
+/// `SpawnPoolFailureReason` plus the two driver-only outcomes:
+/// `noPoolTasksResolved` (the resolved pool was empty — every seed
+/// task got soft-deleted) and `spawnFailed` (the txn threw
+/// unexpectedly).
+///
+/// Mirrors the TS-side union
+/// `SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed'`
+/// used in `useRecurringBoardSpawn.ts`'s `RecurringSpawnDigest`.
+enum SpawnAttentionReason: String, Equatable {
+    case poolTooSmall = "pool_too_small"
+    case hasDeletedTasks = "has_deleted_tasks"
+    case unsupportedTimeframe = "unsupported_timeframe"
+    case unsupportedCenter = "unsupported_center"
+    case noPoolTasksResolved = "no_pool_tasks_resolved"
+    case spawnFailed = "spawn_failed"
+}
+
+extension SpawnAttentionReason {
+    /// Lifts a pure validation failure into the wider attention enum.
+    /// The wider enum is a strict superset, so the rawValue lookup is
+    /// non-failable in practice; the `!` is documenting that invariant.
+    init(_ failure: SpawnPoolFailureReason) {
+        self = SpawnAttentionReason(rawValue: failure.rawValue)!
+    }
+}
+
+/// Counts the cells that need a Task placement for a given board configuration.
+/// Even-sized boards have no center; odd-sized boards with FREE/CUSTOM_FREE
+/// centers reserve one cell for the auto-completed free space; otherwise the
+/// center cell gets a regular task.
+func recurringTemplateFillableCellCount(
+    boardSize: Int,
+    centerSquareType: CenterSquareType
+) -> Int {
+    let total = boardSize * boardSize
+    let hasCenter = boardSize % 2 == 1
+    let centerOmitsTask = hasCenter && (centerSquareType == .free || centerSquareType == .customFree)
+    return total - (centerOmitsTask ? 1 : 0)
+}
+
+/// Detects templates pending a spawn for the current window.
+///
+/// A template is pending when ALL of the following hold:
+///   - `!isDeleted` AND `isActive`.
+///   - `timeframe` is one of daily/weekly/monthly/yearly (custom excluded).
+///   - The current window's `startDate` differs from `lastSpawnedWindowKey`.
+///   - **Idempotency belt**: there is no existing non-deleted Board with
+///     matching `spawnedFromTemplateId + startDate`.
+///
+/// - Parameters:
+///   - templates: All non-deleted templates for the active user.
+///   - boards: All boards for the active user (for the idempotency belt).
+///   - weekStartDay: Controls weekly window boundaries (`"monday"` / `"sunday"`).
+///   - now: Reference date for window computation.
+func findTemplatesPendingSpawn(
+    templates: [RecurringBoardTemplate],
+    boards: [Board],
+    weekStartDay: String,
+    now: Date
+) -> [PendingTemplateSpawn] {
+    var pending: [PendingTemplateSpawn] = []
+
+    for template in templates {
+        if template.isDeleted { continue }
+        if !template.isActive { continue }
+        if template.timeframe == .custom { continue }
+
+        guard let window = computeTimeframeBoundaries(
+            timeframe: template.timeframe,
+            referenceDate: now,
+            weekStartDay: weekStartDay
+        ) else { continue } // .custom — already filtered above, defensive
+
+        let startISO = wizardLocalISOString(window.start)
+        let endISO = wizardLocalISOString(window.end)
+
+        if template.lastSpawnedWindowKey == startISO { continue }
+
+        // Idempotency belt — see header doc.
+        let alreadySpawned = boards.contains { board in
+            !board.isDeleted &&
+            board.spawnedFromTemplateId == template.id &&
+            board.startDate == startISO
+        }
+        if alreadySpawned { continue }
+
+        pending.append(PendingTemplateSpawn(
+            template: template,
+            windowStart: startISO,
+            windowEnd: endISO,
+            suggestedName: deriveSpawnedBoardName(template: template, windowStart: startISO)
+        ))
+    }
+
+    return pending
+}
+
+/// "<template name> — <window label>" helper.
+///
+/// Takes the local ISO8601 string for parity with the TS counterpart
+/// (`packages/shared/src/algorithms/recurringBoardTemplates.ts`'s
+/// `deriveSpawnedBoardName(template, windowStart: string)`). Both
+/// platforms now consume the same wire shape — a future change to
+/// either side's date format won't silently desync the other.
+func deriveSpawnedBoardName(template: RecurringBoardTemplate, windowStart: String) -> String {
+    let trimmed = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let startDate = parseISO8601Date(windowStart) else {
+        return trimmed.isEmpty ? "" : trimmed
+    }
+    let label = playgroundTimeframeLabel(timeframe: template.timeframe, startDate: startDate)
+    if trimmed.isEmpty { return label }
+    return "\(trimmed) — \(label)"
+}
+
+/// Validates a template's pool. Mirrors the TS-side `validateSpawnPool`.
+///
+/// Pool semantics: `poolTasks.count >= required`. The spawn shuffles +
+/// slices, so any extras become the random subset. The earlier
+/// strict-fit `.all` strategy was dropped during the Phase 6.2 UX
+/// rework — it was a special case of loose-fit where the user picked
+/// exactly `required`.
+func validateSpawnPool(
+    template: RecurringBoardTemplate,
+    poolTasks: [Task]
+) -> SpawnPoolValidation {
+    if template.timeframe == .custom {
+        return .failure(.unsupportedTimeframe)
+    }
+    if template.centerSquareType == .chosen {
+        return .failure(.unsupportedCenter)
+    }
+    if poolTasks.contains(where: { $0.isDeleted }) {
+        return .failure(.hasDeletedTasks)
+    }
+
+    // Reject duplicate task ids in the resolved pool. Mirrors the
+    // TS-side validateSpawnPool dedupe check. See its rationale.
+    let uniqueIds = Set(poolTasks.map { $0.id })
+    if uniqueIds.count != poolTasks.count {
+        return .failure(.poolTooSmall)
+    }
+
+    let required = recurringTemplateFillableCellCount(
+        boardSize: template.boardSize,
+        centerSquareType: template.centerSquareType
+    )
+    if poolTasks.count < required { return .failure(.poolTooSmall) }
+    return .ok
+}
+
+/// Builds the cell-by-cell placement for a spawn. Returns an array of
+/// length `boardSize²` where each entry is a Task to place on that cell,
+/// or `nil` for the auto-completed FREE / CUSTOM_FREE center on odd-sized
+/// boards.
+///
+/// Mirrors the TS-side `buildSpawnPlacement`. Optional `rng` parameter
+/// (default uses Foundation's `Int.random`) for deterministic test
+/// placement; passing a closure that returns the same value each call
+/// produces a stable order.
+///
+/// `validateSpawnPool` MUST be called first — this function's behavior is
+/// undefined for a pool that fails validation.
+func buildSpawnPlacement(
+    template: RecurringBoardTemplate,
+    poolTasks: [Task],
+    rng: @escaping () -> Double = { Double.random(in: 0..<1) }
+) -> [Task?] {
+    let total = template.boardSize * template.boardSize
+    let centerIdx = template.boardSize % 2 == 1
+        ? (template.boardSize * template.boardSize) / 2
+        : -1
+    let hasCenter = centerIdx >= 0
+    let centerOmitsTask = hasCenter &&
+        (template.centerSquareType == .free || template.centerSquareType == .customFree)
+
+    let fillCount = recurringTemplateFillableCellCount(
+        boardSize: template.boardSize,
+        centerSquareType: template.centerSquareType
+    )
+
+    let ordered = template.isRandomized
+        ? fisherYatesShuffle(poolTasks, rng: rng)
+        : poolTasks
+    let placed = Array(ordered.prefix(fillCount))
+
+    var placement: [Task?] = Array(repeating: nil, count: total)
+    var nextTaskIdx = 0
+    for cell in 0..<total {
+        if cell == centerIdx && centerOmitsTask { continue }
+        if nextTaskIdx < placed.count {
+            placement[cell] = placed[nextTaskIdx]
+        }
+        nextTaskIdx += 1
+    }
+    return placement
+}
+
+/// Fisher-Yates shuffle with injectable RNG. Mirrors the TS-side
+/// `fisherYatesShuffle(arr, rng?)`. Local helper because Swift's
+/// `.shuffled()` doesn't expose an RNG hook.
+func fisherYatesShuffle<T>(_ array: [T], rng: () -> Double = { Double.random(in: 0..<1) }) -> [T] {
+    var result = array
+    var i = result.count - 1
+    while i > 0 {
+        let j = Int(rng() * Double(i + 1))
+        let clamped = min(j, i)
+        result.swapAt(i, clamped)
+        i -= 1
+    }
+    return result
+}

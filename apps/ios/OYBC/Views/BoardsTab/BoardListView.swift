@@ -6,7 +6,27 @@ import SwiftUI
 /// list of `BoardListItemView` rows, each navigating to `BoardPlayView`.
 /// Boards are loaded from the local GRDB database on appear and filtered
 /// client-side — no network calls.
+///
+/// Phase 6.1: also renders a `PendingCoreBoardsSectionView` when the user
+/// has recurring board prefs enabled and the current window has no covering
+/// board. Tapping a card invokes `onCreateRecurring` (set by MainTabView)
+/// which switches to the Create tab with the timeframe prefilled.
+///
+/// Phase 6.1d note: the section is mounted **inside** the SwiftUI `List`
+/// as a transparent header row (not above it as a sticky element) so the
+/// user can scroll past the section to reach the board list below — when
+/// 4 windows are pending the cards take ~520pt and would otherwise
+/// dominate the screen on iPhone-class widths.
 struct BoardListView: View {
+
+    // MARK: - Inputs
+
+    /// Invoked when the user taps Create on a recurring-boards banner row.
+    /// MainTabView wires this to switch to the Create tab and stash the
+    /// timeframe for `CreateHubView` to consume. Optional for the playground
+    /// + #Preview path where cross-tab navigation isn't available — the
+    /// banner Create button no-ops in that case.
+    var onCreateRecurring: ((Timeframe) -> Void)?
 
     // MARK: - Dependencies
 
@@ -17,6 +37,12 @@ struct BoardListView: View {
     @State private var boards: [Board] = []
     @State private var activeFilter: String = "all"
     @State private var loadError: String?
+    @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
+    /// Phase 6.2: drives template-spawn detection + execution on tab open.
+    /// Idempotent — repeated mounts after the first successful spawn are
+    /// no-ops because `findTemplatesPendingSpawn` filters out templates
+    /// whose `lastSpawnedWindowKey` matches the current window.
+    @State private var spawnVM = RecurringBoardSpawnViewModel()
 
     // MARK: - Constants
 
@@ -33,6 +59,12 @@ struct BoardListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Filter picker stays sticky above the scrolling content (mirrors
+            // standard mobile UX — segmented filters at top, content scrolls
+            // beneath). The pending-core-boards section is INSIDE the
+            // `boardList` List below so it scrolls together with the board
+            // rows; previously it lived here in the outer VStack and pinned
+            // to the top, dominating the screen when 4 windows were pending.
             filterPicker
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -40,14 +72,59 @@ struct BoardListView: View {
 
             if let loadError {
                 errorView(message: loadError)
-            } else if filteredBoards.isEmpty {
+            } else if filteredBoards.isEmpty && pendingRecurringVM.pending.isEmpty {
+                // True empty state: no boards, no pending core windows. Big
+                // ContentUnavailableView reads as expected.
                 emptyStateView
+            } else if filteredBoards.isEmpty {
+                // No boards but we have pending core boards to surface — let
+                // the section be the entire content in a ScrollView so the
+                // user can act on it without an awkward "no boards" graphic
+                // below. `.frame(maxHeight: .infinity)` ensures the
+                // ScrollView fills the remaining vertical space below the
+                // filter picker; without it, on small-screen devices with
+                // 4 pending cards the last card can be obscured by the tab
+                // bar / home indicator with no way to scroll to it.
+                ScrollView {
+                    PendingCoreBoardsSectionView(
+                        pending: pendingRecurringVM.pending,
+                        variant: .boardsTab,
+                        onCreate: { entry in
+                            onCreateRecurring?(entry.timeframe)
+                        }
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 boardList
             }
         }
         .navigationTitle("Boards")
-        .onAppear { loadBoards() }
+        .onAppear {
+            loadBoards()
+            // Reload pending recurring boards alongside the board list so the
+            // section stays in sync with creates/deletes that happened
+            // off-tab. Same pattern as `loadBoards()`.
+            if let userId = authService.currentUser?.id {
+                pendingRecurringVM.reloadAsync(userId: userId)
+                // Phase 6.2: fire any pending template spawns. Idempotent
+                // — see VM doc. Reads weekStartDay from the user's
+                // preferences (defaults to .monday if the row is absent).
+                _Concurrency.Task {
+                    // `try?` on `fetchUser(id:)` gives `User??` — flatten + default.
+                    // `User.preferences` is a JSON-string column; `decodedPreferences`
+                    // parses it (or returns `.defaults` for missing/malformed rows).
+                    let user = (try? AppDatabase.shared.fetchUser(id: userId)) ?? nil
+                    let weekStartDay = user?.decodedPreferences.weekStartDay ?? .monday
+                    await spawnVM.runSpawnPass(userId: userId, weekStartDay: weekStartDay)
+                    // Re-load the visible boards after spawn so the new
+                    // boards appear without requiring a tab-switch.
+                    await MainActor.run { loadBoards() }
+                }
+            }
+        }
     }
 
     // MARK: - Subviews
@@ -63,6 +140,28 @@ struct BoardListView: View {
 
     private var boardList: some View {
         List {
+            // Pending core boards section as a transparent List header row
+            // so it scrolls together with the board rows. Without
+            // `.listRowInsets` the row would inherit List's default 16pt
+            // horizontal padding, double-padding the section's own card
+            // backgrounds. `.listRowSeparator(.hidden)` removes the divider
+            // line that List would otherwise draw between this row and the
+            // first board row. `.listRowBackground(Color.clear)` keeps the
+            // section's tinted card backgrounds from being washed out by
+            // the List's default row background.
+            if !pendingRecurringVM.pending.isEmpty {
+                PendingCoreBoardsSectionView(
+                    pending: pendingRecurringVM.pending,
+                    variant: .boardsTab,
+                    onCreate: { entry in
+                        onCreateRecurring?(entry.timeframe)
+                    }
+                )
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
+
             ForEach(filteredBoards, id: \.id) { board in
                 // Value-based NavigationLink so cross-tab callers
                 // (CreateHubView.onBoardCompleted) can push onto the

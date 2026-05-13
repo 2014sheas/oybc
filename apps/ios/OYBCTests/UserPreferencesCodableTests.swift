@@ -39,7 +39,11 @@ final class UserPreferencesCodableTests: XCTestCase {
             defaultTimeframe: .weekly,
             defaultRandomize: false,
             defaultCenterCustomName: "Wild Card",
-            theme: .dark
+            theme: .dark,
+            recurringDailyEnabled: true,
+            recurringWeeklyEnabled: false,
+            recurringMonthlyEnabled: true,
+            recurringYearlyEnabled: false
         )
         let encoded = try encoder.encode(original)
         let decoded = try decoder.decode(UserPreferences.self, from: encoded)
@@ -107,5 +111,79 @@ final class UserPreferencesCodableTests: XCTestCase {
             UserPreferences.defaults.defaultBoardSize,
             "Malformed defaultBoardSize should fall back without affecting valid siblings."
         )
+    }
+
+    // MARK: - Phase 6.1 recurring fields (forward-compat for pre-6.1 peers)
+
+    func testPre61PayloadDecodesRecurringFieldsAsTrue() throws {
+        // A user doc written by a pre-6.1 client has all the legacy fields
+        // but none of the recurring*Enabled keys. With the post-6.1d
+        // defaults, missing keys auto-upgrade to true so the core boards
+        // become discoverable on first open. Users who explicitly toggled
+        // them off keep their explicit choice (covered below).
+        let json = """
+        {
+          "weekStartDay": "monday",
+          "defaultBoardSize": 5,
+          "defaultCenterType": "free",
+          "defaultTimeframe": "custom",
+          "defaultRandomize": true,
+          "defaultCenterCustomName": "",
+          "theme": "system"
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertTrue(decoded.recurringDailyEnabled)
+        XCTAssertTrue(decoded.recurringWeeklyEnabled)
+        XCTAssertTrue(decoded.recurringMonthlyEnabled)
+        XCTAssertTrue(decoded.recurringYearlyEnabled)
+    }
+
+    func testExplicitFalseValuesArePreservedAcrossDefault() throws {
+        // Users who explicitly opted out of specific timeframes (toggled
+        // off on the prefs page) keep their explicit `false` even though
+        // the default is now `true`. Missing fields still upgrade to the
+        // new default.
+        let json = """
+        {
+          "weekStartDay": "monday",
+          "defaultBoardSize": 5,
+          "defaultCenterType": "free",
+          "defaultTimeframe": "custom",
+          "defaultRandomize": true,
+          "defaultCenterCustomName": "",
+          "theme": "system",
+          "recurringDailyEnabled": false,
+          "recurringMonthlyEnabled": false
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertFalse(decoded.recurringDailyEnabled)
+        XCTAssertTrue(decoded.recurringWeeklyEnabled)   // missing → default true
+        XCTAssertFalse(decoded.recurringMonthlyEnabled)
+        XCTAssertTrue(decoded.recurringYearlyEnabled)   // missing → default true
+    }
+
+    func testMalformedRecurringFieldsFallBackToTrue() throws {
+        let json = """
+        {
+          "weekStartDay": "monday",
+          "defaultBoardSize": 5,
+          "defaultCenterType": "free",
+          "defaultTimeframe": "custom",
+          "defaultRandomize": true,
+          "defaultCenterCustomName": "",
+          "theme": "system",
+          "recurringDailyEnabled": "yes",
+          "recurringWeeklyEnabled": 1,
+          "recurringMonthlyEnabled": null,
+          "recurringYearlyEnabled": "true"
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertTrue(decoded.recurringDailyEnabled)
+        XCTAssertTrue(decoded.recurringWeeklyEnabled)
+        XCTAssertTrue(decoded.recurringMonthlyEnabled)
+        XCTAssertTrue(decoded.recurringYearlyEnabled)
     }
 }

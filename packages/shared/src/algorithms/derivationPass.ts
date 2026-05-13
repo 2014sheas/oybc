@@ -1,7 +1,8 @@
 import type { Task, CompoundChild, BoardTask, Board } from '../types';
 import { BoardSize } from '../constants';
-import { CenterSquareType, TaskType } from '../constants/enums';
+import { AchievementTrigger, BoardStatus, CenterSquareType, TaskType } from '../constants/enums';
 import { detectBingos } from './bingoDetection';
+import { isWithinTimeframe } from './calendarBoundaries';
 import { evaluateCompound } from './compoundEvaluation';
 
 /**
@@ -92,6 +93,13 @@ export interface BoardStatsUpdate {
  * @param boardTasksOnBoard  All BoardTask rows for this specific board.
  * @param childrenByCompound Map of compoundTaskId → list of CompoundChild rows.
  * @param taskById           Map of taskId → Task (all tasks in the workspace).
+ * @param allBoards          All non-deleted boards in the workspace. Required
+ *                           for Phase 6.3 ACHIEVEMENT-typed Tasks — they
+ *                           read another board's (or template-spawn set's)
+ *                           state directly. Pass `[]` when the caller has
+ *                           no cross-board context (will degrade those
+ *                           branches to "incomplete", matching the
+ *                           missing-reference semantic).
  * @returns A payload to MERGE into the board row. The caller is responsible
  *          for ALSO setting `board.updatedAt` (current timestamp) and
  *          incrementing `board.version` before persisting — those are
@@ -104,39 +112,118 @@ export function computeBoardStatsUpdate(
   boardTasksOnBoard: BoardTask[],
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
+  allBoards: Board[] = [],
 ): BoardStatsUpdate {
   const size = board.boardSize as BoardSize;
   const totalSquares = size * size;
   const grid: boolean[] = new Array(totalSquares).fill(false);
   let completedTasks = 0;
 
-  for (const bt of boardTasksOnBoard) {
-    // Achievement squares: completion derives from achievementProgress reaching
-    // achievementCount on THIS board. The backing Task's isCompleted state is
-    // irrelevant — the square's semantic is "this cross-board goal is reached",
-    // tracked by achievementProgress / achievementCount on the BoardTask row.
-    if (bt.isAchievementSquare) {
-      const required = bt.achievementCount ?? 0;
-      const progress = bt.achievementProgress ?? 0;
-      const idx = bt.row * size + bt.col;
-      if (idx < 0 || idx >= totalSquares) continue;
-      // required > 0 guard: prevents a 0/0 achievement square from registering
-      // as complete before it has been configured.
-      if (required > 0 && progress >= required) {
-        grid[idx] = true;
-        completedTasks += 1;
+  // Phase 6.3: index all non-deleted boards by id (specific-board mode)
+  // and by spawnedFromTemplateId (recurring-template mode). Built lazily —
+  // only allocated if at least one boardTask uses one of the new modes —
+  // so non-recurring boards pay no cost. `allBoards.length === 0` paths
+  // (no cross-board context supplied) skip both maps entirely.
+  let boardById: Map<string, Board> | null = null;
+  let boardsByTemplateId: Map<string, Board[]> | null = null;
+  const buildBoardIndexes = (): void => {
+    if (boardById !== null) return;
+    boardById = new Map();
+    boardsByTemplateId = new Map();
+    for (const b of allBoards) {
+      if (b.isDeleted) continue;
+      boardById.set(b.id, b);
+      if (b.spawnedFromTemplateId) {
+        const list = boardsByTemplateId.get(b.spawnedFromTemplateId) ?? [];
+        list.push(b);
+        boardsByTemplateId.set(b.spawnedFromTemplateId, list);
       }
-      continue; // don't fall through to the Task.isCompleted branch
     }
+  };
 
+  for (const bt of boardTasksOnBoard) {
     const t = taskById[bt.taskId];
     if (!t || t.isDeleted) continue;
+
+    const idx = bt.row * size + bt.col;
+    if (idx < 0 || idx >= totalSquares) continue;
+
+    // Phase 6.3 — ACHIEVEMENT-typed Tasks are cross-board watchers. The
+    // backing Task carries the reference fields (board XOR template); the
+    // BoardTask is a pure placement record. Dispatching on `t.type` here
+    // is the only point where derivation cares about the task type vs the
+    // simple-completion branch below.
+    if (t.type === TaskType.ACHIEVEMENT) {
+      // Trigger selects what "done" means for the watched target.
+      // Default GREENLOG matches the pre-trigger shipped behavior so
+      // older payloads decode safely (the Zod schema also defaults).
+      const trigger = t.achievementTrigger ?? AchievementTrigger.GREENLOG;
+      const meets = (b: Board): boolean =>
+        trigger === AchievementTrigger.BINGO
+          ? (b.linesCompleted ?? 0) > 0
+          : b.status === BoardStatus.COMPLETED;
+
+      // Precedence: `referencedBoardId` wins when both fields are set.
+      // The Zod refinement rejects rows that set both, but a malicious
+      // remote payload or older client could still produce one — pick
+      // the more specific reference deterministically so derivation is
+      // predictable.
+      if (t.referencedBoardId) {
+        // Specific-board mode: square completes when the referenced
+        // board meets the trigger AND is non-deleted. Soft-deleted ⇒
+        // incomplete (not crash; not silently ignore — UI can surface
+        // a "needs attention" badge separately). `requiredCount` is
+        // ignored in this mode (the named board is either done or not).
+        buildBoardIndexes();
+        const ref = boardById!.get(t.referencedBoardId);
+        if (ref && meets(ref)) {
+          grid[idx] = true;
+          completedTasks += 1;
+        }
+        continue;
+      }
+
+      if (t.referencedTemplateId) {
+        // Recurring-template mode: count how many in-window spawns
+        // meet the trigger, then compare against `requiredCount`.
+        // The cell completes when:
+        //   - the in-window non-deleted spawn set is non-empty
+        //     (matches the locked "empty window = incomplete, NOT
+        //     vacuously true" rule), AND
+        //   - the number of in-window spawns meeting the trigger is
+        //     >= `requiredCount`.
+        // When fewer in-window spawns exist than `requiredCount`
+        // requires, the cell stays incomplete and waits for future
+        // spawns. Window membership is inclusive on both ends.
+        buildBoardIndexes();
+        const spawns = boardsByTemplateId!.get(t.referencedTemplateId) ?? [];
+        // Parse to timestamps via the shared helper rather than
+        // lexicographic string compare — `Board.startDate`/`endDate`
+        // may be either local-ISO (no zone) or UTC-with-`Z` (sync
+        // round-trips Firestore Timestamps), and the two encodings
+        // don't compare correctly as strings.
+        const inWindow = spawns.filter((b) =>
+          isWithinTimeframe(b.startDate, board.startDate, board.endDate),
+        );
+        if (inWindow.length === 0) continue;
+        const metCount = inWindow.filter(meets).length;
+        const required = t.requiredCount ?? 0;
+        if (required > 0 && metCount >= required) {
+          grid[idx] = true;
+          completedTasks += 1;
+        }
+        continue;
+      }
+
+      // No reference set → incomplete (achievement Task lacking the XOR
+      // value should have been rejected at write time; degrade safely).
+      continue;
+    }
+
     const isDone =
       t.type === TaskType.COMPOUND
         ? evaluateCompound(t, childrenByCompound, taskById)
         : t.isCompleted;
-    const idx = bt.row * size + bt.col;
-    if (idx < 0 || idx >= totalSquares) continue;
     if (isDone) {
       grid[idx] = true;
       completedTasks += 1;

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
   CenterSquareType,
   Timeframe,
+  formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
 } from '@oybc/shared';
@@ -10,6 +11,7 @@ import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { BingoBoard } from '../BingoBoard';
 import {
   buildWizardPlacement,
+  persistRecurringTemplate,
   persistWizardBoard,
   resolveWizardDates,
   type WizardPlacement,
@@ -27,8 +29,20 @@ export interface BoardWizardPreviewStepProps {
   /** Step navigation back to Tasks. */
   onBack: () => void;
   /** Called after the board record + all `BoardTask` rows have been
-   *  written. `status` reflects whether the record is ACTIVE or DRAFT. */
+   *  written. `status` reflects whether the record is ACTIVE or DRAFT.
+   *  In recurring mode this fires only when the spawn succeeded — the
+   *  parent navigates to `/boards/${boardId}` (web) / `boardsPath.append(boardId)`
+   *  (iOS), so passing a templateId here would land on a non-existent
+   *  board. Use `onTemplateComplete` for template-only outcomes. */
   onComplete: (boardId: string, status: CompletionStatus) => void;
+  /** Phase 6.2: called when a recurring template was saved without a
+   *  spawned board to show — either the spawn was skipped (e.g. a seed
+   *  task got soft-deleted) or this was a template edit (no spawn). The
+   *  parent should navigate somewhere template-relevant (the Profile
+   *  templates list) rather than `/boards/${id}`. Without this callback
+   *  the wizard would have to overload `onComplete` with a templateId,
+   *  which the parent would mistakenly route to a non-existent board. */
+  onTemplateComplete?: (templateId: string) => void;
 }
 
 /**
@@ -49,6 +63,7 @@ export function BoardWizardPreviewStep({
   userId,
   onBack,
   onComplete,
+  onTemplateComplete,
 }: BoardWizardPreviewStepProps): React.ReactElement {
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,12 +107,20 @@ export function BoardWizardPreviewStep({
       new Date(),
       controller.weekStartDay,
     );
-    return formatTimeframeLabel(controller.timeframe, b.startDate);
+    const windowLabel = formatTimeframeLabel(controller.timeframe, b.startDate);
+    if (controller.isRecurring) {
+      // Recurring: lead with the cadence ("Every week") and show the
+      // first-spawn window after, so the preview row can't be confused
+      // with a one-off board for that single window.
+      return `${formatRecurringCadence(controller.timeframe)} · starting ${windowLabel}`;
+    }
+    return windowLabel;
   }, [
     controller.timeframe,
     controller.customStartDate,
     controller.customEndDate,
     controller.weekStartDay,
+    controller.isRecurring,
   ]);
 
   const isOddBoard = controller.size % 2 !== 0;
@@ -123,6 +146,43 @@ export function BoardWizardPreviewStep({
 
   async function performCreation(status: CompletionStatus): Promise<void> {
     setErrorMessage(null);
+
+    // Recurring branch — persist the template and (for fresh creates)
+    // immediately spawn the current window's board. The status arg is
+    // ignored: recurring templates don't have a draft concept.
+    if (controller.isRecurring) {
+      setIsCreating(true);
+      try {
+        const result = await persistRecurringTemplate({ controller, userId });
+        // Two completion paths so the parent doesn't have to guess
+        // which id it received:
+        //   - Spawn succeeded → `onComplete(boardId, status)` — parent
+        //     navigates to `/boards/${boardId}` as it would for a
+        //     one-off creation.
+        //   - Spawn skipped or template edit → `onTemplateComplete(templateId)`
+        //     — parent routes to `/profile/recurring-templates` so the
+        //     user lands on the templates list (with the attention
+        //     badge if it was a skip), not on a board id that doesn't
+        //     exist.
+        if (result.spawnedBoardId !== null) {
+          onComplete(result.spawnedBoardId, status);
+        } else {
+          onTemplateComplete?.(result.templateId);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error.';
+        setErrorMessage(
+          controller.editingTemplateId === null
+            ? `Failed to create recurring template: ${msg}`
+            : `Failed to update recurring template: ${msg}`,
+        );
+      } finally {
+        setIsCreating(false);
+      }
+      return;
+    }
+
+    // One-off branch — existing behavior unchanged.
     const dates = resolveWizardDates(controller);
     if ('error' in dates) {
       setErrorMessage(dates.error);
@@ -255,11 +315,33 @@ export function BoardWizardPreviewStep({
             Edit
           </button>
         </div>
+        {controller.isRecurring && (
+          <div className={styles.summaryRow}>
+            <span className={styles.summaryLabel}>Recurring</span>
+            <span className={styles.summaryValue}>
+              Spawns a new {controller.timeframe} board from a{' '}
+              {controller.selectedTaskIds.size}-task pool (random subset
+              each window).
+            </span>
+            <button
+              type="button"
+              className={styles.editLink}
+              onClick={() => controller.goToStep(1)}
+            >
+              Edit
+            </button>
+          </div>
+        )}
       </div>
 
       {errorMessage && <div className={styles.errorMessage}>{errorMessage}</div>}
 
-      {/* Footer */}
+      {/* Footer — three button-set variants:
+          - one-off: Save as Draft + Activate Board (existing)
+          - recurring create: single primary "Create template & spawn first board"
+          - recurring edit: single primary "Save changes" (no spawn)
+          The actual write branching lives in `wizardPersist` (see
+          Commit B); this component only chooses the label. */}
       <div className={styles.footer}>
         <button
           type="button"
@@ -270,22 +352,40 @@ export function BoardWizardPreviewStep({
           ‹ Back
         </button>
         <div className={styles.footerActions}>
-          <button
-            type="button"
-            className={styles.draftButton}
-            onClick={() => void performCreation('draft')}
-            disabled={isCreating}
-          >
-            {isCreating ? 'Saving…' : 'Save as Draft'}
-          </button>
-          <button
-            type="button"
-            className={styles.activateButton}
-            onClick={() => void performCreation('active')}
-            disabled={isCreating}
-          >
-            {isCreating ? 'Activating…' : 'Activate Board'}
-          </button>
+          {!controller.isRecurring && (
+            <>
+              <button
+                type="button"
+                className={styles.draftButton}
+                onClick={() => void performCreation('draft')}
+                disabled={isCreating}
+              >
+                {isCreating ? 'Saving…' : 'Save as Draft'}
+              </button>
+              <button
+                type="button"
+                className={styles.activateButton}
+                onClick={() => void performCreation('active')}
+                disabled={isCreating}
+              >
+                {isCreating ? 'Activating…' : 'Activate Board'}
+              </button>
+            </>
+          )}
+          {controller.isRecurring && (
+            <button
+              type="button"
+              className={styles.activateButton}
+              onClick={() => void performCreation('active')}
+              disabled={isCreating}
+            >
+              {isCreating
+                ? 'Saving…'
+                : controller.editingTemplateId !== null
+                  ? 'Save changes'
+                  : 'Create template & spawn first board'}
+            </button>
+          )}
         </div>
       </div>
     </div>

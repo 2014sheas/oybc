@@ -69,6 +69,22 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    /// Recurring-template variant — verifies the count row reads
+    /// "X / N min" instead of the bare count, matching the loose-fit
+    /// pool semantics introduced in commit `1400721`.
+    func testDenseLibraryRecurringSomeSelected() {
+        let view = makeView(
+            libraryState: .dense,
+            initialSelection: ["t-normal-1", "t-counting-1", "t-compound-and"],
+            isRecurring: true
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 852)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Builder
 
     /// Constructs a `BoardWizardTasksStepView` with stable bindings so
@@ -78,14 +94,16 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         libraryState: SnapshotFixtures.LibraryState,
         initialSelection: Set<String> = [],
         centerTaskMode: Bool = false,
-        initialCenterTaskId: String? = nil
+        initialCenterTaskId: String? = nil,
+        isRecurring: Bool = false
     ) -> some View {
         let library = SnapshotFixtures.makeTaskLibrary(state: libraryState)
         let host = TasksStepHost(
             library: library,
             initialSelection: initialSelection,
             initialCenterTaskId: initialCenterTaskId,
-            centerTaskMode: centerTaskMode
+            centerTaskMode: centerTaskMode,
+            isRecurring: isRecurring
         )
         return host
     }
@@ -99,17 +117,20 @@ private struct TasksStepHost: View {
     @State var selectedTaskIds: Set<String>
     @State var centerTaskId: String?
     let centerTaskMode: Bool
+    let isRecurring: Bool
 
     init(
         library: TaskLibraryViewModel,
         initialSelection: Set<String>,
         initialCenterTaskId: String?,
-        centerTaskMode: Bool
+        centerTaskMode: Bool,
+        isRecurring: Bool
     ) {
         self.library = library
         self._selectedTaskIds = State(initialValue: initialSelection)
         self._centerTaskId = State(initialValue: initialCenterTaskId)
         self.centerTaskMode = centerTaskMode
+        self.isRecurring = isRecurring
     }
 
     var body: some View {
@@ -117,9 +138,16 @@ private struct TasksStepHost: View {
             library: library,
             selectedTaskIds: $selectedTaskIds,
             tasksRequired: 25,
+            // Recurring=true exercises the "X / N min" loose-fit copy
+            // (commit 1400721); =false keeps the bare count for the
+            // legacy one-off variants.
+            isRecurring: isRecurring,
             centerTaskMode: centerTaskMode,
             centerTaskId: $centerTaskId,
             userId: SnapshotFixtures.userId,
+            // Snapshot fixture: .custom hides the new "From parent boards"
+            // filter chip (no parent timeframes), keeping baselines stable.
+            currentTimeframe: .custom,
             onTaskCreated: { _, _, _ in },
             onCompositeCreated: { _ in },
             onLibraryReloadRequested: { },

@@ -29,6 +29,12 @@ struct BoardWizardTasksStepView: View {
     /// Number of tasks the chosen board geometry requires.
     let tasksRequired: Int
 
+    /// Phase 6.2 — true when the wizard is in recurring-template mode.
+    /// Drives the count-line "min" suffix wording. The pool is always
+    /// loose-fit; the spawn shuffles + slices, so any extras become the
+    /// random subset for each window.
+    let isRecurring: Bool
+
     /// When true, every selected row shows a star radio for picking the
     /// center task. Driven by Step 1's center-type choice.
     let centerTaskMode: Bool
@@ -38,6 +44,12 @@ struct BoardWizardTasksStepView: View {
 
     /// Authenticated user id used by the inline new-task sheet.
     let userId: String
+
+    /// Phase 6.1: current wizard timeframe. Drives whether the "From
+    /// parent boards" filter chip is shown (only for daily/weekly/
+    /// monthly — yearly + custom hide it) and what timeframe to feed
+    /// `ParentBoardTasksViewModel`.
+    let currentTimeframe: Timeframe
 
     /// Fired after a non-composite task is created from the sheet —
     /// the wizard should auto-add the new id to `selectedTaskIds`.
@@ -63,6 +75,9 @@ struct BoardWizardTasksStepView: View {
     @State private var activeFilter: LibraryFilter = .all
     @State private var expandedCompositeId: String? = nil
     @State private var isSheetPresented: Bool = false
+    /// Phase 6.1: parent-board tasks for the "From parent boards" filter.
+    /// Reloaded on appear and whenever `currentTimeframe` changes.
+    @State private var parentTasksVM = ParentBoardTasksViewModel()
     /// Source task + draft max-count for the "derive smaller version"
     /// quick action on counting rows. `nil` when the deriver sheet is
     /// closed. Set by the contextMenu Button; cleared on save/cancel.
@@ -90,6 +105,11 @@ struct BoardWizardTasksStepView: View {
         case .counting:  pool = library.libraryTasks.filter { $0.type == .counting }
         case .progress:  pool = []
         case .composite: pool = []
+        // Phase 6.1: source is the parent-board-tasks query, not the
+        // user's library. Compounds surfaced through this filter render
+        // here too (no separate composites region) since the user is
+        // picking from an already-curated parent set.
+        case .fromParents: pool = parentTasksVM.tasks
         }
         return pool.filter { matches($0.title) }
     }
@@ -112,6 +132,10 @@ struct BoardWizardTasksStepView: View {
             return library.libraryTasks
                 .filter { $0.type == .compound && $0.isOrdered == true }
                 .filter { matches($0.title) }
+        // .fromParents: compounds surfaced through this filter render in
+        // the primitives region (visibleTasks), not as separate
+        // expandable composites — the user is picking from an
+        // already-curated parent set.
         default:
             return []
         }
@@ -125,6 +149,14 @@ struct BoardWizardTasksStepView: View {
         return selectedTaskIds.contains(id)
     }
     private var canAdvance: Bool { isCountSatisfied && isCenterSatisfied }
+
+    /// Suffix on the count line: " min" / "" — only shown when
+    /// `isRecurring` (one-off boards keep the bare count to preserve
+    /// existing copy). The pool is always loose-fit; the spawn picks
+    /// N from the larger pool each window.
+    private var countSuffix: String {
+        return isRecurring ? " min" : ""
+    }
 
     // ── Usage-hint + leaf-preview data ───────────────────────────────
     // Ported from the composite wizard so both surfaces agree.
@@ -202,6 +234,40 @@ struct BoardWizardTasksStepView: View {
         }
         .padding(16)
         .background(Color(.systemBackground))
+        .onAppear {
+            // Phase 6.1: load parent-board tasks for the wizard's current
+            // timeframe so the "From parent boards" filter chip has data
+            // ready when the user taps it. Cheap when there are no parents
+            // (the VM short-circuits to []).
+            parentTasksVM.reloadAsync(userId: userId, childTimeframe: currentTimeframe)
+        }
+        .onChange(of: currentTimeframe) { _, newTimeframe in
+            // If the user goes back to step 1 and changes the timeframe,
+            // refresh the parents list so a re-entry into step 2 sees the
+            // right candidates. The reload is fire-and-forget; while it's
+            // in flight `parentTasksVM.tasks` still holds the previous
+            // timeframe's parent tasks (visible only if the user re-taps
+            // the .fromParents chip during the load window). The VM uses
+            // a monotonic latestSeq guard so the in-flight reload's result
+            // is dropped if a newer reload starts before it commits —
+            // critical because daily↔monthly both have parents but their
+            // parent SETS differ (daily includes weekly/monthly; monthly
+            // does not), so a stale commit would surface tasks that
+            // shouldn't appear on the new child board.
+            parentTasksVM.reloadAsync(userId: userId, childTimeframe: newTimeframe)
+
+            // Coerce the active filter back to .all if the user picked
+            // .fromParents on a timeframe with parents (e.g., daily) and
+            // then switched to a parentless timeframe (yearly / custom).
+            // Without this, the chip disappears from the tab row but
+            // activeFilter remains .fromParents — leaving no pill visually
+            // selected and showing the "No parent boards" empty state
+            // instead of the user's library.
+            let newHasParents = !(parentTimeframesByChild[newTimeframe] ?? []).isEmpty
+            if !newHasParents && activeFilter == .fromParents {
+                activeFilter = .all
+            }
+        }
         .sheet(isPresented: $isSheetPresented) {
             NewTaskSheetView(
                 userId: userId,
@@ -378,7 +444,7 @@ struct BoardWizardTasksStepView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 +
-                Text("\(selectedCount) / \(tasksRequired)")
+                Text("\(selectedCount) / \(tasksRequired)\(countSuffix)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(isCountSatisfied ? .green : .orange)
@@ -431,8 +497,12 @@ struct BoardWizardTasksStepView: View {
             // Scrollable pill row instead of .segmented — matches the
             // composite wizard; avoids the "Composite" truncation on
             // narrow iPhones.
+            //
+            // Phase 6.1: append .fromParents only when the wizard's
+            // current timeframe has parent timeframes. yearly + custom
+            // hide the chip (it would always be empty).
             FilterTabsView(
-                tabs: LibraryFilter.allCases.map { FilterTab(value: $0.rawValue, label: $0.rawValue) },
+                tabs: visibleFilterTabs.map { FilterTab(value: $0.rawValue, label: $0.rawValue) },
                 activeTab: Binding(
                     get: { activeFilter.rawValue },
                     set: { newValue in
@@ -445,6 +515,13 @@ struct BoardWizardTasksStepView: View {
                 onTabChange: { _ in }
             )
         }
+    }
+
+    /// LibraryFilter cases visible in this wizard step. Excludes
+    /// `.fromParents` for child timeframes that have no parents.
+    private var visibleFilterTabs: [LibraryFilter] {
+        let hasParents = !(parentTimeframesByChild[currentTimeframe] ?? []).isEmpty
+        return LibraryFilter.allCases.filter { $0 != .fromParents || hasParents }
     }
 
     // MARK: - List
@@ -482,6 +559,12 @@ struct BoardWizardTasksStepView: View {
         VStack(spacing: 6) {
             if !trimmedQuery.isEmpty {
                 Text("No tasks match \"\(searchQuery)\".")
+            } else if activeFilter == .fromParents {
+                Text("No parent boards found.")
+                    .fontWeight(.medium)
+                Text("Create a longer-window board first (weekly/monthly/yearly) to surface its tasks here.")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
             } else {
                 Text("Your task library is empty.")
                     .fontWeight(.medium)

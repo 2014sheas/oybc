@@ -21,6 +21,23 @@ Schema shape:
 
 The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables are still present in old migrations so first-launch backfill on dev/test devices works. They are read only by (a) the GRDB/Dexie first-launch migrations that backfill `compound_children`, and (b) the sync service's known-collections list, which lets the push loop drain DELETE tombstones to Firestore. No live UI reads, no live writes — once a device has migrated and drained, those rows are inert. Build deferred compound playgrounds (`CompoundTaskPlayground` / `GlobalCompletionPlayground`) when a future feature genuinely needs them — the snapshot test target (`OYBCSnapshotTests`) is the primary visual-verification surface today.
 
+## Recurring Boards (Phase 6 — shipped)
+
+Three sub-phases, all merged to `dev`. Canonical design: [`docs/ARCHITECTURE.md` §Phase 6](docs/ARCHITECTURE.md#phase-6-recurring-boards--shipped).
+
+| Sub-phase | Scope | PR |
+| --- | --- | --- |
+| 6.1 | Timeframe-prompted boards — Boards-tab banner when a new daily/weekly/monthly/yearly window opens; wizard prefill from banner; "From parent boards" filter in the wizard's tasks step. | [#50](https://github.com/2014sheas/oybc/pull/50) |
+| 6.2 | Preset-pool recurring boards — `RecurringBoardTemplate` entity carrying a fixed task pool; lazy app-open spawn reuses 6.1's detection hook. | [#52](https://github.com/2014sheas/oybc/pull/52) |
+| 6.3 | ACHIEVEMENT as a `TaskType` — cross-board watcher tasks (specific board XOR recurring template) with `achievementTrigger` (bingo / greenlog) + `requiredCount` for template mode. Cycle detection + window-aware spawn fan-out. | [#54](https://github.com/2014sheas/oybc/pull/54) |
+
+Key invariants (so future contributors don't accidentally violate them):
+
+- **Shared task semantics**: a task placed on a daily and on a parent monthly is the *same Task*; completing it on the daily globally completes the monthly. This is intentional — derivation is a UI filter on the wizard's task picker, never a clone path. If a user wants an independent counter, the answer is a separately-named Task.
+- **6.1 schema footprint is minimal**: only 4 boolean fields on `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`). Detection is computed at read time from existing `Board.timeframe + startDate + endDate`. `mergeUserPreferences()` in `packages/shared/src/types/user.ts` and the iOS `UserPreferences.init(from:)` mirror both decode the fields forward-compatibly.
+- **Lazy detection only**: no background scheduling, no notifications. Recurrence is observed when the user opens the Boards tab, never pushed. `BGTaskScheduler` (iOS) and service-worker scheduling (web) are explicit non-goals.
+- **No custom-timeframe recurrence**: `Timeframe.CUSTOM` is excluded from the `PARENT_TIMEFRAMES` map and from the recurrence toggles. Re-evaluate if a real use case surfaces.
+
 ## Code Quality Standards
 
 - Type hints and docstrings required for all functions and classes. Public APIs must document parameters, return values, and exceptions.
@@ -39,6 +56,22 @@ The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables ar
 - Use Jest for TypeScript tests and XCTest for Swift tests.
 - Tests should be deterministic and not rely on external services or network calls.
 
+### iOS verification: snapshot tests + relay-to-user, never sim-driving
+
+For iOS UI verification, the only two tools agents should reach for are:
+
+1. **Snapshot tests** (`OYBCSnapshotTests` target) — fast, deterministic, runnable from `xcodebuild`. The default surface for visual regression checks; see the section below.
+2. **`xcodebuild test`** for the logic-test scheme — also fine to run from any agent session.
+
+For anything else (interactive flows, real-device behavior, "does this actually work end-to-end on iPhone 16 sim"), **agents must NOT** drive the simulator from the CLI:
+
+- ❌ Don't run `xcrun simctl boot/install/launch` to spin up an interactive sim from this session.
+- ❌ Don't open `Simulator.app` and try to script taps via AppleScript / accessibility / `simctl ui`.
+- ❌ Don't loop "screenshot → ask user to tap → screenshot again" — the round-trips are slow and brittle.
+- ✅ Instead, **relay a numbered list of steps to the user** describing what to tap and what to observe at each step. The user already has Xcode open and can rebuild + interact in seconds (`-bypassAuth YES` arg avoids Firebase signin).
+
+Why: the iOS sim has no native tap CLI (`simctl` doesn't expose touch) and the install/launch overhead per iteration is much higher than just letting the user drive the sim window they're already looking at. The user established this convention explicitly during 6.1d testing.
+
 ### iOS snapshot tests (rapid UI verification)
 
 Snapshot tests are the fastest way to visually verify iOS UI changes — no simulator boot, no manual screenshots. Use them whenever a layout, color, typography, or component-rendering change might regress an existing surface.
@@ -54,10 +87,13 @@ Snapshot tests are the fastest way to visually verify iOS UI changes — no simu
 ```bash
 cd apps/ios
 xcodegen generate    # only if you added new test files
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
   -derivedDataPath /tmp/oybc-derived test
 ```
+
+CI pins Xcode to **26.3** (`DEVELOPER_DIR=/Applications/Xcode_26.3.app/...` in `ios.yml`). Use the same Xcode major.minor locally — the runner image keeps multiple Xcodes around, so the precise build of 26.3 may differ slightly from your local 26.3, but the iOS simulator that ships with it is what `OS=latest` resolves to on both ends. If you have multiple Xcodes installed locally, run `sudo xcode-select -s /Applications/Xcode-26.3.app` (or set `DEVELOPER_DIR` per-command as above) so re-recordings happen against the matching toolchain.
 
 Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
 
@@ -76,7 +112,8 @@ Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build
 7. Run once to record the baseline; re-run to confirm green.
 
 **Sharp edges:**
-- **iOS-version drift**: simulator iOS upgrades (e.g., 17 → 18) shift font kerning. Pin to one iOS version per CI run. Locally, snapshots may need re-recording after Xcode updates.
+- **Xcode/iOS drift**: simulator iOS upgrades (or jumping Xcode majors) shift font kerning + glyph metrics. CI pins Xcode 26.3 via `DEVELOPER_DIR` in `ios.yml`; `OS=latest` resolves deterministically to whichever iOS ships with that Xcode. Bumping the pin is a deliberate event — change the Xcode path in `ios.yml`, re-record baselines locally on the matching Xcode, commit both in one PR. Re-record locally with `xcodebuild test -scheme OYBCSnapshotTests -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'` after deleting the affected `__Snapshots__/.../*.png` and running `xcodegen generate` (the test target lists baselines as bundle resources — deleting them and re-running while leaving the project stale produces a hard build error).
+- **CI override of `record: .missing`**: `.github/workflows/ios.yml` sets `SNAPSHOT_TESTING_RECORD=never` before invoking the snapshot scheme. The library checks the env var ahead of any per-call `record:` setting, so an absent baseline fails loudly on CI instead of silently auto-recording an ephemeral PNG. Don't change this — the per-call `.missing` is the right local default; the env override is the right CI default. On CI failure the `xcresult` bundle is uploaded as the `snapshot-test-results` artifact (7-day retention) so the failure-candidate PNGs can be pulled and compared without re-running.
 - **`AppDatabase.shared`**: views that query the production database singleton (e.g., `BoardPlayView`) are not yet covered — they'd need either an injected database or per-test seeding of `.shared`. Until the harness is refactored, prefer snapshotting the leaf views (which take props) over containers that query the DB.
 - **`@EnvironmentObject AuthService`**: views that depend on auth state require either the `-bypassAuth` runtime arg or a stub injection via `.environmentObject(...)`. Easiest path is to snapshot inner step views directly rather than the auth-gated wrappers.
 - **Counter-suffixed filenames**: baselines use `<test>.1.png` (the `.1` is a per-test counter from swift-snapshot-testing). Don't strip the `.1` — the library uses the full filename to look up baselines.
@@ -396,6 +433,8 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
 - **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline progress subtasks. **Post-unification**: this pattern stays but routes through `compound_children.childTaskId` instead of `TaskStep.linkedTaskId` — the inline-create-paired-Task transaction shape is unchanged.
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.
+- **Don't assume daily-derived tasks get an independent counter**: per the Recurring Boards design (ARCHITECTURE.md §Phase 6), the same `Task` is shared across boards. Completing once = completing globally, including on the parent monthly. If you find yourself wanting per-window independent state, the user wants a separately-named Task, not a clone.
+- **Don't background-schedule recurring board creation**: detection is intentionally lazy (Boards-tab open only). No `BGTaskScheduler` on iOS, no service-worker scheduling on web. The user opens the app → the banner appears. If a future feature genuinely needs background creation, that's a deliberate scope expansion, not an incremental add.
 
 ## Performance Targets
 
@@ -406,12 +445,12 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 
 ## Documentation
 
-- `docs/ARCHITECTURE.md` — Technical plan, development phases
+- `docs/ARCHITECTURE.md` — Technical plan, development phases (now includes **Phase 6: Recurring Boards** design)
 - `docs/OFFLINE_FIRST.md` — Offline-first design and data flow
-- `docs/superpowers/specs/` — Feature design specs (created during `/feature` planning phase)
-  - `2026-04-23-compound-tasks-unification-design.md` — In-flight refactor: unify Progress + Composite into Compound + adopt global completion. See top-of-doc callout.
 - `docs/SYNC_STRATEGY.md` — Conflict resolution patterns
-- `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (now reflects the planned unified compound model; old `COMPOSITE_TASKS.md` retired and merged into this file)
+- `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (Normal / Counting / Compound; cross-board square mechanisms live on `BoardTask`, see ARCHITECTURE.md §Phase 6)
+
+The `docs/superpowers/specs/` folder is **not in active use** — design docs for in-flight work live in CLAUDE.md and ARCHITECTURE.md instead. The legacy `2026-04-23-compound-tasks-unification-design.md` was the precursor for the unification work shipped in PR #43; the current canonical doc is `docs/TASK_SYSTEM.md`.
 
 **Not yet configured**: Prettier, SwiftLint.
 
@@ -518,11 +557,22 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 - **C — CLAUDE.md parity map updated + `_Concurrency.Task` shadow CI guard.**
 - **D3 — iOS `BingoDetection` unit tests** (parity with shared TS coverage).
 
-### Known follow-ups (not blockers for Phase 6)
+### Known follow-ups
 
 - `CreatePage.tsx` (972 LOC) and `CreateView.swift` (1030 LOC) violate the "containers stay thin" rule. Tracked as future `refactor/create-page-hooks` + `refactor/create-view-viewmodels` branches — no sync/correctness impact, just makes adding form fields easier.
 - Web has no Jest/Vitest harness yet; `packages/shared` covers cross-platform logic. Adding web-layer tests is tracked for the next tooling pass.
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
+- **iOS snapshot tests are advisory in CI** (`continue-on-error: true` on the snapshot step in `ios.yml`). The macos-15 runner ships Xcode 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3), while local dev uses iOS 26.3.x — pixel kerning differs across the iOS minor, so baselines recorded locally don't match CI byte-for-byte. The xcresult artifact still uploads on every snapshot diff, so a developer can pull it and re-record when convenient. To re-enable strict mode: either (a) wait for a macos-15 runner image refresh that ships iOS 26.3, then drop `continue-on-error`; or (b) install iOS 26.2 simulator runtime locally (~5 GB, requires freeing space on `/Library/Developer/CoreSimulator/Volumes/`), re-record on `OS=26.2`, commit baselines, drop `continue-on-error`.
+
+**Phase 6 — Recurring Boards: SHIPPED** (May 2026).
+
+| Sub-phase | Scope | PR |
+| --- | --- | --- |
+| 6.1 | Timeframe-prompted boards — banner detection, wizard prefill, "From parent boards" filter, 4 prefs fields | [#50](https://github.com/2014sheas/oybc/pull/50) |
+| 6.2 | Preset-pool recurring boards — `RecurringBoardTemplate` + lazy app-open spawn | [#52](https://github.com/2014sheas/oybc/pull/52) |
+| 6.3 | ACHIEVEMENT as a `TaskType` — cross-board watcher tasks with trigger + count, cycle detection, window-aware fan-out | [#54](https://github.com/2014sheas/oybc/pull/54) |
+
+**Next phase**: TBD. No Phase 7 has been scoped — the next concrete work item lives in the "Known follow-ups" section above (CreatePage / CreateView refactors, web Vitest harness, CI snapshot strict-mode, pre-launch hardening). Pick by directive rather than by inferred roadmap.
 
 ## Branching Strategy
 

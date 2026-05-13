@@ -137,6 +137,80 @@ enum SnapshotFixtures {
         )
     }
 
+    /// Build a Board fixture via JSON round-trip (Board has no member-
+    /// wise init because of its custom Codable decoder). Used by Phase
+    /// 6.3 snapshot tests for both the achievement-square config sheet
+    /// (board picker) and the cell-badge variants. Dates default to
+    /// April 2026 (matching the algorithm-test fixtures) so spawn-in-
+    /// window math stays predictable.
+    static func makeBoard(
+        id: String,
+        name: String,
+        boardSize: Int = 5,
+        timeframe: Timeframe = .monthly,
+        status: BoardStatus = .active,
+        startDate: String = "2026-04-01T00:00:00.000Z",
+        endDate: String = "2026-04-30T23:59:59.000Z",
+        spawnedFromTemplateId: String? = nil,
+        isDeleted: Bool = false
+    ) -> Board {
+        var dict: [String: Any] = [
+            "id": id,
+            "userId": userId,
+            "name": name,
+            "status": status.rawValue,
+            "boardSize": boardSize,
+            "timeframe": timeframe.rawValue,
+            "startDate": startDate,
+            "endDate": endDate,
+            "centerSquareType": CenterSquareType.free.rawValue,
+            "isRandomized": false,
+            "totalTasks": boardSize * boardSize,
+            "completedTasks": 0,
+            "linesCompleted": 0,
+            "completedLineIds": "[]",
+            "createdAt": fixedTimestamp,
+            "updatedAt": fixedTimestamp,
+            "version": 1,
+            "isDeleted": isDeleted,
+        ]
+        if let tid = spawnedFromTemplateId { dict["spawnedFromTemplateId"] = tid }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
+    static func makeRecurringTemplate(
+        id: String,
+        name: String,
+        timeframe: Timeframe = .monthly,
+        boardSize: Int = 5,
+        centerSquareType: CenterSquareType = .free,
+        isRandomized: Bool = true,
+        seedTaskCount: Int = 24,
+        isActive: Bool = true,
+        lastSpawnedWindowKey: String? = nil
+    ) -> RecurringBoardTemplate {
+        RecurringBoardTemplate(
+            id: id,
+            userId: userId,
+            name: name,
+            timeframe: timeframe,
+            boardSize: boardSize,
+            centerSquareType: centerSquareType,
+            centerSquareCustomName: nil,
+            isRandomized: isRandomized,
+            seedTaskIds: (0..<seedTaskCount).map { "\(id)-task-\($0)" },
+            lastSpawnedWindowKey: lastSpawnedWindowKey,
+            isActive: isActive,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp,
+            lastSyncedAt: nil,
+            version: 1,
+            isDeleted: false,
+            deletedAt: nil
+        )
+    }
+
     // MARK: - Wizard controller
 
     /// Stage hint for the controller — Setup blank, Setup valid, or
@@ -146,7 +220,9 @@ enum SnapshotFixtures {
     enum WizardStage {
         case setupBlank
         case setupValid
+        case setupRecurring
         case previewReady
+        case previewRecurring
     }
 
     static func makeWizardController(stage: WizardStage = .setupBlank) -> BoardWizardViewModel {
@@ -158,6 +234,14 @@ enum SnapshotFixtures {
         case .setupValid:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
+        case .setupRecurring:
+            // User-toggled recurring path (NOT banner deep-link). Verifies
+            // the cadence card renders + Custom is hidden from the timeframe
+            // selector. Weekly chosen so the cadence label and the "Starting:
+            // Week of …" caption both differ from a daily/monthly variant.
+            controller.name = "Weekly Workout"
+            controller.timeframe = .weekly
+            controller.updateIsRecurring(true)
         case .previewReady:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
@@ -165,6 +249,13 @@ enum SnapshotFixtures {
             // Pin shuffle off — randomized placement breaks snapshot
             // determinism (every render produces a different grid).
             controller.isRandomized = false
+            controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
+        case .previewRecurring:
+            controller.name = "Weekly Workout"
+            controller.timeframe = .weekly
+            controller.currentStep = 3
+            controller.isRandomized = false
+            controller.updateIsRecurring(true)
             controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
         }
         return controller
@@ -186,7 +277,16 @@ enum SnapshotFixtures {
             defaultTimeframe: .monthly,
             defaultRandomize: true,
             defaultCenterCustomName: "",
-            theme: .system
+            theme: .system,
+            // Snapshot fixtures pin the recurring*Enabled flags off so any
+            // existing snapshot baselines that render the wizard or hub
+            // surface stay byte-identical. New tests for the
+            // PendingCoreBoardsSection seed their own pending list directly
+            // and don't rely on this fixture's pref values.
+            recurringDailyEnabled: false,
+            recurringWeeklyEnabled: false,
+            recurringMonthlyEnabled: false,
+            recurringYearlyEnabled: false
         )
     }
 

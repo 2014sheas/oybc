@@ -1,32 +1,47 @@
 import {
   CenterSquareType,
   Timeframe,
+  formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
   type WeekStartDay,
-} from '@oybc/shared';
-import styles from './BoardSetupForm.module.css';
+} from "@oybc/shared";
+import styles from "./BoardSetupForm.module.css";
 
 const SIZE_OPTIONS: { value: 3 | 4 | 5; label: string }[] = [
-  { value: 3, label: '3×3' },
-  { value: 4, label: '4×4' },
-  { value: 5, label: '5×5' },
+  { value: 3, label: "3×3" },
+  { value: 4, label: "4×4" },
+  { value: 5, label: "5×5" },
 ];
 
 const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
-  { value: Timeframe.DAILY, label: 'Daily' },
-  { value: Timeframe.WEEKLY, label: 'Weekly' },
-  { value: Timeframe.MONTHLY, label: 'Monthly' },
-  { value: Timeframe.YEARLY, label: 'Yearly' },
-  { value: Timeframe.CUSTOM, label: 'Custom' },
+  { value: Timeframe.DAILY, label: "Daily" },
+  { value: Timeframe.WEEKLY, label: "Weekly" },
+  { value: Timeframe.MONTHLY, label: "Monthly" },
+  { value: Timeframe.YEARLY, label: "Yearly" },
+  { value: Timeframe.CUSTOM, label: "Custom" },
 ];
 
+/** Subset of `TIMEFRAME_OPTIONS` shown when `isRecurring=true`. The
+ *  recurring template schema rejects `Timeframe.CUSTOM` (no computed
+ *  window), so the form hides it. */
+const RECURRING_TIMEFRAME_OPTIONS = TIMEFRAME_OPTIONS.filter(
+  (o) => o.value !== Timeframe.CUSTOM,
+);
+
 const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
-  { value: CenterSquareType.FREE, label: 'Free Space' },
-  { value: CenterSquareType.CUSTOM_FREE, label: 'Custom Name' },
-  { value: CenterSquareType.CHOSEN, label: 'Pick one of my board tasks' },
-  { value: CenterSquareType.NONE, label: 'None' },
+  { value: CenterSquareType.FREE, label: "Free Space" },
+  { value: CenterSquareType.CUSTOM_FREE, label: "Custom Name" },
+  { value: CenterSquareType.CHOSEN, label: "Pick one of my board tasks" },
+  { value: CenterSquareType.NONE, label: "None" },
 ];
+
+/** Subset of `CENTER_TYPE_OPTIONS` shown when `isRecurring=true`. The
+ *  recurring template MVP excludes `CenterSquareType.CHOSEN` — adding
+ *  a per-template `centerTaskId` is a future extension. */
+const RECURRING_CENTER_TYPE_OPTIONS = CENTER_TYPE_OPTIONS.filter(
+  (o) => o.value !== CenterSquareType.CHOSEN,
+);
 
 export interface BoardSetupFormProps {
   // Controlled state
@@ -38,6 +53,11 @@ export interface BoardSetupFormProps {
 
   timeframe: Timeframe;
   onTimeframeChange: (t: Timeframe) => void;
+  /** When true, the timeframe is rendered as a read-only chip (no
+   *  segmented selector). Used by the recurring-banner flow (Phase
+   *  6.1) so the user can't accidentally pick a different timeframe
+   *  than the banner promised. */
+  timeframeLocked?: boolean;
 
   customStartDate: string;
   onCustomStartDateChange: (d: string) => void;
@@ -51,6 +71,13 @@ export interface BoardSetupFormProps {
 
   isRandomized: boolean;
   onIsRandomizedChange: (b: boolean) => void;
+
+  /** Phase 6.2 — when true, the wizard saves a recurring template
+   *  (and immediately spawns the current window's board) instead of
+   *  a one-off Board. Toggling hides Custom from the timeframe
+   *  selector (recurring schema rejects it). */
+  isRecurring: boolean;
+  onIsRecurringChange: (b: boolean) => void;
 
   weekStartDay: WeekStartDay;
 }
@@ -74,6 +101,7 @@ export function BoardSetupForm({
   onSizeChange,
   timeframe,
   onTimeframeChange,
+  timeframeLocked = false,
   customStartDate,
   onCustomStartDateChange,
   customEndDate,
@@ -84,9 +112,17 @@ export function BoardSetupForm({
   onCenterCustomNameChange,
   isRandomized,
   onIsRandomizedChange,
+  isRecurring,
+  onIsRecurringChange,
   weekStartDay,
 }: BoardSetupFormProps): React.ReactElement {
   const isOddBoard = size % 2 !== 0;
+  const visibleTimeframeOptions = isRecurring
+    ? RECURRING_TIMEFRAME_OPTIONS
+    : TIMEFRAME_OPTIONS;
+  const visibleCenterTypeOptions = isRecurring
+    ? RECURRING_CENTER_TYPE_OPTIONS
+    : CENTER_TYPE_OPTIONS;
 
   const computedBoundaries =
     timeframe !== Timeframe.CUSTOM
@@ -124,7 +160,7 @@ export function BoardSetupForm({
               key={opt.value}
               type="button"
               className={`${styles.segmentedButton} ${
-                size === opt.value ? styles.segmentedButtonActive : ''
+                size === opt.value ? styles.segmentedButtonActive : ""
               }`}
               onClick={() => onSizeChange(opt.value)}
               aria-pressed={size === opt.value}
@@ -138,30 +174,81 @@ export function BoardSetupForm({
       {/* Timeframe */}
       <div className={styles.fieldGroup}>
         <span className={styles.label}>Timeframe</span>
-        <div className={styles.segmented}>
-          {TIMEFRAME_OPTIONS.map((opt) => (
+        {timeframeLocked ? (
+          <div className={styles.segmented}>
+            {/* Render only the locked timeframe — visually identical to a
+             *  selected segmented button but disabled, with a small hint
+             *  underneath explaining the lock came from the recurring
+             *  banner. Mirrors the iOS prefilled-chip variant. */}
             <button
-              key={opt.value}
               type="button"
-              className={`${styles.segmentedButton} ${
-                timeframe === opt.value ? styles.segmentedButtonActive : ''
-              }`}
-              onClick={() => onTimeframeChange(opt.value)}
-              aria-pressed={timeframe === opt.value}
+              className={`${styles.segmentedButton} ${styles.segmentedButtonActive}`}
+              disabled
+              aria-pressed
             >
-              {opt.label}
+              {TIMEFRAME_OPTIONS.find((o) => o.value === timeframe)?.label ??
+                String(timeframe)}
             </button>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className={styles.segmented}>
+            {visibleTimeframeOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`${styles.segmentedButton} ${
+                  timeframe === opt.value ? styles.segmentedButtonActive : ""
+                }`}
+                onClick={() => onTimeframeChange(opt.value)}
+                aria-pressed={timeframe === opt.value}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {timeframeLocked && (
+          <p className={styles.hint}>
+            Timeframe set from recurring banner. Cancel to pick a different one.
+          </p>
+        )}
       </div>
 
-      {/* Date display — auto for non-Custom, pickers for Custom */}
+      {/* Recurring toggle (Phase 6.2). Rendered between Timeframe and
+          Center cell so the user sees recurrence affect the timeframe
+          options visibly. The pool is always loose-fit — extras become
+          the random subset for each spawn. */}
+      <div className={styles.fieldGroup}>
+        <label className={styles.checkboxRow}>
+          <input
+            type="checkbox"
+            checked={isRecurring}
+            onChange={(e) => onIsRecurringChange(e.target.checked)}
+          />
+          <span>
+            <strong>Make recurring</strong>
+            <span className={styles.checkboxSubtitle}>
+              {" "}
+              — automatically spawn a fresh board each window from a pool.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      {/* Date display — auto for non-Custom, pickers for Custom.
+          Recurring boards show a cadence label ("Every week") with
+          the first-spawn window as the caption, so the wizard makes
+          the recurrence visible instead of looking identical to a
+          one-off board for the same window. */}
       {timeframe !== Timeframe.CUSTOM && computedBoundaries && (
         <div className={styles.dateDisplay}>
-          <span className={styles.dateDisplayLabel}>{timeframeLabel}</span>
+          <span className={styles.dateDisplayLabel}>
+            {isRecurring ? formatRecurringCadence(timeframe) : timeframeLabel}
+          </span>
           <span className={styles.dateDisplayRange}>
-            {computedBoundaries.startDate.split('T')[0]} to{' '}
-            {computedBoundaries.endDate.split('T')[0]}
+            {isRecurring
+              ? `Starting: ${timeframeLabel}`
+              : `${computedBoundaries.startDate.split("T")[0]} to ${computedBoundaries.endDate.split("T")[0]}`}
           </span>
         </div>
       )}
@@ -205,9 +292,11 @@ export function BoardSetupForm({
             id="bw-center-type"
             className={styles.input}
             value={centerType}
-            onChange={(e) => onCenterTypeChange(e.target.value as CenterSquareType)}
+            onChange={(e) =>
+              onCenterTypeChange(e.target.value as CenterSquareType)
+            }
           >
-            {CENTER_TYPE_OPTIONS.map((opt) => (
+            {visibleCenterTypeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -215,7 +304,7 @@ export function BoardSetupForm({
           </select>
           {centerType === CenterSquareType.CHOSEN && (
             <p className={styles.hint}>
-              You'll mark which selected task is the center in the next step.
+              You'll pick the center in the next step.
             </p>
           )}
         </div>

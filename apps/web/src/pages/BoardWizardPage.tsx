@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import type { UserPreferences } from '@oybc/shared';
+import type {
+  RecurringBoardTemplate,
+  Timeframe,
+  UserPreferences,
+} from '@oybc/shared';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useBoardWizard, type BoardWizardDraft } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
@@ -23,14 +27,31 @@ export interface BoardWizardPageProps {
    *  field from the draft and Save / Activate actions update this
    *  record rather than create a new one. */
   draft?: BoardWizardDraft;
+  /** When set, the wizard was opened from the Boards-tab Recurring
+   *  Boards banner. The setup step locks the timeframe field so the
+   *  user can't accidentally pick a different one (the seeded value
+   *  comes from `useBoardWizard`'s `prefilledRecurringTimeframe`).
+   *  Phase 6.1 of the Recurring Boards feature. */
+  prefilledRecurringTimeframe?: Timeframe;
+  /** When set, the wizard was opened from Profile → Recurring
+   *  templates → Edit. All fields hydrate from the template,
+   *  `isRecurring` is forced ON, and Save updates the template
+   *  instead of creating a new board. Phase 6.2 UX rework. */
+  editingTemplate?: RecurringBoardTemplate;
   /** Called when the user dismisses the wizard without persisting —
    *  either because they're in a pristine state (no edits) or they
    *  explicitly chose "Discard" in the smart-cancel dialog. */
   onCancel: () => void;
   /** Called after a successful Activate or Save Draft, including a
    *  Save-Draft triggered from the cancel dialog. `status` reflects
-   *  the board's post-write status. */
+   *  the board's post-write status. In recurring mode this fires only
+   *  when the spawn produced a board to land on. */
   onComplete: (boardId: string, status: 'active' | 'draft') => void;
+  /** Phase 6.2: called when a recurring template was saved without a
+   *  spawnable board (skip or edit). Parent should navigate to the
+   *  Profile templates list. See `BoardWizardPreviewStep`'s prop docs
+   *  for why this isn't folded into `onComplete`. */
+  onTemplateComplete?: (templateId: string) => void;
 }
 
 /**
@@ -47,11 +68,24 @@ export function BoardWizardPage({
   userId,
   preferences,
   draft,
+  prefilledRecurringTimeframe,
+  editingTemplate,
   onCancel,
   onComplete,
+  onTemplateComplete,
 }: BoardWizardPageProps): React.ReactElement {
-  const wizard = useBoardWizard({ preferences, draft });
+  const wizard = useBoardWizard({
+    preferences,
+    draft,
+    prefilledRecurringTimeframe,
+    editingTemplate,
+  });
   const library = useTaskLibrary(userId);
+  // Lock the timeframe field only when (a) we have a prefill AND (b) we're
+  // not resuming a draft (drafts already lock semantics by hydrating the
+  // record). Mirrors the suppression rule inside useBoardWizard.
+  const lockTimeframe =
+    prefilledRecurringTimeframe !== undefined && draft === undefined;
 
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelDialogError, setCancelDialogError] = useState<string | null>(null);
@@ -144,6 +178,7 @@ export function BoardWizardPage({
         {wizard.currentStep === 1 && (
           <BoardWizardSetupStep
             controller={wizard}
+            lockTimeframe={lockTimeframe}
             onCancel={handleCancelRequested}
             onNext={wizard.goNext}
           />
@@ -155,10 +190,12 @@ export function BoardWizardPage({
             selectedTaskIds={wizard.selectedTaskIds}
             onToggleSelection={wizard.toggleTaskSelection}
             tasksRequired={wizard.tasksRequired}
+            isRecurring={wizard.isRecurring}
             centerTaskMode={wizard.centerMode}
             centerTaskId={wizard.centerTaskId}
             onCenterTaskChange={wizard.setCenterTaskId}
             userId={userId}
+            currentTimeframe={wizard.timeframe}
             onTaskCreated={(task) => wizard.toggleTaskSelection(task.id)}
             onCompositeCreated={() => {
               /* Composites are not boardable; the live library query
@@ -176,6 +213,7 @@ export function BoardWizardPage({
             userId={userId}
             onBack={wizard.goBack}
             onComplete={onComplete}
+            onTemplateComplete={onTemplateComplete}
           />
         )}
       </div>
