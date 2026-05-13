@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 
 /// CreateHubView — Landing surface for the Create tab. iOS twin of
 /// web's `CreateHubPage`.
@@ -14,9 +13,10 @@ import GRDB
 /// - `CreateHubQuickAddView`: inline task-creation form that writes
 ///   to the library only.
 ///
-/// The hub owns the wizard-mount state so the two surfaces
-/// transition in-place. Dismissing the wizard (Cancel / Activate /
-/// Save Draft) returns to the hub and triggers a drafts reload.
+/// Hub-mode state, drafts, library count, and the four GRDB loaders
+/// live on `CreateHubViewModel`. The view is a thin switch over
+/// `vm.mode` plus the `.onAppear` hook that triggers initial loads
+/// and consumes the cross-tab deep-link bindings.
 struct CreateHubView: View {
     let userId: String
     let preferences: UserPreferences
@@ -46,53 +46,32 @@ struct CreateHubView: View {
     /// templateId, navigating to a non-existent board.
     var onTemplateCompleted: ((_ templateId: String) -> Void)? = nil
 
-    private enum HubMode: Equatable {
-        case hub
-        case wizardFresh
-        case wizardResume(boardId: String)
-        /// Wizard launched from the Recurring Boards banner with a
-        /// pre-selected timeframe. The setup step locks the timeframe
-        /// field; everything else behaves like `wizardFresh`.
-        case wizardRecurring(timeframe: Timeframe)
-        /// Wizard launched in template-edit mode (Profile → Recurring
-        /// templates → Edit). The wizard hydrates from the template
-        /// and Save updates the template instead of creating a board.
-        case wizardEditTemplate(templateId: String)
-    }
-
-    @State private var mode: HubMode = .hub
-    @State private var resumeDraft: (board: Board, boardTasks: [BoardTask])? = nil
-
-    @State private var drafts: [DraftRowData] = []
-    @State private var libraryCount: Int = 0
+    @State private var vm = CreateHubViewModel()
 
     /// Phase 6.1d: pending core boards (daily/weekly/monthly/yearly) that
     /// the user hasn't created yet for the current windows. When non-empty,
     /// the prominent `PendingCoreBoardsSectionView` becomes the headline
     /// action and the existing `CreateHubBoardCTAView` is demoted to a
-    /// secondary "Custom timeframe board" affordance below it.
+    /// secondary "Custom timeframe board" affordance below it. Kept as
+    /// its own observable on the view rather than embedding it in
+    /// `CreateHubViewModel` — it's already an `@Observable` and nesting
+    /// adds an indirection without removing state from the view.
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
 
-    /// Phase 6.2 UX rework: hydrated template for `wizardEditTemplate`
-    /// mode. Loaded asynchronously when `pendingEditTemplateId` is
-    /// consumed; the wizard mounts only after this resolves so the
-    /// view-model's hydration runs against real data.
-    @State private var editingTemplate: RecurringBoardTemplate? = nil
-
     var body: some View {
-        switch mode {
+        switch vm.mode {
         case .hub:
             hubContent
                 .onAppear {
-                    reloadDrafts()
-                    reloadLibraryCount()
+                    vm.reloadDrafts(userId: userId)
+                    vm.reloadLibraryCount(userId: userId)
                     pendingRecurringVM.reloadAsync(userId: userId)
                     // Consume the recurring-banner deep link, if any.
                     // Same behavior as web's URL-param consumption +
-                    // immediate clear in CreateHubPage.
+                    // immediate clear in `useRecurringTimeframeParam`.
                     if let timeframe = pendingRecurringTimeframe.wrappedValue {
                         pendingRecurringTimeframe.wrappedValue = nil
-                        mode = .wizardRecurring(timeframe: timeframe)
+                        vm.enterRecurringWizard(timeframe: timeframe)
                         return
                     }
                     // Consume the edit-template deep link, if any.
@@ -100,88 +79,65 @@ struct CreateHubView: View {
                     // after hydration so its view-model sees real data.
                     if let templateId = pendingEditTemplateId.wrappedValue {
                         pendingEditTemplateId.wrappedValue = nil
-                        loadTemplateAndEnterWizard(templateId: templateId)
+                        vm.loadTemplateAndEnterWizard(templateId: templateId)
                     }
                 }
         case .wizardFresh:
-            BoardWizardView(
-                userId: userId,
-                preferences: preferences,
-                draft: nil,
-                prefilledRecurringTimeframe: nil,
-                editingTemplate: nil,
-                onCancel: { returnToHub() },
-                onComplete: { boardId, status in
-                    onBoardCompleted?(boardId, status)
-                    returnToHub()
-                },
-                onTemplateComplete: { templateId in
-                    onTemplateCompleted?(templateId)
-                    returnToHub()
-                }
-            )
+            wizard(draft: nil, prefilledRecurringTimeframe: nil, editingTemplate: nil)
         case .wizardResume:
-            BoardWizardView(
-                userId: userId,
-                preferences: preferences,
-                draft: resumeDraft,
-                prefilledRecurringTimeframe: nil,
-                editingTemplate: nil,
-                onCancel: { returnToHub() },
-                onComplete: { boardId, status in
-                    onBoardCompleted?(boardId, status)
-                    returnToHub()
-                },
-                onTemplateComplete: { templateId in
-                    onTemplateCompleted?(templateId)
-                    returnToHub()
-                }
-            )
+            wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, editingTemplate: nil)
         case .wizardRecurring(let timeframe):
-            BoardWizardView(
-                userId: userId,
-                preferences: preferences,
-                draft: nil,
-                prefilledRecurringTimeframe: timeframe,
-                editingTemplate: nil,
-                onCancel: { returnToHub() },
-                onComplete: { boardId, status in
-                    onBoardCompleted?(boardId, status)
-                    returnToHub()
-                },
-                onTemplateComplete: { templateId in
-                    onTemplateCompleted?(templateId)
-                    returnToHub()
-                }
-            )
+            wizard(draft: nil, prefilledRecurringTimeframe: timeframe, editingTemplate: nil)
         case .wizardEditTemplate:
             // The mode is set BEFORE `editingTemplate` is set (when
             // hydration is in flight) and AFTER (once loaded). Render
             // a thin loading state in the in-flight window so the
             // wizard doesn't mount with stale state.
-            if let template = editingTemplate {
-                BoardWizardView(
-                    userId: userId,
-                    preferences: preferences,
-                    draft: nil,
-                    prefilledRecurringTimeframe: nil,
-                    editingTemplate: template,
-                    onCancel: { returnToHub() },
-                    onComplete: { boardId, status in
-                        onBoardCompleted?(boardId, status)
-                        returnToHub()
-                    },
-                    onTemplateComplete: { templateId in
-                        onTemplateCompleted?(templateId)
-                        returnToHub()
-                    }
-                )
+            if let template = vm.editingTemplate {
+                wizard(draft: nil, prefilledRecurringTimeframe: nil, editingTemplate: template)
             } else {
                 ProgressView("Loading template…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(20)
             }
         }
+    }
+
+    /// Single source of truth for how the wizard is wired into the hub.
+    /// Cancellation + completion always route through `handleHubReturn`
+    /// so the hub-side cleanup lives in exactly one place: view-model
+    /// reset (mode + drafts + library count) plus the
+    /// pending-recurring refresh that's intentionally view-owned.
+    @ViewBuilder
+    private func wizard(
+        draft: (board: Board, boardTasks: [BoardTask])?,
+        prefilledRecurringTimeframe: Timeframe?,
+        editingTemplate: RecurringBoardTemplate?
+    ) -> some View {
+        BoardWizardView(
+            userId: userId,
+            preferences: preferences,
+            draft: draft,
+            prefilledRecurringTimeframe: prefilledRecurringTimeframe,
+            editingTemplate: editingTemplate,
+            onCancel: { handleHubReturn() },
+            onComplete: { boardId, status in
+                onBoardCompleted?(boardId, status)
+                handleHubReturn()
+            },
+            onTemplateComplete: { templateId in
+                onTemplateCompleted?(templateId)
+                handleHubReturn()
+            }
+        )
+    }
+
+    /// Hub-return shim: resets the view-model and also refreshes the
+    /// pending-recurring section so a board the user just created
+    /// disappears from the banner without a tab switch.
+    private func handleHubReturn() {
+        vm.returnToHub(userId: userId)
+        pendingRecurringVM.reloadAsync(userId: userId)
     }
 
     @ViewBuilder
@@ -208,24 +164,20 @@ struct CreateHubView: View {
                     // Already on the Create tab — flip mode directly
                     // rather than bouncing through MainTabView's
                     // pendingRecurringTimeframe binding.
-                    resumeDraft = nil
-                    mode = .wizardRecurring(timeframe: entry.timeframe)
+                    vm.enterRecurringWizard(timeframe: entry.timeframe)
                 }
             )
 
             CreateHubBoardCTAView(
-                onTap: {
-                    resumeDraft = nil
-                    mode = .wizardFresh
-                },
+                onTap: { vm.enterFreshWizard() },
                 variant: hasPendingCoreBoards ? .secondary : .primary
             )
 
-            if !drafts.isEmpty {
+            if !vm.drafts.isEmpty {
                 CreateHubDraftsListView(
-                    drafts: drafts,
+                    drafts: vm.drafts,
                     onResume: { board in
-                        loadDraftAndEnterWizard(board: board)
+                        vm.loadDraftAndEnterWizard(board: board)
                     }
                 )
             }
@@ -235,7 +187,7 @@ struct CreateHubView: View {
             CreateHubQuickAddView(
                 userId: userId,
                 onTaskCreated: {
-                    reloadLibraryCount()
+                    vm.reloadLibraryCount(userId: userId)
                 }
             )
         }
@@ -254,9 +206,9 @@ struct CreateHubView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.secondary)
             Text(
-                libraryCount == 0
+                vm.libraryCount == 0
                     ? "No tasks yet — quick-add below or pick some when you build a board."
-                    : "\(libraryCount) task\(libraryCount == 1 ? "" : "s") ready to place on a board."
+                    : "\(vm.libraryCount) task\(vm.libraryCount == 1 ? "" : "s") ready to place on a board."
             )
             .font(.subheadline)
             .foregroundColor(.primary)
@@ -267,114 +219,4 @@ struct CreateHubView: View {
         .background(Color(.systemGray6))
         .cornerRadius(10)
     }
-
-    // MARK: - State transitions
-
-    private func returnToHub() {
-        mode = .hub
-        resumeDraft = nil
-        reloadDrafts()
-        reloadLibraryCount()
-        // Refresh pending core boards so a board the user just created
-        // disappears from the section without needing a tab-switch.
-        pendingRecurringVM.reloadAsync(userId: userId)
-    }
-
-    private func loadDraftAndEnterWizard(board: Board) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let boardTasks = try AppDatabase.shared.fetchBoardTasks(boardId: board.id)
-                DispatchQueue.main.async {
-                    resumeDraft = (board, boardTasks)
-                    mode = .wizardResume(boardId: board.id)
-                }
-            } catch {
-                // Fallback: just open the wizard fresh and surface the
-                // error via a log — draft hydration failed but the
-                // user can still create a new board.
-                DispatchQueue.main.async {
-                    resumeDraft = nil
-                    mode = .wizardFresh
-                    print("⚠️ Failed to load draft \(board.id): \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    /// Phase 6.2 UX rework: cross-tab edit hydration. The Profile-tab
-    /// `RecurringTemplatesView` writes a `pendingEditTemplateId` and
-    /// switches to Create; we fetch the template here and mount the
-    /// wizard in `wizardEditTemplate` mode. If the template can't be
-    /// found (deleted concurrently), surface a log and fall back to
-    /// the fresh-create wizard so the user can recover.
-    private func loadTemplateAndEnterWizard(templateId: String) {
-        // Set the mode immediately so the user gets a "loading" view;
-        // the wizard mounts after editingTemplate hydrates.
-        mode = .wizardEditTemplate(templateId: templateId)
-        editingTemplate = nil
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let template = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId)
-                DispatchQueue.main.async {
-                    if let template = template {
-                        editingTemplate = template
-                    } else {
-                        print("⚠️ Recurring template \(templateId) no longer exists")
-                        mode = .wizardFresh
-                    }
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    print("⚠️ Failed to load recurring template \(templateId): \(error.localizedDescription)")
-                    mode = .wizardFresh
-                }
-            }
-        }
-    }
-
-    // MARK: - Data loaders
-
-    private func reloadDrafts() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let draftBoards: [Board] = try AppDatabase.shared.read { db in
-                    try Board
-                        .filter(
-                            Column("userId") == userId
-                            && Column("status") == "draft"
-                            && Column("isDeleted") == false
-                        )
-                        .order(Column("updatedAt").desc)
-                        .fetchAll(db)
-                }
-                var rows: [DraftRowData] = []
-                for board in draftBoards {
-                    let count = try AppDatabase.shared.fetchBoardTasks(boardId: board.id).count
-                    rows.append(DraftRowData(board: board, taskCount: count))
-                }
-                DispatchQueue.main.async { drafts = rows }
-            } catch {
-                DispatchQueue.main.async { drafts = [] }
-            }
-        }
-    }
-
-    private func reloadLibraryCount() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                // Post-unification, compounds (formerly composite_tasks)
-                // live in the `tasks` table with type='compound', so
-                // `fetchTasks` already returns them. The previous
-                // implementation also queried the legacy `composite_tasks`
-                // table and added its row count, which double-counted
-                // every compound for any user that had one.
-                let tasks = try AppDatabase.shared.fetchTasks(userId: userId)
-                let total = tasks.count
-                DispatchQueue.main.async { libraryCount = total }
-            } catch {
-                DispatchQueue.main.async { libraryCount = 0 }
-            }
-        }
-    }
-
 }
