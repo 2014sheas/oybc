@@ -32,6 +32,10 @@ const TYPE_ABBREV: Record<string, string> = {
   counting: 'COUN',
   progress: 'PROG',
   composite: 'COMP',
+  // Phase 6.3 — ACHIEVEMENT (cross-board watcher). "ACHV" is the
+  // 4-letter abbreviation; the full label "Achievement task" still
+  // appears in `aria-label` and the hover tooltip.
+  achievement: 'ACHV',
 };
 
 /**

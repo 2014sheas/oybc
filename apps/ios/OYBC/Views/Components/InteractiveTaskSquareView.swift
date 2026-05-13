@@ -55,6 +55,13 @@ struct InteractiveTaskSquareView: View {
     var onTap: (() -> Void)? = nil
     var isReadOnly: Bool = false
 
+    // Phase 6.3 — Optional achievement-square badge data. When set, the
+    // cell renders a 🎯-prefixed pill at the top-left indicating
+    // cross-board tracking. Replaces the "C" compound badge when both
+    // apply (achievement-square semantics override the task-type
+    // indicator for display purposes; the cell still backs the task).
+    var achievementBadge: AchievementSquareBadgeData? = nil
+
     // Size
     var size: CGFloat = 90
 
@@ -72,7 +79,10 @@ struct InteractiveTaskSquareView: View {
     /// Fraction (0–1) to fill the progress bar.
     private var fillFraction: Double {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
+            // ACHIEVEMENT cells render via InteractiveTaskSquareView with
+            // `taskType: .normal` in production (see BoardPlayView), but
+            // the switch must still be exhaustive over TaskType.
             return isCompleted ? 1.0 : 0.0
         case .counting:
             guard maxCount > 0 else { return 0 }
@@ -95,7 +105,7 @@ struct InteractiveTaskSquareView: View {
     /// Accent colour for the progress bar, matching TaskSquareActionsPlayground conventions.
     private var barColor: Color {
         switch taskType {
-        case .normal:   return .green
+        case .normal, .achievement: return .green
         case .counting: return .orange
         case .compound: return Color(red: 0.39, green: 0.4, blue: 0.95)  // indigo, mirrors web's #6366f1
         }
@@ -104,7 +114,7 @@ struct InteractiveTaskSquareView: View {
     /// Label text displayed inside the progress bar.
     private var barLabel: String {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
             return ""
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"
@@ -218,7 +228,9 @@ struct InteractiveTaskSquareView: View {
             }
 
             // ── "C" badge (top-left corner for compound squares) ──
-            if taskType == .compound {
+            // Suppressed when an achievement badge is rendering — the
+            // achievement-square indicator takes priority on display.
+            if taskType == .compound && achievementBadge == nil {
                 VStack {
                     HStack {
                         Text("C")
@@ -232,6 +244,42 @@ struct InteractiveTaskSquareView: View {
                     }
                     Spacer()
                 }
+            }
+
+            // ── Phase 6.3: achievement-square badge (top-left) ──
+            // Pill-shaped to carry the mode + counts label inline. Sits
+            // in the same top-left slot as the "C" badge; suppresses
+            // the "C" badge when both apply (see the compound branch
+            // above). Uses the SF Symbol `target` rather than a 🎯
+            // emoji so the badge renders deterministically across
+            // simulator runtimes — the snapshot harness's headless
+            // simulator lacks the Color Emoji font and would show a
+            // broken-glyph placeholder, locking that into committed
+            // baselines.
+            if let badge = achievementBadge {
+                VStack {
+                    HStack {
+                        HStack(spacing: 2) {
+                            Image(systemName: "target")
+                                .font(.system(size: 8, weight: .semibold))
+                            Text(badge.displayLabel)
+                                .font(.system(size: 8, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(red: 0.39, green: 0.4, blue: 0.95).opacity(0.18))
+                        )
+                        .foregroundColor(isCompleted ? .white : .primary)
+                        .padding(4)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .accessibilityLabel("Achievement square — \(badge.displayLabel)")
             }
         }
         .frame(width: size, height: size)
@@ -258,7 +306,7 @@ struct InteractiveTaskSquareView: View {
 
     private var accessibilityLabel: String {
         switch taskType {
-        case .normal:
+        case .normal, .achievement:
             return "\(title) — \(isCompleted ? "completed" : "incomplete")"
         case .counting:
             let unitText = unit.isEmpty ? "" : " \(unit)"

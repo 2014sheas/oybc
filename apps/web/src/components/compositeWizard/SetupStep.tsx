@@ -63,7 +63,7 @@ export function SetupStep({
         <OperatorSelector selectedOperator={operator} onOperatorChange={onOperatorChange} />
         {operator === OperatorType.M_OF_N && (
           <span className={styles.operatorHint}>
-            You'll pick the required count on the next step, alongside your subtasks.
+            You'll set the required count with your subtasks.
           </span>
         )}
       </div>

@@ -74,7 +74,7 @@ test.describe('Phase 6.2 rework', () => {
     // Empty-state copy from RecurringTemplatesPage.
     await expect(page.getByText(/no recurring templates yet/i)).toBeVisible();
     // The empty-state body explains the wizard-toggle entry-point.
-    await expect(page.getByText(/toggle.*make recurring.*setup step/i)).toBeVisible();
+    await expect(page.getByText(/toggle.*make recurring.*in setup/i)).toBeVisible();
   });
 
   test('Profile templates page lists a seeded template + Edit deep-links into the wizard', async ({ page }) => {

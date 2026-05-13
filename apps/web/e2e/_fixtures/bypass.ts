@@ -159,4 +159,151 @@ export async function clearTemplates(page: Page): Promise<void> {
   });
 }
 
+// ─── Phase 6.3 — Board / Task / BoardTask seed helpers ──────────────────────
+//
+// Same raw-IDB pattern as `seedTemplate` above. The Phase 6.3
+// achievement-square spec needs a parent board with a placed cell to
+// right-click, plus optional peer boards / templates for the modal's
+// pickers. Each helper takes a loosely-typed `Record` (avoids pulling
+// `@oybc/shared` into the e2e module graph) and writes one row.
+
+export interface SeedBoard {
+  id: string;
+  name: string;
+  boardSize: 3 | 4 | 5;
+  timeframe: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  status: 'active' | 'completed' | 'archived' | 'draft';
+  startDate: string;
+  endDate: string;
+  centerSquareType?: 'free' | 'custom_free' | 'none' | 'chosen';
+  isRandomized?: boolean;
+  totalTasks?: number;
+  completedTasks?: number;
+  linesCompleted?: number;
+  completedLineIds?: string[];
+  spawnedFromTemplateId?: string;
+}
+
+export async function seedBoard(page: Page, board: SeedBoard): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    userId: BYPASS_USER_ID,
+    centerSquareType: 'free',
+    isRandomized: false,
+    totalTasks: board.boardSize * board.boardSize,
+    completedTasks: 0,
+    linesCompleted: 0,
+    completedLineIds: [],
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+    ...board,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['boards'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('boards').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
+export interface SeedTask {
+  id: string;
+  title: string;
+  type: 'normal' | 'counting' | 'compound' | 'achievement';
+  /** Phase 6.3 — Achievement-task reference (specific-board mode).
+   *  Mutually exclusive with `referencedTemplateId`; only valid when
+   *  `type === 'achievement'`. */
+  referencedBoardId?: string;
+  /** Phase 6.3 — Achievement-task reference (recurring-template mode). */
+  referencedTemplateId?: string;
+  /** Phase 6.3 — completion trigger (default 'greenlog'). */
+  achievementTrigger?: 'bingo' | 'greenlog';
+  /** Phase 6.3 — required count of in-window spawns hitting the
+   *  trigger. Positive integer; required for template mode. */
+  requiredCount?: number;
+}
+
+export async function seedTask(page: Page, task: SeedTask): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    userId: BYPASS_USER_ID,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+    ...task,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['tasks'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('tasks').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
+export interface SeedBoardTask {
+  id: string;
+  boardId: string;
+  taskId: string;
+  row: number;
+  col: number;
+  isCenter?: boolean;
+  // Phase 6.3 — `BoardTask` is now a pure placement record. The
+  // achievement-square config moved to `Task` (`type='achievement'`
+  // + `referencedBoardId` / `referencedTemplateId` / `achievementTrigger`
+  // / `requiredCount`) — see `SeedTask` above.
+}
+
+export async function seedBoardTask(page: Page, boardTask: SeedBoardTask): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    isCenter: false,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    ...boardTask,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['boardTasks'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('boardTasks').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
 export { expect } from '@playwright/test';

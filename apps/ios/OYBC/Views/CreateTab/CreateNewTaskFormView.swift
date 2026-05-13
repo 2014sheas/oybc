@@ -23,6 +23,14 @@ struct CreateNewTaskFormView: View {
     /// Label for the submit button. Defaults to the legacy pool-flow wording.
     var submitLabel: String = "Create & Add to Pool"
 
+    // Phase 6.3 — pickers for ACHIEVEMENT task creation. Loaded lazily
+    // when the user selects the Achievement type tab. Kept as state on
+    // the view rather than the view model because the data is purely
+    // for the picker UI (no submit-time relevance — the submit pipeline
+    // just reads `form.achievementReferenceId`).
+    @State private var availableBoards: [Board] = []
+    @State private var availableTemplates: [RecurringBoardTemplate] = []
+
     var body: some View {
         // `.frame(maxWidth: .infinity, alignment: .leading)` makes the form
         // stretch to the container's width. Without it, the VStack collapses
@@ -49,6 +57,12 @@ struct CreateNewTaskFormView: View {
                 // leaves stale fields with the picker showing the "Use template"
                 // affordance, silently submitting another task's action+unit.
                 form.clearTemplate()
+                // Phase 6.3 — reset the achievement-mode picker so the user
+                // doesn't return to Achievement and find a stale
+                // recurringTemplate mode selected with an empty picker
+                // beneath. specificBoard is the default.
+                form.achievementMode = .specificBoard
+                form.achievementReferenceId = nil
             }
 
             if form.taskType == .composite {
@@ -91,6 +105,11 @@ struct CreateNewTaskFormView: View {
                 // a compound Task with isOrdered=true.
                 if form.taskType == .progress {
                     progressFields
+                }
+
+                // Achievement-specific fields (Phase 6.3).
+                if form.taskType == .achievement {
+                    achievementFields
                 }
 
                 // Feedback
@@ -143,7 +162,7 @@ struct CreateNewTaskFormView: View {
                     .foregroundColor(form.countingAction.count > CreateFormLimits.action ? .red : .secondary)
             }
 
-            TextField("Max Count (positive integer)", text: $form.countingMaxCount)
+            TextField("Max (positive integer)", text: $form.countingMaxCount)
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.numberPad)
 
@@ -158,6 +177,120 @@ struct CreateNewTaskFormView: View {
         .padding(8)
         .background(Color(.systemGray5))
         .cornerRadius(6)
+    }
+
+    // MARK: - Achievement fields (Phase 6.3)
+
+    @ViewBuilder
+    private var achievementFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Watch")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+
+            Picker("Watch mode", selection: $form.achievementMode) {
+                ForEach(AchievementMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: form.achievementMode) {
+                // Switching mode clears the picker selection — an id
+                // from one mode is not eligible in the other.
+                form.achievementReferenceId = nil
+                form.clearFeedback()
+            }
+
+            switch form.achievementMode {
+            case .specificBoard:
+                if availableBoards.isEmpty {
+                    Text("No boards yet — create one first.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Picker("Board", selection: Binding(
+                        get: { form.achievementReferenceId ?? "" },
+                        set: { form.achievementReferenceId = $0.isEmpty ? nil : $0 }
+                    )) {
+                        Text("Select a board…").tag("")
+                        ForEach(availableBoards, id: \.id) { b in
+                            Text(b.name).tag(b.id)
+                        }
+                    }
+                    .pickerStyle(.navigationLink)
+                }
+            case .recurringTemplate:
+                if availableTemplates.isEmpty {
+                    Text("No recurring templates yet — create one first.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Picker("Template", selection: Binding(
+                        get: { form.achievementReferenceId ?? "" },
+                        set: { form.achievementReferenceId = $0.isEmpty ? nil : $0 }
+                    )) {
+                        Text("Select a template…").tag("")
+                        ForEach(availableTemplates, id: \.id) { t in
+                            Text(t.isActive ? t.name : "\(t.name) (paused)").tag(t.id)
+                        }
+                    }
+                    .pickerStyle(.navigationLink)
+                }
+            }
+
+            // Trigger picker (Phase 6.3). Domain terms verbatim:
+            // "Greenlog" / "Bingo". Default `.greenlog` matches the
+            // pre-trigger shipped behavior.
+            Text("Trigger")
+                .font(.subheadline)
+                .padding(.top, 6)
+            Picker("Trigger", selection: $form.achievementTrigger) {
+                Text("Greenlog").tag(AchievementTrigger.greenlog)
+                Text("Bingo").tag(AchievementTrigger.bingo)
+            }
+            .pickerStyle(.segmented)
+
+            // Count input (template mode only). Specific-board mode
+            // is implicitly count=1.
+            if form.achievementMode == .recurringTemplate {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Count")
+                        .font(.subheadline)
+                        .padding(.top, 6)
+                    TextField("e.g. 3", text: $form.achievementRequiredCountStr)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                }
+            }
+        }
+        .padding(8)
+        .background(Color(.systemGray5))
+        .cornerRadius(6)
+        .onAppear {
+            loadAchievementOptions()
+        }
+        .onChange(of: form.taskType) {
+            // Reload when the user switches into Achievement so a board
+            // / template created while another type was selected is
+            // visible without dismissing the form.
+            if form.taskType == .achievement { loadAchievementOptions() }
+        }
+    }
+
+    /// Loads non-deleted boards and templates for the current user.
+    /// Errors are swallowed (the picker just shows the empty-state
+    /// fallback) — the form's submit pipeline will surface a more
+    /// specific error if the user tries to save without a selection.
+    private func loadAchievementOptions() {
+        guard let uid = userId else { return }
+        _Concurrency.Task.detached {
+            let boards = (try? AppDatabase.shared.fetchBoards(userId: uid)) ?? []
+            let templates = (try? AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)) ?? []
+            await MainActor.run {
+                availableBoards = boards
+                availableTemplates = templates
+            }
+        }
     }
 
     // MARK: - Progress fields

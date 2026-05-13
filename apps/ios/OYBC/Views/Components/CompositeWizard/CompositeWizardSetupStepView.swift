@@ -58,7 +58,7 @@ struct CompositeWizardSetupStepView: View {
                 .pickerStyle(.segmented)
 
                 if operatorType == .mOfN {
-                    Text("You'll pick the required count on the next step, alongside your subtasks.")
+                    Text("You'll set the required count with your subtasks.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

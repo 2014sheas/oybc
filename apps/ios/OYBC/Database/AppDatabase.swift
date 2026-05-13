@@ -309,6 +309,71 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN spawnedFromTemplateId TEXT")
         }
 
+        // v9: Phase 6.3 — original draft added `referencedBoardId` /
+        // `referencedTemplateId` columns to `board_tasks`. The refactor
+        // moves those fields to `Task` instead (see v10 below). v9 is
+        // kept around so dev installs that already migrated through it
+        // don't fail — the no-op columns it added to `board_tasks` are
+        // harmless (Swift's BoardTask model doesn't reference them
+        // post-refactor, so they're dead weight in storage).
+        //
+        // For fresh installs that have never run v9: the ALTER TABLE
+        // is still useful as a stepping stone toward v10 so the schema
+        // history is linear, but the columns it creates are not
+        // referenced anywhere in code. A future cleanup could drop the
+        // columns via a table rebuild; not worth doing for an unshipped
+        // feature.
+        migrator.registerMigration("v9") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedBoardId TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedTemplateId TEXT")
+        }
+
+        // v10: Phase 6.3 refactor — ACHIEVEMENT as a TaskType.
+        //
+        //   Add `referencedBoardId` and `referencedTemplateId` columns
+        //   to the `tasks` table (cross-board watcher fields now live
+        //   on Task, not BoardTask). Only ACHIEVEMENT-typed Tasks
+        //   populate them:
+        //     - referencedBoardId TEXT — specific-board mode. Cell
+        //       completes when the named board's status is COMPLETED
+        //       and !isDeleted.
+        //     - referencedTemplateId TEXT — recurring-template mode.
+        //       Cell completes when ALL in-window non-deleted spawns
+        //       of that template are COMPLETED.
+        //
+        //   Both fields are nullable, additive, and NOT indexed (lookups
+        //   happen inside derivationPass per-row, not via table scans).
+        //   No FK constraints — adding a FK to an existing table in
+        //   SQLite requires a full table rebuild, and templates/boards
+        //   are soft-deleted only so a FK ON DELETE clause would never
+        //   fire (mirrors the 6.2 spawnedFromTemplateId precedent).
+        //
+        //   Mutual exclusion (at most one set per row) is enforced at
+        //   the Zod refinement layer in the shared package's TaskSchema,
+        //   plus a defensive check in the iOS task-write helpers.
+        migrator.registerMigration("v10") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN referencedBoardId TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN referencedTemplateId TEXT")
+        }
+
+        // v11: Phase 6.3 — Achievement trigger + required count.
+        //
+        //   Adds two optional columns to `tasks`:
+        //     - achievementTrigger TEXT — 'bingo' or 'greenlog'. When
+        //       null, derivation defaults to 'greenlog' at read time
+        //       (matches the pre-trigger shipped behavior and the
+        //       shared Zod schema's defensive decode).
+        //     - requiredCount INTEGER — positive integer required when
+        //       referencedTemplateId is set; null otherwise. Forbidden
+        //       on non-ACHIEVEMENT tasks.
+        //
+        //   No indexes; lookups happen per-row inside DerivationPass.
+        //   Both fields are nullable + additive so back-fill is a no-op.
+        migrator.registerMigration("v11") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN achievementTrigger TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN requiredCount INTEGER")
+        }
+
         return migrator
     }
 
@@ -766,23 +831,6 @@ extension AppDatabase {
         }
     }
 
-    /// Find all boards with achievement squares
-    func fetchBoardsWithAchievements(userId: String) throws -> [Board] {
-        return try read { db in
-            // Find distinct board IDs with achievement squares
-            let boardIds = try String.fetchAll(db, sql: """
-                SELECT DISTINCT boardId 
-                FROM board_tasks 
-                WHERE isAchievementSquare = 1
-                """)
-
-            // Fetch boards
-            return try Board
-                .filter(keys: boardIds)
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .fetchAll(db)
-        }
-    }
 }
 
 // MARK: - Utilities

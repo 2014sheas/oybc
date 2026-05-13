@@ -248,7 +248,7 @@ export function BuildStep({
 
           {subtasks.length === 0 && (
             <div className={styles.emptyState}>
-              No subtasks yet. Tap a row from your library below, or use <strong>+ New task</strong>.
+              No subtasks. Tap a row below or use <strong>+ New task</strong>.
             </div>
           )}
         </div>
@@ -295,7 +295,7 @@ export function BuildStep({
         <div className={styles.libraryList}>
           {showEmptyLibrary && (
             <div className={styles.libraryEmptyState}>
-              Your library is empty — tap <strong>+ New task</strong> above to make one.
+              Library is empty — tap <strong>+ New task</strong> to create one.
             </div>
           )}
           {showNoMatches && (

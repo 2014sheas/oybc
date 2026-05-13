@@ -75,6 +75,12 @@ export async function runBoardCascadeForTask(
   const allChildren = await fetchAllCompoundChildren();
   const allBoardTasks = await fetchAllBoardTasks();
   const allTasks = await db.tasks.toArray();
+  // Phase 6.3 — `computeBoardStatsUpdate` needs the workspace's boards
+  // to evaluate the specific-board / recurring-template achievement
+  // branches. Pre-6.3 callers passed nothing here and the algorithm
+  // defaults to `[]`, but on this cascade path we have the full set
+  // available, so use it.
+  const allBoards = await db.boards.toArray();
 
   const taskById: Record<string, Task> = {};
   for (const t of allTasks) taskById[t.id] = t;
@@ -100,6 +106,7 @@ export async function runBoardCascadeForTask(
       boardTasksOnBoard,
       childrenByCompound,
       taskById,
+      allBoards,
     );
 
     const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
