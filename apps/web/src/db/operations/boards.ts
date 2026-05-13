@@ -57,7 +57,7 @@ export async function createBoard(
   };
 
   await db.boards.add(board);
-  void addToSyncQueue('boards', board.id, SyncOperationType.CREATE, board);
+  await addToSyncQueue('boards', board.id, SyncOperationType.CREATE, board);
   return board;
 }
 
@@ -76,7 +76,7 @@ export async function updateBoard(
     version: (board.version ?? 0) + 1,
   });
   const updated = await db.boards.get(id);
-  if (updated) void addToSyncQueue('boards', id, SyncOperationType.UPDATE, updated);
+  if (updated) await addToSyncQueue('boards', id, SyncOperationType.UPDATE, updated);
 }
 
 /**
@@ -96,7 +96,7 @@ export async function deleteBoard(id: string): Promise<void> {
     version: (existing.version ?? 0) + 1,
   });
   const board = await db.boards.get(id);
-  if (board) void addToSyncQueue('boards', id, SyncOperationType.DELETE, board);
+  if (board) await addToSyncQueue('boards', id, SyncOperationType.DELETE, board);
 }
 
 /**
@@ -118,7 +118,7 @@ export async function updateBoardStats(
     version: (board.version ?? 0) + 1,
   });
   const updatedBoard = await db.boards.get(boardId);
-  if (updatedBoard) void addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard);
+  if (updatedBoard) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard);
 }
 
 /**
@@ -134,7 +134,7 @@ export async function completeBoard(boardId: string): Promise<void> {
     version: (board.version ?? 0) + 1,
   });
   const completedBoard = await db.boards.get(boardId);
-  if (completedBoard) void addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, completedBoard);
+  if (completedBoard) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, completedBoard);
 }
 
 /**
@@ -150,6 +150,12 @@ export async function activateBoard(boardId: string): Promise<void> {
     updatedAt: currentTimestamp(),
     version: (board.version ?? 0) + 1,
   });
+  // Re-fetch so the enqueued payload captures the post-activate status
+  // and bumped version — otherwise Firestore would only ever see the
+  // original DRAFT snapshot from the paired create, and the ACTIVE
+  // transition wouldn't reach other devices until an unrelated update.
+  const activated = await db.boards.get(boardId);
+  if (activated) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, activated);
 }
 
 /**

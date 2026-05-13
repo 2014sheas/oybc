@@ -1,0 +1,86 @@
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0.5rem 0;
+}
+
+.stepRow {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.connector {
+  flex: 1;
+  height: 2px;
+  background-color: var(--border-color);
+  margin: 0 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background-color: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: not-allowed;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.chip:not(:disabled) {
+  cursor: pointer;
+}
+
+.chip:not(:disabled):hover {
+  background-color: var(--button-hover-bg);
+}
+
+.chipActive {
+  background-color: var(--active-bg);
+  color: var(--active-text);
+  border-color: var(--active-bg);
+  font-weight: 600;
+}
+
+.chipComplete {
+  color: var(--success-text);
+  border-color: var(--success-border);
+  background-color: var(--success-bg);
+}
+
+.chipComplete:not(:disabled):hover {
+  filter: brightness(0.97);
+}
+
+.dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.18);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.chipActive .dot {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+.chipComplete .dot {
+  background-color: var(--success-text);
+  color: var(--success-bg);
+}
+
+.label {
+  font-size: 0.85rem;
+}

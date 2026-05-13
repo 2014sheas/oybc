@@ -33,3 +33,29 @@
   background-color: var(--info-bg, #cfe2ff);
   color: var(--info-text, #084298);
 }
+
+/* Phase 6.3 — Achievement (cross-board watcher). Distinct tint from
+ * the other types so it reads at a glance on the wizard library list. */
+.typeBadgeAchievement {
+  background-color: var(--accent-bg, #f6e6ff);
+  color: var(--accent-text, #6b21a8);
+}
+
+/* Abbreviated 4-letter variant — fixed width so stacked badges align
+ * regardless of task type. Still uses the pill shape of the default
+ * badge, but the width is locked via min-width/justify-content so no
+ * amount of font-width jitter shifts the adjacent column. */
+.letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding: 0.15rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.letter.small {
+  min-width: 42px;
+  padding: 0.1rem 0.35rem;
+}

@@ -30,12 +30,19 @@ function validCounting(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * Returns a valid PROGRESS task input with one step.
+ * Returns a valid NORMAL task input with a `steps` array attached. Used by
+ * the steps-array sub-schema tests below — `CreateTaskInputSchema.steps` is
+ * an optional array regardless of `type`, so a NORMAL task with steps is a
+ * fine fixture for testing per-step validation.
+ *
+ * Pre-unification this helper was named `validProgress`. Under the unified
+ * compound model, the legacy Progress task type doesn't exist (Progress is
+ * now `compound + isOrdered=true`, created via CreateCompoundTaskInputSchema).
  */
-function validProgress(overrides: Record<string, unknown> = {}) {
+function validWithSteps(overrides: Record<string, unknown> = {}) {
   return {
-    title: 'Finish project',
-    type: TaskType.PROGRESS,
+    title: 'Task with steps',
+    type: TaskType.NORMAL,
     steps: [{ title: 'Draft outline', type: TaskType.NORMAL }],
     ...overrides,
   };
@@ -58,23 +65,6 @@ describe('CreateTaskInputSchema — happy path', () => {
 
   it('accepts a valid COUNTING task with action, unit, and maxCount', () => {
     const result = CreateTaskInputSchema.safeParse(validCounting());
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts a valid PROGRESS task with at least one step', () => {
-    const result = CreateTaskInputSchema.safeParse(validProgress());
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts a PROGRESS task with multiple steps', () => {
-    const result = CreateTaskInputSchema.safeParse(
-      validProgress({
-        steps: [
-          { title: 'Step one', type: TaskType.NORMAL },
-          { title: 'Step two', type: TaskType.NORMAL },
-        ],
-      })
-    );
     expect(result.success).toBe(true);
   });
 
@@ -171,9 +161,15 @@ describe('CreateTaskInputSchema — type', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts TaskType.PROGRESS (with required steps)', () => {
-    const result = CreateTaskInputSchema.safeParse(validProgress());
-    expect(result.success).toBe(true);
+  it("rejects the legacy 'progress' value (no longer in TaskType)", () => {
+    // Sanity-check that the legacy alias is gone from the runtime enum and
+    // that pre-unification creation payloads can't slip through this schema.
+    const result = CreateTaskInputSchema.safeParse({
+      title: 'Multi-step task',
+      type: 'progress',
+      steps: [{ title: 'Step one', type: TaskType.NORMAL }],
+    });
+    expect(result.success).toBe(false);
   });
 
   it('rejects an unrecognised type string', () => {
@@ -330,60 +326,17 @@ describe('CreateTaskInputSchema — COUNTING type refinement', () => {
   });
 });
 
-// ── PROGRESS refine ───────────────────────────────────────────────────────────
-
-describe('CreateTaskInputSchema — PROGRESS type refinement', () => {
-  it('rejects a PROGRESS task with no steps field', () => {
-    const result = CreateTaskInputSchema.safeParse({
-      title: 'Multi-step task',
-      type: TaskType.PROGRESS,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects a PROGRESS task with an empty steps array', () => {
-    const result = CreateTaskInputSchema.safeParse(
-      validProgress({ steps: [] })
-    );
-    expect(result.success).toBe(false);
-  });
-
-  it('includes the correct error message when steps are missing', () => {
-    const result = CreateTaskInputSchema.safeParse({
-      title: 'Multi-step task',
-      type: TaskType.PROGRESS,
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.errors.map((e) => e.message);
-      expect(messages).toContain(
-        'Progress tasks must have at least one step'
-      );
-    }
-  });
-
-  it('accepts a PROGRESS task with exactly one step', () => {
-    const result = CreateTaskInputSchema.safeParse(validProgress());
-    expect(result.success).toBe(true);
-  });
-
-  it('does not require steps for a NORMAL task', () => {
-    const result = CreateTaskInputSchema.safeParse(validNormal());
-    expect(result.success).toBe(true);
-  });
-
-  it('does not require steps for a COUNTING task', () => {
-    const result = CreateTaskInputSchema.safeParse(validCounting());
-    expect(result.success).toBe(true);
-  });
-});
+// Note: Progress-type refinement was removed in the compound-tasks unification
+// — under the new model, what was a "Progress" task is a `compound` Task with
+// `isOrdered=true`, created via `CreateCompoundTaskInputSchema`. This schema
+// (CreateTaskInputSchema) only accepts NORMAL / COUNTING / COMPOUND.
 
 // ── steps array validation ────────────────────────────────────────────────────
 
 describe('CreateTaskInputSchema — steps array (CreateTaskStepInputSchema)', () => {
   it('rejects a step with an empty title', () => {
     const result = CreateTaskInputSchema.safeParse(
-      validProgress({
+      validWithSteps({
         steps: [{ title: '', type: TaskType.NORMAL }],
       })
     );
@@ -392,7 +345,7 @@ describe('CreateTaskInputSchema — steps array (CreateTaskStepInputSchema)', ()
 
   it('rejects a step with a title exceeding 200 characters', () => {
     const result = CreateTaskInputSchema.safeParse(
-      validProgress({
+      validWithSteps({
         steps: [{ title: 'E'.repeat(201), type: TaskType.NORMAL }],
       })
     );
@@ -401,7 +354,7 @@ describe('CreateTaskInputSchema — steps array (CreateTaskStepInputSchema)', ()
 
   it('rejects a step with an invalid type', () => {
     const result = CreateTaskInputSchema.safeParse(
-      validProgress({
+      validWithSteps({
         steps: [{ title: 'Valid step', type: 'unknown' }],
       })
     );
@@ -410,7 +363,7 @@ describe('CreateTaskInputSchema — steps array (CreateTaskStepInputSchema)', ()
 
   it('accepts a step with a positive integer maxCount', () => {
     const result = CreateTaskInputSchema.safeParse(
-      validProgress({
+      validWithSteps({
         steps: [{ title: 'Counted step', type: TaskType.COUNTING, action: 'Do', unit: 'times', maxCount: 5 }],
       })
     );
@@ -419,7 +372,7 @@ describe('CreateTaskInputSchema — steps array (CreateTaskStepInputSchema)', ()
 
   it('rejects a step with a non-positive maxCount', () => {
     const result = CreateTaskInputSchema.safeParse(
-      validProgress({
+      validWithSteps({
         steps: [{ title: 'Bad step', type: TaskType.COUNTING, maxCount: 0 }],
       })
     );
@@ -477,9 +430,12 @@ describe('CreateTaskStepInputSchema — happy path', () => {
     }
   });
 
-  it('accepts a PROGRESS type step (schema does not prevent recursion)', () => {
+  it('accepts a COMPOUND type step (schema does not prevent nesting)', () => {
+    // The schema doesn't constrain step.type beyond `nativeEnum(TaskType)`.
+    // Pre-unification this test pinned that PROGRESS was accepted; now the
+    // moral equivalent is COMPOUND.
     const result = CreateTaskStepInputSchema.safeParse(
-      validStep({ type: TaskType.PROGRESS })
+      validStep({ type: TaskType.COMPOUND })
     );
     expect(result.success).toBe(true);
   });

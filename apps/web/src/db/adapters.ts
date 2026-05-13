@@ -1,33 +1,68 @@
-import { TaskType, type Task, type TaskStep, type BoardTask } from '@oybc/shared';
+import {
+  TaskType,
+  type Task,
+  type TaskStep,
+  type CompoundChild,
+  evaluateCompound,
+} from '@oybc/shared';
 import type { TaskSquareData, SquareState } from '../components/interactiveTaskSquareUtils';
 
 /**
  * Converts a Task record (and its associated TaskStep records) to the
  * TaskSquareData shape expected by InteractiveTaskSquare.
  *
- * Steps are included for progress tasks so that `progressFraction` inside
- * InteractiveTaskSquare can compute the correct completion fraction using the
- * `completedStepIds` set derived from the BoardTask record.
+ * For compound tasks, pass `compoundChildren` (the pre-resolved children for
+ * this specific task) and `taskMap` so the children's completion states can be
+ * evaluated.
  *
  * @param task - The Task record to adapt
- * @param taskSteps - All task steps; filtered internally by task ID
+ * @param taskSteps - All task steps; filtered internally by task ID (used for legacy progress rows)
+ * @param compoundChildren - Compound tasks only: pre-resolved CompoundChild links for this task
+ * @param taskMap - Compound tasks only: id → Task lookup for child resolution
+ * @param childrenByCompound - Compound tasks only: full map used for recursive evaluateCompound
  * @returns TaskSquareData suitable for InteractiveTaskSquare
  */
-export function taskToSquareData(task: Task, taskSteps: TaskStep[]): TaskSquareData {
-  const type =
-    task.type === TaskType.COUNTING
-      ? 'counting'
-      : task.type === TaskType.PROGRESS
-        ? 'progress'
-        : 'normal';
+export function taskToSquareData(
+  task: Task,
+  taskSteps: TaskStep[],
+  compoundChildren?: CompoundChild[],
+  taskMap?: Record<string, Task>,
+  childrenByCompound?: Record<string, CompoundChild[]>,
+): TaskSquareData {
+  if (task.type === TaskType.COMPOUND) {
+    const links = compoundChildren ?? [];
+    const map = taskMap ?? {};
+    const cbMap = childrenByCompound ?? {};
+    const children = links.map((link) => {
+      const childTask = map[link.childTaskId];
+      if (!childTask) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
+      const isCompleted =
+        childTask.type === TaskType.COMPOUND
+          ? evaluateCompound(childTask, cbMap, map)
+          : childTask.isCompleted;
+      return { taskId: link.childTaskId, title: childTask.title, isCompleted };
+    });
 
-  const steps =
-    task.type === TaskType.PROGRESS
-      ? taskSteps
-          .filter((s) => s.taskId === task.id)
-          .sort((a, b) => a.stepIndex - b.stepIndex)
-          .map((s) => ({ id: s.id, label: s.title }))
-      : undefined;
+    return {
+      id: task.id,
+      title: task.title,
+      type: 'compound',
+      operator: task.operator ?? undefined,
+      threshold: task.threshold ?? undefined,
+      isOrdered: task.isOrdered ?? undefined,
+      children,
+    };
+  }
+
+  // Post-unification: only NORMAL / COUNTING reach this branch (compound
+  // is handled above). The legacy 'progress' SquareData type is dead — its
+  // role is taken by 'compound' with isOrdered=true.
+  const type = task.type === TaskType.COUNTING ? 'counting' : 'normal';
+
+  // `taskSteps` is intentionally unused in the post-unification path; the
+  // legacy progress branch consumed it. Kept as a parameter so call sites
+  // don't need to change all at once. Will be removed in a follow-up sweep.
+  void taskSteps;
 
   return {
     id: task.id,
@@ -36,21 +71,53 @@ export function taskToSquareData(task: Task, taskSteps: TaskStep[]): TaskSquareD
     action: task.action ?? undefined,
     maxCount: task.maxCount ?? undefined,
     unit: task.unit ?? undefined,
-    steps,
   };
 }
 
 /**
- * Converts a BoardTask record to the SquareState shape expected by
- * InteractiveTaskSquare.
+ * Derives the SquareState for a task square from the underlying Task record.
  *
- * @param bt - The BoardTask record to adapt
- * @returns SquareState with completedStepIds as a Set
+ * Under the unified compound model, BoardTask is placement-only. Completion
+ * state (isCompleted, currentCount) lives globally on Task. Progress-step
+ * completion (completedStepIds) is no longer tracked per-board — returns an
+ * empty Set for non-compound tasks.
+ *
+ * For compound tasks, pass `compoundChildren` and `taskMap` so the operator-
+ * aware completion can be evaluated via `evaluateCompound`.
+ *
+ * @param task - The Task record whose state to adapt
+ * @param compoundChildren - Compound tasks only: pre-resolved links for this task
+ * @param taskMap - Compound tasks only: id → Task lookup
+ * @param childrenByCompound - Compound tasks only: full map for recursive evaluation
+ * @returns SquareState suitable for InteractiveTaskSquare
  */
-export function boardTaskToSquareState(bt: BoardTask): SquareState {
+export function taskToSquareState(
+  task: Task,
+  _compoundChildren?: CompoundChild[],
+  taskMap?: Record<string, Task>,
+  childrenByCompound?: Record<string, CompoundChild[]>,
+): SquareState {
+  if (task.type === TaskType.COMPOUND) {
+    const cbMap = childrenByCompound ?? {};
+    const map = taskMap ?? {};
+    return {
+      isCompleted: evaluateCompound(task, cbMap, map),
+      currentCount: 0,
+      completedStepIds: new Set<string>(),
+    };
+  }
+
   return {
-    isCompleted: bt.isCompleted,
-    currentCount: bt.currentCount ?? 0,
-    completedStepIds: new Set(bt.completedStepIds ?? []),
+    isCompleted: task.isCompleted,
+    currentCount: task.currentCount ?? 0,
+    // Per-board step completion is not tracked under the unified model.
+    completedStepIds: new Set<string>(),
   };
 }
+
+/**
+ * @deprecated Use `taskToSquareState` instead.
+ * Kept for backward compatibility with callers outside the three Task 4.4
+ * files; will be removed once playground files are migrated in Task 4.5.
+ */
+export const boardTaskToSquareState = taskToSquareState;

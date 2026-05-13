@@ -9,10 +9,12 @@ import FirebaseFirestore
 private let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
     ("boards", "boards"),
     ("tasks", "tasks"),
-    ("taskSteps", "task_steps"),
+    ("taskSteps", "task_steps"),                      // legacy — kept so push can drain v7's DELETE sync ops
     ("boardTasks", "board_tasks"),
-    ("compositeTasks", "composite_tasks"),
-    ("compositeNodes", "composite_nodes"),
+    ("compositeTasks", "composite_tasks"),            // legacy — same
+    ("compositeNodes", "composite_nodes"),            // legacy — same
+    ("compoundChildren", "compound_children"),
+    ("recurringBoardTemplates", "recurring_board_templates"), // Phase 6.2
     // `users` is handled as the parent doc at `users/{userId}` (not a
     // subcollection child), but the GRDB table it writes back into is still
     // `users`, so it participates in the allowedGRDBTables whitelist.
@@ -27,7 +29,15 @@ private let allowedGRDBTables: Set<String> = Set(syncableCollections.map(\.grdbT
 /// authenticated user for these collections — defense-in-depth against
 /// a compromised peer that spoofs `userId` in its own writes.
 private let userScopedCollections: Set<String> = [
-    "boards", "tasks", "compositeTasks",
+    "boards", "tasks", "compositeTasks", "recurringBoardTemplates",
+]
+
+/// Collections whose GRDB tables were dropped in the v7 data migration.
+/// They stay in `syncableCollections` so the push path can drain DELETE
+/// sync ops for pre-migration rows (cleaning up Firestore), but the pull
+/// path must skip them — upserting into a dropped table would crash.
+private let legacyPullSkipCollections: Set<String> = [
+    "taskSteps", "compositeTasks", "compositeNodes",
 ]
 
 /// Validates the baseline sync-safety invariants that every pulled
@@ -396,7 +406,8 @@ final class SyncService: ObservableObject {
         // the subcollection loop because it lives at a different path.
         await processPullUserDocument(userId: userId, result: &result)
 
-        for collection in syncableCollections where collection.firestoreName != "users" {
+        for collection in syncableCollections where collection.firestoreName != "users"
+            && !legacyPullSkipCollections.contains(collection.firestoreName) {
             await processPullCollection(
                 collection: collection,
                 userId: userId,
@@ -684,41 +695,86 @@ final class SyncService: ObservableObject {
 
                 guard let remoteId = remoteData["id"] as? String else { continue }
 
-                // Look up the local record for conflict resolution.
-                let localData = try fetchLocalRecord(grdbTable: collection.grdbTable, id: remoteId)
+                // Wrap fetch + upsert + cascade in one transaction so a cascade
+                // failure rolls back the upsert. Mirrors the listener-path
+                // applyRemoteSubdoc structure.
+                var pullOutcome: (didWrite: Bool, kind: String)? = nil
+                var skipReason: String? = nil
+                try AppDatabase.shared.write { db in
+                    // CompoundChild parent-userId check (mirrors web + listener).
+                    if collection.firestoreName == "compoundChildren" {
+                        guard let compoundTaskId = remoteData["compoundTaskId"] as? String, !compoundTaskId.isEmpty else {
+                            skipReason = "missing compoundTaskId"
+                            return
+                        }
+                        let parentRow = try Row.fetchOne(
+                            db,
+                            sql: "SELECT userId FROM tasks WHERE id = ?",
+                            arguments: [compoundTaskId]
+                        )
+                        guard let parentRow = parentRow else {
+                            skipReason = "parent compound not yet present locally"
+                            return
+                        }
+                        let parentUserId: String? = parentRow["userId"]
+                        guard parentUserId == userId else {
+                            skipReason = "parent userId mismatch"
+                            return
+                        }
+                    }
 
-                if localData == nil {
-                    // New remote document — insert locally.
-                    try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
-                    result.pulled += 1
-                    recordEvent(.pulled)
-                    let msg = "Pulled \(collection.firestoreName)/\(remoteId) (new)"
-                    result.details.append(msg)
-                    log(msg)
-                    continue
+                    let localData = try fetchLocalRecord(db: db, grdbTable: collection.grdbTable, id: remoteId)
+
+                    var didWrite = false
+                    if localData == nil {
+                        try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                        didWrite = true
+                        pullOutcome = (true, "new")
+                    } else {
+                        let winner = resolveConflict(local: localData!, remote: remoteData)
+                        if winner == "remote" {
+                            try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                            didWrite = true
+                            let remoteV = remoteData["version"] as? Int ?? 0
+                            let localV = localData!["version"] as? Int ?? 0
+                            pullOutcome = (true, "remote v\(remoteV) > local v\(localV)")
+                        } else {
+                            let localV = localData!["version"] as? Int ?? 0
+                            let remoteV = remoteData["version"] as? Int ?? 0
+                            pullOutcome = (false, "local v\(localV) >= remote v\(remoteV)")
+                        }
+                    }
+
+                    // Pull cascade — same transaction as the upsert so a
+                    // cascade error rolls back the upsert.
+                    if didWrite {
+                        if collection.firestoreName == "tasks" {
+                            try runPullCascade(db: db, changedTaskId: remoteId)
+                        }
+                        if collection.firestoreName == "compoundChildren",
+                           let compoundTaskId = remoteData["compoundTaskId"] as? String {
+                            try runPullCascade(db: db, changedTaskId: compoundTaskId)
+                        }
+                    }
                 }
 
-                // Both exist — resolve conflict.
-                let winner = resolveConflict(local: localData!, remote: remoteData)
-
-                if winner == "remote" {
-                    try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
-                    result.pulled += 1
-                    recordEvent(.pulled)
-                    let remoteV = remoteData["version"] as? Int ?? 0
-                    let localV = localData!["version"] as? Int ?? 0
-                    let msg = "Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV))"
+                if let skip = skipReason {
+                    let msg = "Skipped \(collection.firestoreName)/\(remoteId): \(skip)"
                     result.details.append(msg)
                     log(msg)
-                } else {
-                    // Local-wins: no remote write applied; don't tick the
-                    // observability counter (matches web behaviour).
-                    result.conflicts += 1
-                    let localV = localData!["version"] as? Int ?? 0
-                    let remoteV = remoteData["version"] as? Int ?? 0
-                    let msg = "Kept local \(collection.firestoreName)/\(remoteId) (local v\(localV) >= remote v\(remoteV))"
-                    result.details.append(msg)
-                    log(msg)
+                } else if let outcome = pullOutcome {
+                    if outcome.didWrite {
+                        result.pulled += 1
+                        recordEvent(.pulled)
+                        let msg = "Pulled \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
+                        result.details.append(msg)
+                        log(msg)
+                    } else {
+                        result.conflicts += 1
+                        let msg = "Kept local \(collection.firestoreName)/\(remoteId) (\(outcome.kind))"
+                        result.details.append(msg)
+                        log(msg)
+                    }
                 }
             }
         } catch {
@@ -773,25 +829,32 @@ final class SyncService: ObservableObject {
     ///   - id: The primary key of the record.
     /// - Returns: The record as a dictionary, or `nil` if not found.
     private func fetchLocalRecord(grdbTable: String, id: String) throws -> [String: Any]? {
+        return try AppDatabase.shared.read { db in
+            try fetchLocalRecord(db: db, grdbTable: grdbTable, id: id)
+        }
+    }
+
+    /// Reads against an existing GRDB transaction so callers can compose a
+    /// fetch with subsequent writes (e.g. pull-path upsert + cascade) inside
+    /// a single atomic block.
+    private func fetchLocalRecord(db: Database, grdbTable: String, id: String) throws -> [String: Any]? {
         guard allowedGRDBTables.contains(grdbTable) else {
             throw SyncError.invalidPayload("Unknown table: \(grdbTable)")
         }
-        return try AppDatabase.shared.read { db in
-            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM \"\(grdbTable)\" WHERE id = ?", arguments: [id]) else {
-                return nil
-            }
-            var dict: [String: Any] = [:]
-            for (column, dbValue) in zip(row.columnNames, row.databaseValues) {
-                switch dbValue.storage {
-                case .null:             dict[column] = NSNull()
-                case .int64(let i):     dict[column] = i
-                case .double(let d):    dict[column] = d
-                case .string(let s):    dict[column] = s
-                case .blob(let b):      dict[column] = b.base64EncodedString()
-                }
-            }
-            return dict
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM \"\(grdbTable)\" WHERE id = ?", arguments: [id]) else {
+            return nil
         }
+        var dict: [String: Any] = [:]
+        for (column, dbValue) in zip(row.columnNames, row.databaseValues) {
+            switch dbValue.storage {
+            case .null:             dict[column] = NSNull()
+            case .int64(let i):     dict[column] = i
+            case .double(let d):    dict[column] = d
+            case .string(let s):    dict[column] = s
+            case .blob(let b):      dict[column] = b.base64EncodedString()
+            }
+        }
+        return dict
     }
 
     /// Upserts a remote Firestore document into a local GRDB table.
@@ -805,6 +868,15 @@ final class SyncService: ObservableObject {
     ///   - grdbTable: The GRDB table name (e.g. `"tasks"`).
     ///   - data: The Firestore document dictionary.
     private func upsertLocalRecord(grdbTable: String, data: [String: Any]) throws {
+        try AppDatabase.shared.write { db in
+            try upsertLocalRecord(db: db, grdbTable: grdbTable, data: data)
+        }
+    }
+
+    /// Performs the upsert against an existing GRDB write transaction. Lets
+    /// callers compose multiple writes (e.g. upsert + pull cascade) into a
+    /// single atomic block so a downstream failure rolls back everything.
+    private func upsertLocalRecord(db: Database, grdbTable: String, data: [String: Any]) throws {
         guard allowedGRDBTables.contains(grdbTable) else {
             throw SyncError.invalidPayload("Unknown table: \(grdbTable)")
         }
@@ -869,9 +941,7 @@ final class SyncService: ObservableObject {
             return "\(val!)"
         }
 
-        try AppDatabase.shared.write { db in
-            try db.execute(sql: sql, arguments: StatementArguments(values))
-        }
+        try db.execute(sql: sql, arguments: StatementArguments(values))
     }
 
     // MARK: - Sync Queue Helpers
@@ -1114,7 +1184,8 @@ extension SyncService {
         let watermarkDate = formatter.date(from: watermarkString) ?? Date(timeIntervalSince1970: 0)
         let watermarkTs = Timestamp(date: watermarkDate)
 
-        for collection in syncableCollections where collection.firestoreName != "users" {
+        for collection in syncableCollections where collection.firestoreName != "users"
+            && !legacyPullSkipCollections.contains(collection.firestoreName) {
             let colRef = db.collection("users").document(userId).collection(collection.firestoreName)
             let q = colRef.whereField("_syncedAt", isGreaterThan: watermarkTs)
             let listener = q.addSnapshotListener { [weak self] snapshot, error in
@@ -1192,24 +1263,169 @@ extension SyncService {
 
         guard let remoteId = remoteData["id"] as? String else { return }
         do {
-            let localData = try fetchLocalRecord(grdbTable: collection.grdbTable, id: remoteId)
-            if localData == nil {
-                try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
-                recordEvent(.pulled)
-                log("Pulled \(collection.firestoreName)/\(remoteId) (new, listener)")
-                return
-            }
-            let winner = resolveConflict(local: localData!, remote: remoteData)
-            if winner == "remote" {
-                try upsertLocalRecord(grdbTable: collection.grdbTable, data: remoteData)
-                recordEvent(.pulled)
-                let remoteV = remoteData["version"] as? Int ?? 0
-                let localV = localData!["version"] as? Int ?? 0
-                log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
+            // Wrap fetch + upsert + cascade in one transaction so a cascade
+            // failure rolls back the upsert. Previously the cascade ran in a
+            // separate write tx and its catch swallowed errors — leaving the
+            // task applied locally but board stats stale forever, with no
+            // safety net to reconcile.
+            try AppDatabase.shared.write { db in
+                // CompoundChild has no userId column — children scope through
+                // their parent compound's userId. A crafted Firestore doc with
+                // a compoundTaskId pointing at another user's compound would
+                // land locally with no direct check. Resolve the parent and
+                // skip on mismatch (mirrors web).
+                if collection.firestoreName == "compoundChildren" {
+                    guard let compoundTaskId = remoteData["compoundTaskId"] as? String, !compoundTaskId.isEmpty else {
+                        log("Listener skipped compoundChildren/\(remoteId): missing compoundTaskId")
+                        return
+                    }
+                    let parentRow = try Row.fetchOne(
+                        db,
+                        sql: "SELECT userId FROM tasks WHERE id = ?",
+                        arguments: [compoundTaskId]
+                    )
+                    guard let parentRow = parentRow else {
+                        // No local parent yet — could be a cross-device race.
+                        // Defer; safety-net pull retries.
+                        log("Listener skipped compoundChildren/\(remoteId): parent compound not yet present locally")
+                        return
+                    }
+                    let parentUserId: String? = parentRow["userId"]
+                    guard parentUserId == authenticatedUserId else {
+                        log("Listener skipped compoundChildren/\(remoteId): parent userId mismatch")
+                        return
+                    }
+                }
+
+                let localData = try fetchLocalRecord(db: db, grdbTable: collection.grdbTable, id: remoteId)
+                var didWrite = false
+                if localData == nil {
+                    try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                    didWrite = true
+                    log("Pulled \(collection.firestoreName)/\(remoteId) (new, listener)")
+                } else {
+                    let winner = resolveConflict(local: localData!, remote: remoteData)
+                    if winner == "remote" {
+                        try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                        didWrite = true
+                        let remoteV = remoteData["version"] as? Int ?? 0
+                        let localV = localData!["version"] as? Int ?? 0
+                        log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
+                    }
+                }
+                // Pull cascade — runs in the same transaction as the upsert so
+                // a cascade error rolls back the upsert. Task.version is NOT
+                // bumped — the pulled value is authoritative.
+                if didWrite {
+                    if collection.firestoreName == "tasks" {
+                        try runPullCascade(db: db, changedTaskId: remoteId)
+                    }
+                    if collection.firestoreName == "compoundChildren",
+                       let compoundTaskId = remoteData["compoundTaskId"] as? String {
+                        try runPullCascade(db: db, changedTaskId: compoundTaskId)
+                    }
+                    recordEvent(.pulled)
+                }
             }
         } catch {
             log("Listener apply failed for \(collection.firestoreName)/\(remoteId): \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Pull Cascade
+
+    /// Run the derivation pass for a Task whose state just changed via pull.
+    ///
+    /// Recomputes board stats + enqueues board sync for every board affected
+    /// by this task (directly or via a compound). Does NOT bump Task.version —
+    /// the pulled value is authoritative.
+    ///
+    /// **Throws** on any cascade failure so the caller's enclosing transaction
+    /// rolls back the upserted row. Without this, a cascade failure would leave
+    /// the task applied locally but board stats stale forever — a silent
+    /// divergence with no safety net.
+    ///
+    /// - Parameters:
+    ///   - db: GRDB transaction in which to perform the cascade. Caller is
+    ///         responsible for the enclosing `write { db in ... }` block.
+    ///   - changedTaskId: The id of the Task that was just upserted.
+    private func runPullCascade(db: Database, changedTaskId: String) throws {
+        // Fetch lookups needed by DerivationPass.
+        let allChildren: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allTasks: [Task] = try Task.fetchAll(db)
+        // Phase 6.3 — same rationale as bpvRunCrossBoardCascade in
+        // BoardPlayView: feed the workspace's boards into the
+        // derivation pass so the specific-board / recurring-template
+        // achievement branches evaluate against real cross-board state
+        // rather than degrading to "incomplete".
+        let allBoards: [Board] = try Board.fetchAll(db)
+
+        var taskById: [String: Task] = [:]
+        for t in allTasks { taskById[t.id] = t }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allChildren {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+
+        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: changedTaskId,
+            children: allChildren
+        )
+        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+            changedTaskId: changedTaskId,
+            parentCompounds: parentCompounds,
+            boardTasks: allBoardTasks
+        )
+
+        for boardId in affectedBoardIds {
+            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+            let update = DerivationPass.computeBoardStatsUpdate(
+                board: board,
+                boardTasksOnBoard: boardTasksOnBoard,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoards
+            )
+
+            // Write board stats. Bump board.version (local write), NOT Task.version.
+            let now = AppDatabase.currentTimestamp()
+            let completedLineIdsJson = encodePullCascadeJSONArray(update.completedLineIds)
+            try db.execute(sql: """
+                UPDATE boards
+                SET completedTasks = ?, linesCompleted = ?, completedLineIds = ?,
+                    updatedAt = ?, version = version + 1
+                WHERE id = ?
+                """, arguments: [
+                    update.completedTasks,
+                    update.linesCompleted,
+                    completedLineIdsJson,
+                    now,
+                    boardId
+                ])
+
+            // Enqueue board sync so the updated stats reach Firestore.
+            if let updatedBoard = try Board.fetchOne(db, key: boardId) {
+                let payload = try JSONEncoder().encode(updatedBoard)
+                let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
+                try db.execute(sql: """
+                    INSERT INTO sync_queue
+                        (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                    VALUES (?, 'boards', ?, 'update', ?, 'pending', 0, ?, 0)
+                    """, arguments: [UUID().uuidString, boardId, payloadStr, now])
+            }
+        }
+    }
+
+    /// JSON-encode a `[String]` array to a compact JSON string.
+    /// Used exclusively by `runPullCascade` to serialise `completedLineIds`.
+    private func encodePullCascadeJSONArray(_ arr: [String]) -> String {
+        guard let data = try? JSONEncoder().encode(arr),
+              let s = String(data: data, encoding: .utf8) else { return "[]" }
+        return s
     }
 
     // MARK: - Safety-net timer

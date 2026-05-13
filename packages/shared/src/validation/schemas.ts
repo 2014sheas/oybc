@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus, OperatorType } from '../constants/enums';
+import { AchievementTrigger, BoardStatus, TaskType, Timeframe, CenterSquareType, SyncOperationType, SyncStatus, OperatorType } from '../constants/enums';
 
 /**
  * Validation schemas using Zod
@@ -86,6 +86,9 @@ export const BoardSchema = z.object({
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
+  // Phase 6.2 provenance — additive, optional. Pre-6.2 peers without
+  // this field decode unchanged; the spawn path sets it on insert.
+  spawnedFromTemplateId: z.string().uuid().optional(),
 });
 
 // ===== Task Schemas =====
@@ -98,6 +101,79 @@ export const CreateTaskStepInputSchema = z.object({
   maxCount: z.number().int().positive().optional(),
 });
 
+/**
+ * Phase 6.3 — `referencedBoardId` and `referencedTemplateId` rules on Task:
+ *   1. Both unset OR exactly one set; never both. (Mutually exclusive.)
+ *   2. When `type === ACHIEVEMENT`: exactly one MUST be set.
+ *   3. When `type !== ACHIEVEMENT`: neither may be set.
+ * `derivationPass.ts` has a defensive precedence rule (`referencedBoardId`
+ * wins) for the case where bad data slips through anyway.
+ */
+const referencedFieldsOnTaskMutuallyExclusive = (data: {
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+}): boolean => !(data.referencedBoardId && data.referencedTemplateId);
+
+const achievementRequiresReference = (data: {
+  type?: TaskType;
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+}): boolean => {
+  if (data.type !== TaskType.ACHIEVEMENT) return true;
+  // Treat `null` as "explicitly cleared" — same as absent. The XOR demands
+  // *some* truthy value on one side.
+  const hasBoard = data.referencedBoardId != null && data.referencedBoardId !== '';
+  const hasTpl = data.referencedTemplateId != null && data.referencedTemplateId !== '';
+  return hasBoard || hasTpl;
+};
+
+const referenceFieldsForbiddenOnNonAchievement = (data: {
+  type?: TaskType;
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+}): boolean => {
+  if (data.type === undefined || data.type === TaskType.ACHIEVEMENT) return true;
+  return !(data.referencedBoardId || data.referencedTemplateId);
+};
+
+/**
+ * Phase 6.3 — `achievementTrigger` is only valid on ACHIEVEMENT tasks.
+ * (Setting it on NORMAL/COUNTING/COMPOUND is rejected.) When `type` is
+ * absent from the patch, skip the check — helper-layer re-validation
+ * covers the post-merge state.
+ */
+const triggerForbiddenOnNonAchievement = (data: {
+  type?: TaskType;
+  achievementTrigger?: AchievementTrigger | null;
+}): boolean => {
+  if (data.type === undefined || data.type === TaskType.ACHIEVEMENT) return true;
+  return data.achievementTrigger == null;
+};
+
+/**
+ * Phase 6.3 — `requiredCount` is only meaningful on ACHIEVEMENT tasks
+ * in recurring-template mode. Specific-board mode and non-ACHIEVEMENT
+ * types must leave it unset. Recurring-template ACHIEVEMENT MUST set
+ * it (positive integer; the count field itself constrains > 0 via the
+ * schema). When `type` is absent from the patch, skip — helper layer
+ * re-validates merged state.
+ */
+const requiredCountRulesOk = (data: {
+  type?: TaskType;
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+  requiredCount?: number | null;
+}): boolean => {
+  if (data.type === undefined) return true;
+  if (data.type !== TaskType.ACHIEVEMENT) return data.requiredCount == null;
+  // ACHIEVEMENT: must be set iff template mode.
+  if (data.referencedTemplateId != null && data.referencedTemplateId !== '') {
+    return data.requiredCount != null && data.requiredCount > 0;
+  }
+  // specific-board mode or no reference yet: requiredCount must be unset.
+  return data.requiredCount == null;
+};
+
 export const CreateTaskInputSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
@@ -106,6 +182,10 @@ export const CreateTaskInputSchema = z.object({
   unit: z.string().max(50).optional(),
   maxCount: z.number().int().positive().optional(),
   steps: z.array(CreateTaskStepInputSchema).optional(),
+  referencedBoardId: z.string().uuid().optional(),
+  referencedTemplateId: z.string().uuid().optional(),
+  achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
+  requiredCount: z.number().int().positive().optional(),
 }).refine(
   (data) => {
     // Counting tasks must have action, unit, and maxCount
@@ -116,20 +196,110 @@ export const CreateTaskInputSchema = z.object({
   },
   { message: 'Counting tasks must have action, unit, and maxCount' }
 ).refine(
-  (data) => {
-    // Progress tasks must have steps
-    if (data.type === TaskType.PROGRESS) {
-      return data.steps && data.steps.length > 0;
-    }
-    return true;
-  },
-  { message: 'Progress tasks must have at least one step' }
+  referencedFieldsOnTaskMutuallyExclusive,
+  { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
+).refine(
+  achievementRequiresReference,
+  { message: "Achievement tasks must set exactly one of referencedBoardId or referencedTemplateId" },
+).refine(
+  referenceFieldsForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
+).refine(
+  triggerForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set achievementTrigger" },
+).refine(
+  requiredCountRulesOk,
+  { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
 );
+// Note: post-unification, Progress tasks are created via
+// `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
+// only accepts NORMAL / COUNTING / COMPOUND / ACHIEVEMENT — no Progress branch needed.
 
 export const UpdateTaskInputSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
-});
+  /**
+   * Phase 6.3 — `type` is optional on update because callers usually
+   * patch other fields and leave the type alone. When present, the
+   * refinements below check `referencedBoardId` / `referencedTemplateId`
+   * against the patched type. When absent, the refinements skip the
+   * type-match check (the helper layer is expected to fetch the
+   * existing row and re-validate against its post-merge state — see
+   * `updateTask` in `apps/web/src/db/operations/tasks.ts`).
+   */
+  type: z.nativeEnum(TaskType).optional(),
+  // `null` sentinel clears the field; `undefined` leaves it untouched.
+  referencedBoardId: z.string().uuid().nullable().optional(),
+  referencedTemplateId: z.string().uuid().nullable().optional(),
+  achievementTrigger: z.nativeEnum(AchievementTrigger).nullable().optional(),
+  requiredCount: z.number().int().positive().nullable().optional(),
+}).refine(
+  referencedFieldsOnTaskMutuallyExclusive,
+  { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
+).refine(
+  achievementRequiresReference,
+  { message: "Achievement tasks must set exactly one of referencedBoardId or referencedTemplateId" },
+).refine(
+  referenceFieldsForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
+).refine(
+  triggerForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set achievementTrigger" },
+).refine(
+  requiredCountRulesOk,
+  { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
+);
+
+// ===== Compound creation input =====
+
+export const AutoCreateCompoundChildTaskSchema = z.object({
+  type: z.enum([TaskType.NORMAL, TaskType.COUNTING]),
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  action: z.string().min(1).max(50).optional(),
+  unit: z.string().min(1).max(50).optional(),
+  maxCount: z.number().int().positive().optional(),
+}).refine(
+  (data) => {
+    if (data.type === TaskType.COUNTING) {
+      return data.action !== undefined && data.unit !== undefined && data.maxCount !== undefined;
+    }
+    return true;
+  },
+  { message: 'Counting child tasks require action, unit, and maxCount' },
+);
+
+export const CreateCompoundChildEntrySchema = z.object({
+  childTaskId: z.string().uuid().optional(),
+  autoCreate: AutoCreateCompoundChildTaskSchema.optional(),
+}).refine(
+  (data) => (data.childTaskId !== undefined) !== (data.autoCreate !== undefined),
+  { message: 'CreateCompoundChildEntry must specify exactly one of childTaskId or autoCreate' },
+);
+
+export const CreateCompoundTaskInputSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  operator: z.nativeEnum(OperatorType),
+  threshold: z.number().int().positive().optional(),
+  isOrdered: z.boolean(),
+  children: z.array(CreateCompoundChildEntrySchema).min(2),
+}).refine(
+  (data) => {
+    if (data.operator === OperatorType.M_OF_N) {
+      return data.threshold !== undefined && data.threshold >= 1 && data.threshold <= data.children.length;
+    }
+    return true;
+  },
+  { message: "operator='M_OF_N' requires threshold in [1, children.length]" },
+).refine(
+  (data) => {
+    // No duplicate childTaskIds.
+    const ids = data.children.map((c) => c.childTaskId).filter((id): id is string => id !== undefined);
+    return new Set(ids).size === ids.length;
+  },
+  { message: 'Compound children must not contain duplicate childTaskId references' },
+);
 
 export const TaskProgressCounterSchema = z.object({
   counterId: z.string().uuid(),
@@ -146,18 +316,82 @@ export const TaskSchema = z.object({
   action: z.string().max(50).optional(),
   unit: z.string().max(50).optional(),
   maxCount: z.number().int().positive().optional(),
+  // Compound task fields
+  operator: z.nativeEnum(OperatorType).optional(),
+  threshold: z.number().int().positive().optional(),
+  isOrdered: z.boolean().optional(),
+  // Phase 6.3 — Achievement-task cross-board references. Only meaningful
+  // when `type === ACHIEVEMENT`. Mutually exclusive and required-XOR'd on
+  // achievement tasks; forbidden on every other type. The refinements at
+  // the bottom of the schema enforce all three rules — when a remote
+  // payload arrives via the sync pull, the pull validator (PR Phase 3.5)
+  // calls this schema and rejects bad rows before they hit the local DB.
+  referencedBoardId: z.string().uuid().optional(),
+  referencedTemplateId: z.string().uuid().optional(),
+  // Phase 6.3 — completion trigger. Optional at the schema layer so
+  // non-ACHIEVEMENT rows can omit the field; derivation defaults to
+  // `GREENLOG` at read time when undefined (matches the pre-trigger
+  // shipped behavior + the iOS Codable defensive decode).
+  achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
+  // Phase 6.3 — required count of in-window spawns hitting the
+  // trigger. Required (positive integer) when `referencedTemplateId`
+  // is set, forbidden otherwise. Enforced by the `requiredCountRulesOk`
+  // refinement below.
+  requiredCount: z.number().int().positive().optional(),
   parentStepId: z.string().uuid().optional(),
   parentStepIndex: z.number().int().min(0).optional(),
   progressCounters: z.array(TaskProgressCounterSchema).optional(),
   totalCompletions: z.number().int().min(0),
   totalInstances: z.number().int().min(0),
+  // Completion tracking fields (live on Task, not BoardTask).
+  // `isCompleted` defaults to `false` on decode so pre-unification Firestore
+  // docs (written before global-completion landed) still pass pull validation
+  // on a fresh device. Mirrors iOS Task.swift's `decodeIfPresent ?? false`
+  // defensive decode at line 170. Without this default, first-sync against a
+  // project with stale remote docs would skip every legacy Task.
+  isCompleted: z.boolean().default(false),
+  completedAt: z.string().datetime().optional(),
+  currentCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
-});
+}).refine(
+  (data) => {
+    // Compound tasks must have an operator.
+    if (data.type === TaskType.COMPOUND) {
+      return data.operator !== undefined;
+    }
+    return true;
+  },
+  { message: "Task with type='compound' must have an operator" },
+).refine(
+  (data) => {
+    // M_OF_N operator requires a threshold.
+    if (data.operator === OperatorType.M_OF_N) {
+      return data.threshold !== undefined;
+    }
+    return true;
+  },
+  { message: "Task with operator='M_OF_N' must have a threshold" },
+).refine(
+  referencedFieldsOnTaskMutuallyExclusive,
+  { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
+).refine(
+  achievementRequiresReference,
+  { message: "Achievement tasks must set exactly one of referencedBoardId or referencedTemplateId" },
+).refine(
+  referenceFieldsForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set referencedBoardId or referencedTemplateId" },
+).refine(
+  triggerForbiddenOnNonAchievement,
+  { message: "Only ACHIEVEMENT tasks may set achievementTrigger" },
+).refine(
+  requiredCountRulesOk,
+  { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
+);
 
 export const TaskStepSchema = z.object({
   id: z.string().uuid(),
@@ -178,6 +412,13 @@ export const TaskStepSchema = z.object({
 });
 
 // ===== BoardTask Schemas =====
+//
+// Phase 6.3 — BoardTask is a pure placement record. The pre-refactor
+// achievement-square fields (`isAchievementSquare`, `achievementType`,
+// `achievementCount`, `achievementTimeframe`, `achievementProgress`,
+// `referencedBoardId`, `referencedTemplateId`) moved to `Task` as part
+// of the ACHIEVEMENT-as-TaskType refactor — placements just record where
+// the task lives on a board, the rest is derived from the Task itself.
 
 export const CreateBoardTaskInputSchema = z.object({
   boardId: z.string().uuid(),
@@ -185,17 +426,6 @@ export const CreateBoardTaskInputSchema = z.object({
   row: z.number().int().min(0),
   col: z.number().int().min(0),
   isCenter: z.boolean(),
-  isAchievementSquare: z.boolean().optional(),
-  achievementType: z.enum(['bingo', 'full_completion']).optional(),
-  achievementCount: z.number().int().positive().optional(),
-  achievementTimeframe: z.nativeEnum(Timeframe).optional(),
-});
-
-export const UpdateBoardTaskCompletionInputSchema = z.object({
-  isCompleted: z.boolean(),
-  currentCount: z.number().int().min(0).optional(),
-  completedStepIds: z.array(z.string().uuid()).optional(),
-  achievementProgress: z.number().int().min(0).optional(),
 });
 
 export const BoardTaskSchema = z.object({
@@ -205,20 +435,39 @@ export const BoardTaskSchema = z.object({
   row: z.number().int().min(0),
   col: z.number().int().min(0),
   isCenter: z.boolean(),
-  isCompleted: z.boolean(),
-  completedAt: z.string().datetime().optional(),
-  currentCount: z.number().int().min(0).optional(),
-  completedStepIds: z.array(z.string().uuid()).optional(),
-  isAchievementSquare: z.boolean().optional(),
-  achievementType: z.enum(['bingo', 'full_completion']).optional(),
-  achievementCount: z.number().int().positive().optional(),
-  achievementTimeframe: z.nativeEnum(Timeframe).optional(),
-  achievementProgress: z.number().int().min(0).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
 });
+
+// ===== CompoundChild Schemas =====
+
+const compoundChildNoSelfReference = (data: { compoundTaskId: string; childTaskId: string }) =>
+  data.compoundTaskId !== data.childTaskId;
+
+const compoundChildSelfReferenceMessage = {
+  message: 'CompoundChild must not self-reference (compoundTaskId == childTaskId)',
+};
+
+export const CreateCompoundChildInputSchema = z.object({
+  compoundTaskId: z.string().uuid(),
+  childTaskId: z.string().uuid(),
+  childIndex: z.number().int().nonnegative(),
+}).refine(compoundChildNoSelfReference, compoundChildSelfReferenceMessage);
+
+export const CompoundChildSchema = z.object({
+  id: z.string().uuid(),
+  compoundTaskId: z.string().uuid(),
+  childTaskId: z.string().uuid(),
+  childIndex: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+}).refine(compoundChildNoSelfReference, compoundChildSelfReferenceMessage);
 
 // ===== ProgressCounter Schemas =====
 
@@ -404,6 +653,113 @@ export const CompositeNodeSchema = z.object({
   deletedAt: z.string().datetime().optional(),
 });
 
+// ===== RecurringBoardTemplate Schemas (Phase 6.2) =====
+
+/**
+ * Templates exclude `Timeframe.CUSTOM` (no computed window) and
+ * `CenterSquareType.CHOSEN` (MVP scope — see types/recurringBoardTemplate.ts).
+ * The schema enforces both at the field level so a malformed pull payload
+ * is rejected before it reaches the spawn driver.
+ */
+const RecurringTimeframeSchema = z.union([
+  z.literal(Timeframe.DAILY),
+  z.literal(Timeframe.WEEKLY),
+  z.literal(Timeframe.MONTHLY),
+  z.literal(Timeframe.YEARLY),
+]);
+
+const RecurringCenterSquareTypeSchema = z.union([
+  z.literal(CenterSquareType.FREE),
+  z.literal(CenterSquareType.CUSTOM_FREE),
+  z.literal(CenterSquareType.NONE),
+]);
+
+export const CreateRecurringBoardTemplateInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  timeframe: RecurringTimeframeSchema,
+  boardSize: BoardSizeSchema,
+  centerSquareType: RecurringCenterSquareTypeSchema,
+  centerSquareCustomName: z.string().max(100).optional(),
+  isRandomized: z.boolean(),
+  seedTaskIds: z.array(z.string().uuid()).min(1),
+  isActive: z.boolean(),
+}).refine(
+  (data) => {
+    if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
+      // Trim before checking length so a whitespace-only label
+      // ('   ') doesn't slip through. The form input layer also
+      // trims, but this is the schema-level defense.
+      return (
+        data.centerSquareCustomName !== undefined &&
+        data.centerSquareCustomName.trim().length > 0
+      );
+    }
+    return true;
+  },
+  { message: 'centerSquareCustomName is required (and must be non-blank) when centerSquareType is custom_free' },
+).refine(
+  (data) => {
+    // No duplicate seedTaskIds — each pool entry must reference a distinct
+    // Task. The spawn path treats duplicates as an error class equivalent
+    // to "pool too small" (a 25-pool with 5 dups only places 20 unique tasks).
+    return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
+  },
+  { message: 'seedTaskIds must not contain duplicates' },
+);
+
+export const UpdateRecurringBoardTemplateInputSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  timeframe: RecurringTimeframeSchema.optional(),
+  boardSize: BoardSizeSchema.optional(),
+  centerSquareType: RecurringCenterSquareTypeSchema.optional(),
+  centerSquareCustomName: z.string().max(100).optional(),
+  isRandomized: z.boolean().optional(),
+  seedTaskIds: z.array(z.string().uuid()).min(1).optional(),
+  isActive: z.boolean().optional(),
+}).refine(
+  (data) => {
+    if (data.seedTaskIds === undefined) return true;
+    return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
+  },
+  { message: 'seedTaskIds must not contain duplicates' },
+).refine(
+  (data) => {
+    // When a partial update sets `centerSquareType` to CUSTOM_FREE, it must
+    // also include a non-blank `centerSquareCustomName` in the same patch.
+    // Otherwise a syncing peer or malicious client could land a
+    // CUSTOM_FREE template with no label, and the spawn path would create
+    // boards whose center cell has no displayable text. The schema can't
+    // see the existing record's name, so the conservative call is to
+    // require both fields to travel together — the form already does so.
+    if (data.centerSquareType !== CenterSquareType.CUSTOM_FREE) return true;
+    return (
+      data.centerSquareCustomName !== undefined &&
+      data.centerSquareCustomName.trim().length > 0
+    );
+  },
+  { message: 'Setting centerSquareType to custom_free requires a non-blank centerSquareCustomName in the same patch' },
+);
+
+export const RecurringBoardTemplateSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  name: z.string().min(1).max(120),
+  timeframe: RecurringTimeframeSchema,
+  boardSize: BoardSizeSchema,
+  centerSquareType: RecurringCenterSquareTypeSchema,
+  centerSquareCustomName: z.string().max(100).optional(),
+  isRandomized: z.boolean(),
+  seedTaskIds: z.array(z.string().uuid()),
+  lastSpawnedWindowKey: z.string().nullable(),
+  isActive: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+});
+
 // ===== User Schema =====
 
 export const WeekStartDaySchema = z.union([z.literal('monday'), z.literal('sunday')]);
@@ -427,6 +783,14 @@ export const UserPreferencesSchema = z.object({
   defaultRandomize: z.boolean(),
   defaultCenterCustomName: z.string().max(100),
   theme: ThemePreferenceSchema,
+  // Recurring boards (Phase 6.1): optional for forward-compat with older peers
+  // that wrote their user doc before these fields existed. mergeUserPreferences
+  // fills in the post-6.1d `true` defaults on the pull path; local writes
+  // always include them (DEFAULT_USER_PREFERENCES has them set to true).
+  recurringDailyEnabled: z.boolean().optional(),
+  recurringWeeklyEnabled: z.boolean().optional(),
+  recurringMonthlyEnabled: z.boolean().optional(),
+  recurringYearlyEnabled: z.boolean().optional(),
 });
 
 export const UserSchema = z.object({

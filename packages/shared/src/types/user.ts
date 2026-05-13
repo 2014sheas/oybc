@@ -28,6 +28,17 @@ export interface UserPreferences {
   defaultRandomize: boolean;
   defaultCenterCustomName: string;
   theme: ThemePreference;
+  // Recurring boards (Phase 6.1) — when enabled, the Boards and Create tabs
+  // surface a prominent "core boards" section inviting the user to create a
+  // board for the current window. Default `true` so the feature is
+  // discoverable on a fresh account (opt-out semantics — see
+  // DEFAULT_USER_PREFERENCES below). Users who explicitly toggled them off
+  // keep their explicit choice via the forward-compat decoder in
+  // `mergeUserPreferences`.
+  recurringDailyEnabled: boolean;
+  recurringWeeklyEnabled: boolean;
+  recurringMonthlyEnabled: boolean;
+  recurringYearlyEnabled: boolean;
 }
 
 /**
@@ -41,6 +52,15 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   defaultRandomize: true,
   defaultCenterCustomName: '',
   theme: 'system',
+  // Phase 6.1: default to true so the core boards (daily/weekly/monthly/
+  // yearly) are immediately discoverable on a fresh account. Per the
+  // forward-compat decoder, users who already explicitly toggled these
+  // to false on the prefs page keep their explicit choice — only users
+  // whose stored prefs are missing these fields auto-upgrade to true.
+  recurringDailyEnabled: true,
+  recurringWeeklyEnabled: true,
+  recurringMonthlyEnabled: true,
+  recurringYearlyEnabled: true,
 };
 
 /**
@@ -108,6 +128,26 @@ export function mergeUserPreferences(
       ? partial.theme
       : DEFAULT_USER_PREFERENCES.theme;
 
+  const recurringDailyEnabled: boolean =
+    typeof partial.recurringDailyEnabled === 'boolean'
+      ? partial.recurringDailyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringDailyEnabled;
+
+  const recurringWeeklyEnabled: boolean =
+    typeof partial.recurringWeeklyEnabled === 'boolean'
+      ? partial.recurringWeeklyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringWeeklyEnabled;
+
+  const recurringMonthlyEnabled: boolean =
+    typeof partial.recurringMonthlyEnabled === 'boolean'
+      ? partial.recurringMonthlyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringMonthlyEnabled;
+
+  const recurringYearlyEnabled: boolean =
+    typeof partial.recurringYearlyEnabled === 'boolean'
+      ? partial.recurringYearlyEnabled
+      : DEFAULT_USER_PREFERENCES.recurringYearlyEnabled;
+
   return {
     weekStartDay,
     defaultBoardSize,
@@ -116,6 +156,10 @@ export function mergeUserPreferences(
     defaultRandomize,
     defaultCenterCustomName,
     theme,
+    recurringDailyEnabled,
+    recurringWeeklyEnabled,
+    recurringMonthlyEnabled,
+    recurringYearlyEnabled,
   };
 }
 

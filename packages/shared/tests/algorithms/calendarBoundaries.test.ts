@@ -7,6 +7,7 @@ import {
   isWithinTimeframe,
   isTimeframeExpired,
   formatTimeframeLabel,
+  formatRecurringCadence,
 } from '../../src/algorithms/calendarBoundaries';
 import { Timeframe } from '../../src/constants/enums';
 
@@ -291,5 +292,25 @@ describe('formatTimeframeLabel', () => {
   it('formats custom as "Custom"', () => {
     const label = formatTimeframeLabel(Timeframe.CUSTOM, '2026-03-01T00:00:00.000');
     expect(label).toBe('Custom');
+  });
+});
+
+// ─── formatRecurringCadence ──────────────────────────────────────────────────
+
+describe('formatRecurringCadence', () => {
+  it('returns "Every day" for DAILY', () => {
+    expect(formatRecurringCadence(Timeframe.DAILY)).toBe('Every day');
+  });
+  it('returns "Every week" for WEEKLY', () => {
+    expect(formatRecurringCadence(Timeframe.WEEKLY)).toBe('Every week');
+  });
+  it('returns "Every month" for MONTHLY', () => {
+    expect(formatRecurringCadence(Timeframe.MONTHLY)).toBe('Every month');
+  });
+  it('returns "Every year" for YEARLY', () => {
+    expect(formatRecurringCadence(Timeframe.YEARLY)).toBe('Every year');
+  });
+  it('returns "Custom" for CUSTOM (defensive — production excludes it)', () => {
+    expect(formatRecurringCadence(Timeframe.CUSTOM)).toBe('Custom');
   });
 });

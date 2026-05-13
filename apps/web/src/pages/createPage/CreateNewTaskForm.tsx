@@ -1,9 +1,11 @@
-import { TaskType, type CompositeTask } from '@oybc/shared';
+import { AchievementTrigger, TaskType, type Board, type RecurringBoardTemplate, type Task } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { ProgressStepRow } from '../../components/ProgressStepRow';
-import { CompositeTaskForm } from '../../components/playground/CompositeTaskForm';
+import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
+import { CountingTemplatePicker } from '../../components/wizard/CountingTemplatePicker';
+import { useBoards, useRecurringBoardTemplates } from '../../hooks';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
-import { COMPOSITE_TYPE, type TaskTypeOrComposite } from './useTaskLibrary';
+import { COMPOSITE_TYPE, PROGRESS_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
 import {
   type UseCreateFormState,
   TITLE_MAX_LENGTH,
@@ -12,19 +14,21 @@ import {
   UNIT_MAX_LENGTH,
   STEP_TITLE_MAX_LENGTH,
 } from './useCreateFormState';
-import styles from '../CreatePage.module.css';
+import styles from './CreateNewTaskForm.module.css';
 
 const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
-  { value: TaskType.PROGRESS, label: 'Progress' },
+  { value: PROGRESS_TYPE, label: 'Progress' },
   { value: COMPOSITE_TYPE, label: 'Composite' },
+  // Phase 6.3 — Achievement (cross-board watcher).
+  { value: TaskType.ACHIEVEMENT, label: 'Achievement' },
 ];
 
 /**
  * Renders the "Create New" tab: the type selector, per-type form
  * fields, progress steps, and the submit button. Composite selection
- * swaps to `CompositeTaskForm` (owns its own state). All other state
+ * swaps to `CompositeTaskWizard` (owns its own state). All other state
  * comes from `useCreateFormState` via the `form` prop.
  *
  * Kept as a pure presentation component — no data-layer calls, no
@@ -35,14 +39,25 @@ const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
 export interface CreateNewTaskFormProps {
   form: UseCreateFormState;
   userId: string | undefined;
-  onCompositeCreated: (ct: CompositeTask) => void;
+  /** Called with the newly-created compound Task when the user finishes the wizard. */
+  onCompositeCreated: (task: Task) => void;
+  /** Label for the submit button. Defaults to the legacy pool-flow wording. */
+  submitLabel?: string;
 }
 
 export function CreateNewTaskForm({
   form,
   userId,
   onCompositeCreated,
+  submitLabel = 'Create & Add to Pool',
 }: CreateNewTaskFormProps): React.ReactElement {
+  // Phase 6.3 — Workspace lookups for the Achievement-task picker.
+  // Both hooks return non-deleted rows for `userId` (or `[]` while
+  // auth is loading); the dropdowns render the empty state below
+  // when neither list has eligible entries.
+  const boards: Board[] = useBoards(userId) ?? [];
+  const templates: RecurringBoardTemplate[] = useRecurringBoardTemplates(userId) ?? [];
+
   return (
     <div className={styles.modeSection}>
       <div className={styles.fieldGroup}>
@@ -57,7 +72,7 @@ export function CreateNewTaskForm({
       </div>
 
       {form.taskType === COMPOSITE_TYPE ? (
-        <CompositeTaskForm userId={userId} onCreated={onCompositeCreated} />
+        <CompositeTaskWizard userId={userId} onCreated={onCompositeCreated} />
       ) : (
         <form className={styles.form} onSubmit={form.handleSubmit}>
           {/* Title */}
@@ -104,9 +119,152 @@ export function CreateNewTaskForm({
             {form.errors.description && <span className={styles.fieldError}>{form.errors.description}</span>}
           </div>
 
+          {/* Achievement-task fields (Phase 6.3) */}
+          {form.taskType === TaskType.ACHIEVEMENT && (
+            <div className={styles.fieldGroup}>
+              <label className={styles.label}>
+                Watch
+                <span className={styles.required}>*</span>
+              </label>
+              <div className={styles.modeSection}>
+                <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', marginRight: '1rem', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="create-task-achievement-mode"
+                    value="specificBoard"
+                    checked={form.achievementMode === 'specificBoard'}
+                    onChange={() => form.setAchievementMode('specificBoard')}
+                  />
+                  Board
+                </label>
+                <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="create-task-achievement-mode"
+                    value="recurringTemplate"
+                    checked={form.achievementMode === 'recurringTemplate'}
+                    onChange={() => form.setAchievementMode('recurringTemplate')}
+                  />
+                  Template
+                </label>
+              </div>
+              {form.achievementMode === 'specificBoard' ? (
+                <select
+                  id="create-task-ach-board"
+                  className={`${styles.input} ${form.errors.achievementReference ? styles.inputError : ''}`}
+                  value={form.achievementReferenceId ?? ''}
+                  onChange={(e) =>
+                    form.setAchievementReferenceId(e.target.value || null)
+                  }
+                >
+                  <option value="">
+                    {boards.length === 0
+                      ? 'No boards'
+                      : 'Select a board…'}
+                  </option>
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  id="create-task-ach-template"
+                  className={`${styles.input} ${form.errors.achievementReference ? styles.inputError : ''}`}
+                  value={form.achievementReferenceId ?? ''}
+                  onChange={(e) =>
+                    form.setAchievementReferenceId(e.target.value || null)
+                  }
+                >
+                  <option value="">
+                    {templates.length === 0
+                      ? 'No templates'
+                      : 'Select a template…'}
+                  </option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                      {!t.isActive ? ' (paused)' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {form.errors.achievementReference && (
+                <span className={styles.fieldError}>{form.errors.achievementReference}</span>
+              )}
+
+              {/* Trigger picker (Phase 6.3). Domain terms verbatim:
+                  "Greenlog" / "Bingo". Default GREENLOG matches the
+                  pre-trigger shipped behavior. */}
+              <label className={styles.label} style={{ marginTop: '0.75rem' }}>
+                Trigger
+              </label>
+              <div className={styles.modeSection}>
+                <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', marginRight: '1rem', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="create-task-achievement-trigger"
+                    value={AchievementTrigger.GREENLOG}
+                    checked={form.achievementTrigger === AchievementTrigger.GREENLOG}
+                    onChange={() => form.setAchievementTrigger(AchievementTrigger.GREENLOG)}
+                  />
+                  Greenlog
+                </label>
+                <label className={styles.label} style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="create-task-achievement-trigger"
+                    value={AchievementTrigger.BINGO}
+                    checked={form.achievementTrigger === AchievementTrigger.BINGO}
+                    onChange={() => form.setAchievementTrigger(AchievementTrigger.BINGO)}
+                  />
+                  Bingo
+                </label>
+              </div>
+
+              {/* Count input (template mode only). Specific-board mode
+                  is implicitly count=1. */}
+              {form.achievementMode === 'recurringTemplate' && (
+                <>
+                  <label className={styles.label} htmlFor="create-task-ach-count" style={{ marginTop: '0.75rem' }}>
+                    Count
+                    <span className={styles.required}>*</span>
+                  </label>
+                  <input
+                    id="create-task-ach-count"
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    className={`${styles.input} ${form.errors.requiredCount ? styles.inputError : ''}`}
+                    value={form.achievementRequiredCountStr}
+                    onChange={(e) => form.setAchievementRequiredCountStr(e.target.value)}
+                    placeholder="e.g. 3"
+                  />
+                  {form.errors.requiredCount && (
+                    <span className={styles.fieldError}>{form.errors.requiredCount}</span>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {/* Counting fields */}
           {form.taskType === TaskType.COUNTING && (
             <div className={styles.countingFields}>
+              {/* "Derive from existing" affordance — only when userId is
+                 resolved. Rendering with `userId === undefined` shows a stale
+                 "No counting tasks yet" empty-state during auth load. */}
+              {userId != null && (
+                <CountingTemplatePicker
+                  userId={userId}
+                  selectedTemplate={form.deriveFromTask}
+                  onSelect={form.applyTemplate}
+                  onClear={form.clearTemplate}
+                />
+              )}
+
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-action">
                   Action<span className={styles.required}>*</span>
@@ -125,7 +283,7 @@ export function CreateNewTaskForm({
 
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-maxcount">
-                  Max Count<span className={styles.required}>*</span>
+                  Max<span className={styles.required}>*</span>
                 </label>
                 <input
                   id="create-task-maxcount"
@@ -158,7 +316,7 @@ export function CreateNewTaskForm({
           )}
 
           {/* Progress steps */}
-          {form.taskType === TaskType.PROGRESS && (
+          {form.taskType === PROGRESS_TYPE && (
             <div className={styles.stepsSection}>
               <span className={styles.stepsHeader}>Steps</span>
               <div className={styles.stepsList}>
@@ -185,7 +343,7 @@ export function CreateNewTaskForm({
           {form.errors.general && <div className={styles.errorMessage}>{form.errors.general}</div>}
 
           <button type="submit" className={styles.submitButton} disabled={form.isSubmitting}>
-            {form.isSubmitting ? 'Creating...' : 'Create & Add to Pool'}
+            {form.isSubmitting ? 'Creating...' : submitLabel}
           </button>
         </form>
       )}

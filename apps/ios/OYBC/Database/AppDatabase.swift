@@ -210,6 +210,170 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE users ADD COLUMN preferences TEXT")
         }
 
+        // v6: Compound tasks unification — schema changes only.
+        //   - Create compound_children table (replaces the role of task_steps +
+        //     composite_nodes leaves under the unified model).
+        //   - Widen tasks with compound fields (operator, threshold, isOrdered)
+        //     and global completion fields (isCompleted, completedAt, currentCount).
+        //
+        // The board_tasks completion-column rebuild that was originally here has
+        // been moved to v7 (MigrationV7Helpers.swift). It must run AFTER the data
+        // migration so that steps 5 (Task completion backfill), 6 (step completion
+        // backfill), and 8 (board stats recompute) can still read the legacy
+        // board_tasks.isCompleted / completedAt / currentCount / completedStepIds
+        // columns before they are dropped.
+        migrator.registerMigration("v6") { db in
+            // (a) compound_children
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS compound_children (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    compoundTaskId TEXT NOT NULL,
+                    childTaskId TEXT NOT NULL,
+                    childIndex INTEGER NOT NULL,
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+
+                    FOREIGN KEY (compoundTaskId) REFERENCES tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (childTaskId) REFERENCES tasks(id)
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_compound_children_compound_index ON compound_children(compoundTaskId, childIndex)")
+            try db.execute(sql: "CREATE INDEX idx_compound_children_child ON compound_children(childTaskId)")
+
+            // (b) Widen tasks with compound + global completion columns.
+            // isCompleted is NOT NULL DEFAULT 0 so existing rows get a value.
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN \"operator\" TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN threshold INTEGER")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isOrdered INTEGER")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isCompleted INTEGER NOT NULL DEFAULT 0")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN completedAt TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN currentCount INTEGER")
+        }
+
+        // v7: Data migration for the compound unification. Transforms legacy
+        // progress + composite rows into the unified compound shape, backfills
+        // global Task completion, enqueues legacy doc deletes, recomputes board
+        // stats via DerivationPass, and finally rebuilds board_tasks to drop
+        // the per-board completion columns (moved here from v6).
+        migrator.registerMigration("v7") { db in
+            try MigrationV7Helpers.run(db)
+        }
+
+        // v8: Phase 6.2 — recurring board templates.
+        //
+        //   (a) recurring_board_templates table — user-curated task pools that
+        //       automatically create boards each window. seedTaskIds is stored as a JSON
+        //       string TEXT column (mirror of boards.completedLineIds) since
+        //       SQLite has no native array type.
+        //   (b) Add boards.spawnedFromTemplateId TEXT column. Plain TEXT,
+        //       no FK constraint — adding a FK to an existing table in
+        //       SQLite requires a full table rebuild, and the only
+        //       reason to want one (cascading delete behavior) doesn't
+        //       apply: templates are soft-deleted (isDeleted=true) and
+        //       never hard-deleted, so a FK's ON DELETE clause would
+        //       never fire. Spawned boards remain independent from the
+        //       template they came from by design.
+        migrator.registerMigration("v8") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS recurring_board_templates (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    boardSize INTEGER NOT NULL,
+                    centerSquareType TEXT NOT NULL,
+                    centerSquareCustomName TEXT,
+                    isRandomized INTEGER NOT NULL DEFAULT 1,
+                    seedTaskIds TEXT NOT NULL DEFAULT '[]',
+                    lastSpawnedWindowKey TEXT,
+                    isActive INTEGER NOT NULL DEFAULT 1,
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_recurring_templates_user_active ON recurring_board_templates(userId, isActive)")
+            try db.execute(sql: "CREATE INDEX idx_recurring_templates_user_deleted ON recurring_board_templates(userId, isDeleted)")
+
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN spawnedFromTemplateId TEXT")
+        }
+
+        // v9: Phase 6.3 — original draft added `referencedBoardId` /
+        // `referencedTemplateId` columns to `board_tasks`. The refactor
+        // moves those fields to `Task` instead (see v10 below). v9 is
+        // kept around so dev installs that already migrated through it
+        // don't fail — the no-op columns it added to `board_tasks` are
+        // harmless (Swift's BoardTask model doesn't reference them
+        // post-refactor, so they're dead weight in storage).
+        //
+        // For fresh installs that have never run v9: the ALTER TABLE
+        // is still useful as a stepping stone toward v10 so the schema
+        // history is linear, but the columns it creates are not
+        // referenced anywhere in code. A future cleanup could drop the
+        // columns via a table rebuild; not worth doing for an unshipped
+        // feature.
+        migrator.registerMigration("v9") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedBoardId TEXT")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN referencedTemplateId TEXT")
+        }
+
+        // v10: Phase 6.3 refactor — ACHIEVEMENT as a TaskType.
+        //
+        //   Add `referencedBoardId` and `referencedTemplateId` columns
+        //   to the `tasks` table (cross-board watcher fields now live
+        //   on Task, not BoardTask). Only ACHIEVEMENT-typed Tasks
+        //   populate them:
+        //     - referencedBoardId TEXT — specific-board mode. Cell
+        //       completes when the named board's status is COMPLETED
+        //       and !isDeleted.
+        //     - referencedTemplateId TEXT — recurring-template mode.
+        //       Cell completes when ALL in-window non-deleted spawns
+        //       of that template are COMPLETED.
+        //
+        //   Both fields are nullable, additive, and NOT indexed (lookups
+        //   happen inside derivationPass per-row, not via table scans).
+        //   No FK constraints — adding a FK to an existing table in
+        //   SQLite requires a full table rebuild, and templates/boards
+        //   are soft-deleted only so a FK ON DELETE clause would never
+        //   fire (mirrors the 6.2 spawnedFromTemplateId precedent).
+        //
+        //   Mutual exclusion (at most one set per row) is enforced at
+        //   the Zod refinement layer in the shared package's TaskSchema,
+        //   plus a defensive check in the iOS task-write helpers.
+        migrator.registerMigration("v10") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN referencedBoardId TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN referencedTemplateId TEXT")
+        }
+
+        // v11: Phase 6.3 — Achievement trigger + required count.
+        //
+        //   Adds two optional columns to `tasks`:
+        //     - achievementTrigger TEXT — 'bingo' or 'greenlog'. When
+        //       null, derivation defaults to 'greenlog' at read time
+        //       (matches the pre-trigger shipped behavior and the
+        //       shared Zod schema's defensive decode).
+        //     - requiredCount INTEGER — positive integer required when
+        //       referencedTemplateId is set; null otherwise. Forbidden
+        //       on non-ACHIEVEMENT tasks.
+        //
+        //   No indexes; lookups happen per-row inside DerivationPass.
+        //   Both fields are nullable + additive so back-fill is a no-op.
+        migrator.registerMigration("v11") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN achievementTrigger TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN requiredCount INTEGER")
+        }
+
         return migrator
     }
 
@@ -304,37 +468,6 @@ extension AppDatabase {
         }
     }
 
-    // MARK: - TaskSteps
-
-    func fetchTaskSteps(taskId: String) throws -> [TaskStep] {
-        return try read { db in
-            try TaskStep
-                .filter(Column("taskId") == taskId && Column("isDeleted") == false)
-                .order(Column("stepIndex"))
-                .fetchAll(db)
-        }
-    }
-
-    /// Fetches all non-deleted `TaskStep` records for progress tasks owned by a user.
-    ///
-    /// - Parameter userId: The owning user's ID.
-    /// - Returns: All matching steps ordered by `stepIndex`.
-    func fetchAllTaskSteps(userId: String) throws -> [TaskStep] {
-        return try read { db in
-            try TaskStep
-                .joining(required: TaskStep.task.filter(Column("userId") == userId))
-                .filter(Column("isDeleted") == false)
-                .order(Column("stepIndex"))
-                .fetchAll(db)
-        }
-    }
-
-    func saveTaskStep(_ step: TaskStep) throws {
-        try write { db in
-            try step.save(db)
-        }
-    }
-
     // MARK: - BoardTasks
 
     func fetchBoardTasks(boardId: String) throws -> [BoardTask] {
@@ -351,9 +484,102 @@ extension AppDatabase {
         }
     }
 
+    /// Hard-deletes every `BoardTask` row for the given board. Used
+    /// when re-saving a draft whose task placement has changed —
+    /// simpler than diffing old vs new layout, and tolerable at scale
+    /// (boards have at most 25 cells).
+    ///
+    /// `BoardTask` has no `isDeleted` flag, so the deletion is literal;
+    /// the web twin uses the same pattern.
+    func deleteBoardTasksForBoard(boardId: String) throws {
+        try write { db in
+            _ = try BoardTask
+                .filter(Column("boardId") == boardId)
+                .deleteAll(db)
+        }
+    }
+
     func saveBoardTask(_ boardTask: BoardTask) throws {
         try write { db in
             try boardTask.save(db)
+        }
+    }
+
+    /// Fetch every BoardTask in the workspace. Used by the derivation pass
+    /// to find which boards contain a given task (directly or via a compound).
+    /// Small-N: typical user has under a few thousand BoardTasks.
+    func fetchAllBoardTasks() throws -> [BoardTask] {
+        return try read { db in
+            try BoardTask.fetchAll(db)
+        }
+    }
+
+    // MARK: - CompoundChildren
+
+    /// Fetch every non-deleted compound_children row in the workspace.
+    /// Used by the derivation pass to find transitive parent compounds and
+    /// build the childrenByCompound map fed into computeBoardStatsUpdate.
+    func fetchAllCompoundChildren() throws -> [CompoundChild] {
+        return try read { db in
+            try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+    }
+
+    /// Fetch all non-deleted compound_children rows for a single parent compound,
+    /// ordered by childIndex.
+    ///
+    /// - Parameter compoundTaskId: The parent compound task's ID.
+    /// - Returns: All matching children ordered by `childIndex`.
+    func fetchCompoundChildren(compoundTaskId: String) throws -> [CompoundChild] {
+        return try read { db in
+            try CompoundChild
+                .filter(Column("compoundTaskId") == compoundTaskId && Column("isDeleted") == false)
+                .order(Column("childIndex"))
+                .fetchAll(db)
+        }
+    }
+
+    // MARK: - RecurringBoardTemplates (Phase 6.2)
+
+    /// Fetch all non-deleted templates for a user, ordered by `updatedAt desc`.
+    func fetchRecurringBoardTemplates(userId: String) throws -> [RecurringBoardTemplate] {
+        return try read { db in
+            try RecurringBoardTemplate
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+        }
+    }
+
+    /// Fetch a single template by id (including soft-deleted, for completeness).
+    func fetchRecurringBoardTemplate(id: String) throws -> RecurringBoardTemplate? {
+        return try read { db in
+            try RecurringBoardTemplate.fetchOne(db, key: id)
+        }
+    }
+
+    /// Insert / update a template. The caller is responsible for bumping
+    /// `version` and `updatedAt` (mirror of `saveBoard`).
+    func saveRecurringBoardTemplate(_ template: RecurringBoardTemplate) throws {
+        try write { db in
+            try template.save(db)
+        }
+    }
+
+    /// Soft-delete a template. Spawned boards remain — they're independent
+    /// once spawned (per Phase 6.2 design). Bumps `version` so LWW treats
+    /// the deletion as later-wins.
+    func softDeleteRecurringBoardTemplate(id: String) throws {
+        try write { db in
+            guard var template = try RecurringBoardTemplate.fetchOne(db, key: id) else { return }
+            let now = ISO8601DateFormatter().string(from: Date())
+            template.isDeleted = true
+            template.deletedAt = now
+            template.updatedAt = now
+            template.version += 1
+            try template.update(db)
         }
     }
 
@@ -605,23 +831,6 @@ extension AppDatabase {
         }
     }
 
-    /// Find all boards with achievement squares
-    func fetchBoardsWithAchievements(userId: String) throws -> [Board] {
-        return try read { db in
-            // Find distinct board IDs with achievement squares
-            let boardIds = try String.fetchAll(db, sql: """
-                SELECT DISTINCT boardId 
-                FROM board_tasks 
-                WHERE isAchievementSquare = 1
-                """)
-
-            // Fetch boards
-            return try Board
-                .filter(keys: boardIds)
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .fetchAll(db)
-        }
-    }
 }
 
 // MARK: - Utilities

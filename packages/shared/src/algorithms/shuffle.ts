@@ -9,12 +9,18 @@
  * to ensure identical shuffle behaviour across platforms.
  *
  * @param array - The array to shuffle
+ * @param rng - Optional uniform `[0, 1)` RNG. Defaults to `Math.random`.
+ *              Pass a seeded RNG from tests to make placement deterministic
+ *              (Phase 6.2 spawn placement tests rely on this).
  * @returns A new array with the same elements in a random order
  */
-export function fisherYatesShuffle<T>(array: ReadonlyArray<T>): T[] {
+export function fisherYatesShuffle<T>(
+  array: ReadonlyArray<T>,
+  rng: () => number = Math.random,
+): T[] {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result;

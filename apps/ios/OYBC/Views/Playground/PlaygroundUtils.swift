@@ -156,6 +156,25 @@ func playgroundTimeframeLabel(timeframe: Timeframe, startDate: Date) -> String {
     }
 }
 
+/// Cadence label for a recurring board template — communicates that
+/// the board re-spawns each window rather than describing a single
+/// window. Mirror of TS `formatRecurringCadence`.
+///
+/// Pair with `playgroundTimeframeLabel(timeframe:startDate:)` (which
+/// describes the *first* spawn window) to compose strings like
+/// `"Every week · first spawn Week of May 4 – 10, 2026"`. Without this
+/// helper the wizard's date-card and preview-row labels were identical
+/// for one-off and recurring boards, hiding the recurrence.
+func recurringCadenceLabel(timeframe: Timeframe) -> String {
+    switch timeframe {
+    case .daily:   return "Every day"
+    case .weekly:  return "Every week"
+    case .monthly: return "Every month"
+    case .yearly:  return "Every year"
+    case .custom:  return "Custom"
+    }
+}
+
 // MARK: - Board Expiry Helpers
 
 /// Returns whether a board is expired (past its end date and not Custom timeframe).

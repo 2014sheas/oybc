@@ -20,6 +20,43 @@ export {
   evaluateCompositeTree,
 } from './compositeEvaluation';
 
+// ===== Compound tasks unification =====
+export {
+  evaluateCompound,
+} from './compoundEvaluation';
+
+export {
+  findTransitiveParentCompounds,
+  findAffectedBoardIds,
+  computeBoardStatsUpdate,
+} from './derivationPass';
+
+export type { BoardStatsUpdate } from './derivationPass';
+
+export { hasCycle } from './cycleDetection';
+
+export type {
+  CycleCheckCandidate,
+  CycleCheckContext,
+  CycleCheckResult,
+} from './cycleDetection';
+
+export {
+  progressTaskToCompound,
+  taskStepToCompoundChild,
+  compositeTaskToTask,
+  compositeNodeToCompoundChild,
+  backfillTaskCompletion,
+  collectEverCompletedStepIds,
+  shouldBackfillStepLinkedTaskAsComplete,
+} from './migrationHelpers';
+
+export type {
+  LegacyBoardTaskCompletion,
+  CompletionBackfillResult,
+} from './migrationHelpers';
+// ===== End compound tasks unification =====
+
 export {
   calculateCountingRollup,
   calculateProgressRollup,
@@ -40,9 +77,32 @@ export {
   isWithinTimeframe,
   isTimeframeExpired,
   formatTimeframeLabel,
+  formatRecurringCadence,
 } from './calendarBoundaries';
 
 export type {
   WeekStartDay,
   TimeframeBoundaries,
 } from './calendarBoundaries';
+
+export {
+  PARENT_TIMEFRAMES,
+  findPendingRecurringBoards,
+  getParentBoards,
+} from './recurringBoards';
+
+export type { PendingRecurringBoard } from './recurringBoards';
+
+export {
+  findTemplatesPendingSpawn,
+  validateSpawnPool,
+  buildSpawnPlacement,
+  deriveSpawnedBoardName,
+} from './recurringBoardTemplates';
+
+export type {
+  PendingTemplateSpawn,
+  SpawnPoolValidation,
+  SpawnPoolFailureReason,
+  BuildSpawnPlacementArgs,
+} from './recurringBoardTemplates';
