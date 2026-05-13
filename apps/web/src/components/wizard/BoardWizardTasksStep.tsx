@@ -378,8 +378,8 @@ export function BoardWizardTasksStep({
           {searchQuery.trim().length > 0
             ? `No tasks match "${searchQuery}".`
             : activeFilter === 'from-parents'
-              ? 'No parent boards found. Create a longer-window board first (weekly/monthly/yearly) to surface its tasks here.'
-              : 'Your task library is empty. Tap "New task" above to create your first one.'}
+              ? 'No parent boards. Create a weekly/monthly/yearly board first.'
+              : 'Library is empty. Tap "New task" to create one.'}
         </div>
       ) : (
         <ul className={styles.list}>

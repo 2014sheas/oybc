@@ -418,7 +418,7 @@ struct CompositeWizardBuildStepView: View {
     private var libraryListContainer: some View {
         let rows = visibleRows
         if libraryRows.isEmpty {
-            emptyMessage("Your library is empty — tap + Create new task above to make one.")
+            emptyMessage("Library is empty — tap + New task to create one.")
         } else if rows.isEmpty {
             let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
             let msg = !q.isEmpty
@@ -508,7 +508,7 @@ struct CompositeWizardBuildStepView: View {
     }
 
     private var emptyState: some View {
-        Text("No subtasks yet. Tap a row from your library below, or create one inline.")
+        Text("No subtasks. Tap a row below or create one.")
             .font(.subheadline)
             .italic()
             .foregroundColor(.secondary)

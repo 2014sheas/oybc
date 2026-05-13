@@ -1,14 +1,20 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
+  AchievementTrigger,
+  BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  TaskType,
+  isWithinTimeframe,
+  type Board,
+  type RecurringBoardTemplate,
   type TaskStep,
   type BoardTask,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
-import { useBoard, useBoardTasks } from '../hooks';
+import { useBoard, useBoardTasks, useBoards, useRecurringBoardTemplates } from '../hooks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
@@ -18,6 +24,7 @@ import {
   InteractiveTaskSquare,
   DetailModal,
   FloatingContextMenu,
+  type AchievementSquareBadgeData,
 } from '../components/InteractiveTaskSquare';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { BoardStatusBadge } from '../components/BoardStatusBadge';
@@ -37,6 +44,11 @@ const FLASH_MS = 3000;
 // `T[]`, not `readonly T[]`; the runtime frozen array still throws on mutation.
 const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
 const EMPTY_TASK_STEPS = Object.freeze([]) as unknown as TaskStep[];
+// Phase 6.3 — frozen empty fallbacks for the workspace-wide board /
+// template hooks. Same pattern as EMPTY_BOARD_TASKS above (preserves
+// React Compiler memoization of downstream deps).
+const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
+const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,6 +89,14 @@ export function BoardPlayPage(): React.ReactElement {
   const allBoardTasks: BoardTask[] =
     useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
 
+  // Phase 6.3 — workspace data needed by per-cell badge data computation
+  // for ACHIEVEMENT-typed Tasks. Reuses existing hooks; `useBoards`
+  // returns non-deleted boards for the user, and
+  // `useRecurringBoardTemplates` returns non-deleted templates.
+  const allBoards: Board[] = useBoards(user?.id) ?? EMPTY_BOARDS;
+  const allTemplates: RecurringBoardTemplate[] =
+    useRecurringBoardTemplates(user?.id) ?? EMPTY_TEMPLATES;
+
   // ── UI state ───────────────────────────────────────────────────────────
 
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
@@ -90,6 +110,75 @@ export function BoardPlayPage(): React.ReactElement {
   }, []);
 
   // ── Derived data ───────────────────────────────────────────────────────
+
+  // Phase 6.3 — per-cell achievement-task badge data, keyed by
+  // BoardTask.id. The badge labels what each ACHIEVEMENT-typed Task is
+  // watching; the cell's actual completion state still comes from
+  // derivationPass.
+  //
+  // Build the lookup maps once per render (boardById, spawnsByTemplate)
+  // then loop cells to assemble the badge entries. This mirrors the
+  // performance optimization in `derivationPass.ts` — without the
+  // template index, each template-mode cell would re-scan all boards.
+  const achievementBadgesByBoardTaskId = useMemo<Record<string, AchievementSquareBadgeData>>(() => {
+    if (!board) return {};
+    const out: Record<string, AchievementSquareBadgeData> = {};
+    const boardById = new Map<string, Board>();
+    const spawnsByTemplate = new Map<string, Board[]>();
+    for (const b of allBoards) {
+      if (b.isDeleted) continue;
+      boardById.set(b.id, b);
+      if (b.spawnedFromTemplateId) {
+        const list = spawnsByTemplate.get(b.spawnedFromTemplateId) ?? [];
+        list.push(b);
+        spawnsByTemplate.set(b.spawnedFromTemplateId, list);
+      }
+    }
+    const templateById = new Map(allTemplates.map((t) => [t.id, t]));
+
+    for (const bt of boardTasks) {
+      const t = taskMap[bt.taskId];
+      if (!t || t.type !== TaskType.ACHIEVEMENT) continue;
+      const trigger = t.achievementTrigger ?? AchievementTrigger.GREENLOG;
+      const meets = (b: Board): boolean =>
+        trigger === AchievementTrigger.BINGO
+          ? (b.linesCompleted ?? 0) > 0
+          : b.status === BoardStatus.COMPLETED;
+      // Phase 6.3 precedence: referencedBoardId wins when both fields
+      // somehow get set. The Zod refinement should prevent this, but
+      // the badge stays predictable for bad-data payloads.
+      if (t.referencedBoardId) {
+        const ref = boardById.get(t.referencedBoardId);
+        out[bt.id] = {
+          mode: 'specificBoard',
+          referencedBoardName: ref?.name,
+          referencedBoardCompleted: ref ? meets(ref) : false,
+        };
+        continue;
+      }
+      if (t.referencedTemplateId) {
+        const tmpl = templateById.get(t.referencedTemplateId);
+        const spawns = spawnsByTemplate.get(t.referencedTemplateId) ?? [];
+        // Parse to timestamps via the shared helper — `Board.startDate`/
+        // `endDate` may be local-ISO (no zone) or UTC-with-`Z` (sync
+        // round-trips), and the two encodings don't compare correctly
+        // as strings. Same fix as derivationPass.ts.
+        const inWindow = spawns.filter((b) =>
+          isWithinTimeframe(b.startDate, board.startDate, board.endDate),
+        );
+        const met = inWindow.filter(meets).length;
+        out[bt.id] = {
+          mode: 'recurringTemplate',
+          templateName: tmpl?.name,
+          templateInWindowMet: met,
+          templateRequiredCount: t.requiredCount ?? 0,
+        };
+      }
+      // No reference set on an ACHIEVEMENT task: skip the badge entirely
+      // (the cell renders as a regular task; derivation marks incomplete).
+    }
+    return out;
+  }, [board, boardTasks, allBoards, allTemplates, taskMap]);
 
   // taskMap is provided by useTaskLibrary — no need to rebuild it here.
 
@@ -329,6 +418,7 @@ export function BoardPlayPage(): React.ReactElement {
                     key={bt.id}
                     sq={squareData}
                     state={squareState}
+                    achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
                     onAct={() => {
                       if (isExpired) return;
                       if (squareData.type === 'progress' || squareData.type === 'compound') {

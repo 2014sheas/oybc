@@ -155,7 +155,6 @@ export async function spawnTemplateBoard(
           row,
           col,
           isCenter: cell === centerCellIndex,
-          isAchievementSquare: false,
           createdAt: now,
           updatedAt: now,
           version: 1,

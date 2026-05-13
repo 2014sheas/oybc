@@ -53,4 +53,30 @@ enum DateFormatting {
         guard let date = parseISO(iso) else { return "—" }
         return date.formatted(date: .abbreviated, time: .omitted)
     }
+
+    /// Inclusive timestamp-window check used by Phase 6.3 derivation +
+    /// cycle detection. Mirrors the shared TS `isWithinTimeframe` helper
+    /// in `packages/shared/src/algorithms/calendarBoundaries.ts`.
+    ///
+    /// Parses all three strings via `parseISO` so the comparison is
+    /// time-based (not lexicographic). Lexicographic compare is unsafe
+    /// because `Board.startDate`/`endDate` can be either local-ISO (no
+    /// timezone suffix) or full UTC-with-`Z` (sync round-trip), and the
+    /// two encodings don't sort correctly as strings — a UTC `2026-04-30T23:59:59.000Z`
+    /// sorts *before* a local `2026-04-30T23:59:59.000` even though they
+    /// represent different instants.
+    ///
+    /// Returns `false` if any side fails to parse — conservative degrade
+    /// (matches the shared helper's silent NaN-comparison behaviour for
+    /// unparseable inputs).
+    static func isWithinTimeframe(
+        _ candidate: String,
+        startDate: String,
+        endDate: String
+    ) -> Bool {
+        guard let c = parseISO(candidate),
+              let s = parseISO(startDate),
+              let e = parseISO(endDate) else { return false }
+        return c >= s && c <= e
+    }
 }
