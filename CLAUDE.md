@@ -21,22 +21,22 @@ Schema shape:
 
 The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables are still present in old migrations so first-launch backfill on dev/test devices works. They are read only by (a) the GRDB/Dexie first-launch migrations that backfill `compound_children`, and (b) the sync service's known-collections list, which lets the push loop drain DELETE tombstones to Firestore. No live UI reads, no live writes — once a device has migrated and drained, those rows are inert. Build deferred compound playgrounds (`CompoundTaskPlayground` / `GlobalCompletionPlayground`) when a future feature genuinely needs them — the snapshot test target (`OYBCSnapshotTests`) is the primary visual-verification surface today.
 
-## Recurring Boards (in design — Phase 6)
+## Recurring Boards (Phase 6 — shipped)
 
-Three-phase feature on deck. Phase 1 (timeframe-prompted recurring boards) is fully designed; Phases 2 and 3 are sketched. Canonical design: [`docs/ARCHITECTURE.md` §Phase 6](docs/ARCHITECTURE.md#phase-6-recurring-boards-in-design).
+Three sub-phases, all merged to `dev`. Canonical design: [`docs/ARCHITECTURE.md` §Phase 6](docs/ARCHITECTURE.md#phase-6-recurring-boards--shipped).
 
-Phase outline:
-
-- **Phase 1 — Timeframe-prompted boards (next).** App-open detection on the Boards tab surfaces a banner when a new daily/weekly/monthly/yearly window has begun and the user has the corresponding recurrence enabled in prefs. Tapping a banner entry opens the existing wizard prefilled with that timeframe + window dates. New "From parent boards" filter in the wizard's tasks step reuses tasks from currently-active longer-window boards.
-- **Phase 2 — Preset-pool recurring boards.** Introduces a `RecurringBoardTemplate` entity carrying a fixed task pool; lazy app-open spawn reuses Phase 1's detection hook. No banner entry; spawned boards appear directly in the list.
-- **Phase 3 — Board-completion-as-a-square.** Extends achievement squares with a `referencedBoardId` field on `BoardTask`, switching the existing aggregate-counter mechanism into a specific-board mode (e.g., a square that completes when the *Daily Wellness* board greenlogs). Same evaluation branch in `derivationPass.ts`, same fan-out wiring, no new task type. Cycle detection mandatory.
+| Sub-phase | Scope | PR |
+| --- | --- | --- |
+| 6.1 | Timeframe-prompted boards — Boards-tab banner when a new daily/weekly/monthly/yearly window opens; wizard prefill from banner; "From parent boards" filter in the wizard's tasks step. | [#50](https://github.com/2014sheas/oybc/pull/50) |
+| 6.2 | Preset-pool recurring boards — `RecurringBoardTemplate` entity carrying a fixed task pool; lazy app-open spawn reuses 6.1's detection hook. | [#52](https://github.com/2014sheas/oybc/pull/52) |
+| 6.3 | ACHIEVEMENT as a `TaskType` — cross-board watcher tasks (specific board XOR recurring template) with `achievementTrigger` (bingo / greenlog) + `requiredCount` for template mode. Cycle detection + window-aware spawn fan-out. | [#54](https://github.com/2014sheas/oybc/pull/54) |
 
 Key invariants (so future contributors don't accidentally violate them):
 
 - **Shared task semantics**: a task placed on a daily and on a parent monthly is the *same Task*; completing it on the daily globally completes the monthly. This is intentional — derivation is a UI filter on the wizard's task picker, never a clone path. If a user wants an independent counter, the answer is a separately-named Task.
-- **No new schema for Phase 1**: only 4 boolean fields added to `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`). Detection is computed at read time from existing `Board.timeframe + startDate + endDate`. `mergeUserPreferences()` in `packages/shared/src/types/user.ts` and the iOS `UserPreferences.init(from:)` mirror must both be extended for forward-compatible decode.
+- **6.1 schema footprint is minimal**: only 4 boolean fields on `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`). Detection is computed at read time from existing `Board.timeframe + startDate + endDate`. `mergeUserPreferences()` in `packages/shared/src/types/user.ts` and the iOS `UserPreferences.init(from:)` mirror both decode the fields forward-compatibly.
 - **Lazy detection only**: no background scheduling, no notifications. Recurrence is observed when the user opens the Boards tab, never pushed. `BGTaskScheduler` (iOS) and service-worker scheduling (web) are explicit non-goals.
-- **No MVP custom-timeframe recurrence**: `Timeframe.CUSTOM` is excluded from Phase 1's `PARENT_TIMEFRAMES` map and from the recurrence toggles. Re-evaluate once Phase 1 ships.
+- **No custom-timeframe recurrence**: `Timeframe.CUSTOM` is excluded from the `PARENT_TIMEFRAMES` map and from the recurrence toggles. Re-evaluate if a real use case surfaces.
 
 ## Code Quality Standards
 
@@ -486,7 +486,7 @@ Example shape (what the terminal response should include):
 
 Rationale: the user wants the status of each comment visible inline with the work, not hidden in git history or accumulating in a doc. Fresh table per round.
 
-**pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v4` with explicit `version: 9.15.4` (v6 of the action ignores the version input).
+**pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v6`, which reads the version from `packageManager` and ignores any `version:` workflow input — so the workflows don't set one. To bump the pnpm major across local + CI, change the `packageManager` field; the workflows pick it up automatically.
 
 ## Development Status
 
@@ -557,24 +557,22 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 - **C — CLAUDE.md parity map updated + `_Concurrency.Task` shadow CI guard.**
 - **D3 — iOS `BingoDetection` unit tests** (parity with shared TS coverage).
 
-### Known follow-ups (not blockers for Phase 6)
+### Known follow-ups
 
 - `CreatePage.tsx` (972 LOC) and `CreateView.swift` (1030 LOC) violate the "containers stay thin" rule. Tracked as future `refactor/create-page-hooks` + `refactor/create-view-viewmodels` branches — no sync/correctness impact, just makes adding form fields easier.
 - Web has no Jest/Vitest harness yet; `packages/shared` covers cross-platform logic. Adding web-layer tests is tracked for the next tooling pass.
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
 - **iOS snapshot tests are advisory in CI** (`continue-on-error: true` on the snapshot step in `ios.yml`). The macos-15 runner ships Xcode 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3), while local dev uses iOS 26.3.x — pixel kerning differs across the iOS minor, so baselines recorded locally don't match CI byte-for-byte. The xcresult artifact still uploads on every snapshot diff, so a developer can pull it and re-record when convenient. To re-enable strict mode: either (a) wait for a macos-15 runner image refresh that ships iOS 26.3, then drop `continue-on-error`; or (b) install iOS 26.2 simulator runtime locally (~5 GB, requires freeing space on `/Library/Developer/CoreSimulator/Volumes/`), re-record on `OS=26.2`, commit baselines, drop `continue-on-error`.
 
-**Next Phase**: Phase 6 — Recurring Boards (design pass in progress; implementation begins once design docs merge)
+**Phase 6 — Recurring Boards: SHIPPED** (May 2026).
 
-| Sub-phase | Scope | Status |
+| Sub-phase | Scope | PR |
 | --- | --- | --- |
-| 6.0 | Design docs (this PR): CLAUDE.md callout, ARCHITECTURE.md §Phase 6, TASK_SYSTEM.md cross-board mechanisms note, SYNC_STRATEGY.md + OFFLINE_FIRST.md cross-references | IN PROGRESS |
-| 6.1a | Shared package: `findPendingRecurringBoards` + `getParentBoards` + `PARENT_TIMEFRAMES` constant + `UserPreferences` field additions + Jest tests | NOT STARTED |
-| 6.1b | Web: banner on Boards tab + wizard prefill via URL params + "From parent boards" filter + 4 toggles in Board Preferences + sync-mapping update | NOT STARTED |
-| 6.1c | iOS: mirror of 6.1b (banner view, wizard view-model args, filter chip, toggles) + GRDB column add for prefs + Swift `UserPreferences.init(from:)` mirror update | NOT STARTED |
-| 6.1d | Snapshot tests + Playwright validation + cross-platform parity verification | NOT STARTED |
-| 6.2 | Preset-pool recurring boards (`RecurringBoardTemplate` entity, lazy app-open spawn) | DEFERRED |
-| 6.3 | Board-completion-as-a-square (extend achievement squares with `referencedBoardId` + cross-board cascade + cycle detection) | DEFERRED |
+| 6.1 | Timeframe-prompted boards — banner detection, wizard prefill, "From parent boards" filter, 4 prefs fields | [#50](https://github.com/2014sheas/oybc/pull/50) |
+| 6.2 | Preset-pool recurring boards — `RecurringBoardTemplate` + lazy app-open spawn | [#52](https://github.com/2014sheas/oybc/pull/52) |
+| 6.3 | ACHIEVEMENT as a `TaskType` — cross-board watcher tasks with trigger + count, cycle detection, window-aware fan-out | [#54](https://github.com/2014sheas/oybc/pull/54) |
+
+**Next phase**: TBD. No Phase 7 has been scoped — the next concrete work item lives in the "Known follow-ups" section above (CreatePage / CreateView refactors, web Vitest harness, CI snapshot strict-mode, pre-launch hardening). Pick by directive rather than by inferred roadmap.
 
 ## Branching Strategy
 

@@ -74,7 +74,7 @@ struct BoardSetupFormView: View {
                             .cornerRadius(6)
                         Spacer()
                     }
-                    Text("Timeframe set from the recurring boards banner. Cancel and use \"Start a new board\" to pick a different one.")
+                    Text("Timeframe set from recurring banner. Cancel to pick a different one.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .italic()
@@ -113,7 +113,7 @@ struct BoardSetupFormView: View {
                         Text("Make recurring")
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                        Text("automatically create a fresh board each window from a task pool.")
+                        Text("automatically spawn a fresh board each window from a pool.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -213,7 +213,7 @@ struct BoardSetupFormView: View {
                     .pickerStyle(.menu)
 
                     if controller.centerType == .chosen {
-                        Text("You'll mark which selected task is the center in the next step.")
+                        Text("You'll pick the center in the next step.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .italic()

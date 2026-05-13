@@ -116,12 +116,6 @@ enum RecurringBoardSpawn {
                         row: row,
                         col: col,
                         isCenter: cell == centerCellIndex,
-                        // Set explicitly (not defaulted to nil) so the
-                        // iOS-pushed Firestore payload matches the web
-                        // spawn's `false` and a future achievement-square
-                        // cross-board feature can trust the field is
-                        // always populated on spawned cells.
-                        isAchievementSquare: false,
                         createdAt: now,
                         updatedAt: now,
                         version: 1

@@ -378,14 +378,21 @@ enum MigrationV7Helpers {
             db,
             sql: "SELECT * FROM boards WHERE isDeleted = 0"
         )
-        for bRow in boardRows {
-            let board = try Board(row: bRow)
+        // Decode each board row once into a struct so we can both pass
+        // the affected board into computeBoardStatsUpdate AND feed the
+        // workspace set into the new Phase 6.3 allBoards parameter. The
+        // migration runs over historical data so cross-board references
+        // shouldn't exist yet, but feeding the data through correctly
+        // keeps the call site uniform with the live cascade paths.
+        let allBoardStructs: [Board] = try boardRows.map { try Board(row: $0) }
+        for board in allBoardStructs {
             let boardTasksOnBoard = allBoardTaskStructs.filter { $0.boardId == board.id }
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
-                taskById: taskById
+                taskById: taskById,
+                allBoards: allBoardStructs
             )
             let newVersion = board.version + 1
 

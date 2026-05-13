@@ -1356,6 +1356,12 @@ extension SyncService {
             .fetchAll(db)
         let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
         let allTasks: [Task] = try Task.fetchAll(db)
+        // Phase 6.3 — same rationale as bpvRunCrossBoardCascade in
+        // BoardPlayView: feed the workspace's boards into the
+        // derivation pass so the specific-board / recurring-template
+        // achievement branches evaluate against real cross-board state
+        // rather than degrading to "incomplete".
+        let allBoards: [Board] = try Board.fetchAll(db)
 
         var taskById: [String: Task] = [:]
         for t in allTasks { taskById[t.id] = t }
@@ -1381,7 +1387,8 @@ extension SyncService {
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
-                taskById: taskById
+                taskById: taskById,
+                allBoards: allBoards
             )
 
             // Write board stats. Bump board.version (local write), NOT Task.version.

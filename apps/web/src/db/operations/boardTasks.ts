@@ -73,7 +73,13 @@ export async function fetchBoardTasksForBoards(
 }
 
 /**
- * Create a board task (add task to board)
+ * Create a board task (add task to board).
+ *
+ * Phase 6.3 — BoardTask is a pure placement record. Achievement-square
+ * configuration moved to `Task` (`type === ACHIEVEMENT` + reference
+ * fields); see `apps/web/src/db/operations/tasks.ts` for the achievement
+ * task creation path. Cycle detection for ACHIEVEMENT tasks happens at
+ * the UI layer before this helper runs.
  */
 export async function createBoardTask(
   input: CreateBoardTaskInput
@@ -85,10 +91,6 @@ export async function createBoardTask(
     row: input.row,
     col: input.col,
     isCenter: input.isCenter,
-    isAchievementSquare: input.isAchievementSquare,
-    achievementType: input.achievementType,
-    achievementCount: input.achievementCount,
-    achievementTimeframe: input.achievementTimeframe,
     createdAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
     version: 1,
@@ -97,47 +99,6 @@ export async function createBoardTask(
   await db.boardTasks.add(boardTask);
   await addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
   return boardTask;
-}
-
-/**
- * Update achievement square progress
- */
-export async function updateAchievementProgress(
-  id: string,
-  progress: number
-): Promise<void> {
-  const boardTask = await db.boardTasks.get(id);
-  if (!boardTask || !boardTask.isAchievementSquare) return;
-
-  await db.boardTasks.update(id, {
-    achievementProgress: progress,
-    updatedAt: currentTimestamp(),
-    version: (boardTask.version ?? 0) + 1,
-  });
-}
-
-/**
- * Find all achievement squares across all boards
- */
-export async function fetchAchievementSquares(): Promise<BoardTask[]> {
-  // Dexie types `.equals()` against `IndexableType` which excludes
-  // booleans, but IndexedDB coerces booleans to 1/0 at runtime.
-  return db.boardTasks.where('isAchievementSquare').equals(true as unknown as string).toArray();
-}
-
-/**
- * Find achievement squares for a specific timeframe
- */
-export async function fetchAchievementSquaresByTimeframe(
-  timeframe: string
-): Promise<BoardTask[]> {
-  return db.boardTasks
-    .where('[isAchievementSquare+achievementTimeframe]')
-    // Dexie's `.equals()` doesn't model compound-index tuples in its
-    // type signature (only scalar IndexableType).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .equals([true, timeframe] as any)
-    .toArray();
 }
 
 /**

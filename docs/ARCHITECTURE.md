@@ -581,9 +581,9 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 
 **Principle**: Extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.
 
-### Phase 5: Polish & Launch — IN PROGRESS
+### Phase 5: Polish & Launch — COMPLETE
 
-**CI/CD & repo automation** (complete):
+**CI/CD & repo automation**:
 
 - [x] Web CI workflow (build + test + lint on PRs to dev)
 - [x] iOS CI workflow (build + test on PRs to dev)
@@ -595,18 +595,31 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - [x] TypeScript 6 upgrade
 - [x] pnpm 9 upgrade (8.15 deprecated)
 
-**Remaining**:
+**Polish work** (shipped via the pre-phase6 audit, see `CLAUDE.md`):
 
-- [ ] Cross-platform parity audit (manual side-by-side review)
-- [ ] Achievement squares and progress counters
+- [x] Cross-platform parity audit (architecture + security + parity passes)
+- [x] Sign-out confirmation dialog (web + iOS)
+- [x] Empty states on Create tab
+- [x] Display name edit (Firebase Auth + local DB + sync)
+- [x] Sync status indicator + iOS `NetworkMonitor`
+
+**Achievement squares** shipped subsequently in Phase 6.3 (PR #54) as the `TaskType.ACHIEVEMENT` first-class type. `ProgressCounter` schema exists but has no UI consumer — open question whether to surface it later or drop the entity.
+
+### Launch readiness (separate gate, not a Phase 5 sub-task)
+
+These are pre-public-launch milestones that overlap Phase 6 + future work, tracked here for visibility:
+
 - [ ] TestFlight beta (5-10 users)
 - [ ] No sync bugs (1 week testing)
 - [ ] Performance targets met (< 10ms reads, < 50ms composite evaluation)
 - [ ] Security verified (can't access other users' data)
+- [ ] CAPTCHA / rate-limit hardening on auth flows (see `CLAUDE.md` Known follow-ups)
 
-### Phase 6: Recurring Boards (in design)
+### Phase 6: Recurring Boards — shipped
 
-OYBC's primary use case is "user opens the app, creates a board for what they want to track in this window, completes squares throughout the window." Phase 6 closes the friction loop at the natural rollover points (start of each day, week start, month start, year start) by surfacing a banner the moment the user opens the Boards tab inside a new window. This section is the canonical design — written before code lands, kept in sync as decisions evolve.
+> Design captured 2026-05-01; all three sub-phases shipped 2026-05-13. The design content below is preserved as the canonical record — useful for understanding *why* the shipped shape is what it is. For the shipped state of any sub-phase, follow the PR link in the status table.
+
+OYBC's primary use case is "user opens the app, creates a board for what they want to track in this window, completes squares throughout the window." Phase 6 closes the friction loop at the natural rollover points (start of each day, week start, month start, year start) by surfacing a banner the moment the user opens the Boards tab inside a new window. This section is the canonical design — written before code landed, kept in sync as decisions evolved.
 
 #### Motivation
 
@@ -618,11 +631,13 @@ The architecture investigation that preceded this design (April 2026) establishe
 
 #### Three-phase vision
 
-| Phase                          | Scope                                                                                                                    | Net-new infrastructure                                                               | Status   |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | -------- |
-| 1 — Timeframe-prompted         | Daily/weekly/monthly/yearly recurrence prompts via Boards-tab banner; wizard prefill; "From parent boards" wizard filter | 4 prefs fields, detection algorithm, banner UI, wizard prefill, parent-tasks filter  | NEXT     |
-| 2 — Preset-pool                | Boards that auto-instantiate from a fixed task pool each window                                                          | `RecurringBoardTemplate` entity, lazy spawn on app-open (no banner)                  | DEFERRED |
-| 3 — Board-completion-as-square | Achievement squares with specific-board references (extends the existing aggregate-mode mechanism)                       | `BoardTask.referencedBoardId` field, board-status cascade extension, cycle detection | DEFERRED |
+| Phase                          | Scope                                                                                                                    | Net-new infrastructure                                                                                                                | Status / PR |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1 — Timeframe-prompted         | Daily/weekly/monthly/yearly recurrence prompts via Boards-tab banner; wizard prefill; "From parent boards" wizard filter | 4 prefs fields, detection algorithm, banner UI, wizard prefill, parent-tasks filter                                                   | SHIPPED [#50](https://github.com/2014sheas/oybc/pull/50) |
+| 2 — Preset-pool                | Boards that auto-instantiate from a fixed task pool each window                                                          | `RecurringBoardTemplate` entity, lazy spawn on app-open (no banner)                                                                   | SHIPPED [#52](https://github.com/2014sheas/oybc/pull/52) |
+| 3 — ACHIEVEMENT TaskType       | Cross-board watcher squares as a first-class `TaskType` (specific board XOR recurring template)                          | `TaskType.ACHIEVEMENT`, `referencedBoardId` / `referencedTemplateId` / `achievementTrigger` / `requiredCount` on `Task`, cycle detection, window-aware spawn fan-out | SHIPPED [#54](https://github.com/2014sheas/oybc/pull/54) |
+
+> **Note on Phase 3 scope drift:** Originally designed as "extend achievement squares with a `BoardTask.referencedBoardId` field" (additive on the existing aggregate-counter mechanism). During implementation, manual testing surfaced that this design had no first-class creation path — users had to place a throwaway task then convert. The shipped design pivoted to ACHIEVEMENT-as-a-TaskType: reference fields moved onto `Task`, `BoardTask` reverted to a pure placement record, aggregate-counter mode dropped entirely. See PR #54's description for the full design-pivot story.
 
 #### Phase 1 detailed design
 

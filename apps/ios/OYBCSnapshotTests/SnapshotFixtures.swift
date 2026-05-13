@@ -137,6 +137,48 @@ enum SnapshotFixtures {
         )
     }
 
+    /// Build a Board fixture via JSON round-trip (Board has no member-
+    /// wise init because of its custom Codable decoder). Used by Phase
+    /// 6.3 snapshot tests for both the achievement-square config sheet
+    /// (board picker) and the cell-badge variants. Dates default to
+    /// April 2026 (matching the algorithm-test fixtures) so spawn-in-
+    /// window math stays predictable.
+    static func makeBoard(
+        id: String,
+        name: String,
+        boardSize: Int = 5,
+        timeframe: Timeframe = .monthly,
+        status: BoardStatus = .active,
+        startDate: String = "2026-04-01T00:00:00.000Z",
+        endDate: String = "2026-04-30T23:59:59.000Z",
+        spawnedFromTemplateId: String? = nil,
+        isDeleted: Bool = false
+    ) -> Board {
+        var dict: [String: Any] = [
+            "id": id,
+            "userId": userId,
+            "name": name,
+            "status": status.rawValue,
+            "boardSize": boardSize,
+            "timeframe": timeframe.rawValue,
+            "startDate": startDate,
+            "endDate": endDate,
+            "centerSquareType": CenterSquareType.free.rawValue,
+            "isRandomized": false,
+            "totalTasks": boardSize * boardSize,
+            "completedTasks": 0,
+            "linesCompleted": 0,
+            "completedLineIds": "[]",
+            "createdAt": fixedTimestamp,
+            "updatedAt": fixedTimestamp,
+            "version": 1,
+            "isDeleted": isDeleted,
+        ]
+        if let tid = spawnedFromTemplateId { dict["spawnedFromTemplateId"] = tid }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
     static func makeRecurringTemplate(
         id: String,
         name: String,

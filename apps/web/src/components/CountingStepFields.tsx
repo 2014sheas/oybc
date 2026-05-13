@@ -71,7 +71,7 @@ export function CountingStepFields({
       {/* Max Count */}
       <div className={styles.fieldGroup}>
         <label className={styles.label} htmlFor={`${idPrefix}-maxcount`}>
-          Max Count<span className={styles.required}>*</span>
+          Max<span className={styles.required}>*</span>
         </label>
         <input
           id={`${idPrefix}-maxcount`}

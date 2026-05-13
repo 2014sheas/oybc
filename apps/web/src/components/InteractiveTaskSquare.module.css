@@ -376,6 +376,29 @@
   line-height: 1;
 }
 
+/* ── Achievement-square badge (Phase 6.3, top-left) ───────── */
+/* Pill-shaped so it can carry the mode + counts label inline. Sits in
+   the same top-left slot as the compound badge but is wider; the
+   compound badge is suppressed when this is rendered (see the
+   InteractiveTaskSquare render branch). */
+.achievementBadge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  max-width: calc(100% - 26px); /* leave room for the checkmark */
+  padding: 2px 6px;
+  border-radius: 9px;
+  background-color: var(--achievement-badge-bg, rgba(99, 102, 241, 0.18));
+  color: var(--achievement-badge-text, var(--text-primary));
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 2;
+}
+
 /* ── Compound detail sheet ────────────────────────────────── */
 
 .compoundOperatorCaption {
