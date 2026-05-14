@@ -479,7 +479,7 @@ extension AppDatabase {
                 entityId: task.id,
                 operationType: .update,
                 payload: task,
-                now: Self.iso8601Now(),
+                now: Self.currentTimestamp(),
             ).save(db)
         }
     }
@@ -1016,12 +1016,6 @@ extension AppDatabase {
     /// Get current ISO8601 timestamp.
     static func currentTimestamp() -> String {
         return isoFormatter.string(from: Date())
-    }
-
-    /// Same as `currentTimestamp` — alias kept for readability in
-    /// transaction helpers (e.g. `saveTaskAndEnqueueUpdate`).
-    static func iso8601Now() -> String {
-        return currentTimestamp()
     }
 
     /// Parse an ISO8601 string back to a `Date` (or nil). Used by the

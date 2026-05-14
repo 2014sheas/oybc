@@ -67,7 +67,7 @@ struct TaskDetailView: View {
                 deleteImpact = nil
             }
             Button("Delete", role: .destructive) {
-                performDelete()
+                _Concurrency.Task { await performDelete() }
             }
         } message: { impact in
             Text(deleteConfirmMessage(impact: impact))
@@ -226,7 +226,7 @@ struct TaskDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             Button {
-                prepareDelete()
+                _Concurrency.Task { await prepareDelete() }
             } label: {
                 Text("Delete")
                     .fontWeight(.semibold)
@@ -303,7 +303,7 @@ struct TaskDetailView: View {
         EditTaskSheet(
             task: task,
             onSubmit: { patch in
-                saveEdits(patch: patch)
+                _Concurrency.Task { await saveEdits(patch: patch) }
             },
             onCancel: {
                 showEditSheet = false
@@ -311,7 +311,13 @@ struct TaskDetailView: View {
         )
     }
 
-    private func saveEdits(patch: EditTaskSheet.Patch) {
+    /// Build the patched Task on the main thread (reads `@State task`),
+    /// then dispatch the GRDB write off-thread. Mirrors the `reload()`
+    /// pattern — GRDB writes block their calling thread and the
+    /// cascade scan over BoardTask + both directions of CompoundChild
+    /// can be non-trivial for tasks with many placements; keeping it
+    /// off the main thread avoids UI hitches.
+    private func saveEdits(patch: EditTaskSheet.Patch) async {
         guard var t = task else { return }
         t.title = patch.title.trimmingCharacters(in: .whitespacesAndNewlines)
         t.description = patch.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -331,38 +337,55 @@ struct TaskDetailView: View {
         t.updatedAt = AppDatabase.currentTimestamp()
         t.version += 1
 
+        let patched = t
         do {
-            // Atomic: save + enqueue in one transaction so a crash
-            // between can't leave local state out of sync with the
-            // sync queue (CLAUDE.md "atomic pull-path multi-writes").
-            try AppDatabase.shared.saveTaskAndEnqueueUpdate(t)
-            task = t
-            saveError = nil
-            showEditSheet = false
-            onChanged()
+            try await _Concurrency.Task.detached(priority: .userInitiated) {
+                // Atomic: save + enqueue in one transaction so a
+                // crash between can't leave local state out of sync
+                // with the sync queue (CLAUDE.md "atomic pull-path
+                // multi-writes").
+                try AppDatabase.shared.saveTaskAndEnqueueUpdate(patched)
+            }.value
+            await MainActor.run {
+                task = patched
+                saveError = nil
+                showEditSheet = false
+                onChanged()
+            }
         } catch {
-            saveError = "Failed to save: \(error.localizedDescription)"
+            let message = "Failed to save: \(error.localizedDescription)"
+            await MainActor.run { saveError = message }
         }
     }
 
     // MARK: - Delete cascade
 
-    private func prepareDelete() {
+    private func prepareDelete() async {
         do {
-            let impact = try AppDatabase.shared.computeTaskDeletionImpact(taskId: taskId)
-            deleteImpact = impact
-            showDeleteConfirm = true
+            let id = taskId
+            let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
+            }.value
+            await MainActor.run {
+                deleteImpact = impact
+                showDeleteConfirm = true
+            }
         } catch {
-            saveError = "Failed to compute delete impact: \(error.localizedDescription)"
+            let message = "Failed to compute delete impact: \(error.localizedDescription)"
+            await MainActor.run { saveError = message }
         }
     }
 
-    private func performDelete() {
+    private func performDelete() async {
         do {
-            try AppDatabase.shared.deleteTaskWithCascade(taskId: taskId)
-            onDeleted()
+            let id = taskId
+            try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try AppDatabase.shared.deleteTaskWithCascade(taskId: id)
+            }.value
+            await MainActor.run { onDeleted() }
         } catch {
-            saveError = "Failed to delete: \(error.localizedDescription)"
+            let message = "Failed to delete: \(error.localizedDescription)"
+            await MainActor.run { saveError = message }
         }
     }
 

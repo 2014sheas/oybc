@@ -42,18 +42,27 @@ export function TaskDetailPage(): React.ReactElement {
     [id],
   ) as BoardTask[] | undefined;
 
-  const affectedBoardIds = useMemo(() => {
+  const placementBoardIds = useMemo(() => {
     if (!placements) return [] as string[];
     return Array.from(new Set(placements.map((bt) => bt.boardId)));
   }, [placements]);
 
-  const affectedBoardIdsKey = affectedBoardIds.join(',');
+  // Resolve to live boards only. `BoardTask` has no `isDeleted` column
+  // (deletes are hard), so an orphan placement on a soft-deleted board
+  // persists in the table forever — listing such a board in "Usage"
+  // would link the user to a phantom row that won't appear anywhere
+  // else in the app. Mirrors the same filter on `computeTaskDeletionImpact`.
+  const placementBoardIdsKey = placementBoardIds.join(',');
   const affectedBoards = useLiveQuery(
     async () =>
-      affectedBoardIds.length === 0
+      placementBoardIds.length === 0
         ? []
-        : await db.boards.where('id').anyOf(affectedBoardIds).toArray(),
-    [affectedBoardIdsKey],
+        : await db.boards
+            .where('id')
+            .anyOf(placementBoardIds)
+            .filter((b) => !b.isDeleted)
+            .toArray(),
+    [placementBoardIdsKey],
   ) as Board[] | undefined;
 
   const [isEditing, setIsEditing] = useState(false);
@@ -541,9 +550,9 @@ function ConfirmDeleteDialog({
           {impact.parentLinkCount > 0 && (
             <li>
               Releases {impact.parentLinkCount} subtask
-              {impact.parentLinkCount === 1 ? '' : 's'} (the subtask{' '}
-              {impact.parentLinkCount === 1 ? 'Task stays' : 'Tasks stay'} in
-              your library).
+              {impact.parentLinkCount === 1 ? '' : 's'} (
+              {impact.parentLinkCount === 1 ? 'it stays' : 'they stay'} in your
+              library).
             </li>
           )}
           {impact.boardTaskCount === 0 &&

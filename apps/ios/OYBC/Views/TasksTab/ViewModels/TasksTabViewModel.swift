@@ -167,13 +167,13 @@ final class TasksTabViewModel {
         library: TaskLibraryViewModel,
         filter: TasksTabStatusFilter,
     ) -> Bool {
-        if filter == .any { return true }
-        let inProgress = Self.isInProgress(task, library: library)
         switch filter {
         case .any: return true
         case .completed: return task.isCompleted
-        case .inProgress: return !task.isCompleted && inProgress
-        case .neverStarted: return !task.isCompleted && !inProgress
+        case .inProgress:
+            return !task.isCompleted && Self.isInProgress(task, library: library)
+        case .neverStarted:
+            return !task.isCompleted && !Self.isInProgress(task, library: library)
         }
     }
 
