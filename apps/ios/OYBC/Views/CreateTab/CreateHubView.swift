@@ -10,8 +10,8 @@ import SwiftUI
 ///   loaded via GRDB; tapping a row hydrates the wizard from that
 ///   draft.
 /// - Library section: shows the user's task count.
-/// - `CreateHubQuickAddView`: inline task-creation form that writes
-///   to the library only.
+/// (Task quick-add lives on the Tasks tab now; the Create hub is
+/// board-creation only.)
 ///
 /// Hub-mode state, drafts, library count, and the four GRDB loaders
 /// live on `CreateHubViewModel`. The view is a thin switch over

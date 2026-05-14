@@ -25,6 +25,11 @@ struct NewTaskSheetView: View {
     /// view-model can refresh in the same turn the sheet dismisses.
     let onLibraryReloadRequested: () -> Void
 
+    /// Override for the form's submit button label. Wizard context wants
+    /// "Create & Select" (the new task is auto-added to the pool); the
+    /// Tasks-tab context wants "Add to library".
+    var submitLabel: String = "Create & Select"
+
     @State private var form = CreateFormViewModel()
     @Environment(\.dismiss) private var dismiss
 
@@ -40,7 +45,7 @@ struct NewTaskSheetView: View {
                         onLibraryReloadRequested()
                         dismiss()
                     },
-                    submitLabel: "Create & Select"
+                    submitLabel: submitLabel
                 )
                 .padding(16)
             }

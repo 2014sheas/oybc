@@ -11,6 +11,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-md);
 }
 
 .title {
@@ -18,6 +19,28 @@
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+}
+
+.newTaskButton {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--active-bg);
+  color: var(--active-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.12s;
+  white-space: nowrap;
+}
+
+.newTaskButton:hover {
+  filter: brightness(0.95);
+}
+
+.newTaskButton:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
 }
 
 .list {

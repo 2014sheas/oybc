@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreateHubQuickAdd } from '../components/createHub/CreateHubQuickAdd';
+import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { TasksFilterControls } from './tasks/TasksFilterControls';
 import { TaskRow } from './tasks/TaskRow';
@@ -12,7 +13,9 @@ export interface TasksPageProps {
 
 /**
  * TasksPage — Dedicated Tasks tab. Composes:
- * - Quick-add form at the top (moved here from the Create hub).
+ * - Header row with a compact "+ New task" button; tapping it opens
+ *   the existing `NewTaskSheet` modal so the form doesn't dominate
+ *   the page (the library is the primary surface).
  * - Filter + sort controls (search + type chips + status / usage
  *   dropdowns + sort dropdown).
  * - Scrolling list of task rows; tapping a row deep-links into the
@@ -26,14 +29,20 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   const navigate = useNavigate();
   const library = useTaskLibrary(userId);
   const filters = useTasksFilters(library);
+  const [showNewTaskSheet, setShowNewTaskSheet] = useState(false);
 
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <h1 className={styles.title}>Tasks</h1>
+        <button
+          type="button"
+          className={styles.newTaskButton}
+          onClick={() => setShowNewTaskSheet(true)}
+        >
+          + New task
+        </button>
       </header>
-
-      <CreateHubQuickAdd userId={userId} />
 
       <TasksFilterControls
         search={filters.search}
@@ -69,6 +78,19 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
           ))}
         </ul>
       )}
+
+      <NewTaskSheet
+        isOpen={showNewTaskSheet}
+        onClose={() => setShowNewTaskSheet(false)}
+        userId={userId}
+        // Both callbacks fire after the sheet has already closed the
+        // form on success. No extra reload is needed — `useTaskLibrary`
+        // is reactive via `useLiveQuery` and picks up the new row
+        // automatically.
+        onTaskCreated={() => {}}
+        onCompositeCreated={() => {}}
+        submitLabel="Add to library"
+      />
     </div>
   );
 }
@@ -92,7 +114,7 @@ function EmptyState({
         <>
           <p className={styles.emptyTitle}>No tasks yet.</p>
           <p className={styles.emptyBody}>
-            Use the quick-add form above, or build a board on the Create tab —
+            Tap “+ New task” to add one, or build a board on the Create tab —
             tasks you make there appear here too.
           </p>
         </>

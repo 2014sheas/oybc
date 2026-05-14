@@ -4,9 +4,9 @@ import SwiftUI
 /// and editing the user's task library. iOS twin of web's `TasksPage`.
 ///
 /// Composes:
-/// - `CreateHubQuickAddView` pinned at the top (moved here from the
-///   Create hub as part of the same refactor — the quick-add belongs
-///   with the library it writes to).
+/// - Toolbar trailing `+` button that presents `NewTaskSheetView` as
+///   a modal. Keeps the library (filter row + list) as the primary
+///   page content so it doesn't get pushed below the fold.
 /// - `TasksFilterControlsView` (search + type chips + status / usage
 ///   dropdowns + sort dropdown).
 /// - Scrolling list of `TaskRowView` rows. Tapping a row pushes
@@ -24,22 +24,11 @@ struct TasksTabView: View {
 
     @State private var library = TaskLibraryViewModel()
     @State private var vm = TasksTabViewModel()
+    @State private var showNewTaskSheet = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Tasks")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-
-                CreateHubQuickAddView(
-                    userId: userId,
-                    onTaskCreated: {
-                        library.loadLibrary(userId: userId)
-                        vm.reloadAsync()
-                    }
-                )
-
                 TasksFilterControlsView(
                     search: $vm.search,
                     typeFilter: $vm.typeFilter,
@@ -68,6 +57,37 @@ struct TasksTabView: View {
                 }
             }
             .padding(16)
+        }
+        .navigationTitle("Tasks")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showNewTaskSheet = true
+                } label: {
+                    Label("New task", systemImage: "plus.circle.fill")
+                }
+            }
+        }
+        .sheet(isPresented: $showNewTaskSheet) {
+            NewTaskSheetView(
+                userId: userId,
+                // The Tasks tab doesn't auto-select; just refresh on
+                // dismiss so the new row shows up immediately.
+                onTaskCreated: { _, _, _ in
+                    library.loadLibrary(userId: userId)
+                    vm.reloadAsync()
+                },
+                onCompositeCreated: { _ in
+                    library.loadLibrary(userId: userId)
+                    vm.reloadAsync()
+                },
+                onLibraryReloadRequested: {
+                    library.loadLibrary(userId: userId)
+                    vm.reloadAsync()
+                },
+                submitLabel: "Add to library"
+            )
         }
         .navigationDestination(for: String.self) { taskId in
             TaskDetailView(
@@ -105,7 +125,7 @@ struct TasksTabView: View {
             } else {
                 Text("No tasks yet.")
                     .font(.system(size: 16, weight: .semibold))
-                Text("Use the quick-add form above, or build a board on the Create tab — tasks you make there appear here too.")
+                Text("Tap the + button above to add one, or build a board on the Create tab — tasks you make there appear here too.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)

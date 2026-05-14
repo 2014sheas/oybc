@@ -9,13 +9,18 @@ export interface NewTaskSheetProps {
   onClose: () => void;
   userId: string;
   /** Fired when a NORMAL/COUNTING/PROGRESS task is created. The wizard
-   *  should auto-add the new id to its `selectedTaskIds` set. */
+   *  should auto-add the new id to its `selectedTaskIds` set; the Tasks
+   *  tab just dismisses the sheet (the live-query refreshes the list). */
   onTaskCreated: (task: Task) => void;
   /** Fired when a compound (formerly composite) task is created. The
    *  wizard typically reloads the library so the compound shows up under
    *  filters. Under the unified compound model composites are Tasks, so
    *  the callback signature uses Task. */
   onCompositeCreated: (task: Task) => void;
+  /** Optional override for the form's submit button label. The wizard
+   *  context wants "Create & Select" (the new task is auto-added to the
+   *  pool); the Tasks-tab context wants "Add to library". */
+  submitLabel?: string;
 }
 
 /**
@@ -36,6 +41,7 @@ export function NewTaskSheet({
   userId,
   onTaskCreated,
   onCompositeCreated,
+  submitLabel,
 }: NewTaskSheetProps): React.ReactElement | null {
   useEffect(() => {
     if (!isOpen) return;
@@ -54,6 +60,7 @@ export function NewTaskSheet({
       userId={userId}
       onTaskCreated={onTaskCreated}
       onCompositeCreated={onCompositeCreated}
+      submitLabel={submitLabel}
     />
   );
 }
@@ -67,6 +74,7 @@ function NewTaskSheetBody({
   userId,
   onTaskCreated,
   onCompositeCreated,
+  submitLabel,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
   const form = useCreateFormState({
     userId,
@@ -111,7 +119,7 @@ function NewTaskSheetBody({
               onCompositeCreated(ct);
               onClose();
             }}
-            submitLabel="Create & Select"
+            submitLabel={submitLabel ?? 'Create & Select'}
           />
         </div>
       </div>

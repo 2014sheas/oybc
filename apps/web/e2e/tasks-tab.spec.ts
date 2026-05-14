@@ -128,6 +128,29 @@ test.describe('Tasks tab', () => {
     await expect(page.getByText('Stretch')).not.toBeVisible();
   });
 
+  test('+ New task opens the sheet; submitting closes it and the new row appears', async ({ page }) => {
+    // After PR #57's first iteration, the quick-add form dominated the
+    // Tasks tab. The refactor moves it behind a sheet so the library
+    // is the primary surface. This locks the open/submit/close cycle
+    // + the live-query refresh path that gets the row into the list.
+    await page.getByRole('link', { name: /tasks/i }).click();
+
+    // The form should NOT be rendered inline anymore — only the trigger.
+    await expect(page.getByPlaceholder(/enter task title/i)).not.toBeVisible();
+    await page.getByRole('button', { name: /\+ New task/i }).click();
+
+    const sheet = page.getByRole('dialog', { name: 'New task' });
+    await expect(sheet).toBeVisible();
+    await sheet.getByPlaceholder(/enter task title/i).fill('Brushed teeth');
+    await sheet.getByRole('button', { name: /add to library/i }).click();
+
+    // Sheet auto-dismisses on success.
+    await expect(sheet).not.toBeVisible();
+    // useLiveQuery picks up the new row; it should appear in the list
+    // without any explicit refresh.
+    await expect(page.getByText('Brushed teeth')).toBeVisible();
+  });
+
   test('Create tab no longer surfaces the task library', async ({ page }) => {
     // Verifies the Phase D relocation: CreateHub used to render a
     // "Your task library" section + quick-add form. Both should now be
