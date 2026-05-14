@@ -39,7 +39,6 @@ final class CreateHubViewModel {
     var mode: HubMode = .hub
     var resumeDraft: (board: Board, boardTasks: [BoardTask])? = nil
     var drafts: [DraftRowData] = []
-    var libraryCount: Int = 0
 
     /// Hydrated template for `wizardEditTemplate` mode. Loaded
     /// asynchronously when the edit-template deep link is consumed;
@@ -51,13 +50,12 @@ final class CreateHubViewModel {
 
     /// Reset the hub to its landing state. Clears any resume-draft
     /// hydration and reloads the on-screen data so newly-saved drafts
-    /// + tasks appear without a tab-switch.
+    /// appear without a tab-switch.
     func returnToHub(userId: String) {
         mode = .hub
         resumeDraft = nil
         editingTemplate = nil
         reloadDrafts(userId: userId)
-        reloadLibraryCount(userId: userId)
     }
 
     func enterFreshWizard() {
@@ -94,24 +92,6 @@ final class CreateHubViewModel {
                 DispatchQueue.main.async { self.drafts = rows }
             } catch {
                 DispatchQueue.main.async { self.drafts = [] }
-            }
-        }
-    }
-
-    func reloadLibraryCount(userId: String) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            do {
-                // Post-unification, compounds (formerly composite_tasks)
-                // live in the `tasks` table with type='compound', so
-                // `fetchTasks` already returns them. Querying the legacy
-                // `composite_tasks` table and adding its row count would
-                // double-count every compound.
-                let tasks = try AppDatabase.shared.fetchTasks(userId: userId)
-                let total = tasks.count
-                DispatchQueue.main.async { self.libraryCount = total }
-            } catch {
-                DispatchQueue.main.async { self.libraryCount = 0 }
             }
         }
     }

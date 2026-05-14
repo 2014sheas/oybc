@@ -64,7 +64,6 @@ struct CreateHubView: View {
             hubContent
                 .onAppear {
                     vm.reloadDrafts(userId: userId)
-                    vm.reloadLibraryCount(userId: userId)
                     pendingRecurringVM.reloadAsync(userId: userId)
                     // Consume the recurring-banner deep link, if any.
                     // Same behavior as web's URL-param consumption +
@@ -181,42 +180,11 @@ struct CreateHubView: View {
                     }
                 )
             }
-
-            librarySection
-
-            CreateHubQuickAddView(
-                userId: userId,
-                onTaskCreated: {
-                    vm.reloadLibraryCount(userId: userId)
-                }
-            )
         }
         // Hub mode pads itself; wizard mode pads inside each step view.
         // Padding moved off the parent ScrollView so the wizard's tasks
         // step doesn't get double-padded (16pt outer + 16pt step + 12pt
         // row chrome shrunk row content to ~78% of screen width).
         .padding(16)
-    }
-
-    @ViewBuilder
-    private var librarySection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("YOUR TASK LIBRARY")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.secondary)
-            Text(
-                vm.libraryCount == 0
-                    ? "No tasks yet — quick-add below or pick some when you build a board."
-                    : "\(vm.libraryCount) task\(vm.libraryCount == 1 ? "" : "s") ready to place on a board."
-            )
-            .font(.subheadline)
-            .foregroundColor(.primary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemGray6))
-        .cornerRadius(10)
     }
 }

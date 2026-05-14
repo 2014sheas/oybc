@@ -62,16 +62,16 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('task type selector includes "Achievement" alongside Normal/Counting/Progress/Composite', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
+    await page.goto('/tasks?__oybc_test_bypass=1');
     // The Create page mounts the task-creator form below the wizard
     // launcher. Wait for the "Achievement" type button to appear in
     // the TaskTypeSelector.
-    await expect(page.getByRole('button', { name: /^Achievement$/ })).toBeVisible();
+    await expect(page.getByLabel('Quick-add task').getByRole('button', { name: /^Achievement$/ })).toBeVisible();
   });
 
   test('selecting Achievement reveals the watch-mode radio + board picker', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await page.getByLabel('Quick-add task').getByRole('button', { name: /^Achievement$/ }).click();
 
     // Watch-mode radios appear after the type switch.
     await expect(page.getByRole('radio', { name: /^Board$/i })).toBeVisible();
@@ -85,8 +85,8 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('switching mode to "recurring template" swaps the picker', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await page.getByLabel('Quick-add task').getByRole('button', { name: /^Achievement$/ }).click();
     await page.getByRole('radio', { name: /^Template$/i }).check();
 
     // The board <select> goes away, the template <select> appears.
@@ -97,8 +97,8 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('submit without a reference selection surfaces validation error', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await page.getByLabel('Quick-add task').getByRole('button', { name: /^Achievement$/ }).click();
     // Fill title, leave the picker empty.
     await page.getByPlaceholder(/enter task title/i).fill('Watch wellness');
     // The /create hub mounts CreateNewTaskForm via CreateHubQuickAdd, which
@@ -110,8 +110,8 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('full happy path: pick a board, submit, task lands in the workspace', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await page.getByLabel('Quick-add task').getByRole('button', { name: /^Achievement$/ }).click();
     await page.getByPlaceholder(/enter task title/i).fill('Watch Daily Wellness');
     await page.locator('#create-task-ach-board').selectOption(PEER_BOARD_ID);
     // The /create hub mounts CreateNewTaskForm via CreateHubQuickAdd, which
@@ -172,8 +172,8 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('recurring-template mode requires a count + persists trigger & count', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    await page.getByLabel('Quick-add task').getByRole('button', { name: /^Achievement$/ }).click();
     await page.getByRole('radio', { name: /^Template$/i }).check();
     await page.getByPlaceholder(/enter task title/i).fill('3 Leg Days a month');
     await page.locator('#create-task-ach-template').selectOption(TEMPLATE_ID);

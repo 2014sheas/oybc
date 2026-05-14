@@ -5,7 +5,6 @@ import {
   type Timeframe,
   type UserPreferences,
 } from '@oybc/shared';
-import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useDrafts } from './createHub/useDrafts';
 import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframeParam';
 import { useEditTemplateParam } from './createHub/useEditTemplateParam';
@@ -14,7 +13,6 @@ import { usePendingRecurringBoards } from '../hooks';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
-import { CreateHubQuickAdd } from '../components/createHub/CreateHubQuickAdd';
 import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
 import type { BoardWizardDraft } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
@@ -60,15 +58,9 @@ type HubMode =
  * - `CreateHubDraftsList` (conditional): lists DRAFT boards via the
  *   `useDrafts` hook; tapping a row hydrates the wizard from that
  *   draft.
- * - Library section: shows the user's task count (navigating to a
- *   full library browser is a later enhancement).
- * - `CreateHubQuickAdd`: inline task-creation form that writes to
- *   the library only.
  *
- * The hub owns the wizard-mount state so the two surfaces transition
- * in-place. Dismissing the wizard (Cancel / Activate / Save Draft)
- * returns to the hub; the reactive `useDrafts` hook ensures any
- * newly-saved draft appears immediately in the list.
+ * Task library + quick-add moved out of this hub when the dedicated
+ * `/tasks` tab landed — Create is now board-creation-only.
  *
  * Two deep-link entry points are handled by dedicated hooks:
  * - `?recurringTimeframe=daily` → `useRecurringTimeframeParam`
@@ -84,7 +76,6 @@ export function CreateHubPage({
 }: CreateHubPageProps): React.ReactElement {
   const [mode, setMode] = useState<HubMode>({ kind: 'hub' });
   const drafts = useDrafts(userId);
-  const library = useTaskLibrary(userId);
   const pendingRecurring = usePendingRecurringBoards(userId);
   const resolveDraft = useResumableDraft();
 
@@ -149,11 +140,6 @@ export function CreateHubPage({
     );
   }
 
-  // Under the unified compound model, composites live in `allTasks` with
-  // type='compound' — counting them separately would double-count. The
-  // library count is just the size of allTasks (incl. compounds).
-  const libraryCount = library.allTasks.length;
-
   // Phase 6.1d: when there are pending core boards, they become the
   // headline action and the "Start a new board" custom CTA is demoted to
   // a smaller secondary affordance. When the section short-circuits to
@@ -191,17 +177,6 @@ export function CreateHubPage({
           onResume={(d) => void handleResumeDraft(d)}
         />
       )}
-
-      <section className={styles.librarySection}>
-        <h3 className={styles.librarySectionHeading}>Your task library</h3>
-        <p className={styles.librarySectionMeta}>
-          {libraryCount === 0
-            ? 'No tasks yet — quick-add below or pick some when you build a board.'
-            : `${libraryCount} task${libraryCount === 1 ? '' : 's'} ready to place on a board.`}
-        </p>
-      </section>
-
-      <CreateHubQuickAdd userId={userId} />
     </div>
   );
 }

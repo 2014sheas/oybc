@@ -1,0 +1,61 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-md);
+  background: var(--surface-bg, var(--bg-secondary));
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+
+.row:hover {
+  background: var(--bg-hover, var(--bg-secondary));
+  border-color: var(--active-bg);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
+}
+
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  min-width: 0; /* allow children to truncate */
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rowTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowMeta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.rowChevron {
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
+}

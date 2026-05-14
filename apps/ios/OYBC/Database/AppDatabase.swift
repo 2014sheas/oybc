@@ -402,6 +402,17 @@ extension AppDatabase {
         }
     }
 
+    /// Fetch boards by id. Used by the task detail view to render
+    /// "placed on" links for the cells where this task lives.
+    func fetchBoards(ids: [String]) throws -> [Board] {
+        guard !ids.isEmpty else { return [] }
+        return try read { db in
+            try Board
+                .filter(ids.contains(Column("id")) && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+    }
+
     func fetchBoard(id: String) throws -> Board? {
         return try read { db in
             try Board.fetchOne(db, key: id)
@@ -455,6 +466,21 @@ extension AppDatabase {
         }
     }
 
+    /// Enqueue a sync UPDATE for a Task that's already been saved
+    /// locally. Used by the Task detail view's edit flow — `saveTask`
+    /// writes the row but doesn't push to Firestore on its own.
+    func enqueueTaskSyncUpdate(_ task: Task) throws {
+        try write { db in
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .update,
+                payload: task,
+                now: ISO8601DateFormatter().string(from: Date()),
+            ).save(db)
+        }
+    }
+
     /// Soft-delete a task. See `deleteBoard` for the version-bump rationale.
     func deleteTask(id: String) throws {
         try write { db in
@@ -465,6 +491,118 @@ extension AppDatabase {
             task.updatedAt = now
             task.version += 1
             try task.update(db)
+        }
+    }
+
+    /// Summary of what `deleteTaskWithCascade` would remove. Lets the
+    /// detail view surface affected counts in the confirm dialog before
+    /// the user commits. Mirrors web's `TaskDeletionImpact`.
+    struct TaskDeletionImpact {
+        /// Count of `BoardTask` rows that reference this task as a placement.
+        let boardTaskCount: Int
+        /// Distinct boards the placements span (cells on the same board count once).
+        let affectedBoardIds: [String]
+        /// `CompoundChild` rows where the task is the CHILD. The parent
+        /// compound loses this child; sibling children remain.
+        let childLinkCount: Int
+        /// `CompoundChild` rows where the task IS the parent compound.
+        /// Each parent link is severed; the child Tasks remain.
+        let parentLinkCount: Int
+    }
+
+    /// Read-only impact calculation; safe to call before showing the
+    /// confirm dialog.
+    func computeTaskDeletionImpact(taskId: String) throws -> TaskDeletionImpact {
+        try read { db in
+            let placements = try BoardTask
+                .filter(Column("taskId") == taskId)
+                .fetchAll(db)
+            let childLinks = try CompoundChild
+                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
+                .fetchCount(db)
+            let parentLinks = try CompoundChild
+                .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
+                .fetchCount(db)
+            let affectedBoardIds = Array(Set(placements.map { $0.boardId }))
+            return TaskDeletionImpact(
+                boardTaskCount: placements.count,
+                affectedBoardIds: affectedBoardIds,
+                childLinkCount: childLinks,
+                parentLinkCount: parentLinks,
+            )
+        }
+    }
+
+    /// Cascade-delete a task. Mirrors web's `deleteTaskWithCascade`:
+    ///
+    /// 1. **BoardTask placements** referencing this task — *hard-
+    ///    deleted* (BoardTask has no `isDeleted` field). Each removal
+    ///    queued for sync DELETE so other devices drop the placement.
+    /// 2. **`CompoundChild` rows where the task IS the parent compound**
+    ///    — soft-deleted (version bump + isDeleted + deletedAt). The
+    ///    child Tasks themselves stay alive.
+    /// 3. **`CompoundChild` rows where the task IS a child** — soft-
+    ///    deleted. Sibling links + the parent Task itself are untouched.
+    /// 4. **The Task itself** — soft-deleted with version bump (matches
+    ///    `deleteTask`'s LWW semantics).
+    ///
+    /// All operations run in a single GRDB write transaction so a
+    /// crash mid-cascade leaves a consistent local DB.
+    func deleteTaskWithCascade(taskId: String) throws {
+        try write { db in
+            guard var task = try Task.fetchOne(db, key: taskId) else { return }
+            let now = ISO8601DateFormatter().string(from: Date())
+
+            // 1. Hard-delete BoardTask placements.
+            let placements = try BoardTask
+                .filter(Column("taskId") == taskId)
+                .fetchAll(db)
+            for bt in placements {
+                _ = try bt.delete(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: bt.id,
+                    operationType: .delete,
+                    payload: bt,
+                    now: now,
+                ).save(db)
+            }
+
+            // 2 + 3. Soft-delete compound-child links — both directions.
+            let parentLinks = try CompoundChild
+                .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
+                .fetchAll(db)
+            let childLinks = try CompoundChild
+                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
+                .fetchAll(db)
+            for var link in parentLinks + childLinks {
+                link.isDeleted = true
+                link.deletedAt = now
+                link.updatedAt = now
+                link.version += 1
+                try link.update(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren",
+                    entityId: link.id,
+                    operationType: .delete,
+                    payload: link,
+                    now: now,
+                ).save(db)
+            }
+
+            // 4. Soft-delete the Task itself.
+            task.isDeleted = true
+            task.deletedAt = now
+            task.updatedAt = now
+            task.version += 1
+            try task.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .delete,
+                payload: task,
+                now: now,
+            ).save(db)
         }
     }
 
@@ -481,6 +619,17 @@ extension AppDatabase {
     func fetchBoardTask(id: String) throws -> BoardTask? {
         return try read { db in
             try BoardTask.fetchOne(db, key: id)
+        }
+    }
+
+    /// Fetch every `BoardTask` row that references a specific Task. Used
+    /// by the Task detail view to list "placed on N boards" and by the
+    /// cascade-delete impact preview.
+    func fetchBoardTasksForTask(taskId: String) throws -> [BoardTask] {
+        return try read { db in
+            try BoardTask
+                .filter(Column("taskId") == taskId)
+                .fetchAll(db)
         }
     }
 
