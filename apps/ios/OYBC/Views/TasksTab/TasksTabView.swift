@@ -62,16 +62,19 @@ struct TasksTabView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
+                // Plain-text toolbar button: SwiftUI reliably renders
+                // text-only buttons in nav-bar slots (same shape Apple
+                // uses for "Done" / "Cancel"). A `Label` with an
+                // SF Symbol collapses to icon-only in `.primaryAction`
+                // regardless of `.labelStyle(.titleAndIcon)`, which
+                // shipped as an unlabeled "+" the user couldn't see.
+                // The literal "+" prefix in the string keeps the
+                // create-action read at a glance and matches web's
+                // "+ Create task" copy verbatim.
+                Button("+ Create task") {
                     showNewTaskSheet = true
-                } label: {
-                    // `.titleAndIcon` forces SwiftUI to render BOTH the
-                    // SF Symbol and the text label — the default
-                    // toolbar layout shows icon-only, which made the
-                    // create-task affordance easy to miss on first run.
-                    Label("Create task", systemImage: "plus.circle.fill")
-                        .labelStyle(.titleAndIcon)
                 }
+                .accessibilityLabel("Create task")
             }
         }
         .sheet(isPresented: $showNewTaskSheet) {
