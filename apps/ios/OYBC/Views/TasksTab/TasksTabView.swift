@@ -65,7 +65,12 @@ struct TasksTabView: View {
                 Button {
                     showNewTaskSheet = true
                 } label: {
-                    Label("New task", systemImage: "plus.circle.fill")
+                    // `.titleAndIcon` forces SwiftUI to render BOTH the
+                    // SF Symbol and the text label — the default
+                    // toolbar layout shows icon-only, which made the
+                    // create-task affordance easy to miss on first run.
+                    Label("Create task", systemImage: "plus.circle.fill")
+                        .labelStyle(.titleAndIcon)
                 }
             }
         }

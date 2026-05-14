@@ -64,7 +64,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
   test('task type selector includes "Achievement" alongside Normal/Counting/Progress/Composite', async ({ page }) => {
     await page.goto('/tasks?__oybc_test_bypass=1');
     // Tasks tab gates the create form behind a sheet; open it first.
-    await page.getByRole('button', { name: /\+ New task/i }).click();
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet.getByRole('button', { name: /^Achievement$/ })).toBeVisible();
   });
@@ -74,7 +74,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     // The Tasks tab now hides the create form behind a sheet to keep
     // the library central. Open it first; then the existing Achievement
     // type-button assertions still apply inside the dialog.
-    await page.getByRole('button', { name: /\+ New task/i }).click();
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
@@ -95,7 +95,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     // The Tasks tab now hides the create form behind a sheet to keep
     // the library central. Open it first; then the existing Achievement
     // type-button assertions still apply inside the dialog.
-    await page.getByRole('button', { name: /\+ New task/i }).click();
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
@@ -113,7 +113,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     // The Tasks tab now hides the create form behind a sheet to keep
     // the library central. Open it first; then the existing Achievement
     // type-button assertions still apply inside the dialog.
-    await page.getByRole('button', { name: /\+ New task/i }).click();
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
@@ -132,7 +132,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     // The Tasks tab now hides the create form behind a sheet to keep
     // the library central. Open it first; then the existing Achievement
     // type-button assertions still apply inside the dialog.
-    await page.getByRole('button', { name: /\+ New task/i }).click();
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
@@ -202,7 +202,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     // The Tasks tab now hides the create form behind a sheet to keep
     // the library central. Open it first; then the existing Achievement
     // type-button assertions still apply inside the dialog.
-    await page.getByRole('button', { name: /\+ New task/i }).click();
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
     const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
     await expect(newTaskSheet).toBeVisible();
     await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();

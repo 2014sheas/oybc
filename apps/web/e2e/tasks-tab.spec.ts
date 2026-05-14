@@ -128,7 +128,7 @@ test.describe('Tasks tab', () => {
     await expect(page.getByText('Stretch')).not.toBeVisible();
   });
 
-  test('+ New task opens the sheet; submitting closes it and the new row appears', async ({ page }) => {
+  test('+ Create task opens the sheet; submitting closes it and the new row appears', async ({ page }) => {
     // After PR #57's first iteration, the quick-add form dominated the
     // Tasks tab. The refactor moves it behind a sheet so the library
     // is the primary surface. This locks the open/submit/close cycle
@@ -137,7 +137,7 @@ test.describe('Tasks tab', () => {
 
     // The form should NOT be rendered inline anymore — only the trigger.
     await expect(page.getByPlaceholder(/enter task title/i)).not.toBeVisible();
-    await page.getByRole('button', { name: /\+ New task/i }).click();
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
 
     const sheet = page.getByRole('dialog', { name: 'New task' });
     await expect(sheet).toBeVisible();

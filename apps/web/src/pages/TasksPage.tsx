@@ -40,7 +40,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
           className={styles.newTaskButton}
           onClick={() => setShowNewTaskSheet(true)}
         >
-          + New task
+          + Create task
         </button>
       </header>
 
