@@ -428,17 +428,35 @@ export interface TaskDeletionImpact {
 export async function computeTaskDeletionImpact(
   id: string,
 ): Promise<TaskDeletionImpact> {
-  const boardTasks = await db.boardTasks.where('taskId').equals(id).toArray();
+  const allPlacements = await db.boardTasks.where('taskId').equals(id).toArray();
+  // Filter to placements on non-deleted boards. `BoardTask` has no
+  // `isDeleted` column (deletes are hard) so an orphan placement on a
+  // soft-deleted board persists in the table forever — those rows
+  // shouldn't inflate the user-facing impact count. The actual cascade
+  // still hard-deletes ALL matching `BoardTask` rows (storage cleanup),
+  // but the dialog only reports on cells the user can still see.
+  const boardIdsAll = Array.from(new Set(allPlacements.map((bt) => bt.boardId)));
+  const liveBoards =
+    boardIdsAll.length === 0
+      ? []
+      : await db.boards
+          .where('id')
+          .anyOf(boardIdsAll)
+          .filter((b) => !b.isDeleted)
+          .toArray();
+  const liveBoardIdSet = new Set(liveBoards.map((b) => b.id));
+  const visiblePlacements = allPlacements.filter((bt) =>
+    liveBoardIdSet.has(bt.boardId),
+  );
   const childLinks = await db.compoundChildren
     .filter((c: CompoundChild) => !c.isDeleted && c.childTaskId === id)
     .toArray();
   const parentLinks = await db.compoundChildren
     .filter((c: CompoundChild) => !c.isDeleted && c.compoundTaskId === id)
     .toArray();
-  const affectedBoardIds = Array.from(new Set(boardTasks.map((bt) => bt.boardId)));
   return {
-    boardTaskCount: boardTasks.length,
-    affectedBoardIds,
+    boardTaskCount: visiblePlacements.length,
+    affectedBoardIds: Array.from(liveBoardIdSet),
     childLinkCount: childLinks.length,
     parentLinkCount: parentLinks.length,
   };

@@ -434,7 +434,7 @@ extension AppDatabase {
     func deleteBoard(id: String) throws {
         try write { db in
             guard var board = try Board.fetchOne(db, key: id) else { return }
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = Self.currentTimestamp()
             board.isDeleted = true
             board.deletedAt = now
             board.updatedAt = now
@@ -466,17 +466,20 @@ extension AppDatabase {
         }
     }
 
-    /// Enqueue a sync UPDATE for a Task that's already been saved
-    /// locally. Used by the Task detail view's edit flow — `saveTask`
-    /// writes the row but doesn't push to Firestore on its own.
-    func enqueueTaskSyncUpdate(_ task: Task) throws {
+    /// Atomic save + sync-enqueue used by the Task detail view's edit
+    /// flow. Replaces the prior pattern of calling `saveTask` followed
+    /// by `enqueueTaskSyncUpdate` in two separate transactions — a
+    /// crash between the two left the local row updated but no
+    /// Firestore sync, silently dropping the edit on other devices.
+    func saveTaskAndEnqueueUpdate(_ task: Task) throws {
         try write { db in
+            try task.save(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "tasks",
                 entityId: task.id,
                 operationType: .update,
                 payload: task,
-                now: ISO8601DateFormatter().string(from: Date()),
+                now: Self.iso8601Now(),
             ).save(db)
         }
     }
@@ -485,7 +488,7 @@ extension AppDatabase {
     func deleteTask(id: String) throws {
         try write { db in
             guard var task = try Task.fetchOne(db, key: id) else { return }
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = Self.currentTimestamp()
             task.isDeleted = true
             task.deletedAt = now
             task.updatedAt = now
@@ -511,22 +514,35 @@ extension AppDatabase {
     }
 
     /// Read-only impact calculation; safe to call before showing the
-    /// confirm dialog.
+    /// confirm dialog. Filters BoardTask placements to those on
+    /// non-deleted boards — `BoardTask` has no `isDeleted` column, so
+    /// orphan placements on soft-deleted boards would otherwise inflate
+    /// the user-facing count. The actual cascade still hard-deletes
+    /// every matching placement (storage cleanup); the dialog only
+    /// reports cells the user can still see.
     func computeTaskDeletionImpact(taskId: String) throws -> TaskDeletionImpact {
         try read { db in
-            let placements = try BoardTask
+            let allPlacements = try BoardTask
                 .filter(Column("taskId") == taskId)
                 .fetchAll(db)
+            let placementBoardIds = Array(Set(allPlacements.map { $0.boardId }))
+            let liveBoards: [Board] = placementBoardIds.isEmpty
+                ? []
+                : try Board
+                    .filter(placementBoardIds.contains(Column("id"))
+                            && Column("isDeleted") == false)
+                    .fetchAll(db)
+            let liveBoardIds = Set(liveBoards.map { $0.id })
+            let visiblePlacements = allPlacements.filter { liveBoardIds.contains($0.boardId) }
             let childLinks = try CompoundChild
                 .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
                 .fetchCount(db)
             let parentLinks = try CompoundChild
                 .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
                 .fetchCount(db)
-            let affectedBoardIds = Array(Set(placements.map { $0.boardId }))
             return TaskDeletionImpact(
-                boardTaskCount: placements.count,
-                affectedBoardIds: affectedBoardIds,
+                boardTaskCount: visiblePlacements.count,
+                affectedBoardIds: Array(liveBoardIds),
                 childLinkCount: childLinks,
                 parentLinkCount: parentLinks,
             )
@@ -551,7 +567,7 @@ extension AppDatabase {
     func deleteTaskWithCascade(taskId: String) throws {
         try write { db in
             guard var task = try Task.fetchOne(db, key: taskId) else { return }
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = Self.currentTimestamp()
 
             // 1. Hard-delete BoardTask placements.
             let placements = try BoardTask
@@ -723,7 +739,7 @@ extension AppDatabase {
     func softDeleteRecurringBoardTemplate(id: String) throws {
         try write { db in
             guard var template = try RecurringBoardTemplate.fetchOne(db, key: id) else { return }
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = Self.currentTimestamp()
             template.isDeleted = true
             template.deletedAt = now
             template.updatedAt = now
@@ -787,7 +803,7 @@ extension AppDatabase {
 
             user.preferences = User.encodePreferences(next)
             user.version += 1
-            user.updatedAt = ISO8601DateFormatter().string(from: Date())
+            user.updatedAt = Self.currentTimestamp()
             try user.save(db)
 
             // Encode the full user record as the sync payload. Propagating
@@ -864,7 +880,7 @@ extension AppDatabase {
     @discardableResult
     func resetStaleInProgressSyncItems(staleAfter: TimeInterval = 60) throws -> Int {
         let cutoff = Date().addingTimeInterval(-staleAfter)
-        let cutoffISO = ISO8601DateFormatter().string(from: cutoff)
+        let cutoffISO = Self.isoFormatter.string(from: cutoff)
 
         return try write { db in
             let inProgress = try SyncQueueItem
@@ -914,7 +930,7 @@ extension AppDatabase {
             for var item in failed {
                 if item.retryCount >= SyncRetry.maxRetries { continue }
                 let lastAttemptAtMs: Int? = item.lastAttemptAt
-                    .flatMap { ISO8601DateFormatter().date(from: $0) }
+                    .flatMap { Self.parseISO8601($0) }
                     .map { Int($0.timeIntervalSince1970 * 1000) }
                 guard SyncRetry.isFailedItemEligibleForRetry(
                     retryCount: item.retryCount,
@@ -949,7 +965,7 @@ extension AppDatabase {
     func markBoardSynced(id: String) throws {
         try write { db in
             var board = try Board.fetchOne(db, key: id)
-            board?.lastSyncedAt = ISO8601DateFormatter().string(from: Date())
+            board?.lastSyncedAt = Self.currentTimestamp()
             try board?.update(db)
         }
     }
@@ -990,9 +1006,28 @@ extension AppDatabase {
         return UUID().uuidString.lowercased()
     }
 
-    /// Get current ISO8601 timestamp
+    /// Shared ISO8601 formatter. `ISO8601DateFormatter` is expensive
+    /// to instantiate (~10–50ms on first use) and identical across
+    /// every call site that just wants `Date.now` in ISO8601 — hoist
+    /// it to a single static so write transactions don't pay the cost
+    /// per row. `Foundation` documents the type as thread-safe.
+    private static let isoFormatter = ISO8601DateFormatter()
+
+    /// Get current ISO8601 timestamp.
     static func currentTimestamp() -> String {
-        return ISO8601DateFormatter().string(from: Date())
+        return isoFormatter.string(from: Date())
+    }
+
+    /// Same as `currentTimestamp` — alias kept for readability in
+    /// transaction helpers (e.g. `saveTaskAndEnqueueUpdate`).
+    static func iso8601Now() -> String {
+        return currentTimestamp()
+    }
+
+    /// Parse an ISO8601 string back to a `Date` (or nil). Used by the
+    /// sync-pull validators.
+    static func parseISO8601(_ s: String) -> Date? {
+        return isoFormatter.date(from: s)
     }
 
     /// Errors raised by `AppDatabase` operations.

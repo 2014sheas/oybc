@@ -50,7 +50,13 @@ struct TaskDetailView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { reload() }
+        .onAppear {
+            // Reads off the main thread so a task with many placements
+            // doesn't hitch the UI. The `await MainActor.run` inside
+            // `reload()` republishes the resulting state back on the
+            // main thread before SwiftUI observes the change.
+            _Concurrency.Task { await reload() }
+        }
         .sheet(isPresented: $showEditSheet) {
             if let task {
                 editSheet(task)
@@ -70,20 +76,32 @@ struct TaskDetailView: View {
 
     // MARK: - Reload
 
-    private func reload() {
+    private func reload() async {
         do {
-            let loaded = try AppDatabase.shared.fetchTask(id: taskId)
-            self.task = loaded
-            if let loaded = loaded, !loaded.isDeleted {
-                let bts = try AppDatabase.shared.fetchBoardTasksForTask(taskId: taskId)
-                self.placements = bts
-                let boardIds = Array(Set(bts.map { $0.boardId }))
-                let boards = try AppDatabase.shared.fetchBoards(ids: boardIds)
-                self.affectedBoards = boards
+            // GRDB reads block their calling thread; keep them off the
+            // main thread so SwiftUI doesn't hitch when a task has
+            // many placements. The hop back to the main actor below
+            // republishes state before the view observes it.
+            let snapshot = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                let loaded = try AppDatabase.shared.fetchTask(id: taskId)
+                var bts: [BoardTask] = []
+                var boards: [Board] = []
+                if let loaded = loaded, !loaded.isDeleted {
+                    bts = try AppDatabase.shared.fetchBoardTasksForTask(taskId: taskId)
+                    let boardIds = Array(Set(bts.map { $0.boardId }))
+                    boards = try AppDatabase.shared.fetchBoards(ids: boardIds)
+                }
+                return (loaded, bts, boards)
+            }.value
+            await MainActor.run {
+                self.task = snapshot.0
+                self.placements = snapshot.1
+                self.affectedBoards = snapshot.2
+                self.loadError = nil
             }
-            self.loadError = nil
         } catch {
-            self.loadError = "Failed to load task: \(error.localizedDescription)"
+            let message = "Failed to load task: \(error.localizedDescription)"
+            await MainActor.run { self.loadError = message }
         }
     }
 
@@ -310,12 +328,14 @@ struct TaskDetailView: View {
                 if let req = Int(patch.requiredCountStr), req > 0 { t.requiredCount = req }
             }
         }
-        t.updatedAt = ISO8601DateFormatter().string(from: Date())
+        t.updatedAt = AppDatabase.currentTimestamp()
         t.version += 1
 
         do {
-            try AppDatabase.shared.saveTask(t)
-            try AppDatabase.shared.enqueueTaskSyncUpdate(t)
+            // Atomic: save + enqueue in one transaction so a crash
+            // between can't leave local state out of sync with the
+            // sync queue (CLAUDE.md "atomic pull-path multi-writes").
+            try AppDatabase.shared.saveTaskAndEnqueueUpdate(t)
             task = t
             saveError = nil
             showEditSheet = false

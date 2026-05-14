@@ -4,6 +4,8 @@ import {
   seedBoard,
   seedTask,
   seedBoardTask,
+  seedCompoundChild,
+  readCompoundChild,
 } from './_fixtures/bypass';
 
 /**
@@ -136,5 +138,141 @@ test.describe('Tasks tab', () => {
     // The quick-add form's submit was titled "Add to library" on the
     // hub; with the form removed, the button shouldn't be present here.
     await expect(page.getByRole('button', { name: /add to library/i })).not.toBeVisible();
+  });
+
+  test('search matches description text, not just title', async ({ page }) => {
+    // The wizard's filter only checks `title`; the Tasks tab extends
+    // matching to `description` so power users can find things by note.
+    // Seed an extra task with description-only signal.
+    const DESC_ID = 'dddddddd-0009-0000-0000-000000000009';
+    await seedTask(page, {
+      id: DESC_ID,
+      title: 'Plain title',
+      description: 'Includes the word goldfinch',
+      type: 'normal',
+    });
+
+    await page.getByRole('link', { name: /tasks/i }).click();
+    await page.getByPlaceholder(/search tasks/i).fill('goldfinch');
+
+    // Only the description-matched task should remain.
+    await expect(page.getByText('Plain title')).toBeVisible();
+    await expect(page.getByText('Read for 30 minutes')).not.toBeVisible();
+    await expect(page.getByText('Run miles')).not.toBeVisible();
+  });
+
+  test('sort: Title A→Z reorders the list alphabetically', async ({ page }) => {
+    await page.getByRole('link', { name: /tasks/i }).click();
+
+    // Default sort is "Recently updated" — seeds went in in the
+    // beforeEach order, so we can't make a strong claim about the
+    // initial order. What we can verify: after switching to title-asc,
+    // the rows appear in alphabetic order regardless.
+    await page.getByLabel('Sort').selectOption('title-asc');
+
+    // Read the rendered task names in DOM order via aria-labels.
+    const rowNames = await page
+      .locator('ul[aria-label="Task list"] button')
+      .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('aria-label') ?? ''));
+    // Strip the aria-label scaffolding to just the title.
+    const titles = rowNames.map((s) =>
+      s.replace(/^Open /, '').replace(/ details$/, '').replace(/^"|"$/g, ''),
+    );
+    const sortedTitles = [...titles].sort((a, b) => a.localeCompare(b));
+    expect(titles).toEqual(sortedTitles);
+  });
+
+  test('usage filter "Unused" hides tasks placed on any board', async ({ page }) => {
+    await page.getByRole('link', { name: /tasks/i }).click();
+    // Stretch is the placed task; the others (Read, Run miles) are unplaced.
+    await page.getByLabel('Usage').selectOption('unused');
+
+    await expect(page.getByText('Read for 30 minutes')).toBeVisible();
+    await expect(page.getByText('Run miles')).toBeVisible();
+    await expect(page.getByText('Stretch')).not.toBeVisible();
+  });
+
+  test('edit cancel leaves the task untouched', async ({ page }) => {
+    await page.getByRole('link', { name: /tasks/i }).click();
+    await page.getByRole('button', { name: /open read for 30 minutes details/i }).click();
+    await page.getByRole('button', { name: 'Edit' }).click();
+
+    // Change the title but cancel — list should still show the original.
+    const dialog = page.getByRole('dialog', { name: 'Edit task' });
+    await dialog.getByLabel(/title/i).fill('THIS SHOULD NOT PERSIST');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    // Sheet closes; detail still shows the original title.
+    await expect(page.getByRole('heading', { name: 'Read for 30 minutes' })).toBeVisible();
+
+    // Round-trip via the list to confirm Dexie didn't get the update.
+    await page.getByRole('link', { name: '‹ Tasks' }).click();
+    await expect(page.getByText('Read for 30 minutes')).toBeVisible();
+    await expect(page.getByText('THIS SHOULD NOT PERSIST')).not.toBeVisible();
+  });
+
+  test('navigating to a bogus task id redirects back to /tasks', async ({ page }) => {
+    // Regression: a previous implementation relied on `useLiveQuery`
+    // returning null for missing keys, but it returns `undefined` for
+    // BOTH "still loading" and "no row matches" — so the redirect
+    // effect short-circuited and the user got stuck on a Loading…
+    // spinner. The fix uses a parallel one-shot `db.tasks.get(id)` to
+    // distinguish loading from missing.
+    await page.goto('/tasks/bogus-id-that-does-not-exist?__oybc_test_bypass=1');
+    await expect(page).toHaveURL(/\/tasks$/);
+    await expect(page.getByRole('heading', { name: 'Tasks', level: 1 })).toBeVisible();
+  });
+
+  test('compound cascade: deleting a parent severs all child-link rows', async ({ page }) => {
+    // Build a compound parent + two child tasks linked via compound_children
+    // rows. The cascade impact dialog should report 2 subtasks; after
+    // confirm, both link rows should be soft-deleted but the child Tasks
+    // themselves remain in the library.
+    const PARENT_ID = 'eeeeeeee-0001-0000-0000-000000000001';
+    const CHILD_A_ID = 'eeeeeeee-0002-0000-0000-000000000002';
+    const CHILD_B_ID = 'eeeeeeee-0003-0000-0000-000000000003';
+    const LINK_A_ID = 'eeeeeeee-aaaa-0000-0000-000000000001';
+    const LINK_B_ID = 'eeeeeeee-aaaa-0000-0000-000000000002';
+
+    await seedTask(page, { id: PARENT_ID, title: 'Workout routine', type: 'compound', isOrdered: false });
+    await seedTask(page, { id: CHILD_A_ID, title: 'Pushups', type: 'normal' });
+    await seedTask(page, { id: CHILD_B_ID, title: 'Squats', type: 'normal' });
+    await seedCompoundChild(page, {
+      id: LINK_A_ID,
+      compoundTaskId: PARENT_ID,
+      childTaskId: CHILD_A_ID,
+      childIndex: 0,
+    });
+    await seedCompoundChild(page, {
+      id: LINK_B_ID,
+      compoundTaskId: PARENT_ID,
+      childTaskId: CHILD_B_ID,
+      childIndex: 1,
+    });
+
+    await page.getByRole('link', { name: /tasks/i }).click();
+    await page.getByRole('button', { name: /open workout routine details/i }).click();
+    await page.getByRole('button', { name: 'Delete' }).click();
+
+    const dialog = page.getByRole('alertdialog', { name: 'Confirm delete' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/Releases 2 subtasks/i)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Delete' }).click();
+
+    // Back on the list — the compound parent is gone, but Pushups + Squats
+    // remain as standalone library tasks.
+    await expect(page).toHaveURL(/\/tasks$/);
+    await expect(page.getByText('Workout routine')).not.toBeVisible();
+    await expect(page.getByText('Pushups')).toBeVisible();
+    await expect(page.getByText('Squats')).toBeVisible();
+
+    // The compound_children link rows themselves should have isDeleted=true
+    // (soft-delete) — verify directly via IndexedDB. The web cascade only
+    // *flags* the rows; it doesn't remove them from the table so the sync
+    // queue can drain the tombstone to Firestore.
+    const linkA = await readCompoundChild(page, LINK_A_ID);
+    const linkB = await readCompoundChild(page, LINK_B_ID);
+    expect(linkA?.isDeleted).toBe(true);
+    expect(linkB?.isDeleted).toBe(true);
   });
 });

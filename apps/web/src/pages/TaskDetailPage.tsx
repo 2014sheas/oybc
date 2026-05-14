@@ -61,19 +61,48 @@ export function TaskDetailPage(): React.ReactElement {
   const [deleteImpact, setDeleteImpact] = useState<TaskDeletionImpact | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 404 — task missing OR soft-deleted. Bounce back to the list so the
-  // URL doesn't get stuck on a dead detail page (e.g., another device
-  // deleted this task while we had it open).
+  // `useLiveQuery` returns `undefined` for BOTH "still loading" AND
+  // "no row matches the key" — we can't distinguish 404 from loading
+  // by inspecting it. A parallel one-shot `get(id)` lets us settle
+  // the question: once that resolves to `undefined`, we know the
+  // row is missing (or was missing at mount) and can redirect.
+  const [resolved, setResolved] = useState<'pending' | 'present' | 'missing'>(
+    'pending',
+  );
   useEffect(() => {
-    if (task === undefined) return; // still loading
-    if (task === null || task.isDeleted) {
+    if (!id) {
+      setResolved('missing');
+      return;
+    }
+    setResolved('pending');
+    let cancelled = false;
+    void (async () => {
+      const row = await db.tasks.get(id);
+      if (cancelled) return;
+      setResolved(row === undefined ? 'missing' : 'present');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // Redirect on (a) bogus id (one-shot resolved missing), (b) task
+  // present at mount but soft-deleted while we were viewing it
+  // (another device synced a delete).
+  useEffect(() => {
+    if (resolved === 'missing') {
+      navigate('/tasks', { replace: true });
+      return;
+    }
+    if (task && task.isDeleted) {
       navigate('/tasks', { replace: true });
     }
-  }, [task, navigate]);
+  }, [resolved, task, navigate]);
 
   if (!id) return <Navigate404 />;
-  if (task === undefined) return <Loading />;
-  if (task === null || task.isDeleted) return <Loading />;
+  if (resolved === 'pending') return <Loading />;
+  if (resolved === 'missing') return <Loading />;
+  if (!task || task.isDeleted) return <Loading />;
 
   const handleDeleteClick = async () => {
     setError(null);
@@ -288,9 +317,22 @@ function EditSheet({ task, onSubmit, onCancel }: EditSheetProps): React.ReactEle
     task.requiredCount !== undefined ? String(task.requiredCount) : '',
   );
   const [submitting, setSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  /** Parse a digit-string into a positive integer or return null
+   *  (signalling "user typed something we can't accept"). Empty string
+   *  is treated as "no change" by callers so they can keep the
+   *  existing field value. */
+  const parsePositiveInt = (raw: string): number | null | 'empty' => {
+    const trimmed = raw.trim();
+    if (trimmed === '') return 'empty';
+    const parsed = parseInt(trimmed, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) return null;
+    return parsed;
+  };
 
   const handleSubmit = async () => {
-    setSubmitting(true);
+    setValidationError(null);
     const patch: Partial<Task> = {
       title: title.trim(),
       description: description.trim() || undefined,
@@ -298,20 +340,29 @@ function EditSheet({ task, onSubmit, onCancel }: EditSheetProps): React.ReactEle
     if (task.type === TaskType.COUNTING) {
       patch.action = action.trim();
       patch.unit = unit.trim();
-      const parsed = parseInt(maxCountStr, 10);
-      if (Number.isInteger(parsed) && parsed > 0) {
-        patch.maxCount = parsed;
+      const result = parsePositiveInt(maxCountStr);
+      if (result === null) {
+        setValidationError('Max Count must be a whole number greater than 0.');
+        return;
+      }
+      if (result !== 'empty') {
+        patch.maxCount = result;
       }
     }
     if (task.type === TaskType.ACHIEVEMENT) {
       patch.achievementTrigger = trigger;
       if (task.referencedTemplateId) {
-        const parsed = parseInt(requiredCountStr, 10);
-        if (Number.isInteger(parsed) && parsed > 0) {
-          patch.requiredCount = parsed;
+        const result = parsePositiveInt(requiredCountStr);
+        if (result === null) {
+          setValidationError('Required count must be a whole number greater than 0.');
+          return;
+        }
+        if (result !== 'empty') {
+          patch.requiredCount = result;
         }
       }
     }
+    setSubmitting(true);
     await onSubmit(patch);
     setSubmitting(false);
   };
@@ -358,7 +409,7 @@ function EditSheet({ task, onSubmit, onCancel }: EditSheetProps): React.ReactEle
               />
             </label>
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Max count</span>
+              <span className={styles.fieldLabel}>Max Count</span>
               <input
                 type="number"
                 min={1}
@@ -413,6 +464,12 @@ function EditSheet({ task, onSubmit, onCancel }: EditSheetProps): React.ReactEle
           <p className={styles.compoundHint}>
             Compound subtasks are edited from the board-creation wizard. The
             title and description can still be changed here.
+          </p>
+        )}
+
+        {validationError !== null && (
+          <p className={styles.error} role="alert">
+            {validationError}
           </p>
         )}
 
