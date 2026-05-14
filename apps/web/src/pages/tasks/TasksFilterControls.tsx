@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FilterTabs } from '../../components/FilterTabs';
 import type {
   SortOption,
@@ -50,13 +51,22 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'most-used-desc', label: 'Most-used' },
 ];
 
+const DEFAULT_SORT: SortOption = 'updated-desc';
+const DEFAULT_STATUS: StatusFilter = 'any';
+const DEFAULT_USAGE: UsageFilter = 'any';
+
 /**
- * TasksFilterControls — Search + type-chip-row + (status / usage / sort)
- * dropdowns for the Tasks tab. Layout is intentionally stacked instead
- * of a single mega-row so it stays readable on phone widths.
+ * TasksFilterControls — Two primary rows (search + type chips) always
+ * visible; secondary controls (Sort / Status / Usage) tuck behind a
+ * "Filters" disclosure button so the default state doesn't clutter
+ * the page above the library. A dot badge on the disclosure indicates
+ * when any secondary filter is non-default, and a "Clear all" link
+ * inside the expanded panel resets the secondary filters in one tap.
  *
- * State lives in the parent (`useTasksFilters`). This component is
- * fully controlled.
+ * State lives in the parent (`useTasksFilters`). The disclosure
+ * open/closed state is local — re-collapses when the user navigates
+ * away (parity with iOS, where the .sheet pattern would discard the
+ * SwiftUI view state anyway).
  */
 export function TasksFilterControls({
   search,
@@ -70,6 +80,19 @@ export function TasksFilterControls({
   sortBy,
   onSortByChange,
 }: TasksFilterControlsProps): React.ReactElement {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const isAnyFilterActive =
+    sortBy !== DEFAULT_SORT ||
+    statusFilter !== DEFAULT_STATUS ||
+    usageFilter !== DEFAULT_USAGE;
+
+  const handleClearAll = (): void => {
+    onSortByChange(DEFAULT_SORT);
+    onStatusFilterChange(DEFAULT_STATUS);
+    onUsageFilterChange(DEFAULT_USAGE);
+  };
+
   return (
     <div className={styles.controls}>
       <div className={styles.searchRow}>
@@ -81,20 +104,23 @@ export function TasksFilterControls({
           onChange={(e) => onSearchChange(e.target.value)}
           aria-label="Search tasks"
         />
-        <label className={styles.dropdownLabel}>
-          <span className={styles.dropdownLabelText}>Sort</span>
-          <select
-            className={styles.dropdown}
-            value={sortBy}
-            onChange={(e) => onSortByChange(e.target.value as SortOption)}
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <button
+          type="button"
+          className={styles.disclosure}
+          onClick={() => setIsExpanded((v) => !v)}
+          aria-expanded={isExpanded}
+          aria-controls="tasks-filters-panel"
+        >
+          <span>Filters</span>
+          <span aria-hidden="true">{isExpanded ? '▴' : '▾'}</span>
+          {isAnyFilterActive && (
+            <span
+              className={styles.badge}
+              aria-label="Filters active"
+              title="Filters active"
+            />
+          )}
+        </button>
       </div>
 
       <div role="group" aria-label="Filter by task type">
@@ -105,36 +131,68 @@ export function TasksFilterControls({
         />
       </div>
 
-      <div className={styles.dropdownRow}>
-        <label className={styles.dropdownLabel}>
-          <span className={styles.dropdownLabelText}>Status</span>
-          <select
-            className={styles.dropdown}
-            value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value as StatusFilter)}
-          >
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.dropdownLabel}>
-          <span className={styles.dropdownLabelText}>Usage</span>
-          <select
-            className={styles.dropdown}
-            value={usageFilter}
-            onChange={(e) => onUsageFilterChange(e.target.value as UsageFilter)}
-          >
-            {USAGE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {isExpanded && (
+        <div
+          id="tasks-filters-panel"
+          className={styles.expandedPanel}
+          role="group"
+          aria-label="Secondary filters"
+        >
+          <label className={styles.dropdownLabel}>
+            <span className={styles.dropdownLabelText}>Sort</span>
+            <select
+              className={styles.dropdown}
+              value={sortBy}
+              onChange={(e) => onSortByChange(e.target.value as SortOption)}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.dropdownLabel}>
+            <span className={styles.dropdownLabelText}>Status</span>
+            <select
+              className={styles.dropdown}
+              value={statusFilter}
+              onChange={(e) =>
+                onStatusFilterChange(e.target.value as StatusFilter)
+              }
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.dropdownLabel}>
+            <span className={styles.dropdownLabelText}>Usage</span>
+            <select
+              className={styles.dropdown}
+              value={usageFilter}
+              onChange={(e) => onUsageFilterChange(e.target.value as UsageFilter)}
+            >
+              {USAGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {isAnyFilterActive && (
+            <button
+              type="button"
+              className={styles.clearAll}
+              onClick={handleClearAll}
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

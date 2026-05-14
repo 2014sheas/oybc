@@ -187,6 +187,9 @@ test.describe('Tasks tab', () => {
   test('sort: Title A→Z reorders the list alphabetically', async ({ page }) => {
     await page.getByRole('link', { name: /tasks/i }).click();
 
+    // Sort lives behind the Filters disclosure now — open it first.
+    await page.getByRole('button', { name: /^Filters/ }).click();
+
     // Default sort is "Recently updated" — seeds went in in the
     // beforeEach order, so we can't make a strong claim about the
     // initial order. What we can verify: after switching to title-asc,
@@ -207,6 +210,8 @@ test.describe('Tasks tab', () => {
 
   test('usage filter "Unused" hides tasks placed on any board', async ({ page }) => {
     await page.getByRole('link', { name: /tasks/i }).click();
+    // Usage lives behind the Filters disclosure now — open it first.
+    await page.getByRole('button', { name: /^Filters/ }).click();
     // Stretch is the placed task; the others (Read, Run miles) are unplaced.
     await page.getByLabel('Usage').selectOption('unused');
 
@@ -244,6 +249,43 @@ test.describe('Tasks tab', () => {
     await page.goto('/tasks/bogus-id-that-does-not-exist?__oybc_test_bypass=1');
     await expect(page).toHaveURL(/\/tasks$/);
     await expect(page.getByRole('heading', { name: 'Tasks', level: 1 })).toBeVisible();
+  });
+
+  test('Filters disclosure: hides Sort/Status/Usage by default, badge + Clear all', async ({ page }) => {
+    await page.getByRole('link', { name: /tasks/i }).click();
+
+    // Defaults: secondary controls collapsed, no badge.
+    await expect(page.getByLabel('Sort')).not.toBeVisible();
+    await expect(page.getByLabel('Status')).not.toBeVisible();
+    await expect(page.getByLabel('Usage')).not.toBeVisible();
+    const filtersButton = page.getByRole('button', { name: /^Filters/ });
+    await expect(filtersButton).toBeVisible();
+    // The "Filters active" badge sibling is a span with aria-label;
+    // when no filter is active it shouldn't render.
+    await expect(page.getByLabel('Filters active')).not.toBeVisible();
+
+    // Open the panel.
+    await filtersButton.click();
+    await expect(page.getByLabel('Sort')).toBeVisible();
+    await expect(page.getByLabel('Status')).toBeVisible();
+    await expect(page.getByLabel('Usage')).toBeVisible();
+
+    // Change one filter — badge should appear once the panel is
+    // closed AND a Clear all button shows inside the panel.
+    await page.getByLabel('Status').selectOption('completed');
+    await expect(
+      page.getByRole('button', { name: /clear all/i }),
+    ).toBeVisible();
+
+    // Close, confirm the badge sticks.
+    await filtersButton.click();
+    await expect(page.getByLabel('Filters active')).toBeVisible();
+
+    // Re-open and Clear all → badge disappears, dropdowns hide again.
+    await filtersButton.click();
+    await page.getByRole('button', { name: /clear all/i }).click();
+    await filtersButton.click(); // collapse panel
+    await expect(page.getByLabel('Filters active')).not.toBeVisible();
   });
 
   test('compound cascade: deleting a parent severs all child-link rows', async ({ page }) => {

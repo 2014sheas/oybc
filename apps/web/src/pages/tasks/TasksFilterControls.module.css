@@ -25,10 +25,49 @@
   outline-offset: -1px;
 }
 
-.dropdownRow {
+.disclosure {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+
+.disclosure:hover {
+  border-color: var(--active-bg);
+}
+
+.disclosure:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
+}
+
+.badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--active-bg);
+  margin-left: 2px;
+}
+
+.expandedPanel {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
 }
 
 .dropdownLabel {
@@ -50,7 +89,7 @@
   padding: 6px 10px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   color: var(--text-primary);
   font-size: 0.9rem;
   cursor: pointer;
@@ -59,4 +98,26 @@
 .dropdown:focus {
   outline: 2px solid var(--active-bg);
   outline-offset: -1px;
+}
+
+.clearAll {
+  margin-left: auto;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--active-bg);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.clearAll:hover {
+  filter: brightness(0.9);
+}
+
+.clearAll:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
+  text-decoration: none;
 }
