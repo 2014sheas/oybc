@@ -11,6 +11,10 @@ struct TaskDetailView: View {
     let userId: String
     let onChanged: () -> Void
     let onDeleted: () -> Void
+    /// Cross-tab navigation: when the user taps a board name in Usage,
+    /// switch to the Boards tab and push BoardPlayView for that id.
+    /// Plumbed in from MainTabView, which owns boardsPath + selectedTab.
+    let onOpenBoard: (String) -> Void
 
     @State private var task: Task?
     @State private var placements: [BoardTask] = []
@@ -51,7 +55,8 @@ struct TaskDetailView: View {
                     },
                     onOpenTask: { id in
                         openedChildTaskId = TaskIdItem(id: id)
-                    }
+                    },
+                    onOpenBoard: onOpenBoard
                 )
             } else {
                 Text("Loading…").foregroundColor(.secondary).padding()
@@ -67,7 +72,8 @@ struct TaskDetailView: View {
                 taskId: item.id,
                 userId: userId,
                 onChanged: onChanged,
-                onDeleted: onChanged
+                onDeleted: onChanged,
+                onOpenBoard: onOpenBoard
             )
         }
         .alert("Delete task?", isPresented: $showDeleteConfirm, presenting: deleteImpact) { _ in

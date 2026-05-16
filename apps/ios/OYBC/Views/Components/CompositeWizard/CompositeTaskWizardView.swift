@@ -120,7 +120,13 @@ struct CompositeTaskWizardView: View {
             loadLibrary()
         }
         .sheet(item: $openedTaskInLibrary) { item in
-            TaskDetailSheetView(taskId: item.id, onClose: { openedTaskInLibrary = nil })
+            // Wizard context: see BoardWizardTasksStepView for rationale —
+            // dismiss-only, no cross-tab navigation.
+            TaskDetailSheetView(
+                taskId: item.id,
+                onClose: { openedTaskInLibrary = nil },
+                onOpenBoard: { _ in openedTaskInLibrary = nil }
+            )
         }
     }
 

@@ -184,6 +184,12 @@ struct BoardPlayView: View {
     // MARK: - Parameters
 
     let boardId: String
+    /// Cross-tab navigation: when the user opens a Task detail sheet
+    /// over this board and taps a different board in the Usage section,
+    /// dismiss the sheet here and delegate the routing to MainTabView
+    /// (which owns boardsPath). Defaults to a no-op so existing call
+    /// sites compile while we plumb this from the top.
+    var onOpenBoard: (String) -> Void = { _ in }
     @EnvironmentObject var authService: AuthService
 
     // MARK: - State
@@ -314,7 +320,16 @@ struct BoardPlayView: View {
             detailSheet
         }
         .sheet(item: $taskDetailSheetTaskId) { item in
-            TaskDetailSheetView(taskId: item.id, onClose: { taskDetailSheetTaskId = nil })
+            TaskDetailSheetView(
+                taskId: item.id,
+                onClose: { taskDetailSheetTaskId = nil },
+                onOpenBoard: { newBoardId in
+                    // Dismiss the sheet first so the new board renders
+                    // unobstructed once the navigation lands.
+                    taskDetailSheetTaskId = nil
+                    onOpenBoard(newBoardId)
+                }
+            )
         }
     }
 

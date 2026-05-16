@@ -48,6 +48,17 @@ struct MainTabView: View {
         }
     }
 
+    /// Cross-tab navigation: jump to a specific board. Used by Tasks-tab
+    /// detail Usage section ("tap a board name → go there") and by the
+    /// task-detail sheet over BoardPlayView (board-to-board jump).
+    /// Resets boardsPath to a single entry so the user lands on a clean
+    /// stack — same intent as `onBoardCompleted` from the wizard.
+    private func openBoard(_ boardId: String) {
+        boardsPath = NavigationPath()
+        boardsPath.append(boardId)
+        selectedTab = 0
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack(path: $boardsPath) {
@@ -62,7 +73,10 @@ struct MainTabView: View {
                     }
                 )
                 .navigationDestination(for: String.self) { boardId in
-                    BoardPlayView(boardId: boardId)
+                    BoardPlayView(
+                        boardId: boardId,
+                        onOpenBoard: { newId in openBoard(newId) }
+                    )
                 }
             }
             .tabItem {
@@ -72,7 +86,11 @@ struct MainTabView: View {
 
             NavigationStack(path: $tasksPath) {
                 if let userId = authService.currentUser?.id {
-                    TasksTabView(userId: userId, path: $tasksPath)
+                    TasksTabView(
+                        userId: userId,
+                        path: $tasksPath,
+                        onOpenBoard: { boardId in openBoard(boardId) }
+                    )
                 }
             }
             .tabItem {

@@ -32,6 +32,15 @@ struct TaskDetailContentView: View {
     /// Called when the user taps a parent compound chip or child task row
     /// to navigate to that task's detail.
     let onOpenTask: (String) -> Void
+    /// Called when the user taps a board name in the Usage section. The
+    /// caller decides where to land — typically: switch to the Boards
+    /// tab and push BoardPlayView for that board id, dismissing any
+    /// open sheet first. Without this, board names would be no-ops in
+    /// sheet mode and broken in route mode (they previously matched
+    /// the Tasks-tab `navigationDestination(for: String.self)`, which
+    /// pushes a TaskDetailView with the board's id — finds no task,
+    /// renders Loading… forever).
+    let onOpenBoard: (String) -> Void
 
     // MARK: - Local state
 
@@ -248,7 +257,9 @@ struct TaskDetailContentView: View {
                     .foregroundColor(.secondary)
             } else {
                 ForEach(affectedBoards, id: \.id) { board in
-                    NavigationLink(value: board.id) {
+                    Button {
+                        onOpenBoard(board.id)
+                    } label: {
                         HStack(spacing: 6) {
                             Text(board.name)
                                 .foregroundColor(.blue)

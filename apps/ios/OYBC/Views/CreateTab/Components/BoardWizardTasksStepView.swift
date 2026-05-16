@@ -293,7 +293,15 @@ struct BoardWizardTasksStepView: View {
         }
         // Task detail sheet — opened from a row's context menu "Open in library".
         .sheet(item: $openedTaskInLibrary) { item in
-            TaskDetailSheetView(taskId: item.id, onClose: { openedTaskInLibrary = nil })
+            // Wizard context: tapping a board in Usage would discard
+            // wizard state, so we intentionally only dismiss the sheet
+            // (no navigation). The user can finish the wizard and
+            // navigate to the board manually.
+            TaskDetailSheetView(
+                taskId: item.id,
+                onClose: { openedTaskInLibrary = nil },
+                onOpenBoard: { _ in openedTaskInLibrary = nil }
+            )
         }
     }
 

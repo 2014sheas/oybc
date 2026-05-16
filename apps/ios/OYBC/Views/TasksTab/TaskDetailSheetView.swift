@@ -15,10 +15,21 @@ struct TaskDetailSheetView: View {
     /// using the replace semantics pinned in the plan.
     @State private var currentTaskId: String
     let onClose: () -> Void
+    /// Callback for when a board is tapped in the Usage section. The
+    /// caller is expected to dismiss this sheet (via `onClose`) AND
+    /// route to the new board (e.g. by appending to the Boards-tab
+    /// nav path). Called BEFORE `onClose` so the caller can sequence
+    /// both effects in one closure.
+    let onOpenBoard: (String) -> Void
 
-    init(taskId: String, onClose: @escaping () -> Void) {
+    init(
+        taskId: String,
+        onClose: @escaping () -> Void,
+        onOpenBoard: @escaping (String) -> Void
+    ) {
         _currentTaskId = State(initialValue: taskId)
         self.onClose = onClose
+        self.onOpenBoard = onOpenBoard
     }
 
     // MARK: - Async state
@@ -63,7 +74,8 @@ struct TaskDetailSheetView: View {
                             // Replace semantics: swap the task ID and reload.
                             currentTaskId = taskId
                             _Concurrency.Task { await reload() }
-                        }
+                        },
+                        onOpenBoard: onOpenBoard
                     )
                 } else {
                     Text("Loading…").foregroundColor(.secondary).padding()

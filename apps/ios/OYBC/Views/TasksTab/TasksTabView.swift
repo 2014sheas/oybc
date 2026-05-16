@@ -21,6 +21,9 @@ struct TasksTabView: View {
     /// same `tasksPath` the parent owns. Lets us reset on tab switch
     /// (parity with how `boardsPath` resets after `onBoardCompleted`).
     @Binding var path: NavigationPath
+    /// Cross-tab navigation: passed down to each TaskDetailView so the
+    /// Usage section's board taps can jump the user to the Boards tab.
+    let onOpenBoard: (String) -> Void
 
     @State private var library = TaskLibraryViewModel()
     @State private var vm = TasksTabViewModel()
@@ -111,7 +114,8 @@ struct TasksTabView: View {
                     // Pop the detail view off the stack so the user
                     // returns to the list.
                     if !path.isEmpty { path.removeLast() }
-                }
+                },
+                onOpenBoard: onOpenBoard
             )
         }
         .onAppear {
