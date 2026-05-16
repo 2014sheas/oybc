@@ -203,6 +203,8 @@ struct BoardPlayView: View {
     @State private var isProcessing = false
     @State private var bingoMessage: String?
     @State private var detailBoardTaskId: String?
+    /// Drives the task-detail library sheet (separate from the board-play detail sheet).
+    @State private var taskDetailSheetTaskId: TaskIdItem?
 
     // MARK: - Computed
 
@@ -310,6 +312,9 @@ struct BoardPlayView: View {
             set: { if !$0 { detailBoardTaskId = nil } }
         )) {
             detailSheet
+        }
+        .sheet(item: $taskDetailSheetTaskId) { item in
+            TaskDetailSheetView(taskId: item.id, onClose: { taskDetailSheetTaskId = nil })
         }
     }
 
@@ -508,6 +513,10 @@ struct BoardPlayView: View {
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
                 }
+
+                Button("Open in library", systemImage: "book") {
+                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+                }
             }
 
         case .counting:
@@ -546,6 +555,10 @@ struct BoardPlayView: View {
 
                     Button("View Details", systemImage: "info.circle") {
                         detailBoardTaskId = boardTask.id
+                    }
+
+                    Button("Open in library", systemImage: "book") {
+                        taskDetailSheetTaskId = TaskIdItem(id: t.id)
                     }
                 }
             }
@@ -594,6 +607,9 @@ struct BoardPlayView: View {
                 Button("View Children", systemImage: "list.bullet") {
                     detailBoardTaskId = boardTask.id
                 }
+                Button("Open in library", systemImage: "book") {
+                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+                }
             }
 
         case .achievement:
@@ -611,6 +627,9 @@ struct BoardPlayView: View {
             .contextMenu {
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
+                }
+                Button("Open in library", systemImage: "book") {
+                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
                 }
             }
         }
@@ -815,20 +834,33 @@ struct BoardPlayView: View {
                         return ct.isCompleted
                     }()
 
-                    Button {
-                        guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
-                        handleCompoundChildToggle(childTask: ct)
-                    } label: {
-                        HStack {
-                            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                .foregroundColor(isDone ? .green : .secondary)
-                            Text(childTask?.title ?? link.childTaskId)
-                                .foregroundColor(.primary)
-                            Spacer()
+                    HStack {
+                        Button {
+                            guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
+                            handleCompoundChildToggle(childTask: ct)
+                        } label: {
+                            HStack {
+                                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(isDone ? .green : .secondary)
+                                Text(childTask?.title ?? link.childTaskId)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                            }
                         }
+                        .buttonStyle(.plain)
+                        .disabled(isProcessing || isBoardLocked || childTask == nil)
+
+                        // Info button — opens the child task's detail in the library sheet.
+                        Button {
+                            taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 16))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isProcessing || isBoardLocked || childTask == nil)
                 }
             }
         }

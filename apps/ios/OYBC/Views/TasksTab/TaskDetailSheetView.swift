@@ -1,16 +1,27 @@
 import SwiftUI
 import GRDB
 
-/// Task detail page — route-pushed shell that owns `taskId` resolution,
-/// async data loading, and the delete-confirm alert. Renders
-/// `TaskDetailContentView` for all visible content.
+/// Sheet wrapper for the task detail surface. Presents the same content as
+/// `TaskDetailView` but wrapped in a `NavigationStack` with a "Done" toolbar
+/// button. Callers mount it via `.sheet(item:)` driven by a `TaskIdItem?`.
 ///
-/// iOS twin of web's `TaskDetailPage.tsx`.
-struct TaskDetailView: View {
-    let taskId: String
-    let userId: String
-    let onChanged: () -> Void
-    let onDeleted: () -> Void
+/// Chip-to-detail navigation inside the sheet uses "replace" semantics
+/// (per the plan's pinned decision): `onOpenTask` swaps `currentTaskId`
+/// and triggers a fresh `reload()` rather than pushing onto a nav stack.
+///
+/// iOS twin of web's `TaskDetailSheet.tsx`.
+struct TaskDetailSheetView: View {
+    /// Allow the sheet to swap to a different task without dismissing,
+    /// using the replace semantics pinned in the plan.
+    @State private var currentTaskId: String
+    let onClose: () -> Void
+
+    init(taskId: String, onClose: @escaping () -> Void) {
+        _currentTaskId = State(initialValue: taskId)
+        self.onClose = onClose
+    }
+
+    // MARK: - Async state
 
     @State private var task: Task?
     @State private var placements: [BoardTask] = []
@@ -24,51 +35,54 @@ struct TaskDetailView: View {
     @State private var showDeleteConfirm: Bool = false
     @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
 
-    /// Drives in-detail navigation: tapping a parent compound chip or
-    /// child task row pushes another TaskDetailView onto the stack.
-    @State private var openedChildTaskId: TaskIdItem?
+    // MARK: - Body
 
     var body: some View {
-        Group {
-            if let loadError {
-                Text(loadError)
-                    .foregroundColor(.red)
-                    .padding()
-            } else if let task {
-                TaskDetailContentView(
-                    task: task,
-                    placements: placements,
-                    affectedBoards: affectedBoards,
-                    parentCompounds: parentCompounds,
-                    compoundChildren: compoundChildren,
-                    templates: templates,
-                    saveError: saveError,
-                    onEditSubmit: { patch in
-                        _Concurrency.Task { await saveEdits(patch: patch) }
-                    },
-                    onDeleteTap: {
-                        _Concurrency.Task { await prepareDelete() }
-                    },
-                    onOpenTask: { id in
-                        openedChildTaskId = TaskIdItem(id: id)
-                    }
-                )
-            } else {
-                Text("Loading…").foregroundColor(.secondary).padding()
+        NavigationStack {
+            Group {
+                if let loadError {
+                    Text(loadError)
+                        .foregroundColor(.red)
+                        .padding()
+                } else if let task {
+                    TaskDetailContentView(
+                        task: task,
+                        placements: placements,
+                        affectedBoards: affectedBoards,
+                        parentCompounds: parentCompounds,
+                        compoundChildren: compoundChildren,
+                        templates: templates,
+                        saveError: saveError,
+                        onEditSubmit: { patch in
+                            _Concurrency.Task { await saveEdits(patch: patch) }
+                        },
+                        onDeleteTap: {
+                            _Concurrency.Task { await prepareDelete() }
+                        },
+                        onOpenTask: { taskId in
+                            // Replace semantics: swap the task ID and reload.
+                            currentTaskId = taskId
+                            _Concurrency.Task { await reload() }
+                        }
+                    )
+                } else {
+                    Text("Loading…").foregroundColor(.secondary).padding()
+                }
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { onClose() }
+                        .fontWeight(.semibold)
+                }
             }
         }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             _Concurrency.Task { await reload() }
         }
-        .navigationDestination(item: $openedChildTaskId) { item in
-            TaskDetailView(
-                taskId: item.id,
-                userId: userId,
-                onChanged: onChanged,
-                onDeleted: onChanged
-            )
+        .onChange(of: currentTaskId) { _, _ in
+            _Concurrency.Task { await reload() }
         }
         .alert("Delete task?", isPresented: $showDeleteConfirm, presenting: deleteImpact) { _ in
             Button("Cancel", role: .cancel) {
@@ -86,20 +100,21 @@ struct TaskDetailView: View {
 
     private func reload() async {
         do {
+            let id = currentTaskId
             let snapshot = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                let loaded = try AppDatabase.shared.fetchTask(id: taskId)
+                let loaded = try AppDatabase.shared.fetchTask(id: id)
                 var bts: [BoardTask] = []
                 var boards: [Board] = []
                 var parents: [Task] = []
                 var children: [Task] = []
                 var tpls: [RecurringBoardTemplate] = []
                 if let loaded = loaded, !loaded.isDeleted {
-                    bts = try AppDatabase.shared.fetchBoardTasksForTask(taskId: taskId)
+                    bts = try AppDatabase.shared.fetchBoardTasksForTask(taskId: id)
                     let boardIds = Array(Set(bts.map { $0.boardId }))
                     boards = try AppDatabase.shared.fetchBoards(ids: boardIds)
-                    parents = try AppDatabase.shared.fetchCompoundParents(forTaskId: taskId)
-                    children = try AppDatabase.shared.fetchCompoundChildrenTasks(parentTaskId: taskId)
-                    tpls = try AppDatabase.shared.fetchTemplatesReferencingTask(taskId)
+                    parents = try AppDatabase.shared.fetchCompoundParents(forTaskId: id)
+                    children = try AppDatabase.shared.fetchCompoundChildrenTasks(parentTaskId: id)
+                    tpls = try AppDatabase.shared.fetchTemplatesReferencingTask(id)
                 }
                 return (loaded, bts, boards, parents, children, tpls)
             }.value
@@ -148,7 +163,6 @@ struct TaskDetailView: View {
             await MainActor.run {
                 task = patched
                 saveError = nil
-                onChanged()
             }
         } catch {
             let message = "Failed to save: \(error.localizedDescription)"
@@ -160,7 +174,7 @@ struct TaskDetailView: View {
 
     private func prepareDelete() async {
         do {
-            let id = taskId
+            let id = currentTaskId
             let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
                 try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
             }.value
@@ -176,11 +190,12 @@ struct TaskDetailView: View {
 
     private func performDelete() async {
         do {
-            let id = taskId
+            let id = currentTaskId
             try await _Concurrency.Task.detached(priority: .userInitiated) {
                 try AppDatabase.shared.deleteTaskWithCascade(taskId: id)
             }.value
-            await MainActor.run { onDeleted() }
+            // After delete, close the sheet.
+            await MainActor.run { onClose() }
         } catch {
             let message = "Failed to delete: \(error.localizedDescription)"
             await MainActor.run { saveError = message }

@@ -14,6 +14,7 @@ import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { TypeBadge } from '../TypeBadge';
 import { FilterTabs } from '../FilterTabs';
 import { NewTaskSheet } from './NewTaskSheet';
+import { TaskDetailSheet } from '../TaskDetailSheet';
 import styles from './BoardWizardTasksStep.module.css';
 
 const BASE_FILTER_TABS: { value: TasksFilter; label: string }[] = [
@@ -169,6 +170,11 @@ export function BoardWizardTasksStep({
   const [derivingFromTask, setDerivingFromTask] = useState<Task | null>(null);
   const [deriveMaxCountInput, setDeriveMaxCountInput] = useState('');
   const [deriveError, setDeriveError] = useState<string | null>(null);
+  /** When set, mounts TaskDetailSheet over the wizard so the user can
+   *  inspect a task's full library detail without losing wizard state.
+   *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
+   *  affordance. */
+  const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
 
   // Usage-hint data — "N boards" / "unused" / "N steps" / "N subtasks".
   // Matches the composite wizard's library row hints so the two
@@ -623,10 +629,21 @@ export function BoardWizardTasksStep({
                     action: () => { handleCenterRadio(target.id); close(); },
                   }]
                 : []),
+              {
+                label: 'Open in library',
+                glyph: '↗',
+                action: () => { setOpenedTaskInLibrary(target.id); close(); },
+              },
             ]}
           />
         );
       })()}
+
+      <TaskDetailSheet
+        taskId={openedTaskInLibrary}
+        onClose={() => setOpenedTaskInLibrary(null)}
+        onOpenTask={(id) => setOpenedTaskInLibrary(id)}
+      />
 
       {derivingFromTask && (
         <DeriveCounterModal

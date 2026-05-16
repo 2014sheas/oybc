@@ -67,6 +67,10 @@ export interface BuildStepProps {
   onAddInline: () => void;
   onBack: () => void;
   onNext: () => void;
+  /** Open an existing subtask's library detail (sheet over the wizard).
+   *  Pulled up to the wizard root so the sheet state can live above the
+   *  step-by-step navigation. */
+  onOpenTask?: (taskId: string) => void;
 }
 
 /**
@@ -96,6 +100,7 @@ export function BuildStep({
   onAddInline,
   onBack,
   onNext,
+  onOpenTask,
 }: BuildStepProps): React.ReactElement {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<LibraryFilter>('all');
@@ -243,6 +248,7 @@ export function BuildStep({
               onStepFieldChange={(stepId, field, value) => onStepFieldChange(s.id, stepId, field, value)}
               onAddStep={() => onAddStep(s.id)}
               onRemoveStep={(stepId) => onRemoveStep(s.id, stepId)}
+              onOpenTask={onOpenTask}
             />
           ))}
 

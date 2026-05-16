@@ -16,6 +16,9 @@ struct CompositeWizardReviewStepView: View {
     let libraryCompositeTasks: [OYBC.Task]
     let isSubmitting: Bool
     let errorMessage: String?
+    /// Optional. When provided, tapping a chip in the subtask list opens
+    /// the task's detail sheet.
+    var onOpenTask: ((_ taskId: String) -> Void)? = nil
     let onBack: () -> Void
     let onCreate: () -> Void
 
@@ -130,6 +133,12 @@ struct CompositeWizardReviewStepView: View {
     @ViewBuilder
     private func chipView(for item: SubtaskItem, index: Int) -> some View {
         let info = chipInfo(for: item)
+        let viewableTaskId: String? = {
+            guard item.mode == .existing, onOpenTask != nil else { return nil }
+            let tid = item.selectionType == .task ? item.selectedTaskId : item.selectedCompositeId
+            return tid.isEmpty ? nil : tid
+        }()
+
         HStack(spacing: 8) {
             Text("\(index)")
                 .font(.caption2)
@@ -158,6 +167,18 @@ struct CompositeWizardReviewStepView: View {
                 Text(meta)
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+
+            if let tid = viewableTaskId {
+                Button {
+                    onOpenTask?(tid)
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("View \(info.title) details")
             }
         }
         .padding(.horizontal, 10)

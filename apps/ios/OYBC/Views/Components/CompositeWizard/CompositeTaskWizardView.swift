@@ -31,6 +31,8 @@ struct CompositeTaskWizardView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
+    /// Drives the task-detail sheet when the user taps "view" on a selected subtask.
+    @State private var openedTaskInLibrary: TaskIdItem?
 
     // MARK: - Library state
 
@@ -83,6 +85,7 @@ struct CompositeTaskWizardView: View {
                     onRemove: { item in removeSubtask(item) },
                     onToggleLibraryItem: toggleLibraryItem,
                     onAddInline: addInlineSubtask,
+                    onOpenTask: { taskId in openedTaskInLibrary = TaskIdItem(id: taskId) },
                     onBack: { currentStep = 1 },
                     onNext: { currentStep = 3 }
                 )
@@ -96,6 +99,7 @@ struct CompositeTaskWizardView: View {
                     libraryCompositeTasks: libraryCompositeTasks,
                     isSubmitting: isSubmitting,
                     errorMessage: errorMessage,
+                    onOpenTask: { taskId in openedTaskInLibrary = TaskIdItem(id: taskId) },
                     onBack: { currentStep = 2 },
                     onCreate: handleCreateCompositeTask
                 )
@@ -114,6 +118,9 @@ struct CompositeTaskWizardView: View {
         .onAppear {
             ensurePlaygroundUser()
             loadLibrary()
+        }
+        .sheet(item: $openedTaskInLibrary) { item in
+            TaskDetailSheetView(taskId: item.id, onClose: { openedTaskInLibrary = nil })
         }
     }
 

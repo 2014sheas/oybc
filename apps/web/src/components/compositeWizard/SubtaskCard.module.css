@@ -115,6 +115,25 @@
   gap: 2px;
 }
 
+.flatCenterButton {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.flatCenterButton:hover .flatTitle {
+  color: var(--accent, #2563eb);
+}
+
 .flatTitle {
   font-size: 0.95rem;
   font-weight: 600;

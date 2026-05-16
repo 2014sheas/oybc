@@ -19,6 +19,10 @@ struct CompositeSubtaskCardView: View {
     let compositeSubtaskCounts: [String: Int]
     let compositeLeafPreviews: [String: CompositeLeafPreview]
 
+    /// Optional. When provided, an info button appears on the existing-mode
+    /// row so the user can open the task's detail sheet without leaving the wizard.
+    var onView: (() -> Void)? = nil
+
     /// Called when the user taps remove.
     let onRemove: () -> Void
 
@@ -73,6 +77,18 @@ struct CompositeSubtaskCardView: View {
                 }
                 Spacer()
             }
+            // Info button — only shown when the caller provides onView.
+            if let onView {
+                Button(action: onView) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 18, weight: .regular))
+                        .foregroundColor(.secondary)
+                        .frame(width: 36, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("View \(row?.title ?? "subtask") details")
+            }
+
             // Bigger tap target for the remove control — the previous
             // 26pt hairline × was tap-hostile vs the 20pt checkboxes
             // in the library rows below. 44pt is the iOS HIG minimum.

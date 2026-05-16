@@ -28,6 +28,7 @@ import {
 } from '../components/InteractiveTaskSquare';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { BoardStatusBadge } from '../components/BoardStatusBadge';
+import { TaskDetailSheet } from '../components/TaskDetailSheet';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
 import styles from './BoardPlayPage.module.css';
@@ -102,6 +103,7 @@ export function BoardPlayPage(): React.ReactElement {
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clean up flash timer on unmount
@@ -526,9 +528,17 @@ export function BoardPlayPage(): React.ReactElement {
             onCompoundChildToggle={
               squareData.type === 'compound' ? handleCompoundChildToggle : undefined
             }
+            onOpenInLibrary={(taskId) => setOpenedTaskInLibrary(taskId)}
           />
         );
       })()}
+
+      {/* Task library sheet — "Open in library" from context menu or compound child rows */}
+      <TaskDetailSheet
+        taskId={openedTaskInLibrary}
+        onClose={() => setOpenedTaskInLibrary(null)}
+        onOpenTask={(id) => setOpenedTaskInLibrary(id)}
+      />
 
       {/* Floating Context Menu */}
       {contextMenu && (() => {
@@ -571,6 +581,10 @@ export function BoardPlayPage(): React.ReactElement {
             }}
             onViewDetails={() => {
               setSelectedSquareId(bt.id);
+              setContextMenu(null);
+            }}
+            onOpenInLibrary={(taskId) => {
+              setOpenedTaskInLibrary(taskId);
               setContextMenu(null);
             }}
           />

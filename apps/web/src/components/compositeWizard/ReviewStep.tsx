@@ -15,6 +15,9 @@ export interface ReviewStepProps {
   errorMessage: string | null;
   onBack: () => void;
   onCreate: () => void;
+  /** Open an existing-mode subtask's library detail. Inline-mode chips
+   *  are ignored (those tasks aren't saved yet). */
+  onOpenTask?: (taskId: string) => void;
 }
 
 /**
@@ -37,6 +40,7 @@ export function ReviewStep({
   errorMessage,
   onBack,
   onCreate,
+  onOpenTask,
 }: ReviewStepProps): React.ReactElement {
   const inlineCount = subtasks.filter((s) => s.mode === 'inline').length;
 
@@ -75,6 +79,7 @@ export function ReviewStep({
                 allTasks={allTasks}
                 allCompositeTasks={allCompositeTasks}
                 index={idx + 1}
+                onOpenTask={onOpenTask}
               />
             </li>
           ))}
@@ -129,6 +134,7 @@ interface SubtaskReviewChipProps {
   allTasks: Task[];
   allCompositeTasks: Task[];
   index: number;
+  onOpenTask?: (taskId: string) => void;
 }
 
 function SubtaskReviewChip({
@@ -136,8 +142,10 @@ function SubtaskReviewChip({
   allTasks,
   allCompositeTasks,
   index,
+  onOpenTask,
 }: SubtaskReviewChipProps): React.ReactElement {
   if (draft.mode === 'existing') {
+    const onClick = onOpenTask ? () => onOpenTask(draft.selectedId) : undefined;
     if (draft.selectionType === 'task') {
       const task = allTasks.find((t) => t.id === draft.selectedId);
       return (
@@ -147,6 +155,7 @@ function SubtaskReviewChip({
           title={task?.title ?? '(unknown task)'}
           meta={null}
           tone="library"
+          onClick={onClick}
         />
       );
     }
@@ -158,6 +167,7 @@ function SubtaskReviewChip({
         title={ct?.title ?? '(unknown composite)'}
         meta={null}
         tone="library"
+        onClick={onClick}
       />
     );
   }
@@ -190,6 +200,7 @@ interface ReviewChipBodyProps {
   title: string;
   meta: string | null;
   tone: 'library' | 'inline';
+  onClick?: () => void;
 }
 
 function ReviewChipBody({
@@ -198,9 +209,26 @@ function ReviewChipBody({
   title,
   meta,
   tone,
+  onClick,
 }: ReviewChipBodyProps): React.ReactElement {
+  const className = tone === 'inline' ? styles.chipInline : styles.chipLibrary;
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onClick}
+        aria-label={`Open ${title} in library`}
+      >
+        <span className={styles.chipIndex}>{index}</span>
+        <span className={styles.chipBadge}>{badge}</span>
+        <span className={styles.chipTitle}>{title}</span>
+        {meta !== null && <span className={styles.chipMeta}>{meta}</span>}
+      </button>
+    );
+  }
   return (
-    <div className={tone === 'inline' ? styles.chipInline : styles.chipLibrary}>
+    <div className={className}>
       <span className={styles.chipIndex}>{index}</span>
       <span className={styles.chipBadge}>{badge}</span>
       <span className={styles.chipTitle}>{title}</span>

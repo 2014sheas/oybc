@@ -10,6 +10,9 @@ import SwiftUI
 /// - Parameters:
 ///   - title: Display title of the subtask.
 ///   - type: Task type string passed to `TypeBadgeView`.
+///   - onView: Optional. When provided, tapping the chip body fires this
+///     callback (e.g., open the task's detail sheet). Edit/remove buttons
+///     remain independent.
 ///   - onEdit: Called when the edit (pencil) button is tapped.
 ///   - onRemove: Called when the remove (✕) button is tapped.
 struct SubtaskChipView: View {
@@ -18,6 +21,7 @@ struct SubtaskChipView: View {
 
     let title: String
     let type: String
+    var onView: (() -> Void)? = nil
     let onEdit: () -> Void
     let onRemove: () -> Void
 
@@ -25,12 +29,18 @@ struct SubtaskChipView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TypeBadgeView(type: type, size: .small)
-
-            Text(title)
-                .font(.system(size: 13))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Tappable body: fires onView when provided.
+            Group {
+                if let onView {
+                    Button(action: onView) {
+                        chipBody
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View \(title) details")
+                } else {
+                    chipBody
+                }
+            }
 
             // Edit button
             Button(action: onEdit) {
@@ -61,12 +71,25 @@ struct SubtaskChipView: View {
         .background(Color(.systemGray6))
         .cornerRadius(8)
     }
+
+    // MARK: - Chip body (shared between tappable and non-tappable forms)
+
+    private var chipBody: some View {
+        HStack(spacing: 8) {
+            TypeBadgeView(type: type, size: .small)
+
+            Text(title)
+                .font(.system(size: 13))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 }
 
 #Preview {
     VStack(spacing: 8) {
         SubtaskChipView(title: "Read 50 pages", type: "counting", onEdit: {}, onRemove: {})
-        SubtaskChipView(title: "Morning run", type: "normal", onEdit: {}, onRemove: {})
+        SubtaskChipView(title: "Morning run", type: "normal", onView: {}, onEdit: {}, onRemove: {})
         SubtaskChipView(title: "Weekly workout routine", type: "progress", onEdit: {}, onRemove: {})
         SubtaskChipView(title: "All fitness goals combined", type: "composite", onEdit: {}, onRemove: {})
     }

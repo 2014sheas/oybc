@@ -641,6 +641,34 @@ export async function deleteTaskStep(id: string): Promise<void> {
 }
 
 /**
+ * Fetch the compound Task(s) that list the given task as a child.
+ *
+ * Queries `compoundChildren` for non-deleted rows where `childTaskId` matches,
+ * then resolves the parent Task for each link (also filtered to non-deleted).
+ * De-duplicates in case a task is linked more than once to the same parent
+ * (should not occur under normal constraints, but defensive).
+ *
+ * @param taskId - ID of the child task to look up parents for
+ * @returns de-duplicated array of parent compound Tasks
+ */
+export async function fetchCompoundParentsForTask(taskId: string): Promise<Task[]> {
+  const links = await db.compoundChildren
+    .filter((c: CompoundChild) => !c.isDeleted && c.childTaskId === taskId)
+    .toArray();
+
+  if (links.length === 0) return [];
+
+  const parentIds = Array.from(new Set(links.map((l) => l.compoundTaskId)));
+  const parents = await db.tasks
+    .where('id')
+    .anyOf(parentIds)
+    .filter((t) => !t.isDeleted)
+    .toArray();
+
+  return parents;
+}
+
+/**
  * Find tasks that are linked to a step (for propagation)
  */
 export async function findTasksByParentStep(stepId: string): Promise<Task[]> {

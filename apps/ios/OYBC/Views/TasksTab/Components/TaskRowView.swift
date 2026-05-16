@@ -62,8 +62,14 @@ struct TaskRowView: View {
     }
 
     private var metaLine: String? {
-        let parts: [String] = [subtitle, statusLabel, usageHint].compactMap { $0 }
+        let parts: [String] = [subtitle, statusLabel, lastCompletedHint, usageHint].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "Last completed Xd ago" — only shown when `completedAt` is set.
+    private var lastCompletedHint: String? {
+        guard let rel = RelativeTime.formatRelativeTime(task.completedAt) else { return nil }
+        return "Last completed \(rel)"
     }
 
     private var subtitle: String? {

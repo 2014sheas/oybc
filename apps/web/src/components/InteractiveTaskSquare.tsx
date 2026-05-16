@@ -30,6 +30,11 @@ interface ContextMenuProps {
   onMarkAllStepsComplete?: (id: string) => void;
   onMarkAllStepsIncomplete?: (id: string) => void;
   onViewDetails?: (id: string) => void;
+  /**
+   * When provided, an "Open in library" item is added to the context menu
+   * for ALL task types. Triggers the task library detail sheet.
+   */
+  onOpenInLibrary?: (taskId: string) => void;
 }
 
 /**
@@ -59,6 +64,7 @@ export function FloatingContextMenu({
   onMarkAllStepsComplete,
   onMarkAllStepsIncomplete,
   onViewDetails,
+  onOpenInLibrary,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -208,6 +214,18 @@ export function FloatingContextMenu({
       >
         ⓘ View Details
       </button>
+
+      {onOpenInLibrary && (
+        <button
+          className={styles.contextMenuItem}
+          onClick={() => {
+            onOpenInLibrary(sq.id);
+            onClose();
+          }}
+        >
+          ↗ Open in library
+        </button>
+      )}
 
       </>)}
     </div>
@@ -371,6 +389,12 @@ interface DetailModalProps {
   onToggleStep: (squareId: string, stepId: string) => void;
   /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
   onCompoundChildToggle?: (childTaskId: string) => void;
+  /**
+   * Optional: when provided, each compound child row renders a small "ⓘ"
+   * icon button that fires this callback with the child's task ID. Opens
+   * the library detail sheet for that child without leaving the board.
+   */
+  onOpenInLibrary?: (taskId: string) => void;
 }
 
 /**
@@ -398,6 +422,7 @@ export function DetailModal({
   onDecrementCount,
   onToggleStep,
   onCompoundChildToggle,
+  onOpenInLibrary,
 }: DetailModalProps) {
   // Close on Escape key
   useEffect(() => {
@@ -577,6 +602,20 @@ export function DetailModal({
                   >
                     {child.title}
                   </span>
+                  {onOpenInLibrary && (
+                    <button
+                      type="button"
+                      className={styles.compoundChildInfoButton}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenInLibrary(child.taskId);
+                      }}
+                      aria-label={`Open ${child.title} in library`}
+                      title="View task in library"
+                    >
+                      ⓘ
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

@@ -83,6 +83,9 @@ struct BoardWizardTasksStepView: View {
     /// closed. Set by the contextMenu Button; cleared on save/cancel.
     @State private var derivingFromTask: OYBC.Task? = nil
     @State private var deriveMaxCountInput: String = ""
+    /// Drives a task-detail sheet when the user taps "Open in library" from
+    /// a row's context menu.
+    @State private var openedTaskInLibrary: TaskIdItem? = nil
 
     // MARK: - Derived
 
@@ -287,6 +290,10 @@ struct BoardWizardTasksStepView: View {
         // through the full New Task form.
         .sheet(item: derivePickerItemBinding) { _ in
             deriveCounterSheet
+        }
+        // Task detail sheet — opened from a row's context menu "Open in library".
+        .sheet(item: $openedTaskInLibrary) { item in
+            TaskDetailSheetView(taskId: item.id, onClose: { openedTaskInLibrary = nil })
         }
     }
 
@@ -656,6 +663,9 @@ struct BoardWizardTasksStepView: View {
                     ) {
                         centerTaskId = isCenter ? nil : task.id
                     }
+                }
+                Button("Open in library", systemImage: "info.circle") {
+                    openedTaskInLibrary = TaskIdItem(id: task.id)
                 }
             }
 

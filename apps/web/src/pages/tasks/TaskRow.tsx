@@ -1,5 +1,6 @@
 import { generateCounterTaskTitle, TaskType, type Task } from '@oybc/shared';
 import { TypeBadge } from '../../components/TypeBadge';
+import { formatRelativeTime } from '../../utils/relativeTime';
 import styles from './TaskRow.module.css';
 
 export interface TaskRowProps {
@@ -35,6 +36,7 @@ export function TaskRow({
   const status = computeStatusLabel(task);
   const subtitle = computeSubtitle(task, childCount);
   const usage = computeUsageHint(placementCount, activePlacementCount);
+  const lastCompleted = task.completedAt ? formatRelativeTime(task.completedAt) : null;
 
   return (
     <button
@@ -49,9 +51,11 @@ export function TaskRow({
           <span className={styles.rowTitle}>
             {task.title || '(untitled task)'}
           </span>
-          {(subtitle || status || usage) && (
+          {(subtitle || status || lastCompleted || usage) && (
             <span className={styles.rowMeta}>
-              {[subtitle, status, usage].filter(Boolean).join(' · ')}
+              {[subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           )}
         </div>
