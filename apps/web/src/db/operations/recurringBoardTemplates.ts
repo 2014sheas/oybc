@@ -139,6 +139,25 @@ export async function softDeleteRecurringBoardTemplate(id: string): Promise<void
 }
 
 /**
+ * Fetch all non-deleted recurring board templates that include the given
+ * task ID in their `seedTaskIds` pool.
+ *
+ * Soft-deleted tasks are intentionally retained in `seedTaskIds` per the
+ * schema (the template itself may still be active). This query therefore
+ * filters only on template `isDeleted`, not on the task's state.
+ *
+ * @param taskId - ID of the task to scan for
+ * @returns templates whose seedTaskIds contains taskId
+ */
+export async function fetchTemplatesReferencingTask(
+  taskId: string,
+): Promise<RecurringBoardTemplate[]> {
+  return db.recurringBoardTemplates
+    .filter((t) => !t.isDeleted && Array.isArray(t.seedTaskIds) && t.seedTaskIds.includes(taskId))
+    .toArray();
+}
+
+/**
  * Updates `lastSpawnedWindowKey` after a successful spawn. Used inside
  * the spawn transaction (see `recurringBoardSpawn.ts`) so this helper
  * does NOT enqueue a sync entry — the caller's transaction does that.

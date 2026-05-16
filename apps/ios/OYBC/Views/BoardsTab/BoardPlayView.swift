@@ -184,6 +184,12 @@ struct BoardPlayView: View {
     // MARK: - Parameters
 
     let boardId: String
+    /// Cross-tab navigation: when the user opens a Task detail sheet
+    /// over this board and taps a different board in the Usage section,
+    /// dismiss the sheet here and delegate the routing to MainTabView
+    /// (which owns boardsPath). Defaults to a no-op so existing call
+    /// sites compile while we plumb this from the top.
+    var onOpenBoard: (String) -> Void = { _ in }
     @EnvironmentObject var authService: AuthService
 
     // MARK: - State
@@ -203,6 +209,16 @@ struct BoardPlayView: View {
     @State private var isProcessing = false
     @State private var bingoMessage: String?
     @State private var detailBoardTaskId: String?
+    /// Drives the task-detail library sheet (separate from the board-play detail sheet).
+    @State private var taskDetailSheetTaskId: TaskIdItem?
+    /// Stashed target for cross-board navigation requested from inside
+    /// the task-detail sheet. We can't mutate `boardsPath` while the
+    /// sheet is dismissing — SwiftUI swallows the path change during
+    /// the transition, leaving the user on the original board. Setting
+    /// this stash + watching `taskDetailSheetTaskId` for nil-transition
+    /// (see `.onChange` below) sequences dismiss-then-navigate
+    /// correctly.
+    @State private var pendingOpenBoardId: String?
 
     // MARK: - Computed
 
@@ -305,11 +321,45 @@ struct BoardPlayView: View {
             loadBoardTasks()
             loadTaskData()
         }
+        // Defensive: also reload on boardId prop change. With `.id(boardId)`
+        // on the destination, SwiftUI re-creates the view (and .onAppear
+        // fires) — but if any future refactor strips the .id, this keeps
+        // data fresh per boardId.
+        .onChange(of: boardId) { _, _ in
+            loadBoard()
+            loadBoardTasks()
+            loadTaskData()
+        }
         .sheet(isPresented: Binding(
             get: { detailBoardTaskId != nil },
             set: { if !$0 { detailBoardTaskId = nil } }
         )) {
             detailSheet
+        }
+        // `onDismiss:` fires AFTER the sheet has visually unmounted, so
+        // the subsequent boardsPath mutation (via onOpenBoard) lands in
+        // a clean SwiftUI transaction. Using .onChange of the item here
+        // would fire synchronously with the state mutation (before the
+        // dismiss transition completes) and the path change would get
+        // swallowed mid-transition — leaving the user on the original
+        // board.
+        .sheet(
+            item: $taskDetailSheetTaskId,
+            onDismiss: {
+                if let target = pendingOpenBoardId {
+                    pendingOpenBoardId = nil
+                    onOpenBoard(target)
+                }
+            }
+        ) { item in
+            TaskDetailSheetView(
+                taskId: item.id,
+                onClose: { taskDetailSheetTaskId = nil },
+                onOpenBoard: { newBoardId in
+                    pendingOpenBoardId = newBoardId
+                    taskDetailSheetTaskId = nil
+                }
+            )
         }
     }
 
@@ -508,6 +558,10 @@ struct BoardPlayView: View {
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
                 }
+
+                Button("Open in library", systemImage: "book") {
+                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+                }
             }
 
         case .counting:
@@ -546,6 +600,10 @@ struct BoardPlayView: View {
 
                     Button("View Details", systemImage: "info.circle") {
                         detailBoardTaskId = boardTask.id
+                    }
+
+                    Button("Open in library", systemImage: "book") {
+                        taskDetailSheetTaskId = TaskIdItem(id: t.id)
                     }
                 }
             }
@@ -594,6 +652,9 @@ struct BoardPlayView: View {
                 Button("View Children", systemImage: "list.bullet") {
                     detailBoardTaskId = boardTask.id
                 }
+                Button("Open in library", systemImage: "book") {
+                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+                }
             }
 
         case .achievement:
@@ -611,6 +672,9 @@ struct BoardPlayView: View {
             .contextMenu {
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
+                }
+                Button("Open in library", systemImage: "book") {
+                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
                 }
             }
         }
@@ -815,20 +879,33 @@ struct BoardPlayView: View {
                         return ct.isCompleted
                     }()
 
-                    Button {
-                        guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
-                        handleCompoundChildToggle(childTask: ct)
-                    } label: {
-                        HStack {
-                            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                .foregroundColor(isDone ? .green : .secondary)
-                            Text(childTask?.title ?? link.childTaskId)
-                                .foregroundColor(.primary)
-                            Spacer()
+                    HStack {
+                        Button {
+                            guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
+                            handleCompoundChildToggle(childTask: ct)
+                        } label: {
+                            HStack {
+                                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(isDone ? .green : .secondary)
+                                Text(childTask?.title ?? link.childTaskId)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                            }
                         }
+                        .buttonStyle(.plain)
+                        .disabled(isProcessing || isBoardLocked || childTask == nil)
+
+                        // Info button — opens the child task's detail in the library sheet.
+                        Button {
+                            taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 16))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isProcessing || isBoardLocked || childTask == nil)
                 }
             }
         }

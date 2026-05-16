@@ -19,6 +19,7 @@ import {
 import { SetupStep } from './SetupStep';
 import { BuildStep } from './BuildStep';
 import { ReviewStep } from './ReviewStep';
+import { TaskDetailSheet } from '../TaskDetailSheet';
 import {
   type SubtaskDraft,
   type ExistingSubtaskDraft,
@@ -87,6 +88,10 @@ export function CompositeTaskWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  /** When set, mounts the TaskDetailSheet over the wizard so the user can
+   *  inspect a referenced subtask without losing wizard state. Replace
+   *  semantics inside the sheet — see TaskDetailSheet props. */
+  const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
 
   // Library feeds — live so a task created elsewhere shows up here.
   // Use JS-level .filter() (same pattern as the useTasks hook) so the boolean
@@ -369,6 +374,7 @@ export function CompositeTaskWizard({
           onAddInline={addInlineSubtask}
           onBack={() => setCurrentStep(1)}
           onNext={() => setCurrentStep(3)}
+          onOpenTask={(id) => setOpenedTaskInLibrary(id)}
         />
       )}
 
@@ -384,10 +390,17 @@ export function CompositeTaskWizard({
           errorMessage={errorMessage}
           onBack={() => setCurrentStep(2)}
           onCreate={handleCreate}
+          onOpenTask={(id) => setOpenedTaskInLibrary(id)}
         />
       )}
 
       {successMessage && <div className={styles.successMessage}>{successMessage}</div>}
+
+      <TaskDetailSheet
+        taskId={openedTaskInLibrary}
+        onClose={() => setOpenedTaskInLibrary(null)}
+        onOpenTask={(id) => setOpenedTaskInLibrary(id)}
+      />
     </div>
   );
 }

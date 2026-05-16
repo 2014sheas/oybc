@@ -5,6 +5,8 @@ import { TabBar } from './components/TabBar';
 import { BoardsPage } from './pages/BoardsPage';
 import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreateHubPage } from './pages/CreateHubPage';
+import { TasksPage } from './pages/TasksPage';
+import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
@@ -56,6 +58,20 @@ function CreateRoute(): React.ReactElement | null {
   );
 }
 
+// ─── Tasks tab route wrapper ──────────────────────────────────────────────────
+
+/**
+ * Route-level wrapper that hands the authenticated user id to
+ * `TasksPage`. Mirrors `CreateRoute`'s shape: defers rendering until
+ * auth resolves so we don't briefly mount the page against an
+ * undefined user.
+ */
+function TasksRoute(): React.ReactElement | null {
+  const { user } = useAuth();
+  if (!user?.id) return null;
+  return <TasksPage userId={user.id} />;
+}
+
 // ─── Authenticated Layout ─────────────────────────────────────────────────────
 
 /**
@@ -78,6 +94,8 @@ function AuthenticatedLayout(): React.ReactElement {
           <Route path="/boards" element={<BoardsPage />} />
           <Route path="/boards/:id" element={<BoardPlayPage />} />
           <Route path="/create" element={<CreateRoute />} />
+          <Route path="/tasks" element={<TasksRoute />} />
+          <Route path="/tasks/:id" element={<TaskDetailPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/profile/board-preferences"

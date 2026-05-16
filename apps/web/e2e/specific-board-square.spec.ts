@@ -62,16 +62,22 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('task type selector includes "Achievement" alongside Normal/Counting/Progress/Composite', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    // The Create page mounts the task-creator form below the wizard
-    // launcher. Wait for the "Achievement" type button to appear in
-    // the TaskTypeSelector.
-    await expect(page.getByRole('button', { name: /^Achievement$/ })).toBeVisible();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    // Tasks tab gates the create form behind a sheet; open it first.
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
+    const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
+    await expect(newTaskSheet.getByRole('button', { name: /^Achievement$/ })).toBeVisible();
   });
 
   test('selecting Achievement reveals the watch-mode radio + board picker', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    // The Tasks tab now hides the create form behind a sheet to keep
+    // the library central. Open it first; then the existing Achievement
+    // type-button assertions still apply inside the dialog.
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
+    const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
+    await expect(newTaskSheet).toBeVisible();
+    await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
 
     // Watch-mode radios appear after the type switch.
     await expect(page.getByRole('radio', { name: /^Board$/i })).toBeVisible();
@@ -85,8 +91,14 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('switching mode to "recurring template" swaps the picker', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    // The Tasks tab now hides the create form behind a sheet to keep
+    // the library central. Open it first; then the existing Achievement
+    // type-button assertions still apply inside the dialog.
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
+    const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
+    await expect(newTaskSheet).toBeVisible();
+    await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
     await page.getByRole('radio', { name: /^Template$/i }).check();
 
     // The board <select> goes away, the template <select> appears.
@@ -97,8 +109,14 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('submit without a reference selection surfaces validation error', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    // The Tasks tab now hides the create form behind a sheet to keep
+    // the library central. Open it first; then the existing Achievement
+    // type-button assertions still apply inside the dialog.
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
+    const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
+    await expect(newTaskSheet).toBeVisible();
+    await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
     // Fill title, leave the picker empty.
     await page.getByPlaceholder(/enter task title/i).fill('Watch wellness');
     // The /create hub mounts CreateNewTaskForm via CreateHubQuickAdd, which
@@ -110,8 +128,14 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('full happy path: pick a board, submit, task lands in the workspace', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    // The Tasks tab now hides the create form behind a sheet to keep
+    // the library central. Open it first; then the existing Achievement
+    // type-button assertions still apply inside the dialog.
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
+    const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
+    await expect(newTaskSheet).toBeVisible();
+    await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
     await page.getByPlaceholder(/enter task title/i).fill('Watch Daily Wellness');
     await page.locator('#create-task-ach-board').selectOption(PEER_BOARD_ID);
     // The /create hub mounts CreateNewTaskForm via CreateHubQuickAdd, which
@@ -120,8 +144,10 @@ test.describe('Phase 6.3 achievement task creator', () => {
     // whether the hub or the wizard's NewTaskSheet hosts the form.
     await page.getByRole('button', { name: /Add to library|Create & Add to Pool/i }).click();
 
-    // After submit, the form resets — the title field is empty again.
-    await expect(page.getByPlaceholder(/enter task title/i)).toHaveValue('');
+    // After submit, the sheet auto-dismisses on success — the input
+    // disappears with it. Wait for the sheet to be gone (which doubles
+    // as the success signal) before reading the row back from Dexie.
+    await expect(page.getByRole('dialog', { name: 'New task' })).not.toBeVisible();
 
     // Verify the Task landed in Dexie. We re-open the connection and look
     // up the new row by title; the assertion is that exactly one task
@@ -172,8 +198,14 @@ test.describe('Phase 6.3 achievement task creator', () => {
   });
 
   test('recurring-template mode requires a count + persists trigger & count', async ({ page }) => {
-    await page.goto('/create?__oybc_test_bypass=1');
-    await page.getByRole('button', { name: /^Achievement$/ }).click();
+    await page.goto('/tasks?__oybc_test_bypass=1');
+    // The Tasks tab now hides the create form behind a sheet to keep
+    // the library central. Open it first; then the existing Achievement
+    // type-button assertions still apply inside the dialog.
+    await page.getByRole('button', { name: /\+ Create task/i }).click();
+    const newTaskSheet = page.getByRole('dialog', { name: 'New task' });
+    await expect(newTaskSheet).toBeVisible();
+    await newTaskSheet.getByRole('button', { name: /^Achievement$/ }).click();
     await page.getByRole('radio', { name: /^Template$/i }).check();
     await page.getByPlaceholder(/enter task title/i).fill('3 Leg Days a month');
     await page.locator('#create-task-ach-template').selectOption(TEMPLATE_ID);
@@ -188,8 +220,9 @@ test.describe('Phase 6.3 achievement task creator', () => {
     await page.locator('#create-task-ach-count').fill('3');
     await page.getByRole('button', { name: /Add to library|Create & Add to Pool/i }).click();
 
-    // After submit, the form resets — title cleared.
-    await expect(page.getByPlaceholder(/enter task title/i)).toHaveValue('');
+    // After successful submit the sheet dismisses; wait for that before
+    // reading the row back.
+    await expect(page.getByRole('dialog', { name: 'New task' })).not.toBeVisible();
 
     // Read back the persisted Task and assert the trigger + count
     // landed correctly.

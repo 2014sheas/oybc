@@ -2,8 +2,9 @@ import SwiftUI
 
 /// MainTabView - Root tab bar for authenticated users.
 ///
-/// Three tabs:
+/// Four tabs:
 /// - Boards: browse and manage the user's bingo boards.
+/// - Tasks: dedicated library surface — filter / sort / search / detail.
 /// - Create: build tasks, assemble a pool, and generate a new board.
 /// - Profile: account settings, app configuration, and sign-out.
 ///
@@ -20,6 +21,7 @@ struct MainTabView: View {
 
     @State private var selectedTab: Int = 0
     @State private var boardsPath: NavigationPath = NavigationPath()
+    @State private var tasksPath: NavigationPath = NavigationPath()
     /// Phase 6.1: when the user taps Create on the Boards-tab Recurring
     /// Boards banner, BoardListView calls back here to (a) switch to the
     /// Create tab and (b) stash the timeframe. CreateHubView reads this
@@ -46,6 +48,17 @@ struct MainTabView: View {
         }
     }
 
+    /// Cross-tab navigation: jump to a specific board. Used by Tasks-tab
+    /// detail Usage section ("tap a board name → go there") and by the
+    /// task-detail sheet over BoardPlayView (board-to-board jump).
+    /// Resets boardsPath to a single entry so the user lands on a clean
+    /// stack — same intent as `onBoardCompleted` from the wizard.
+    private func openBoard(_ boardId: String) {
+        boardsPath = NavigationPath()
+        boardsPath.append(boardId)
+        selectedTab = 0
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack(path: $boardsPath) {
@@ -56,17 +69,42 @@ struct MainTabView: View {
                         // `pendingRecurringTimeframe` on appear and
                         // enters wizard mode with prefill.
                         pendingRecurringTimeframe = timeframe
-                        selectedTab = 1
+                        selectedTab = 2
                     }
                 )
                 .navigationDestination(for: String.self) { boardId in
-                    BoardPlayView(boardId: boardId)
+                    BoardPlayView(
+                        boardId: boardId,
+                        onOpenBoard: { newId in openBoard(newId) }
+                    )
+                    // Force a fresh view identity per boardId. Without
+                    // this, NavigationStack reuses the same BoardPlayView
+                    // when boardsPath swaps from [A] to [B], keeping all
+                    // @State (board, boardTasks, etc.) and never firing
+                    // .onAppear — so the user sees the original board's
+                    // data after a cross-board jump from a Task detail
+                    // sheet's Usage section.
+                    .id(boardId)
                 }
             }
             .tabItem {
                 Label("Boards", systemImage: "square.grid.3x3")
             }
             .tag(0)
+
+            NavigationStack(path: $tasksPath) {
+                if let userId = authService.currentUser?.id {
+                    TasksTabView(
+                        userId: userId,
+                        path: $tasksPath,
+                        onOpenBoard: { boardId in openBoard(boardId) }
+                    )
+                }
+            }
+            .tabItem {
+                Label("Tasks", systemImage: "list.bullet")
+            }
+            .tag(1)
 
             NavigationStack {
                 ScrollView {
@@ -97,16 +135,8 @@ struct MainTabView: View {
                                 // Phase 6.2: recurring-template completions
                                 // without a spawned board (skip OR edit) —
                                 // route the user to the Profile tab so they
-                                // land near the templates list. The earlier
-                                // contract overloaded `onBoardCompleted`
-                                // with the templateId, which got pushed onto
-                                // `boardsPath` and tried to render
-                                // `BoardPlayView` for a non-existent board.
-                                // Switching tabs is the minimal fix without
-                                // adding a separate Profile-tab navigation
-                                // path; the user is one tap from the
-                                // templates list (NavigationLink in ProfileView).
-                                selectedTab = 2
+                                // land near the templates list.
+                                selectedTab = 3
                             }
                         )
                     }
@@ -115,7 +145,7 @@ struct MainTabView: View {
             .tabItem {
                 Label("Create", systemImage: "plus.circle")
             }
-            .tag(1)
+            .tag(2)
 
             NavigationStack {
                 ProfileView(
@@ -126,14 +156,14 @@ struct MainTabView: View {
                         // and switch to Create. CreateHubView consumes
                         // the binding and opens the wizard hydrated.
                         pendingEditTemplateId = templateId
-                        selectedTab = 1
+                        selectedTab = 2
                     }
                 )
             }
             .tabItem {
                 Label("Profile", systemImage: "person.circle")
             }
-            .tag(2)
+            .tag(3)
         }
         .preferredColorScheme(forcedColorScheme)
     }

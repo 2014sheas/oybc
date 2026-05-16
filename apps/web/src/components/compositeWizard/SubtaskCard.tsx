@@ -40,6 +40,10 @@ export interface SubtaskCardProps {
   onUpdate: (updates: Partial<SubtaskDraft>) => void;
   /** Called when the user clicks remove. */
   onRemove: () => void;
+  /** Called when the user wants to open the existing-mode task's library
+   *  detail. Inline-mode subtasks ignore this — they're not yet saved
+   *  Tasks. When omitted, the row's center area is non-interactive. */
+  onOpenTask?: (taskId: string) => void;
   /** Progress-subtask step mutators — hoisted so the composite form's
    *  single `subtasks` state stays canonical. */
   onStepFieldChange: (stepId: string, field: keyof StepFormState, value: string) => void;
@@ -76,6 +80,7 @@ function ExistingFlatRow({
   compositeSubtaskCounts,
   compositeLeafPreviews,
   onRemove,
+  onOpenTask,
 }: ExistingFlatRowProps): React.ReactElement {
   const row = useMemo(() => {
     if (draft.selectionType === 'task') {
@@ -130,10 +135,22 @@ function ExistingFlatRow({
   return (
     <div className={styles.flatRow}>
       <TypeBadge type={row.type} size="small" letterOnly />
-      <div className={styles.flatCenter}>
-        <span className={styles.flatTitle}>{row.title}</span>
-        {row.subtitle && <span className={styles.flatSubtitle}>{row.subtitle}</span>}
-      </div>
+      {onOpenTask ? (
+        <button
+          type="button"
+          className={styles.flatCenterButton}
+          onClick={() => onOpenTask(draft.selectedId)}
+          aria-label={`Open ${row.title} in library`}
+        >
+          <span className={styles.flatTitle}>{row.title}</span>
+          {row.subtitle && <span className={styles.flatSubtitle}>{row.subtitle}</span>}
+        </button>
+      ) : (
+        <div className={styles.flatCenter}>
+          <span className={styles.flatTitle}>{row.title}</span>
+          {row.subtitle && <span className={styles.flatSubtitle}>{row.subtitle}</span>}
+        </div>
+      )}
       <span className={styles.flatUsage}>{row.usageHint}</span>
       <button
         type="button"

@@ -233,6 +233,8 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 ├── BoardPlayPage.tsx          ←→                Views/BoardsTab/BoardPlayView.swift
 ├── CreateHubPage.tsx          ←→                Views/CreateTab/CreateHubView.swift
 ├── BoardWizardPage.tsx        ←→                Views/CreateTab/BoardWizardView.swift
+├── TasksPage.tsx              ←→                Views/TasksTab/TasksTabView.swift
+├── TaskDetailPage.tsx         ←→                Views/TasksTab/TaskDetailView.swift
 ├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
 ├── BoardPreferencesPage.tsx   ←→                Views/ProfileTab/BoardPreferencesView.swift
 └── Playground.tsx             ←→                Views/PlaygroundView.swift
@@ -253,6 +255,11 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 - **Composite-task mini-wizard** (feature):
   - `components/compositeWizard/{CompositeTaskWizard,CompositeWizardStepper,SetupStep,BuildStep,ReviewStep,SubtaskCard,compositeSubtaskDraft}.tsx/.ts` ←→ `Views/Components/CompositeWizard/{CompositeTaskWizardView,CompositeWizardStepperView,CompositeWizardSetupStepView,CompositeWizardBuildStepView,CompositeWizardReviewStepView,CompositeSubtaskCardView,CompositeSubtaskItem}.swift`. The Build step renders an always-visible inline library section (search + filter tabs + checkbox rows) — matching the board wizard's Tasks-step pattern; the earlier modal `LibraryPickerSheet` is retired.
   - Replaced the legacy ~850-line `CompositeTaskForm.tsx` / `CompositeTaskFormView.swift` monoliths with a 3-step Setup → Build → Review flow. Same data model + write path, better UX (live validation, type-switch confirm, threshold clamp toast, library callout).
+- **Tasks tab** (feature):
+  - `pages/TasksPage.tsx` ←→ `Views/TasksTab/TasksTabView.swift`. Lists the user's library with search + type chips + status / usage dropdowns + sort dropdown. `pages/tasks/{useTasksFilters.ts,TaskRow.tsx,TasksFilterControls.tsx}` ←→ `Views/TasksTab/{ViewModels/TasksTabViewModel.swift,Components/TaskRowView.swift,Components/TasksFilterControlsView.swift}`. The filter pipeline (type / search / status / usage / sort) is shared in spirit but implemented per platform; the `BoardWizardTasksStep` row renderer is intentionally *not* shared — it's entangled with selection / center-pinning state. Achievement is on the filter chip row even though it's hidden from the wizard's row, because Tasks-tab is the only place to find an achievement task.
+  - `pages/TaskDetailPage.tsx` ←→ `Views/TasksTab/TaskDetailView.swift`. Per-task stats / type-specific facts / "placed on" board list / inline edit sheet / cascade delete.
+  - **Cascade delete**: `deleteTaskWithCascade(id)` (web `db/operations/tasks.ts`, iOS `AppDatabase.swift`) hard-deletes BoardTask rows, soft-deletes CompoundChild link rows in both directions, then soft-deletes the Task itself, atomically in one transaction. `computeTaskDeletionImpact(id)` is a read-only preview consumed by the confirm dialog. Achievement tasks reference *boards/templates* not other tasks, so they don't participate in the task-side cascade.
+  - **Quick-add relocation**: `CreateHubQuickAdd` / `CreateHubQuickAddView` moved out of the Create hub and now live at the top of the Tasks tab. The Create tab is board-creation only.
 
 **Rules**:
 
@@ -524,7 +531,7 @@ Playground-tested features: unified task creator, composite tasks, board generat
 
 Tab-based app with auth gate. Web + iOS built simultaneously.
 
-**Navigation**: Bottom tab bar — Boards (default), Create, Profile.
+**Navigation**: Bottom tab bar — Boards (default), Tasks, Create, Profile.
 
 | Phase | Feature | Status |
 | ----- | ------- | ------ |
@@ -535,7 +542,7 @@ Tab-based app with auth gate. Web + iOS built simultaneously.
 | 4 | Create tab (task pool + BoardCreatorPanel) | COMPLETE |
 | 5 | Profile + settings + polish | COMPLETE |
 
-**Routes (web)**: `/boards`, `/boards/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/playground` (dev tool)
+**Routes (web)**: `/boards`, `/boards/:id`, `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/profile/recurring-templates`, `/playground` (dev tool)
 
 **Current Phase**: Phase 5 — Polish & Launch
 

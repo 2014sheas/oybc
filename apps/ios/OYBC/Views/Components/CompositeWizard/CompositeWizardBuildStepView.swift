@@ -68,6 +68,9 @@ struct CompositeWizardBuildStepView: View {
     /// is decided by the parent.
     let onToggleLibraryItem: (_ id: String, _ kind: SubtaskItem.SelectionType) -> Void
     let onAddInline: () -> Void
+    /// Optional. When provided, tapping the info button on an existing-mode
+    /// subtask row opens the task's detail sheet.
+    var onOpenTask: ((_ taskId: String) -> Void)? = nil
     let onBack: () -> Void
     let onNext: () -> Void
 
@@ -295,6 +298,17 @@ struct CompositeWizardBuildStepView: View {
                             taskStepCounts: taskStepCounts,
                             compositeSubtaskCounts: compositeSubtaskCounts,
                             compositeLeafPreviews: compositeLeafPreviews,
+                            onView: onOpenTask.map { openFn in
+                                {
+                                    // Resolve which task ID to open for this item.
+                                    if item.mode == .existing {
+                                        let tid = item.selectionType == .task
+                                            ? item.selectedTaskId
+                                            : item.selectedCompositeId
+                                        if !tid.isEmpty { openFn(tid) }
+                                    }
+                                }
+                            },
                             onRemove: { onRemove(item) }
                         )
                     }

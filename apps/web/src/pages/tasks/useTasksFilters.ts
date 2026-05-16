@@ -1,0 +1,276 @@
+import { useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import {
+  BoardStatus,
+  TaskType,
+  type Board,
+  type BoardTask,
+  type Task,
+} from '@oybc/shared';
+import { db } from '../../db/database';
+import type { TaskLibrary } from '../createPage/useTaskLibrary';
+
+/** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
+ *  adds ACHIEVEMENT (which the wizard hides because achievements can't
+ *  be placed on a board pool). */
+export type TypeFilter =
+  | 'all'
+  | 'normal'
+  | 'counting'
+  | 'progress'
+  | 'composite'
+  | 'achievement';
+
+/** Status-filter dropdown values. "Never started" = not completed and
+ *  no progress signal; "In progress" = some signal but not done. */
+export type StatusFilter = 'any' | 'completed' | 'in-progress' | 'never-started';
+
+/** Usage-filter dropdown values. Computed from `BoardTask` joined to
+ *  `Board.status` (we only count non-deleted, non-draft placements). */
+export type UsageFilter = 'any' | 'unused' | 'on-active-boards';
+
+/** Sort options for the Tasks list. `most-used-desc` ranks by the
+ *  count of `BoardTask` placements on non-deleted boards. */
+export type SortOption =
+  | 'updated-desc'
+  | 'created-desc'
+  | 'completed-desc'
+  | 'title-asc'
+  | 'most-used-desc';
+
+export interface TasksFiltersState {
+  search: string;
+  typeFilter: TypeFilter;
+  statusFilter: StatusFilter;
+  usageFilter: UsageFilter;
+  sortBy: SortOption;
+}
+
+export interface TasksFiltersApi extends TasksFiltersState {
+  setSearch: (value: string) => void;
+  setTypeFilter: (value: TypeFilter) => void;
+  setStatusFilter: (value: StatusFilter) => void;
+  setUsageFilter: (value: UsageFilter) => void;
+  setSortBy: (value: SortOption) => void;
+  /** Filtered + sorted task list ready to render. */
+  filteredTasks: Task[];
+  /** Per-task placement count on non-deleted boards (active OR completed
+   *  OR draft). Exposed so the row can show "Placed on N boards". */
+  placementCountByTaskId: Record<string, number>;
+  /** Same as above but restricted to ACTIVE boards. Used by the usage
+   *  filter's "on active boards" value and by the row's "active" hint. */
+  activePlacementCountByTaskId: Record<string, number>;
+}
+
+const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
+
+/**
+ * Centralises the Tasks-tab filter + sort pipeline. Reads the library
+ * from `useTaskLibrary` and the workspace-wide BoardTask / Board live
+ * queries (small-N) to compute usage hints. The pipeline is pure: any
+ * state change produces a fresh `filteredTasks` array via memo.
+ */
+export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('any');
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>('any');
+  const [sortBy, setSortBy] = useState<SortOption>('updated-desc');
+
+  // Workspace-wide BoardTasks. `BoardTask` has no `isDeleted` field
+  // (deletes are hard via `deleteBoardTasksForBoard`), so the table
+  // already represents the live placement set. Small-N — even very
+  // active users have well under a few thousand placements. We need
+  // the `boardId` join to filter by `Board.status` below.
+  const allBoardTasks =
+    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+  const allBoards =
+    useLiveQuery(
+      () => db.boards.filter((b: Board) => !b.isDeleted).toArray(),
+      [],
+    ) ?? EMPTY_BOARDS;
+
+  // Index boards by id so the join below stays O(N) total.
+  const boardStatusById = useMemo(() => {
+    const m: Record<string, BoardStatus> = {};
+    for (const b of allBoards) m[b.id] = b.status;
+    return m;
+  }, [allBoards]);
+
+  const { placementCountByTaskId, activePlacementCountByTaskId } = useMemo(() => {
+    const all: Record<string, number> = {};
+    const active: Record<string, number> = {};
+    for (const bt of allBoardTasks) {
+      all[bt.taskId] = (all[bt.taskId] ?? 0) + 1;
+      if (boardStatusById[bt.boardId] === BoardStatus.ACTIVE) {
+        active[bt.taskId] = (active[bt.taskId] ?? 0) + 1;
+      }
+    }
+    return { placementCountByTaskId: all, activePlacementCountByTaskId: active };
+  }, [allBoardTasks, boardStatusById]);
+
+  const filteredTasks = useMemo(() => {
+    const trimmed = search.trim().toLowerCase();
+    const typed = library.allTasks
+      .filter((t) => matchesTypeFilter(t, typeFilter))
+      .filter((t) => matchesSearch(t, trimmed))
+      .filter((t) => matchesStatusFilter(t, library, statusFilter));
+    const used = applyUsageFilter(
+      typed,
+      usageFilter,
+      placementCountByTaskId,
+      activePlacementCountByTaskId,
+    );
+    return used
+      .slice() // copy before sort so we don't mutate the memoized library
+      .sort((a, b) => compareTasks(a, b, sortBy, placementCountByTaskId));
+  }, [
+    library,
+    search,
+    typeFilter,
+    statusFilter,
+    usageFilter,
+    sortBy,
+    placementCountByTaskId,
+    activePlacementCountByTaskId,
+  ]);
+
+  return {
+    search,
+    setSearch,
+    typeFilter,
+    setTypeFilter,
+    statusFilter,
+    setStatusFilter,
+    usageFilter,
+    setUsageFilter,
+    sortBy,
+    setSortBy,
+    filteredTasks,
+    placementCountByTaskId,
+    activePlacementCountByTaskId,
+  };
+}
+
+// ─── Pure helpers (exported for testability and parity with iOS) ─────────────
+
+export function matchesTypeFilter(task: Task, filter: TypeFilter): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'normal':
+      return task.type === TaskType.NORMAL;
+    case 'counting':
+      return task.type === TaskType.COUNTING;
+    case 'progress':
+      return task.type === TaskType.COMPOUND && task.isOrdered === true;
+    case 'composite':
+      return task.type === TaskType.COMPOUND && task.isOrdered !== true;
+    case 'achievement':
+      return task.type === TaskType.ACHIEVEMENT;
+  }
+}
+
+function matchesSearch(task: Task, trimmedLowerQuery: string): boolean {
+  if (!trimmedLowerQuery) return true;
+  if (task.title.toLowerCase().includes(trimmedLowerQuery)) return true;
+  if (task.description?.toLowerCase().includes(trimmedLowerQuery)) return true;
+  return false;
+}
+
+function matchesStatusFilter(
+  task: Task,
+  library: TaskLibrary,
+  filter: StatusFilter,
+): boolean {
+  if (filter === 'any') return true;
+  const inProgress = isInProgress(task, library);
+  switch (filter) {
+    case 'completed':
+      return task.isCompleted === true;
+    case 'in-progress':
+      return !task.isCompleted && inProgress;
+    case 'never-started':
+      return !task.isCompleted && !inProgress;
+  }
+}
+
+/**
+ * "In progress" predicate. Counting tasks: any `currentCount > 0` and
+ * not done. Compound tasks: at least one child Task is completed but
+ * the compound parent isn't (we read child completion state out of
+ * `library.taskMap`, which already has all the user's Tasks indexed).
+ * Normal + Achievement tasks have no fractional state, so they're
+ * either completed or never-started.
+ */
+export function isInProgress(task: Task, library: TaskLibrary): boolean {
+  if (task.isCompleted) return false;
+  if (task.type === TaskType.COUNTING) {
+    return (task.currentCount ?? 0) > 0;
+  }
+  if (task.type === TaskType.COMPOUND) {
+    const children = library.compoundChildrenByCompound[task.id] ?? [];
+    for (const link of children) {
+      const child = library.taskMap[link.childTaskId];
+      if (child?.isCompleted) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+function compareTasks(
+  a: Task,
+  b: Task,
+  sort: SortOption,
+  placementCounts: Record<string, number>,
+): number {
+  switch (sort) {
+    case 'title-asc':
+      return a.title.localeCompare(b.title);
+    case 'created-desc':
+      return b.createdAt.localeCompare(a.createdAt);
+    case 'updated-desc':
+      return b.updatedAt.localeCompare(a.updatedAt);
+    case 'completed-desc': {
+      // Completed tasks first, sorted by completedAt desc; uncompleted
+      // tasks fall to the bottom, ordered by updatedAt desc as a tie-
+      // breaker so users still see recency.
+      if (a.completedAt && b.completedAt) {
+        return b.completedAt.localeCompare(a.completedAt);
+      }
+      if (a.completedAt) return -1;
+      if (b.completedAt) return 1;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    }
+    case 'most-used-desc': {
+      const ca = placementCounts[a.id] ?? 0;
+      const cb = placementCounts[b.id] ?? 0;
+      if (ca !== cb) return cb - ca;
+      // Tie-break alphabetically so the list is stable.
+      return a.title.localeCompare(b.title);
+    }
+  }
+}
+
+/**
+ * Usage filter: depends on the placement count maps that the hook
+ * derives from BoardTask + Board live queries. Lifted out of the hook
+ * so the pipeline reads as one chain and the rule is unit-testable.
+ */
+export function applyUsageFilter(
+  tasks: Task[],
+  filter: UsageFilter,
+  placementCountByTaskId: Record<string, number>,
+  activePlacementCountByTaskId: Record<string, number>,
+): Task[] {
+  switch (filter) {
+    case 'any':
+      return tasks;
+    case 'unused':
+      return tasks.filter((t) => (placementCountByTaskId[t.id] ?? 0) === 0);
+    case 'on-active-boards':
+      return tasks.filter((t) => (activePlacementCountByTaskId[t.id] ?? 0) > 0);
+  }
+}

@@ -222,6 +222,21 @@ export interface SeedTask {
   id: string;
   title: string;
   type: 'normal' | 'counting' | 'compound' | 'achievement';
+  /** Optional task description. Used by description-search tests. */
+  description?: string;
+  /** Counting-task action verb (e.g. "Run"). */
+  action?: string;
+  /** Counting-task unit string (e.g. "miles"). */
+  unit?: string;
+  /** Counting-task target count. */
+  maxCount?: number;
+  /** Counting-task current progress; used by the "in progress" status
+   *  filter and the detail page's progress bar. */
+  currentCount?: number;
+  /** Compound-task ordering flag — true ⇒ Progress UX, false ⇒ Composite. */
+  isOrdered?: boolean;
+  /** Mark the task as already completed (global completion state). */
+  isCompleted?: boolean;
   /** Phase 6.3 — Achievement-task reference (specific-board mode).
    *  Mutually exclusive with `referencedTemplateId`; only valid when
    *  `type === 'achievement'`. */
@@ -304,6 +319,75 @@ export async function seedBoardTask(page: Page, boardTask: SeedBoardTask): Promi
       };
     });
   }, row);
+}
+
+export interface SeedCompoundChild {
+  id: string;
+  compoundTaskId: string;
+  childTaskId: string;
+  childIndex: number;
+}
+
+/**
+ * Inserts a `compoundChildren` link row directly via raw IDB. Same
+ * pattern as the other seeders. Used to verify the cascade-delete
+ * impact preview and the actual link-row soft-delete behavior.
+ */
+export async function seedCompoundChild(
+  page: Page,
+  link: SeedCompoundChild,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+    ...link,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['compoundChildren'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('compoundChildren').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
+/**
+ * Read a `compoundChildren` row by id from IndexedDB. Returns null if
+ * not found. Used by cascade-delete tests to assert the soft-delete
+ * flag flipped after the cascade.
+ */
+export async function readCompoundChild(
+  page: Page,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  return await page.evaluate(async (childId) => {
+    return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['compoundChildren'], 'readonly');
+        const req = tx.objectStore('compoundChildren').get(childId);
+        req.onsuccess = () => {
+          db.close();
+          resolve((req.result as Record<string, unknown> | undefined) ?? null);
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, id);
 }
 
 export { expect } from '@playwright/test';
