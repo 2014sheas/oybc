@@ -133,9 +133,18 @@ export function findPendingRecurringBoards(
       prefs.weekStartDay
     );
 
+    // Only a *core* board for the window dismisses the banner. Manual
+    // ad-hoc boards (same timeframe + same window, isCore = false) are
+    // unrelated to the recurring suggestion and must NOT silently
+    // suppress it. A board is core iff it was created from the
+    // recurring banner (Phase 6.1) or auto-spawned from a
+    // RecurringBoardTemplate (Phase 6.2). See `Board.isCore`.
     const exists = boards.some(
       (b) =>
-        b.timeframe === timeframe && !b.isDeleted && b.startDate === startDate
+        b.timeframe === timeframe &&
+        !b.isDeleted &&
+        b.startDate === startDate &&
+        b.isCore === true
     );
     if (exists) continue;
 

@@ -30,7 +30,12 @@ export async function fetchBoard(id: string): Promise<Board | undefined> {
  */
 export async function createBoard(
   userId: string,
-  input: CreateBoardInput
+  input: CreateBoardInput,
+  /** Optional fields not on CreateBoardInput. Currently used by the
+   *  wizard to carry the Phase 6.1 `isCore` marker when launched from
+   *  the recurring banner. Kept off CreateBoardInput so external
+   *  callers don't need to think about provenance fields. */
+  options: { isCore?: boolean } = {},
 ): Promise<Board> {
   const board: Board = {
     id: generateUUID(),
@@ -54,6 +59,7 @@ export async function createBoard(
     updatedAt: currentTimestamp(),
     version: 1,
     isDeleted: false,
+    isCore: options.isCore === true,
   };
 
   await db.boards.add(board);

@@ -104,10 +104,16 @@ func findPendingRecurringBoards(
         let startISO = wizardLocalISOString(window.start)
         let endISO = wizardLocalISOString(window.end)
 
+        // Only a *core* board for the window dismisses the banner. Manual
+        // ad-hoc boards (same timeframe + same window, isCore = false) are
+        // unrelated to the recurring suggestion and must NOT silently
+        // suppress it. Core = banner-spawned (Phase 6.1) or template-
+        // spawned (Phase 6.2). See `Board.isCore`.
         let alreadyExists = boards.contains { board in
             board.timeframe == timeframe
                 && !board.isDeleted
                 && board.startDate == startISO
+                && board.isCore
         }
         if alreadyExists { continue }
 

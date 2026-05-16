@@ -61,6 +61,10 @@ function boardForWindow(
     updatedAt: '2026-05-01T00:00:00.000',
     version: 1,
     isDeleted: false,
+    // Default to non-core so each test must opt in to suppression
+    // explicitly with `{ isCore: true }`. Surfaces the new semantic
+    // in the test source instead of hiding it in the fixture.
+    isCore: false,
     ...overrides,
   };
 }
@@ -185,9 +189,9 @@ describe('findPendingRecurringBoards', () => {
   });
 
   describe('window-already-covered suppression', () => {
-    it('suppresses daily when a daily board exists for today', () => {
+    it('suppresses daily when a core daily board exists for today', () => {
       const now = new Date(2026, 4, 1);
-      const todaysDaily = boardForWindow(Timeframe.DAILY, now);
+      const todaysDaily = boardForWindow(Timeframe.DAILY, now, { isCore: true });
       const result = findPendingRecurringBoards(
         [todaysDaily],
         PREFS_ALL_ENABLED,
@@ -196,6 +200,32 @@ describe('findPendingRecurringBoards', () => {
       const timeframes = result.map((p) => p.timeframe);
       expect(timeframes).not.toContain(Timeframe.DAILY);
       expect(timeframes).toContain(Timeframe.WEEKLY);
+    });
+
+    it('does NOT suppress when only a non-core daily exists for today', () => {
+      // Regression: an ad-hoc weekly/daily board (e.g. user clicks
+      // Create directly without going through the banner) used to
+      // silently dismiss the suggestion. Now it must not.
+      const now = new Date(2026, 4, 1);
+      const adhoc = boardForWindow(Timeframe.DAILY, now); // isCore: false default
+      const result = findPendingRecurringBoards(
+        [adhoc],
+        PREFS_ALL_ENABLED,
+        now
+      );
+      expect(result.map((p) => p.timeframe)).toContain(Timeframe.DAILY);
+    });
+
+    it('suppresses daily when a core daily exists even if a non-core daily also exists', () => {
+      const now = new Date(2026, 4, 1);
+      const adhoc = boardForWindow(Timeframe.DAILY, now, { id: 'adhoc' });
+      const core = boardForWindow(Timeframe.DAILY, now, { id: 'core', isCore: true });
+      const result = findPendingRecurringBoards(
+        [adhoc, core],
+        PREFS_ALL_ENABLED,
+        now
+      );
+      expect(result.map((p) => p.timeframe)).not.toContain(Timeframe.DAILY);
     });
 
     it('does NOT suppress daily when only YESTERDAY has a board', () => {
@@ -224,10 +254,10 @@ describe('findPendingRecurringBoards', () => {
       expect(result.map((p) => p.timeframe)).toContain(Timeframe.DAILY);
     });
 
-    it('matches even if multiple boards exist for the same window', () => {
+    it('matches even if multiple core boards exist for the same window', () => {
       const now = new Date(2026, 4, 1);
-      const a = boardForWindow(Timeframe.DAILY, now, { id: 'daily-a' });
-      const b = boardForWindow(Timeframe.DAILY, now, { id: 'daily-b' });
+      const a = boardForWindow(Timeframe.DAILY, now, { id: 'daily-a', isCore: true });
+      const b = boardForWindow(Timeframe.DAILY, now, { id: 'daily-b', isCore: true });
       const result = findPendingRecurringBoards(
         [a, b],
         PREFS_ALL_ENABLED,
@@ -236,9 +266,9 @@ describe('findPendingRecurringBoards', () => {
       expect(result.map((p) => p.timeframe)).not.toContain(Timeframe.DAILY);
     });
 
-    it('does not match a daily for today if only the weekly exists', () => {
+    it('does not match a daily for today if only a core weekly exists', () => {
       const now = new Date(2026, 4, 1);
-      const weekly = boardForWindow(Timeframe.WEEKLY, now);
+      const weekly = boardForWindow(Timeframe.WEEKLY, now, { isCore: true });
       const result = findPendingRecurringBoards(
         [weekly],
         PREFS_ALL_ENABLED,
@@ -250,13 +280,13 @@ describe('findPendingRecurringBoards', () => {
   });
 
   describe('week-start variation', () => {
-    it('matches a weekly board recorded with the same week-start preference', () => {
+    it('matches a core weekly board recorded with the same week-start preference', () => {
       const wednesdayMar25 = new Date(2026, 2, 25);
       const mondayPrefs: UserPreferences = {
         ...PREFS_ALL_ENABLED,
         weekStartDay: 'monday',
       };
-      const weekly = boardForWindow(Timeframe.WEEKLY, wednesdayMar25);
+      const weekly = boardForWindow(Timeframe.WEEKLY, wednesdayMar25, { isCore: true });
       const result = findPendingRecurringBoards(
         [weekly],
         mondayPrefs,

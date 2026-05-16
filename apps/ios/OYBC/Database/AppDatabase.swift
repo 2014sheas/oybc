@@ -374,6 +374,20 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN requiredCount INTEGER")
         }
 
+        // v12: Phase 6.1 — core-board marker on boards.
+        //
+        //   Adds `isCore INTEGER NOT NULL DEFAULT 0` to `boards`. True
+        //   iff the board was created from the recurring banner OR
+        //   auto-spawned from a RecurringBoardTemplate (Phase 6.2).
+        //   `findPendingRecurringBoards` suppresses the banner only
+        //   when an isCore board exists for the active window — ad-hoc
+        //   wizard boards (isCore = false) no longer silently dismiss
+        //   the suggestion. Pre-migration rows back-fill to 0 (false)
+        //   automatically via the DEFAULT.
+        migrator.registerMigration("v12") { db in
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN isCore INTEGER NOT NULL DEFAULT 0")
+        }
+
         return migrator
     }
 

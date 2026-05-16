@@ -53,6 +53,17 @@ export interface Board {
   // after insert. Forward-compatible: pre-6.2 peers without this field
   // decode unchanged via Zod `.optional()`.
   spawnedFromTemplateId?: string;
+
+  // Phase 6.1 core-board marker. `true` iff this board was created from
+  // the Boards-tab recurring banner OR auto-spawned from a
+  // RecurringBoardTemplate (Phase 6.2). The recurring-banner detector
+  // (`findPendingRecurringBoards`) suppresses the banner only when an
+  // `isCore: true` board exists for the active window — manual ad-hoc
+  // boards for the same window do not dismiss the suggestion. Marked
+  // optional so existing fixtures + old sync rows decode unchanged
+  // (the Zod schema also defaults to `false`); the detector uses
+  // strict `=== true` so `undefined` is treated as non-core.
+  isCore?: boolean;
 }
 
 /**

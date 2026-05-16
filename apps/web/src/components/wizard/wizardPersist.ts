@@ -194,13 +194,17 @@ export async function persistWizardBoard({
     async () => {
       if (controller.draftBoardId !== null) {
         boardId = controller.draftBoardId;
+        // Preserve the original draft's isCore (set at first wizard
+        // launch); resume + activate of a banner-launched draft stays
+        // core. updateBoard merges Partial<Board> so omitting isCore
+        // here is a no-op when it was already correct on the draft.
         await updateBoard(boardId, {
           ...sharedFields,
           status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
         });
         await deleteBoardTasksForBoard(boardId);
       } else {
-        const board = await createBoard(userId, sharedFields);
+        const board = await createBoard(userId, sharedFields, { isCore: controller.isCore });
         boardId = board.id;
       }
 

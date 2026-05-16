@@ -92,6 +92,14 @@ export interface BoardWizardState {
    *  boards or trigger a fresh spawn). Mutually exclusive with
    *  `draftBoardId`. */
   editingTemplateId: string | null;
+
+  /** Phase 6.1 — true iff the wizard was launched from the recurring
+   *  banner (`prefilledRecurringTimeframe != undefined`). Persisted on
+   *  the created Board as `isCore: true`, which is the marker the
+   *  `findPendingRecurringBoards` detector checks when deciding whether
+   *  to keep showing the banner. Manual Create-page opens (no prefill)
+   *  leave this false → resulting Board is non-core → banner persists. */
+  isCore: boolean;
 }
 
 /** Mutators for each piece of state. */
@@ -301,6 +309,12 @@ export function useBoardWizard({
   const draftBoardId = draftBoard?.id ?? null;
   const editingTemplateId = effectiveTemplate?.id ?? null;
 
+  // Phase 6.1 — banner-launched ⇒ core. Preserve existing draft's
+  // core-ness on resume so a banner-launched draft, once resumed and
+  // activated, still marks the board as core. Independent of
+  // isRecurring (which the user can toggle freely mid-wizard).
+  const isCore = draftBoard?.isCore ?? effectivePrefill !== null;
+
   // ── Coupled setters ───────────────────────────────────────────────────
   // Changing size or center type can invalidate downstream selections;
   // these setters keep the model consistent so step components don't
@@ -496,6 +510,7 @@ export function useBoardWizard({
     currentStep,
     draftBoardId,
     editingTemplateId,
+    isCore,
 
     // Actions
     setName,

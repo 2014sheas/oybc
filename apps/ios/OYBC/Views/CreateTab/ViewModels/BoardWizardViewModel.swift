@@ -73,6 +73,15 @@ final class BoardWizardViewModel {
     /// `draftBoardId`.
     let editingTemplateId: String?
 
+    /// Phase 6.1 — true iff the wizard was launched from the recurring
+    /// banner (`prefilledRecurringTimeframe != nil`). Persisted on the
+    /// created Board as `isCore: true`, which is the marker the
+    /// `findPendingRecurringBoards` detector checks when deciding
+    /// whether to keep showing the banner. Manual Create-tab opens
+    /// (no prefill) leave this false → resulting Board is non-core →
+    /// banner persists.
+    let isCore: Bool
+
     // MARK: - Init
 
     private let initialPreferences: UserPreferences
@@ -105,6 +114,12 @@ final class BoardWizardViewModel {
         // Banner deep-link OR template-edit both imply isRecurring=true.
         self.isRecurring = effectiveTemplate != nil || effectivePrefill != nil
         self.editingTemplateId = effectiveTemplate?.id
+
+        // isCore is independent from isRecurring (which can be toggled
+        // by the user mid-wizard). Capture the launch-time signal:
+        // banner-launched ⇒ core (Phase 6.1); preserve existing draft's
+        // core-ness on resume.
+        self.isCore = draft?.board.isCore ?? (effectivePrefill != nil)
 
         if let d = draft {
             self.name = d.board.name
