@@ -316,6 +316,49 @@ test.describe('Tasks tab', () => {
     await expect(page.getByText('Total completions:')).toBeVisible();
   });
 
+  test('clicking a board link inside the sheet navigates AND dismisses the sheet', async ({ page }) => {
+    // Regression: the sheet sat over BoardPlay holding `openedTaskInLibrary`
+    // state. Clicking a board <Link> in the Usage section navigated the
+    // URL, but the sheet remained mounted on top of the new board — from
+    // the user's POV "the click did nothing." TaskDetailSheet now watches
+    // `useLocation` and dismisses when the path changes.
+    const SECOND_BOARD_ID = 'dddddddd-bbbb-0000-0000-000000000002';
+    await seedBoard(page, {
+      id: SECOND_BOARD_ID,
+      name: 'Other Board',
+      boardSize: 5,
+      timeframe: 'weekly',
+      status: 'active',
+      startDate: '2026-05-11',
+      endDate: '2026-05-17',
+    });
+    // Place the same task ("Stretch") on the second board so the Usage
+    // section in the sheet lists both boards.
+    await seedBoardTask(page, {
+      id: 'dddddddd-bt00-0000-0000-000000000002',
+      boardId: SECOND_BOARD_ID,
+      taskId: PLACED_ID,
+      row: 0,
+      col: 0,
+    });
+
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Stretch' }).first().click({ button: 'right' });
+    await page.getByRole('button', { name: /open in library/i }).click();
+
+    // Sheet is open on the original board.
+    await expect(page).toHaveURL(new RegExp(`/boards/${BOARD_ID}`));
+    await expect(page.getByRole('heading', { name: 'Stretch', level: 1 })).toBeVisible();
+
+    // Click the OTHER board's link in Usage. The sheet should dismiss
+    // and the URL should land on the second board.
+    await page.getByRole('link', { name: 'Other Board' }).click();
+    await expect(page).toHaveURL(new RegExp(`/boards/${SECOND_BOARD_ID}`));
+    // Sheet heading no longer visible — sheet has unmounted.
+    await expect(page.getByRole('heading', { name: 'Stretch', level: 1 })).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Other Board' })).toBeVisible();
+  });
+
   test('detail page shows parent-compound back-ref when task is a child', async ({ page }) => {
     // Set up: a compound parent "Workout routine" with one child "Pushups".
     // From the child's detail page, the new "Subtask of" section should

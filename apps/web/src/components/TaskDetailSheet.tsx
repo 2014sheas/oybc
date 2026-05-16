@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { db } from '../db/database';
 import { TaskDetailContent } from '../pages/tasks/TaskDetailContent';
 import styles from './TaskDetailSheet.module.css';
@@ -81,6 +82,20 @@ interface SheetBodyProps {
 function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.ReactElement | null {
   const [resolved, setResolved] = useState<'pending' | 'present' | 'missing'>('pending');
   const [task, setTask] = useState<import('@oybc/shared').Task | null>(null);
+
+  // Auto-dismiss when the user navigates anywhere outside the sheet
+  // (e.g. clicks a board Link in Usage, or a template Link in
+  // "Part of recurring template"). Without this, the sheet stays
+  // mounted over the new route and the navigation looks broken.
+  // Internal chip-to-detail swaps (`setInnerTaskId`) don't change the
+  // URL, so they don't trigger this effect.
+  const location = useLocation();
+  const initialPath = useRef(location.pathname);
+  useEffect(() => {
+    if (location.pathname !== initialPath.current) {
+      onClose();
+    }
+  }, [location.pathname, onClose]);
 
   useEffect(() => {
     if (!taskId) {
