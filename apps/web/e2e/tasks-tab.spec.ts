@@ -288,6 +288,75 @@ test.describe('Tasks tab', () => {
     await expect(page.getByLabel('Filters active')).not.toBeVisible();
   });
 
+  test('board square → Open in library opens TaskDetailSheet over BoardPlay', async ({ page }) => {
+    // The placed task "Stretch" sits on Test Board. Right-clicking the
+    // square opens the FloatingContextMenu, which gained an "Open in
+    // library" item that mounts TaskDetailSheet — preserving board
+    // context (no navigation away from /boards/:id).
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await expect(page.getByRole('heading', { name: 'Test Board' })).toBeVisible();
+
+    // The placed square's aria-label is the task title. Right-click to
+    // open the FloatingContextMenu.
+    const square = page.getByRole('button', { name: 'Stretch' }).first();
+    await square.click({ button: 'right' });
+
+    // The new menu item is the only place "Open in library" appears.
+    await page.getByRole('button', { name: /open in library/i }).click();
+
+    // TaskDetailSheet mounts over BoardPlay — the task title appears as
+    // the detail heading. URL stays on the board (sheet is overlay state,
+    // not navigation).
+    await expect(page).toHaveURL(new RegExp(`/boards/${BOARD_ID}`));
+    await expect(
+      page.getByRole('heading', { name: 'Stretch', level: 1 }),
+    ).toBeVisible();
+
+    // The sheet shows the Usage section listing this board.
+    await expect(page.getByText('Total completions:')).toBeVisible();
+  });
+
+  test('detail page shows parent-compound back-ref when task is a child', async ({ page }) => {
+    // Set up: a compound parent "Workout routine" with one child "Pushups".
+    // From the child's detail page, the new "Subtask of" section should
+    // surface the parent compound.
+    const PARENT_ID = 'eeeeeeee-0011-0000-0000-000000000011';
+    const CHILD_ID = 'eeeeeeee-0012-0000-0000-000000000012';
+    const LINK_ID = 'eeeeeeee-aaaa-0000-0000-000000000011';
+    await seedTask(page, { id: PARENT_ID, title: 'Workout routine', type: 'compound', isOrdered: false });
+    await seedTask(page, { id: CHILD_ID, title: 'Pushups', type: 'normal' });
+    await seedCompoundChild(page, {
+      id: LINK_ID,
+      compoundTaskId: PARENT_ID,
+      childTaskId: CHILD_ID,
+      childIndex: 0,
+    });
+
+    await page.getByRole('link', { name: /tasks/i }).click();
+    await page.getByRole('button', { name: /open pushups details/i }).click();
+
+    // The "Subtask of" section renders a chip linking back to the parent.
+    await expect(page.getByRole('heading', { name: /^subtask of$/i })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: /open parent task: workout routine/i }),
+    ).toBeVisible();
+  });
+
+  test('row shows "Last completed" relative time after a toggle', async ({ page }) => {
+    // Toggle the placed task complete on the board, then return to the
+    // library — the row's meta line gains "Last completed just now".
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Stretch' }).first().click();
+
+    // Navigate back to the Tasks tab and find the Stretch row.
+    await page.getByRole('link', { name: /tasks/i }).click();
+    const stretchRow = page.getByRole('button', { name: /open stretch details/i });
+    await expect(stretchRow).toBeVisible();
+    // The meta line is rendered inside the row button. "Last completed"
+    // appears when completedAt is set; for a fresh toggle it's "just now".
+    await expect(stretchRow).toContainText(/last completed/i);
+  });
+
   test('compound cascade: deleting a parent severs all child-link rows', async ({ page }) => {
     // Build a compound parent + two child tasks linked via compound_children
     // rows. The cascade impact dialog should report 2 subtasks; after
