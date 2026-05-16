@@ -211,6 +211,14 @@ struct BoardPlayView: View {
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
+    /// Stashed target for cross-board navigation requested from inside
+    /// the task-detail sheet. We can't mutate `boardsPath` while the
+    /// sheet is dismissing — SwiftUI swallows the path change during
+    /// the transition, leaving the user on the original board. Setting
+    /// this stash + watching `taskDetailSheetTaskId` for nil-transition
+    /// (see `.onChange` below) sequences dismiss-then-navigate
+    /// correctly.
+    @State private var pendingOpenBoardId: String?
 
     // MARK: - Computed
 
@@ -324,12 +332,19 @@ struct BoardPlayView: View {
                 taskId: item.id,
                 onClose: { taskDetailSheetTaskId = nil },
                 onOpenBoard: { newBoardId in
-                    // Dismiss the sheet first so the new board renders
-                    // unobstructed once the navigation lands.
+                    // Stash the target + dismiss. The .onChange below
+                    // fires onOpenBoard once the sheet has actually
+                    // unmounted — see pendingOpenBoardId doc-comment.
+                    pendingOpenBoardId = newBoardId
                     taskDetailSheetTaskId = nil
-                    onOpenBoard(newBoardId)
                 }
             )
+        }
+        .onChange(of: taskDetailSheetTaskId) { _, new in
+            if new == nil, let target = pendingOpenBoardId {
+                pendingOpenBoardId = nil
+                onOpenBoard(target)
+            }
         }
     }
 
