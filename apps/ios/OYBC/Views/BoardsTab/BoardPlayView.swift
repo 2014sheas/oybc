@@ -321,30 +321,45 @@ struct BoardPlayView: View {
             loadBoardTasks()
             loadTaskData()
         }
+        // Defensive: also reload on boardId prop change. With `.id(boardId)`
+        // on the destination, SwiftUI re-creates the view (and .onAppear
+        // fires) — but if any future refactor strips the .id, this keeps
+        // data fresh per boardId.
+        .onChange(of: boardId) { _, _ in
+            loadBoard()
+            loadBoardTasks()
+            loadTaskData()
+        }
         .sheet(isPresented: Binding(
             get: { detailBoardTaskId != nil },
             set: { if !$0 { detailBoardTaskId = nil } }
         )) {
             detailSheet
         }
-        .sheet(item: $taskDetailSheetTaskId) { item in
+        // `onDismiss:` fires AFTER the sheet has visually unmounted, so
+        // the subsequent boardsPath mutation (via onOpenBoard) lands in
+        // a clean SwiftUI transaction. Using .onChange of the item here
+        // would fire synchronously with the state mutation (before the
+        // dismiss transition completes) and the path change would get
+        // swallowed mid-transition — leaving the user on the original
+        // board.
+        .sheet(
+            item: $taskDetailSheetTaskId,
+            onDismiss: {
+                if let target = pendingOpenBoardId {
+                    pendingOpenBoardId = nil
+                    onOpenBoard(target)
+                }
+            }
+        ) { item in
             TaskDetailSheetView(
                 taskId: item.id,
                 onClose: { taskDetailSheetTaskId = nil },
                 onOpenBoard: { newBoardId in
-                    // Stash the target + dismiss. The .onChange below
-                    // fires onOpenBoard once the sheet has actually
-                    // unmounted — see pendingOpenBoardId doc-comment.
                     pendingOpenBoardId = newBoardId
                     taskDetailSheetTaskId = nil
                 }
             )
-        }
-        .onChange(of: taskDetailSheetTaskId) { _, new in
-            if new == nil, let target = pendingOpenBoardId {
-                pendingOpenBoardId = nil
-                onOpenBoard(target)
-            }
         }
     }
 

@@ -77,6 +77,14 @@ struct MainTabView: View {
                         boardId: boardId,
                         onOpenBoard: { newId in openBoard(newId) }
                     )
+                    // Force a fresh view identity per boardId. Without
+                    // this, NavigationStack reuses the same BoardPlayView
+                    // when boardsPath swaps from [A] to [B], keeping all
+                    // @State (board, boardTasks, etc.) and never firing
+                    // .onAppear — so the user sees the original board's
+                    // data after a cross-board jump from a Task detail
+                    // sheet's Usage section.
+                    .id(boardId)
                 }
             }
             .tabItem {
