@@ -39,11 +39,12 @@ export function DefaultPoolEditorPage(): React.ReactElement {
   const navigate = useNavigate();
   const { timeframe: rawTimeframe } = useParams<{ timeframe: string }>();
 
-  // Guard: reject unknown / CUSTOM timeframes. Redirect to the list.
-  if (!rawTimeframe || !VALID_TIMEFRAMES.has(rawTimeframe)) {
-    return <Navigate to="/profile/default-pools" replace />;
-  }
-  const timeframe = rawTimeframe as Timeframe;
+  // Defer the validity check to JSX so hooks can run unconditionally
+  // (Rules of Hooks). `timeframe` falls back to DAILY for the invalid
+  // case; the JSX returns <Navigate> before any of the hooks' values
+  // are actually used.
+  const isValidTimeframe = !!rawTimeframe && VALID_TIMEFRAMES.has(rawTimeframe);
+  const timeframe = (isValidTimeframe ? rawTimeframe : Timeframe.DAILY) as Timeframe;
 
   const library = useTaskLibrary(user?.id);
   const pool = useDefaultPool(user?.id, timeframe);
@@ -126,6 +127,12 @@ export function DefaultPoolEditorPage(): React.ReactElement {
       setSaving(false);
     }
   };
+
+  // Invalid path-param routes redirect to the list (hooks above ran
+  // with the DAILY fallback but their results are discarded here).
+  if (!isValidTimeframe) {
+    return <Navigate to="/profile/default-pools" replace />;
+  }
 
   return (
     <div className={styles.page}>
