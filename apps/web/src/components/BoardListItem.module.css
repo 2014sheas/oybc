@@ -1,15 +1,8 @@
 .row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border: none;
+  align-items: stretch;
+  gap: 0;
   border-bottom: 1px solid var(--border-color);
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.15s;
   width: 100%;
 }
 
@@ -17,13 +10,120 @@
   border-bottom: none;
 }
 
-.row:hover {
+.mainButton {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s;
+  font: inherit;
+  color: inherit;
+}
+
+.mainButton:hover {
   background-color: var(--card-bg, #f8f9fa);
 }
 
-.row:focus-visible {
+.mainButton:focus-visible {
   outline: 2px solid var(--active-bg);
   outline-offset: -2px;
+}
+
+.deleteButton {
+  flex-shrink: 0;
+  padding: 0 0.85rem;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.deleteButton:hover {
+  background-color: var(--error-bg, rgba(220, 53, 69, 0.08));
+  color: var(--error-text, #dc3545);
+}
+
+.deleteButton:focus-visible {
+  outline: 2px solid var(--error-text, #dc3545);
+  outline-offset: -2px;
+}
+
+.confirmBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.confirmDialog {
+  background: var(--card-bg, #ffffff);
+  border-radius: 8px;
+  padding: 1.25rem;
+  max-width: 24rem;
+  width: 92%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+}
+
+.confirmHeading {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.confirmBody {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.confirmCancel {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.confirmCancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.confirmDelete {
+  padding: 0.45rem 0.9rem;
+  border: none;
+  background: var(--error-text, #dc3545);
+  color: #ffffff;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.confirmDelete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .left {

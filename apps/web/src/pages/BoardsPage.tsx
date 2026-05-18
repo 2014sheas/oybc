@@ -9,6 +9,8 @@ import {
 import { FilterTabs } from '../components/FilterTabs';
 import { BoardListItem } from '../components/BoardListItem';
 import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
+import { deleteBoard } from '../db/operations/boards';
+import { isBoardExpired } from '../utils/boardDisplayUtils';
 import styles from './BoardsPage.module.css';
 
 const FILTER_TABS = [
@@ -37,11 +39,20 @@ export function BoardsPage(): React.ReactElement {
   // attention" badges (see `RecurringTemplatesPage` + the
   // `templateAttention` memo it derives).
   useRecurringBoardSpawn(user?.id);
-  const [activeFilter, setActiveFilter] = useState('all');
+  // Default to 'active' so the boards a user is currently playing are
+  // front-and-center. They can switch to 'all' for drafts / completed /
+  // expired boards. Session-local — no UserPreferences persistence.
+  const [activeFilter, setActiveFilter] = useState('active');
 
   const filteredBoards = allBoards.filter((b) => {
     if (activeFilter === 'all') return true;
-    return b.status === activeFilter;
+    if (b.status !== activeFilter) return false;
+    // Expiry-aware: a board whose status is ACTIVE but whose endDate
+    // has passed is no longer "active" for the user's purposes.
+    // Excluded from the Active tab (still visible under All). Other
+    // filters (Completed, Draft) don't apply the expiry check.
+    if (activeFilter === 'active' && isBoardExpired(b)) return false;
+    return true;
   });
 
   return (
@@ -87,6 +98,7 @@ export function BoardsPage(): React.ReactElement {
               key={board.id}
               board={board}
               onClick={() => navigate(`/boards/${board.id}`)}
+              onDelete={(id) => deleteBoard(id)}
             />
           ))}
         </div>
