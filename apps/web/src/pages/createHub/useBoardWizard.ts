@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDefaultPool } from '../../hooks';
 import {
   CenterSquareType,
   Timeframe,
@@ -158,6 +159,12 @@ export interface UseBoardWizardArgs {
   /** Synced user preferences — used to seed defaults when no draft
    *  is supplied, or as a fallback for fields missing on a draft. */
   preferences: UserPreferences;
+  /** Authenticated user id. Used by the Phase 6.X default-pool prefill
+   *  path: when the wizard is launched from the recurring banner and a
+   *  `DefaultPool` exists for `(userId, timeframe)`, `selectedTaskIds`
+   *  is hydrated from `pool.taskIds`. Optional so the wizard still
+   *  compiles for tests / playgrounds that don't have an auth context. */
+  userId?: string;
   /** Optional starting step (defaults to 1). Useful for tests / drafts. */
   initialStep?: WizardStep;
   /** If provided, the wizard hydrates every field from this draft and
@@ -203,6 +210,7 @@ export interface UseBoardWizardArgs {
  */
 export function useBoardWizard({
   preferences,
+  userId,
   initialStep = 1,
   draft,
   prefilledRecurringTimeframe,
@@ -301,6 +309,26 @@ export function useBoardWizard({
     if (effectiveTemplate) return new Set(effectiveTemplate.seedTaskIds);
     return new Set();
   });
+
+  // Phase 6.X — Default Pool prefill. When the wizard is banner-launched
+  // (`effectivePrefill` set) AND no draft/template hydrated the
+  // selection, look up the user's DefaultPool for that timeframe and
+  // seed `selectedTaskIds` from `pool.taskIds`. One-shot via a ref flag
+  // so user edits after prefill aren't stomped on later renders.
+  const defaultPool = useDefaultPool(
+    userId,
+    effectivePrefill ?? undefined,
+  );
+  const poolPrefillAppliedRef = useRef(false);
+  useEffect(() => {
+    if (poolPrefillAppliedRef.current) return;
+    if (draft || effectiveTemplate || effectivePrefill === null) return;
+    if (defaultPool === undefined) return; // useLiveQuery still loading or no pool
+    poolPrefillAppliedRef.current = true;
+    if (defaultPool.taskIds.length > 0) {
+      setSelectedTaskIds(new Set(defaultPool.taskIds));
+    }
+  }, [defaultPool, draft, effectiveTemplate, effectivePrefill]);
   const [centerTaskId, setCenterTaskIdRaw] = useState<string | null>(
     () => draftBoard?.centerTaskId ?? null,
   );

@@ -10,6 +10,8 @@ import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
+import { DefaultPoolsListPage } from './pages/DefaultPoolsListPage';
+import { DefaultPoolEditorPage } from './pages/DefaultPoolEditorPage';
 import { Playground } from './pages/Playground';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -104,6 +106,14 @@ function AuthenticatedLayout(): React.ReactElement {
           <Route
             path="/profile/recurring-templates"
             element={<RecurringTemplatesPage />}
+          />
+          <Route
+            path="/profile/default-pools"
+            element={<DefaultPoolsListPage />}
+          />
+          <Route
+            path="/profile/default-pools/:timeframe"
+            element={<DefaultPoolEditorPage />}
           />
           <Route path="/" element={<Navigate to="/boards" replace />} />
           <Route path="*" element={<Navigate to="/boards" replace />} />

@@ -67,7 +67,8 @@ struct BoardWizardView: View {
             preferences: preferences,
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
-            editingTemplate: editingTemplate
+            editingTemplate: editingTemplate,
+            userId: userId
         ))
     }
 

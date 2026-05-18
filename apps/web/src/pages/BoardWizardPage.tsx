@@ -76,6 +76,7 @@ export function BoardWizardPage({
 }: BoardWizardPageProps): React.ReactElement {
   const wizard = useBoardWizard({
     preferences,
+    userId,
     draft,
     prefilledRecurringTimeframe,
     editingTemplate,

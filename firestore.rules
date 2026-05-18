@@ -25,16 +25,19 @@ service cloud.firestore {
           'boards', 'tasks', 'taskSteps',
           'boardTasks', 'compositeTasks', 'compositeNodes',
           'compoundChildren',
-          'recurringBoardTemplates'
+          'recurringBoardTemplates',
+          'defaultPools'
         ];
       }
 
-      // Top-level entities (Board, Task, CompositeTask, RecurringBoardTemplate)
-      // carry a `userId` field in their payload. Child entities (TaskStep,
-      // BoardTask, CompositeNode) are scoped via their parent and do not.
+      // Top-level entities (Board, Task, CompositeTask, RecurringBoardTemplate,
+      // DefaultPool) carry a `userId` field in their payload. Child entities
+      // (TaskStep, BoardTask, CompositeNode) are scoped via their parent and
+      // do not.
       function requiresUserIdField() {
         return collection in [
-          'boards', 'tasks', 'compositeTasks', 'recurringBoardTemplates'
+          'boards', 'tasks', 'compositeTasks', 'recurringBoardTemplates',
+          'defaultPools'
         ];
       }
 

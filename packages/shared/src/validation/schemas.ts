@@ -763,6 +763,49 @@ export const RecurringBoardTemplateSchema = z.object({
   deletedAt: z.string().datetime().optional(),
 });
 
+// ===== DefaultPool Schemas (Phase 6.X — Default Pools) =====
+
+/**
+ * DefaultPools follow the same timeframe constraint as templates:
+ * `Timeframe.CUSTOM` is excluded because a "default pool per recurring
+ * timeframe" has no semantic for custom-window boards. Reuses
+ * `RecurringTimeframeSchema` above for parity.
+ *
+ * `taskIds` MAY be empty — a user can set up a pool, clear it, leave it
+ * empty, and later refill it without first deleting + recreating the
+ * pool. The wizard prefill path tolerates empty pools (no-op).
+ */
+export const CreateDefaultPoolInputSchema = z.object({
+  timeframe: RecurringTimeframeSchema,
+  taskIds: z.array(z.string().uuid()),
+}).refine(
+  (data) => new Set(data.taskIds).size === data.taskIds.length,
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const UpdateDefaultPoolInputSchema = z.object({
+  taskIds: z.array(z.string().uuid()).optional(),
+}).refine(
+  (data) => {
+    if (data.taskIds === undefined) return true;
+    return new Set(data.taskIds).size === data.taskIds.length;
+  },
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const DefaultPoolSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  timeframe: RecurringTimeframeSchema,
+  taskIds: z.array(z.string().uuid()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+});
+
 // ===== User Schema =====
 
 export const WeekStartDaySchema = z.union([z.literal('monday'), z.literal('sunday')]);

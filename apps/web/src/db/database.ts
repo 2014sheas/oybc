@@ -11,6 +11,7 @@ import type {
   CompositeNode,
   CompoundChild,
   RecurringBoardTemplate,
+  DefaultPool,
 } from '@oybc/shared';
 
 /**
@@ -31,6 +32,7 @@ export class AppDatabase extends Dexie {
   compositeNodes!: Table<CompositeNode, string>;
   compoundChildren!: Table<CompoundChild, string>;
   recurringBoardTemplates!: Table<RecurringBoardTemplate, string>;
+  defaultPools!: Table<DefaultPool, string>;
 
   constructor() {
     super('oybc');
@@ -199,6 +201,22 @@ export class AppDatabase extends Dexie {
         id,
         boardId,
         taskId
+      `,
+    });
+
+    // v8: Phase 6.X — Default Pools. A new `defaultPools` table holding
+    // one pool per `(userId, timeframe)`. Index `[userId+timeframe]` so
+    // the wizard's prefill path can do a single-row lookup; `id` is the
+    // primary key for sync push/pull; `updatedAt` indexed for ordered
+    // reads in any future "recently edited" UI. Uniqueness is enforced
+    // client-side (no DB constraint) — the CRUD layer's `upsertDefaultPool`
+    // call queries by the index first and creates-or-updates accordingly.
+    this.version(8).stores({
+      defaultPools: `
+        id,
+        [userId+timeframe],
+        [userId+isDeleted],
+        updatedAt
       `,
     });
   }

@@ -32,6 +32,16 @@ const COUNTING_ID = 'dddddddd-0002-0000-0000-000000000002';
 const PLACED_ID = 'dddddddd-0003-0000-0000-000000000003';
 const BOARD_ID = 'dddddddd-bbbb-0000-0000-000000000001';
 
+// Compute today/next-week so the seeded board doesn't go "expired" as
+// the calendar ticks forward (previously hardcoded to a fixed week —
+// reads as expired once now() passes the endDate). Phase 6.X's
+// expiry-aware Active filter (PR #58) then changes the BoardPlay
+// surface's behavior in subtle ways that broke these tests.
+const TASKS_TAB_TODAY = new Date().toISOString().slice(0, 10);
+const TASKS_TAB_NEXT_WEEK = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  .toISOString()
+  .slice(0, 10);
+
 test.describe('Tasks tab', () => {
   test.beforeEach(async ({ page }) => {
     // Seed a normal task (will be edited + deleted), a counting task
@@ -53,8 +63,8 @@ test.describe('Tasks tab', () => {
       boardSize: 5,
       timeframe: 'weekly',
       status: 'active',
-      startDate: '2026-05-11',
-      endDate: '2026-05-17',
+      startDate: TASKS_TAB_TODAY,
+      endDate: TASKS_TAB_NEXT_WEEK,
     });
     await seedBoardTask(page, {
       id: 'dddddddd-bt00-0000-0000-000000000001',
@@ -329,8 +339,8 @@ test.describe('Tasks tab', () => {
       boardSize: 5,
       timeframe: 'weekly',
       status: 'active',
-      startDate: '2026-05-11',
-      endDate: '2026-05-17',
+      startDate: TASKS_TAB_TODAY,
+      endDate: TASKS_TAB_NEXT_WEEK,
     });
     // Place the same task ("Stretch") on the second board so the Usage
     // section in the sheet lists both boards.

@@ -176,6 +176,13 @@ export function ProfilePage(): React.ReactElement {
           <span className={styles.rowLabel}>Recurring templates</span>
           <span className={styles.rowArrow}>&rarr;</span>
         </Link>
+        <Link
+          to="/profile/default-pools"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Default pools</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
       </div>
 
       {/* Developer tools */}
