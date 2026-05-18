@@ -165,6 +165,12 @@ func persistWizardBoard(
                 "updatedAt": now,
                 "version": (existing?.version ?? 0) + 1,
                 "isDeleted": false,
+                // Phase 6.1 core-board marker. Preserve existing draft's
+                // marker on update; for fresh creates, take it from the
+                // controller (set true when the wizard was launched from
+                // the recurring banner). Falls back to false for manual
+                // Create-tab opens.
+                "isCore": existing?.isCore ?? controller.isCore,
             ]
             if let name = customCenterName, !name.isEmpty {
                 boardDict["centerSquareCustomName"] = name

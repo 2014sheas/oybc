@@ -94,6 +94,12 @@ enum RecurringBoardSpawn {
                     "version": 1,
                     "isDeleted": false,
                     "spawnedFromTemplateId": template.id,
+                    // Phase 6.1 — template-spawned boards are core by
+                    // construction. They fulfill the same "recurring
+                    // board for this window exists" promise as banner-
+                    // spawned boards, so the recurring banner detector
+                    // must treat them the same.
+                    "isCore": true,
                 ]
                 if let custom = template.centerSquareCustomName, !custom.isEmpty {
                     boardDict["centerSquareCustomName"] = custom

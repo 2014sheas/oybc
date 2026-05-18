@@ -35,8 +35,14 @@ struct BoardListView: View {
     // MARK: - State
 
     @State private var boards: [Board] = []
-    @State private var activeFilter: String = "all"
+    // Default to 'active' so the boards a user is currently playing are
+    // front-and-center. They can switch to 'all' for drafts / completed /
+    // expired boards. Session-local — no UserPreferences persistence.
+    @State private var activeFilter: String = "active"
     @State private var loadError: String?
+    /// Drives the delete-confirmation alert when the user swipes Delete.
+    @State private var boardPendingDelete: Board?
+    @State private var deleteError: String?
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
     /// Phase 6.2: drives template-spawn detection + execution on tab open.
     /// Idempotent — repeated mounts after the first successful spawn are
@@ -52,7 +58,17 @@ struct BoardListView: View {
 
     private var filteredBoards: [Board] {
         guard activeFilter != "all" else { return boards }
-        return boards.filter { $0.status.rawValue == activeFilter }
+        return boards.filter { board in
+            guard board.status.rawValue == activeFilter else { return false }
+            // Expiry-aware: a board whose status is ACTIVE but whose
+            // endDate has passed is no longer "active" for the user's
+            // purposes. Excluded from the Active tab (still visible
+            // under All). Other filters don't apply the expiry check.
+            if activeFilter == "active", isBoardExpired(board) {
+                return false
+            }
+            return true
+        }
     }
 
     // MARK: - Body
@@ -171,9 +187,43 @@ struct BoardListView: View {
                 NavigationLink(value: board.id) {
                     BoardListItemView(board: board)
                 }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        boardPendingDelete = board
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
             }
         }
         .listStyle(.plain)
+        .alert(
+            "Delete board?",
+            isPresented: Binding(
+                get: { boardPendingDelete != nil },
+                set: { if !$0 { boardPendingDelete = nil } }
+            ),
+            presenting: boardPendingDelete
+        ) { board in
+            Button("Cancel", role: .cancel) { boardPendingDelete = nil }
+            Button("Delete", role: .destructive) {
+                performDelete(board: board)
+            }
+        } message: { board in
+            Text("“\(board.name)” will be removed. This can't be undone from the app.")
+        }
+        .alert(
+            "Delete failed",
+            isPresented: Binding(
+                get: { deleteError != nil },
+                set: { if !$0 { deleteError = nil } }
+            ),
+            presenting: deleteError
+        ) { _ in
+            Button("OK", role: .cancel) { deleteError = nil }
+        } message: { message in
+            Text(message)
+        }
     }
 
     private var emptyStateView: some View {
@@ -213,6 +263,29 @@ struct BoardListView: View {
                 }
             } catch {
                 await MainActor.run { loadError = error.localizedDescription }
+            }
+        }
+    }
+
+    /// Soft-delete the board off the main thread and refresh the list.
+    /// On failure, surfaces an error alert; the board stays put so the
+    /// user can retry.
+    private func performDelete(board: Board) {
+        let boardId = board.id
+        _Concurrency.Task {
+            do {
+                try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try AppDatabase.shared.deleteBoard(id: boardId)
+                }.value
+                await MainActor.run {
+                    boardPendingDelete = nil
+                    loadBoards()
+                }
+            } catch {
+                await MainActor.run {
+                    boardPendingDelete = nil
+                    deleteError = "Failed to delete: \(error.localizedDescription)"
+                }
             }
         }
     }

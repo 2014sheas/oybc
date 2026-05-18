@@ -48,7 +48,8 @@ final class RecurringBoardsTests: XCTestCase {
         referenceDate: Date,
         id: String? = nil,
         status: BoardStatus = .active,
-        isDeleted: Bool = false
+        isDeleted: Bool = false,
+        isCore: Bool = false
     ) -> Board {
         let window = computeTimeframeBoundaries(
             timeframe: timeframe,
@@ -73,6 +74,11 @@ final class RecurringBoardsTests: XCTestCase {
             "updatedAt": "2026-05-01T00:00:00.000",
             "version": 1,
             "isDeleted": isDeleted,
+            // Default non-core so each test opts in to suppression
+            // explicitly with `isCore: true`. Surfaces the Phase 6.1
+            // semantic in the test source instead of hiding it in the
+            // fixture.
+            "isCore": isCore,
         ]
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
@@ -130,9 +136,9 @@ final class RecurringBoardsTests: XCTestCase {
         XCTAssertEqual(order, [.yearly, .monthly, .weekly, .daily])
     }
 
-    func testSuppressesDailyWhenTodayHasABoard() {
+    func testSuppressesDailyWhenTodayHasACoreBoard() {
         let now = date(2026, 5, 1)
-        let todaysDaily = boardForWindow(timeframe: .daily, referenceDate: now)
+        let todaysDaily = boardForWindow(timeframe: .daily, referenceDate: now, isCore: true)
         let result = findPendingRecurringBoards(
             boards: [todaysDaily],
             prefs: prefsAllEnabled,
@@ -141,6 +147,32 @@ final class RecurringBoardsTests: XCTestCase {
         let timeframes = result.map { $0.timeframe }
         XCTAssertFalse(timeframes.contains(.daily))
         XCTAssertTrue(timeframes.contains(.weekly))
+    }
+
+    func testDoesNotSuppressWhenOnlyNonCoreDailyExists() {
+        // Regression: an ad-hoc daily board (created from Create tab
+        // without going through the banner) used to silently dismiss
+        // the suggestion. Now it must not.
+        let now = date(2026, 5, 1)
+        let adhoc = boardForWindow(timeframe: .daily, referenceDate: now) // isCore: false default
+        let result = findPendingRecurringBoards(
+            boards: [adhoc],
+            prefs: prefsAllEnabled,
+            now: now
+        )
+        XCTAssertTrue(result.contains { $0.timeframe == .daily })
+    }
+
+    func testSuppressesDailyWhenCoreExistsEvenAlongsideNonCore() {
+        let now = date(2026, 5, 1)
+        let adhoc = boardForWindow(timeframe: .daily, referenceDate: now, id: "adhoc")
+        let core = boardForWindow(timeframe: .daily, referenceDate: now, id: "core", isCore: true)
+        let result = findPendingRecurringBoards(
+            boards: [adhoc, core],
+            prefs: prefsAllEnabled,
+            now: now
+        )
+        XCTAssertFalse(result.contains { $0.timeframe == .daily })
     }
 
     func testDoesNotSuppressDailyWhenOnlyYesterdayHasABoard() {

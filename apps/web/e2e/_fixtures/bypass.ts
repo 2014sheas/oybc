@@ -390,4 +390,31 @@ export async function readCompoundChild(
   }, id);
 }
 
+/**
+ * Read a board row directly from IndexedDB. Used by the boards-tab
+ * delete test to assert `isDeleted: true` after the user confirms
+ * delete in the UI (Dexie's soft-delete path).
+ */
+export async function readBoard(
+  page: Page,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  return await page.evaluate(async (boardId) => {
+    return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['boards'], 'readonly');
+        const req = tx.objectStore('boards').get(boardId);
+        req.onsuccess = () => {
+          db.close();
+          resolve((req.result as Record<string, unknown> | undefined) ?? null);
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, id);
+}
+
 export { expect } from '@playwright/test';

@@ -89,6 +89,9 @@ export const BoardSchema = z.object({
   // Phase 6.2 provenance — additive, optional. Pre-6.2 peers without
   // this field decode unchanged; the spawn path sets it on insert.
   spawnedFromTemplateId: z.string().uuid().optional(),
+  // Phase 6.1 core-board marker. Defaulted so sync-pulled rows from
+  // older clients (without the field) decode as ad-hoc / non-core.
+  isCore: z.boolean().default(false),
 });
 
 // ===== Task Schemas =====
