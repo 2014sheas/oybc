@@ -19,6 +19,10 @@ export interface TasksFilterControlsProps {
   onUsageFilterChange: (value: UsageFilter) => void;
   sortBy: SortOption;
   onSortByChange: (value: SortOption) => void;
+  /** Phase 6.Y — Timeboxed Tasks. When false (the default), the list
+   *  hides tasks whose `endDate < now`. Toggle to show them. */
+  showExpired: boolean;
+  onShowExpiredChange: (value: boolean) => void;
 }
 
 const TYPE_TABS: { value: TypeFilter; label: string }[] = [
@@ -54,6 +58,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 const DEFAULT_SORT: SortOption = 'updated-desc';
 const DEFAULT_STATUS: StatusFilter = 'any';
 const DEFAULT_USAGE: UsageFilter = 'any';
+const DEFAULT_SHOW_EXPIRED = false;
 
 /**
  * TasksFilterControls — Two primary rows (search + type chips) always
@@ -79,18 +84,22 @@ export function TasksFilterControls({
   onUsageFilterChange,
   sortBy,
   onSortByChange,
+  showExpired,
+  onShowExpiredChange,
 }: TasksFilterControlsProps): React.ReactElement {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const isAnyFilterActive =
     sortBy !== DEFAULT_SORT ||
     statusFilter !== DEFAULT_STATUS ||
-    usageFilter !== DEFAULT_USAGE;
+    usageFilter !== DEFAULT_USAGE ||
+    showExpired !== DEFAULT_SHOW_EXPIRED;
 
   const handleClearAll = (): void => {
     onSortByChange(DEFAULT_SORT);
     onStatusFilterChange(DEFAULT_STATUS);
     onUsageFilterChange(DEFAULT_USAGE);
+    onShowExpiredChange(DEFAULT_SHOW_EXPIRED);
   };
 
   return (
@@ -181,6 +190,14 @@ export function TasksFilterControls({
                 </option>
               ))}
             </select>
+          </label>
+          <label className={styles.dropdownLabel}>
+            <input
+              type="checkbox"
+              checked={showExpired}
+              onChange={(e) => onShowExpiredChange(e.target.checked)}
+            />
+            <span className={styles.dropdownLabelText}>Show expired tasks</span>
           </label>
           {isAnyFilterActive && (
             <button

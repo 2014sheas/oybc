@@ -108,6 +108,12 @@ export async function createTask(
         ? input.achievementTrigger ?? AchievementTrigger.GREENLOG
         : undefined,
     requiredCount: input.requiredCount,
+    // Phase 6.Y — Timeboxed Tasks. Optional triple. Wizard-initiated
+    // creates pass these from the board being built; standalone
+    // quick-add creates leave them undefined (indefinite).
+    timeframe: input.timeframe,
+    startDate: input.startDate,
+    endDate: input.endDate,
     isCompleted: false,
     totalCompletions: 0,
     totalInstances: 0,
@@ -179,6 +185,13 @@ export async function createCompound(
     updatedAt: now,
     version: 1,
     isDeleted: false,
+    // Phase 6.Y — Timeboxed Tasks. The parent compound + every inline
+    // child below inherit this triple. Out-of-band: later edits to
+    // the parent compound's timeframe do NOT propagate to children
+    // (per the plan's out-of-scope note).
+    timeframe: input.timeframe,
+    startDate: input.startDate,
+    endDate: input.endDate,
   };
 
   const childRowsToSync: { task?: Task; child: CompoundChild }[] = [];
@@ -211,6 +224,10 @@ export async function createCompound(
           updatedAt: now,
           version: 1,
           isDeleted: false,
+          // Inherit the parent compound's timeframe at creation time.
+          timeframe: input.timeframe,
+          startDate: input.startDate,
+          endDate: input.endDate,
         };
         await db.tasks.add(inlineCreatedTask);
         childTaskId = inlineCreatedTask.id;

@@ -197,6 +197,8 @@ export function BoardWizardPage({
             onCenterTaskChange={wizard.setCenterTaskId}
             userId={userId}
             currentTimeframe={wizard.timeframe}
+            currentStartDate={'error' in dates ? undefined : dates.startDate}
+            currentEndDate={'error' in dates ? undefined : dates.endDate}
             onTaskCreated={(task) => wizard.toggleTaskSelection(task.id)}
             onCompositeCreated={() => {
               /* Composites are not boardable; the live library query

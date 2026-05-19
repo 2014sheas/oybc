@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   BoardStatus,
   TaskType,
+  isTaskExpired,
   type Board,
   type BoardTask,
   type Task,
@@ -44,6 +45,11 @@ export interface TasksFiltersState {
   statusFilter: StatusFilter;
   usageFilter: UsageFilter;
   sortBy: SortOption;
+  /** Phase 6.Y — Timeboxed Tasks. Default false → tasks whose
+   *  `endDate < now` are hidden from the list (the "zombie tasks"
+   *  the user complained about). Toggle reveals them. Tasks with
+   *  no `endDate` (indefinite) are always visible regardless. */
+  showExpired: boolean;
 }
 
 export interface TasksFiltersApi extends TasksFiltersState {
@@ -52,6 +58,7 @@ export interface TasksFiltersApi extends TasksFiltersState {
   setStatusFilter: (value: StatusFilter) => void;
   setUsageFilter: (value: UsageFilter) => void;
   setSortBy: (value: SortOption) => void;
+  setShowExpired: (value: boolean) => void;
   /** Filtered + sorted task list ready to render. */
   filteredTasks: Task[];
   /** Per-task placement count on non-deleted boards (active OR completed
@@ -77,6 +84,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('any');
   const [usageFilter, setUsageFilter] = useState<UsageFilter>('any');
   const [sortBy, setSortBy] = useState<SortOption>('updated-desc');
+  const [showExpired, setShowExpired] = useState(false);
 
   // Workspace-wide BoardTasks. `BoardTask` has no `isDeleted` field
   // (deletes are hard via `deleteBoardTasksForBoard`), so the table
@@ -122,7 +130,11 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
       placementCountByTaskId,
       activePlacementCountByTaskId,
     );
-    return used
+    // Phase 6.Y — Default-hide expired timeboxed tasks unless the
+    // user explicitly toggles them on. Indefinite tasks (no endDate)
+    // are unaffected.
+    const visible = showExpired ? used : used.filter((t) => !isTaskExpired(t));
+    return visible
       .slice() // copy before sort so we don't mutate the memoized library
       .sort((a, b) => compareTasks(a, b, sortBy, placementCountByTaskId));
   }, [
@@ -130,6 +142,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     search,
     typeFilter,
     statusFilter,
+    showExpired,
     usageFilter,
     sortBy,
     placementCountByTaskId,
@@ -147,6 +160,8 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     setUsageFilter,
     sortBy,
     setSortBy,
+    showExpired,
+    setShowExpired,
     filteredTasks,
     placementCountByTaskId,
     activePlacementCountByTaskId,

@@ -1,4 +1,4 @@
-import { AchievementTrigger, OperatorType, TaskType } from '../constants/enums';
+import { AchievementTrigger, OperatorType, TaskType, Timeframe } from '../constants/enums';
 
 /**
  * Task - Reusable task definition
@@ -112,6 +112,23 @@ export interface Task {
   version: number;               // Optimistic locking
   isDeleted: boolean;            // Soft delete
   deletedAt?: string;            // ISO8601
+
+  // Phase 6.Y — Timeboxed Tasks. All three fields are optional; when
+  // ALL are absent the task is "indefinite" (never expires, always
+  // shows in the Tasks tab). When `endDate` is set, the Tasks tab
+  // default-hides the task once `now > endDate` (a "Show expired"
+  // toggle reveals it). Wizard-initiated creates inherit these from
+  // the board being built; standalone quick-add creates default to
+  // indefinite (user can override in the New Task sheet). Tasks
+  // existing pre-migration are backfilled from their most-recent
+  // BoardTask placement during Dexie v9 / GRDB v14 upgrade.
+  //
+  // No DB-level constraint enforcing all-three-or-none — the
+  // backfill writes them consistently and new creates default to
+  // inherited-from-board, so inconsistency is a caller bug.
+  timeframe?: Timeframe;         // DAILY / WEEKLY / MONTHLY / YEARLY / CUSTOM
+  startDate?: string;            // ISO8601
+  endDate?: string;              // ISO8601
 }
 
 /**
@@ -181,6 +198,15 @@ export interface CreateTaskInput {
    *  Required (positive integer) when `referencedTemplateId` is set;
    *  ignored for specific-board mode and rejected on non-ACHIEVEMENT. */
   requiredCount?: number;
+
+  /** Phase 6.Y — Timeboxed Tasks. Optional. When set, the resulting
+   *  Task carries its own temporal anchor for the Tasks-tab
+   *  default-hide-expired filter. Wizard creates set this from the
+   *  board's timeframe + dates; standalone quick-add omits these
+   *  (indefinite). User can override in the New Task sheet. */
+  timeframe?: Timeframe;
+  startDate?: string;
+  endDate?: string;
 }
 
 /**
@@ -217,6 +243,15 @@ export interface UpdateTaskInput {
   /** Phase 6.3 — required spawn count. `null` clears. Only meaningful
    *  in recurring-template mode. */
   requiredCount?: number | null;
+
+  /** Phase 6.Y — Timeboxed Tasks. `null` clears the field (sets task
+   *  to indefinite); `undefined` leaves unchanged. All three fields
+   *  travel together by convention (the New Task / edit form sends
+   *  them as a set), but Zod does not enforce the invariant — callers
+   *  are responsible for keeping them consistent. */
+  timeframe?: Timeframe | null;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 /**
@@ -260,4 +295,9 @@ export interface CreateCompoundTaskInput {
   /** Display hint: true → renders as ordered "step list" (former Progress UX). */
   isOrdered: boolean;
   children: CreateCompoundChildEntry[];
+  /** Phase 6.Y — Timeboxed Tasks. Optional. When provided the parent
+   *  compound + every inline-created child Task inherit this triple. */
+  timeframe?: Timeframe;
+  startDate?: string;
+  endDate?: string;
 }

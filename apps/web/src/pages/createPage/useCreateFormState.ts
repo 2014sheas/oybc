@@ -202,6 +202,16 @@ export interface UseCreateFormStateArgs {
   /** Called when a task was successfully created. Gives the container
    *  a single integration point for "add to pool + flash a toast". */
   onTaskCreated: (task: Task) => void;
+  /** Phase 6.Y — Timeboxed Tasks. When provided (typically from the
+   *  board wizard), every task created through this form auto-inherits
+   *  this triple. Standalone Tasks-tab quick-add passes nothing and
+   *  resulting tasks are indefinite. Editing the timeframe post-create
+   *  happens via TaskDetailContent. Kept on UseCreateFormStateArgs (vs.
+   *  per-call) so the wizard sets it once at mount; users who never
+   *  open the wizard see indefinite tasks. */
+  defaultTimeframe?: import('@oybc/shared').Timeframe;
+  defaultStartDate?: string;
+  defaultEndDate?: string;
 }
 
 export interface UseCreateFormState {
@@ -274,7 +284,13 @@ export interface UseCreateFormState {
  * Errors surface as `errors.general`. Composite creation doesn't
  * flow through this hook — the Composite form is its own component.
  */
-export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormStateArgs): UseCreateFormState {
+export function useCreateFormState({
+  userId,
+  onTaskCreated,
+  defaultTimeframe,
+  defaultStartDate,
+  defaultEndDate,
+}: UseCreateFormStateArgs): UseCreateFormState {
   const [taskType, setTaskType] = useState<TaskTypeOrComposite>(TaskType.NORMAL);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -485,6 +501,12 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
             title: title.trim(),
             description: description.trim() || undefined,
             type: TaskType.NORMAL,
+            // Phase 6.Y — inherit timeframe triple from the caller
+            // context (wizard passes board's timeframe + dates; Tasks-tab
+            // standalone passes nothing → indefinite task).
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
           });
         } else if (taskType === TaskType.COUNTING) {
           const parsedMaxCount = parseInt(maxCountStr, 10);
@@ -501,6 +523,9 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
             action: action.trim(),
             unit: unit.trim(),
             maxCount: parsedMaxCount,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
           });
         } else if (taskType === TaskType.ACHIEVEMENT) {
           // Phase 6.3 — Achievement task: serialise the mode + picker
@@ -529,6 +554,9 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
                 : undefined,
             achievementTrigger,
             requiredCount: isTemplateMode ? parsedCount : undefined,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
           });
         } else {
           // Progress tasks: route through createCompound (compound + isOrdered=true).
@@ -565,6 +593,9 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
             operator: OperatorType.AND,
             isOrdered: true,
             children,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
           });
         }
 
@@ -577,7 +608,7 @@ export function useCreateFormState({ userId, onTaskCreated }: UseCreateFormState
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr]
+    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
   );
 
   return {

@@ -219,6 +219,75 @@ export class AppDatabase extends Dexie {
         updatedAt
       `,
     });
+
+    // v9: Phase 6.Y — Timeboxed Tasks. Adds 3 optional fields to Task
+    // (timeframe / startDate / endDate) and BACKFILLS them from the
+    // task's most-recently-updated non-deleted BoardTask placement.
+    // Dexie's `.stores({})` is a no-op shape change (no new indexes
+    // needed — these fields are unindexed); the schema bump is just
+    // a vehicle for the `.upgrade()` callback.
+    //
+    // Backfill rule: for each non-deleted task with no `endDate`
+    // (i.e., not already timeboxed), find the latest BoardTask whose
+    // Board is non-deleted, then set the task's `timeframe`,
+    // `startDate`, `endDate` from that Board. Tasks with zero
+    // placements stay indefinite. Bumps `version + updatedAt` so the
+    // change syncs to remote peers (where each peer will run its
+    // own migration on first launch — duplicate writes coalesce via
+    // LWW because the timestamps are identical-or-close).
+    this.version(9).stores({}).upgrade(async (tx) => {
+      const tasksTable = tx.table('tasks');
+      const boardTasksTable = tx.table('boardTasks');
+      const boardsTable = tx.table('boards');
+
+      const allTasks = await tasksTable.toArray();
+      const allBoardTasks = await boardTasksTable.toArray();
+      const allBoards = await boardsTable.toArray();
+      const boardById = new Map(allBoards.map((b: { id: string }) => [b.id, b]));
+
+      // Group BoardTasks by taskId; sort each group by updatedAt desc.
+      const btsByTaskId = new Map<string, typeof allBoardTasks>();
+      for (const bt of allBoardTasks) {
+        const list = btsByTaskId.get(bt.taskId) ?? [];
+        list.push(bt);
+        btsByTaskId.set(bt.taskId, list);
+      }
+
+      const now = new Date().toISOString();
+      for (const task of allTasks) {
+        if (task.isDeleted) continue;
+        if (task.endDate) continue; // already timeboxed (somehow)
+
+        const candidates = btsByTaskId.get(task.id) ?? [];
+        if (candidates.length === 0) continue; // no placements → indefinite
+
+        // Pick the most-recently-updated BoardTask whose Board is alive.
+        let chosen: typeof allBoardTasks[number] | undefined;
+        let chosenBoard: { timeframe: string; startDate: string; endDate: string } | undefined;
+        let chosenUpdatedAt = '';
+        for (const bt of candidates) {
+          const board = boardById.get(bt.boardId) as
+            | { timeframe: string; startDate: string; endDate: string; isDeleted: boolean }
+            | undefined;
+          if (!board || board.isDeleted) continue;
+          const u = (bt.updatedAt as string | undefined) ?? '';
+          if (u >= chosenUpdatedAt) {
+            chosen = bt;
+            chosenBoard = board;
+            chosenUpdatedAt = u;
+          }
+        }
+        if (!chosen || !chosenBoard) continue;
+
+        await tasksTable.update(task.id, {
+          timeframe: chosenBoard.timeframe,
+          startDate: chosenBoard.startDate,
+          endDate: chosenBoard.endDate,
+          updatedAt: now,
+          version: (task.version ?? 0) + 1,
+        });
+      }
+    });
   }
 }
 

@@ -421,6 +421,68 @@ final class AppDatabase {
             try db.execute(sql: "CREATE INDEX idx_default_pools_user_deleted ON default_pools(userId, isDeleted)")
         }
 
+        // v14: Phase 6.Y — Timeboxed Tasks. Adds `timeframe`,
+        // `startDate`, `endDate` to `tasks` and backfills each
+        // non-deleted task with the values from its most-recently-
+        // updated non-deleted BoardTask's Board. Tasks with zero
+        // placements stay indefinite (all three columns NULL).
+        //
+        // Bumps `version + updatedAt` so the change syncs to remote
+        // peers (each peer runs its own migration; LWW resolves any
+        // overlap because timestamps are within milliseconds).
+        migrator.registerMigration("v14") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN timeframe TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN startDate TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN endDate TEXT")
+
+            // Backfill from most-recent BoardTask → Board. SQLite's
+            // correlated UPDATE form keeps the whole pass to one
+            // statement; the inner subquery finds the latest BoardTask
+            // (by updatedAt) for each task whose Board is alive, then
+            // returns its Board's timeframe/startDate/endDate.
+            let nowISO = Self.currentTimestamp()
+            try db.execute(sql: """
+                UPDATE tasks
+                SET timeframe = (
+                        SELECT b.timeframe
+                        FROM board_tasks bt
+                        JOIN boards b ON b.id = bt.boardId
+                        WHERE bt.taskId = tasks.id
+                          AND b.isDeleted = 0
+                        ORDER BY bt.updatedAt DESC
+                        LIMIT 1
+                    ),
+                    startDate = (
+                        SELECT b.startDate
+                        FROM board_tasks bt
+                        JOIN boards b ON b.id = bt.boardId
+                        WHERE bt.taskId = tasks.id
+                          AND b.isDeleted = 0
+                        ORDER BY bt.updatedAt DESC
+                        LIMIT 1
+                    ),
+                    endDate = (
+                        SELECT b.endDate
+                        FROM board_tasks bt
+                        JOIN boards b ON b.id = bt.boardId
+                        WHERE bt.taskId = tasks.id
+                          AND b.isDeleted = 0
+                        ORDER BY bt.updatedAt DESC
+                        LIMIT 1
+                    ),
+                    updatedAt = ?,
+                    version = version + 1
+                WHERE tasks.isDeleted = 0
+                  AND tasks.endDate IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM board_tasks bt
+                      JOIN boards b ON b.id = bt.boardId
+                      WHERE bt.taskId = tasks.id
+                        AND b.isDeleted = 0
+                  )
+                """, arguments: [nowISO])
+        }
+
         return migrator
     }
 

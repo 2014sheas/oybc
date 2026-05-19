@@ -14,17 +14,22 @@ struct TasksFilterControlsView: View {
     @Binding var statusFilter: TasksTabStatusFilter
     @Binding var usageFilter: TasksTabUsageFilter
     @Binding var sortBy: TasksTabSort
+    /// Phase 6.Y — Timeboxed Tasks toggle. False (the default) hides
+    /// tasks whose `endDate < now`; toggle reveals them.
+    @Binding var showExpired: Bool
 
     @State private var isExpanded: Bool = false
 
     private static let defaultSort: TasksTabSort = .updatedDesc
     private static let defaultStatus: TasksTabStatusFilter = .any
     private static let defaultUsage: TasksTabUsageFilter = .any
+    private static let defaultShowExpired: Bool = false
 
     private var isAnyFilterActive: Bool {
         sortBy != Self.defaultSort
             || statusFilter != Self.defaultStatus
             || usageFilter != Self.defaultUsage
+            || showExpired != Self.defaultShowExpired
     }
 
     private var typeTabs: [FilterTab] {
@@ -123,11 +128,14 @@ struct TasksFilterControlsView: View {
             sortMenu
             statusMenu
             usageMenu
+            Toggle("Show expired tasks", isOn: $showExpired)
+                .font(.system(size: 13))
             if isAnyFilterActive {
                 Button {
                     sortBy = Self.defaultSort
                     statusFilter = Self.defaultStatus
                     usageFilter = Self.defaultUsage
+                    showExpired = Self.defaultShowExpired
                 } label: {
                     Text("Clear all")
                         .font(.system(size: 13, weight: .semibold))

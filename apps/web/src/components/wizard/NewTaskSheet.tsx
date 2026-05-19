@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useCreateFormState } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
-import type { Task } from '@oybc/shared';
+import type { Task, Timeframe } from '@oybc/shared';
 import styles from './NewTaskSheet.module.css';
 
 export interface NewTaskSheetProps {
@@ -21,6 +21,13 @@ export interface NewTaskSheetProps {
    *  context wants "Create & Select" (the new task is auto-added to the
    *  pool); the Tasks-tab context wants "Add to library". */
   submitLabel?: string;
+  /** Phase 6.Y — Timeboxed Tasks. When the sheet is mounted from the
+   *  board wizard, the wizard passes its `currentTimeframe` + dates so
+   *  every task created here inherits the board's window. Standalone
+   *  Tasks-tab usage omits these and resulting tasks are indefinite. */
+  defaultTimeframe?: Timeframe;
+  defaultStartDate?: string;
+  defaultEndDate?: string;
 }
 
 /**
@@ -42,6 +49,9 @@ export function NewTaskSheet({
   onTaskCreated,
   onCompositeCreated,
   submitLabel,
+  defaultTimeframe,
+  defaultStartDate,
+  defaultEndDate,
 }: NewTaskSheetProps): React.ReactElement | null {
   useEffect(() => {
     if (!isOpen) return;
@@ -61,6 +71,9 @@ export function NewTaskSheet({
       onTaskCreated={onTaskCreated}
       onCompositeCreated={onCompositeCreated}
       submitLabel={submitLabel}
+      defaultTimeframe={defaultTimeframe}
+      defaultStartDate={defaultStartDate}
+      defaultEndDate={defaultEndDate}
     />
   );
 }
@@ -75,6 +88,9 @@ function NewTaskSheetBody({
   onTaskCreated,
   onCompositeCreated,
   submitLabel,
+  defaultTimeframe,
+  defaultStartDate,
+  defaultEndDate,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
   const form = useCreateFormState({
     userId,
@@ -82,6 +98,9 @@ function NewTaskSheetBody({
       onTaskCreated(task);
       onClose();
     },
+    defaultTimeframe,
+    defaultStartDate,
+    defaultEndDate,
   });
 
   return (
