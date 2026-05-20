@@ -45,24 +45,26 @@ struct CreateNewTaskFormView: View {
 
             // Type picker
             //
-            // 5 segments (Normal / Counting / Progress / Composite /
-            // Achievement) share the row equally. "Achievement" at the
-            // implicit ~13 pt segmented font overflows its 1/5 share on
-            // phone-class widths and native-truncates with `…`. Shrink
-            // the font + scale-to-fit the longest label so all five
-            // read in full. `lineLimit(1)` is belt-and-suspenders: if a
-            // future label is wider than expected, the segment still
-            // can't grow vertically into a 2-line layout.
-            Picker("Task Type", selection: $form.taskType) {
-                ForEach(CreateTaskType.allCases, id: \.self) { pt in
-                    Text(pt.rawValue)
-                        .font(.system(size: 11))
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                        .tag(pt)
+            // Segments display `shortLabel` (3–4 char abbreviations)
+            // because `.segmented` allocates equal width per segment
+            // and renders via UIKit's UISegmentedControl, which
+            // ignores per-`Text` SwiftUI font modifiers — the full
+            // "Achievement" label otherwise truncates with `…` on
+            // iPhone widths. The caption below the picker spells out
+            // the full name of the current selection so the user
+            // always knows what they're choosing.
+            VStack(alignment: .leading, spacing: 4) {
+                Picker("Task Type", selection: $form.taskType) {
+                    ForEach(CreateTaskType.allCases, id: \.self) { pt in
+                        Text(pt.shortLabel).tag(pt)
+                    }
                 }
+                .pickerStyle(.segmented)
+
+                Text(form.taskType.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .pickerStyle(.segmented)
             .onChange(of: form.taskType) {
                 form.clearFeedback()
                 // Clear the template AND the action/unit/maxCount fields it

@@ -1,25 +1,16 @@
 .typeSelector {
   display: flex;
-  /* Tightened from 0.5rem to fit all 5 type pills (incl. the longer
-   * "Achievement" label) on a single row inside the 560 px-max
-   * NewTaskSheet. The `@media (max-width: 600px) { flex-wrap: wrap }`
-   * block below stays as a backstop for split-screen iPad and other
-   * very-narrow viewports. */
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .typeButton {
-  /* Tightened from `0.5rem 1rem` so all 5 pills fit on one row in
-   * the sheet without clipping the trailing "Achievement" pill. */
-  padding: 0.4rem 0.75rem;
+  padding: 0.5rem 1rem;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  /* Shrunk from 0.9rem so the narrower glyphs claw back enough room
-   * for the longest label to fit in its intrinsic width. */
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 500;
   transition: border-color 0.15s, background-color 0.15s, color 0.15s;
 }

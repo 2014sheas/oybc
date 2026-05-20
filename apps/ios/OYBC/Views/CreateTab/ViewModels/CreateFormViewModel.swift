@@ -11,6 +11,28 @@ enum CreateTaskType: String, CaseIterable {
     case composite = "Composite"
     /// Phase 6.3 — Achievement (cross-board watcher).
     case achievement = "Achievement"
+
+    /// Short 3–4 character abbreviation used by the segmented type
+    /// picker in `CreateNewTaskFormView`. The picker renders via
+    /// UIKit's `UISegmentedControl`, which allocates equal width per
+    /// segment and ignores per-`Text` SwiftUI font modifiers — so
+    /// the full `rawValue` "Achievement" (11 chars) truncates with
+    /// `…` on phone-class widths. The form pairs the picker with a
+    /// caption below showing the current selection's full `rawValue`
+    /// so the abbreviation never loses meaning.
+    ///
+    /// All other surfaces (badges, filter chips, detail views)
+    /// continue to display the full `rawValue` — this property is
+    /// scoped to the segmented picker.
+    var shortLabel: String {
+        switch self {
+        case .normal:      return "Norm"
+        case .counting:    return "Cnt"
+        case .progress:    return "Prog"
+        case .composite:   return "Comp"
+        case .achievement: return "Ach"
+        }
+    }
 }
 
 /// Phase 6.3 — Achievement-mode picker for the Create form. Mirrors
