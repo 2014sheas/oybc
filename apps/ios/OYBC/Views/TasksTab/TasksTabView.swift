@@ -37,7 +37,8 @@ struct TasksTabView: View {
                     typeFilter: $vm.typeFilter,
                     statusFilter: $vm.statusFilter,
                     usageFilter: $vm.usageFilter,
-                    sortBy: $vm.sortBy
+                    sortBy: $vm.sortBy,
+                    showExpired: $vm.showExpired
                 )
 
                 let filtered = vm.filteredTasks(library: library)

@@ -82,6 +82,15 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
     var isDeleted: Bool
     var deletedAt: String? // ISO8601
 
+    // Phase 6.Y — Timeboxed Tasks. All three optional; absent ⇒
+    // indefinite (never expired). Wizard-initiated creates inherit
+    // from the board being built; standalone quick-add omits them.
+    // Tasks existing pre-migration are backfilled from their most-
+    // recent BoardTask placement during GRDB v14 upgrade.
+    var timeframe: Timeframe?
+    var startDate: String? // ISO8601
+    var endDate: String? // ISO8601
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -120,7 +129,10 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         lastSyncedAt: String? = nil,
         version: Int,
         isDeleted: Bool,
-        deletedAt: String? = nil
+        deletedAt: String? = nil,
+        timeframe: Timeframe? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -151,6 +163,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         self.version = version
         self.isDeleted = isDeleted
         self.deletedAt = deletedAt
+        self.timeframe = timeframe
+        self.startDate = startDate
+        self.endDate = endDate
     }
 
     // MARK: - Codable
@@ -167,6 +182,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         case isCompleted, completedAt, currentCount
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
+        // Phase 6.Y
+        case timeframe, startDate, endDate
     }
 
     // Custom decoding for progressCounters (stored as JSON string)
@@ -210,6 +227,11 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         version = try container.decode(Int.self, forKey: .version)
         isDeleted = try container.decode(Bool.self, forKey: .isDeleted)
         deletedAt = try container.decodeIfPresent(String.self, forKey: .deletedAt)
+        // Phase 6.Y — Timeboxed Tasks. Forward-compat: pre-migration
+        // local rows + pre-feature sync payloads decode as nil.
+        timeframe = try container.decodeIfPresent(Timeframe.self, forKey: .timeframe)
+        startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
+        endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
     }
 
     // Custom encoding for progressCounters (store as JSON string)
@@ -252,6 +274,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord {
         try container.encode(version, forKey: .version)
         try container.encode(isDeleted, forKey: .isDeleted)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+        try container.encodeIfPresent(timeframe, forKey: .timeframe)
+        try container.encodeIfPresent(startDate, forKey: .startDate)
+        try container.encodeIfPresent(endDate, forKey: .endDate)
     }
 }
 

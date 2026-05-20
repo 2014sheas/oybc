@@ -98,6 +98,11 @@ struct ProfileView: View {
             } label: {
                 Label("Recurring templates", systemImage: "calendar.badge.clock")
             }
+            NavigationLink {
+                DefaultPoolsListView()
+            } label: {
+                Label("Default pools", systemImage: "tray.full")
+            }
         }
     }
 

@@ -61,6 +61,12 @@ final class TasksTabViewModel {
     var usageFilter: TasksTabUsageFilter = .any
     var sortBy: TasksTabSort = .updatedDesc
 
+    /// Phase 6.Y — Timeboxed Tasks. Default false → tasks whose
+    /// `endDate < now` are hidden from the list (the "zombie tasks"
+    /// the user complained about). Toggle reveals them. Tasks with
+    /// no `endDate` (indefinite) are always visible regardless.
+    var showExpired: Bool = false
+
     // MARK: - Joined board-status data
 
     /// Status map for non-deleted boards. Loaded once per `reload`; the
@@ -139,7 +145,26 @@ final class TasksTabViewModel {
             activeCounts: activeCounts,
         )
 
-        return used.sorted { Self.compare($0, $1, sort: sortBy, placementCounts: placementCounts) }
+        // Phase 6.Y — Default-hide expired timeboxed tasks unless the
+        // user explicitly toggles them on. Indefinite tasks (no
+        // endDate) are unaffected.
+        let visible = showExpired ? used : used.filter { !Self.isTaskExpired($0) }
+
+        return visible.sorted { Self.compare($0, $1, sort: sortBy, placementCounts: placementCounts) }
+    }
+
+    /// Mirrors the shared `isTaskExpired` predicate (we don't import
+    /// the TS module on iOS — algorithm is small enough to duplicate
+    /// per the convention used by `isBoardExpired`). Keep in lock-step
+    /// with `packages/shared/src/algorithms/taskExpiry.ts`.
+    static func isTaskExpired(_ task: Task, now: Date = Date()) -> Bool {
+        guard let endIso = task.endDate else { return false }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let end = formatter.date(from: endIso)
+            ?? ISO8601DateFormatter().date(from: endIso)
+        guard let end = end else { return false }
+        return now > end
     }
 
     // MARK: - Pure helpers (mirror useTasksFilters.ts)

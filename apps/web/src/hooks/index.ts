@@ -14,3 +14,4 @@ export * from './usePendingRecurringBoards';
 export * from './useParentBoardTasks';
 export * from './useRecurringBoardTemplates';
 export * from './useRecurringBoardSpawn';
+export * from './useDefaultPools';

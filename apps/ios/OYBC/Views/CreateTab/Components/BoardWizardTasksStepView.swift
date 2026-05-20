@@ -51,6 +51,14 @@ struct BoardWizardTasksStepView: View {
     /// `ParentBoardTasksViewModel`.
     let currentTimeframe: Timeframe
 
+    /// Phase 6.Y — resolved start/end dates the wizard will write on
+    /// the board. Threaded into NewTaskSheetView so any new task
+    /// created from inside the wizard inherits the same window. Nil
+    /// when dates can't be resolved (e.g., CUSTOM with no user input);
+    /// the new task then inherits timeframe but not dates.
+    var currentStartDate: String? = nil
+    var currentEndDate: String? = nil
+
     /// Fired after a non-composite task is created from the sheet —
     /// the wizard should auto-add the new id to `selectedTaskIds`.
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
@@ -280,7 +288,10 @@ struct BoardWizardTasksStepView: View {
                 onCompositeCreated: { ct in
                     onCompositeCreated(ct)
                 },
-                onLibraryReloadRequested: onLibraryReloadRequested
+                onLibraryReloadRequested: onLibraryReloadRequested,
+                defaultTimeframe: currentTimeframe,
+                defaultStartDate: currentStartDate,
+                defaultEndDate: currentEndDate
             )
         }
         // Quick "Derive smaller version" sheet — opened from a counting

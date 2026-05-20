@@ -123,7 +123,14 @@ final class CreateFormViewModel {
     func handleCreateAndAddToPool(
         userId: String,
         onTaskCreated: @escaping (_ taskId: String, _ title: String, _ type: String) -> Void,
-        onLibraryReloadRequested: @escaping () -> Void
+        onLibraryReloadRequested: @escaping () -> Void,
+        // Phase 6.Y — Timeboxed Tasks. When provided (typically from
+        // the board wizard's currentTimeframe + resolved dates), the
+        // newly-created Task inherits this triple. Standalone Tasks-
+        // tab usage passes nil and the task is indefinite.
+        defaultTimeframe: Timeframe? = nil,
+        defaultStartDate: String? = nil,
+        defaultEndDate: String? = nil
     ) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDesc = description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -255,7 +262,10 @@ final class CreateFormViewModel {
             type: resolvedType,
             title: resolvedTitle,
             desc: trimmedDesc.isEmpty ? nil : trimmedDesc,
-            now: now
+            now: now,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate
         )
         // Progress submit becomes a compound write: one Task with
         // type=.compound + isOrdered=true, plus one CompoundChild row per
@@ -265,7 +275,14 @@ final class CreateFormViewModel {
         let progressChildTasks: [Task]
         let progressChildLinks: [CompoundChild]
         if resolvedType == .compound {
-            let pair = buildCompoundChildrenForProgress(parentId: taskId, userId: userId, now: now)
+            let pair = buildCompoundChildrenForProgress(
+                parentId: taskId,
+                userId: userId,
+                now: now,
+                timeframe: defaultTimeframe,
+                startDate: defaultStartDate,
+                endDate: defaultEndDate
+            )
             progressChildTasks = pair.tasks
             progressChildLinks = pair.children
         } else {
@@ -391,13 +408,24 @@ final class CreateFormViewModel {
 
     /// Builds a `Task` record for the resolved task type. Pulls the
     /// counting-specific fields from the view model's state.
-    private func buildCreateTask(id: String, userId: String, type: TaskType, title: String, desc: String?, now: String) -> Task {
+    private func buildCreateTask(
+        id: String,
+        userId: String,
+        type: TaskType,
+        title: String,
+        desc: String?,
+        now: String,
+        timeframe: Timeframe? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil
+    ) -> Task {
         switch type {
         case .normal:
             return Task(
                 id: id, userId: userId, title: title, description: desc,
                 type: .normal, totalCompletions: 0, totalInstances: 0,
-                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+                timeframe: timeframe, startDate: startDate, endDate: endDate
             )
         case .counting:
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -407,14 +435,10 @@ final class CreateFormViewModel {
                 id: id, userId: userId, title: title, description: desc,
                 type: .counting, action: a, unit: u, maxCount: m,
                 totalCompletions: 0, totalInstances: 0,
-                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+                timeframe: timeframe, startDate: startDate, endDate: endDate
             )
         case .compound:
-            // The Progress form mode resolves to `.compound` (selectedType
-            // maps .progress → .compound). Composite mode is excluded
-            // earlier (selectedType returns nil and the submit pipeline
-            // bails). So `.compound` here always means "Progress submit":
-            // operator=AND + isOrdered=true with one CompoundChild per step.
             return Task(
                 id: id, userId: userId, title: title, description: desc,
                 type: .compound,
@@ -422,13 +446,10 @@ final class CreateFormViewModel {
                 threshold: nil,
                 isOrdered: true,
                 totalCompletions: 0, totalInstances: 0,
-                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+                timeframe: timeframe, startDate: startDate, endDate: endDate
             )
         case .achievement:
-            // Phase 6.3 — Achievement task: serialise the picker
-            // selection + trigger + count into the Task. Validation
-            // earlier ensures exactly one reference and (template
-            // mode) a positive count.
             let isTemplateMode = (achievementMode == .recurringTemplate)
             let parsedCount: Int? = isTemplateMode
                 ? Int(achievementRequiredCountStr.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -441,7 +462,8 @@ final class CreateFormViewModel {
                 achievementTrigger: achievementTrigger,
                 requiredCount: parsedCount,
                 totalCompletions: 0, totalInstances: 0,
-                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+                timeframe: timeframe, startDate: startDate, endDate: endDate
             )
         }
     }
@@ -452,7 +474,14 @@ final class CreateFormViewModel {
     /// behavior) plus the corresponding CompoundChild link rows.
     /// Counting steps with a blank title get an auto-generated title.
     /// Mirrors web's `createCompound(...autoCreate...)` path.
-    private func buildCompoundChildrenForProgress(parentId: String, userId: String, now: String) -> (tasks: [Task], children: [CompoundChild]) {
+    private func buildCompoundChildrenForProgress(
+        parentId: String,
+        userId: String,
+        now: String,
+        timeframe: Timeframe? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil
+    ) -> (tasks: [Task], children: [CompoundChild]) {
         var tasks: [Task] = []
         var children: [CompoundChild] = []
         for (index, stepForm) in progressSteps.enumerated() {
@@ -481,7 +510,11 @@ final class CreateFormViewModel {
                 createdAt: now,
                 updatedAt: now,
                 version: 1,
-                isDeleted: false
+                isDeleted: false,
+                // Inherit parent compound's timeframe triple at create time.
+                timeframe: timeframe,
+                startDate: startDate,
+                endDate: endDate
             )
             let link = CompoundChild(
                 id: AppDatabase.generateUUID(),

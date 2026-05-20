@@ -106,3 +106,5 @@ export type {
   SpawnPoolFailureReason,
   BuildSpawnPlacementArgs,
 } from './recurringBoardTemplates';
+
+export { isTaskExpired } from './taskExpiry';

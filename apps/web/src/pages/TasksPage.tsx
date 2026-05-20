@@ -55,6 +55,8 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         onUsageFilterChange={filters.setUsageFilter}
         sortBy={filters.sortBy}
         onSortByChange={filters.setSortBy}
+        showExpired={filters.showExpired}
+        onShowExpiredChange={filters.setShowExpired}
       />
 
       {filters.filteredTasks.length === 0 ? (

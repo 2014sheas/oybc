@@ -67,7 +67,8 @@ struct BoardWizardView: View {
             preferences: preferences,
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
-            editingTemplate: editingTemplate
+            editingTemplate: editingTemplate,
+            userId: userId
         ))
     }
 
@@ -221,6 +222,8 @@ struct BoardWizardView: View {
                 centerTaskId: $wizard.centerTaskId,
                 userId: userId,
                 currentTimeframe: wizard.timeframe,
+                currentStartDate: { if case .ok(let s, _) = currentDates { return s }; return nil }(),
+                currentEndDate: { if case .ok(_, let e) = currentDates { return e }; return nil }(),
                 onTaskCreated: { taskId, _, _ in
                     wizard.toggleTaskSelection(taskId)
                 },

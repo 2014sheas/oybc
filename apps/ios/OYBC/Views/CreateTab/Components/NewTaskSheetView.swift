@@ -30,6 +30,15 @@ struct NewTaskSheetView: View {
     /// Tasks-tab context wants "Add to library".
     var submitLabel: String = "Create & Select"
 
+    /// Phase 6.Y — Timeboxed Tasks. When the sheet is mounted from the
+    /// board wizard the wizard passes its currentTimeframe + resolved
+    /// dates so every task created here inherits the board's window.
+    /// Standalone Tasks-tab usage omits these (resulting tasks are
+    /// indefinite).
+    var defaultTimeframe: Timeframe? = nil
+    var defaultStartDate: String? = nil
+    var defaultEndDate: String? = nil
+
     @State private var form = CreateFormViewModel()
     @Environment(\.dismiss) private var dismiss
 
@@ -67,7 +76,10 @@ struct NewTaskSheetView: View {
                 onLibraryReloadRequested()
                 dismiss()
             },
-            onLibraryReloadRequested: onLibraryReloadRequested
+            onLibraryReloadRequested: onLibraryReloadRequested,
+            defaultTimeframe: defaultTimeframe,
+            defaultStartDate: defaultStartDate,
+            defaultEndDate: defaultEndDate
         )
     }
 }

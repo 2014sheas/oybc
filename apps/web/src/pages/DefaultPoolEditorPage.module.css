@@ -1,0 +1,153 @@
+.page {
+  padding: 1.25rem 1rem 6rem;
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 1rem;
+}
+
+.backLink {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.backLink:hover { color: var(--text-primary); }
+
+.title {
+  margin: 0.4rem 0 0.15rem;
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.search {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--card-bg, #ffffff);
+  margin-bottom: 0.75rem;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card-bg, #ffffff);
+}
+
+.row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background-color 0.15s;
+}
+
+.row:last-child { border-bottom: none; }
+
+.row:hover { background-color: var(--row-hover, #f8f9fa); }
+
+.rowSelected {
+  background-color: var(--row-selected, #e7f1ff);
+}
+
+.check {
+  display: inline-block;
+  width: 1.2rem;
+  text-align: center;
+  font-weight: 700;
+  color: var(--active-bg, #0d6efd);
+}
+
+.rowTitle {
+  flex: 1;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.emptyState {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.error {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--error-text, #dc3545);
+}
+
+.actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--page-bg, #ffffff);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.clearButton {
+  margin-right: auto;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--error-text, #dc3545);
+  background: transparent;
+  color: var(--error-text, #dc3545);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.clearButton:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cancelButton {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.cancelButton:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.saveButton {
+  padding: 0.5rem 0.9rem;
+  border: none;
+  background: var(--active-bg, #0d6efd);
+  color: #ffffff;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.saveButton:disabled { opacity: 0.5; cursor: not-allowed; }

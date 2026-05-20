@@ -35,6 +35,7 @@ import {
   CompositeNodeSchema,
   CompoundChildSchema,
   RecurringBoardTemplateSchema,
+  DefaultPoolSchema,
   mergeUserPreferences,
   type User,
 } from '@oybc/shared';
@@ -55,6 +56,7 @@ const SYNCABLE_COLLECTIONS = [
   'compositeNodes',           // legacy — kept so push can drain DELETE ops from migration v4
   'compoundChildren',
   'recurringBoardTemplates',  // Phase 6.2
+  'defaultPools',             // Phase 6.X — Default Pools
 ] as const;
 
 type SyncCollection = (typeof SYNCABLE_COLLECTIONS)[number];
@@ -88,6 +90,7 @@ const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   compositeNodes: CompositeNodeSchema,
   compoundChildren: CompoundChildSchema,
   recurringBoardTemplates: RecurringBoardTemplateSchema,
+  defaultPools: DefaultPoolSchema,
 };
 
 /**
@@ -103,6 +106,7 @@ const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
   'tasks',
   'compositeTasks',
   'recurringBoardTemplates',
+  'defaultPools',
 ]);
 
 /**

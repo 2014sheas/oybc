@@ -91,7 +91,8 @@ final class BoardWizardViewModel {
         initialStep: WizardStep = 1,
         draft: (board: Board, boardTasks: [BoardTask])? = nil,
         prefilledRecurringTimeframe: Timeframe? = nil,
-        editingTemplate: RecurringBoardTemplate? = nil
+        editingTemplate: RecurringBoardTemplate? = nil,
+        userId: String? = nil
     ) {
         self.initialPreferences = preferences
         self.weekStartDay = preferences.weekStartDay.rawValue
@@ -160,6 +161,16 @@ final class BoardWizardViewModel {
                         timeframe: timeframe,
                         startDate: window.start
                     )
+                }
+                // Phase 6.X — Default Pool prefill: when banner-launched
+                // and a DefaultPool exists for `(userId, timeframe)`,
+                // hydrate `selectedTaskIds` from the pool's taskIds.
+                // Silent on DB error — the wizard still opens with an
+                // empty selection so the user can build a board manually.
+                if let userId = userId,
+                   let pool = try? AppDatabase.shared.fetchDefaultPool(userId: userId, timeframe: timeframe),
+                   !pool.taskIds.isEmpty {
+                    self.selectedTaskIds = Set(pool.taskIds)
                 }
             } else {
                 self.timeframe = Self.resolveTimeframe(preferences.defaultTimeframe)

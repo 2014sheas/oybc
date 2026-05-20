@@ -73,6 +73,12 @@ export interface BoardWizardTasksStepProps {
    *  filter chip is shown (only for child timeframes — daily, weekly,
    *  monthly) and what timeframe to feed `useParentBoardTasks`. */
   currentTimeframe: Timeframe;
+  /** Phase 6.Y — Timeboxed Tasks. The resolved start/end dates the
+   *  wizard will write on the board. Threaded into NewTaskSheet so
+   *  any new task created from inside the wizard inherits the same
+   *  timeboxed window as its parent board. */
+  currentStartDate?: string;
+  currentEndDate?: string;
   /** Fired after a non-composite task is created from the sheet — the
    *  wizard should auto-add the new id to `selectedTaskIds`. */
   onTaskCreated: (task: Task) => void;
@@ -120,6 +126,8 @@ export function BoardWizardTasksStep({
   onCenterTaskChange,
   userId,
   currentTimeframe,
+  currentStartDate,
+  currentEndDate,
   onTaskCreated,
   onCompositeCreated,
   onBack,
@@ -541,6 +549,9 @@ export function BoardWizardTasksStep({
         onCompositeCreated={(ct) => {
           onCompositeCreated(ct);
         }}
+        defaultTimeframe={currentTimeframe}
+        defaultStartDate={currentStartDate}
+        defaultEndDate={currentEndDate}
       />
 
       {rowContextMenu && (() => {

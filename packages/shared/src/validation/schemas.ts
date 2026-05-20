@@ -189,6 +189,12 @@ export const CreateTaskInputSchema = z.object({
   referencedTemplateId: z.string().uuid().optional(),
   achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
   requiredCount: z.number().int().positive().optional(),
+  // Phase 6.Y — Timeboxed Tasks. All optional; absent ⇒ indefinite.
+  // No all-three-or-none refinement; callers (wizard-create + edit)
+  // are responsible for keeping them consistent.
+  timeframe: z.nativeEnum(Timeframe).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 }).refine(
   (data) => {
     // Counting tasks must have action, unit, and maxCount
@@ -236,6 +242,10 @@ export const UpdateTaskInputSchema = z.object({
   referencedTemplateId: z.string().uuid().nullable().optional(),
   achievementTrigger: z.nativeEnum(AchievementTrigger).nullable().optional(),
   requiredCount: z.number().int().positive().nullable().optional(),
+  // Phase 6.Y — Timeboxed Tasks update.
+  timeframe: z.nativeEnum(Timeframe).nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
 }).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -287,6 +297,12 @@ export const CreateCompoundTaskInputSchema = z.object({
   threshold: z.number().int().positive().optional(),
   isOrdered: z.boolean(),
   children: z.array(CreateCompoundChildEntrySchema).min(2),
+  // Phase 6.Y — Timeboxed Tasks. Optional; when set, the parent
+  // compound AND all inline-created children inherit this triple at
+  // creation time (see createCompound in db/operations/tasks.ts).
+  timeframe: z.nativeEnum(Timeframe).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 }).refine(
   (data) => {
     if (data.operator === OperatorType.M_OF_N) {
@@ -361,6 +377,15 @@ export const TaskSchema = z.object({
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
+  // Phase 6.Y — Timeboxed Tasks. All optional; absent ⇒ indefinite.
+  // No DB-level constraint requiring all-three-or-none — the backfill
+  // migration writes them consistently and new creates default to
+  // inherited-from-board, so inconsistency is a caller bug. Loose
+  // string for dates (not `.datetime()`) so the migration can write
+  // a `YYYY-MM-DD` shape inherited verbatim from `Board.startDate`/`endDate`.
+  timeframe: z.nativeEnum(Timeframe).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.
@@ -755,6 +780,49 @@ export const RecurringBoardTemplateSchema = z.object({
   seedTaskIds: z.array(z.string().uuid()),
   lastSpawnedWindowKey: z.string().nullable(),
   isActive: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+});
+
+// ===== DefaultPool Schemas (Phase 6.X — Default Pools) =====
+
+/**
+ * DefaultPools follow the same timeframe constraint as templates:
+ * `Timeframe.CUSTOM` is excluded because a "default pool per recurring
+ * timeframe" has no semantic for custom-window boards. Reuses
+ * `RecurringTimeframeSchema` above for parity.
+ *
+ * `taskIds` MAY be empty — a user can set up a pool, clear it, leave it
+ * empty, and later refill it without first deleting + recreating the
+ * pool. The wizard prefill path tolerates empty pools (no-op).
+ */
+export const CreateDefaultPoolInputSchema = z.object({
+  timeframe: RecurringTimeframeSchema,
+  taskIds: z.array(z.string().uuid()),
+}).refine(
+  (data) => new Set(data.taskIds).size === data.taskIds.length,
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const UpdateDefaultPoolInputSchema = z.object({
+  taskIds: z.array(z.string().uuid()).optional(),
+}).refine(
+  (data) => {
+    if (data.taskIds === undefined) return true;
+    return new Set(data.taskIds).size === data.taskIds.length;
+  },
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const DefaultPoolSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  timeframe: RecurringTimeframeSchema,
+  taskIds: z.array(z.string().uuid()),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),

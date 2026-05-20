@@ -388,6 +388,101 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN isCore INTEGER NOT NULL DEFAULT 0")
         }
 
+        // v13: Phase 6.X — Default Pools.
+        //
+        //   Adds a new `default_pools` table holding one pool per
+        //   `(userId, timeframe)`. Mirrors the Phase 6.2
+        //   `recurring_board_templates` schema where applicable, minus
+        //   the spawn-state columns (DefaultPool doesn't auto-spawn).
+        //   `taskIds` is JSON-encoded text (same pattern as
+        //   `seedTaskIds` on templates and `completedLineIds` on boards).
+        //   Uniqueness on `(userId, timeframe)` is enforced at the
+        //   application layer (`upsertDefaultPool`); no SQL UNIQUE
+        //   constraint so soft-deleted rows can coexist with their
+        //   recreated replacements during sync.
+        migrator.registerMigration("v13") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS default_pools (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    taskIds TEXT NOT NULL DEFAULT '[]',
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_default_pools_user_timeframe ON default_pools(userId, timeframe)")
+            try db.execute(sql: "CREATE INDEX idx_default_pools_user_deleted ON default_pools(userId, isDeleted)")
+        }
+
+        // v14: Phase 6.Y — Timeboxed Tasks. Adds `timeframe`,
+        // `startDate`, `endDate` to `tasks` and backfills each
+        // non-deleted task with the values from its most-recently-
+        // updated non-deleted BoardTask's Board. Tasks with zero
+        // placements stay indefinite (all three columns NULL).
+        //
+        // Bumps `version + updatedAt` so the change syncs to remote
+        // peers (each peer runs its own migration; LWW resolves any
+        // overlap because timestamps are within milliseconds).
+        migrator.registerMigration("v14") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN timeframe TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN startDate TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN endDate TEXT")
+
+            // Backfill from most-recent BoardTask → Board. SQLite's
+            // correlated UPDATE form keeps the whole pass to one
+            // statement; the inner subquery finds the latest BoardTask
+            // (by updatedAt) for each task whose Board is alive, then
+            // returns its Board's timeframe/startDate/endDate.
+            let nowISO = Self.currentTimestamp()
+            try db.execute(sql: """
+                UPDATE tasks
+                SET timeframe = (
+                        SELECT b.timeframe
+                        FROM board_tasks bt
+                        JOIN boards b ON b.id = bt.boardId
+                        WHERE bt.taskId = tasks.id
+                          AND b.isDeleted = 0
+                        ORDER BY bt.updatedAt DESC
+                        LIMIT 1
+                    ),
+                    startDate = (
+                        SELECT b.startDate
+                        FROM board_tasks bt
+                        JOIN boards b ON b.id = bt.boardId
+                        WHERE bt.taskId = tasks.id
+                          AND b.isDeleted = 0
+                        ORDER BY bt.updatedAt DESC
+                        LIMIT 1
+                    ),
+                    endDate = (
+                        SELECT b.endDate
+                        FROM board_tasks bt
+                        JOIN boards b ON b.id = bt.boardId
+                        WHERE bt.taskId = tasks.id
+                          AND b.isDeleted = 0
+                        ORDER BY bt.updatedAt DESC
+                        LIMIT 1
+                    ),
+                    updatedAt = ?,
+                    version = version + 1
+                WHERE tasks.isDeleted = 0
+                  AND tasks.endDate IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM board_tasks bt
+                      JOIN boards b ON b.id = bt.boardId
+                      WHERE bt.taskId = tasks.id
+                        AND b.isDeleted = 0
+                  )
+                """, arguments: [nowISO])
+        }
+
         return migrator
     }
 
@@ -823,6 +918,94 @@ extension AppDatabase {
             template.updatedAt = now
             template.version += 1
             try template.update(db)
+        }
+    }
+
+    // MARK: - DefaultPools (Phase 6.X)
+
+    /// Fetch all non-deleted DefaultPools for a user. Used by the
+    /// Profile editor to render the per-timeframe summary.
+    func fetchDefaultPools(userId: String) throws -> [DefaultPool] {
+        return try read { db in
+            try DefaultPool
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+    }
+
+    /// Fetch the (at-most-one) non-deleted DefaultPool for
+    /// `(userId, timeframe)`. Returns nil when the user has no pool for
+    /// this timeframe. Used by the wizard's banner-launch prefill path.
+    func fetchDefaultPool(userId: String, timeframe: Timeframe) throws -> DefaultPool? {
+        return try read { db in
+            try DefaultPool
+                .filter(
+                    Column("userId") == userId
+                        && Column("timeframe") == timeframe.rawValue
+                        && Column("isDeleted") == false
+                )
+                .fetchOne(db)
+        }
+    }
+
+    /// Insert / update a pool. Caller is responsible for bumping
+    /// `version` + `updatedAt` (mirror of `saveRecurringBoardTemplate`).
+    func saveDefaultPool(_ pool: DefaultPool) throws {
+        try write { db in
+            try pool.save(db)
+        }
+    }
+
+    /// Atomic upsert by `(userId, timeframe)`. Preferred UI-side entry
+    /// point — guarantees per-timeframe uniqueness without leaking the
+    /// create-vs-update decision to callers.
+    @discardableResult
+    func upsertDefaultPool(userId: String, timeframe: Timeframe, taskIds: [String]) throws -> DefaultPool {
+        return try write { db in
+            let now = Self.currentTimestamp()
+            if var existing = try DefaultPool
+                .filter(
+                    Column("userId") == userId
+                        && Column("timeframe") == timeframe.rawValue
+                        && Column("isDeleted") == false
+                )
+                .fetchOne(db)
+            {
+                existing.taskIds = taskIds
+                existing.updatedAt = now
+                existing.version += 1
+                try existing.update(db)
+                return existing
+            }
+            let pool = DefaultPool(
+                id: Self.generateUUID(),
+                userId: userId,
+                timeframe: timeframe,
+                taskIds: taskIds,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+            try pool.insert(db)
+            return pool
+        }
+    }
+
+    /// Soft-delete a DefaultPool. The Profile editor's "Clear pool"
+    /// action calls this — distinct from saving an empty taskIds list
+    /// (which keeps the row, just empties the pool).
+    func softDeleteDefaultPool(id: String) throws {
+        try write { db in
+            guard var pool = try DefaultPool.fetchOne(db, key: id) else { return }
+            let now = Self.currentTimestamp()
+            pool.isDeleted = true
+            pool.deletedAt = now
+            pool.updatedAt = now
+            pool.version += 1
+            try pool.update(db)
         }
     }
 
