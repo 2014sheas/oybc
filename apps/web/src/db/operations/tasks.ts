@@ -1,5 +1,6 @@
 import { db } from '../database';
 import type {
+  Board,
   Task,
   TaskStep,
   CreateTaskInput,
@@ -429,6 +430,10 @@ export interface TaskDeletionImpact {
   /** Count of distinct boards the placements span (cells on the same
    *  board count once). */
   affectedBoardIds: string[];
+  /** The live (non-deleted) board records the placements live on. Same
+   *  set as `affectedBoardIds` — the rows are included so the confirm
+   *  dialog can surface board name + status without a second fetch. */
+  affectedBoards: Board[];
   /** Count of `CompoundChild` rows where the task is the CHILD. The
    *  parent compound loses this child; sibling children remain. */
   childLinkCount: number;
@@ -474,6 +479,7 @@ export async function computeTaskDeletionImpact(
   return {
     boardTaskCount: visiblePlacements.length,
     affectedBoardIds: Array.from(liveBoardIdSet),
+    affectedBoards: liveBoards,
     childLinkCount: childLinks.length,
     parentLinkCount: parentLinks.length,
   };

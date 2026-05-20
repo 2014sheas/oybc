@@ -148,6 +148,7 @@
 		EE8923EC70C290866809AF19 /* CreateHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 672279842817679C05C429E7 /* CreateHubView.swift */; };
 		F0694A95CA4976DB767F809D /* CompositeTaskWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C010E67EB720199154237F /* CompositeTaskWizardView.swift */; };
 		F3B644B5DC92BE978EDF7587 /* MigrationV7Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 441C991C95FE9AD4EFFA2636 /* MigrationV7Helpers.swift */; };
+		F4F351F9F1B7DC69FFB4DC42 /* TaskDeleteConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */; };
 		F520EAF2A234007AFB744072 /* InteractiveTaskSquareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E74B041346356A3B771F07 /* InteractiveTaskSquareView.swift */; };
 		F5E2465F70AE719F0B3757D6 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57E4812F35B465F49A15FFAB /* NetworkMonitor.swift */; };
 		F88AA4099C8847C184B66D45 /* BoardWizardStepsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0197805BBDEC8D2A8EE5BD /* BoardWizardStepsSnapshotTests.swift */; };
@@ -309,6 +310,7 @@
 		D5F9D8CAE934036DAC767707 /* CompositeWizardSetupStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeWizardSetupStepView.swift; sourceTree = "<group>"; };
 		DB1B3618551FB9321876B28E /* TasksTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTabView.swift; sourceTree = "<group>"; };
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
+		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
 		DCE6F8AAD4860D11D04DF12E /* TaskTypeSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTypeSelectorView.swift; sourceTree = "<group>"; };
 		E2CF3253817A74C5644618E0 /* TimeframeBoundaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeframeBoundaries.swift; sourceTree = "<group>"; };
 		E8D39996B07C2272CFEC6722 /* testDenseLibrarySomeSelected.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDenseLibrarySomeSelected.1.png; sourceTree = "<group>"; };
@@ -326,7 +328,7 @@
 		FA434E50844910E99B885B94 /* BoardListItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardListItemView.swift; sourceTree = "<group>"; };
 		FD95095EB869DABF66F74D56 /* testSectionSingleDailyEntry.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSectionSingleDailyEntry.1.png; sourceTree = "<group>"; };
 		FF05FDF400BEB2A8666662F9 /* testSetupStepBlank.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepBlank.1.png; sourceTree = "<group>"; };
-		"TEMP_FB39E2DC-3FA2-421F-9F09-3BFA62D8EEA7" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_AE1BF864-2256-4D34-BC88-D15110744E0E" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -660,6 +662,7 @@
 			isa = PBXGroup;
 			children = (
 				050067C0AEDF6C6893CBF0C1 /* EditTaskSheet.swift */,
+				DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */,
 				A0AEF4657B35701332CFDD74 /* TaskDetailContentView.swift */,
 				95765CD1D332F33B198789F4 /* TaskDetailSheetView.swift */,
 				A63F6319A6D6A43BED99C299 /* TaskDetailView.swift */,
@@ -748,10 +751,10 @@
 			path = BoardWizardStepsSnapshotTests;
 			sourceTree = "<group>";
 		};
-		"TEMP_1BD44560-0E26-4F6B-9AFC-C7EBFD62ECAF" /* ios */ = {
+		"TEMP_66FDD7F2-C867-4FE3-AC5F-22B39100FBDA" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_FB39E2DC-3FA2-421F-9F09-3BFA62D8EEA7" /* Signing.xcconfig */,
+				"TEMP_AE1BF864-2256-4D34-BC88-D15110744E0E" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1028,6 +1031,7 @@
 				C0A46EFF73CDF0023708C549 /* SyncService.swift in Sources */,
 				0D093F4BF4758E670D2B3DEF /* SyncStatusIndicatorView.swift in Sources */,
 				1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */,
+				F4F351F9F1B7DC69FFB4DC42 /* TaskDeleteConfirmView.swift in Sources */,
 				D01D5E109C0B4BFD53EE0B06 /* TaskDetailContentView.swift in Sources */,
 				1BB88B6B56A395A94BD5CF43 /* TaskDetailSheetView.swift in Sources */,
 				E989AAF87A891FEB3A22E9D6 /* TaskDetailView.swift in Sources */,
@@ -1094,7 +1098,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_FB39E2DC-3FA2-421F-9F09-3BFA62D8EEA7" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_AE1BF864-2256-4D34-BC88-D15110744E0E" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1191,7 +1195,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_FB39E2DC-3FA2-421F-9F09-3BFA62D8EEA7" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_AE1BF864-2256-4D34-BC88-D15110744E0E" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

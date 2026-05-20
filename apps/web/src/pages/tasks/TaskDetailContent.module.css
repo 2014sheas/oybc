@@ -492,3 +492,64 @@
   font-size: 0.9rem;
   color: var(--text-primary);
 }
+
+/* ── Affected-boards section (delete-confirm dialog) ─────────────────────────── */
+
+.affectedBoardsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.affectedBoardsHeading {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.affectedBoardsList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.affectedBoardsItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.affectedBoardsName {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.affectedBoardsPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.affectedBoardsPillExpired {
+  background: rgba(220, 53, 69, 0.12);
+  color: #b91c1c;
+}

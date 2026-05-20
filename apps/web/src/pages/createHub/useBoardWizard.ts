@@ -338,7 +338,14 @@ export function useBoardWizard({
   // (`effectivePrefill` set) AND no draft/template hydrated the
   // selection, look up the user's DefaultPool for that timeframe and
   // seed `selectedTaskIds` from `pool.taskIds`. One-shot via a ref flag
-  // so user edits after prefill aren't stomped on later renders.
+  // so user edits after prefill aren't stomped on later renders — and
+  // so a pool that arrives later via sync can't replace selections the
+  // user already made.
+  //
+  // `useDefaultPool` returns a tri-state: `undefined` while loading,
+  // `null` when there is no pool for this timeframe, a `DefaultPool`
+  // when one exists. Both `null` and a pool object resolve the one-shot
+  // decision; only `undefined` should keep the effect waiting.
   const defaultPool = useDefaultPool(
     userId,
     effectivePrefill ?? undefined,
@@ -347,9 +354,9 @@ export function useBoardWizard({
   useEffect(() => {
     if (poolPrefillAppliedRef.current) return;
     if (draft || effectiveTemplate || effectivePrefill === null) return;
-    if (defaultPool === undefined) return; // useLiveQuery still loading or no pool
+    if (defaultPool === undefined) return; // still loading
     poolPrefillAppliedRef.current = true;
-    if (defaultPool.taskIds.length > 0) {
+    if (defaultPool !== null && defaultPool.taskIds.length > 0) {
       setSelectedTaskIds(new Set(defaultPool.taskIds));
     }
   }, [defaultPool, draft, effectiveTemplate, effectivePrefill]);
@@ -426,6 +433,12 @@ export function useBoardWizard({
   }, []);
 
   const toggleTaskSelection = useCallback((taskId: string) => {
+    // Phase 6.X — user has touched the selection, so any DefaultPool
+    // that arrives later via `useLiveQuery` MUST NOT overwrite their
+    // edits. Marking the ref here closes the race where the user picks
+    // tasks while `defaultPool === undefined` (still loading) and the
+    // pool resolution would otherwise re-fire the prefill effect.
+    poolPrefillAppliedRef.current = true;
     setSelectedTaskIds((prev) => {
       const next = new Set(prev);
       if (next.has(taskId)) {

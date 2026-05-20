@@ -26,21 +26,32 @@ export function useDefaultPools(userId: string | undefined): DefaultPool[] {
 
 /**
  * Live snapshot of a single DefaultPool by `(userId, timeframe)`.
- * Returns undefined when none exists for this pair. Drives the editor
- * page's hydration and the wizard's prefill lookup.
+ *
+ * Returns a tri-state so callers can distinguish "still loading" from
+ * "loaded but no pool exists":
+ *   - `undefined` → `useLiveQuery` hasn't resolved yet (first render
+ *     and any re-key on `[userId, timeframe]`).
+ *   - `null` → resolved, no DefaultPool row for this `(userId, timeframe)`.
+ *   - `DefaultPool` → resolved, row exists.
+ *
+ * Without this distinction, both the wizard's one-shot prefill effect
+ * (`useBoardWizard`) and the editor page's hydration (`DefaultPoolEditorPage`)
+ * stall forever for users who haven't configured a pool, and a pool
+ * that arrives later via sync can stomp in-progress user selections.
  */
 export function useDefaultPool(
   userId: string | undefined,
   timeframe: Timeframe | undefined,
-): DefaultPool | undefined {
+): DefaultPool | null | undefined {
   return useLiveQuery(
-    async (): Promise<DefaultPool | undefined> => {
-      if (!userId || !timeframe) return undefined;
-      return db.defaultPools
+    async (): Promise<DefaultPool | null> => {
+      if (!userId || !timeframe) return null;
+      const pool = await db.defaultPools
         .filter(
           (p) => p.userId === userId && p.timeframe === timeframe && !p.isDeleted,
         )
         .first();
+      return pool ?? null;
     },
     [userId, timeframe],
   );
