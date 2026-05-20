@@ -157,14 +157,55 @@ final class TasksTabViewModel {
     /// the TS module on iOS — algorithm is small enough to duplicate
     /// per the convention used by `isBoardExpired`). Keep in lock-step
     /// with `packages/shared/src/algorithms/taskExpiry.ts`.
+    ///
+    /// Date shapes supported (must match the shared predicate so the
+    /// two platforms don't drift):
+    ///   - Calendar-only `YYYY-MM-DD` → interpreted as **local end-of-day**
+    ///     (`23:59:59.999` in the device's local timezone). Important:
+    ///     iOS's default ISO parser would reject this shape, and any
+    ///     formatter pinned to UTC would expire the task up to a day
+    ///     early for users east of UTC.
+    ///   - Local-ISO without timezone (output of `toLocalISO` / the
+    ///     wizard's date helpers, e.g. `2026-05-25T23:59:59.999`).
+    ///   - Full ISO8601 with `Z` / `±HH:MM` (Firestore sync round-trip).
+    ///
+    /// The non-date-only branch delegates to the shared `parseISO8601Date`
+    /// helper in `PlaygroundUtils.swift`, which already covers the two
+    /// timestamped shapes via cached formatters.
     static func isTaskExpired(_ task: Task, now: Date = Date()) -> Bool {
         guard let endIso = task.endDate else { return false }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let end = formatter.date(from: endIso)
-            ?? ISO8601DateFormatter().date(from: endIso)
-        guard let end = end else { return false }
+        guard let end = parseTaskEndDate(endIso) else { return false }
         return now > end
+    }
+
+    /// Parse the supported `Task.endDate` shapes into a `Date`. See
+    /// `isTaskExpired` for the full shape contract.
+    static func parseTaskEndDate(_ s: String) -> Date? {
+        if let end = parseLocalEndOfDayDate(s) { return end }
+        return parseISO8601Date(s)
+    }
+
+    /// If `s` is a calendar-only `YYYY-MM-DD` string, return the local
+    /// end-of-day Date for that calendar date. Returns nil for any
+    /// other shape so the timestamped branch can take over.
+    private static func parseLocalEndOfDayDate(_ s: String) -> Date? {
+        guard s.count == 10 else { return nil }
+        let parts = s.split(separator: "-")
+        guard parts.count == 3,
+              let year = Int(parts[0]), parts[0].count == 4,
+              let month = Int(parts[1]), parts[1].count == 2,
+              let day = Int(parts[2]), parts[2].count == 2 else {
+            return nil
+        }
+        var comps = DateComponents()
+        comps.year = year
+        comps.month = month
+        comps.day = day
+        comps.hour = 23
+        comps.minute = 59
+        comps.second = 59
+        comps.nanosecond = 999_000_000
+        return Calendar.current.date(from: comps)
     }
 
     // MARK: - Pure helpers (mirror useTasksFilters.ts)

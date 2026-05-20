@@ -614,6 +614,10 @@ extension AppDatabase {
         let boardTaskCount: Int
         /// Distinct boards the placements span (cells on the same board count once).
         let affectedBoardIds: [String]
+        /// The live (non-deleted) board records the placements live on. Same
+        /// set as `affectedBoardIds` — included so the confirm sheet can
+        /// surface board name + status without a second fetch.
+        let affectedBoards: [Board]
         /// `CompoundChild` rows where the task is the CHILD. The parent
         /// compound loses this child; sibling children remain.
         let childLinkCount: Int
@@ -652,6 +656,7 @@ extension AppDatabase {
             return TaskDeletionImpact(
                 boardTaskCount: visiblePlacements.count,
                 affectedBoardIds: Array(liveBoardIds),
+                affectedBoards: liveBoards,
                 childLinkCount: childLinks,
                 parentLinkCount: parentLinks,
             )

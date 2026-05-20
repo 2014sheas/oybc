@@ -50,20 +50,19 @@ export function DefaultPoolEditorPage(): React.ReactElement {
   const pool = useDefaultPool(user?.id, timeframe);
 
   // Local selection state — initialized from the pool, but the pool may
-  // arrive asynchronously (useLiveQuery is `undefined` on first frame).
+  // arrive asynchronously. `useDefaultPool` returns `undefined` while
+  // the live query is resolving and `null` when no pool row exists for
+  // this `(userId, timeframe)`; both `null` and a `DefaultPool` should
+  // resolve hydration so the no-pool case doesn't stall forever and so
+  // a pool that arrives later via sync can't overwrite local toggles.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    if (!hydrated && pool !== undefined) {
-      // pool may be undefined permanently (no pool yet) — useLiveQuery
-      // returns undefined for both "loading" and "no row". Treat the
-      // first observed value as the hydration signal; the no-pool case
-      // resolves with `pool === undefined` after a microtask, and
-      // hydration just leaves `selectedIds` empty.
-      setSelectedIds(new Set(pool?.taskIds ?? []));
-      setHydrated(true);
-    }
+    if (hydrated) return;
+    if (pool === undefined) return; // still loading
+    setSelectedIds(new Set(pool?.taskIds ?? []));
+    setHydrated(true);
   }, [pool, hydrated]);
 
   // All non-deleted, non-achievement tasks are pickable. Achievements

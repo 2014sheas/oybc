@@ -14,12 +14,29 @@ export interface TaskRowProps {
    *  Skipped for any other type. */
   childCount: number;
   onClick: (taskId: string) => void;
+  /** Quick-action: open the edit sheet for this task without
+   *  navigating to the detail page. Omit to hide the ✎ button. */
+  onEdit?: (taskId: string) => void;
+  /** Quick-action: open the delete confirm dialog for this task without
+   *  navigating to the detail page. Omit to hide the ✕ button. */
+  onDelete?: (taskId: string) => void;
 }
 
 /**
- * TaskRow — single list row on the Tasks tab. Title + type badge + a
- * one-line status/usage hint. Tapping the row navigates to the task
- * detail page.
+ * TaskRow — single list row on the Tasks tab.
+ *
+ * Three side-by-side surfaces inside one outer `<div>`:
+ *   1. The main button: title + type badge + one-line status/usage
+ *      hint + trailing chevron. Tapping it navigates to the detail page.
+ *   2. Trailing ✎ button (optional): quick-action edit, opens the
+ *      `TaskEditSheet` over the list without navigating.
+ *   3. Trailing ✕ button (optional): quick-action delete, opens the
+ *      `TaskConfirmDeleteDialog` over the list.
+ *
+ * Mirrors the `BoardListItem` pattern from PR #58: nested `<button>`s
+ * are invalid HTML, so the row is an outer `<div>` and each button is
+ * a sibling. The web doesn't have iOS-style swipe gestures, so persistent
+ * trailing icons are the affordance.
  *
  * Kept deliberately simpler than the wizard's `renderTaskRow` — no
  * selection state, no center-pinning, no right-click "add to board".
@@ -32,36 +49,63 @@ export function TaskRow({
   activePlacementCount,
   childCount,
   onClick,
+  onEdit,
+  onDelete,
 }: TaskRowProps): React.ReactElement {
   const status = computeStatusLabel(task);
   const subtitle = computeSubtitle(task, childCount);
   const usage = computeUsageHint(placementCount, activePlacementCount);
   const lastCompleted = task.completedAt ? formatRelativeTime(task.completedAt) : null;
+  const titleForA11y = task.title || '(untitled task)';
 
   return (
-    <button
-      type="button"
-      className={styles.row}
-      onClick={() => onClick(task.id)}
-      aria-label={`Open ${task.title || '(untitled task)'} details`}
-    >
-      <div className={styles.rowMain}>
-        <TypeBadge type={typeLabel(task)} size="small" letterOnly />
-        <div className={styles.rowText}>
-          <span className={styles.rowTitle}>
-            {task.title || '(untitled task)'}
-          </span>
-          {(subtitle || status || lastCompleted || usage) && (
-            <span className={styles.rowMeta}>
-              {[subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
-          )}
+    <div className={styles.row}>
+      <button
+        type="button"
+        className={styles.mainButton}
+        onClick={() => onClick(task.id)}
+        aria-label={`Open ${titleForA11y} details`}
+      >
+        <div className={styles.rowMain}>
+          <TypeBadge type={typeLabel(task)} size="small" letterOnly />
+          <div className={styles.rowText}>
+            <span className={styles.rowTitle}>{titleForA11y}</span>
+            {(subtitle || status || lastCompleted || usage) && (
+              <span className={styles.rowMeta}>
+                {[subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-      <span className={styles.rowChevron} aria-hidden="true">›</span>
-    </button>
+        <span className={styles.rowChevron} aria-hidden="true">›</span>
+      </button>
+
+      {onEdit && (
+        <button
+          type="button"
+          className={styles.editButton}
+          onClick={() => onEdit(task.id)}
+          aria-label={`Edit ${titleForA11y}`}
+          title="Edit task"
+        >
+          ✎
+        </button>
+      )}
+
+      {onDelete && (
+        <button
+          type="button"
+          className={styles.deleteButton}
+          onClick={() => onDelete(task.id)}
+          aria-label={`Delete ${titleForA11y}`}
+          title="Delete task"
+        >
+          ✕
+        </button>
+      )}
+    </div>
   );
 }
 

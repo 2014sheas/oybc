@@ -15,7 +15,7 @@ import GRDB
 ///     present but never written or read — derive completion via
 ///     CompoundEvaluation.evaluate (added in Task 3.6).
 ///   - UUID primary key (offline creation).
-struct Task: Codable, FetchableRecord, PersistableRecord {
+struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     // Identity
     var id: String
     var userId: String

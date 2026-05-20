@@ -1,9 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { Task } from '@oybc/shared';
 import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
+import {
+  computeTaskDeletionImpact,
+  deleteTaskWithCascade,
+  updateTask,
+  type TaskDeletionImpact,
+} from '../db/operations/tasks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { TasksFilterControls } from './tasks/TasksFilterControls';
 import { TaskRow } from './tasks/TaskRow';
+import { TaskEditSheet } from './tasks/TaskEditSheet';
+import { TaskConfirmDeleteDialog } from './tasks/TaskConfirmDeleteDialog';
 import { useTasksFilters } from './tasks/useTasksFilters';
 import styles from './TasksPage.module.css';
 
@@ -30,6 +39,51 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   const library = useTaskLibrary(userId);
   const filters = useTasksFilters(library);
   const [showNewTaskSheet, setShowNewTaskSheet] = useState(false);
+
+  // Quick-action state for row-level edit / delete. Both modals are
+  // mounted at the page root rather than inside `TaskRow` so the
+  // confirm-delete impact data (loaded once via `computeTaskDeletionImpact`)
+  // doesn't have to be re-fetched per render of every row.
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [deletingTask, setDeletingTask] = useState<Task | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<TaskDeletionImpact | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Resolve the row-level quick-action callbacks. The Tasks page owns
+  // the dialog state so the row stays presentational; the row only
+  // signals the user's intent and we open the dialog here.
+  const handleRowEdit = (taskId: string): void => {
+    const task = library.allTasks.find((t) => t.id === taskId);
+    if (!task) return;
+    setEditError(null);
+    setEditingTask(task);
+  };
+
+  const handleRowDelete = async (taskId: string): Promise<void> => {
+    const task = library.allTasks.find((t) => t.id === taskId);
+    if (!task) return;
+    setDeleteError(null);
+    try {
+      const impact = await computeTaskDeletionImpact(taskId);
+      setDeleteImpact(impact);
+      setDeletingTask(task);
+    } catch (e) {
+      setDeleteError(`Failed to compute delete impact: ${(e as Error).message}`);
+    }
+  };
+
+  const handleConfirmDelete = async (): Promise<void> => {
+    if (!deletingTask) return;
+    setDeleteError(null);
+    try {
+      await deleteTaskWithCascade(deletingTask.id);
+      setDeletingTask(null);
+      setDeleteImpact(null);
+    } catch (e) {
+      setDeleteError(`Failed to delete task: ${(e as Error).message}`);
+    }
+  };
 
   return (
     <div className={styles.shell}>
@@ -59,6 +113,12 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         onShowExpiredChange={filters.setShowExpired}
       />
 
+      {deleteError !== null && (
+        <p className={styles.error} role="alert">
+          {deleteError}
+        </p>
+      )}
+
       {filters.filteredTasks.length === 0 ? (
         <EmptyState hasAnyTasks={library.allTasks.length > 0} />
       ) : (
@@ -75,6 +135,8 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                   library.compoundChildrenByCompound[task.id]?.length ?? 0
                 }
                 onClick={(id) => navigate(`/tasks/${id}`)}
+                onEdit={handleRowEdit}
+                onDelete={handleRowDelete}
               />
             </li>
           ))}
@@ -93,6 +155,39 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         onCompositeCreated={() => {}}
         submitLabel="Add to library"
       />
+
+      {editingTask && (
+        <TaskEditSheet
+          task={editingTask}
+          onSubmit={async (patch) => {
+            try {
+              await updateTask(editingTask.id, patch);
+              setEditingTask(null);
+            } catch (e) {
+              setEditError(`Failed to save: ${(e as Error).message}`);
+            }
+          }}
+          onCancel={() => setEditingTask(null)}
+        />
+      )}
+
+      {editError !== null && (
+        <p className={styles.error} role="alert">
+          {editError}
+        </p>
+      )}
+
+      {deletingTask && deleteImpact && (
+        <TaskConfirmDeleteDialog
+          task={deletingTask}
+          impact={deleteImpact}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => {
+            setDeletingTask(null);
+            setDeleteImpact(null);
+          }}
+        />
+      )}
     </div>
   );
 }
