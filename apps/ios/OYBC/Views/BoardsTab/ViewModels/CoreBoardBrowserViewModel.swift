@@ -74,6 +74,15 @@ final class CoreBoardBrowserViewModel {
     /// reloads on `.onAppear` (return-from-wizard).
     private var boardsByStart: [String: Board] = [:]
 
+    /// Monotonically-increasing token incremented on every `reload`
+    /// call. Each in-flight background fetch captures the token at
+    /// dispatch and only applies its result if `reloadToken` still
+    /// matches when it completes on the main queue. Prevents a slower
+    /// earlier fetch from stomping the state of a newer reload —
+    /// happens in practice when the user tab-flips Boards-tab ↔
+    /// Browser quickly, or navigates Daily → Weekly mid-fetch.
+    private var reloadToken: Int = 0
+
     // MARK: - Public actions
 
     /// Initial load — ±`initialRadius` windows around the current
@@ -96,11 +105,18 @@ final class CoreBoardBrowserViewModel {
         self.earliestOffset = -initialRadius
         self.latestOffset = initialRadius
 
+        // Bump the token + capture the new value so this fetch can
+        // verify it's still the latest when it completes. Any in-flight
+        // earlier fetch will see a mismatch and discard its result
+        // instead of overwriting newer state.
+        reloadToken += 1
+        let token = reloadToken
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
                 let boards = try self.fetchCoreBoards(userId: userId, timeframe: timeframe)
                 DispatchQueue.main.async {
+                    guard token == self.reloadToken else { return }
                     self.boardsByStart = Dictionary(
                         uniqueKeysWithValues: boards.map { ($0.startDate, $0) }
                     )
@@ -109,7 +125,10 @@ final class CoreBoardBrowserViewModel {
                 }
             } catch {
                 let message = "Failed to load core boards: \(error.localizedDescription)"
-                DispatchQueue.main.async { self.loadError = message }
+                DispatchQueue.main.async {
+                    guard token == self.reloadToken else { return }
+                    self.loadError = message
+                }
             }
         }
     }

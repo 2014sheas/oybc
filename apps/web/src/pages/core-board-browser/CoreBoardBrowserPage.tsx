@@ -61,7 +61,16 @@ export function CoreBoardBrowserPage(): React.ReactElement {
 
   // Scroll-into-view the current window on first render so the user
   // lands oriented around "now" rather than at the oldest cell.
+  //
+  // React Router reuses the same component instance when only the
+  // `:timeframe` param changes (Daily → Weekly), so we reset the
+  // one-shot flag whenever `timeframe` changes — otherwise the user
+  // navigates to Weekly and lands at whatever scroll position the
+  // Daily browser was left at.
   const didInitialScroll = useRef(false);
+  useEffect(() => {
+    didInitialScroll.current = false;
+  }, [timeframe]);
   useEffect(() => {
     if (didInitialScroll.current) return;
     if (browser.currentIndex < 0) return;
@@ -72,6 +81,12 @@ export function CoreBoardBrowserPage(): React.ReactElement {
   // Sentinel-driven pagination. IntersectionObserver fires whenever
   // either sentinel enters the viewport (rootMargin lets us pre-load
   // a screen ahead so the user doesn't see a stall).
+  //
+  // Destructured up here so the deps array references the stable
+  // callbacks directly — `[browser.loadEarlier, browser.loadLater]`
+  // would trip `react-hooks/exhaustive-deps` since it can't see that
+  // those are `useCallback`-stable across renders of the hook.
+  const { loadEarlier, loadLater } = browser;
   useEffect(() => {
     const earlier = earlierSentinelRef.current;
     const later = laterSentinelRef.current;
@@ -80,8 +95,8 @@ export function CoreBoardBrowserPage(): React.ReactElement {
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
-          if (entry.target === earlier) browser.loadEarlier();
-          if (entry.target === later) browser.loadLater();
+          if (entry.target === earlier) loadEarlier();
+          if (entry.target === later) loadLater();
         }
       },
       { rootMargin: '400px' },
@@ -89,7 +104,7 @@ export function CoreBoardBrowserPage(): React.ReactElement {
     observer.observe(earlier);
     observer.observe(later);
     return () => observer.disconnect();
-  }, [browser.loadEarlier, browser.loadLater]);
+  }, [loadEarlier, loadLater]);
 
   const handleOpenBoard = useMemo(
     () => (boardId: string) => navigate(`/boards/${boardId}`),

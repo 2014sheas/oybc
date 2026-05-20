@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
@@ -82,17 +82,27 @@ export function useCoreBoardBrowser({
 }: UseCoreBoardBrowserArgs): UseCoreBoardBrowserState {
   // Reactive lookup of the user's core boards for this timeframe.
   // Indexed by startDate ISO string for O(1) cell-to-board matching.
+  //
+  // IndexedDB scan note: uses the `[userId+timeframe+status]` compound
+  // index (declared on `db.boards` from v1) to scan only the user's
+  // boards in the active timeframe, then narrows in memory on the
+  // remaining predicates. The `[userId+isDeleted]` compound is
+  // deliberately not used here — per the explanation in
+  // `useParentBoardTasks.ts`, IndexedDB's handling of boolean keys is
+  // unreliable across browsers, so the codebase JS-filters
+  // `!isDeleted` rather than indexing on it. The `[u+t+s]` index
+  // still gives the right complexity (small fraction of the user's
+  // boards scanned per live-query re-fire) without that hazard.
   const boardsByStart = useLiveQuery(
     async (): Promise<Map<string, Board>> => {
       if (!userId) return new Map();
       const boards = await db.boards
-        .filter(
-          (b) =>
-            b.userId === userId &&
-            !b.isDeleted &&
-            b.isCore === true &&
-            b.timeframe === timeframe,
+        .where('[userId+timeframe+status]')
+        .between(
+          [userId, timeframe, ''] as readonly unknown[],
+          [userId, timeframe, '￿'] as readonly unknown[],
         )
+        .and((b) => !b.isDeleted && b.isCore === true)
         .toArray();
       const map = new Map<string, Board>();
       for (const b of boards) map.set(b.startDate, b);
@@ -106,12 +116,17 @@ export function useCoreBoardBrowser({
   // for current / past flags. Re-deriving `now` per render would mark
   // a cell as past as it ticks past midnight mid-session, which would
   // jitter the "current window" highlight.
-  const nowRef = useRef<Date>(new Date());
+  //
+  // `useMemo(..., [])` rather than `useRef(new Date())` so the
+  // `react-hooks/refs` lint rule doesn't flag the downstream reads as
+  // mid-render ref access — `useMemo` is the idiomatic "compute once
+  // on mount" primitive when the value is read during render.
+  const now = useMemo(() => new Date(), []);
 
   // Current window's startDate string, used as the seed for stepping.
   const currentWindowStart = useMemo(() => {
-    return getTimeframeBoundaries(timeframe, nowRef.current, weekStartDay).startDate;
-  }, [timeframe, weekStartDay]);
+    return getTimeframeBoundaries(timeframe, now, weekStartDay).startDate;
+  }, [timeframe, weekStartDay, now]);
 
   // Track the negative + positive offsets we've expanded to from the
   // current window. Starts at [-initialRadius, +initialRadius]; each
@@ -138,7 +153,6 @@ export function useCoreBoardBrowser({
   // Materialise the cell list.
   const cells = useMemo<WindowCell[]>(() => {
     const out: WindowCell[] = [];
-    const now = nowRef.current;
     for (let off = earliestOffset; off <= latestOffset; off += 1) {
       const { startDate, endDate } = stepWindow(
         timeframe,
@@ -156,7 +170,7 @@ export function useCoreBoardBrowser({
       });
     }
     return out;
-  }, [timeframe, currentWindowStart, weekStartDay, earliestOffset, latestOffset, boardsByStart]);
+  }, [timeframe, currentWindowStart, weekStartDay, earliestOffset, latestOffset, boardsByStart, now]);
 
   const currentIndex = useMemo(
     () => cells.findIndex((c) => c.isCurrentWindow),
