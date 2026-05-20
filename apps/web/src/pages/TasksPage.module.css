@@ -77,3 +77,12 @@
   max-width: 360px;
   line-height: 1.4;
 }
+
+.error {
+  margin: 0;
+  padding: var(--spacing-sm);
+  background: rgba(220, 53, 69, 0.1);
+  color: #b91c1c;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
