@@ -105,22 +105,33 @@ struct BoardWizardTasksStepView: View {
         trimmedQuery.isEmpty || title.lowercased().contains(trimmedQuery)
     }
 
+    /// Phase 6.Y — Timeboxed Tasks: hide expired tasks from every
+    /// wizard pool branch. Same default as the Tasks-tab list. No
+    /// "show expired" toggle here — the wizard is "tasks I might want
+    /// on this new board", and an expired task by definition
+    /// shouldn't be added to a fresh board. A user who needs to
+    /// backfill an expired task can re-extend its window from the
+    /// Tasks tab first. Mirrors web's `BoardWizardTasksStep`.
+    private func notExpired(_ t: Task) -> Bool {
+        !TasksTabViewModel.isTaskExpired(t)
+    }
+
     private var visibleTasks: [Task] {
         let pool: [Task]
         switch activeFilter {
         // Under the unified compound model, all compound tasks (progress and
         // composite) are rendered in the composites region below, so the
         // primitives pool never includes compounds.
-        case .all:       pool = library.libraryTasks.filter { $0.type != .compound }
-        case .normal:    pool = library.libraryTasks.filter { $0.type == .normal }
-        case .counting:  pool = library.libraryTasks.filter { $0.type == .counting }
+        case .all:       pool = library.libraryTasks.filter { notExpired($0) && $0.type != .compound }
+        case .normal:    pool = library.libraryTasks.filter { notExpired($0) && $0.type == .normal }
+        case .counting:  pool = library.libraryTasks.filter { notExpired($0) && $0.type == .counting }
         case .progress:  pool = []
         case .composite: pool = []
         // Phase 6.1: source is the parent-board-tasks query, not the
         // user's library. Compounds surfaced through this filter render
         // here too (no separate composites region) since the user is
         // picking from an already-curated parent set.
-        case .fromParents: pool = parentTasksVM.tasks
+        case .fromParents: pool = parentTasksVM.tasks.filter { notExpired($0) }
         }
         return pool.filter { matches($0.title) }
     }
@@ -133,15 +144,15 @@ struct BoardWizardTasksStepView: View {
         switch activeFilter {
         case .all:
             return library.libraryTasks
-                .filter { $0.type == .compound }
+                .filter { notExpired($0) && $0.type == .compound }
                 .filter { matches($0.title) }
         case .composite:
             return library.libraryTasks
-                .filter { $0.type == .compound && $0.isOrdered != true }
+                .filter { notExpired($0) && $0.type == .compound && $0.isOrdered != true }
                 .filter { matches($0.title) }
         case .progress:
             return library.libraryTasks
-                .filter { $0.type == .compound && $0.isOrdered == true }
+                .filter { notExpired($0) && $0.type == .compound && $0.isOrdered == true }
                 .filter { matches($0.title) }
         // .fromParents: compounds surfaced through this filter render in
         // the primitives region (visibleTasks), not as separate
