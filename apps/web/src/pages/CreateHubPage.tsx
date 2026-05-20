@@ -41,6 +41,11 @@ type HubMode =
        *  Boards banner (`/create?recurringTimeframe=daily`). The setup
        *  step locks the timeframe field to this value. */
       prefilledRecurringTimeframe?: Timeframe;
+      /** Set when the wizard was launched from the core-board browser
+       *  to spawn a non-current window (`/create?recurringTimeframe=daily&windowDate=2026-05-25`).
+       *  Threaded as a `Date` into the wizard so `resolveWizardDates`
+       *  picks the right window. Always paired with `prefilledRecurringTimeframe`. */
+      targetWindowDate?: Date;
       /** Set when the wizard was launched from Profile → Recurring
        *  templates → Edit (`/create?editTemplate=<uuid>`). All fields
        *  hydrate from the template, `isRecurring` is forced ON, and
@@ -80,8 +85,12 @@ export function CreateHubPage({
   const resolveDraft = useResumableDraft();
 
   useRecurringTimeframeParam(
-    useCallback((timeframe: Timeframe) => {
-      setMode({ kind: 'wizard', prefilledRecurringTimeframe: timeframe });
+    useCallback((timeframe: Timeframe, windowDate?: Date) => {
+      setMode({
+        kind: 'wizard',
+        prefilledRecurringTimeframe: timeframe,
+        targetWindowDate: windowDate,
+      });
     }, []),
   );
 
@@ -132,6 +141,7 @@ export function CreateHubPage({
         preferences={preferences}
         draft={mode.draft}
         prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
+        targetWindowDate={mode.targetWindowDate}
         editingTemplate={mode.editingTemplate}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}

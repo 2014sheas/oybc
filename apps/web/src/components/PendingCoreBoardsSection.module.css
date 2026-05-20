@@ -86,6 +86,20 @@
   opacity: 0.9;
 }
 
+.browseButton {
+  background: transparent;
+  color: var(--active-bg);
+  border: 0;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.browseButton:hover {
+  text-decoration: underline;
+}
+
 .dismissButton {
   background: transparent;
   color: var(--text-secondary);

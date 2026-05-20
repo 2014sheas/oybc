@@ -24,6 +24,11 @@ export interface PendingCoreBoardsSectionProps {
    *  Create-tab consumer flips its internal mode directly. Hoisting the
    *  behavior here lets the create-tab path skip a useless URL round-trip. */
   onCreate: (entry: PendingRecurringBoard) => void;
+  /** Optional — invoked when the user taps the secondary "Browse →"
+   *  link on a card. Opens the per-timeframe core-board browser so the
+   *  user can plan future windows or revisit past ones. Omit on the
+   *  Create-tab variant (no browser entry point from there). */
+  onBrowse?: (entry: PendingRecurringBoard) => void;
 }
 
 /**
@@ -45,6 +50,7 @@ export function PendingCoreBoardsSection({
   pending,
   variant,
   onCreate,
+  onBrowse,
 }: PendingCoreBoardsSectionProps): React.ReactElement | null {
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
 
@@ -96,6 +102,16 @@ export function PendingCoreBoardsSection({
                 >
                   Create
                 </button>
+                {onBrowse && (
+                  <button
+                    type="button"
+                    className={styles.browseButton}
+                    onClick={() => onBrowse(entry)}
+                    aria-label={`Browse ${display.label} core boards`}
+                  >
+                    Browse →
+                  </button>
+                )}
                 <button
                   type="button"
                   className={styles.dismissButton}

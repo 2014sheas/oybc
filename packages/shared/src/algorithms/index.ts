@@ -74,6 +74,7 @@ export {
   getMonthBoundaries,
   getYearBoundaries,
   getTimeframeBoundaries,
+  stepWindow,
   isWithinTimeframe,
   isTimeframeExpired,
   formatTimeframeLabel,

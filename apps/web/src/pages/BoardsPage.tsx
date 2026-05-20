@@ -63,6 +63,7 @@ export function BoardsPage(): React.ReactElement {
         pending={pendingRecurring}
         variant="boards-tab"
         onCreate={(entry) => navigate(`/create?recurringTimeframe=${entry.timeframe}`)}
+        onBrowse={(entry) => navigate(`/boards/core/${entry.timeframe}`)}
       />
 
       {allBoards.length > 0 && (

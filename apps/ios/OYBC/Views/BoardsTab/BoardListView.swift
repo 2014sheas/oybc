@@ -28,6 +28,20 @@ struct BoardListView: View {
     /// banner Create button no-ops in that case.
     var onCreateRecurring: ((Timeframe) -> Void)?
 
+    /// Phase B — cross-tab launch for a non-current window picked in
+    /// the core-board browser. MainTabView wires this to set the
+    /// `pendingRecurringTimeframe` + `pendingTargetWindowDate` bindings
+    /// and flip to the Create tab. Optional for the playground /
+    /// #Preview path. Receives the date in local time; the wizard
+    /// uses it as the reference for `computeTimeframeBoundaries`.
+    var onCreateForWindow: ((Timeframe, Date) -> Void)?
+
+    /// Phase B — push the core-board browser onto the Boards-tab
+    /// navigation stack. MainTabView appends a `CoreBrowserRoute`
+    /// onto `boardsPath`. Optional so the playground / #Preview path
+    /// can leave it nil (the browser entry hides itself in that case).
+    var onBrowseTimeframe: ((Timeframe) -> Void)?
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
@@ -171,6 +185,9 @@ struct BoardListView: View {
                     variant: .boardsTab,
                     onCreate: { entry in
                         onCreateRecurring?(entry.timeframe)
+                    },
+                    onBrowse: { entry in
+                        onBrowseTimeframe?(entry.timeframe)
                     }
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

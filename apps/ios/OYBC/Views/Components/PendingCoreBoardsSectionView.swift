@@ -43,6 +43,11 @@ struct PendingCoreBoardsSectionView: View {
     /// create-tab path skip a useless tab-bounce.
     let onCreate: (PendingRecurringBoard) -> Void
 
+    /// Optional — invoked when the user taps the new `Browse →` button
+    /// to open the per-timeframe core-board browser. Omit on the
+    /// Create-tab variant (no browser entry point from there).
+    var onBrowse: ((PendingRecurringBoard) -> Void)? = nil
+
     // MARK: - Local state
 
     @State private var dismissedKeys: Set<String> = []
@@ -122,6 +127,15 @@ struct PendingCoreBoardsSectionView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
             .accessibilityLabel("Create \(label(for: entry.timeframe)) board")
+
+            if let onBrowse = onBrowse {
+                Button("Browse →") {
+                    onBrowse(entry)
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .accessibilityLabel("Browse \(label(for: entry.timeframe)) core boards")
+            }
 
             Button {
                 dismissedKeys.insert(key(for: entry))

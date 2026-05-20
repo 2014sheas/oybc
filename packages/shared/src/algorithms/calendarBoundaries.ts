@@ -141,6 +141,73 @@ export function getTimeframeBoundaries(
   }
 }
 
+// ─── Pagination ───────────────────────────────────────────────────────────────
+
+/**
+ * Step from one calendar window to the next (or previous, or N steps away)
+ * and return the resulting window's boundaries.
+ *
+ * Used by the core-board browser to lazy-load adjacent windows as the
+ * user scrolls. The returned boundaries are computed by `getTimeframeBoundaries`,
+ * so DST transitions, month-length variations (Jan 31 → Feb 28), and leap
+ * years all behave consistently with the rest of the calendar helpers.
+ *
+ * @param timeframe   Window granularity. Throws for `CUSTOM`.
+ * @param currentStart The current window's `startDate` (local ISO string,
+ *   as written by `toLocalISO`). Parsed via `new Date(...)`, which
+ *   interprets local-ISO without timezone in the device's local time.
+ * @param step         How many windows to step. Positive = forward in
+ *   time, negative = backward. ±1 is the common case for sentinel-driven
+ *   pagination.
+ * @param weekStartDay First day of week. Only relevant for `WEEKLY`.
+ *
+ * Notes on month/year stepping:
+ *   - MONTHLY uses `new Date(year, month + step, 1)`, which lets JS
+ *     normalise month overflow (month 13 → next year's January). Using
+ *     day=1 means we never land on an invalid date (no Feb 31 problem).
+ *   - YEARLY uses `new Date(year + step, 0, 1)` for the same reason.
+ *   - DAILY / WEEKLY use simple day arithmetic. Crossing a DST boundary
+ *     may move the wall-clock startDate forward or backward by an hour,
+ *     but the resulting boundaries are then re-snapped to start-of-day
+ *     / end-of-day in the new local time by `getTimeframeBoundaries`.
+ */
+export function stepWindow(
+  timeframe: Timeframe,
+  currentStart: string,
+  step: number,
+  weekStartDay: WeekStartDay = 'monday',
+): TimeframeBoundaries {
+  if (timeframe === Timeframe.CUSTOM) {
+    throw new Error('Cannot step CUSTOM windows — they have user-specified dates');
+  }
+  if (!Number.isInteger(step)) {
+    throw new Error(`stepWindow: step must be an integer, got ${step}`);
+  }
+
+  const d = new Date(currentStart);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`stepWindow: currentStart is not a parseable date: ${currentStart}`);
+  }
+
+  let referenceDate: Date;
+  switch (timeframe) {
+    case Timeframe.DAILY:
+      referenceDate = new Date(d.getFullYear(), d.getMonth(), d.getDate() + step);
+      break;
+    case Timeframe.WEEKLY:
+      referenceDate = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * step);
+      break;
+    case Timeframe.MONTHLY:
+      referenceDate = new Date(d.getFullYear(), d.getMonth() + step, 1);
+      break;
+    case Timeframe.YEARLY:
+      referenceDate = new Date(d.getFullYear() + step, 0, 1);
+      break;
+  }
+
+  return getTimeframeBoundaries(timeframe, referenceDate, weekStartDay);
+}
+
 // ─── Validation & Expiry ──────────────────────────────────────────────────────
 
 /**

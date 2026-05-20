@@ -12,6 +12,7 @@ import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
 import { DefaultPoolsListPage } from './pages/DefaultPoolsListPage';
 import { DefaultPoolEditorPage } from './pages/DefaultPoolEditorPage';
+import { CoreBoardBrowserPage } from './pages/core-board-browser/CoreBoardBrowserPage';
 import { Playground } from './pages/Playground';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -94,6 +95,7 @@ function AuthenticatedLayout(): React.ReactElement {
       <div className="tabbar-content">
         <Routes>
           <Route path="/boards" element={<BoardsPage />} />
+          <Route path="/boards/core/:timeframe" element={<CoreBoardBrowserPage />} />
           <Route path="/boards/:id" element={<BoardPlayPage />} />
           <Route path="/create" element={<CreateRoute />} />
           <Route path="/tasks" element={<TasksRoute />} />

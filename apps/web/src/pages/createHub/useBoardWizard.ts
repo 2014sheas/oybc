@@ -101,6 +101,15 @@ export interface BoardWizardState {
    *  to keep showing the banner. Manual Create-page opens (no prefill)
    *  leave this false → resulting Board is non-core → banner persists. */
   isCore: boolean;
+
+  /** Phase B — when the wizard was launched from the core-board browser
+   *  to spawn a non-current window, this is the reference date for the
+   *  target window. Threaded to `resolveWizardDates(controller, this)`
+   *  by the persist path so the board's `startDate`/`endDate` match the
+   *  picked window. Null when the user is creating today's window
+   *  (banner click) or any non-recurring board — `resolveWizardDates`
+   *  falls back to `new Date()` in that case. */
+  targetWindowDate: Date | null;
 }
 
 /** Mutators for each piece of state. */
@@ -187,6 +196,18 @@ export interface UseBoardWizardArgs {
    *  record). When more than one is supplied, the priority is:
    *  draft > editingTemplate > prefilledRecurringTimeframe. */
   prefilledRecurringTimeframe?: Timeframe;
+  /** Optional target-window reference date for the prefill. When
+   *  provided alongside `prefilledRecurringTimeframe`, the wizard
+   *  resolves boundaries with this date instead of `new Date()` — i.e.
+   *  the user can pre-spawn a future window from the core-board
+   *  browser. The default (undefined) reproduces the original "today's
+   *  window" behaviour of the recurring banner. Ignored when there's
+   *  no prefilled timeframe (drafts and one-off boards don't need it).
+   *
+   *  Threaded through to `resolveWizardDates` so the persisted
+   *  `startDate`/`endDate` reflect the target window, not today.
+   */
+  targetWindowDate?: Date;
   /** When set, the wizard is opened in template-edit mode (Profile →
    *  Recurring templates → Edit). All fields hydrate from the template,
    *  `isRecurring` is forced ON, and Save updates the template via
@@ -214,6 +235,7 @@ export function useBoardWizard({
   initialStep = 1,
   draft,
   prefilledRecurringTimeframe,
+  targetWindowDate,
   editingTemplate,
 }: UseBoardWizardArgs): BoardWizardController {
   const draftBoard = draft?.board;
@@ -242,9 +264,11 @@ export function useBoardWizard({
     if (effectivePrefill !== null) {
       // Seed with a human-readable label like "Today" / "Week of May 4 – 10,
       // 2026" / "May 2026" / "2026". User can edit before saving.
+      // `targetWindowDate` (when present) selects a non-today window so
+      // the seed name matches the window the user is actually creating.
       const { startDate } = getTimeframeBoundaries(
         effectivePrefill,
-        new Date(),
+        targetWindowDate ?? new Date(),
         preferences.weekStartDay,
       );
       return formatTimeframeLabel(effectivePrefill, startDate);
@@ -539,6 +563,7 @@ export function useBoardWizard({
     draftBoardId,
     editingTemplateId,
     isCore,
+    targetWindowDate: targetWindowDate ?? null,
 
     // Actions
     setName,

@@ -198,6 +198,11 @@ export function BoardPreferencesPage(): React.ReactElement {
             />
             <span className={styles.toggleTrack} />
           </label>
+          {prefs.recurringDailyEnabled && (
+            <Link to={`/boards/core/${Timeframe.DAILY}`} className={styles.browseLink}>
+              Browse →
+            </Link>
+          )}
         </div>
 
         <div className={styles.settingsRow}>
@@ -213,6 +218,11 @@ export function BoardPreferencesPage(): React.ReactElement {
             />
             <span className={styles.toggleTrack} />
           </label>
+          {prefs.recurringWeeklyEnabled && (
+            <Link to={`/boards/core/${Timeframe.WEEKLY}`} className={styles.browseLink}>
+              Browse →
+            </Link>
+          )}
         </div>
 
         <div className={styles.settingsRow}>
@@ -228,6 +238,11 @@ export function BoardPreferencesPage(): React.ReactElement {
             />
             <span className={styles.toggleTrack} />
           </label>
+          {prefs.recurringMonthlyEnabled && (
+            <Link to={`/boards/core/${Timeframe.MONTHLY}`} className={styles.browseLink}>
+              Browse →
+            </Link>
+          )}
         </div>
 
         <div className={styles.settingsRow}>
@@ -243,6 +258,11 @@ export function BoardPreferencesPage(): React.ReactElement {
             />
             <span className={styles.toggleTrack} />
           </label>
+          {prefs.recurringYearlyEnabled && (
+            <Link to={`/boards/core/${Timeframe.YEARLY}`} className={styles.browseLink}>
+              Browse →
+            </Link>
+          )}
         </div>
       </div>
     </div>

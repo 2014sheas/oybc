@@ -27,6 +27,13 @@ struct CreateHubView: View {
     /// tab Recurring Boards banner. Optional binding keeps the
     /// playground / preview path simple.
     var pendingRecurringTimeframe: Binding<Timeframe?> = .constant(nil)
+    /// Phase B — Optional target-window date that pairs with
+    /// `pendingRecurringTimeframe`. Set by the core-board browser
+    /// when the user picks a non-current window via a Create-cell tap;
+    /// `nil` keeps the legacy "today's window" behaviour when the
+    /// banner is the entry point. Read + cleared on the same `.onAppear`
+    /// that consumes the timeframe binding.
+    var pendingTargetWindowDate: Binding<Date?> = .constant(nil)
     /// Phase 6.2 UX rework: cross-tab edit deep-link. When non-nil on
     /// appear, the hub fetches the template and immediately enters the
     /// wizard in template-edit mode, then resets the binding to nil
@@ -69,8 +76,10 @@ struct CreateHubView: View {
                     // Same behavior as web's URL-param consumption +
                     // immediate clear in `useRecurringTimeframeParam`.
                     if let timeframe = pendingRecurringTimeframe.wrappedValue {
+                        let date = pendingTargetWindowDate.wrappedValue
                         pendingRecurringTimeframe.wrappedValue = nil
-                        vm.enterRecurringWizard(timeframe: timeframe)
+                        pendingTargetWindowDate.wrappedValue = nil
+                        vm.enterRecurringWizard(timeframe: timeframe, targetWindowDate: date)
                         return
                     }
                     // Consume the edit-template deep link, if any.
@@ -82,18 +91,18 @@ struct CreateHubView: View {
                     }
                 }
         case .wizardFresh:
-            wizard(draft: nil, prefilledRecurringTimeframe: nil, editingTemplate: nil)
+            wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: nil)
         case .wizardResume:
-            wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, editingTemplate: nil)
-        case .wizardRecurring(let timeframe):
-            wizard(draft: nil, prefilledRecurringTimeframe: timeframe, editingTemplate: nil)
+            wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: nil)
+        case .wizardRecurring(let timeframe, let targetWindowDate):
+            wizard(draft: nil, prefilledRecurringTimeframe: timeframe, targetWindowDate: targetWindowDate, editingTemplate: nil)
         case .wizardEditTemplate:
             // The mode is set BEFORE `editingTemplate` is set (when
             // hydration is in flight) and AFTER (once loaded). Render
             // a thin loading state in the in-flight window so the
             // wizard doesn't mount with stale state.
             if let template = vm.editingTemplate {
-                wizard(draft: nil, prefilledRecurringTimeframe: nil, editingTemplate: template)
+                wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: template)
             } else {
                 ProgressView("Loading template…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -111,6 +120,7 @@ struct CreateHubView: View {
     private func wizard(
         draft: (board: Board, boardTasks: [BoardTask])?,
         prefilledRecurringTimeframe: Timeframe?,
+        targetWindowDate: Date?,
         editingTemplate: RecurringBoardTemplate?
     ) -> some View {
         BoardWizardView(
@@ -118,6 +128,7 @@ struct CreateHubView: View {
             preferences: preferences,
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
+            targetWindowDate: targetWindowDate,
             editingTemplate: editingTemplate,
             onCancel: { handleHubReturn() },
             onComplete: { boardId, status in
