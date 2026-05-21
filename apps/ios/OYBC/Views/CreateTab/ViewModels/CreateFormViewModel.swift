@@ -12,7 +12,7 @@ enum CreateTaskType: String, CaseIterable {
     /// Phase 6.3 — Achievement (cross-board watcher).
     case achievement = "Achievement"
 
-    /// Short 3–4 character abbreviation used by the segmented type
+    /// Standard 4-letter abbreviation used by the segmented type
     /// picker in `CreateNewTaskFormView`. The picker renders via
     /// UIKit's `UISegmentedControl`, which allocates equal width per
     /// segment and ignores per-`Text` SwiftUI font modifiers — so
@@ -21,16 +21,22 @@ enum CreateTaskType: String, CaseIterable {
     /// caption below showing the current selection's full `rawValue`
     /// so the abbreviation never loses meaning.
     ///
+    /// All abbreviations are exactly 4 chars: first-4-letters for
+    /// most (Norm, Prog, Comp) plus mild vowel-drop for the words
+    /// where first-4 doesn't read well (Achv vs "Achi"). Counting's
+    /// first-4 ("Coun") is the cleanest 4-letter option that avoids
+    /// awkward 3-letter forms.
+    ///
     /// All other surfaces (badges, filter chips, detail views)
     /// continue to display the full `rawValue` — this property is
     /// scoped to the segmented picker.
     var shortLabel: String {
         switch self {
         case .normal:      return "Norm"
-        case .counting:    return "Cnt"
+        case .counting:    return "Coun"
         case .progress:    return "Prog"
         case .composite:   return "Comp"
-        case .achievement: return "Ach"
+        case .achievement: return "Achv"
         }
     }
 }
