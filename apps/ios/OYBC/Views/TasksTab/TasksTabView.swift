@@ -33,15 +33,24 @@ struct TasksTabView: View {
     @State private var vm = TasksTabViewModel()
     @State private var showNewTaskSheet = false
 
+    /// Task + its precomputed deletion impact, bundled so the confirm
+    /// sheet is driven by a single Identifiable. Presenting off two
+    /// separate `@State` (the task plus a companion impact) let the sheet
+    /// render before the impact landed — a blank modal that then crashed.
+    private struct PendingTaskDeletion: Identifiable {
+        let task: Task
+        let impact: AppDatabase.TaskDeletionImpact
+        var id: String { task.id }
+    }
+
     // ── Quick-action state ────────────────────────────────────────────
     /// Task currently being edited via swipe-Edit. `.sheet(item:)` opens
     /// `EditTaskSheet` when this is non-nil.
     @State private var editingTask: Task?
-    /// Task pending delete confirm. Set once the impact computation
-    /// finishes so the confirm sheet can render the affected-boards
-    /// list synchronously.
-    @State private var deletingTask: Task?
-    @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
+    /// Set once the impact computation finishes; presenting the confirm
+    /// sheet off this single item guarantees the impact is available when
+    /// the sheet renders.
+    @State private var pendingDelete: PendingTaskDeletion?
     @State private var quickActionError: String?
 
     var body: some View {
@@ -154,20 +163,17 @@ struct TasksTabView: View {
                 onCancel: { editingTask = nil }
             )
         }
-        .sheet(item: $deletingTask) { task in
-            if let impact = deleteImpact {
-                TaskDeleteConfirmView(
-                    task: task,
-                    impact: impact,
-                    onConfirm: {
-                        _Concurrency.Task { await performDelete(taskId: task.id) }
-                    },
-                    onCancel: {
-                        deletingTask = nil
-                        deleteImpact = nil
-                    }
-                )
-            }
+        .sheet(item: $pendingDelete) { pending in
+            TaskDeleteConfirmView(
+                task: pending.task,
+                impact: pending.impact,
+                onConfirm: {
+                    _Concurrency.Task { await performDelete(taskId: pending.task.id) }
+                },
+                onCancel: {
+                    pendingDelete = nil
+                }
+            )
         }
         .navigationDestination(for: String.self) { taskId in
             TaskDetailView(
@@ -206,8 +212,7 @@ struct TasksTabView: View {
                     try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
                 }.value
                 await MainActor.run {
-                    deleteImpact = impact
-                    deletingTask = task
+                    pendingDelete = PendingTaskDeletion(task: task, impact: impact)
                 }
             } catch {
                 await MainActor.run {
@@ -224,8 +229,7 @@ struct TasksTabView: View {
                 try AppDatabase.shared.deleteTaskWithCascade(taskId: taskId)
             }.value
             await MainActor.run {
-                deletingTask = nil
-                deleteImpact = nil
+                pendingDelete = nil
                 library.loadLibrary(userId: userId)
                 vm.reloadAsync()
             }
