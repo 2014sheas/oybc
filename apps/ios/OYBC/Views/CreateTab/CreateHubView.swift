@@ -166,14 +166,14 @@ struct CreateHubView: View {
 
             CoreBoardsSectionView(
                 slots: pendingRecurringVM.slots,
-                onCreate: { slot in
-                    // Already on the Create tab — flip mode directly
-                    // rather than bouncing through MainTabView's
-                    // pendingRecurringTimeframe binding.
+                onSelect: { slot in
+                    // Already on the Create tab — whole-row tap flips
+                    // mode directly into the wizard for that
+                    // timeframe's current window, no cross-tab hop.
+                    // To browse past/future windows the user goes to
+                    // the Boards tab.
                     vm.enterRecurringWizard(timeframe: slot.timeframe)
                 }
-                // No onPlay / onBrowse on the Create-tab caller — the
-                // Boards tab owns the play + browse affordances.
             )
 
             CreateHubBoardCTAView(

@@ -167,14 +167,15 @@ export function CreateHubPage({
 
       <CoreBoardsSection
         slots={coreBoardSlots}
-        onCreate={(slot) =>
-          // Skip the URL round-trip the Boards-tab caller uses — we're
-          // already on /create, so flip mode directly. Same end state as
-          // consuming the URL param via useRecurringTimeframeParam above.
+        // Already on /create — whole-row tap launches the wizard for
+        // that timeframe's current window in place, no cross-tab hop.
+        // Same end state as the Boards-tab caller's "tap row → browser
+        // → tap current cell → wizard", just one step shorter for the
+        // common "I'm here to create" intent. To browse past/future
+        // windows the user goes to the Boards tab.
+        onSelect={(slot) =>
           setMode({ kind: 'wizard', prefilledRecurringTimeframe: slot.timeframe })
         }
-        // No onPlay / onBrowse on the Create-tab caller — the Boards
-        // tab is the home for browsing and playing existing boards.
       />
 
       <CreateHubBoardCTA

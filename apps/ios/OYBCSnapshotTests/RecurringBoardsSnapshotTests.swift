@@ -23,9 +23,9 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
 
     // MARK: - Core Boards section (replaces the old Pending banner)
 
-    /// Section with a single Daily slot — the most common steady state
-    /// (only daily-prompt enabled). Slot is in the not-yet state.
-    func testCoreBoardsSectionSingleDailyNotYet() {
+    /// Section with a single Daily slot — the most common steady
+    /// state (only daily-prompt enabled).
+    func testCoreBoardsSectionSingleDaily() {
         let slots: [CoreBoardSlot] = [
             CoreBoardSlot(
                 timeframe: .daily,
@@ -35,12 +35,7 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
                 currentBoard: nil
             )
         ]
-        let view = CoreBoardsSectionView(
-            slots: slots,
-            onCreate: { _ in },
-            onPlay: { _ in },
-            onBrowse: { _ in }
-        )
+        let view = CoreBoardsSectionView(slots: slots, onSelect: { _ in })
         assertSnapshot(
             of: view,
             as: .image(layout: .fixed(width: 393, height: 110)),
@@ -48,47 +43,13 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
         )
     }
 
-    /// Section with all 4 timeframes enabled, all not-yet — the Jan 1
-    /// case where the user opens the app on the first day of a new
-    /// year/month/week/day. Daily-first ordering is load-bearing.
-    func testCoreBoardsSectionAllFourNotYet() {
+    /// Section with all 4 timeframes enabled — the Jan 1 case where
+    /// the user opens the app on the first day of a new year/month/
+    /// week/day. Daily-first ordering is load-bearing.
+    func testCoreBoardsSectionAllFour() {
         let view = CoreBoardsSectionView(
             slots: jan1FourSlotsAllNotYet(),
-            onCreate: { _ in },
-            onPlay: { _ in },
-            onBrowse: { _ in }
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 360)),
-            record: recordMode
-        )
-    }
-
-    /// Section with all 4 enabled, daily already created (Done state)
-    /// + the other 3 not yet. Verifies the Done variant's status pill +
-    /// Play button render alongside the Not-yet variants.
-    func testCoreBoardsSectionMixedDoneAndNotYet() {
-        var slots = jan1FourSlotsAllNotYet()
-        slots[0] = CoreBoardSlot(
-            timeframe: .daily,
-            windowStart: slots[0].windowStart,
-            windowEnd: slots[0].windowEnd,
-            windowLabel: slots[0].windowLabel,
-            currentBoard: SnapshotFixtures.makeBoard(
-                id: "jan1-daily",
-                name: "Jan 1 Daily",
-                timeframe: .daily,
-                startDate: slots[0].windowStart,
-                endDate: slots[0].windowEnd,
-                isCore: true
-            )
-        )
-        let view = CoreBoardsSectionView(
-            slots: slots,
-            onCreate: { _ in },
-            onPlay: { _ in },
-            onBrowse: { _ in }
+            onSelect: { _ in }
         )
         assertSnapshot(
             of: view,

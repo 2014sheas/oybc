@@ -18,21 +18,34 @@
   gap: 10px;
 }
 
+/* Whole row is a single tap target — wired by the parent to push the
+ * per-timeframe browser (Boards tab) or launch the wizard for the
+ * current window (Create tab). No competing buttons inside the row. */
 .card {
   display: flex;
   align-items: center;
   gap: 14px;
+  width: 100%;
   padding: 16px 16px;
   background: var(--surface-elevated, rgba(10, 132, 255, 0.08));
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
   transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
 .card:hover {
   transform: translateY(-1px);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
 }
 
 .icon {
@@ -61,90 +74,9 @@
   margin-top: 2px;
 }
 
-/* Status pill — small chip indicating the current-window state. */
-.statusPill {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 3px 10px;
-  border-radius: 999px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.statusPillDone {
-  background: rgba(31, 111, 63, 0.15);
-  color: #1f6f3f;
-}
-
-.statusPillNotYet {
-  background: var(--bg-secondary);
+.chevron {
+  font-size: 22px;
   color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-}
-
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  margin-left: var(--spacing-sm);
   flex-shrink: 0;
-  align-items: stretch;
-}
-
-.createButton {
-  background: var(--active-bg);
-  color: var(--active-text);
-  border: 0;
-  border-radius: 8px;
-  padding: 9px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  min-width: 88px;
-  transition: opacity 0.2s;
-}
-
-.createButton:hover {
-  opacity: 0.9;
-}
-
-/* Play button: secondary action on done rows. Distinct from Create
- * (the not-yet primary) so visiting users don't confuse "open the
- * existing board" with "create a new one". */
-.playButton {
-  background: transparent;
-  color: var(--active-bg);
-  border: 1px solid var(--active-bg);
-  border-radius: 8px;
-  padding: 8px 17px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  min-width: 88px;
-  transition: background-color 0.2s, color 0.2s;
-}
-
-.playButton:hover:not(:disabled) {
-  background: var(--active-bg);
-  color: var(--active-text);
-}
-
-.playButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.browseButton {
-  background: transparent;
-  color: var(--active-bg);
-  border: 0;
-  padding: 4px 6px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.browseButton:hover {
-  text-decoration: underline;
 }

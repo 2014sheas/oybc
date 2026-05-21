@@ -61,9 +61,11 @@ export function BoardsPage(): React.ReactElement {
 
       <CoreBoardsSection
         slots={coreBoardSlots}
-        onCreate={(slot) => navigate(`/create?recurringTimeframe=${slot.timeframe}`)}
-        onPlay={(boardId) => navigate(`/boards/${boardId}`)}
-        onBrowse={(timeframe) => navigate(`/boards/core/${timeframe}`)}
+        // Whole-row tap → per-timeframe Core Board Browser. The
+        // browser handles state-specific actions in cell form
+        // (Create today's cell when slot is empty, board cell when
+        // it's already created, plus past/future windows).
+        onSelect={(slot) => navigate(`/boards/core/${slot.timeframe}`)}
       />
 
       {allBoards.length > 0 && (

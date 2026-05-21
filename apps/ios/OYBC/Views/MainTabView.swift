@@ -71,35 +71,22 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             NavigationStack(path: $boardsPath) {
                 BoardListView(
-                    onCreateRecurring: { timeframe in
-                        // Cross-tab: stash the timeframe and switch to
-                        // the Create tab. CreateHubView reads
-                        // `pendingRecurringTimeframe` on appear and
-                        // enters wizard mode with prefill.
-                        pendingRecurringTimeframe = timeframe
-                        pendingTargetWindowDate = nil
-                        selectedTab = 2
-                    },
                     onCreateForWindow: { timeframe, windowDate in
-                        // Phase B cross-tab: same cross-tab handoff,
-                        // plus a target window date for pre-spawn. The
-                        // browser's Create-cell taps land here so the
-                        // wizard launches with the picked window
-                        // instead of today.
+                        // Cross-tab: the browser's Create-cell taps
+                        // land here so the wizard launches with the
+                        // picked window. Stash both bindings + flip
+                        // to the Create tab; CreateHubView consumes
+                        // both on appear.
                         pendingRecurringTimeframe = timeframe
                         pendingTargetWindowDate = windowDate
                         selectedTab = 2
                     },
                     onBrowseTimeframe: { timeframe in
-                        // Phase B in-tab push: open the per-timeframe
-                        // core-board browser on the Boards-tab stack.
+                        // Push the per-timeframe Core Board Browser
+                        // onto the Boards-tab stack. Used by both the
+                        // Core Boards section (whole-row tap) and the
+                        // pending-recurring banner if it re-enables.
                         boardsPath.append(CoreBrowserRoute(timeframe: timeframe))
-                    },
-                    onPlayBoard: { boardId in
-                        // Persistent Core Boards section's Play button —
-                        // push the board id onto the same Boards-tab path
-                        // that NavigationLink-based rows use.
-                        boardsPath.append(boardId)
                     }
                 )
                 .navigationDestination(for: CoreBrowserRoute.self) { route in

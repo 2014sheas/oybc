@@ -13,30 +13,23 @@ export interface CoreBoardsSectionProps {
   /** Output of `useCoreBoardSlots(userId)`. One entry per enabled
    *  recurring timeframe, daily-first. */
   slots: CoreBoardSlot[];
-  /** Tap target for a Not-Yet row's Create button. Parent decides what
-   *  to do — the Boards-tab consumer hops cross-tab via URL param;
-   *  the Create-tab consumer enters wizard mode in place. */
-  onCreate: (slot: CoreBoardSlot) => void;
-  /** Tap target for a Done row's main click area. Receives the
-   *  currentBoard's id. Omitted on the Create-tab caller (Create
-   *  surface doesn't navigate to play — that's the Boards tab's job). */
-  onPlay?: (boardId: string) => void;
-  /** Tap target for the per-row Browse button → opens the per-timeframe
-   *  core-board browser. Omitted on the Create-tab caller (same reason). */
-  onBrowse?: (timeframe: Timeframe) => void;
+  /** Tap target for a whole row. Parent decides where it navigates —
+   *  the Boards-tab consumer pushes the per-timeframe Core Board
+   *  Browser; the Create-tab consumer launches the wizard for today's
+   *  window of that timeframe. Either way the row is a single tap
+   *  target with no competing buttons. */
+  onSelect: (slot: CoreBoardSlot) => void;
 }
 
 /**
  * CoreBoardsSection — persistent home-screen section showing one row
  * per *enabled* recurring timeframe (daily/weekly/monthly/yearly).
- * Replaces the earlier "PendingCoreBoardsSection" which only rendered
- * when there were uncreated current-window boards.
  *
- * Each row shows the current window's status:
- *   - **Done** (`currentBoard != null`): timeframe label + window
- *     label + "Done" pill + clickable to open the board + Browse →.
- *   - **Not yet** (`currentBoard === null`): timeframe label + window
- *     label + "Not yet" pill + Create button + Browse →.
+ * Each row is a single tap target — clicking anywhere on it invokes
+ * `onSelect(slot)`. The Boards-tab consumer wires this to push the
+ * per-timeframe browser; the Create-tab consumer wires it to launch
+ * the wizard for that timeframe's current window. No competing
+ * buttons inside the row.
  *
  * No dismiss affordance — per-timeframe disable lives in Board
  * Preferences. That's the only path to silence a recurring prompt.
@@ -46,9 +39,7 @@ export interface CoreBoardsSectionProps {
  */
 export function CoreBoardsSection({
   slots,
-  onCreate,
-  onPlay,
-  onBrowse,
+  onSelect,
 }: CoreBoardsSectionProps): React.ReactElement | null {
   if (slots.length === 0) return null;
 
@@ -61,9 +52,13 @@ export function CoreBoardsSection({
       <div className={styles.cards}>
         {slots.map((slot) => {
           const display = TIMEFRAME_DISPLAY[slot.timeframe];
-          const done = slot.currentBoard !== null;
           return (
-            <div key={slot.timeframe} className={styles.card}>
+            <button
+              key={slot.timeframe}
+              type="button"
+              className={styles.card}
+              onClick={() => onSelect(slot)}
+            >
               <div className={styles.icon} aria-hidden="true">
                 {display.icon}
               </div>
@@ -71,49 +66,8 @@ export function CoreBoardsSection({
                 <span className={styles.timeframeLabel}>{display.label}</span>
                 <span className={styles.windowLabel}>{slot.windowLabel}</span>
               </div>
-              <span
-                className={
-                  done
-                    ? `${styles.statusPill} ${styles.statusPillDone}`
-                    : `${styles.statusPill} ${styles.statusPillNotYet}`
-                }
-              >
-                {done ? 'Done' : 'Not yet'}
-              </span>
-              <div className={styles.actions}>
-                {done ? (
-                  <button
-                    type="button"
-                    className={styles.playButton}
-                    onClick={() =>
-                      slot.currentBoard && onPlay?.(slot.currentBoard.id)
-                    }
-                    disabled={onPlay === undefined}
-                    aria-label={`Open ${display.label} board`}
-                  >
-                    Play
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className={styles.createButton}
-                    onClick={() => onCreate(slot)}
-                  >
-                    Create
-                  </button>
-                )}
-                {onBrowse && (
-                  <button
-                    type="button"
-                    className={styles.browseButton}
-                    onClick={() => onBrowse(slot.timeframe)}
-                    aria-label={`Browse ${display.label} core boards`}
-                  >
-                    Browse →
-                  </button>
-                )}
-              </div>
-            </div>
+              <span className={styles.chevron} aria-hidden="true">›</span>
+            </button>
           );
         })}
       </div>

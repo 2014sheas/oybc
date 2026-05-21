@@ -7,46 +7,31 @@ import SwiftUI
 /// Boards are loaded from the local GRDB database on appear and filtered
 /// client-side — no network calls.
 ///
-/// Phase 6.1: also renders a `PendingCoreBoardsSectionView` when the user
-/// has recurring board prefs enabled and the current window has no covering
-/// board. Tapping a card invokes `onCreateRecurring` (set by MainTabView)
-/// which switches to the Create tab with the timeframe prefilled.
+/// Also renders a `CoreBoardsSectionView` whenever any recurring
+/// timeframe pref is enabled. Each row is a single tap target →
+/// `onBrowseTimeframe` opens the per-timeframe Core Board Browser.
 ///
 /// Phase 6.1d note: the section is mounted **inside** the SwiftUI `List`
 /// as a transparent header row (not above it as a sticky element) so the
-/// user can scroll past the section to reach the board list below — when
-/// 4 windows are pending the cards take ~520pt and would otherwise
-/// dominate the screen on iPhone-class widths.
+/// user can scroll past the section to reach the board list below.
 struct BoardListView: View {
 
     // MARK: - Inputs
 
-    /// Invoked when the user taps Create on a recurring-boards banner row.
-    /// MainTabView wires this to switch to the Create tab and stash the
-    /// timeframe for `CreateHubView` to consume. Optional for the playground
-    /// + #Preview path where cross-tab navigation isn't available — the
-    /// banner Create button no-ops in that case.
-    var onCreateRecurring: ((Timeframe) -> Void)?
-
-    /// Phase B — cross-tab launch for a non-current window picked in
-    /// the core-board browser. MainTabView wires this to set the
+    /// Cross-tab launch for a non-current window picked in the
+    /// core-board browser. MainTabView wires this to set the
     /// `pendingRecurringTimeframe` + `pendingTargetWindowDate` bindings
     /// and flip to the Create tab. Optional for the playground /
     /// #Preview path. Receives the date in local time; the wizard
     /// uses it as the reference for `computeTimeframeBoundaries`.
     var onCreateForWindow: ((Timeframe, Date) -> Void)?
 
-    /// Phase B — push the core-board browser onto the Boards-tab
-    /// navigation stack. MainTabView appends a `CoreBrowserRoute`
-    /// onto `boardsPath`. Optional so the playground / #Preview path
-    /// can leave it nil (the browser entry hides itself in that case).
+    /// Push the per-timeframe Core Board Browser onto the Boards-tab
+    /// navigation stack. MainTabView appends a `CoreBrowserRoute` onto
+    /// `boardsPath`. Also the tap target for the Core Boards section's
+    /// rows (each row routes through here). Optional so the playground /
+    /// #Preview path can leave it nil.
     var onBrowseTimeframe: ((Timeframe) -> Void)?
-
-    /// Tap target for the Core Boards section's Play button on a
-    /// "done" slot. Pushes the board id onto `boardsPath` so the user
-    /// lands on `BoardPlayView` via the same path-based navigation
-    /// the main list uses. Optional for the playground / #Preview path.
-    var onPlayBoard: ((String) -> Void)?
 
     // MARK: - Dependencies
 
@@ -124,14 +109,10 @@ struct BoardListView: View {
                 ScrollView {
                     CoreBoardsSectionView(
                         slots: pendingRecurringVM.slots,
-                        onCreate: { slot in
-                            onCreateRecurring?(slot.timeframe)
-                        },
-                        onPlay: { boardId in
-                            onPlayBoard?(boardId)
-                        },
-                        onBrowse: { timeframe in
-                            onBrowseTimeframe?(timeframe)
+                        onSelect: { slot in
+                            // Whole-row tap → per-timeframe browser
+                            // (handles Create + Play + adjacent windows).
+                            onBrowseTimeframe?(slot.timeframe)
                         }
                     )
                     .padding(.horizontal)
@@ -193,14 +174,9 @@ struct BoardListView: View {
             if !pendingRecurringVM.slots.isEmpty {
                 CoreBoardsSectionView(
                     slots: pendingRecurringVM.slots,
-                    onCreate: { slot in
-                        onCreateRecurring?(slot.timeframe)
-                    },
-                    onPlay: { boardId in
-                        onPlayBoard?(boardId)
-                    },
-                    onBrowse: { timeframe in
-                        onBrowseTimeframe?(timeframe)
+                    onSelect: { slot in
+                        // Whole-row tap → per-timeframe browser.
+                        onBrowseTimeframe?(slot.timeframe)
                     }
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

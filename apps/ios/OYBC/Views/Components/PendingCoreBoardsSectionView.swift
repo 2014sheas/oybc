@@ -2,20 +2,17 @@ import SwiftUI
 
 /// CoreBoardsSectionView — persistent home-screen section showing one
 /// row per *enabled* recurring timeframe (daily/weekly/monthly/yearly).
-/// Replaces the earlier `PendingCoreBoardsSectionView` which only
-/// rendered when there were uncreated current-window core boards.
 ///
-/// Each row's content depends on `slot.currentBoard`:
-///   - **Done** (board exists): timeframe label + window label +
-///     "Done" pill + Play button (opens the board) + Browse →.
-///   - **Not yet** (board nil): same labels + "Not yet" pill + Create
-///     button + Browse →.
+/// Each row is a single tap target. The parent decides where it
+/// navigates — the Boards-tab consumer pushes the per-timeframe
+/// browser; the Create-tab consumer launches the wizard for that
+/// timeframe's current window. No competing in-row buttons.
 ///
 /// No dismiss affordance — per-timeframe disable lives in Board
 /// Preferences (Profile → Board Preferences → Recurring section).
 ///
 /// File kept at the original path so the Xcode project doesn't need
-/// regeneration. Old type name is preserved via a typealias at the
+/// regeneration. Old type name preserved via a typealias at the
 /// bottom for any consumer still using it during the migration window.
 struct CoreBoardsSectionView: View {
 
@@ -24,18 +21,8 @@ struct CoreBoardsSectionView: View {
     /// One slot per enabled recurring timeframe, daily-first.
     let slots: [CoreBoardSlot]
 
-    /// Invoked when the user taps Create on a not-yet row.
-    let onCreate: (CoreBoardSlot) -> Void
-
-    /// Optional — invoked when the user taps Play on a done row.
-    /// Omit on the Create-tab caller (Create surface doesn't navigate
-    /// to play — that's the Boards tab's job).
-    var onPlay: ((String) -> Void)? = nil
-
-    /// Optional — invoked when the user taps Browse → on a row.
-    /// Opens the per-timeframe Core Board Browser. Omit on the
-    /// Create-tab caller for the same reason as `onPlay`.
-    var onBrowse: ((Timeframe) -> Void)? = nil
+    /// Invoked when the user taps anywhere on a row.
+    let onSelect: (CoreBoardSlot) -> Void
 
     // MARK: - Body
 
@@ -52,97 +39,58 @@ struct CoreBoardsSectionView: View {
 
                 VStack(spacing: 10) {
                     ForEach(slots) { slot in
-                        slotCard(slot)
+                        slotRow(slot)
                     }
                 }
             }
         }
     }
 
-    // MARK: - Per-row card
+    // MARK: - Per-row tappable card
 
     @ViewBuilder
-    private func slotCard(_ slot: CoreBoardSlot) -> some View {
-        let isDone = slot.currentBoard != nil
+    private func slotRow(_ slot: CoreBoardSlot) -> some View {
+        Button {
+            onSelect(slot)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon(for: slot.timeframe))
+                    .font(.system(size: 18))
+                    .foregroundStyle(.tint)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
 
-        HStack(spacing: 10) {
-            Image(systemName: icon(for: slot.timeframe))
-                .font(.system(size: 18))
-                .foregroundStyle(.tint)
-                .frame(width: 28)
-                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label(for: slot.timeframe))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text(slot.windowLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label(for: slot.timeframe))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                Text(slot.windowLabel)
-                    .font(.caption2)
+                Spacer(minLength: 4)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-
-            Spacer(minLength: 4)
-
-            statusPill(isDone: isDone)
-
-            if isDone, let board = slot.currentBoard {
-                Button("Play") {
-                    onPlay?(board.id)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.accentColor)
-                .disabled(onPlay == nil)
-                .accessibilityLabel("Open \(label(for: slot.timeframe)) board")
-            } else {
-                Button("Create") {
-                    onCreate(slot)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .accessibilityLabel("Create \(label(for: slot.timeframe)) board")
-            }
-
-            if let onBrowse = onBrowse {
-                Button("Browse →") {
-                    onBrowse(slot.timeframe)
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .accessibilityLabel("Browse \(label(for: slot.timeframe)) core boards")
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.accentColor.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
-                )
-        )
-    }
-
-    @ViewBuilder
-    private func statusPill(isDone: Bool) -> some View {
-        Text(isDone ? "DONE" : "NOT YET")
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(isDone ? Color(red: 0.122, green: 0.435, blue: 0.247) : .secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                Capsule()
-                    .fill(isDone
-                        ? Color(red: 0.122, green: 0.435, blue: 0.247).opacity(0.15)
-                        : Color(.tertiarySystemBackground))
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.accentColor.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+                    )
             )
-            .overlay(
-                Capsule().strokeBorder(
-                    isDone ? Color.clear : Color(.separator),
-                    lineWidth: 1
-                )
-            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label(for: slot.timeframe)) core boards — \(slot.windowLabel)")
     }
 
     // MARK: - Display helpers
