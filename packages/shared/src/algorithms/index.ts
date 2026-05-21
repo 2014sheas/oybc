@@ -89,10 +89,11 @@ export type {
 export {
   PARENT_TIMEFRAMES,
   findPendingRecurringBoards,
+  getCoreBoardSlots,
   getParentBoards,
 } from './recurringBoards';
 
-export type { PendingRecurringBoard } from './recurringBoards';
+export type { CoreBoardSlot, PendingRecurringBoard } from './recurringBoards';
 
 export {
   findTemplatesPendingSpawn,

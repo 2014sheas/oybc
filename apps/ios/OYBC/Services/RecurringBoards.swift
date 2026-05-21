@@ -41,6 +41,14 @@ private let recurringTimeframesByWindowDesc: [Timeframe] = [
     .yearly, .monthly, .weekly, .daily,
 ]
 
+/// Same set, inverted — used by `getCoreBoardSlots` so the persistent
+/// Core Boards section on the home screen reads top-to-bottom as
+/// daily → weekly → monthly → yearly. Shortest-first is what the user
+/// acts on most often, so it sits at the top.
+private let recurringTimeframesByWindowAsc: [Timeframe] = [
+    .daily, .weekly, .monthly, .yearly,
+]
+
 /// One row of the Boards-tab "pending boards" banner. Carries everything the
 /// banner needs to render the row + everything the wizard needs to be
 /// prefilled when the user taps "Create".
@@ -129,6 +137,74 @@ func findPendingRecurringBoards(
     }
 
     return pending
+}
+
+/// Persistent home-screen "Core Boards" section data — returns one
+/// entry per *enabled* recurring timeframe, in shortest-window-first
+/// order (daily → weekly → monthly → yearly), with the matched core
+/// board attached when one exists for the current window.
+///
+/// Distinct from `findPendingRecurringBoards`: that helper only
+/// returns timeframes that NEED creation. This one always returns
+/// every enabled timeframe, with `currentBoard == nil` indicating
+/// the not-yet state. The Boards-tab section uses this so the
+/// per-timeframe Core Board Browser is always reachable from the
+/// home screen, not just when something needs creating.
+///
+/// Mirrors `getCoreBoardSlots` in `packages/shared/src/algorithms/recurringBoards.ts`.
+struct CoreBoardSlot: Identifiable {
+    let timeframe: Timeframe
+    /// Local ISO8601 string from `wizardLocalISOString`.
+    let windowStart: String
+    /// Local ISO8601 string.
+    let windowEnd: String
+    /// Human-readable label (e.g. "Today", "Week of May 4 – 10, 2026").
+    let windowLabel: String
+    /// The matched core board for the current window, or nil if none.
+    let currentBoard: Board?
+
+    /// `Identifiable` conformance — timeframe is unique per slot.
+    var id: String { timeframe.rawValue }
+}
+
+func getCoreBoardSlots(
+    boards: [Board],
+    prefs: UserPreferences,
+    now: Date
+) -> [CoreBoardSlot] {
+    var slots: [CoreBoardSlot] = []
+
+    for timeframe in recurringTimeframesByWindowAsc {
+        guard isRecurringTimeframeEnabled(prefs, timeframe) else { continue }
+        guard let window = computeTimeframeBoundaries(
+            timeframe: timeframe,
+            referenceDate: now,
+            weekStartDay: prefs.weekStartDay.rawValue
+        ) else { continue }
+
+        let startISO = wizardLocalISOString(window.start)
+        let endISO = wizardLocalISOString(window.end)
+
+        let match = boards.first { board in
+            board.timeframe == timeframe
+                && !board.isDeleted
+                && board.startDate == startISO
+                && board.isCore
+        }
+
+        slots.append(CoreBoardSlot(
+            timeframe: timeframe,
+            windowStart: startISO,
+            windowEnd: endISO,
+            windowLabel: playgroundTimeframeLabel(
+                timeframe: timeframe,
+                startDate: window.start
+            ),
+            currentBoard: match
+        ))
+    }
+
+    return slots
 }
 
 /// Returns the currently-active longer-window "parent" boards for a given

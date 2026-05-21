@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
 import {
   useBoards,
-  usePendingRecurringBoards,
+  useCoreBoardSlots,
   useRecurringBoardSpawn,
 } from '../hooks';
 import { FilterTabs } from '../components/FilterTabs';
 import { BoardListItem } from '../components/BoardListItem';
-import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
+import { CoreBoardsSection } from '../components/CoreBoardsSection';
 import { deleteBoard } from '../db/operations/boards';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import styles from './BoardsPage.module.css';
@@ -30,7 +30,7 @@ export function BoardsPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
   const allBoards = useBoards(user?.id) ?? [];
-  const pendingRecurring = usePendingRecurringBoards(user?.id);
+  const coreBoardSlots = useCoreBoardSlots(user?.id);
   // Phase 6.2: fire template spawns on Boards-tab mount. The hook is
   // structurally idempotent — repeated mounts are no-ops once
   // `lastSpawnedWindowKey` is written. We don't currently consume the
@@ -59,11 +59,11 @@ export function BoardsPage(): React.ReactElement {
     <div className={styles.container}>
       <h1 className={styles.header}>Boards</h1>
 
-      <PendingCoreBoardsSection
-        pending={pendingRecurring}
-        variant="boards-tab"
-        onCreate={(entry) => navigate(`/create?recurringTimeframe=${entry.timeframe}`)}
-        onBrowse={(entry) => navigate(`/boards/core/${entry.timeframe}`)}
+      <CoreBoardsSection
+        slots={coreBoardSlots}
+        onCreate={(slot) => navigate(`/create?recurringTimeframe=${slot.timeframe}`)}
+        onPlay={(boardId) => navigate(`/boards/${boardId}`)}
+        onBrowse={(timeframe) => navigate(`/boards/core/${timeframe}`)}
       />
 
       {allBoards.length > 0 && (

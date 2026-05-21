@@ -1,152 +1,116 @@
 import SwiftUI
 
-/// Variants for `PendingCoreBoardsSectionView`. Drives heading copy +
-/// outer padding so the same component looks at home on both surfaces
-/// without requiring two parallel files.
-enum PendingCoreBoardsSectionVariant {
-    /// Mounted above the board list on the Boards tab. Heading: "Pending boards".
-    case boardsTab
-    /// Mounted above the custom-board CTA on the Create tab. Heading:
-    /// "Get started with today's boards".
-    case createTab
-}
-
-/// PendingCoreBoardsSectionView — Promotes the "core boards" (daily /
-/// weekly / monthly / yearly recurring boards) to the headline action on
-/// the Boards and Create tabs. iOS twin of web's
-/// `PendingCoreBoardsSection`. Replaces the smaller
-/// `RecurringBoardsBannerView` from the earlier 6.1b implementation.
+/// CoreBoardsSectionView — persistent home-screen section showing one
+/// row per *enabled* recurring timeframe (daily/weekly/monthly/yearly).
+/// Replaces the earlier `PendingCoreBoardsSectionView` which only
+/// rendered when there were uncreated current-window core boards.
 ///
-/// Each pending entry renders as a tappable card (large SF Symbol icon +
-/// bold timeframe label + suggested-name subtitle + prominent Create
-/// button + secondary Dismiss link). Renders nothing when `pending` is
-/// empty — the parent's fallback content (custom-board CTA on Create,
-/// plain board list on Boards) takes over.
+/// Each row's content depends on `slot.currentBoard`:
+///   - **Done** (board exists): timeframe label + window label +
+///     "Done" pill + Play button (opens the board) + Browse →.
+///   - **Not yet** (board nil): same labels + "Not yet" pill + Create
+///     button + Browse →.
 ///
-/// Dismissals are session-only via local `@State Set<String>`. Permanent
-/// suppression is the per-timeframe toggle in Board Preferences.
-struct PendingCoreBoardsSectionView: View {
+/// No dismiss affordance — per-timeframe disable lives in Board
+/// Preferences (Profile → Board Preferences → Recurring section).
+///
+/// File kept at the original path so the Xcode project doesn't need
+/// regeneration. Old type name is preserved via a typealias at the
+/// bottom for any consumer still using it during the migration window.
+struct CoreBoardsSectionView: View {
 
     // MARK: - Inputs
 
-    /// Pending entries from `PendingRecurringBoardsViewModel.pending`.
-    /// Pre-sorted longest-first.
-    let pending: [PendingRecurringBoard]
+    /// One slot per enabled recurring timeframe, daily-first.
+    let slots: [CoreBoardSlot]
 
-    /// Which surface this section is mounted on.
-    let variant: PendingCoreBoardsSectionVariant
+    /// Invoked when the user taps Create on a not-yet row.
+    let onCreate: (CoreBoardSlot) -> Void
 
-    /// Invoked when the user taps Create on a row. Parent decides what
-    /// to do — the Boards-tab consumer flips a tab-binding (cross-tab
-    /// handoff into the Create tab); the Create-tab consumer enters
-    /// wizard mode in place. Hoisting the behavior here lets the
-    /// create-tab path skip a useless tab-bounce.
-    let onCreate: (PendingRecurringBoard) -> Void
+    /// Optional — invoked when the user taps Play on a done row.
+    /// Omit on the Create-tab caller (Create surface doesn't navigate
+    /// to play — that's the Boards tab's job).
+    var onPlay: ((String) -> Void)? = nil
 
-    /// Optional — invoked when the user taps the new `Browse →` button
-    /// to open the per-timeframe core-board browser. Omit on the
-    /// Create-tab variant (no browser entry point from there).
-    var onBrowse: ((PendingRecurringBoard) -> Void)? = nil
-
-    // MARK: - Local state
-
-    @State private var dismissedKeys: Set<String> = []
-
-    // MARK: - Derived
-
-    private var visible: [PendingRecurringBoard] {
-        pending.filter { !dismissedKeys.contains(key(for: $0)) }
-    }
-
-    private func key(for entry: PendingRecurringBoard) -> String {
-        "\(entry.timeframe.rawValue)::\(entry.startDate)"
-    }
-
-    private var heading: String {
-        switch variant {
-        case .createTab: return "Get started with today's boards"
-        case .boardsTab: return "Pending boards"
-        }
-    }
+    /// Optional — invoked when the user taps Browse → on a row.
+    /// Opens the per-timeframe Core Board Browser. Omit on the
+    /// Create-tab caller for the same reason as `onPlay`.
+    var onBrowse: ((Timeframe) -> Void)? = nil
 
     // MARK: - Body
 
     var body: some View {
-        if !visible.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(heading)
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .textCase(.uppercase)
+        if slots.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Core boards")
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
                     .padding(.horizontal, 4)
 
-                // `id: \.element.timeframe` rather than `\.startDate`:
-                // each Timeframe enum case appears at most once per
-                // detection pass, but on Jan 1 yearly/monthly/daily
-                // share the same start date. Keying by timeframe
-                // prevents the multi-row collision regression.
-                ForEach(Array(visible.enumerated()), id: \.element.timeframe) { _, entry in
-                    card(for: entry)
+                VStack(spacing: 10) {
+                    ForEach(slots) { slot in
+                        slotCard(slot)
+                    }
                 }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Recurring boards to create")
         }
     }
 
-    // MARK: - Card
+    // MARK: - Per-row card
 
-    private func card(for entry: PendingRecurringBoard) -> some View {
-        // Compact card layout (Phase 6.1d follow-up): tightened padding +
-        // smaller icon/font/button than the initial 6.1d sizing so 4 cards
-        // (Jan 1 case) take roughly half the viewport instead of dominating
-        // it. Goal is "visually distinct + scannable" without reverting to
-        // the original 6.1b banner's caption-sized treatment.
+    @ViewBuilder
+    private func slotCard(_ slot: CoreBoardSlot) -> some View {
+        let isDone = slot.currentBoard != nil
+
         HStack(spacing: 10) {
-            Image(systemName: icon(for: entry.timeframe))
+            Image(systemName: icon(for: slot.timeframe))
                 .font(.system(size: 18))
                 .foregroundStyle(.tint)
                 .frame(width: 28)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(label(for: entry.timeframe))
+                Text(label(for: slot.timeframe))
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                Text(entry.suggestedName)
+                Text(slot.windowLabel)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 4)
 
-            Button("Create") {
-                onCreate(entry)
+            statusPill(isDone: isDone)
+
+            if isDone, let board = slot.currentBoard {
+                Button("Play") {
+                    onPlay?(board.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.accentColor)
+                .disabled(onPlay == nil)
+                .accessibilityLabel("Open \(label(for: slot.timeframe)) board")
+            } else {
+                Button("Create") {
+                    onCreate(slot)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityLabel("Create \(label(for: slot.timeframe)) board")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .accessibilityLabel("Create \(label(for: entry.timeframe)) board")
 
             if let onBrowse = onBrowse {
                 Button("Browse →") {
-                    onBrowse(entry)
+                    onBrowse(slot.timeframe)
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
-                .accessibilityLabel("Browse \(label(for: entry.timeframe)) core boards")
+                .accessibilityLabel("Browse \(label(for: slot.timeframe)) core boards")
             }
-
-            Button {
-                dismissedKeys.insert(key(for: entry))
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss \(label(for: entry.timeframe)) prompt for this session")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -160,6 +124,27 @@ struct PendingCoreBoardsSectionView: View {
         )
     }
 
+    @ViewBuilder
+    private func statusPill(isDone: Bool) -> some View {
+        Text(isDone ? "DONE" : "NOT YET")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(isDone ? Color(red: 0.122, green: 0.435, blue: 0.247) : .secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(isDone
+                        ? Color(red: 0.122, green: 0.435, blue: 0.247).opacity(0.15)
+                        : Color(.tertiarySystemBackground))
+            )
+            .overlay(
+                Capsule().strokeBorder(
+                    isDone ? Color.clear : Color(.separator),
+                    lineWidth: 1
+                )
+            )
+    }
+
     // MARK: - Display helpers
 
     private func icon(for timeframe: Timeframe) -> String {
@@ -168,7 +153,7 @@ struct PendingCoreBoardsSectionView: View {
         case .monthly: return "calendar"
         case .weekly:  return "calendar.day.timeline.left"
         case .daily:   return "sun.max"
-        case .custom:  return "pin" // never reached in Phase 1
+        case .custom:  return "pin" // unreachable
         }
     }
 
@@ -183,54 +168,7 @@ struct PendingCoreBoardsSectionView: View {
     }
 }
 
-#Preview("Multiple entries (Jan 1)") {
-    ScrollView {
-        PendingCoreBoardsSectionView(
-            pending: [
-                PendingRecurringBoard(
-                    timeframe: .yearly,
-                    startDate: "2026-01-01T00:00:00.000",
-                    endDate: "2026-12-31T23:59:59.999",
-                    suggestedName: "2026"
-                ),
-                PendingRecurringBoard(
-                    timeframe: .monthly,
-                    startDate: "2026-01-01T00:00:00.000",
-                    endDate: "2026-01-31T23:59:59.999",
-                    suggestedName: "January 2026"
-                ),
-                PendingRecurringBoard(
-                    timeframe: .weekly,
-                    startDate: "2025-12-29T00:00:00.000",
-                    endDate: "2026-01-04T23:59:59.999",
-                    suggestedName: "Week of Dec 29 – Jan 4"
-                ),
-                PendingRecurringBoard(
-                    timeframe: .daily,
-                    startDate: "2026-01-01T00:00:00.000",
-                    endDate: "2026-01-01T23:59:59.999",
-                    suggestedName: "Jan 1, 2026"
-                ),
-            ],
-            variant: .boardsTab,
-            onCreate: { _ in }
-        )
-        .padding()
-    }
-}
-
-#Preview("Single Daily entry") {
-    PendingCoreBoardsSectionView(
-        pending: [
-            PendingRecurringBoard(
-                timeframe: .daily,
-                startDate: "2026-05-04T00:00:00.000",
-                endDate: "2026-05-04T23:59:59.999",
-                suggestedName: "May 4, 2026"
-            ),
-        ],
-        variant: .createTab,
-        onCreate: { _ in }
-    )
-    .padding()
-}
+/// Back-compat typealias for any consumer that still references the
+/// old type name during the migration window. Safe to drop once all
+/// callers use `CoreBoardsSectionView` directly.
+typealias PendingCoreBoardsSectionView = CoreBoardsSectionView

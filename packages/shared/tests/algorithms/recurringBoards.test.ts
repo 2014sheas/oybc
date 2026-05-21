@@ -1,6 +1,7 @@
 import {
   PARENT_TIMEFRAMES,
   findPendingRecurringBoards,
+  getCoreBoardSlots,
   getParentBoards,
 } from '../../src/algorithms/recurringBoards';
 import { getTimeframeBoundaries } from '../../src/algorithms/calendarBoundaries';
@@ -445,5 +446,93 @@ describe('getParentBoards', () => {
   it('does not return sibling-timeframe boards (e.g., another daily)', () => {
     const sibling = boardForWindow(Timeframe.DAILY, may1, { id: 'sibling' });
     expect(getParentBoards(Timeframe.DAILY, [sibling], may1)).toEqual([]);
+  });
+});
+
+// ─── getCoreBoardSlots ────────────────────────────────────────────────────────
+
+describe('getCoreBoardSlots', () => {
+  const NOW = new Date(2026, 4, 18, 12, 0, 0); // Mon May 18, 2026 noon
+
+  it('returns one slot per enabled timeframe, daily-first', () => {
+    const slots = getCoreBoardSlots([], PREFS_ALL_ENABLED, NOW);
+    expect(slots).toHaveLength(4);
+    expect(slots.map((s) => s.timeframe)).toEqual([
+      Timeframe.DAILY,
+      Timeframe.WEEKLY,
+      Timeframe.MONTHLY,
+      Timeframe.YEARLY,
+    ]);
+  });
+
+  it('returns empty array when no recurring timeframes are enabled', () => {
+    expect(getCoreBoardSlots([], PREFS_NONE_ENABLED, NOW)).toEqual([]);
+  });
+
+  it('respects per-timeframe disable — only enabled timeframes appear', () => {
+    const dailyOnly: UserPreferences = {
+      ...DEFAULT_USER_PREFERENCES,
+      recurringDailyEnabled: true,
+      recurringWeeklyEnabled: false,
+      recurringMonthlyEnabled: false,
+      recurringYearlyEnabled: false,
+    };
+    const slots = getCoreBoardSlots([], dailyOnly, NOW);
+    expect(slots).toHaveLength(1);
+    expect(slots[0].timeframe).toBe(Timeframe.DAILY);
+  });
+
+  it('populates currentBoard when an isCore board matches the window', () => {
+    const todayCore = boardForWindow(Timeframe.DAILY, NOW, {
+      id: 'core-daily',
+      isCore: true,
+    });
+    const slots = getCoreBoardSlots([todayCore], PREFS_ALL_ENABLED, NOW);
+    const daily = slots.find((s) => s.timeframe === Timeframe.DAILY);
+    expect(daily?.currentBoard?.id).toBe('core-daily');
+    // The other 3 enabled timeframes still appear but unfilled.
+    expect(slots.filter((s) => s.currentBoard === null)).toHaveLength(3);
+  });
+
+  it('ignores non-core boards even when the window matches', () => {
+    // A user manually created today's daily without the banner — that's
+    // a non-core board. It must NOT satisfy the daily slot.
+    const todayManual = boardForWindow(Timeframe.DAILY, NOW, {
+      id: 'manual-daily',
+      isCore: false,
+    });
+    const slots = getCoreBoardSlots([todayManual], PREFS_ALL_ENABLED, NOW);
+    const daily = slots.find((s) => s.timeframe === Timeframe.DAILY);
+    expect(daily?.currentBoard).toBeNull();
+  });
+
+  it('ignores soft-deleted core boards', () => {
+    const deletedCore = boardForWindow(Timeframe.DAILY, NOW, {
+      id: 'deleted-daily',
+      isCore: true,
+      isDeleted: true,
+    });
+    const slots = getCoreBoardSlots([deletedCore], PREFS_ALL_ENABLED, NOW);
+    const daily = slots.find((s) => s.timeframe === Timeframe.DAILY);
+    expect(daily?.currentBoard).toBeNull();
+  });
+
+  it('does not match a core board from a previous window', () => {
+    const lastWeek = new Date(2026, 4, 11, 12, 0, 0); // Mon May 11
+    const lastWeeksCore = boardForWindow(Timeframe.WEEKLY, lastWeek, {
+      id: 'last-week-core',
+      isCore: true,
+    });
+    const slots = getCoreBoardSlots([lastWeeksCore], PREFS_ALL_ENABLED, NOW);
+    const weekly = slots.find((s) => s.timeframe === Timeframe.WEEKLY);
+    expect(weekly?.currentBoard).toBeNull();
+  });
+
+  it('windowLabel matches formatTimeframeLabel for the current window', () => {
+    const slots = getCoreBoardSlots([], PREFS_ALL_ENABLED, NOW);
+    const monthly = slots.find((s) => s.timeframe === Timeframe.MONTHLY);
+    expect(monthly?.windowLabel).toBe('May 2026');
+    const yearly = slots.find((s) => s.timeframe === Timeframe.YEARLY);
+    expect(yearly?.windowLabel).toBe('2026');
   });
 });

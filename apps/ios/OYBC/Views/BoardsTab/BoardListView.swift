@@ -42,6 +42,12 @@ struct BoardListView: View {
     /// can leave it nil (the browser entry hides itself in that case).
     var onBrowseTimeframe: ((Timeframe) -> Void)?
 
+    /// Tap target for the Core Boards section's Play button on a
+    /// "done" slot. Pushes the board id onto `boardsPath` so the user
+    /// lands on `BoardPlayView` via the same path-based navigation
+    /// the main list uses. Optional for the playground / #Preview path.
+    var onPlayBoard: ((String) -> Void)?
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
@@ -102,25 +108,30 @@ struct BoardListView: View {
 
             if let loadError {
                 errorView(message: loadError)
-            } else if filteredBoards.isEmpty && pendingRecurringVM.pending.isEmpty {
-                // True empty state: no boards, no pending core windows. Big
-                // ContentUnavailableView reads as expected.
+            } else if filteredBoards.isEmpty && pendingRecurringVM.slots.isEmpty {
+                // True empty state: no boards, no enabled recurring
+                // timeframes. Big ContentUnavailableView reads as expected.
                 emptyStateView
             } else if filteredBoards.isEmpty {
-                // No boards but we have pending core boards to surface — let
+                // No boards but we have core-board slots to surface — let
                 // the section be the entire content in a ScrollView so the
                 // user can act on it without an awkward "no boards" graphic
                 // below. `.frame(maxHeight: .infinity)` ensures the
                 // ScrollView fills the remaining vertical space below the
                 // filter picker; without it, on small-screen devices with
-                // 4 pending cards the last card can be obscured by the tab
+                // 4 enabled slots the last card can be obscured by the tab
                 // bar / home indicator with no way to scroll to it.
                 ScrollView {
-                    PendingCoreBoardsSectionView(
-                        pending: pendingRecurringVM.pending,
-                        variant: .boardsTab,
-                        onCreate: { entry in
-                            onCreateRecurring?(entry.timeframe)
+                    CoreBoardsSectionView(
+                        slots: pendingRecurringVM.slots,
+                        onCreate: { slot in
+                            onCreateRecurring?(slot.timeframe)
+                        },
+                        onPlay: { boardId in
+                            onPlayBoard?(boardId)
+                        },
+                        onBrowse: { timeframe in
+                            onBrowseTimeframe?(timeframe)
                         }
                     )
                     .padding(.horizontal)
@@ -179,15 +190,17 @@ struct BoardListView: View {
             // first board row. `.listRowBackground(Color.clear)` keeps the
             // section's tinted card backgrounds from being washed out by
             // the List's default row background.
-            if !pendingRecurringVM.pending.isEmpty {
-                PendingCoreBoardsSectionView(
-                    pending: pendingRecurringVM.pending,
-                    variant: .boardsTab,
-                    onCreate: { entry in
-                        onCreateRecurring?(entry.timeframe)
+            if !pendingRecurringVM.slots.isEmpty {
+                CoreBoardsSectionView(
+                    slots: pendingRecurringVM.slots,
+                    onCreate: { slot in
+                        onCreateRecurring?(slot.timeframe)
                     },
-                    onBrowse: { entry in
-                        onBrowseTimeframe?(entry.timeframe)
+                    onPlay: { boardId in
+                        onPlayBoard?(boardId)
+                    },
+                    onBrowse: { timeframe in
+                        onBrowseTimeframe?(timeframe)
                     }
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

@@ -152,35 +152,33 @@ struct CreateHubView: View {
 
     @ViewBuilder
     private var hubContent: some View {
-        let hasPendingCoreBoards = !pendingRecurringVM.pending.isEmpty
+        // Demote the custom-board CTA only when at least one core-board
+        // slot needs creation today — the persistent Core Boards section
+        // is the headline action in that case. When every enabled slot
+        // is already done (or no recurring timeframes are enabled at
+        // all), the CTA stays primary so the user has an obvious next
+        // action.
+        let hasUncreatedCoreBoards = pendingRecurringVM.slots.contains { $0.currentBoard == nil }
         VStack(alignment: .leading, spacing: 20) {
             Text("Create")
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            // Phase 6.1d: when there are pending core boards (daily /
-            // weekly / monthly / yearly windows the user hasn't created
-            // yet), they become the headline action. The
-            // `CreateHubBoardCTAView` demotes to its secondary "custom
-            // timeframe" variant below. When `hasPendingCoreBoards` is
-            // false (everything created, or all 4 prefs disabled), the
-            // section short-circuits to nil and the existing primary CTA
-            // takes the headline slot — matching pre-6.1d behavior for
-            // back-compat.
-            PendingCoreBoardsSectionView(
-                pending: pendingRecurringVM.pending,
-                variant: .createTab,
-                onCreate: { entry in
+            CoreBoardsSectionView(
+                slots: pendingRecurringVM.slots,
+                onCreate: { slot in
                     // Already on the Create tab — flip mode directly
                     // rather than bouncing through MainTabView's
                     // pendingRecurringTimeframe binding.
-                    vm.enterRecurringWizard(timeframe: entry.timeframe)
+                    vm.enterRecurringWizard(timeframe: slot.timeframe)
                 }
+                // No onPlay / onBrowse on the Create-tab caller — the
+                // Boards tab owns the play + browse affordances.
             )
 
             CreateHubBoardCTAView(
                 onTap: { vm.enterFreshWizard() },
-                variant: hasPendingCoreBoards ? .secondary : .primary
+                variant: hasUncreatedCoreBoards ? .secondary : .primary
             )
 
             if !vm.drafts.isEmpty {

@@ -94,6 +94,12 @@ struct MainTabView: View {
                         // Phase B in-tab push: open the per-timeframe
                         // core-board browser on the Boards-tab stack.
                         boardsPath.append(CoreBrowserRoute(timeframe: timeframe))
+                    },
+                    onPlayBoard: { boardId in
+                        // Persistent Core Boards section's Play button —
+                        // push the board id onto the same Boards-tab path
+                        // that NavigationLink-based rows use.
+                        boardsPath.append(boardId)
                     }
                 )
                 .navigationDestination(for: CoreBrowserRoute.self) { route in

@@ -61,6 +61,29 @@
   margin-top: 2px;
 }
 
+/* Status pill — small chip indicating the current-window state. */
+.statusPill {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.statusPillDone {
+  background: rgba(31, 111, 63, 0.15);
+  color: #1f6f3f;
+}
+
+.statusPillNotYet {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
 .actions {
   display: flex;
   flex-direction: column;
@@ -86,6 +109,32 @@
   opacity: 0.9;
 }
 
+/* Play button: secondary action on done rows. Distinct from Create
+ * (the not-yet primary) so visiting users don't confuse "open the
+ * existing board" with "create a new one". */
+.playButton {
+  background: transparent;
+  color: var(--active-bg);
+  border: 1px solid var(--active-bg);
+  border-radius: 8px;
+  padding: 8px 17px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 88px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.playButton:hover:not(:disabled) {
+  background: var(--active-bg);
+  color: var(--active-text);
+}
+
+.playButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .browseButton {
   background: transparent;
   color: var(--active-bg);
@@ -97,19 +146,5 @@
 }
 
 .browseButton:hover {
-  text-decoration: underline;
-}
-
-.dismissButton {
-  background: transparent;
-  color: var(--text-secondary);
-  border: 0;
-  padding: 4px 6px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.dismissButton:hover {
-  color: var(--text-primary);
   text-decoration: underline;
 }

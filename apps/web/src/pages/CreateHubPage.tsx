@@ -9,11 +9,11 @@ import { useDrafts } from './createHub/useDrafts';
 import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframeParam';
 import { useEditTemplateParam } from './createHub/useEditTemplateParam';
 import { useResumableDraft } from './createHub/useResumableDraft';
-import { usePendingRecurringBoards } from '../hooks';
+import { useCoreBoardSlots } from '../hooks';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
-import { PendingCoreBoardsSection } from '../components/PendingCoreBoardsSection';
+import { CoreBoardsSection } from '../components/CoreBoardsSection';
 import type { BoardWizardDraft } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
 
@@ -81,7 +81,7 @@ export function CreateHubPage({
 }: CreateHubPageProps): React.ReactElement {
   const [mode, setMode] = useState<HubMode>({ kind: 'hub' });
   const drafts = useDrafts(userId);
-  const pendingRecurring = usePendingRecurringBoards(userId);
+  const coreBoardSlots = useCoreBoardSlots(userId);
   const resolveDraft = useResumableDraft();
 
   useRecurringTimeframeParam(
@@ -150,13 +150,14 @@ export function CreateHubPage({
     );
   }
 
-  // Phase 6.1d: when there are pending core boards, they become the
-  // headline action and the "Start a new board" custom CTA is demoted to
-  // a smaller secondary affordance. When the section short-circuits to
-  // null (all 4 windows already covered, or all 4 prefs disabled), the
-  // custom CTA stays as the primary headline — back-compat for users
-  // who've created everything for the current period.
-  const hasPendingCoreBoards = pendingRecurring.length > 0;
+  // Demote the custom-board CTA to "secondary" only when at least one
+  // core-board slot needs creation today — the persistent Core Boards
+  // section is the headline action in that case. When every enabled
+  // slot is already done (or none are enabled), the custom CTA stays
+  // primary so the user has an obvious next action.
+  const hasUncreatedCoreBoards = coreBoardSlots.some(
+    (s) => s.currentBoard === null,
+  );
 
   return (
     <div className={styles.shell}>
@@ -164,21 +165,21 @@ export function CreateHubPage({
         <h1 className={styles.title}>Create</h1>
       </header>
 
-      <PendingCoreBoardsSection
-        pending={pendingRecurring}
-        variant="create-tab"
-        onCreate={(entry) =>
-          // Skip the URL round-trip used by the Boards-tab variant — we're
-          // already on /create, so just flip mode directly. Same end state
-          // as consuming the URL param via the useRecurringTimeframeParam
-          // hook above.
-          setMode({ kind: 'wizard', prefilledRecurringTimeframe: entry.timeframe })
+      <CoreBoardsSection
+        slots={coreBoardSlots}
+        onCreate={(slot) =>
+          // Skip the URL round-trip the Boards-tab caller uses — we're
+          // already on /create, so flip mode directly. Same end state as
+          // consuming the URL param via useRecurringTimeframeParam above.
+          setMode({ kind: 'wizard', prefilledRecurringTimeframe: slot.timeframe })
         }
+        // No onPlay / onBrowse on the Create-tab caller — the Boards
+        // tab is the home for browsing and playing existing boards.
       />
 
       <CreateHubBoardCTA
         onClick={handleStartBoard}
-        variant={hasPendingCoreBoards ? 'secondary' : 'primary'}
+        variant={hasUncreatedCoreBoards ? 'secondary' : 'primary'}
       />
 
       {drafts.length > 0 && (
