@@ -29,7 +29,13 @@ export function CoreBoardWindowPage(): React.ReactElement {
   const { user } = useAuth();
   const [preferences] = usePreferences();
 
-  const isValid = !!rawTf && VALID.has(rawTf) && !!rawDate;
+  const routeDateOnly = rawDate?.slice(0, 10);
+  const isValidDate =
+    !!routeDateOnly &&
+    /^\d{4}-\d{2}-\d{2}$/.test(routeDateOnly) &&
+    !Number.isNaN(new Date(`${routeDateOnly}T12:00:00`).getTime());
+
+  const isValid = !!rawTf && VALID.has(rawTf) && isValidDate;
   const timeframe = (isValid ? rawTf : Timeframe.DAILY) as Timeframe;
 
   const now = useMemo(() => new Date(), []);
@@ -40,9 +46,9 @@ export function CoreBoardWindowPage(): React.ReactElement {
     // the calendar day backwards for users west of UTC (e.g. LA sees
     // "2026-05-21" as May 20 @ 17:00 PDT). Appending T12:00:00 forces a
     // local parse and noon safely avoids any DST-midnight edge cases.
-    const seed = rawDate ? new Date(`${rawDate.slice(0, 10)}T12:00:00`) : now;
+    const seed = routeDateOnly ? new Date(`${routeDateOnly}T12:00:00`) : now;
     return getTimeframeBoundaries(timeframe, seed, preferences.weekStartDay);
-  }, [rawDate, timeframe, preferences.weekStartDay, now]);
+  }, [routeDateOnly, timeframe, preferences.weekStartDay, now]);
 
   const board = useCoreBoardForWindow(user?.id, timeframe, windowStart);
 
