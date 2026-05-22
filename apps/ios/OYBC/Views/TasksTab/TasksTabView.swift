@@ -51,6 +51,12 @@ struct TasksTabView: View {
     /// sheet off this single item guarantees the impact is available when
     /// the sheet renders.
     @State private var pendingDelete: PendingTaskDeletion?
+    /// Monotonic token for in-flight impact computations. Each
+    /// `prepareDelete(for:)` bumps it; the completion only assigns
+    /// `pendingDelete` if its token is still current, so a slow earlier
+    /// request can't overwrite a newer one (rapid swipe-delete on
+    /// different rows) and re-introduce the content-swap-under-sheet bug.
+    @State private var prepareDeleteToken = 0
     @State private var quickActionError: String?
 
     var body: some View {
@@ -206,16 +212,22 @@ struct TasksTabView: View {
     private func prepareDelete(for task: Task) {
         quickActionError = nil
         let id = task.id
+        prepareDeleteToken += 1
+        let token = prepareDeleteToken
         _Concurrency.Task {
             do {
                 let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
                 }.value
                 await MainActor.run {
+                    // A newer prepareDelete superseded this one — drop the
+                    // stale result so it can't present the wrong task.
+                    guard token == prepareDeleteToken else { return }
                     pendingDelete = PendingTaskDeletion(task: task, impact: impact)
                 }
             } catch {
                 await MainActor.run {
+                    guard token == prepareDeleteToken else { return }
                     quickActionError = "Failed to compute delete impact: \(error.localizedDescription)"
                 }
             }
@@ -235,6 +247,12 @@ struct TasksTabView: View {
             }
         } catch {
             await MainActor.run {
+                // Dismiss the confirm sheet: it disables its controls and
+                // shows "Deleting…" after the tap, so leaving it up on
+                // failure strands the user with frozen buttons while the
+                // error renders behind it. Dropping the sheet reveals the
+                // error text in the parent view.
+                pendingDelete = nil
                 quickActionError = "Failed to delete task: \(error.localizedDescription)"
             }
         }
