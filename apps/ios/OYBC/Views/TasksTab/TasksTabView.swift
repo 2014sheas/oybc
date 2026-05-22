@@ -33,15 +33,30 @@ struct TasksTabView: View {
     @State private var vm = TasksTabViewModel()
     @State private var showNewTaskSheet = false
 
+    /// Task + its precomputed deletion impact, bundled so the confirm
+    /// sheet is driven by a single Identifiable. Presenting off two
+    /// separate `@State` (the task plus a companion impact) let the sheet
+    /// render before the impact landed — a blank modal that then crashed.
+    private struct PendingTaskDeletion: Identifiable {
+        let task: Task
+        let impact: AppDatabase.TaskDeletionImpact
+        var id: String { task.id }
+    }
+
     // ── Quick-action state ────────────────────────────────────────────
     /// Task currently being edited via swipe-Edit. `.sheet(item:)` opens
     /// `EditTaskSheet` when this is non-nil.
     @State private var editingTask: Task?
-    /// Task pending delete confirm. Set once the impact computation
-    /// finishes so the confirm sheet can render the affected-boards
-    /// list synchronously.
-    @State private var deletingTask: Task?
-    @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
+    /// Set once the impact computation finishes; presenting the confirm
+    /// sheet off this single item guarantees the impact is available when
+    /// the sheet renders.
+    @State private var pendingDelete: PendingTaskDeletion?
+    /// Monotonic token for in-flight impact computations. Each
+    /// `prepareDelete(for:)` bumps it; the completion only assigns
+    /// `pendingDelete` if its token is still current, so a slow earlier
+    /// request can't overwrite a newer one (rapid swipe-delete on
+    /// different rows) and re-introduce the content-swap-under-sheet bug.
+    @State private var prepareDeleteToken = 0
     @State private var quickActionError: String?
 
     var body: some View {
@@ -154,20 +169,17 @@ struct TasksTabView: View {
                 onCancel: { editingTask = nil }
             )
         }
-        .sheet(item: $deletingTask) { task in
-            if let impact = deleteImpact {
-                TaskDeleteConfirmView(
-                    task: task,
-                    impact: impact,
-                    onConfirm: {
-                        _Concurrency.Task { await performDelete(taskId: task.id) }
-                    },
-                    onCancel: {
-                        deletingTask = nil
-                        deleteImpact = nil
-                    }
-                )
-            }
+        .sheet(item: $pendingDelete) { pending in
+            TaskDeleteConfirmView(
+                task: pending.task,
+                impact: pending.impact,
+                onConfirm: {
+                    _Concurrency.Task { await performDelete(taskId: pending.task.id) }
+                },
+                onCancel: {
+                    pendingDelete = nil
+                }
+            )
         }
         .navigationDestination(for: String.self) { taskId in
             TaskDetailView(
@@ -200,17 +212,22 @@ struct TasksTabView: View {
     private func prepareDelete(for task: Task) {
         quickActionError = nil
         let id = task.id
+        prepareDeleteToken += 1
+        let token = prepareDeleteToken
         _Concurrency.Task {
             do {
                 let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
                 }.value
                 await MainActor.run {
-                    deleteImpact = impact
-                    deletingTask = task
+                    // A newer prepareDelete superseded this one — drop the
+                    // stale result so it can't present the wrong task.
+                    guard token == prepareDeleteToken else { return }
+                    pendingDelete = PendingTaskDeletion(task: task, impact: impact)
                 }
             } catch {
                 await MainActor.run {
+                    guard token == prepareDeleteToken else { return }
                     quickActionError = "Failed to compute delete impact: \(error.localizedDescription)"
                 }
             }
@@ -224,13 +241,18 @@ struct TasksTabView: View {
                 try AppDatabase.shared.deleteTaskWithCascade(taskId: taskId)
             }.value
             await MainActor.run {
-                deletingTask = nil
-                deleteImpact = nil
+                pendingDelete = nil
                 library.loadLibrary(userId: userId)
                 vm.reloadAsync()
             }
         } catch {
             await MainActor.run {
+                // Dismiss the confirm sheet: it disables its controls and
+                // shows "Deleting…" after the tap, so leaving it up on
+                // failure strands the user with frozen buttons while the
+                // error renders behind it. Dropping the sheet reveals the
+                // error text in the parent view.
+                pendingDelete = nil
                 quickActionError = "Failed to delete task: \(error.localizedDescription)"
             }
         }
