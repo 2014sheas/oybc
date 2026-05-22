@@ -24,14 +24,21 @@ final class CreateHubViewModel {
         case hub
         case wizardFresh
         case wizardResume(boardId: String)
-        /// Wizard launched from the Recurring Boards banner with a
-        /// pre-selected timeframe. The setup step locks the timeframe
-        /// field; everything else behaves like `wizardFresh`. When
-        /// `targetWindowDate` is non-nil (Phase B — core-board
-        /// browser pre-spawn), the wizard's `computedBoundaries`
-        /// resolve against that date instead of "now", so the
-        /// persisted window matches the picked one.
-        case wizardRecurring(timeframe: Timeframe, targetWindowDate: Date?)
+        /// Wizard launched for a specific timeframe *window* — a one-off
+        /// **core** board (Boards-tab banner / core-board browser /
+        /// Create-hub Core Boards row). The timeframe is fixed to the
+        /// window and the title auto-set; the setup step collapses to
+        /// size + center (#70). `isCore` is true, `isRecurring` false —
+        /// core boards are NOT recurring templates (#71 decoupled them).
+        /// When `targetWindowDate` is non-nil (Phase B — core-board
+        /// browser pre-spawn), the wizard's `computedBoundaries` resolve
+        /// against that date instead of "now".
+        case wizardCoreBoard(timeframe: Timeframe, targetWindowDate: Date?)
+        /// Issue #71 — wizard launched from the "Create a recurring
+        /// board" CTA. `isRecurring` is forced ON at entry; the user
+        /// picks timeframe/size/center + pool and Save creates a
+        /// template + spawns the first board.
+        case wizardRecurringTemplate
         /// Wizard launched in template-edit mode (Profile → Recurring
         /// templates → Edit). The wizard hydrates from the template
         /// and Save updates the template instead of creating a board.
@@ -67,9 +74,17 @@ final class CreateHubViewModel {
         mode = .wizardFresh
     }
 
-    func enterRecurringWizard(timeframe: Timeframe, targetWindowDate: Date? = nil) {
+    /// Enter the wizard for a one-off core board scoped to a timeframe
+    /// window (banner / core-board browser / Create-hub Core Boards row).
+    func enterCoreBoardWizard(timeframe: Timeframe, targetWindowDate: Date? = nil) {
         resumeDraft = nil
-        mode = .wizardRecurring(timeframe: timeframe, targetWindowDate: targetWindowDate)
+        mode = .wizardCoreBoard(timeframe: timeframe, targetWindowDate: targetWindowDate)
+    }
+
+    /// Issue #71 — enter the wizard to create a recurring-board template.
+    func enterRecurringTemplateWizard() {
+        resumeDraft = nil
+        mode = .wizardRecurringTemplate
     }
 
     // MARK: - Async loaders

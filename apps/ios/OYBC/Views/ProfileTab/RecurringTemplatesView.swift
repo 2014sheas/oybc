@@ -101,7 +101,7 @@ struct RecurringTemplatesView: View {
                 .foregroundColor(.secondary)
             Text("No recurring templates yet.")
                 .font(.headline)
-            Text("To create one, head to the **Create** tab → **Start a new board** → toggle **\"Make recurring\"** in the Setup step.")
+            Text("To create one, head to the **Create** tab → tap **\"Create a recurring board\"**.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

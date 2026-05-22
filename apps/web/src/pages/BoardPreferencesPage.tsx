@@ -134,21 +134,6 @@ export function BoardPreferencesPage(): React.ReactElement {
           </select>
         </div>
 
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-randomize">
-            Randomize tasks by default
-          </label>
-          <label className={styles.toggleSwitch}>
-            <input
-              id="pref-randomize"
-              type="checkbox"
-              checked={prefs.defaultRandomize}
-              onChange={(e) => set('defaultRandomize', e.target.checked)}
-            />
-            <span className={styles.toggleTrack} />
-          </label>
-        </div>
-
         <div className={styles.stackedRow}>
           <label className={styles.rowLabel} htmlFor="pref-center-custom-name">
             Default custom center name

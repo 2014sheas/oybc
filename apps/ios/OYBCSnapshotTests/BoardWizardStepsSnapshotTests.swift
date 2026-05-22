@@ -41,12 +41,11 @@ final class BoardWizardStepsSnapshotTests: XCTestCase {
         )
     }
 
-    /// Setup step with the user-toggled recurring path (NOT a banner
-    /// deep-link). Verifies the cadence card "Every week / Starting:
-    /// Week of …" renders and Custom is absent from the timeframe
-    /// selector. Closes the gap left by `e3e2b63` — the banner-locked
-    /// variant `RecurringBoardsSnapshotTests/testSetupStepLockedMonthlyTimeframe`
-    /// covered the deep-link path only.
+    /// Setup step in recurring-template mode (#71 — the "Create a
+    /// recurring board" entry). Verifies the cadence card "Every week /
+    /// Starting: Week of …" renders and Custom is absent from the
+    /// timeframe selector. The core-board variant is covered by
+    /// `RecurringBoardsSnapshotTests/testSetupStepCoreBoard`.
     func testSetupStepRecurring() {
         let controller = SnapshotFixtures.makeWizardController(stage: .setupRecurring)
         let view = BoardWizardSetupStepView(

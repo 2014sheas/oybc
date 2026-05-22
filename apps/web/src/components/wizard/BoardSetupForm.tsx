@@ -53,11 +53,6 @@ export interface BoardSetupFormProps {
 
   timeframe: Timeframe;
   onTimeframeChange: (t: Timeframe) => void;
-  /** When true, the timeframe is rendered as a read-only chip (no
-   *  segmented selector). Used by the recurring-banner flow (Phase
-   *  6.1) so the user can't accidentally pick a different timeframe
-   *  than the banner promised. */
-  timeframeLocked?: boolean;
 
   customStartDate: string;
   onCustomStartDateChange: (d: string) => void;
@@ -69,15 +64,18 @@ export interface BoardSetupFormProps {
   centerCustomName: string;
   onCenterCustomNameChange: (n: string) => void;
 
-  isRandomized: boolean;
-  onIsRandomizedChange: (b: boolean) => void;
-
-  /** Phase 6.2 — when true, the wizard saves a recurring template
-   *  (and immediately spawns the current window's board) instead of
-   *  a one-off Board. Toggling hides Custom from the timeframe
-   *  selector (recurring schema rejects it). */
+  /** Phase 6.2 — read-only flag (set at wizard entry, no in-form
+   *  toggle since #71). When true the wizard saves a recurring template;
+   *  the form hides `Timeframe.CUSTOM` and `CenterSquareType.CHOSEN`
+   *  (the recurring schema rejects both) and shows the cadence label. */
   isRecurring: boolean;
-  onIsRecurringChange: (b: boolean) => void;
+
+  /** Issue #70 — when true this is a *core* board for a specific
+   *  timeframe window (launched from the Boards-tab banner / core-board
+   *  browser). The form collapses to only Board size + Center space:
+   *  the title is auto-set from the window label (shown read-only), the
+   *  timeframe is fixed to the window, and there's no recurring option. */
+  isCore: boolean;
 
   weekStartDay: WeekStartDay;
 }
@@ -85,14 +83,23 @@ export interface BoardSetupFormProps {
 /**
  * BoardSetupForm — Pure presentational form for the wizard's Setup step.
  *
- * Renders all configuration controls (name, size, timeframe, custom
- * dates, center type, custom name input, randomize toggle) without
- * owning any state. The wizard controller drives every field via the
- * `on*Change` callbacks.
+ * Renders configuration controls (name, size, timeframe, custom dates,
+ * center type, custom name input) without owning any state. The wizard
+ * controller drives every field via the `on*Change` callbacks.
+ *
+ * Three layouts, gated by the read-only `isCore` / `isRecurring` flags:
+ *   - **Core** (`isCore`): only board size + center, with a read-only
+ *     window caption. Title/timeframe are fixed to the window (#70).
+ *   - **Recurring** (`isRecurring`): name + size + timeframe (no Custom)
+ *     + center, with a cadence label. No "Make recurring" toggle — the
+ *     mode is chosen at the Create hub (#71).
+ *   - **One-off** (default): name + size + timeframe (incl. Custom) +
+ *     center.
  *
  * Center-type options for odd boards include the renamed
  * "Pick one of my board tasks" (formerly "Chosen Task"); the actual
- * task is picked in Step 2.
+ * task is picked in Step 2. Placement is always randomized (#69), so
+ * there's no randomize toggle.
  */
 export function BoardSetupForm({
   name,
@@ -101,7 +108,6 @@ export function BoardSetupForm({
   onSizeChange,
   timeframe,
   onTimeframeChange,
-  timeframeLocked = false,
   customStartDate,
   onCustomStartDateChange,
   customEndDate,
@@ -110,10 +116,8 @@ export function BoardSetupForm({
   onCenterTypeChange,
   centerCustomName,
   onCenterCustomNameChange,
-  isRandomized,
-  onIsRandomizedChange,
   isRecurring,
-  onIsRecurringChange,
+  isCore,
   weekStartDay,
 }: BoardSetupFormProps): React.ReactElement {
   const isOddBoard = size % 2 !== 0;
@@ -132,6 +136,92 @@ export function BoardSetupForm({
   const timeframeLabel = computedBoundaries
     ? formatTimeframeLabel(timeframe, computedBoundaries.startDate)
     : null;
+
+  // Reusable Center-square block — shared by all three layouts.
+  const centerBlock = (
+    <>
+      {isOddBoard && (
+        <div className={styles.fieldGroup}>
+          <label className={styles.label} htmlFor="bw-center-type">
+            Center square
+          </label>
+          <select
+            id="bw-center-type"
+            className={styles.input}
+            value={centerType}
+            onChange={(e) =>
+              onCenterTypeChange(e.target.value as CenterSquareType)
+            }
+          >
+            {visibleCenterTypeOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          {centerType === CenterSquareType.CHOSEN && (
+            <p className={styles.hint}>
+              You'll pick the center in the next step.
+            </p>
+          )}
+        </div>
+      )}
+      {isOddBoard && centerType === CenterSquareType.CUSTOM_FREE && (
+        <div className={styles.fieldGroup}>
+          <label className={styles.label} htmlFor="bw-center-custom-name">
+            Custom center name
+          </label>
+          <input
+            id="bw-center-custom-name"
+            type="text"
+            className={styles.input}
+            value={centerCustomName}
+            onChange={(e) => onCenterCustomNameChange(e.target.value)}
+            placeholder='e.g., "Wild Card"'
+            maxLength={100}
+          />
+        </div>
+      )}
+    </>
+  );
+
+  // Reusable Board-size block — shared by all three layouts.
+  const sizeBlock = (
+    <div className={styles.fieldGroup}>
+      <span className={styles.label}>Board size</span>
+      <div className={styles.segmented}>
+        {SIZE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={`${styles.segmentedButton} ${
+              size === opt.value ? styles.segmentedButtonActive : ""
+            }`}
+            onClick={() => onSizeChange(opt.value)}
+            aria-pressed={size === opt.value}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  // Issue #70 — core boards only configure size + center. The title is
+  // auto-set from the window label (rendered read-only) and the
+  // timeframe is fixed to the window, so neither is a control here.
+  if (isCore) {
+    return (
+      <div className={styles.form}>
+        <div className={styles.dateDisplay}>
+          <span className={styles.dateDisplayLabel}>Core board for</span>
+          <span className={styles.dateDisplayRange}>{name || "this window"}</span>
+        </div>
+        {sizeBlock}
+        {centerBlock}
+      </div>
+    );
+  }
 
   return (
     <div className={styles.form}>
@@ -152,87 +242,26 @@ export function BoardSetupForm({
       </div>
 
       {/* Board size */}
+      {sizeBlock}
+
+      {/* Timeframe */}
       <div className={styles.fieldGroup}>
-        <span className={styles.label}>Board size</span>
+        <span className={styles.label}>Timeframe</span>
         <div className={styles.segmented}>
-          {SIZE_OPTIONS.map((opt) => (
+          {visibleTimeframeOptions.map((opt) => (
             <button
               key={opt.value}
               type="button"
               className={`${styles.segmentedButton} ${
-                size === opt.value ? styles.segmentedButtonActive : ""
+                timeframe === opt.value ? styles.segmentedButtonActive : ""
               }`}
-              onClick={() => onSizeChange(opt.value)}
-              aria-pressed={size === opt.value}
+              onClick={() => onTimeframeChange(opt.value)}
+              aria-pressed={timeframe === opt.value}
             >
               {opt.label}
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Timeframe */}
-      <div className={styles.fieldGroup}>
-        <span className={styles.label}>Timeframe</span>
-        {timeframeLocked ? (
-          <div className={styles.segmented}>
-            {/* Render only the locked timeframe — visually identical to a
-             *  selected segmented button but disabled, with a small hint
-             *  underneath explaining the lock came from the recurring
-             *  banner. Mirrors the iOS prefilled-chip variant. */}
-            <button
-              type="button"
-              className={`${styles.segmentedButton} ${styles.segmentedButtonActive}`}
-              disabled
-              aria-pressed
-            >
-              {TIMEFRAME_OPTIONS.find((o) => o.value === timeframe)?.label ??
-                String(timeframe)}
-            </button>
-          </div>
-        ) : (
-          <div className={styles.segmented}>
-            {visibleTimeframeOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`${styles.segmentedButton} ${
-                  timeframe === opt.value ? styles.segmentedButtonActive : ""
-                }`}
-                onClick={() => onTimeframeChange(opt.value)}
-                aria-pressed={timeframe === opt.value}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {timeframeLocked && (
-          <p className={styles.hint}>
-            Timeframe set from recurring banner. Cancel to pick a different one.
-          </p>
-        )}
-      </div>
-
-      {/* Recurring toggle (Phase 6.2). Rendered between Timeframe and
-          Center cell so the user sees recurrence affect the timeframe
-          options visibly. The pool is always loose-fit — extras become
-          the random subset for each spawn. */}
-      <div className={styles.fieldGroup}>
-        <label className={styles.checkboxRow}>
-          <input
-            type="checkbox"
-            checked={isRecurring}
-            onChange={(e) => onIsRecurringChange(e.target.checked)}
-          />
-          <span>
-            <strong>Make recurring</strong>
-            <span className={styles.checkboxSubtitle}>
-              {" "}
-              — automatically spawn a fresh board each window from a pool.
-            </span>
-          </span>
-        </label>
       </div>
 
       {/* Date display — auto for non-Custom, pickers for Custom.
@@ -282,61 +311,8 @@ export function BoardSetupForm({
         </div>
       )}
 
-      {/* Center square — only for odd boards */}
-      {isOddBoard && (
-        <div className={styles.fieldGroup}>
-          <label className={styles.label} htmlFor="bw-center-type">
-            Center square
-          </label>
-          <select
-            id="bw-center-type"
-            className={styles.input}
-            value={centerType}
-            onChange={(e) =>
-              onCenterTypeChange(e.target.value as CenterSquareType)
-            }
-          >
-            {visibleCenterTypeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          {centerType === CenterSquareType.CHOSEN && (
-            <p className={styles.hint}>
-              You'll pick the center in the next step.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Custom center name */}
-      {isOddBoard && centerType === CenterSquareType.CUSTOM_FREE && (
-        <div className={styles.fieldGroup}>
-          <label className={styles.label} htmlFor="bw-center-custom-name">
-            Custom center name
-          </label>
-          <input
-            id="bw-center-custom-name"
-            type="text"
-            className={styles.input}
-            value={centerCustomName}
-            onChange={(e) => onCenterCustomNameChange(e.target.value)}
-            placeholder='e.g., "Wild Card"'
-            maxLength={100}
-          />
-        </div>
-      )}
-
-      {/* Randomize */}
-      <label className={styles.checkboxRow}>
-        <input
-          type="checkbox"
-          checked={isRandomized}
-          onChange={(e) => onIsRandomizedChange(e.target.checked)}
-        />
-        <span>Randomize task positions on the board</span>
-      </label>
+      {/* Center square + custom name (shared with the core layout) */}
+      {centerBlock}
     </div>
   );
 }

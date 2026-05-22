@@ -79,7 +79,7 @@ struct CreateHubView: View {
                         let date = pendingTargetWindowDate.wrappedValue
                         pendingRecurringTimeframe.wrappedValue = nil
                         pendingTargetWindowDate.wrappedValue = nil
-                        vm.enterRecurringWizard(timeframe: timeframe, targetWindowDate: date)
+                        vm.enterCoreBoardWizard(timeframe: timeframe, targetWindowDate: date)
                         return
                     }
                     // Consume the edit-template deep link, if any.
@@ -94,8 +94,10 @@ struct CreateHubView: View {
             wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: nil)
         case .wizardResume:
             wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: nil)
-        case .wizardRecurring(let timeframe, let targetWindowDate):
+        case .wizardCoreBoard(let timeframe, let targetWindowDate):
             wizard(draft: nil, prefilledRecurringTimeframe: timeframe, targetWindowDate: targetWindowDate, editingTemplate: nil)
+        case .wizardRecurringTemplate:
+            wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: nil, startRecurring: true)
         case .wizardEditTemplate:
             // The mode is set BEFORE `editingTemplate` is set (when
             // hydration is in flight) and AFTER (once loaded). Render
@@ -121,7 +123,8 @@ struct CreateHubView: View {
         draft: (board: Board, boardTasks: [BoardTask])?,
         prefilledRecurringTimeframe: Timeframe?,
         targetWindowDate: Date?,
-        editingTemplate: RecurringBoardTemplate?
+        editingTemplate: RecurringBoardTemplate?,
+        startRecurring: Bool = false
     ) -> some View {
         BoardWizardView(
             userId: userId,
@@ -130,6 +133,7 @@ struct CreateHubView: View {
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
             editingTemplate: editingTemplate,
+            startRecurring: startRecurring,
             onCancel: { handleHubReturn() },
             onComplete: { boardId, status in
                 onBoardCompleted?(boardId, status)
@@ -172,13 +176,23 @@ struct CreateHubView: View {
                     // timeframe's current window, no cross-tab hop.
                     // To browse past/future windows the user goes to
                     // the Boards tab.
-                    vm.enterRecurringWizard(timeframe: slot.timeframe)
+                    vm.enterCoreBoardWizard(timeframe: slot.timeframe)
                 }
             )
 
             CreateHubBoardCTAView(
+                kind: .oneOff,
                 onTap: { vm.enterFreshWizard() },
                 variant: hasUncreatedCoreBoards ? .secondary : .primary
+            )
+
+            // Issue #71 — recurring-board creation is its own deliberate
+            // entry point, always the lighter secondary card below the
+            // one-off CTA.
+            CreateHubBoardCTAView(
+                kind: .recurring,
+                onTap: { vm.enterRecurringTemplateWizard() },
+                variant: .secondary
             )
 
             if !vm.drafts.isEmpty {

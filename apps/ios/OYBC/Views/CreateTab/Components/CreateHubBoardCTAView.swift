@@ -2,33 +2,51 @@ import SwiftUI
 
 /// Visual variant for `CreateHubBoardCTAView`.
 enum CreateHubBoardCTAVariant {
-    /// Large gradient card with sparkle icon. The original (and default)
-    /// presentation; used when the parent has no pending core boards to
-    /// surface above.
+    /// Large gradient card with an icon. Used when the parent has no
+    /// pending core boards to surface above.
     case primary
     /// Smaller flat card with muted styling. Used when
-    /// `PendingCoreBoardsSectionView` is the headline action above this
-    /// CTA — Phase 6.1d demoted the headline once core boards became
-    /// the prominent option, but the wording was tightened in the
-    /// Phase 6.2 rework: the secondary CTA is no longer "custom-only"
-    /// (the wizard's recurring toggle means this entry can build
-    /// recurring boards too), so both variants share the same name.
+    /// `CoreBoardsSectionView` is the headline action above this CTA,
+    /// and always for the recurring entry point (#71).
     case secondary
 }
 
+/// Which creation flow the card launches (#71):
+///   - `.oneOff`: a single board (the wizard's default flow).
+///   - `.recurring`: a recurring-board template that auto-spawns a
+///     fresh board each window.
+enum CreateHubBoardCTAKind {
+    case oneOff
+    case recurring
+}
+
 /// CreateHubBoardCTAView — Card that invites the user to start a new
-/// board. Renders the primary action on the Create Hub; tapping it
-/// launches the 3-step board-creation wizard. iOS twin of web's
-/// `CreateHubBoardCTA`.
+/// board. Renders an action on the Create Hub; tapping it launches the
+/// 3-step board-creation wizard. iOS twin of web's `CreateHubBoardCTA`.
 ///
-/// Two variants — same destination, different visual weight:
-///   - `.primary` (default): large gradient card with sparkle icon.
-///   - `.secondary`: smaller flat card. Same copy as primary but
-///     muted, used when `PendingCoreBoardsSectionView` is the
-///     headline action above this CTA.
+/// Two axes:
+///   - `kind` (#71): `.oneOff` (a single board) vs `.recurring` (a
+///     template that auto-spawns each window). The recurring entry
+///     replaced the in-wizard "Make recurring" toggle.
+///   - `variant`: `.primary` (large gradient headline card) vs
+///     `.secondary` (smaller flat card) — same destination, different
+///     visual weight.
 struct CreateHubBoardCTAView: View {
+    var kind: CreateHubBoardCTAKind = .oneOff
     let onTap: () -> Void
     var variant: CreateHubBoardCTAVariant = .primary
+
+    /// Copy + glyphs per `kind`.
+    private var title: String {
+        kind == .recurring ? "Create a recurring board" : "Start a new board"
+    }
+    private var subtitle: String {
+        kind == .recurring
+            ? "Auto-spawns a fresh board each window from a pool."
+            : "Set it up, pick your tasks, and activate."
+    }
+    private var emoji: String { kind == .recurring ? "🔁" : "✨" }
+    private var secondarySymbol: String { kind == .recurring ? "repeat" : "plus" }
 
     var body: some View {
         switch variant {
@@ -44,14 +62,14 @@ struct CreateHubBoardCTAView: View {
     private var primaryButton: some View {
         Button(action: onTap) {
             HStack(spacing: 16) {
-                Text("✨")
+                Text(emoji)
                     .font(.system(size: 32))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Start a new board")
+                    Text(title)
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                    Text("Set it up, pick your tasks, and activate.")
+                    Text(subtitle)
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
@@ -74,7 +92,7 @@ struct CreateHubBoardCTAView: View {
             .shadow(color: Color.blue.opacity(0.25), radius: 10, x: 0, y: 4)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Start a new board")
+        .accessibilityLabel(title)
     }
 
     // MARK: - Secondary
@@ -82,7 +100,7 @@ struct CreateHubBoardCTAView: View {
     private var secondaryButton: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                Image(systemName: "plus")
+                Image(systemName: secondarySymbol)
                     .font(.body)
                     .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
@@ -93,11 +111,11 @@ struct CreateHubBoardCTAView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Start a new board")
+                    Text(title)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
-                    Text("Pick a timeframe, size, and tasks — optionally recurring.")
+                    Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -123,6 +141,6 @@ struct CreateHubBoardCTAView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Start a new board")
+        .accessibilityLabel(title)
     }
 }

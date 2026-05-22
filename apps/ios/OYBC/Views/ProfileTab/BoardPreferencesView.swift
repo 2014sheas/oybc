@@ -31,7 +31,6 @@ struct BoardPreferencesView: View {
                 boardSizeRow
                 timeframeRow
                 centerTypeRow
-                randomizeRow
                 customCenterNameRow
             }
 
@@ -135,12 +134,6 @@ struct BoardPreferencesView: View {
             Text("None").tag(DefaultCenterSquareType.none)
         } label: {
             Text("Default center square")
-        }
-    }
-
-    private var randomizeRow: some View {
-        Toggle(isOn: bind(\.defaultRandomize)) {
-            Text("Randomize tasks by default")
         }
     }
 

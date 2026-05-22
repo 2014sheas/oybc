@@ -51,6 +51,10 @@ type HubMode =
        *  hydrate from the template, `isRecurring` is forced ON, and
        *  Save updates the template instead of creating a new board. */
       editingTemplate?: RecurringBoardTemplate;
+      /** Issue #71 — set when launched from the "Create a recurring
+       *  board" CTA. Forces `isRecurring` ON at entry; the user picks
+       *  timeframe/size/center + pool. */
+      startRecurring?: boolean;
     };
 
 /**
@@ -106,6 +110,13 @@ export function CreateHubPage({
     setMode({ kind: 'wizard' });
   }, []);
 
+  // Issue #71 — dedicated recurring-board entry point. Launches the
+  // same wizard with `startRecurring` so `isRecurring` is ON from the
+  // start (the in-wizard "Make recurring" toggle was removed).
+  const handleStartRecurringBoard = useCallback(() => {
+    setMode({ kind: 'wizard', startRecurring: true });
+  }, []);
+
   const handleResumeDraft = useCallback(
     async (board: Board): Promise<void> => {
       const draft = await resolveDraft(board);
@@ -143,6 +154,7 @@ export function CreateHubPage({
         prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
         targetWindowDate={mode.targetWindowDate}
         editingTemplate={mode.editingTemplate}
+        startRecurring={mode.startRecurring}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
         onTemplateComplete={handleTemplateComplete}
@@ -179,8 +191,18 @@ export function CreateHubPage({
       />
 
       <CreateHubBoardCTA
+        kind="oneOff"
         onClick={handleStartBoard}
         variant={hasUncreatedCoreBoards ? 'secondary' : 'primary'}
+      />
+
+      {/* Issue #71 — recurring-board creation is its own deliberate
+          entry point, always rendered as the lighter secondary card
+          below the one-off CTA. */}
+      <CreateHubBoardCTA
+        kind="recurring"
+        onClick={handleStartRecurringBoard}
+        variant="secondary"
       />
 
       {drafts.length > 0 && (

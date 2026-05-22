@@ -34,6 +34,11 @@ struct BoardWizardView: View {
     /// the template, `isRecurring` is forced ON, and Save updates the
     /// template instead of creating a new board.
     let editingTemplate: RecurringBoardTemplate?
+    /// Issue #71 — when true, the wizard was launched from the Create
+    /// hub's "Create a recurring board" CTA. Forces `isRecurring` ON at
+    /// entry (no in-form toggle). The user picks timeframe/size/center +
+    /// pool, and Save creates a template + spawns the first board.
+    let startRecurring: Bool
     let onCancel: () -> Void
     let onComplete: (_ boardId: String, _ status: String) -> Void
     /// Phase 6.2: called when a recurring template was saved with no
@@ -47,12 +52,6 @@ struct BoardWizardView: View {
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
 
-    /// True when the timeframe field should render as a read-only chip.
-    /// Mirrors web's `lockTimeframe = prefilledRecurringTimeframe !== undefined && draft === undefined`.
-    private var lockTimeframe: Bool {
-        prefilledRecurringTimeframe != nil && draft == nil
-    }
-
     init(
         userId: String,
         preferences: UserPreferences,
@@ -60,6 +59,7 @@ struct BoardWizardView: View {
         prefilledRecurringTimeframe: Timeframe? = nil,
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
+        startRecurring: Bool = false,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void,
         onTemplateComplete: ((_ templateId: String) -> Void)? = nil
@@ -70,6 +70,7 @@ struct BoardWizardView: View {
         self.prefilledRecurringTimeframe = prefilledRecurringTimeframe
         self.targetWindowDate = targetWindowDate
         self.editingTemplate = editingTemplate
+        self.startRecurring = startRecurring
         self.onCancel = onCancel
         self.onComplete = onComplete
         self.onTemplateComplete = onTemplateComplete
@@ -79,6 +80,7 @@ struct BoardWizardView: View {
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
             editingTemplate: editingTemplate,
+            startRecurring: startRecurring,
             userId: userId
         ))
     }
@@ -159,12 +161,22 @@ struct BoardWizardView: View {
         cancelDialogError = nil
     }
 
+    /// Header label reflecting the launch mode (mirrors web's
+    /// `BoardWizardPage` title logic).
+    private var wizardTitle: String {
+        if draft != nil { return "Resume draft" }
+        if wizard.isRecurring {
+            return editingTemplate != nil ? "Edit recurring board" : "New recurring board"
+        }
+        return "New board"
+    }
+
     // MARK: - Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(draft != nil ? "Resume draft" : "New board")
+                Text(wizardTitle)
                     .font(.title2)
                     .fontWeight(.bold)
                 Spacer()
@@ -219,7 +231,6 @@ struct BoardWizardView: View {
         case 1:
             BoardWizardSetupStepView(
                 controller: wizard,
-                lockTimeframe: lockTimeframe,
                 onCancel: handleCancelRequested,
                 onNext: { wizard.goNext() }
             )

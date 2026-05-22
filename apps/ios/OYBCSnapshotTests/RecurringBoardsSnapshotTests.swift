@@ -4,10 +4,10 @@ import SnapshotTesting
 @testable import OYBC
 
 /// Snapshot coverage for the home-screen Core Boards section + the
-/// wizard's locked-timeframe variant:
+/// wizard's core-board setup variant:
 ///   - `CoreBoardsSectionView` — 1-slot, 4-slots all-not-yet, 4-slots
 ///     mixed (one Done, three Not-yet)
-///   - `BoardSetupFormView` with `lockTimeframe: true`
+///   - `BoardWizardSetupStepView` for a core board (#70 collapsed layout)
 ///
 /// `BoardPreferencesView`'s "Recurring Boards" section is not snapshotted
 /// because it depends on `@EnvironmentObject AuthService` — wiring a mock
@@ -91,36 +91,35 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
         ]
     }
 
-    // MARK: - Wizard prefill (locked timeframe variant)
+    // MARK: - Wizard core-board variant (#70)
 
-    /// Setup step rendered with `lockTimeframe=true` — the variant the user
-    /// sees when they tapped Create on a banner row. Verifies the locked-
-    /// chip variant (single disabled segmented button + hint copy) renders
-    /// correctly in place of the full segmented selector.
+    /// Setup step rendered for a **core** board — the variant the user
+    /// sees when they tapped a Core Boards row / banner (the wizard is
+    /// launched with `prefilledRecurringTimeframe`, so `isCore=true`).
+    /// Verifies the #70 collapsed layout: a read-only window caption
+    /// plus only Board size + Center square (no name field, no timeframe
+    /// selector, no recurring/randomize toggles).
     ///
-    /// Uses `.monthly` rather than `.daily` for the test fixture so the
-    /// rendered date display is stable across days within the calendar
-    /// month (daily would drift the snapshot every day; monthly only
-    /// drifts on the 1st of the month, matching the existing
-    /// `testSetupStepValid` pattern).
-    func testSetupStepLockedMonthlyTimeframe() {
+    /// Uses `.monthly` so the rendered window label is stable across
+    /// days within the calendar month (daily would drift daily).
+    func testSetupStepCoreBoard() {
         let prefs = SnapshotFixtures.makeUserPreferences()
         let controller = BoardWizardViewModel(
             preferences: prefs,
             prefilledRecurringTimeframe: .monthly
         )
-        // Pin a stable name so the snapshot doesn't drift across months.
+        // Pin a stable name so the snapshot doesn't drift across months
+        // (the core layout shows this as the read-only window caption).
         controller.name = "May 2026"
 
         let view = BoardWizardSetupStepView(
             controller: controller,
-            lockTimeframe: true,
             onCancel: { },
             onNext: { }
         )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 700)),
+            as: .image(layout: .fixed(width: 393, height: 420)),
             record: recordMode
         )
     }

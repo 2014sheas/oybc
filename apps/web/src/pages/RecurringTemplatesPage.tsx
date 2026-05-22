@@ -74,8 +74,8 @@ export function RecurringTemplatesPage(): React.ReactElement {
         <div className={styles.emptyState}>
           <p className={styles.emptyTitle}>No recurring templates yet.</p>
           <p className={styles.emptyBody}>
-            Create one in the Create tab wizard — toggle{' '}
-            <strong>"Make recurring"</strong> in Setup.
+            Create one from the Create tab — tap{' '}
+            <strong>"Create a recurring board"</strong>.
           </p>
         </div>
       ) : (

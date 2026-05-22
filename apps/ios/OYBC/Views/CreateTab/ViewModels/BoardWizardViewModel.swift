@@ -42,13 +42,20 @@ final class BoardWizardViewModel {
     var customEndDate: String = ""
     var centerType: CenterSquareType
     var centerCustomName: String
-    var isRandomized: Bool
+    /// Issue #69 — board placement is always randomized. There's no
+    /// manual-placement UI, so the per-board "Randomize positions"
+    /// toggle (and the `defaultRandomize` preference) were dead UX and
+    /// have been removed. Nothing in production ever sets this to
+    /// `false` (init/reset leave the `true` default and persist always
+    /// writes `true`), so it's effectively constant — it's a `var`
+    /// purely so snapshot tests can pin deterministic placement.
+    /// Retained on Board/RecurringBoardTemplate for schema stability.
+    var isRandomized: Bool = true
     /// Phase 6.2 — when true, the wizard saves a recurring template
-    /// (and immediately spawns the current window's board) instead of
-    /// a one-off Board. Toggling hides Custom from the timeframe
-    /// selector (recurring schema rejects it). The pool is always
-    /// loose-fit; the spawn shuffles + slices, so any extras become
-    /// the random subset.
+    /// (and immediately spawns the first board) instead of a one-off
+    /// Board. Set at wizard entry (the "Create a recurring board" CTA
+    /// or template edit) — there's no in-form toggle since #71. Hides
+    /// Custom from the timeframe selector (recurring schema rejects it).
     var isRecurring: Bool = false
     let weekStartDay: String
 
@@ -103,6 +110,7 @@ final class BoardWizardViewModel {
         prefilledRecurringTimeframe: Timeframe? = nil,
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
+        startRecurring: Bool = false,
         userId: String? = nil
     ) {
         self.initialPreferences = preferences
@@ -124,14 +132,23 @@ final class BoardWizardViewModel {
                 ? prefilledRecurringTimeframe
                 : nil
 
-        // Banner deep-link OR template-edit both imply isRecurring=true.
-        self.isRecurring = effectiveTemplate != nil || effectivePrefill != nil
+        // Recurring mode is an explicit entry choice now (#71): the
+        // Create-hub "Create a recurring board" CTA passes
+        // `startRecurring`, or we're editing a template. A
+        // `prefilledRecurringTimeframe` (banner / core-board browser)
+        // creates a one-off *core* board for that window — NOT a
+        // recurring template — so it no longer flips isRecurring (#70).
+        // Captured into a local first so the timeframe-coercion below can
+        // read it before `init` finishes (Swift forbids `self.` reads
+        // until every stored property is set).
+        let isRecurringAtEntry = effectiveTemplate != nil || startRecurring
+        self.isRecurring = isRecurringAtEntry
         self.editingTemplateId = effectiveTemplate?.id
 
-        // isCore is independent from isRecurring (which can be toggled
-        // by the user mid-wizard). Capture the launch-time signal:
-        // banner-launched ⇒ core (Phase 6.1); preserve existing draft's
-        // core-ness on resume.
+        // isCore is independent from isRecurring (both fixed at entry).
+        // Capture the launch-time signal: prefilled-from-a-window ⇒ core
+        // (Phase 6.1 banner / core-board browser); preserve an existing
+        // draft's core-ness on resume.
         self.isCore = draft?.board.isCore ?? (effectivePrefill != nil)
 
         if let d = draft {
@@ -141,7 +158,6 @@ final class BoardWizardViewModel {
             self.centerType = d.board.centerSquareType
             self.centerCustomName = d.board.centerSquareCustomName ?? ""
             self.centerTaskId = d.board.centerTaskId
-            self.isRandomized = d.board.isRandomized
             self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
             if d.board.timeframe == .custom {
                 self.customStartDate = String(d.board.startDate.prefix(10))
@@ -153,7 +169,6 @@ final class BoardWizardViewModel {
             self.timeframe = t.timeframe
             self.centerType = t.centerSquareType
             self.centerCustomName = t.centerSquareCustomName ?? ""
-            self.isRandomized = t.isRandomized
             self.selectedTaskIds = Set(t.seedTaskIds)
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
@@ -185,14 +200,17 @@ final class BoardWizardViewModel {
                     self.selectedTaskIds = Set(pool.taskIds)
                 }
             } else {
-                self.timeframe = Self.resolveTimeframe(preferences.defaultTimeframe)
+                let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
+                // Recurring templates can't use CUSTOM (no computed
+                // window). If the user's default is CUSTOM and they
+                // entered via the recurring CTA, fall back to daily.
+                self.timeframe = (isRecurringAtEntry && resolved == .custom) ? .daily : resolved
             }
             self.centerType = Self.coerceCenterType(
                 size: initialSize,
                 desired: Self.resolveCenterType(preferences.defaultCenterType)
             )
             self.centerCustomName = preferences.defaultCenterCustomName
-            self.isRandomized = preferences.defaultRandomize
         }
     }
 
@@ -259,21 +277,6 @@ final class BoardWizardViewModel {
         timeframe = t
     }
 
-    /// Toggling Recurring=ON when timeframe is CUSTOM auto-coerces to
-    /// `.daily` (recurring requires one of the four computed-window
-    /// timeframes). Toggling OFF doesn't touch any other state. Also
-    /// clears CHOSEN center type since templates exclude it (MVP).
-    func updateIsRecurring(_ b: Bool) {
-        isRecurring = b
-        if b {
-            if timeframe == .custom { timeframe = .daily }
-            if centerType == .chosen {
-                centerType = .free
-                centerTaskId = nil
-            }
-        }
-    }
-
     /// Toggles a task's selection; clears the center mark if the user
     /// is deselecting the current center.
     func toggleTaskSelection(_ taskId: String) {
@@ -317,7 +320,6 @@ final class BoardWizardViewModel {
             desired: Self.resolveCenterType(initialPreferences.defaultCenterType)
         )
         centerCustomName = initialPreferences.defaultCenterCustomName
-        isRandomized = initialPreferences.defaultRandomize
         isRecurring = false
         selectedTaskIds = []
         centerTaskId = nil

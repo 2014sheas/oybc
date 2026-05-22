@@ -80,7 +80,6 @@ export function BoardWizardPreviewStep({
       controller.size,
       controller.centerType,
       controller.centerTaskId,
-      controller.isRandomized,
       selectionKey,
       library.allTasks,
     ],
@@ -231,14 +230,14 @@ export function BoardWizardPreviewStep({
           // BingoBoard snapshots taskNames into internal state on mount,
           // so any field that affects placement must remount it via key.
           // centerTaskId swaps which selection sits at the centre under
-          // CHOSEN; isRandomized re-shuffles the grid; centerCustomName
-          // is the displayed label for CUSTOM_FREE.
+          // CHOSEN; centerCustomName is the displayed label for
+          // CUSTOM_FREE. (Placement is always randomized — #69 — so
+          // there's no randomize term in the key.)
           key={[
             controller.size,
             controller.centerType,
             controller.centerTaskId ?? '',
             controller.centerCustomName,
-            controller.isRandomized ? '1' : '0',
             selectionKey,
           ].join('|')}
           taskNames={taskNames}
@@ -310,19 +309,6 @@ export function BoardWizardPreviewStep({
             type="button"
             className={styles.editLink}
             onClick={() => controller.goToStep(2)}
-          >
-            Edit
-          </button>
-        </div>
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Randomize</span>
-          <span className={styles.summaryValue}>
-            {controller.isRandomized ? 'Yes' : 'No'}
-          </span>
-          <button
-            type="button"
-            className={styles.editLink}
-            onClick={() => controller.goToStep(1)}
           >
             Edit
           </button>
