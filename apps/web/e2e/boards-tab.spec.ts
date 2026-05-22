@@ -11,9 +11,12 @@ import {
  *  - Expiry-aware "Active" excludes boards whose `endDate < now` even
  *    when their status is ACTIVE.
  *  - Per-row delete: ✕ button → confirm dialog → soft-delete via Dexie.
+ *  - Core board row navigates to the per-window pager
+ *    (`/boards/core/:timeframe/:date`) instead of the browser list.
  *
  * Both behaviors landed alongside the Phase 6.1 core-board banner fix
- * (PR #58 / fix/core-board-banner-dismissal).
+ * (PR #58 / fix/core-board-banner-dismissal). Core-board pager
+ * navigation landed in the feature/core-board-browser branch.
  */
 
 const ACTIVE_LIVE_ID = 'cccccccc-bbbb-0000-0000-000000000001';
@@ -107,5 +110,89 @@ test.describe('Boards tab', () => {
     const row = await readBoard(page, ACTIVE_LIVE_ID);
     expect(row).not.toBeNull();
     expect((row as { isDeleted?: boolean }).isDeleted).toBe(true);
+  });
+});
+
+// ─── Core board pager navigation ─────────────────────────────────────────────
+//
+// The Core Boards section on the Boards tab shows one row per enabled
+// recurring timeframe. Tapping a row navigates to the per-window pager
+// (`/boards/core/:timeframe/:date`), NOT to the full browser list.
+//
+// Fixture state: the bypass user has `recurringDailyEnabled: true` by
+// default (DEFAULT_USER_PREFERENCES), so the Daily row appears without
+// extra preference seeding. No board is seeded for today's daily window,
+// so the pager renders the CoreBoardSetupPrompt ("No board for Today yet.").
+
+test.describe('Core board pager navigation', () => {
+  test.beforeEach(async ({ page }) => {
+    // Navigate to /boards with the bypass param engaged. The fixture's
+    // page hook already visits /?__oybc_test_bypass=1 on setup, but a
+    // direct goto here forces a fresh BoardsPage mount so useLiveQuery
+    // picks up any IDB state.
+    await page.goto('/boards?__oybc_test_bypass=1');
+    await expect(page.getByRole('heading', { name: 'Boards', level: 1 })).toBeVisible();
+  });
+
+  test('tapping a Core board row lands on the per-window pager', async ({ page }) => {
+    // Compute today's LOCAL date string (getFullYear/Month/Date use local time,
+    // unlike toISOString which is UTC and would give yesterday west of UTC).
+    const d = new Date();
+    const todayLocal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // 1. The Core Boards section is visible with a Daily row. The row is
+    //    a button whose label includes "Daily" (the timeframe label) so
+    //    we target it by its accessible name.
+    const dailyRow = page.getByRole('button', { name: /daily/i });
+    await expect(dailyRow).toBeVisible();
+    await dailyRow.click();
+
+    // 2. URL must include today's LOCAL date (not yesterday's). A regression
+    //    where new Date('YYYY-MM-DD') parses as UTC would give yesterday's
+    //    date for users west of UTC, causing this assertion to fail.
+    await expect(page).toHaveURL(new RegExp(`/boards/core/daily/${todayLocal}`));
+
+    // 3. Window bar is visible: prev/next chevrons + list button.
+    await expect(
+      page.getByRole('button', { name: 'Previous window' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Next window' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Show all windows' }),
+    ).toBeVisible();
+
+    // 4. No board is seeded for today's daily window, so the setup
+    //    prompt must be visible (not the board play surface).
+    await expect(page.getByText(/No board for/)).toBeVisible();
+
+    // 5. Today's window is the current (non-past) window, so the action
+    //    button must say "Set up …" — NOT "Backfill …" (which would mean
+    //    the pager landed on yesterday's window due to the UTC-parse bug).
+    await expect(
+      page.getByRole('button', { name: /^Set up/i }),
+    ).toBeVisible();
+  });
+
+  test('≡ List button navigates to the browser page', async ({ page }) => {
+    // Land on the pager first.
+    const dailyRow = page.getByRole('button', { name: /daily/i });
+    await expect(dailyRow).toBeVisible();
+    await dailyRow.click();
+    await expect(page).toHaveURL(/\/boards\/core\/daily\/\d{4}-\d{2}-\d{2}/);
+
+    // Confirm the ≡ List button is rendered.
+    const listButton = page.getByRole('button', { name: 'Show all windows' });
+    await expect(listButton).toBeVisible();
+
+    // Clicking it should navigate to the browser route (no date segment).
+    await listButton.click();
+    await expect(page).toHaveURL(/\/boards\/core\/daily$/);
+
+    // The browser page renders its heading.
+    await expect(
+      page.getByRole('heading', { name: 'Daily browser' }),
+    ).toBeVisible();
   });
 });

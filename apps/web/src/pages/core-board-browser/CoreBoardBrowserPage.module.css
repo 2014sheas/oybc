@@ -51,6 +51,13 @@
   height: 1px;
 }
 
+.emptyState {
+  margin: var(--spacing-lg) auto;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
 /* ── Row container (wraps either a BoardListItem or an empty CTA) ─────────── */
 
 .row {
@@ -150,4 +157,130 @@
 .emptyLabel {
   font-size: 0.95rem;
   font-weight: 600;
+}
+
+/* ── CoreBoardWindowBar ────────────────────────────────────────────────────── */
+
+.windowBar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.windowNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--spacing-sm);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.windowNav:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.windowNav:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
+}
+
+.windowBarLabel {
+  flex: 1;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.windowListButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px var(--spacing-sm);
+  min-height: 44px;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background-color 0.12s;
+  flex-shrink: 0;
+}
+
+.windowListButton:hover {
+  border-color: var(--active-bg);
+  color: var(--active-bg);
+  background: var(--active-bg-soft, rgba(13, 110, 253, 0.06));
+}
+
+.windowListButton:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
+}
+
+/* ── CoreBoardSetupPrompt ──────────────────────────────────────────────────── */
+
+.setupPrompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-md);
+}
+
+.setupIcon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.setupText {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.setupButton {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+
+.setupButton:hover {
+  border-color: var(--active-bg);
+  color: var(--active-bg);
+  background: var(--active-bg-soft, rgba(13, 110, 253, 0.06));
+}
+
+.setupButton:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
 }

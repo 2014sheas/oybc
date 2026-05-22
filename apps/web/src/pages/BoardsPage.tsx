@@ -61,11 +61,9 @@ export function BoardsPage(): React.ReactElement {
 
       <CoreBoardsSection
         slots={coreBoardSlots}
-        // Whole-row tap → per-timeframe Core Board Browser. The
-        // browser handles state-specific actions in cell form
-        // (Create today's cell when slot is empty, board cell when
-        // it's already created, plus past/future windows).
-        onSelect={(slot) => navigate(`/boards/core/${slot.timeframe}`)}
+        // Whole-row tap → the current window's board (pager). The full window
+        // list is reachable from the pager's ≡ List button.
+        onSelect={(slot) => navigate(`/boards/core/${slot.timeframe}/${slot.windowStart.slice(0, 10)}`)}
       />
 
       {allBoards.length > 0 && (

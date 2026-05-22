@@ -13,6 +13,7 @@ import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
 import { DefaultPoolsListPage } from './pages/DefaultPoolsListPage';
 import { DefaultPoolEditorPage } from './pages/DefaultPoolEditorPage';
 import { CoreBoardBrowserPage } from './pages/core-board-browser/CoreBoardBrowserPage';
+import { CoreBoardWindowPage } from './pages/core-board-browser/CoreBoardWindowPage';
 import { Playground } from './pages/Playground';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -96,6 +97,7 @@ function AuthenticatedLayout(): React.ReactElement {
         <Routes>
           <Route path="/boards" element={<BoardsPage />} />
           <Route path="/boards/core/:timeframe" element={<CoreBoardBrowserPage />} />
+          <Route path="/boards/core/:timeframe/:date" element={<CoreBoardWindowPage />} />
           <Route path="/boards/:id" element={<BoardPlayPage />} />
           <Route path="/create" element={<CreateRoute />} />
           <Route path="/tasks" element={<TasksRoute />} />
