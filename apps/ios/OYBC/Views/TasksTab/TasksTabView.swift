@@ -57,6 +57,13 @@ struct TasksTabView: View {
     /// request can't overwrite a newer one (rapid swipe-delete on
     /// different rows) and re-introduce the content-swap-under-sheet bug.
     @State private var prepareDeleteToken = 0
+    /// Set by a successful delete; consumed by the confirm sheet's
+    /// `onDismiss`. Reloading the library mutates the `List` data source,
+    /// and doing that *during* the sheet-dismiss transition crashed
+    /// UICollectionView with a stale batch-delete. We instead wait for
+    /// `onDismiss` (sheet fully gone) before reloading. Only a successful
+    /// delete flips this, so cancel/dismiss don't trigger a reload.
+    @State private var reloadAfterDeleteDismiss = false
     @State private var quickActionError: String?
 
     var body: some View {
@@ -169,7 +176,16 @@ struct TasksTabView: View {
                 onCancel: { editingTask = nil }
             )
         }
-        .sheet(item: $pendingDelete) { pending in
+        .sheet(item: $pendingDelete, onDismiss: {
+            // Reload only after the sheet has fully dismissed. Mutating the
+            // List's data source mid-transition crashed UICollectionView
+            // with a stale batch-delete; deferring to onDismiss removes the
+            // competing animation. Guarded so only a successful delete
+            // (which actually changed the data) triggers the reload.
+            guard reloadAfterDeleteDismiss else { return }
+            reloadAfterDeleteDismiss = false
+            reloadLibraryAndStatuses()
+        }) { pending in
             TaskDeleteConfirmView(
                 task: pending.task,
                 impact: pending.impact,
@@ -234,16 +250,18 @@ struct TasksTabView: View {
         }
     }
 
-    /// Run the cascade delete off-main and reload the library on success.
+    /// Run the cascade delete off-main. On success we only dismiss the
+    /// sheet here — the library reload (which mutates the List) is deferred
+    /// to the sheet's `onDismiss` so it can't run during the dismiss
+    /// transition and crash UICollectionView.
     private func performDelete(taskId: String) async {
         do {
             try await _Concurrency.Task.detached(priority: .userInitiated) {
                 try AppDatabase.shared.deleteTaskWithCascade(taskId: taskId)
             }.value
             await MainActor.run {
+                reloadAfterDeleteDismiss = true
                 pendingDelete = nil
-                library.loadLibrary(userId: userId)
-                vm.reloadAsync()
             }
         } catch {
             await MainActor.run {
@@ -255,6 +273,17 @@ struct TasksTabView: View {
                 pendingDelete = nil
                 quickActionError = "Failed to delete task: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// Sequenced reload after a delete, run from the confirm sheet's
+    /// `onDismiss`. Awaiting library then statuses (rather than firing both
+    /// fire-and-forget) keeps the two `@Observable` updates from coalescing
+    /// into a single inconsistent batch update against the List.
+    private func reloadLibraryAndStatuses() {
+        _Concurrency.Task {
+            await library.reload(userId: userId)
+            await vm.reload()
         }
     }
 
