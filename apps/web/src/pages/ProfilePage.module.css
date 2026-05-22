@@ -178,6 +178,22 @@
   color: var(--text-secondary);
 }
 
+/* Browse link used on BoardPreferencesPage to jump from a recurring
+ * toggle into the per-timeframe core-board browser. Sits to the right
+ * of the toggle on each row. */
+.browseLink {
+  margin-left: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--active-bg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.browseLink:hover {
+  text-decoration: underline;
+}
+
 .rowLink {
   display: flex;
   align-items: center;

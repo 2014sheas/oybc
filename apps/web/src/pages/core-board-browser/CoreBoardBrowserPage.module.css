@@ -1,0 +1,153 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backLink {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--active-bg);
+  font-weight: 500;
+  font-size: 0.95rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.sentinel {
+  height: 1px;
+}
+
+/* ── Row container (wraps either a BoardListItem or an empty CTA) ─────────── */
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--surface-bg, var(--bg-secondary));
+}
+
+.rowCurrent {
+  border-color: var(--active-bg);
+  box-shadow: 0 0 0 1px var(--active-bg);
+}
+
+.rowMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.windowLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.currentBadge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--active-bg);
+  color: var(--active-text, #ffffff);
+}
+
+.pastBadge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+/* ── Empty CTA button ──────────────────────────────────────────────────────── */
+
+.emptyButton {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-md);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+
+.emptyButton:hover {
+  border-color: var(--active-bg);
+  color: var(--active-bg);
+  background: var(--active-bg-soft, rgba(13, 110, 253, 0.06));
+}
+
+.emptyButton:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
+}
+
+.emptyButtonPast {
+  opacity: 0.75;
+}
+
+.emptyButtonPast:hover {
+  opacity: 1;
+}
+
+.emptyIcon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.emptyLabel {
+  font-size: 0.95rem;
+  font-weight: 600;
+}

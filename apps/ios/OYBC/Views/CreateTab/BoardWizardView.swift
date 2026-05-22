@@ -21,6 +21,14 @@ struct BoardWizardView: View {
     /// Mutually exclusive with `draft` — drafts already lock semantics
     /// by hydrating the full record.
     let prefilledRecurringTimeframe: Timeframe?
+    /// Phase B: when set, the wizard was launched from the core-board
+    /// browser to spawn a non-current window (e.g. tomorrow's daily).
+    /// Forwarded into `BoardWizardViewModel` so `computedBoundaries` /
+    /// `resolveWizardDates` / the recurring spawn-window all key off
+    /// this date instead of `Date()`. Nil = legacy "today's window"
+    /// behaviour (banner click or one-off). Only meaningful alongside
+    /// `prefilledRecurringTimeframe`.
+    let targetWindowDate: Date?
     /// Phase 6.2 UX rework: when set, the wizard was launched from
     /// Profile → Recurring templates → Edit. All fields hydrate from
     /// the template, `isRecurring` is forced ON, and Save updates the
@@ -50,6 +58,7 @@ struct BoardWizardView: View {
         preferences: UserPreferences,
         draft: (board: Board, boardTasks: [BoardTask])? = nil,
         prefilledRecurringTimeframe: Timeframe? = nil,
+        targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void,
@@ -59,6 +68,7 @@ struct BoardWizardView: View {
         self.preferences = preferences
         self.draft = draft
         self.prefilledRecurringTimeframe = prefilledRecurringTimeframe
+        self.targetWindowDate = targetWindowDate
         self.editingTemplate = editingTemplate
         self.onCancel = onCancel
         self.onComplete = onComplete
@@ -67,6 +77,7 @@ struct BoardWizardView: View {
             preferences: preferences,
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
+            targetWindowDate: targetWindowDate,
             editingTemplate: editingTemplate,
             userId: userId
         ))

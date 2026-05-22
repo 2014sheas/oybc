@@ -51,19 +51,49 @@ struct BoardPreferencesView: View {
                 Toggle(isOn: bind(\.recurringDailyEnabled)) {
                     Text("Prompt for daily board")
                 }
+                if authService.userPreferences.recurringDailyEnabled {
+                    browseRow(timeframe: .daily, label: "Daily")
+                }
                 Toggle(isOn: bind(\.recurringWeeklyEnabled)) {
                     Text("Prompt for weekly board")
+                }
+                if authService.userPreferences.recurringWeeklyEnabled {
+                    browseRow(timeframe: .weekly, label: "Weekly")
                 }
                 Toggle(isOn: bind(\.recurringMonthlyEnabled)) {
                     Text("Prompt for monthly board")
                 }
+                if authService.userPreferences.recurringMonthlyEnabled {
+                    browseRow(timeframe: .monthly, label: "Monthly")
+                }
                 Toggle(isOn: bind(\.recurringYearlyEnabled)) {
                     Text("Prompt for yearly board")
+                }
+                if authService.userPreferences.recurringYearlyEnabled {
+                    browseRow(timeframe: .yearly, label: "Yearly")
                 }
             }
         }
         .navigationTitle("Board Preferences")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Phase B — open the per-timeframe core-board browser. Pushed
+    /// directly onto the ProfileTab's NavigationStack via
+    /// `NavigationLink(value:)`; the destination is registered on
+    /// ProfileView so back returns to this preferences screen.
+    @ViewBuilder
+    private func browseRow(timeframe: Timeframe, label: String) -> some View {
+        NavigationLink(value: CoreBrowserRoute(timeframe: timeframe)) {
+            HStack(spacing: 8) {
+                Image(systemName: "calendar.badge.clock")
+                    .foregroundStyle(.tint)
+                Text("Browse \(label) boards")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.tint)
+            }
+        }
+        .accessibilityLabel("Browse \(label) core boards")
     }
 
     // MARK: - Rows

@@ -57,6 +57,19 @@ const RECURRING_TIMEFRAMES_BY_WINDOW_DESC: Timeframe[] = [
 ];
 
 /**
+ * Same set, inverted — used by `getCoreBoardSlots` so the persistent
+ * Core Boards section on the home screen reads top-to-bottom as
+ * daily → weekly → monthly → yearly. Shortest-first is what the user
+ * acts on most often, so it sits at the top.
+ */
+const RECURRING_TIMEFRAMES_BY_WINDOW_ASC: Timeframe[] = [
+  Timeframe.DAILY,
+  Timeframe.WEEKLY,
+  Timeframe.MONTHLY,
+  Timeframe.YEARLY,
+];
+
+/**
  * One row of the Boards-tab "pending boards" banner. Carries everything the
  * banner needs to render the row + everything the wizard needs to be
  * prefilled when the user taps "Create".
@@ -157,6 +170,80 @@ export function findPendingRecurringBoards(
   }
 
   return pending;
+}
+
+/**
+ * Persistent home-screen "Core Boards" section data — returns one entry
+ * per *enabled* recurring timeframe, in shortest-window-first order
+ * (daily → weekly → monthly → yearly), with the matched core board
+ * attached when one exists for the current window.
+ *
+ * Distinct from {@link findPendingRecurringBoards}: that helper only
+ * returns timeframes that NEED creation. This one always returns every
+ * enabled timeframe, with `currentBoard === null` indicating the
+ * not-yet state. The Boards-tab section uses this so the per-timeframe
+ * Core Board Browser is always reachable from the home screen, not
+ * just when something needs creating.
+ *
+ * `currentBoard` matching uses the same string-equal predicate as
+ * `findPendingRecurringBoards`: `timeframe === T && !isDeleted &&
+ * startDate === computedStart && isCore === true`. Returns the matched
+ * `Board` (the first match if multiple exist — which shouldn't happen
+ * but is harmless if it does).
+ *
+ * Returns `[]` when no recurring timeframes are enabled at all — the
+ * section then unmounts.
+ *
+ * @param boards - All boards belonging to the active user.
+ * @param prefs - User preferences (the `recurring${T}Enabled` flags + `weekStartDay`).
+ * @param now - Reference date for window computation.
+ */
+export interface CoreBoardSlot {
+  timeframe: Timeframe;
+  /** Local ISO8601 from `getTimeframeBoundaries()`. */
+  windowStart: string;
+  /** Local ISO8601 from `getTimeframeBoundaries()`. */
+  windowEnd: string;
+  /** Human-readable label (e.g. "Today", "Week of May 18 – 24, 2026"). */
+  windowLabel: string;
+  /** The matched core board for the current window, or null if none exists. */
+  currentBoard: Board | null;
+}
+
+export function getCoreBoardSlots(
+  boards: Board[],
+  prefs: UserPreferences,
+  now: Date,
+): CoreBoardSlot[] {
+  const slots: CoreBoardSlot[] = [];
+
+  for (const timeframe of RECURRING_TIMEFRAMES_BY_WINDOW_ASC) {
+    if (!isRecurringTimeframeEnabled(prefs, timeframe)) continue;
+
+    const { startDate, endDate } = getTimeframeBoundaries(
+      timeframe,
+      now,
+      prefs.weekStartDay,
+    );
+
+    const match = boards.find(
+      (b) =>
+        b.timeframe === timeframe &&
+        !b.isDeleted &&
+        b.startDate === startDate &&
+        b.isCore === true,
+    );
+
+    slots.push({
+      timeframe,
+      windowStart: startDate,
+      windowEnd: endDate,
+      windowLabel: formatTimeframeLabel(timeframe, startDate),
+      currentBoard: match ?? null,
+    });
+  }
+
+  return slots;
 }
 
 /**

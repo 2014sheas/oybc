@@ -30,6 +30,14 @@ struct MainTabView: View {
     /// doesn't re-arm the prefill.
     @State private var pendingRecurringTimeframe: Timeframe? = nil
 
+    /// Phase B: paired with `pendingRecurringTimeframe`. Non-nil when
+    /// the core-board browser launched the wizard for a non-current
+    /// window (e.g. tomorrow's daily). CreateHubView reads + clears
+    /// both on the same `.onAppear` and threads the date into
+    /// `BoardWizardView.targetWindowDate`. Stays nil for the legacy
+    /// banner-click path (today's window).
+    @State private var pendingTargetWindowDate: Date? = nil
+
     /// Phase 6.2 UX rework: cross-tab edit deep-link from the Profile
     /// → Recurring templates page. RecurringTemplatesView writes the
     /// template id and switches `selectedTab` to Create; CreateHubView
@@ -63,15 +71,40 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             NavigationStack(path: $boardsPath) {
                 BoardListView(
-                    onCreateRecurring: { timeframe in
-                        // Cross-tab: stash the timeframe and switch to
-                        // the Create tab. CreateHubView reads
-                        // `pendingRecurringTimeframe` on appear and
-                        // enters wizard mode with prefill.
+                    onCreateForWindow: { timeframe, windowDate in
+                        // Cross-tab: the browser's Create-cell taps
+                        // land here so the wizard launches with the
+                        // picked window. Stash both bindings + flip
+                        // to the Create tab; CreateHubView consumes
+                        // both on appear.
                         pendingRecurringTimeframe = timeframe
+                        pendingTargetWindowDate = windowDate
                         selectedTab = 2
+                    },
+                    onBrowseTimeframe: { timeframe in
+                        // Push the per-timeframe Core Board Browser
+                        // onto the Boards-tab stack. Used by both the
+                        // Core Boards section (whole-row tap) and the
+                        // pending-recurring banner if it re-enables.
+                        boardsPath.append(CoreBrowserRoute(timeframe: timeframe))
                     }
                 )
+                .navigationDestination(for: CoreBrowserRoute.self) { route in
+                    CoreBoardBrowserView(
+                        timeframe: route.timeframe,
+                        onCreate: { tf, date in
+                            pendingRecurringTimeframe = tf
+                            pendingTargetWindowDate = date
+                            selectedTab = 2
+                        },
+                        onOpenBoard: { boardId in
+                            // Push the board onto the same Boards-tab
+                            // stack so back returns to the browser,
+                            // not the list.
+                            boardsPath.append(boardId)
+                        }
+                    )
+                }
                 .navigationDestination(for: String.self) { boardId in
                     BoardPlayView(
                         boardId: boardId,
@@ -120,6 +153,7 @@ struct MainTabView: View {
                             userId: userId,
                             preferences: authService.userPreferences,
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
+                            pendingTargetWindowDate: $pendingTargetWindowDate,
                             pendingEditTemplateId: $pendingEditTemplateId,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
@@ -159,6 +193,26 @@ struct MainTabView: View {
                         selectedTab = 2
                     }
                 )
+                // Phase B — Browse links inside BoardPreferencesView
+                // push CoreBrowserRoute onto this stack. Same view
+                // tree as the Boards-tab browser; only the cross-tab
+                // launch closure differs (Profile-tab pushes still
+                // need to hop to the Create tab on a Create-cell tap).
+                .navigationDestination(for: CoreBrowserRoute.self) { route in
+                    CoreBoardBrowserView(
+                        timeframe: route.timeframe,
+                        onCreate: { tf, date in
+                            pendingRecurringTimeframe = tf
+                            pendingTargetWindowDate = date
+                            selectedTab = 2
+                        },
+                        onOpenBoard: { boardId in
+                            // Jump cross-tab to the Boards stack so
+                            // the user lands on the play view.
+                            openBoard(boardId)
+                        }
+                    )
+                }
             }
             .tabItem {
                 Label("Profile", systemImage: "person.circle")

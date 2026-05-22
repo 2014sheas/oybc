@@ -388,11 +388,13 @@ func persistRecurringTemplate(
                 ).save(db)
             }
 
-            // Compute current window + spawn. Mirrors web's
-            // `persistRecurringTemplate` second-step.
+            // Compute spawn window + spawn. Mirrors web's
+            // `persistRecurringTemplate` second-step. Reference date
+            // honours `controller.targetWindowDate` so the core-board
+            // browser can pre-spawn a future window's first board.
             guard let window = computeTimeframeBoundaries(
                 timeframe: timeframe,
-                referenceDate: Date(),
+                referenceDate: controller.targetWindowDate ?? Date(),
                 weekStartDay: weekStartDay
             ) else {
                 // Computed-window failure for a recurring timeframe

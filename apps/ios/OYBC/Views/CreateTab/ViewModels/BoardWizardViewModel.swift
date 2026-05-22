@@ -82,6 +82,16 @@ final class BoardWizardViewModel {
     /// banner persists.
     let isCore: Bool
 
+    /// Phase B — when the wizard was launched from the core-board
+    /// browser to spawn a non-current window, this is the reference
+    /// date for the target window. `computedBoundaries` resolves
+    /// against this date instead of `Date()` so `resolveWizardDates`
+    /// writes the board's `startDate`/`endDate` for the picked window
+    /// (e.g. tomorrow's daily, next week's weekly). Nil for banner
+    /// clicks and one-off boards — the legacy "today's window"
+    /// behaviour is preserved.
+    let targetWindowDate: Date?
+
     // MARK: - Init
 
     private let initialPreferences: UserPreferences
@@ -91,6 +101,7 @@ final class BoardWizardViewModel {
         initialStep: WizardStep = 1,
         draft: (board: Board, boardTasks: [BoardTask])? = nil,
         prefilledRecurringTimeframe: Timeframe? = nil,
+        targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
         userId: String? = nil
     ) {
@@ -98,6 +109,7 @@ final class BoardWizardViewModel {
         self.weekStartDay = preferences.weekStartDay.rawValue
         self.currentStep = initialStep
         self.draftBoardId = draft?.board.id
+        self.targetWindowDate = targetWindowDate
 
         // Hydration priority: draft > editingTemplate > prefilledRecurringTimeframe.
         // Mirrors web's `useBoardWizard` rule. Drafts hydrate the full
@@ -154,7 +166,7 @@ final class BoardWizardViewModel {
                 self.timeframe = timeframe
                 if let window = computeTimeframeBoundaries(
                     timeframe: timeframe,
-                    referenceDate: Date(),
+                    referenceDate: targetWindowDate ?? Date(),
                     weekStartDay: preferences.weekStartDay.rawValue
                 ) {
                     self.name = playgroundTimeframeLabel(
@@ -319,8 +331,19 @@ final class BoardWizardViewModel {
     var isOddBoard: Bool { size % 2 != 0 }
 
     /// Computed timeframe boundaries (nil for `.custom`).
+    ///
+    /// Uses `targetWindowDate` when set (core-board browser pre-spawn);
+    /// otherwise falls back to `Date()` for the historic banner /
+    /// one-off behaviour. All downstream date producers
+    /// (`timeframeDisplayLabel`, `resolveWizardDates`, the recurring
+    /// template's first-spawn window) read through this single
+    /// computation so the target window stays consistent.
     var computedBoundaries: (start: Date, end: Date)? {
-        computeTimeframeBoundaries(timeframe: timeframe, referenceDate: Date(), weekStartDay: weekStartDay)
+        computeTimeframeBoundaries(
+            timeframe: timeframe,
+            referenceDate: targetWindowDate ?? Date(),
+            weekStartDay: weekStartDay
+        )
     }
 
     /// Inline summary label for the chosen non-custom timeframe.

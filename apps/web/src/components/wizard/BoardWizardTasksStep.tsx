@@ -5,6 +5,7 @@ import {
   TaskType,
   Timeframe,
   generateCounterTaskTitle,
+  isTaskExpired,
   type Task,
 } from '@oybc/shared';
 import { db } from '../../db/database';
@@ -266,6 +267,14 @@ export function BoardWizardTasksStep({
     const q = searchQuery.trim().toLowerCase();
     const matches = (title: string): boolean =>
       q.length === 0 || title.toLowerCase().includes(q);
+    // Phase 6.Y — Timeboxed Tasks: hide expired tasks from every
+    // wizard pool branch. Same default as the Tasks-tab list. There's
+    // no "show expired" toggle here — the wizard is "tasks I might
+    // want on this new board", and an expired task by definition
+    // shouldn't be added to a fresh board. A user who genuinely needs
+    // to backfill an expired task can re-extend its window from the
+    // Tasks tab first.
+    const notExpired = (t: Task): boolean => !isTaskExpired(t);
 
     // "From parent boards" surfaces tasks already placed on currently-
     // active longer-window parent boards (e.g. tasks on the active monthly
@@ -275,7 +284,7 @@ export function BoardWizardTasksStep({
     // expanded leaves aren't useful here since the user is picking from
     // an existing curated set.
     if (activeFilter === 'from-parents') {
-      const filtered = parentBoardTasks.filter((t) => matches(t.title));
+      const filtered = parentBoardTasks.filter((t) => notExpired(t) && matches(t.title));
       return { tasks: filtered, composites: [] };
     }
 
@@ -286,24 +295,24 @@ export function BoardWizardTasksStep({
     //   - "All" pool = primitives only (all compounds render in the composites region)
     const tasks =
       activeFilter === 'all'
-        ? library.allTasks.filter((t) => t.type !== TaskType.COMPOUND && matches(t.title))
+        ? library.allTasks.filter((t) => notExpired(t) && t.type !== TaskType.COMPOUND && matches(t.title))
         : activeFilter === 'composite' || activeFilter === 'progress'
           ? []
-          : library.allTasks.filter((t) => t.type === activeFilter && matches(t.title));
+          : library.allTasks.filter((t) => notExpired(t) && t.type === activeFilter && matches(t.title));
 
     // Composites region shows ALL compound tasks under "All" and type-specific
     // compound subsets under "Progress" / "Composite" filters so every compound
     // is reachable, selectable as a whole, and expandable into its leaves.
     const composites =
       activeFilter === 'all'
-        ? library.allTasks.filter((t) => t.type === TaskType.COMPOUND && matches(t.title))
+        ? library.allTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t.title))
         : activeFilter === 'composite'
           ? library.allTasks.filter(
-              (t) => t.type === TaskType.COMPOUND && t.isOrdered !== true && matches(t.title),
+              (t) => notExpired(t) && t.type === TaskType.COMPOUND && t.isOrdered !== true && matches(t.title),
             )
           : activeFilter === 'progress'
             ? library.allTasks.filter(
-                (t) => t.type === TaskType.COMPOUND && t.isOrdered === true && matches(t.title),
+                (t) => notExpired(t) && t.type === TaskType.COMPOUND && t.isOrdered === true && matches(t.title),
               )
             : [];
 

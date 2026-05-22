@@ -33,6 +33,12 @@ export interface BoardWizardPageProps {
    *  comes from `useBoardWizard`'s `prefilledRecurringTimeframe`).
    *  Phase 6.1 of the Recurring Boards feature. */
   prefilledRecurringTimeframe?: Timeframe;
+  /** When set, the wizard was opened from the core-board browser to
+   *  spawn a non-current window. Passed straight through to the
+   *  wizard controller; everything else (name seed, persist dates,
+   *  recurring first-spawn window) keys off `controller.targetWindowDate`.
+   *  Ignored when there's no `prefilledRecurringTimeframe`. */
+  targetWindowDate?: Date;
   /** When set, the wizard was opened from Profile → Recurring
    *  templates → Edit. All fields hydrate from the template,
    *  `isRecurring` is forced ON, and Save updates the template
@@ -69,6 +75,7 @@ export function BoardWizardPage({
   preferences,
   draft,
   prefilledRecurringTimeframe,
+  targetWindowDate,
   editingTemplate,
   onCancel,
   onComplete,
@@ -79,6 +86,7 @@ export function BoardWizardPage({
     userId,
     draft,
     prefilledRecurringTimeframe,
+    targetWindowDate,
     editingTemplate,
   });
   const library = useTaskLibrary(userId);
@@ -97,7 +105,7 @@ export function BoardWizardPage({
   // the Board record we write is well-formed. Partial task selection
   // is fine — drafts can have fewer BoardTasks than the geometry asks
   // for, and Activate will validate on the way out.
-  const dates = resolveWizardDates(wizard);
+  const dates = resolveWizardDates(wizard, wizard.targetWindowDate ?? undefined);
   const hasResolvableDates = !('error' in dates);
   const hasName = wizard.name.trim().length > 0;
   const canSaveDraft = hasName && hasResolvableDates;

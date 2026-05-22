@@ -7,26 +7,31 @@ import SwiftUI
 /// Boards are loaded from the local GRDB database on appear and filtered
 /// client-side — no network calls.
 ///
-/// Phase 6.1: also renders a `PendingCoreBoardsSectionView` when the user
-/// has recurring board prefs enabled and the current window has no covering
-/// board. Tapping a card invokes `onCreateRecurring` (set by MainTabView)
-/// which switches to the Create tab with the timeframe prefilled.
+/// Also renders a `CoreBoardsSectionView` whenever any recurring
+/// timeframe pref is enabled. Each row is a single tap target →
+/// `onBrowseTimeframe` opens the per-timeframe Core Board Browser.
 ///
 /// Phase 6.1d note: the section is mounted **inside** the SwiftUI `List`
 /// as a transparent header row (not above it as a sticky element) so the
-/// user can scroll past the section to reach the board list below — when
-/// 4 windows are pending the cards take ~520pt and would otherwise
-/// dominate the screen on iPhone-class widths.
+/// user can scroll past the section to reach the board list below.
 struct BoardListView: View {
 
     // MARK: - Inputs
 
-    /// Invoked when the user taps Create on a recurring-boards banner row.
-    /// MainTabView wires this to switch to the Create tab and stash the
-    /// timeframe for `CreateHubView` to consume. Optional for the playground
-    /// + #Preview path where cross-tab navigation isn't available — the
-    /// banner Create button no-ops in that case.
-    var onCreateRecurring: ((Timeframe) -> Void)?
+    /// Cross-tab launch for a non-current window picked in the
+    /// core-board browser. MainTabView wires this to set the
+    /// `pendingRecurringTimeframe` + `pendingTargetWindowDate` bindings
+    /// and flip to the Create tab. Optional for the playground /
+    /// #Preview path. Receives the date in local time; the wizard
+    /// uses it as the reference for `computeTimeframeBoundaries`.
+    var onCreateForWindow: ((Timeframe, Date) -> Void)?
+
+    /// Push the per-timeframe Core Board Browser onto the Boards-tab
+    /// navigation stack. MainTabView appends a `CoreBrowserRoute` onto
+    /// `boardsPath`. Also the tap target for the Core Boards section's
+    /// rows (each row routes through here). Optional so the playground /
+    /// #Preview path can leave it nil.
+    var onBrowseTimeframe: ((Timeframe) -> Void)?
 
     // MARK: - Dependencies
 
@@ -88,25 +93,26 @@ struct BoardListView: View {
 
             if let loadError {
                 errorView(message: loadError)
-            } else if filteredBoards.isEmpty && pendingRecurringVM.pending.isEmpty {
-                // True empty state: no boards, no pending core windows. Big
-                // ContentUnavailableView reads as expected.
+            } else if filteredBoards.isEmpty && pendingRecurringVM.slots.isEmpty {
+                // True empty state: no boards, no enabled recurring
+                // timeframes. Big ContentUnavailableView reads as expected.
                 emptyStateView
             } else if filteredBoards.isEmpty {
-                // No boards but we have pending core boards to surface — let
+                // No boards but we have core-board slots to surface — let
                 // the section be the entire content in a ScrollView so the
                 // user can act on it without an awkward "no boards" graphic
                 // below. `.frame(maxHeight: .infinity)` ensures the
                 // ScrollView fills the remaining vertical space below the
                 // filter picker; without it, on small-screen devices with
-                // 4 pending cards the last card can be obscured by the tab
+                // 4 enabled slots the last card can be obscured by the tab
                 // bar / home indicator with no way to scroll to it.
                 ScrollView {
-                    PendingCoreBoardsSectionView(
-                        pending: pendingRecurringVM.pending,
-                        variant: .boardsTab,
-                        onCreate: { entry in
-                            onCreateRecurring?(entry.timeframe)
+                    CoreBoardsSectionView(
+                        slots: pendingRecurringVM.slots,
+                        onSelect: { slot in
+                            // Whole-row tap → per-timeframe browser
+                            // (handles Create + Play + adjacent windows).
+                            onBrowseTimeframe?(slot.timeframe)
                         }
                     )
                     .padding(.horizontal)
@@ -165,12 +171,12 @@ struct BoardListView: View {
             // first board row. `.listRowBackground(Color.clear)` keeps the
             // section's tinted card backgrounds from being washed out by
             // the List's default row background.
-            if !pendingRecurringVM.pending.isEmpty {
-                PendingCoreBoardsSectionView(
-                    pending: pendingRecurringVM.pending,
-                    variant: .boardsTab,
-                    onCreate: { entry in
-                        onCreateRecurring?(entry.timeframe)
+            if !pendingRecurringVM.slots.isEmpty {
+                CoreBoardsSectionView(
+                    slots: pendingRecurringVM.slots,
+                    onSelect: { slot in
+                        // Whole-row tap → per-timeframe browser.
+                        onBrowseTimeframe?(slot.timeframe)
                     }
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

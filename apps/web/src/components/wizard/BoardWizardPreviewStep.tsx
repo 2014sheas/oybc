@@ -113,7 +113,7 @@ export function BoardWizardPreviewStep({
     }
     const b = getTimeframeBoundaries(
       controller.timeframe,
-      new Date(),
+      controller.targetWindowDate ?? new Date(),
       controller.weekStartDay,
     );
     const windowLabel = formatTimeframeLabel(controller.timeframe, b.startDate);
@@ -130,6 +130,7 @@ export function BoardWizardPreviewStep({
     controller.customEndDate,
     controller.weekStartDay,
     controller.isRecurring,
+    controller.targetWindowDate,
   ]);
 
   const isOddBoard = controller.size % 2 !== 0;
@@ -191,8 +192,10 @@ export function BoardWizardPreviewStep({
       return;
     }
 
-    // One-off branch — existing behavior unchanged.
-    const dates = resolveWizardDates(controller);
+    // One-off branch — existing behavior unchanged, except the
+    // core-board browser may supply a future `targetWindowDate` so the
+    // persisted window matches the user's pick.
+    const dates = resolveWizardDates(controller, controller.targetWindowDate ?? undefined);
     if ('error' in dates) {
       setErrorMessage(dates.error);
       return;

@@ -1,7 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   findPendingRecurringBoards,
+  getCoreBoardSlots,
   mergeUserPreferences,
+  type CoreBoardSlot,
   type PendingRecurringBoard,
 } from '@oybc/shared';
 import { db } from '../db/database';
@@ -44,6 +46,43 @@ export function usePendingRecurringBoards(
       },
       [userId],
       []
+    ) ?? []
+  );
+}
+
+/**
+ * Reactive variant that returns one slot per *enabled* recurring
+ * timeframe (daily/weekly/monthly/yearly), with `currentBoard`
+ * populated when an `isCore=true` board exists for the current window.
+ * Used by the persistent home-screen Core Boards section — distinct
+ * from `usePendingRecurringBoards` which only surfaces timeframes
+ * needing creation.
+ *
+ * Same Dexie deps as the pending hook, so a board create / delete
+ * / preference change reactively updates both. Returns `[]` while
+ * loading, when the user is signed out, or when no recurring
+ * timeframes are enabled at all.
+ */
+export function useCoreBoardSlots(
+  userId: string | undefined,
+): CoreBoardSlot[] {
+  return (
+    useLiveQuery(
+      async (): Promise<CoreBoardSlot[]> => {
+        if (!userId) return [];
+
+        const [user, userBoards] = await Promise.all([
+          db.users.get(userId),
+          db.boards
+            .filter((b) => b.userId === userId && !b.isDeleted)
+            .toArray(),
+        ]);
+
+        const prefs = mergeUserPreferences(user?.preferences);
+        return getCoreBoardSlots(userBoards, prefs, new Date());
+      },
+      [userId],
+      [],
     ) ?? []
   );
 }

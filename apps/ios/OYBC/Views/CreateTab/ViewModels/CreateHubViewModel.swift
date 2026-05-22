@@ -26,8 +26,12 @@ final class CreateHubViewModel {
         case wizardResume(boardId: String)
         /// Wizard launched from the Recurring Boards banner with a
         /// pre-selected timeframe. The setup step locks the timeframe
-        /// field; everything else behaves like `wizardFresh`.
-        case wizardRecurring(timeframe: Timeframe)
+        /// field; everything else behaves like `wizardFresh`. When
+        /// `targetWindowDate` is non-nil (Phase B — core-board
+        /// browser pre-spawn), the wizard's `computedBoundaries`
+        /// resolve against that date instead of "now", so the
+        /// persisted window matches the picked one.
+        case wizardRecurring(timeframe: Timeframe, targetWindowDate: Date?)
         /// Wizard launched in template-edit mode (Profile → Recurring
         /// templates → Edit). The wizard hydrates from the template
         /// and Save updates the template instead of creating a board.
@@ -63,9 +67,9 @@ final class CreateHubViewModel {
         mode = .wizardFresh
     }
 
-    func enterRecurringWizard(timeframe: Timeframe) {
+    func enterRecurringWizard(timeframe: Timeframe, targetWindowDate: Date? = nil) {
         resumeDraft = nil
-        mode = .wizardRecurring(timeframe: timeframe)
+        mode = .wizardRecurring(timeframe: timeframe, targetWindowDate: targetWindowDate)
     }
 
     // MARK: - Async loaders

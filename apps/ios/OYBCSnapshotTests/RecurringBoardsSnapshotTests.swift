@@ -3,43 +3,39 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for Phase 6.1's net-new visual surfaces:
-///   - `PendingCoreBoardsSectionView` — boards-tab + create-tab variants,
-///     1-entry + 4-entry (Jan 1 case)
+/// Snapshot coverage for the home-screen Core Boards section + the
+/// wizard's locked-timeframe variant:
+///   - `CoreBoardsSectionView` — 1-slot, 4-slots all-not-yet, 4-slots
+///     mixed (one Done, three Not-yet)
 ///   - `BoardSetupFormView` with `lockTimeframe: true`
 ///
-/// `BoardPreferencesView`'s new "Recurring Boards" section is not snapshotted
+/// `BoardPreferencesView`'s "Recurring Boards" section is not snapshotted
 /// because it depends on `@EnvironmentObject AuthService` — wiring a mock
 /// AuthService into a snapshot test is non-trivial and the section's render
 /// is a straightforward `Section { Toggle… }` (low visual-regression risk).
-/// Add a dedicated test if AuthService gains a snapshot-friendly initializer.
 ///
 /// Section fixtures use **fixed-date strings** rather than `Date()` so the
-/// suggested-name label ("May 4, 2026" / "May 2026" / "Week of …" / "2026")
-/// stays stable across days.
+/// window label ("May 4, 2026" / "May 2026" / "Week of …" / "2026") stays
+/// stable across days.
 final class RecurringBoardsSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // MARK: - Section (Phase 6.1d — replaces the older banner)
+    // MARK: - Core Boards section (replaces the old Pending banner)
 
-    /// Section with a single Daily entry — the most common steady-state
-    /// case (user has daily-prompt enabled, opens the app on a new day,
-    /// no other windows are pending). Tests the `.boardsTab` variant.
-    func testSectionSingleDailyEntry() {
-        let pending = [
-            PendingRecurringBoard(
+    /// Section with a single Daily slot — the most common steady
+    /// state (only daily-prompt enabled).
+    func testCoreBoardsSectionSingleDaily() {
+        let slots: [CoreBoardSlot] = [
+            CoreBoardSlot(
                 timeframe: .daily,
-                startDate: "2026-05-04T00:00:00.000",
-                endDate: "2026-05-04T23:59:59.999",
-                suggestedName: "May 4, 2026"
+                windowStart: "2026-05-04T00:00:00.000",
+                windowEnd: "2026-05-04T23:59:59.999",
+                windowLabel: "May 4, 2026",
+                currentBoard: nil
             )
         ]
-        let view = PendingCoreBoardsSectionView(
-            pending: pending,
-            variant: .boardsTab,
-            onCreate: { _ in }
-        )
+        let view = CoreBoardsSectionView(slots: slots, onSelect: { _ in })
         assertSnapshot(
             of: view,
             as: .image(layout: .fixed(width: 393, height: 110)),
@@ -47,17 +43,13 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
         )
     }
 
-    /// Section with all four timeframes pending — the Jan 1 case where
+    /// Section with all 4 timeframes enabled — the Jan 1 case where
     /// the user opens the app on the first day of a new year/month/
-    /// week/day simultaneously. Order is load-bearing (longest-window-
-    /// first) so the wizard's "From parent boards" filter has a usable
-    /// parent chain. Tests the `.boardsTab` variant.
-    func testSectionAllFourEntriesJan1BoardsTab() {
-        let pending = jan1FourEntryFixture()
-        let view = PendingCoreBoardsSectionView(
-            pending: pending,
-            variant: .boardsTab,
-            onCreate: { _ in }
+    /// week/day. Daily-first ordering is load-bearing.
+    func testCoreBoardsSectionAllFour() {
+        let view = CoreBoardsSectionView(
+            slots: jan1FourSlotsAllNotYet(),
+            onSelect: { _ in }
         )
         assertSnapshot(
             of: view,
@@ -66,49 +58,35 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
         )
     }
 
-    /// Same fixture as the boards-tab variant but mounted on the Create
-    /// tab. Verifies the heading copy difference ("Get started with
-    /// today's boards" vs "Pending boards") and confirms the cards
-    /// themselves render identically across surfaces.
-    func testSectionAllFourEntriesJan1CreateTab() {
-        let pending = jan1FourEntryFixture()
-        let view = PendingCoreBoardsSectionView(
-            pending: pending,
-            variant: .createTab,
-            onCreate: { _ in }
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 360)),
-            record: recordMode
-        )
-    }
-
-    private func jan1FourEntryFixture() -> [PendingRecurringBoard] {
+    private func jan1FourSlotsAllNotYet() -> [CoreBoardSlot] {
         [
-            PendingRecurringBoard(
-                timeframe: .yearly,
-                startDate: "2026-01-01T00:00:00.000",
-                endDate: "2026-12-31T23:59:59.999",
-                suggestedName: "2026"
-            ),
-            PendingRecurringBoard(
-                timeframe: .monthly,
-                startDate: "2026-01-01T00:00:00.000",
-                endDate: "2026-01-31T23:59:59.999",
-                suggestedName: "January 2026"
-            ),
-            PendingRecurringBoard(
-                timeframe: .weekly,
-                startDate: "2025-12-29T00:00:00.000",
-                endDate: "2026-01-04T23:59:59.999",
-                suggestedName: "Week of Dec 29 – Jan 4"
-            ),
-            PendingRecurringBoard(
+            CoreBoardSlot(
                 timeframe: .daily,
-                startDate: "2026-01-01T00:00:00.000",
-                endDate: "2026-01-01T23:59:59.999",
-                suggestedName: "Jan 1, 2026"
+                windowStart: "2026-01-01T00:00:00.000",
+                windowEnd: "2026-01-01T23:59:59.999",
+                windowLabel: "Jan 1, 2026",
+                currentBoard: nil
+            ),
+            CoreBoardSlot(
+                timeframe: .weekly,
+                windowStart: "2025-12-29T00:00:00.000",
+                windowEnd: "2026-01-04T23:59:59.999",
+                windowLabel: "Week of Dec 29 – Jan 4",
+                currentBoard: nil
+            ),
+            CoreBoardSlot(
+                timeframe: .monthly,
+                windowStart: "2026-01-01T00:00:00.000",
+                windowEnd: "2026-01-31T23:59:59.999",
+                windowLabel: "January 2026",
+                currentBoard: nil
+            ),
+            CoreBoardSlot(
+                timeframe: .yearly,
+                windowStart: "2026-01-01T00:00:00.000",
+                windowEnd: "2026-12-31T23:59:59.999",
+                windowLabel: "2026",
+                currentBoard: nil
             ),
         ]
     }

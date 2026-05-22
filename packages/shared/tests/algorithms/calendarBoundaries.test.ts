@@ -8,6 +8,7 @@ import {
   isTimeframeExpired,
   formatTimeframeLabel,
   formatRecurringCadence,
+  stepWindow,
 } from '../../src/algorithms/calendarBoundaries';
 import { Timeframe } from '../../src/constants/enums';
 
@@ -312,5 +313,131 @@ describe('formatRecurringCadence', () => {
   });
   it('returns "Custom" for CUSTOM (defensive — production excludes it)', () => {
     expect(formatRecurringCadence(Timeframe.CUSTOM)).toBe('Custom');
+  });
+});
+
+// ─── Step Window (pagination) ────────────────────────────────────────────────
+
+describe('stepWindow', () => {
+  // DAILY ─────────────────────────────────────────────────────────────────
+  describe('DAILY', () => {
+    it('+1 from Tuesday gives Wednesday', () => {
+      const next = stepWindow(Timeframe.DAILY, '2026-05-19T00:00:00.000', 1);
+      expect(next.startDate).toBe('2026-05-20T00:00:00.000');
+      expect(next.endDate).toBe('2026-05-20T23:59:59.999');
+    });
+    it('-1 from Tuesday gives Monday', () => {
+      const prev = stepWindow(Timeframe.DAILY, '2026-05-19T00:00:00.000', -1);
+      expect(prev.startDate).toBe('2026-05-18T00:00:00.000');
+    });
+    it('+1 crossing month boundary (May 31 → Jun 1)', () => {
+      const next = stepWindow(Timeframe.DAILY, '2026-05-31T00:00:00.000', 1);
+      expect(next.startDate).toBe('2026-06-01T00:00:00.000');
+    });
+    it('+1 crossing year boundary (Dec 31 → Jan 1)', () => {
+      const next = stepWindow(Timeframe.DAILY, '2026-12-31T00:00:00.000', 1);
+      expect(next.startDate).toBe('2027-01-01T00:00:00.000');
+    });
+    it('+5 accumulates correctly', () => {
+      const result = stepWindow(Timeframe.DAILY, '2026-05-19T00:00:00.000', 5);
+      expect(result.startDate).toBe('2026-05-24T00:00:00.000');
+    });
+  });
+
+  // WEEKLY ────────────────────────────────────────────────────────────────
+  describe('WEEKLY', () => {
+    it('+1 from a Monday-start week gives the next Monday week', () => {
+      const next = stepWindow(
+        Timeframe.WEEKLY,
+        '2026-05-18T00:00:00.000', // Monday May 18
+        1,
+        'monday',
+      );
+      expect(next.startDate).toBe('2026-05-25T00:00:00.000');
+      expect(next.endDate).toBe('2026-05-31T23:59:59.999');
+    });
+    it('-1 from Mon May 18 gives Mon May 11', () => {
+      const prev = stepWindow(Timeframe.WEEKLY, '2026-05-18T00:00:00.000', -1, 'monday');
+      expect(prev.startDate).toBe('2026-05-11T00:00:00.000');
+    });
+    it('honours sunday week-start when stepping across months', () => {
+      const next = stepWindow(
+        Timeframe.WEEKLY,
+        '2026-05-31T00:00:00.000', // Sun May 31
+        1,
+        'sunday',
+      );
+      expect(next.startDate).toBe('2026-06-07T00:00:00.000');
+    });
+    it('+2 jumps two weeks at once', () => {
+      const result = stepWindow(Timeframe.WEEKLY, '2026-05-18T00:00:00.000', 2, 'monday');
+      expect(result.startDate).toBe('2026-06-01T00:00:00.000');
+    });
+  });
+
+  // MONTHLY ───────────────────────────────────────────────────────────────
+  describe('MONTHLY', () => {
+    it('+1 from Jan gives Feb (handles short Feb)', () => {
+      const next = stepWindow(Timeframe.MONTHLY, '2026-01-01T00:00:00.000', 1);
+      expect(next.startDate).toBe('2026-02-01T00:00:00.000');
+      expect(next.endDate).toBe('2026-02-28T23:59:59.999');
+    });
+    it('+1 from Feb gives Mar with full 31-day endDate', () => {
+      const next = stepWindow(Timeframe.MONTHLY, '2026-02-01T00:00:00.000', 1);
+      expect(next.startDate).toBe('2026-03-01T00:00:00.000');
+      expect(next.endDate).toBe('2026-03-31T23:59:59.999');
+    });
+    it('leap year — Feb 2028 has 29 days', () => {
+      const next = stepWindow(Timeframe.MONTHLY, '2028-01-01T00:00:00.000', 1);
+      expect(next.endDate).toBe('2028-02-29T23:59:59.999');
+    });
+    it('+1 from Dec rolls year', () => {
+      const next = stepWindow(Timeframe.MONTHLY, '2026-12-01T00:00:00.000', 1);
+      expect(next.startDate).toBe('2027-01-01T00:00:00.000');
+    });
+    it('-1 from Jan rolls year backward', () => {
+      const prev = stepWindow(Timeframe.MONTHLY, '2026-01-01T00:00:00.000', -1);
+      expect(prev.startDate).toBe('2025-12-01T00:00:00.000');
+    });
+    it('+13 accumulates a year + a month', () => {
+      const result = stepWindow(Timeframe.MONTHLY, '2026-01-01T00:00:00.000', 13);
+      expect(result.startDate).toBe('2027-02-01T00:00:00.000');
+    });
+  });
+
+  // YEARLY ────────────────────────────────────────────────────────────────
+  describe('YEARLY', () => {
+    it('+1 gives the next year', () => {
+      const next = stepWindow(Timeframe.YEARLY, '2026-01-01T00:00:00.000', 1);
+      expect(next.startDate).toBe('2027-01-01T00:00:00.000');
+      expect(next.endDate).toBe('2027-12-31T23:59:59.999');
+    });
+    it('-1 gives the previous year', () => {
+      const prev = stepWindow(Timeframe.YEARLY, '2026-01-01T00:00:00.000', -1);
+      expect(prev.startDate).toBe('2025-01-01T00:00:00.000');
+    });
+  });
+
+  // Invariants ───────────────────────────────────────────────────────────
+  describe('invariants', () => {
+    it('step 0 returns the same window (boundaries from the input date)', () => {
+      const result = stepWindow(Timeframe.DAILY, '2026-05-19T00:00:00.000', 0);
+      expect(result.startDate).toBe('2026-05-19T00:00:00.000');
+    });
+    it('throws for CUSTOM timeframe', () => {
+      expect(() =>
+        stepWindow(Timeframe.CUSTOM, '2026-05-19T00:00:00.000', 1),
+      ).toThrow(/CUSTOM/);
+    });
+    it('throws for non-integer step', () => {
+      expect(() =>
+        stepWindow(Timeframe.DAILY, '2026-05-19T00:00:00.000', 1.5),
+      ).toThrow(/integer/);
+    });
+    it('throws for unparseable currentStart', () => {
+      expect(() =>
+        stepWindow(Timeframe.DAILY, 'not-a-date', 1),
+      ).toThrow(/parseable/);
+    });
   });
 });

@@ -44,12 +44,27 @@ struct CreateNewTaskFormView: View {
                 .font(.headline)
 
             // Type picker
-            Picker("Task Type", selection: $form.taskType) {
-                ForEach(CreateTaskType.allCases, id: \.self) { pt in
-                    Text(pt.rawValue).tag(pt)
+            //
+            // Segments display `shortLabel` (3–4 char abbreviations)
+            // because `.segmented` allocates equal width per segment
+            // and renders via UIKit's UISegmentedControl, which
+            // ignores per-`Text` SwiftUI font modifiers — the full
+            // "Achievement" label otherwise truncates with `…` on
+            // iPhone widths. The caption below the picker spells out
+            // the full name of the current selection so the user
+            // always knows what they're choosing.
+            VStack(alignment: .leading, spacing: 4) {
+                Picker("Task Type", selection: $form.taskType) {
+                    ForEach(CreateTaskType.allCases, id: \.self) { pt in
+                        Text(pt.shortLabel).tag(pt)
+                    }
                 }
+                .pickerStyle(.segmented)
+
+                Text(form.taskType.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .pickerStyle(.segmented)
             .onChange(of: form.taskType) {
                 form.clearFeedback()
                 // Clear the template AND the action/unit/maxCount fields it

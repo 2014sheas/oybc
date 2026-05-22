@@ -18,21 +18,34 @@
   gap: 10px;
 }
 
+/* Whole row is a single tap target — wired by the parent to push the
+ * per-timeframe browser (Boards tab) or launch the wizard for the
+ * current window (Create tab). No competing buttons inside the row. */
 .card {
   display: flex;
   align-items: center;
   gap: 14px;
+  width: 100%;
   padding: 16px 16px;
   background: var(--surface-elevated, rgba(10, 132, 255, 0.08));
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
   transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
 .card:hover {
   transform: translateY(-1px);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
 }
 
 .icon {
@@ -61,41 +74,9 @@
   margin-top: 2px;
 }
 
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex-shrink: 0;
-  align-items: stretch;
-}
-
-.createButton {
-  background: var(--active-bg);
-  color: var(--active-text);
-  border: 0;
-  border-radius: 8px;
-  padding: 9px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  min-width: 88px;
-  transition: opacity 0.2s;
-}
-
-.createButton:hover {
-  opacity: 0.9;
-}
-
-.dismissButton {
-  background: transparent;
+.chevron {
+  font-size: 22px;
   color: var(--text-secondary);
-  border: 0;
-  padding: 4px 6px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.dismissButton:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
 }

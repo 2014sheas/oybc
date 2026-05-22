@@ -152,6 +152,7 @@ enum SnapshotFixtures {
         startDate: String = "2026-04-01T00:00:00.000Z",
         endDate: String = "2026-04-30T23:59:59.000Z",
         spawnedFromTemplateId: String? = nil,
+        isCore: Bool = false,
         isDeleted: Bool = false
     ) -> Board {
         var dict: [String: Any] = [
@@ -172,6 +173,7 @@ enum SnapshotFixtures {
             "createdAt": fixedTimestamp,
             "updatedAt": fixedTimestamp,
             "version": 1,
+            "isCore": isCore,
             "isDeleted": isDeleted,
         ]
         if let tid = spawnedFromTemplateId { dict["spawnedFromTemplateId"] = tid }

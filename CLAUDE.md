@@ -10,7 +10,7 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 ## Task model — Compound Tasks Unification (shipped)
 
-The task model is the unified 3-type one: **Normal / Counting / Compound**. Progress and Composite were collapsed onto Compound during the unification refactor (PR #43, PR #42, and the Phase 8 cleanup). Canonical doc: [`docs/TASK_SYSTEM.md`](docs/TASK_SYSTEM.md).
+The core task model is the unified one — **Normal / Counting / Compound** (Progress and Composite were collapsed onto Compound in the unification refactor: PR #43, PR #42, Phase 8 cleanup). Phase 6.3 later added **Achievement**, a cross-board watcher type. Canonical doc: [`docs/TASK_SYSTEM.md`](docs/TASK_SYSTEM.md).
 
 Schema shape:
 
@@ -246,20 +246,9 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 - `TabBar.tsx` is an HTML `<nav>` + NavLinks; `MainTabView.swift` uses SwiftUI `TabView`. Same UX, platform-native implementation.
 - `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
 - `syncService.ts` uses module-level functions + a React hook for orchestration; iOS embeds orchestration in a `@MainActor ObservableObject` bound to `AuthService`'s lifecycle. Same push/pull/LWW rules, same collection list — when you change one, mirror the other in the same PR.
-- **Create Hub + board wizard** (feature):
-  - `components/wizard/{BoardSetupForm,BoardWizardStepper,BoardWizardSetupStep,BoardWizardTasksStep,BoardWizardPreviewStep,BoardWizardCancelDialog,NewTaskSheet,wizardPersist}.tsx/.ts` ←→ `Views/CreateTab/{BoardWizardPersist.swift}` + `Views/CreateTab/Components/{BoardSetupFormView,BoardWizardStepperView,BoardWizardSetupStepView,BoardWizardTasksStepView,BoardWizardPreviewStepView,BoardWizardCancelDialogView,NewTaskSheetView}.swift`.
-  - `components/createHub/{CreateHubBoardCTA,CreateHubDraftsList,CreateHubQuickAdd}.tsx` ←→ `Views/CreateTab/Components/{CreateHubBoardCTAView,CreateHubDraftsListView,CreateHubQuickAddView}.swift`.
-  - `pages/createHub/useBoardWizard.ts` ←→ `Views/CreateTab/ViewModels/BoardWizardViewModel.swift`.
-  - `pages/createHub/useDrafts.ts` has no dedicated iOS twin — iOS inlines the equivalent GRDB query in `CreateHubView.reloadDrafts()` because SwiftUI lacks a direct `useLiveQuery` analog; drafts reload explicitly on `.onAppear` and after wizard dismiss instead.
-  - `wizardPersist.ts` lives in `components/wizard/` on web (next to consumers). `BoardWizardPersist.swift` lives in `Views/CreateTab/` (not `Components/`) because it is a helper, not a view. Both export the same three helpers: `buildWizardPlacement`, `resolveWizardDates`, `persistWizardBoard`.
-- **Composite-task mini-wizard** (feature):
-  - `components/compositeWizard/{CompositeTaskWizard,CompositeWizardStepper,SetupStep,BuildStep,ReviewStep,SubtaskCard,compositeSubtaskDraft}.tsx/.ts` ←→ `Views/Components/CompositeWizard/{CompositeTaskWizardView,CompositeWizardStepperView,CompositeWizardSetupStepView,CompositeWizardBuildStepView,CompositeWizardReviewStepView,CompositeSubtaskCardView,CompositeSubtaskItem}.swift`. The Build step renders an always-visible inline library section (search + filter tabs + checkbox rows) — matching the board wizard's Tasks-step pattern; the earlier modal `LibraryPickerSheet` is retired.
-  - Replaced the legacy ~850-line `CompositeTaskForm.tsx` / `CompositeTaskFormView.swift` monoliths with a 3-step Setup → Build → Review flow. Same data model + write path, better UX (live validation, type-switch confirm, threshold clamp toast, library callout).
-- **Tasks tab** (feature):
-  - `pages/TasksPage.tsx` ←→ `Views/TasksTab/TasksTabView.swift`. Lists the user's library with search + type chips + status / usage dropdowns + sort dropdown. `pages/tasks/{useTasksFilters.ts,TaskRow.tsx,TasksFilterControls.tsx}` ←→ `Views/TasksTab/{ViewModels/TasksTabViewModel.swift,Components/TaskRowView.swift,Components/TasksFilterControlsView.swift}`. The filter pipeline (type / search / status / usage / sort) is shared in spirit but implemented per platform; the `BoardWizardTasksStep` row renderer is intentionally *not* shared — it's entangled with selection / center-pinning state. Achievement is on the filter chip row even though it's hidden from the wizard's row, because Tasks-tab is the only place to find an achievement task.
-  - `pages/TaskDetailPage.tsx` ←→ `Views/TasksTab/TaskDetailView.swift`. Per-task stats / type-specific facts / "placed on" board list / inline edit sheet / cascade delete.
-  - **Cascade delete**: `deleteTaskWithCascade(id)` (web `db/operations/tasks.ts`, iOS `AppDatabase.swift`) hard-deletes BoardTask rows, soft-deletes CompoundChild link rows in both directions, then soft-deletes the Task itself, atomically in one transaction. `computeTaskDeletionImpact(id)` is a read-only preview consumed by the confirm dialog. Achievement tasks reference *boards/templates* not other tasks, so they don't participate in the task-side cascade.
-  - **Quick-add relocation**: `CreateHubQuickAdd` / `CreateHubQuickAddView` moved out of the Create hub and now live at the top of the Tasks tab. The Create tab is board-creation only.
+- **Create Hub + board wizard**: web `components/wizard/*` + `components/createHub/*` + `pages/createHub/useBoardWizard.ts` ←→ iOS `Views/CreateTab/Components/*` + `ViewModels/BoardWizardViewModel.swift`. Non-obvious bits: `useDrafts.ts` has no iOS twin (iOS inlines the GRDB query in `CreateHubView.reloadDrafts()`, reloading on `.onAppear` + after wizard dismiss, since SwiftUI lacks `useLiveQuery`); `wizardPersist.ts` ←→ `BoardWizardPersist.swift` is a helper not a view (so iOS keeps it in `Views/CreateTab/`, not `Components/`), both exporting `buildWizardPlacement` / `resolveWizardDates` / `persistWizardBoard`.
+- **Composite-task mini-wizard**: `components/compositeWizard/*` ←→ `Views/Components/CompositeWizard/*` — a 3-step Setup → Build → Review flow that replaced the legacy ~850-line `CompositeTaskForm` monoliths (same data model + write path). The Build step uses an always-visible inline library section (search + filter tabs + checkbox rows), matching the board wizard's Tasks step; the old modal `LibraryPickerSheet` is retired.
+- **Tasks tab**: `pages/TasksPage.tsx` ←→ `Views/TasksTab/TasksTabView.swift` (library list, search + type chips + status/usage/sort). The filter pipeline is shared in spirit but implemented per platform; the `BoardWizardTasksStep` row renderer is intentionally *not* shared (entangled with selection / center-pinning). Achievement shows on the Tasks-tab filter chips even though it's hidden from the wizard row. `TaskDetailPage` ←→ `TaskDetailView` covers per-task stats / inline edit / cascade delete. **Cascade delete**: `deleteTaskWithCascade(id)` (web `db/operations/tasks.ts`, iOS `AppDatabase.swift`) hard-deletes BoardTask rows, soft-deletes CompoundChild links both directions, then soft-deletes the Task — atomically; `computeTaskDeletionImpact(id)` is the read-only preview for the confirm dialog (Achievement tasks reference boards/templates, not tasks, so they skip the task-side cascade). **Quick-add** (`CreateHubQuickAdd*`) now lives atop the Tasks tab, not the Create hub (which is board-creation only).
 
 **Rules**:
 
@@ -349,9 +338,7 @@ oybc/
 
 ### Database Schema (Identical Across Platforms)
 
-**Tables**: `users`, `boards`, `tasks`, `task_steps`, `board_tasks`, `progress_counters`, `sync_queue`
-
-> **Planned post-unification** (see top-of-doc callout): `task_steps`, `composite_tasks`, and `composite_nodes` are dropped; a new `compound_children` table is added. `tasks` widens to carry compound operator/threshold/isOrdered fields. `board_tasks` loses its completion-state columns.
+**Tables**: `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `progress_counters`, `sync_queue`. Legacy `task_steps` / `composite_tasks` / `composite_nodes` linger in old migrations for first-launch backfill only — no live reads/writes (see top-of-doc Task model section).
 
 **Key Design Elements**:
 
@@ -363,9 +350,7 @@ oybc/
 
 ### Type System
 
-**`packages/shared`** is the single source of truth for types: `Board`, `Task`, `TaskStep`, `BoardTask`, `ProgressCounter`, `User`, `SyncQueueItem`. Includes Zod validation schemas and enums (`BoardStatus`, `TaskType`, `Timeframe`, `CenterSquareType`).
-
-> **Planned post-unification**: `TaskStep`, `CompositeTask`, `CompositeNode` are removed; `CompoundChild` is added. `TaskType` enum drops `PROGRESS` and `COMPOSITE`, gains `COMPOUND` (with `operator` + `threshold` + `isOrdered` fields on `Task`). See the unification spec.
+**`packages/shared`** is the single source of truth for types: `Board`, `Task`, `CompoundChild`, `BoardTask`, `ProgressCounter`, `User`, `SyncQueueItem`. Includes Zod schemas and enums (`BoardStatus`, `TaskType` = `NORMAL` / `COUNTING` / `COMPOUND` / `ACHIEVEMENT`, `Timeframe`, `CenterSquareType`). Legacy `TaskStep` / `CompositeTask` types persist for migration reads only.
 
 - **iOS**: Swift models mirror TypeScript types using GRDB's `Codable`/`FetchableRecord`/`PersistableRecord`. JSON arrays stored as strings in SQLite.
 - **Web**: Dexie uses TypeScript types directly from `@oybc/shared`. Compound indexes match iOS GRDB indexes.
@@ -390,7 +375,7 @@ try AppDatabase.shared.saveBoard(board)
 // Transaction
 try AppDatabase.shared.write { db in
     try task.save(db)
-    try steps.forEach { try $0.save(db) }
+    try children.forEach { try $0.save(db) }
 }
 ```
 
@@ -407,9 +392,9 @@ const boards = useBoards(userId); // useLiveQuery from dexie-react-hooks
 // Fast compound index query
 db.boards.where("[userId+isDeleted]").equals([userId, false]);
 // Transaction
-await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
+await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
   await db.tasks.add(task);
-  await Promise.all(steps.map((s) => db.taskSteps.add(s)));
+  await Promise.all(children.map((c) => db.compoundChildren.add(c)));
 });
 ```
 
@@ -433,15 +418,12 @@ await db.transaction("rw", [db.tasks, db.taskSteps], async () => {
 - **Don't implement multiple features at once**: ONE at a time, user-directed.
 - **Don't copy from old code**: If archived/legacy code exists, it's reference only.
 - **Don't use Firestore as primary storage**: Local DB is source of truth.
-- **Don't hard delete**: Always soft delete for sync compatibility.
 - **Don't trust denormalized values during conflicts**: Recompute from source data.
-- **Don't block UI for sync**: All sync operations must be background/async.
 - **Counting task field order**: Action → Max Count → Unit (not Action → Unit → Max Count).
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
-- **Progress task step auto-creation**: When a progress task is created, each step automatically gets a standalone `Task` record linked via `TaskStep.linkedTaskId`. This makes steps immediately available as pool-addable tasks and enables cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline progress subtasks. **Post-unification**: this pattern stays but routes through `compound_children.childTaskId` instead of `TaskStep.linkedTaskId` — the inline-create-paired-Task transaction shape is unchanged.
+- **Compound child auto-creation**: creating a compound task with inline subtasks creates a standalone `Task` per subtask, linked via `compound_children.childTaskId`, so subtasks are immediately pool-addable and enable cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline subtasks.
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.
-- **Don't assume daily-derived tasks get an independent counter**: per the Recurring Boards design (ARCHITECTURE.md §Phase 6), the same `Task` is shared across boards. Completing once = completing globally, including on the parent monthly. If you find yourself wanting per-window independent state, the user wants a separately-named Task, not a clone.
-- **Don't background-schedule recurring board creation**: detection is intentionally lazy (Boards-tab open only). No `BGTaskScheduler` on iOS, no service-worker scheduling on web. The user opens the app → the banner appears. If a future feature genuinely needs background creation, that's a deliberate scope expansion, not an incremental add.
+- **Recurring-board invariants**: shared-task semantics (completing a derived daily task globally completes its parent monthly — no clones) and lazy detection-only (no `BGTaskScheduler` / service-worker scheduling; the banner appears on Boards-tab open). Both are spelled out in [§Recurring Boards](#recurring-boards-phase-6--shipped) — re-read before touching recurrence.
 
 ## Performance Targets
 
@@ -475,94 +457,21 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 
 **Copilot code review**: request on PRs via `gh api --method POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers --input - <<< '{"reviewers":["Copilot"]}'`. Address review comments before merging.
 
-**Addressing review comments**: every time you work through a round of PR review comments — from Copilot or a human reviewer — **print a markdown table in the terminal response** showing what was flagged and what was done. This is a display-only convention: the table is for the current chat turn, not a persisted artifact. Do NOT put it in commit messages, PR descriptions, or CLAUDE.md itself.
+**Addressing review comments**: each round of PR review (Copilot or human), **print a markdown table in the terminal response** (columns `Comment | Severity | Remedy`, one row per comment) showing what was flagged and what was done. Display-only and fresh per round — never put it in commit messages, PR descriptions, or CLAUDE.md.
 
-Table columns (one row per comment):
-
-- **Comment**: short restatement (≤ 1 sentence) + file/line pointer. Enough for the user to recognise the thread without re-reading the PR.
-- **Severity**: one of `Critical` (correctness, security, data loss), `Major` (bug in happy path, significant UX regression, a11y blocker), `Minor` (nit-level bug, stale-state edge case, code-quality smell), `Nit` (style, naming, comment wording).
-- **Remedy**: either the fix description in ≤ 1 sentence, or `Declined — <reason>` if you chose not to act. Declining is fine; silent dismissal is not.
-
-Example shape (what the terminal response should include):
-
-```
-| Comment | Severity | Remedy |
-| --- | --- | --- |
-| <restatement> (<file>:<line>) | Minor | <fix summary> |
-```
-
-Rationale: the user wants the status of each comment visible inline with the work, not hidden in git history or accumulating in a doc. Fresh table per round.
+- **Comment**: short restatement (≤ 1 sentence) + file/line pointer.
+- **Severity**: `Critical` (correctness/security/data loss) · `Major` (happy-path bug, significant UX/a11y regression) · `Minor` (nit-level bug, stale-state edge, code smell) · `Nit` (style/naming/wording).
+- **Remedy**: the fix in ≤ 1 sentence, or `Declined — <reason>`. Declining is fine; silent dismissal is not.
 
 **pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v6`, which reads the version from `packageManager` and ignores any `version:` workflow input — so the workflows don't set one. To bump the pnpm major across local + CI, change the `packageManager` field; the workflows pick it up automatically.
 
 ## Development Status
 
-**Phase 1**: Local Database Setup — COMPLETE
-**Phase 1.5**: Working App Infrastructure — COMPLETE (web + iOS + Playground + BingoSquare)
+**Phases 1–6 are complete/shipped:** local DB (1), app infrastructure (1.5), core game loop (2), auth + Firestore sync (3), tab-based production app (4), polish (5), recurring boards (6 — see [§Recurring Boards](#recurring-boards-phase-6--shipped) for the sub-phase table + PRs).
 
-**Phase 2**: Core Game Loop — COMPLETE (all features playground-tested)
+**Navigation**: bottom tab bar — Boards (default), Tasks, Create, Profile.
 
-| #   | Feature                                | Status   |
-| --- | -------------------------------------- | -------- |
-| 1   | 5x5 Bingo Board Grid                  | COMPLETE |
-| 2   | Different Board Sizes (3x3, 4x4, 5x5) | COMPLETE |
-| 3   | Bingo Detection Logic                 | COMPLETE |
-| 4   | Board Randomization                   | COMPLETE |
-| 5   | Center Space Logic                    | COMPLETE |
-| 6   | Tasks & Task Creation                 | COMPLETE |
-| 7   | Celebrations & Polish                 | SKIPPED  |
-
-Playground-tested features: unified task creator, composite tasks, board generator, task square actions, subtask system (SF1-SF4), board task selection, cross-board rollup, board lifecycle (creation → activation → bingo detection → greenlog), timeboxed boards (calendar boundaries, expiry), uncomplete cascade.
-
-**Phase 3**: Authentication & Sync Layer — COMPLETE
-
-| Feature                    | Status   |
-| -------------------------- | -------- |
-| Firebase Auth (email/pw)   | COMPLETE |
-| Google Sign-In             | COMPLETE |
-| Sign in with Apple         | COMPLETE |
-| Firestore sync (push/pull) | COMPLETE |
-| LWW conflict resolution    | COMPLETE |
-| Sync queue integration     | COMPLETE |
-| Firestore security rules   | COMPLETE |
-| Sync playground section    | COMPLETE |
-
-**Phase 4**: Production Integration — COMPLETE
-
-Tab-based app with auth gate. Web + iOS built simultaneously.
-
-**Navigation**: Bottom tab bar — Boards (default), Tasks, Create, Profile.
-
-| Phase | Feature | Status |
-| ----- | ------- | ------ |
-| 0 | Synced user preferences (7 preference fields → Firestore) | COMPLETE |
-| 1 | Auth shell + tab bar (replace "Hello OYBC" with auth-gated tabs) | COMPLETE |
-| 2 | Board list (filtering, progress indicators, tap to navigate) | COMPLETE |
-| 3 | Board play (bingo grid, task completion, flash messages) | COMPLETE |
-| 4 | Create tab (task pool + BoardCreatorPanel) | COMPLETE |
-| 5 | Profile + settings + polish | COMPLETE |
-
-**Routes (web)**: `/boards`, `/boards/:id`, `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/profile/recurring-templates`, `/playground` (dev tool)
-
-**Current Phase**: Phase 5 — Polish & Launch
-
-| Feature | Status |
-| --- | --- |
-| Sign-out confirmation dialog (web + iOS) | COMPLETE |
-| Empty states on Create tab | COMPLETE |
-| Display name edit (Firebase Auth + local DB + sync) | COMPLETE |
-| Sync status indicator (online/offline, error, Sync Now) | COMPLETE |
-| iOS NetworkMonitor (NWPathMonitor) | COMPLETE |
-| Pre-phase6 audit (architecture + security + parity) | COMPLETE |
-
-### Pre-phase6 audit outcome
-
-Three parallel audits (architecture/code-quality, security, cross-platform parity) ran before starting Phase 6. Critical findings were fixed in branch `fix/pre-phase6-audit` across four commits:
-
-- **A — LWW delete integrity + Zod pull validation + rules userId pin.** Soft deletes on both platforms now increment `version`. Web pull validates every remote doc via its Zod schema; iOS pull validates version + userId scope. Firestore rules require `payload.userId == path.userId` on user-scoped subcollection writes.
-- **B — log userId scrub, dev-gated playground short-circuit, sync abandonment warnings, SyncDashboard relocation.**
-- **C — CLAUDE.md parity map updated + `_Concurrency.Task` shadow CI guard.**
-- **D3 — iOS `BingoDetection` unit tests** (parity with shared TS coverage).
+**Routes (web)**: `/boards`, `/boards/:id`, `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/profile/recurring-templates`, `/playground` (dev tool).
 
 ### Known follow-ups
 
@@ -570,15 +479,7 @@ Three parallel audits (architecture/code-quality, security, cross-platform parit
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
 - **iOS snapshot tests are advisory in CI** (`continue-on-error: true` on the snapshot step in `ios.yml`). The macos-15 runner ships Xcode 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3), while local dev uses iOS 26.3.x — pixel kerning differs across the iOS minor, so baselines recorded locally don't match CI byte-for-byte. The xcresult artifact still uploads on every snapshot diff, so a developer can pull it and re-record when convenient. To re-enable strict mode: either (a) wait for a macos-15 runner image refresh that ships iOS 26.3, then drop `continue-on-error`; or (b) install iOS 26.2 simulator runtime locally (~5 GB, requires freeing space on `/Library/Developer/CoreSimulator/Volumes/`), re-record on `OS=26.2`, commit baselines, drop `continue-on-error`.
 
-**Phase 6 — Recurring Boards: SHIPPED** (May 2026).
-
-| Sub-phase | Scope | PR |
-| --- | --- | --- |
-| 6.1 | Timeframe-prompted boards — banner detection, wizard prefill, "From parent boards" filter, 4 prefs fields | [#50](https://github.com/2014sheas/oybc/pull/50) |
-| 6.2 | Preset-pool recurring boards — `RecurringBoardTemplate` + lazy app-open spawn | [#52](https://github.com/2014sheas/oybc/pull/52) |
-| 6.3 | ACHIEVEMENT as a `TaskType` — cross-board watcher tasks with trigger + count, cycle detection, window-aware fan-out | [#54](https://github.com/2014sheas/oybc/pull/54) |
-
-**Next phase**: TBD. No Phase 7 has been scoped — the next concrete work item lives in the "Known follow-ups" section above (CreatePage / CreateView refactors, web Vitest harness, CI snapshot strict-mode, pre-launch hardening). Pick by directive rather than by inferred roadmap.
+**Next phase**: TBD — no Phase 7 scoped. Pick the next item from Known follow-ups (web Vitest harness, CI snapshot strict-mode, CreatePage/CreateView refactors, pre-launch hardening) by directive, not inferred roadmap.
 
 ## Branching Strategy
 

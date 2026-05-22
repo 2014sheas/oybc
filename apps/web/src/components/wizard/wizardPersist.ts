@@ -95,12 +95,21 @@ export type ResolvedDates =
  * Resolves start/end ISO timestamps for the new/updated board record.
  * Matches the semantics the legacy Create tab's `BoardCreatorPanel` used so the wizard
  * produces dates indistinguishable from the legacy panel's output.
+ *
+ * @param controller  Wizard state.
+ * @param now         Reference date for non-CUSTOM windows. Defaults to
+ *   `new Date()`. The core-board browser passes a future date here so a
+ *   banner-launched "Plan ahead" flow spawns the window the user picked
+ *   instead of always landing on today's window.
  */
-export function resolveWizardDates(controller: BoardWizardController): ResolvedDates {
+export function resolveWizardDates(
+  controller: BoardWizardController,
+  now: Date = new Date(),
+): ResolvedDates {
   if (controller.timeframe !== Timeframe.CUSTOM) {
     const b = getTimeframeBoundaries(
       controller.timeframe,
-      new Date(),
+      now,
       controller.weekStartDay,
     );
     return { startDate: b.startDate, endDate: b.endDate };
@@ -316,13 +325,18 @@ export async function persistRecurringTemplate({
     isActive: true,
   });
 
-  // Compute the current window and spawn the board. `spawnTemplateBoard`
+  // Compute the spawn window and create the board. `spawnTemplateBoard`
   // opens its own atomic transaction (Board + BoardTasks + template
   // lastSpawnedWindowKey + sync queue items). If it returns ok=false,
   // the template is intact; the Boards-tab spawn driver retries.
+  //
+  // The reference date defaults to "now" — the historic recurring-banner
+  // flow — but the core-board browser may pass a future date via
+  // `controller.targetWindowDate` so the first-spawn matches the window
+  // the user actually picked.
   const { startDate, endDate } = getTimeframeBoundaries(
     controller.timeframe,
-    new Date(),
+    controller.targetWindowDate ?? new Date(),
     controller.weekStartDay,
   );
   const pendingSpawn: PendingTemplateSpawn = {

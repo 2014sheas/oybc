@@ -892,11 +892,28 @@ final class SyncService: ObservableObject {
         }
 
         // Validate all keys are safe SQL identifiers to prevent injection
-        let keys = Array(cleaned.keys).filter { key in
+        var keys = Array(cleaned.keys).filter { key in
             key.range(of: "^[a-zA-Z_][a-zA-Z0-9_]*$", options: .regularExpression) != nil
         }
         guard !keys.isEmpty else {
             throw SyncError.invalidPayload("No valid column names for \(grdbTable) upsert")
+        }
+
+        // Drop columns the local schema doesn't have. Firestore stores
+        // documents as the schema was when they were written, so a
+        // pre-Compound-Tasks-Unification BoardTask doc still carries
+        // `isCompleted` / `completedAt` / `currentCount` even though
+        // those columns were dropped from `board_tasks` in v7. A raw
+        // INSERT against those columns crashes with "table X has no
+        // column named Y". Web is unaffected because Zod's `safeParse`
+        // strips unknown keys by default; iOS bypasses validation and
+        // INSERTs raw, so we strip here for parity.
+        let validColumns = try Self.columnNames(for: grdbTable, in: db)
+        keys = keys.filter { validColumns.contains($0) }
+        guard !keys.isEmpty else {
+            throw SyncError.invalidPayload(
+                "No columns match the local schema for \(grdbTable) upsert"
+            )
         }
 
         let columns = keys.map { "\"\($0)\"" }.joined(separator: ", ")
@@ -944,6 +961,37 @@ final class SyncService: ObservableObject {
         }
 
         try db.execute(sql: sql, arguments: StatementArguments(values))
+    }
+
+    /// Cached per-table column names. Populated lazily on first lookup
+    /// per table via `PRAGMA table_info`. Reads happen frequently
+    /// (every pull / listener apply) so caching avoids hitting SQLite
+    /// for the metadata over and over. Migrations don't run at runtime
+    /// in production, so cache invalidation isn't needed; if a future
+    /// dev flow ever mutates the schema mid-session, restart the app.
+    private static let columnNameCache = NSCache<NSString, NSSet>()
+
+    /// Returns the set of column names for `table` in the given GRDB
+    /// `db`. Uses `PRAGMA table_info` so the result automatically
+    /// tracks schema migrations — no hardcoded duplicate of the column
+    /// list to keep in sync as columns are added or dropped.
+    private static func columnNames(for table: String, in db: Database) throws -> Set<String> {
+        let key = NSString(string: table)
+        if let cached = columnNameCache.object(forKey: key) as? Set<String> {
+            return cached
+        }
+        // PRAGMA table_info("name") returns one row per column.
+        // Bind via the SQL string because PRAGMA doesn't accept ? bind
+        // parameters for the table name. `table` is sourced from
+        // `syncableCollections` (allowedGRDBTables) which is a closed
+        // set of compile-time-known names — no injection risk.
+        let rows = try Row.fetchAll(
+            db,
+            sql: "PRAGMA table_info(\"\(table)\")"
+        )
+        let names = Set(rows.compactMap { $0["name"] as String? })
+        columnNameCache.setObject(NSSet(set: names), forKey: key)
+        return names
     }
 
     // MARK: - Sync Queue Helpers
