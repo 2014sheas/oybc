@@ -121,8 +121,6 @@ export interface BoardWizardActions {
   setCustomEndDate: (d: string) => void;
   setCenterType: (t: CenterSquareType) => void;
   setCenterCustomName: (n: string) => void;
-  setIsRandomized: (b: boolean) => void;
-  setIsRecurring: (b: boolean) => void;
   toggleTaskSelection: (taskId: string) => void;
   setCenterTaskId: (id: string | null) => void;
   goToStep: (step: WizardStep) => void;
@@ -214,6 +212,14 @@ export interface UseBoardWizardArgs {
    *  `updateRecurringBoardTemplate` rather than spawning a fresh
    *  template + board. Mutually exclusive with `draft`. */
   editingTemplate?: RecurringBoardTemplate;
+  /** Issue #71 — when true, the wizard was launched from the Create
+   *  hub's dedicated "Create a recurring board" CTA. Forces
+   *  `isRecurring` ON at entry (the in-form "Make recurring" toggle was
+   *  removed — recurrence is now an explicit entry choice, not a
+   *  mid-wizard switch). Distinct from `prefilledRecurringTimeframe`,
+   *  which now creates a one-off *core* board for a timeframe window
+   *  (#70 decoupled core boards from recurring templates). */
+  startRecurring?: boolean;
 }
 
 /**
@@ -237,6 +243,7 @@ export function useBoardWizard({
   prefilledRecurringTimeframe,
   targetWindowDate,
   editingTemplate,
+  startRecurring,
 }: UseBoardWizardArgs): BoardWizardController {
   const draftBoard = draft?.board;
 
@@ -255,8 +262,14 @@ export function useBoardWizard({
       ? prefilledRecurringTimeframe
       : null;
 
-  // Banner deep-link AND template-edit both imply isRecurring=true.
-  const initialIsRecurring = effectiveTemplate !== undefined || effectivePrefill !== null;
+  // Recurring mode is an explicit entry choice now (#71): the Create-hub
+  // "Create a recurring board" CTA passes `startRecurring`, or we're
+  // editing an existing template. A `prefilledRecurringTimeframe`
+  // (banner / core-board browser) creates a one-off *core* board for
+  // that window — NOT a recurring template — so it no longer flips
+  // `isRecurring` (#70 decoupled the two concepts).
+  const initialIsRecurring =
+    effectiveTemplate !== undefined || startRecurring === true;
 
   const [name, setName] = useState(() => {
     if (draftBoard) return draftBoard.name;
@@ -281,13 +294,19 @@ export function useBoardWizard({
       (effectiveTemplate?.boardSize as 3 | 4 | 5 | undefined) ??
       preferences.defaultBoardSize,
   );
-  const [timeframe, setTimeframeRaw] = useState<Timeframe>(
-    () =>
+  const [timeframe, setTimeframeRaw] = useState<Timeframe>(() => {
+    const seed =
       draftBoard?.timeframe ??
       effectiveTemplate?.timeframe ??
       effectivePrefill ??
-      preferences.defaultTimeframe,
-  );
+      preferences.defaultTimeframe;
+    // Recurring templates can't use CUSTOM (no computed window). If the
+    // user's default timeframe is CUSTOM and they entered via the
+    // recurring CTA, fall back to DAILY (mirrors the `setIsRecurring`
+    // coercion that the removed toggle used to apply).
+    if (initialIsRecurring && seed === Timeframe.CUSTOM) return Timeframe.DAILY;
+    return seed;
+  });
   const [customStartDate, setCustomStartDate] = useState(() =>
     draftBoard?.timeframe === Timeframe.CUSTOM && draftBoard.startDate
       ? draftBoard.startDate.slice(0, 10)
@@ -319,12 +338,14 @@ export function useBoardWizard({
       effectiveTemplate?.centerSquareCustomName ??
       preferences.defaultCenterCustomName,
   );
-  const [isRandomized, setIsRandomized] = useState(
-    () =>
-      draftBoard?.isRandomized ??
-      effectiveTemplate?.isRandomized ??
-      preferences.defaultRandomize,
-  );
+  // Issue #69 — board placement is always randomized. There's no
+  // manual-placement UI, so the per-board "Randomize positions" toggle
+  // (and the `defaultRandomize` preference) were dead UX and have been
+  // removed. The `isRandomized` field is retained on
+  // Board/RecurringBoardTemplate for schema stability and always
+  // written `true`; `buildWizardPlacement` / template spawn shuffle
+  // unconditionally.
+  const isRandomized = true;
   const [isRecurring, setIsRecurringRaw] = useState<boolean>(initialIsRecurring);
   const weekStartDay = preferences.weekStartDay;
 
@@ -412,26 +433,6 @@ export function useBoardWizard({
     [isRecurring],
   );
 
-  // Toggling Recurring=ON when timeframe is CUSTOM auto-coerces to
-  // DAILY (recurring requires one of the four computed-window
-  // timeframes). Surfaced via a one-line hint in the form. Toggling OFF
-  // doesn't touch any other state — the user keeps their pool, name,
-  // size, etc., and Save reverts to the one-off persist path.
-  const setIsRecurring = useCallback((b: boolean) => {
-    setIsRecurringRaw(b);
-    if (b) {
-      setTimeframeRaw((prev) => (prev === Timeframe.CUSTOM ? Timeframe.DAILY : prev));
-      // CHOSEN center is also excluded for recurring templates.
-      setCenterTypeRaw((prev) => {
-        if (prev === CenterSquareType.CHOSEN) {
-          setCenterTaskIdRaw(null);
-          return CenterSquareType.FREE;
-        }
-        return prev;
-      });
-    }
-  }, []);
-
   const toggleTaskSelection = useCallback((taskId: string) => {
     // Phase 6.X — user has touched the selection, so any DefaultPool
     // that arrives later via `useLiveQuery` MUST NOT overwrite their
@@ -484,7 +485,6 @@ export function useBoardWizard({
     setCustomStartDate('');
     setCustomEndDate('');
     setCenterCustomName(preferences.defaultCenterCustomName);
-    setIsRandomized(preferences.defaultRandomize);
     setIsRecurringRaw(false);
     setSelectedTaskIds(new Set());
     setCenterTaskIdRaw(null);
@@ -586,8 +586,6 @@ export function useBoardWizard({
     setCustomEndDate,
     setCenterType,
     setCenterCustomName,
-    setIsRandomized,
-    setIsRecurring,
     toggleTaskSelection,
     setCenterTaskId,
     goToStep,

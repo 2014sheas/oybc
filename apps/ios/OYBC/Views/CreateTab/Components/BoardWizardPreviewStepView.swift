@@ -104,7 +104,6 @@ struct BoardWizardPreviewStepView: View {
                     value: "\(controller.selectedTaskIds.count) selected · \(controller.tasksRequired) required",
                     jumpTo: 2
                 )
-                summaryRow(label: "Randomize", value: controller.isRandomized ? "Yes" : "No", jumpTo: 1)
                 if controller.isRecurring {
                     summaryRow(
                         label: "Recurring",
@@ -175,8 +174,9 @@ struct BoardWizardPreviewStepView: View {
             readOnly: true
         )
         // Force re-mount on layout-affecting changes since BingoBoard
-        // snapshots its task labels on first render.
-        .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")-\(controller.isRandomized)")
+        // snapshots its task labels on first render. (Placement is always
+        // randomized — #69 — so there's no randomize term in the id.)
+        .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")")
     }
 
     private var recurringSummary: String {

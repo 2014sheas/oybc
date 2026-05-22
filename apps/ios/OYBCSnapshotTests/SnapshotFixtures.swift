@@ -237,13 +237,15 @@ enum SnapshotFixtures {
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
         case .setupRecurring:
-            // User-toggled recurring path (NOT banner deep-link). Verifies
-            // the cadence card renders + Custom is hidden from the timeframe
-            // selector. Weekly chosen so the cadence label and the "Starting:
-            // Week of …" caption both differ from a daily/monthly variant.
+            // Recurring-template entry (the "Create a recurring board"
+            // CTA — #71). Verifies the cadence card renders + Custom is
+            // hidden from the timeframe selector. Weekly chosen so the
+            // cadence label and the "Starting: Week of …" caption both
+            // differ from a daily/monthly variant. (Timeframe is already
+            // non-custom, so no entry-time coercion is needed.)
             controller.name = "Weekly Workout"
             controller.timeframe = .weekly
-            controller.updateIsRecurring(true)
+            controller.isRecurring = true
         case .previewReady:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
@@ -257,7 +259,7 @@ enum SnapshotFixtures {
             controller.timeframe = .weekly
             controller.currentStep = 3
             controller.isRandomized = false
-            controller.updateIsRecurring(true)
+            controller.isRecurring = true
             controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
         }
         return controller

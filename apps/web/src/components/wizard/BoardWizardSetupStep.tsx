@@ -4,11 +4,6 @@ import styles from './BoardWizardSetupStep.module.css';
 
 export interface BoardWizardSetupStepProps {
   controller: BoardWizardController;
-  /** When true, render the Timeframe field as a read-only chip rather
-   *  than the segmented selector. Used by the recurring-banner flow
-   *  (Phase 6.1) so the user can't accidentally pick a different
-   *  timeframe than the banner promised. */
-  lockTimeframe?: boolean;
   onCancel: () => void;
   onNext: () => void;
 }
@@ -18,10 +13,13 @@ export interface BoardWizardSetupStepProps {
  * wired to the wizard controller's state plus a footer with Cancel /
  * Next ›. The Next button reflects `controller.isStep1Valid`; an
  * inline tooltip surfaces the reason when disabled.
+ *
+ * The form's layout (one-off / recurring / core) is driven by the
+ * controller's read-only `isRecurring` / `isCore` flags, both set at
+ * wizard entry — there's no in-step timeframe lock or recurring toggle.
  */
 export function BoardWizardSetupStep({
   controller,
-  lockTimeframe = false,
   onCancel,
   onNext,
 }: BoardWizardSetupStepProps): React.ReactElement {
@@ -40,10 +38,8 @@ export function BoardWizardSetupStep({
     setCenterType,
     centerCustomName,
     setCenterCustomName,
-    isRandomized,
-    setIsRandomized,
     isRecurring,
-    setIsRecurring,
+    isCore,
     weekStartDay,
     isStep1Valid,
     step1ValidationMessage,
@@ -58,7 +54,6 @@ export function BoardWizardSetupStep({
         onSizeChange={setSize}
         timeframe={timeframe}
         onTimeframeChange={setTimeframe}
-        timeframeLocked={lockTimeframe}
         customStartDate={customStartDate}
         onCustomStartDateChange={setCustomStartDate}
         customEndDate={customEndDate}
@@ -67,10 +62,8 @@ export function BoardWizardSetupStep({
         onCenterTypeChange={setCenterType}
         centerCustomName={centerCustomName}
         onCenterCustomNameChange={setCenterCustomName}
-        isRandomized={isRandomized}
-        onIsRandomizedChange={setIsRandomized}
         isRecurring={isRecurring}
-        onIsRecurringChange={setIsRecurring}
+        isCore={isCore}
         weekStartDay={weekStartDay}
       />
 

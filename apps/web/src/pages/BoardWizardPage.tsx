@@ -44,6 +44,11 @@ export interface BoardWizardPageProps {
    *  `isRecurring` is forced ON, and Save updates the template
    *  instead of creating a new board. Phase 6.2 UX rework. */
   editingTemplate?: RecurringBoardTemplate;
+  /** Issue #71 — when set, the wizard was opened from the Create hub's
+   *  "Create a recurring board" CTA. Forces `isRecurring` ON at entry
+   *  (no in-form toggle). The user picks the timeframe/size/center +
+   *  pool, and Save creates a template + spawns the first board. */
+  startRecurring?: boolean;
   /** Called when the user dismisses the wizard without persisting —
    *  either because they're in a pristine state (no edits) or they
    *  explicitly chose "Discard" in the smart-cancel dialog. */
@@ -77,6 +82,7 @@ export function BoardWizardPage({
   prefilledRecurringTimeframe,
   targetWindowDate,
   editingTemplate,
+  startRecurring,
   onCancel,
   onComplete,
   onTemplateComplete,
@@ -88,13 +94,9 @@ export function BoardWizardPage({
     prefilledRecurringTimeframe,
     targetWindowDate,
     editingTemplate,
+    startRecurring,
   });
   const library = useTaskLibrary(userId);
-  // Lock the timeframe field only when (a) we have a prefill AND (b) we're
-  // not resuming a draft (drafts already lock semantics by hydrating the
-  // record). Mirrors the suppression rule inside useBoardWizard.
-  const lockTimeframe =
-    prefilledRecurringTimeframe !== undefined && draft === undefined;
 
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelDialogError, setCancelDialogError] = useState<string | null>(null);
@@ -169,7 +171,13 @@ export function BoardWizardPage({
     <div className={styles.shell}>
       <header className={styles.header}>
         <h2 className={styles.title}>
-          {draft !== undefined ? 'Resume draft' : 'New board'}
+          {draft !== undefined
+            ? 'Resume draft'
+            : wizard.isRecurring
+              ? editingTemplate !== undefined
+                ? 'Edit recurring board'
+                : 'New recurring board'
+              : 'New board'}
         </h2>
         <button
           type="button"
@@ -187,7 +195,6 @@ export function BoardWizardPage({
         {wizard.currentStep === 1 && (
           <BoardWizardSetupStep
             controller={wizard}
-            lockTimeframe={lockTimeframe}
             onCancel={handleCancelRequested}
             onNext={wizard.goNext}
           />
