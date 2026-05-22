@@ -168,6 +168,23 @@ private func bpvRunCrossBoardCascade(
     return results
 }
 
+/// Applies BoardPlayView's navigation title only when not embedded.
+/// SwiftUI can't conditionally apply a modifier inline without a branch,
+/// so we wrap the title chrome here.
+private struct BoardPlayTitleChrome: ViewModifier {
+    let title: String
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - BoardPlayView
 
 /// Full interactive bingo board play screen.
@@ -190,6 +207,10 @@ struct BoardPlayView: View {
     /// (which owns boardsPath). Defaults to a no-op so existing call
     /// sites compile while we plumb this from the top.
     var onOpenBoard: (String) -> Void = { _ in }
+    /// When true the view omits its own navigation-title chrome so a host
+    /// (the core-board window pager) can own the title/bar. Default false
+    /// preserves the standalone /boards/:id-equivalent behavior.
+    var embedded: Bool = false
     @EnvironmentObject var authService: AuthService
 
     // MARK: - State
@@ -314,8 +335,7 @@ struct BoardPlayView: View {
             }
             .padding(.vertical)
         }
-        .navigationTitle(board?.name ?? "Board")
-        .navigationBarTitleDisplayMode(.inline)
+        .modifier(BoardPlayTitleChrome(title: board?.name ?? "Board", enabled: !embedded))
         .onAppear {
             loadBoard()
             loadBoardTasks()

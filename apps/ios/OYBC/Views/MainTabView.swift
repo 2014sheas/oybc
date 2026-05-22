@@ -87,6 +87,10 @@ struct MainTabView: View {
                         // Core Boards section (whole-row tap) and the
                         // pending-recurring banner if it re-enables.
                         boardsPath.append(CoreBrowserRoute(timeframe: timeframe))
+                    },
+                    onOpenCoreWindow: { timeframe, windowStart in
+                        // Core board row tap → per-window pager.
+                        boardsPath.append(CoreWindowRoute(timeframe: timeframe, windowStart: windowStart))
                     }
                 )
                 .navigationDestination(for: CoreBrowserRoute.self) { route in
@@ -101,6 +105,28 @@ struct MainTabView: View {
                             // Push the board onto the same Boards-tab
                             // stack so back returns to the browser,
                             // not the list.
+                            boardsPath.append(boardId)
+                        }
+                    )
+                }
+                .navigationDestination(for: CoreWindowRoute.self) { route in
+                    // Per-window core-board pager. Prev/next page by
+                    // mutating the VM in place, so no .id() is needed
+                    // on this destination.
+                    CoreBoardWindowView(
+                        timeframe: route.timeframe,
+                        seedWindowStart: route.windowStart,
+                        userId: authService.currentUser?.id ?? "",
+                        weekStartDay: authService.userPreferences.weekStartDay.rawValue,
+                        onCreateForWindow: { tf, date in
+                            pendingRecurringTimeframe = tf
+                            pendingTargetWindowDate = date
+                            selectedTab = 2
+                        },
+                        onBrowseTimeframe: { tf in
+                            boardsPath.append(CoreBrowserRoute(timeframe: tf))
+                        },
+                        onOpenBoard: { boardId in
                             boardsPath.append(boardId)
                         }
                     )
@@ -213,6 +239,7 @@ struct MainTabView: View {
                         }
                     )
                 }
+
             }
             .tabItem {
                 Label("Profile", systemImage: "person.circle")

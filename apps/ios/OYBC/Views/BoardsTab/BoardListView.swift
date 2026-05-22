@@ -33,6 +33,12 @@ struct BoardListView: View {
     /// #Preview path can leave it nil.
     var onBrowseTimeframe: ((Timeframe) -> Void)?
 
+    /// Open the per-window pager for the tapped Core Board slot. MainTabView
+    /// appends a `CoreWindowRoute` onto `boardsPath`. The pager's list
+    /// button fires `onBrowseTimeframe` to reach the full browser.
+    /// Optional so the playground / #Preview path can leave it nil.
+    var onOpenCoreWindow: ((Timeframe, String) -> Void)? = nil
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
@@ -110,9 +116,9 @@ struct BoardListView: View {
                     CoreBoardsSectionView(
                         slots: pendingRecurringVM.slots,
                         onSelect: { slot in
-                            // Whole-row tap → per-timeframe browser
-                            // (handles Create + Play + adjacent windows).
-                            onBrowseTimeframe?(slot.timeframe)
+                            // Whole-row tap → current-window pager.
+                            // The pager's list button reaches the full browser.
+                            onOpenCoreWindow?(slot.timeframe, slot.windowStart)
                         }
                     )
                     .padding(.horizontal)
@@ -175,8 +181,9 @@ struct BoardListView: View {
                 CoreBoardsSectionView(
                     slots: pendingRecurringVM.slots,
                     onSelect: { slot in
-                        // Whole-row tap → per-timeframe browser.
-                        onBrowseTimeframe?(slot.timeframe)
+                        // Whole-row tap → current-window pager.
+                        // The pager's list button reaches the full browser.
+                        onOpenCoreWindow?(slot.timeframe, slot.windowStart)
                     }
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
