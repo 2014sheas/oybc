@@ -125,7 +125,7 @@ jobs:
         # diff worth inspecting. Outcome reflects what actually happened
         # in the step.
         if: steps.snapshot-tests.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: snapshot-test-results
           path: /tmp/snapshot-results.xcresult
