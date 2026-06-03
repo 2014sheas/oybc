@@ -120,6 +120,7 @@
 		A3FBDF82011C7F6ED8D3F7C5 /* PlaygroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032F40E3064154C5E3108AB4 /* PlaygroundView.swift */; };
 		A4D761B3D3CB7A3326F7B11F /* TaskSquareActionsPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */; };
 		A513A452649ABD308E2E1849 /* testHubLanding.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 27680C319099CDAB161A6E95 /* testHubLanding.1.png */; };
+		A559B86D15F48CF5C18FE5A1 /* FromBoardPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04402F8C43AA8E0CAB88CA6D /* FromBoardPickerView.swift */; };
 		A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854FEF8734BD37239F0A8462 /* BoardTask.swift */; };
 		A6F3DCD9274923158442DA36 /* BingoDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476EB8034735B0ACC9032FA9 /* BingoDetection.swift */; };
 		AD7B6745F16D74F4733FF545 /* TypeBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37AE86E7BE2C5A2C66BEB50A /* TypeBadgeView.swift */; };
@@ -129,6 +130,7 @@
 		B4A0265ED693ACB1A8B81E95 /* CreateNewTaskFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1FF0E9814EFB0A5528E12B /* CreateNewTaskFormView.swift */; };
 		B602C002BA5E808B589A6CAD /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BFCB077AA954687C6EFED5 /* AuthGateView.swift */; };
 		BCABB5A98C5F5AC253DF38F7 /* CompositeWizardBuildStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE06FD16D90C84B07EE47F7D /* CompositeWizardBuildStepView.swift */; };
+		BCB2D8012672082C4A124AF7 /* BoardThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 972F38AAD4D65766C7F3E735 /* BoardThumbnailView.swift */; };
 		BCF35E5F81FB0CBF7E44960F /* UserPreferencesCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0B38321FC596D67DEBCAAB /* UserPreferencesCodableTests.swift */; };
 		BD7E816390E48BAA75582B89 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */; };
 		BF25DF0D1007E0448FC56801 /* CreateFormViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DCC1B869DCD626A926C690 /* CreateFormViewModel.swift */; };
@@ -137,6 +139,7 @@
 		C21D1CB5B562EFAD0E9AECB9 /* DerivationPassTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEA091BEC9F9DE7F7EDCC979 /* DerivationPassTests.swift */; };
 		C2C8D744E19FC1CC95F72D96 /* SelectableTaskItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397644A1686EEC49F1E7C294 /* SelectableTaskItemView.swift */; };
 		C3B8B4FD9C30EBC428EC52E6 /* CountingStepFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FAE48D69EF28D353EBD10A /* CountingStepFieldsView.swift */; };
+		C58FAD0DE79D41DE3BF5BBE7 /* FromBoardGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16586B715F5FB4174C2717A /* FromBoardGridView.swift */; };
 		C5DAC2DD6C247A8B43C043F5 /* BoardStatusBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7F89E61CAB57BA23FDB94E /* BoardStatusBadgeView.swift */; };
 		C6806883CA75A4506C5111EE /* CompositeWizardSetupStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F9D8CAE934036DAC767707 /* CompositeWizardSetupStepView.swift */; };
 		C8E6C614BA2E9D7A0D220781 /* CoreBoardWindowCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6838BB87E9F33CAA3183F631 /* CoreBoardWindowCellView.swift */; };
@@ -192,6 +195,7 @@
 		02C62708DBFB724168148938 /* CoreWindowRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreWindowRoute.swift; sourceTree = "<group>"; };
 		032F40E3064154C5E3108AB4 /* PlaygroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaygroundView.swift; sourceTree = "<group>"; };
 		0436CC51A477FF70932A9546 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
+		04402F8C43AA8E0CAB88CA6D /* FromBoardPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FromBoardPickerView.swift; sourceTree = "<group>"; };
 		04738FB0C98055765804ADFB /* ParentBoardTasksViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParentBoardTasksViewModel.swift; sourceTree = "<group>"; };
 		050067C0AEDF6C6893CBF0C1 /* EditTaskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTaskSheet.swift; sourceTree = "<group>"; };
 		05F4A6CC10601ADD7F42876B /* CoreBoardBrowserViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardBrowserViewModel.swift; sourceTree = "<group>"; };
@@ -292,6 +296,7 @@
 		8E3F18DF150886C6CA0F36DD /* CreateHubDraftsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateHubDraftsListView.swift; sourceTree = "<group>"; };
 		930B21C71FAB0140E9BE5960 /* BoardWizardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardViewModel.swift; sourceTree = "<group>"; };
 		95765CD1D332F33B198789F4 /* TaskDetailSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailSheetView.swift; sourceTree = "<group>"; };
+		972F38AAD4D65766C7F3E735 /* BoardThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardThumbnailView.swift; sourceTree = "<group>"; };
 		9CC5D387F2397A3984CF5FF2 /* testDenseLibraryUnselected.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDenseLibraryUnselected.1.png; sourceTree = "<group>"; };
 		9D72F0CD1196886BF1206F94 /* SyncStatusIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusIndicatorView.swift; sourceTree = "<group>"; };
 		9F714DD146988F2C085D5EA4 /* CycleDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleDetection.swift; sourceTree = "<group>"; };
@@ -329,6 +334,7 @@
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
 		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
 		DCE6F8AAD4860D11D04DF12E /* TaskTypeSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTypeSelectorView.swift; sourceTree = "<group>"; };
+		E16586B715F5FB4174C2717A /* FromBoardGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FromBoardGridView.swift; sourceTree = "<group>"; };
 		E2CF3253817A74C5644618E0 /* TimeframeBoundaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeframeBoundaries.swift; sourceTree = "<group>"; };
 		E69AAD5BF975B06144CDE449 /* SourceBoardsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceBoardsViewModel.swift; sourceTree = "<group>"; };
 		E8D39996B07C2272CFEC6722 /* testDenseLibrarySomeSelected.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDenseLibrarySomeSelected.1.png; sourceTree = "<group>"; };
@@ -346,7 +352,7 @@
 		FA364CFC7AE1782BC3F5A635 /* TaskSquareActionsPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSquareActionsPlayground.swift; sourceTree = "<group>"; };
 		FA434E50844910E99B885B94 /* BoardListItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardListItemView.swift; sourceTree = "<group>"; };
 		FF05FDF400BEB2A8666662F9 /* testSetupStepBlank.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepBlank.1.png; sourceTree = "<group>"; };
-		"TEMP_34274E9D-79B0-4482-B873-E7AC884DA5A2" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_FA8C5B5D-810A-4343-8802-AEC2B449AB8A" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -599,6 +605,7 @@
 			isa = PBXGroup;
 			children = (
 				EEB80DC119D8B35159EBEE29 /* BoardSetupFormView.swift */,
+				972F38AAD4D65766C7F3E735 /* BoardThumbnailView.swift */,
 				4F5CE3737436A2FDB380CACA /* BoardWizardCancelDialogView.swift */,
 				8A29E6A87BB117849FD5BF74 /* BoardWizardPreviewStepView.swift */,
 				3305697412B4359823BA88B5 /* BoardWizardSetupStepView.swift */,
@@ -607,6 +614,8 @@
 				7241CCA5EB6FB2CACBC94EF6 /* CountingTemplatePickerView.swift */,
 				4F9A279CE019AF205A34B7CE /* CreateHubBoardCTAView.swift */,
 				8E3F18DF150886C6CA0F36DD /* CreateHubDraftsListView.swift */,
+				E16586B715F5FB4174C2717A /* FromBoardGridView.swift */,
+				04402F8C43AA8E0CAB88CA6D /* FromBoardPickerView.swift */,
 				CF19FE3B77ABFB68CA53CE2C /* NewTaskSheetView.swift */,
 			);
 			path = Components;
@@ -786,10 +795,10 @@
 			path = BoardWizardStepsSnapshotTests;
 			sourceTree = "<group>";
 		};
-		"TEMP_0B655695-9F3A-4373-A9E2-8BA84EC045AB" /* ios */ = {
+		"TEMP_476BA042-E0E4-4426-A3A2-A3438234D58B" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_34274E9D-79B0-4482-B873-E7AC884DA5A2" /* Signing.xcconfig */,
+				"TEMP_FA8C5B5D-810A-4343-8802-AEC2B449AB8A" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -991,6 +1000,7 @@
 				2A3BFD9FD811D080464D7B53 /* BoardSetupFormView.swift in Sources */,
 				C5DAC2DD6C247A8B43C043F5 /* BoardStatusBadgeView.swift in Sources */,
 				A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */,
+				BCB2D8012672082C4A124AF7 /* BoardThumbnailView.swift in Sources */,
 				B0A090A23437AFB103276BD1 /* BoardWizardCancelDialogView.swift in Sources */,
 				441C5B2BAC4E663AED8969B2 /* BoardWizardPersist.swift in Sources */,
 				34CD652D040F6B6899F3D228 /* BoardWizardPreviewStepView.swift in Sources */,
@@ -1038,6 +1048,8 @@
 				64146A06D2B82514FF381B8D /* DerivationPass.swift in Sources */,
 				3203978B132B16868CDF7DAC /* EditTaskSheet.swift in Sources */,
 				4CE4469DBCB98384521C8165 /* FilterTabsView.swift in Sources */,
+				C58FAD0DE79D41DE3BF5BBE7 /* FromBoardGridView.swift in Sources */,
+				A559B86D15F48CF5C18FE5A1 /* FromBoardPickerView.swift in Sources */,
 				F520EAF2A234007AFB744072 /* InteractiveTaskSquareView.swift in Sources */,
 				159D16051FA8E2923FE9CC84 /* MainTabView.swift in Sources */,
 				F3B644B5DC92BE978EDF7587 /* MigrationV7Helpers.swift in Sources */,
@@ -1142,7 +1154,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_34274E9D-79B0-4482-B873-E7AC884DA5A2" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_FA8C5B5D-810A-4343-8802-AEC2B449AB8A" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1239,7 +1251,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_34274E9D-79B0-4482-B873-E7AC884DA5A2" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_FA8C5B5D-810A-4343-8802-AEC2B449AB8A" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
