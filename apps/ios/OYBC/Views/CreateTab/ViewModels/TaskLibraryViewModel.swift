@@ -96,6 +96,11 @@ final class TaskLibraryViewModel {
             // BoardWizardTasksStepView. Returning [] here is correct;
             // generic library consumers shouldn't see anything for this filter.
             return []
+        case .fromBoard:
+            // Source is a separate SourceBoardsViewModel — see
+            // BoardWizardTasksStepView. Returning [] mirrors .fromParents
+            // for generic library consumers.
+            return []
         }
     }
 
