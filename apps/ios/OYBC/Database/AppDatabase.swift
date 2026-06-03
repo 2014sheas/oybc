@@ -522,6 +522,35 @@ extension AppDatabase {
         }
     }
 
+    /// Boards eligible to act as a "source" in the wizard's
+    /// `From a board…` filter — active boards plus boards completed
+    /// within the last 30 days. Drafts and archived are excluded.
+    /// Sorted recently-active first (`updatedAt desc`). Mirror of
+    /// web's `useSourceBoards` hook.
+    func fetchEligibleSourceBoards(userId: String) throws -> [Board] {
+        let completedLookbackDays = 30
+        let cutoff = Date().addingTimeInterval(
+            -Double(completedLookbackDays) * 24 * 60 * 60
+        )
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoFormatterNoFrac = ISO8601DateFormatter()
+
+        let boards = try fetchBoards(userId: userId)
+        return boards.filter { board in
+            if board.status == .active { return true }
+            guard board.status == .completed else { return false }
+            guard let completedAt = board.completedAt else { return false }
+            // ISO8601 strings round-trip from JS (fractional) and Swift
+            // (no fractional). Try both parsers so we don't reject valid
+            // timestamps from either platform.
+            let parsed = isoFormatter.date(from: completedAt)
+                ?? isoFormatterNoFrac.date(from: completedAt)
+            guard let ts = parsed else { return false }
+            return ts >= cutoff
+        }
+    }
+
     func fetchBoard(id: String) throws -> Board? {
         return try read { db in
             try Board.fetchOne(db, key: id)
