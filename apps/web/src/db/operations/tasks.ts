@@ -712,7 +712,9 @@ export async function findTasksByParentStep(stepId: string): Promise<Task[]> {
 // validation + sync-queue write as a brand-new task. See
 // docs/ARCHITECTURE.md § "Wizard 'From a board' picker" for the
 // product-level invariants (shallow compound copy; Achievement copies
-// must pass hasCycle in the calling UI layer).
+// inherit the existing Phase 6.3 cycle-detection gate at wizard-commit
+// time — copy itself is unguarded because the new Task has no
+// placements yet and `hasCycle` would trivially return ok).
 
 /**
  * Editable fields the Copy modal may override when copying a primitive

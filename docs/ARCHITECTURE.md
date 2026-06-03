@@ -1007,8 +1007,7 @@ Reuses the existing `RowContextMenu` items + glyphs verbatim where they apply (s
 - `+ Add to board (link)` / `− Remove from board` — toggle; `(link)` hint disambiguates from the copy item below
 - `⎘ Add a copy of this task…` — opens the Copy modal (see below)
 - `⇣ Derive smaller version…` — counting tasks only; reuses the existing `DeriveCounterModal`
-- `▼ Expand subtasks` / `▲ Collapse subtasks` — compound tasks only
-- `⧉ Add all subtasks to board` — compound tasks only
+- `⧉ Add all subtasks to board` — compound tasks only (flattens the compound's primitive leaves into the new board's selection). The grid is fixed-geometry per the source's layout, so the list view's inline `▼ Expand subtasks` affordance has no analogue here — compounds either link as one square or get flattened via this item.
 - `↗ Open in library` — always
 
 #### Square visual states
@@ -1033,7 +1032,7 @@ Opened from `⎘ Add a copy of this task…`. Pre-fills every field from the sou
 | Compound    | Title only — children references stay shared (shallow copy; new parent, same children)                |
 | Achievement | Title, `achievementTrigger`, reference picker (`referencedBoardId` XOR `referencedTemplateId`), `requiredCount` (when template mode) |
 
-On Save: calls `copyTask(userId, sourceTask, overrides)` or `copyCompound(userId, sourceTask, overrides)` in `db/operations/tasks.ts` (web) / new helper in `AppDatabase.swift` (iOS). For Achievement copies, calls `hasCycle(...)` from `packages/shared/src/algorithms/cycleDetection.ts` before committing and surfaces the error inline rather than persisting.
+On Save: calls `copyTask(userId, sourceTask, overrides)` or `copyCompound(userId, sourceTask, overrides)` in `db/operations/tasks.ts` (web) / new helper in `AppDatabase.swift` (iOS). For Achievement copies, cycle detection (`hasCycle` from `packages/shared/src/algorithms/cycleDetection.ts`) is **not** invoked at copy time — the copy creates a Task that has no placements yet, so `parentBoardIds` is empty and the algorithm trivially returns `{ ok: true }`. The real cycle check fires at the existing Phase 6.3 gate: when the wizard's "Create board" commit places the (possibly newly-copied) Task on the new board. Edge surfaced inline at that step, same as a brand-new ACHIEVEMENT task placed via `+ New task`.
 
 ### Data flow
 
@@ -1045,7 +1044,7 @@ On Save: calls `copyTask(userId, sourceTask, overrides)` or `copyCompound(userId
 - **Link is a UI filter, never a clone path** — same invariant Phase 6.1 locked for `From parent boards`. The user selecting a linked square places the *same* `Task` on the new board; completion remains globally shared per Task.
 - **Copy is a normal `createTask` / `createCompound`** — no special table, no special validation. The Zod refinements in `packages/shared/src/validation/schemas.ts` (`referencedFieldsOnTaskMutuallyExclusive`, `achievementRequiresReference`) already cover the Copy modal's commit path because it routes through the same helpers as the `+ New task` sheet.
 - **Compound copies are shallow** by default — new parent, same children (which are themselves first-class `Task`s under the unified model). A deep-clone path is not provided; the user can always create independent primitives via `+ New task` if that's what they want.
-- **Achievement copies must pass `hasCycle`** — Phase 6.3 already enforces this on creation; the Copy commit path runs the same check. Cycle errors surface inline in the Copy modal, not on wizard advance.
+- **Achievement copies are gated at wizard commit, not at copy commit** — Phase 6.3's cycle-detection (`hasCycle`) runs when the wizard *places* the (copied) Task on the new board, not when the Copy modal saves. A brand-new copy has no placements, so a pre-commit `hasCycle` call is trivially `{ ok: true }`. This matches how a fresh ACHIEVEMENT task created via `+ New task` flows: validation happens at placement time. Cycle errors surface inline on the wizard's commit step.
 - **No bulk-add-all-squares affordance** — `⧉ Add all subtasks to board` on a compound is intentionally the only bulk-add path. "Add every square from this source" would defeat the curation step the wizard exists to enable.
 
 ### Status

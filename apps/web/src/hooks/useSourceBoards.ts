@@ -47,7 +47,10 @@ export function useSourceBoards(userId: string | undefined): Board[] {
           return ts >= cutoff;
         });
 
-        eligible.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+        // ISO8601 strings compare correctly with localeCompare. Negated
+        // for descending order; ties intentionally return 0 so Array.sort
+        // preserves the input order (stable in V8 / modern engines).
+        eligible.sort((a, b) => -a.updatedAt.localeCompare(b.updatedAt));
         return eligible;
       },
       [userId],

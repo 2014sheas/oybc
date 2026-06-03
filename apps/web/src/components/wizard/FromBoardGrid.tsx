@@ -76,11 +76,14 @@ export function FromBoardGrid({
         .filter((p) => p.task?.type === TaskType.COMPOUND)
         .map((p) => p.task!.id);
       if (compoundIds.length === 0) return [];
-      return db.compoundChildren
-        .filter(
-          (c) => !c.isDeleted && compoundIds.includes(c.compoundTaskId),
-        )
+      // Use the `compoundTaskId` index (declared in db/database.ts) so
+      // Dexie hits only matching rows rather than scanning the whole
+      // compoundChildren table. Filter !isDeleted in-process after.
+      const matching = await db.compoundChildren
+        .where('compoundTaskId')
+        .anyOf(compoundIds)
         .toArray();
+      return matching.filter((c) => !c.isDeleted);
     },
     [placements],
     [],

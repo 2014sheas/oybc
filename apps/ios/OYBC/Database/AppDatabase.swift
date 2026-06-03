@@ -527,7 +527,23 @@ extension AppDatabase {
     /// within the last 30 days. Drafts and archived are excluded.
     /// Sorted recently-active first (`updatedAt desc`). Mirror of
     /// web's `useSourceBoards` hook.
+    ///
+    /// Opens its own `read` block. For callers that already hold a
+    /// transaction (e.g., `SourceBoardsViewModel.reload` which also
+    /// needs to read board_tasks atomically with the eligibility
+    /// list), use `fetchEligibleSourceBoards(_:userId:)` instead so
+    /// both queries see one consistent snapshot.
     func fetchEligibleSourceBoards(userId: String) throws -> [Board] {
+        try read { db in
+            try AppDatabase.fetchEligibleSourceBoards(db, userId: userId)
+        }
+    }
+
+    /// Transaction-aware variant. Runs the same eligibility filter as
+    /// `fetchEligibleSourceBoards(userId:)` but inside the caller's
+    /// `read` block so the resulting boards + any subsequent reads
+    /// (placements, tasks) share a single snapshot.
+    static func fetchEligibleSourceBoards(_ db: Database, userId: String) throws -> [Board] {
         let completedLookbackDays = 30
         let cutoff = Date().addingTimeInterval(
             -Double(completedLookbackDays) * 24 * 60 * 60
@@ -536,7 +552,10 @@ extension AppDatabase {
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let isoFormatterNoFrac = ISO8601DateFormatter()
 
-        let boards = try fetchBoards(userId: userId)
+        let boards = try Board
+            .filter(Column("userId") == userId && Column("isDeleted") == false)
+            .order(Column("updatedAt").desc)
+            .fetchAll(db)
         return boards.filter { board in
             if board.status == .active { return true }
             guard board.status == .completed else { return false }
@@ -632,7 +651,9 @@ extension AppDatabase {
     // iOS twin of web's `copyTask` / `copyCompound` in
     // `apps/web/src/db/operations/tasks.ts`. See
     // docs/ARCHITECTURE.md § "Wizard 'From a board' picker" for the
-    // shallow-compound-copy + Achievement cycle-detection invariants.
+    // shallow-compound-copy invariant. Achievement copies are NOT
+    // cycle-checked here — the gate runs at wizard-commit time when
+    // the Task is placed on the new board (Phase 6.3 behavior).
 
     /// Editable fields the Copy sheet may override when copying a
     /// primitive (normal / counting / achievement) task. Any property

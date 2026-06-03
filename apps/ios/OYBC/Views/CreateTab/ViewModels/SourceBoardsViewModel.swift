@@ -76,9 +76,12 @@ final class SourceBoardsViewModel {
             ) in
                 // Re-run the eligibility filter inside the read so the
                 // boards + their placements come from one consistent
-                // snapshot (a write between two separate reads could
-                // otherwise yield mismatched data).
-                let eligible = try AppDatabase.shared.fetchEligibleSourceBoards(userId: userId)
+                // snapshot. The static variant takes the current `db`
+                // handle so the eligibility list, all_placements, and
+                // tasks all read from the same transaction — a write
+                // between two separate reads could otherwise yield
+                // mismatched data.
+                let eligible = try AppDatabase.fetchEligibleSourceBoards(db, userId: userId)
                 if eligible.isEmpty {
                     return (eligible, [:], [:])
                 }
@@ -120,19 +123,43 @@ final class SourceBoardsViewModel {
                         repeating: .empty,
                         count: size * size
                     )
+                    // Mirror web's `computeCellStates`: any odd-geometry
+                    // board with a center-square type (FREE / CUSTOM_FREE
+                    // / CHOSEN) gets a center marker on the computed
+                    // center cell regardless of whether a placement
+                    // exists there. CenterSquareType.none → no marker.
+                    let usesChosenCenter = board.centerSquareType == .chosen
+                        || board.centerSquareType == .free
+                        || board.centerSquareType == .customFree
+                    let centerIndex: Int = (size % 2 == 1 && usesChosenCenter)
+                        ? (size / 2) * size + (size / 2)
+                        : -1
+
                     var done = 0
                     for p in placementsByBoard[board.id] ?? [] {
                         let idx = p.row * size + p.col
                         guard idx >= 0 && idx < states.count else { continue }
                         let task = tasksById[p.taskId]
-                        if p.isCenter {
+                        // Completion is counted independently of cell
+                        // state so the center cell's completion still
+                        // contributes to the ratio shown beside the
+                        // thumbnail (matches web's `countCompleted`).
+                        if task?.isCompleted == true {
+                            done += 1
+                        }
+                        if p.isCenter || idx == centerIndex {
                             states[idx] = .center
                         } else if task?.isCompleted == true {
                             states[idx] = .done
-                            done += 1
                         } else if task != nil {
                             states[idx] = .pending
                         }
+                    }
+                    // FREE / CUSTOM_FREE: no placement at the center; we
+                    // still want the orange marker so the user can spot
+                    // those boards visually.
+                    if centerIndex >= 0 && states[centerIndex] == .empty {
+                        states[centerIndex] = .center
                     }
                     thumbnails[board.id] = states
                     completion[board.id] = (done, size * size)
