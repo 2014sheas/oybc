@@ -22,6 +22,12 @@ enum LibraryFilter: String, CaseIterable {
     /// the user's library — it's a separate `ParentBoardTasksViewModel`
     /// query, special-cased in BoardWizardTasksStepView.
     case fromParents = "From parent boards"
+    /// Wizard "From a board" picker — swaps the list region for a
+    /// source-board picker (and then for that board's grid). Always
+    /// available in the wizard regardless of timeframe; never surfaces
+    /// in the standalone Tasks tab. Special-cased in
+    /// BoardWizardTasksStepView's list switch.
+    case fromBoard = "From a board…"
 }
 
 /// Owns the user's task library + derive-panel working set under the

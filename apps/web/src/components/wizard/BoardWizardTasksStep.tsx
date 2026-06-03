@@ -14,7 +14,10 @@ import { useParentBoardTasks } from '../../hooks';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { TypeBadge } from '../TypeBadge';
 import { FilterTabs } from '../FilterTabs';
+import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
+import { FromBoardGrid } from './FromBoardGrid';
+import { FromBoardPicker } from './FromBoardPicker';
 import { NewTaskSheet } from './NewTaskSheet';
 import { RowContextMenu } from './RowContextMenu';
 import { TaskDetailSheet } from '../TaskDetailSheet';
@@ -37,12 +40,18 @@ const FROM_PARENTS_TAB: { value: TasksFilter; label: string } = {
   label: 'From parent boards',
 };
 
+const FROM_BOARD_TAB: { value: TasksFilter; label: string } = {
+  value: 'from-board',
+  label: 'From a board…',
+};
+
 export type TasksFilter =
   | 'all'
   | TaskType
   | 'progress'
   | 'composite'
-  | 'from-parents';
+  | 'from-parents'
+  | 'from-board';
 
 export interface BoardWizardTasksStepProps {
   /** User's full task + composite library (from `useTaskLibrary`). */
@@ -144,9 +153,15 @@ export function BoardWizardTasksStep({
   // recurrence. Hide the chip otherwise to avoid an always-empty filter.
   const hasParentTimeframes = PARENT_TIMEFRAMES[currentTimeframe].length > 0;
 
+  // `From a board…` is unconditionally available (no timeframe gating)
+  // since any wizard timeframe is a valid context for browsing another
+  // board. Sits AFTER `From parent boards` so the parent-tasks chip
+  // stays in its established position.
   const filterTabs = useMemo(
     () =>
-      hasParentTimeframes ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB] : BASE_FILTER_TABS,
+      hasParentTimeframes
+        ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB, FROM_BOARD_TAB]
+        : [...BASE_FILTER_TABS, FROM_BOARD_TAB],
     [hasParentTimeframes]
   );
 
@@ -181,6 +196,18 @@ export function BoardWizardTasksStep({
   const [derivingFromTask, setDerivingFromTask] = useState<Task | null>(null);
   const [deriveMaxCountInput, setDeriveMaxCountInput] = useState('');
   const [deriveError, setDeriveError] = useState<string | null>(null);
+  /** `From a board…` filter state. `null` = picker mode (no source
+   *  chosen yet); set = grid mode for that board. Selection itself
+   *  lives in `selectedTaskIds` (wizard-owned), so swapping sources
+   *  doesn't lose what the user has already linked. */
+  const [pickedSourceBoardId, setPickedSourceBoardId] = useState<string | null>(null);
+  /** Task ids copied via the From-a-board grid's `⎘ Add a copy…`
+   *  this session. Used to render the amber-tint indicator on source
+   *  squares whose original we've already copied. Cleared on remount
+   *  (session-scoped). */
+  const [copiedTaskIds, setCopiedTaskIds] = useState<Set<string>>(new Set());
+  /** Source task whose Copy modal is currently mounted. Null = no modal. */
+  const [copyingTask, setCopyingTask] = useState<Task | null>(null);
   /** When set, mounts TaskDetailSheet over the wizard so the user can
    *  inspect a task's full library detail without losing wizard state.
    *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
@@ -379,26 +406,70 @@ export function BoardWizardTasksStep({
           </button>
         </div>
 
-        <input
-          type="search"
-          className={styles.search}
-          placeholder="Search your tasks…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+        {activeFilter !== 'from-board' && (
+          <input
+            type="search"
+            className={styles.search}
+            placeholder="Search your tasks…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        )}
 
         <FilterTabs
           tabs={filterTabs}
           activeTab={activeFilter}
           onTabChange={(value) => {
-            setActiveFilter(value as TasksFilter);
+            const next = value as TasksFilter;
+            setActiveFilter(next);
             setExpandedCompositeId(null);
+            // Re-entering the From-a-board flow resets the picker so
+            // the user always lands in "pick a board" mode.
+            if (next === 'from-board') {
+              setPickedSourceBoardId(null);
+            }
           }}
         />
       </div>
 
-      {/* List */}
-      {visible.tasks.length === 0 && visible.composites.length === 0 ? (
+      {/* From-a-board flow — picker (no source) or grid (source picked) */}
+      {activeFilter === 'from-board' ? (
+        pickedSourceBoardId === null ? (
+          <FromBoardPicker
+            userId={userId}
+            onPickBoard={(id) => setPickedSourceBoardId(id)}
+          />
+        ) : (
+          <FromBoardGrid
+            boardId={pickedSourceBoardId}
+            userId={userId}
+            selectedTaskIds={selectedTaskIds}
+            copiedTaskIds={copiedTaskIds}
+            onToggleSelection={handleToggle}
+            onCopyTask={(task) => setCopyingTask(task)}
+            onAddAllSubtasks={(compoundTask) => {
+              // Mirror the list view's "Add all subtasks to board" —
+              // pull leaves from compositeLeafTasks and link any that
+              // aren't already in selection.
+              const leaves = compositeLeafTasks[compoundTask.id] ?? [];
+              for (const leaf of leaves) {
+                if (!selectedTaskIds.has(leaf.id)) {
+                  onToggleSelection(leaf.id);
+                }
+              }
+            }}
+            onOpenInLibrary={(id) => setOpenedTaskInLibrary(id)}
+            onChangeSource={() => setPickedSourceBoardId(null)}
+            onTaskCreated={(task) => {
+              // Derived counter — auto-add to selection like the list
+              // flow does.
+              if (!selectedTaskIds.has(task.id)) {
+                onToggleSelection(task.id);
+              }
+            }}
+          />
+        )
+      ) : visible.tasks.length === 0 && visible.composites.length === 0 ? (
         <div className={styles.emptyState}>
           {searchQuery.trim().length > 0
             ? `No tasks match "${searchQuery}".`
@@ -696,6 +767,28 @@ export function BoardWizardTasksStep({
             } catch (err) {
               setDeriveError(err instanceof Error ? err.message : 'Failed to save');
             }
+          }}
+        />
+      )}
+
+      {copyingTask && (
+        <CopyTaskModal
+          source={copyingTask}
+          userId={userId}
+          onCancel={() => setCopyingTask(null)}
+          onCopied={(newTask) => {
+            // Mark the source as "copied this session" for the
+            // amber-tint indicator on the grid, and link the new
+            // task into the wizard's selection.
+            setCopiedTaskIds((prev) => {
+              const next = new Set(prev);
+              next.add(copyingTask.id);
+              return next;
+            });
+            if (!selectedTaskIds.has(newTask.id)) {
+              onToggleSelection(newTask.id);
+            }
+            setCopyingTask(null);
           }}
         />
       )}

@@ -95,6 +95,22 @@ struct BoardWizardTasksStepView: View {
     /// a row's context menu.
     @State private var openedTaskInLibrary: TaskIdItem? = nil
 
+    // ── From-a-board picker state ─────────────────────────────────────
+    /// VM for `From a board…` — owns eligible boards + the currently
+    /// loaded source's placements. Reloaded on appear; `loadPlacements`
+    /// fires when the user picks a source.
+    @State private var sourceBoardsVM = SourceBoardsViewModel()
+    /// `nil` = picker mode; set = grid mode for that board id. Source
+    /// can be swapped via the grid header's chevron without losing the
+    /// running `selectedTaskIds` set.
+    @State private var pickedSourceBoardId: String? = nil
+    /// Task ids copied via the grid this session — drives the amber
+    /// "copied" tint on source squares whose original we already
+    /// copied. Session-scoped (cleared on remount).
+    @State private var copiedTaskIds: Set<String> = []
+    /// Source task whose CopyTaskSheet is currently presented; nil = closed.
+    @State private var copyingTask: OYBC.Task? = nil
+
     // MARK: - Derived
 
     private var trimmedQuery: String {
@@ -132,6 +148,10 @@ struct BoardWizardTasksStepView: View {
         // here too (no separate composites region) since the user is
         // picking from an already-curated parent set.
         case .fromParents: pool = parentTasksVM.tasks.filter { notExpired($0) }
+        // From-a-board branch renders the picker / grid instead of the
+        // list, so visibleTasks returns [] here — see the `list`
+        // ViewBuilder for the routing.
+        case .fromBoard: pool = []
         }
         return pool.filter { matches($0.title) }
     }
@@ -325,6 +345,24 @@ struct BoardWizardTasksStepView: View {
                 onOpenBoard: { _ in openedTaskInLibrary = nil }
             )
         }
+        // Copy sheet for the From-a-board grid's `⎘ Add a copy of this
+        // task…` action. Marks the source as "copied this session" for
+        // the amber tint indicator + auto-links the new task into
+        // selection on success.
+        .sheet(item: $copyingTask) { source in
+            CopyTaskSheet(
+                source: source,
+                userId: userId,
+                onCopied: { newTask in
+                    copiedTaskIds.insert(source.id)
+                    if !selectedTaskIds.contains(newTask.id) {
+                        toggleSelection(newTask.id)
+                    }
+                    copyingTask = nil
+                },
+                onCancel: { copyingTask = nil }
+            )
+        }
     }
 
     /// `Identifiable` adapter wrapping `derivingFromTask` so we can use
@@ -511,25 +549,27 @@ struct BoardWizardTasksStepView: View {
                 .accessibilityLabel("Create a new task")
             }
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                TextField("Search your tasks…", text: $searchQuery)
-                    .textFieldStyle(.plain)
-                if !searchQuery.isEmpty {
-                    Button {
-                        searchQuery = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+            if activeFilter != .fromBoard {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Search your tasks…", text: $searchQuery)
+                        .textFieldStyle(.plain)
+                    if !searchQuery.isEmpty {
+                        Button {
+                            searchQuery = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(.systemGray6))
-            .cornerRadius(8)
 
             // Scrollable pill row instead of .segmented — matches the
             // composite wizard; avoids the "Composite" truncation on
@@ -546,6 +586,12 @@ struct BoardWizardTasksStepView: View {
                         if let f = LibraryFilter(rawValue: newValue) {
                             activeFilter = f
                             expandedCompositeId = nil
+                            // Re-entering the From-a-board flow resets the
+                            // picker so the user always lands in "pick a
+                            // board" mode.
+                            if f == .fromBoard {
+                                pickedSourceBoardId = nil
+                            }
                         }
                     }
                 ),
@@ -556,6 +602,7 @@ struct BoardWizardTasksStepView: View {
 
     /// LibraryFilter cases visible in this wizard step. Excludes
     /// `.fromParents` for child timeframes that have no parents.
+    /// `.fromBoard` is always shown (no timeframe gating).
     private var visibleFilterTabs: [LibraryFilter] {
         let hasParents = !(parentTimeframesByChild[currentTimeframe] ?? []).isEmpty
         return LibraryFilter.allCases.filter { $0 != .fromParents || hasParents }
@@ -565,7 +612,9 @@ struct BoardWizardTasksStepView: View {
 
     @ViewBuilder
     private var list: some View {
-        if visibleTasks.isEmpty && visibleComposites.isEmpty {
+        if activeFilter == .fromBoard {
+            fromBoardList
+        } else if visibleTasks.isEmpty && visibleComposites.isEmpty {
             emptyState
         } else {
             // No inner ScrollView — the parent (MainTabView's ScrollView,
@@ -589,6 +638,49 @@ struct BoardWizardTasksStepView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// `From a board…` branch — picker when no source picked, grid
+    /// when one is. Mirrors the web wizard's `from-board` routing.
+    @ViewBuilder
+    private var fromBoardList: some View {
+        if let pickedId = pickedSourceBoardId,
+           let sourceBoard = sourceBoardsVM.eligibleBoards.first(where: { $0.id == pickedId }) {
+            FromBoardGridView(
+                vm: sourceBoardsVM,
+                sourceBoard: sourceBoard,
+                userId: userId,
+                selectedTaskIds: selectedTaskIds,
+                copiedTaskIds: copiedTaskIds,
+                onToggleSelection: { taskId in toggleSelection(taskId) },
+                onCopyTask: { task in copyingTask = task },
+                onAddAllSubtasks: { compoundTask in
+                    // Pull primitive leaves from the library helper
+                    // (same source the list view uses for `⧉ Add all
+                    // subtasks to board`).
+                    let leaves = leafTasks(for: compoundTask.id)
+                    for leaf in leaves where !selectedTaskIds.contains(leaf.id) {
+                        toggleSelection(leaf.id)
+                    }
+                },
+                onOpenInLibrary: { taskId in
+                    openedTaskInLibrary = TaskIdItem(id: taskId)
+                },
+                onChangeSource: { pickedSourceBoardId = nil },
+                onTaskCreated: { task in
+                    // Derived counter — auto-add to selection.
+                    if !selectedTaskIds.contains(task.id) {
+                        toggleSelection(task.id)
+                    }
+                }
+            )
+        } else {
+            FromBoardPickerView(
+                vm: sourceBoardsVM,
+                userId: userId,
+                onPickBoard: { boardId in pickedSourceBoardId = boardId }
+            )
         }
     }
 
