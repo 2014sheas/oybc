@@ -447,14 +447,15 @@ export function BoardWizardTasksStep({
             copiedTaskIds={copiedTaskIds}
             onToggleSelection={handleToggle}
             onCopyTask={(task) => setCopyingTask(task)}
-            onAddAllSubtasks={(compoundTask) => {
-              // Mirror the list view's "Add all subtasks to board" —
-              // pull leaves from compositeLeafTasks and link any that
-              // aren't already in selection.
-              const leaves = compositeLeafTasks[compoundTask.id] ?? [];
-              for (const leaf of leaves) {
-                if (!selectedTaskIds.has(leaf.id)) {
-                  onToggleSelection(leaf.id);
+            onAddAllSubtasks={(_compoundTask, leafTaskIds) => {
+              // Grid passes its already-resolved leaf ids (from the
+              // SOURCE board's compound, which may not be in the
+              // wizard's own library). Don't fall back to a parent-
+              // side lookup — it would silently no-op for compounds
+              // not yet in the library map.
+              for (const leafId of leafTaskIds) {
+                if (!selectedTaskIds.has(leafId)) {
+                  onToggleSelection(leafId);
                 }
               }
             }}

@@ -75,12 +75,21 @@ export function RowContextMenu({
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      {items.map((it) => (
+      {items.map((it, i) => (
+        // Index in the key disambiguates items that happen to share a
+        // label (compound leaves can legitimately have the same title).
         <button
-          key={it.label}
+          key={`${i}-${it.label}`}
           type="button"
           role="menuitem"
-          onClick={it.action}
+          onClick={() => {
+            it.action();
+            // Auto-close after the action runs — matches the
+            // RowContextMenuItem doc contract ("menu auto-closes on
+            // click; callers don't need to call onClose themselves").
+            // Idempotent if the caller's action also calls onClose.
+            onClose();
+          }}
           disabled={it.disabled}
           style={{
             display: 'flex',

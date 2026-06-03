@@ -655,13 +655,14 @@ struct BoardWizardTasksStepView: View {
                 copiedTaskIds: copiedTaskIds,
                 onToggleSelection: { taskId in toggleSelection(taskId) },
                 onCopyTask: { task in copyingTask = task },
-                onAddAllSubtasks: { compoundTask in
-                    // Pull primitive leaves from the library helper
-                    // (same source the list view uses for `⧉ Add all
-                    // subtasks to board`).
-                    let leaves = leafTasks(for: compoundTask.id)
-                    for leaf in leaves where !selectedTaskIds.contains(leaf.id) {
-                        toggleSelection(leaf.id)
+                onAddAllSubtasks: { _, leafTaskIds in
+                    // Grid passes its already-resolved leaf ids (from
+                    // the SOURCE board's compound, which may not be in
+                    // the wizard's library map). Don't fall back to a
+                    // local lookup — it would silently no-op when the
+                    // compound isn't present in `library`.
+                    for leafId in leafTaskIds where !selectedTaskIds.contains(leafId) {
+                        toggleSelection(leafId)
                     }
                 },
                 onOpenInLibrary: { taskId in

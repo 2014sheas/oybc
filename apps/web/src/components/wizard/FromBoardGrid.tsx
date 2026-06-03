@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
+  CenterSquareType,
   TaskType,
+  getCenterDisplayText,
   isTaskExpired,
   type Board,
   type Task,
@@ -26,8 +28,12 @@ interface FromBoardGridProps {
   onToggleSelection: (taskId: string) => void;
   /** Open the Copy modal for `⎘ Add a copy of this task…`. */
   onCopyTask: (sourceTask: Task) => void;
-  /** Auto-add every non-deleted leaf of a compound. */
-  onAddAllSubtasks: (compoundTask: Task) => void;
+  /** Auto-add every non-deleted leaf of a compound. Grid passes the
+   *  already-resolved leaf ids so the parent doesn't have to look
+   *  them up in its own library — the source's compound may have
+   *  children that aren't in the wizard's library yet, which would
+   *  silently no-op a parent-side lookup. */
+  onAddAllSubtasks: (compoundTask: Task, leafTaskIds: string[]) => void;
   /** Open the task in the library sheet (`↗ Open in library`). */
   onOpenInLibrary: (taskId: string) => void;
   /** Tap the source header `▾` to return to the picker. */
@@ -61,21 +67,44 @@ export function FromBoardGrid({
   onChangeSource,
   onTaskCreated,
 }: FromBoardGridProps): React.ReactElement {
-  const board: Board | undefined = useLiveQuery(
-    () => db.boards.get(boardId),
-    [boardId]
+  // `undefined` while loading; `null` after a confirmed not-found
+  // (board was soft-deleted or its row otherwise disappeared after we
+  // opened the grid). Distinguishing those states lets us recover —
+  // a stuck "Loading…" with no exit affordance is worse than bouncing
+  // the user back to the picker.
+  const board: Board | undefined | null = useLiveQuery(
+    async () => {
+      const row = await db.boards.get(boardId);
+      if (!row) return null;
+      if (row.isDeleted) return null;
+      return row;
+    },
+    [boardId],
+    undefined as Board | undefined | null
   );
   const placements = useSourceBoardPlacements(boardId);
 
   // Compound-leaf preview & resolved leaves are needed for the
   // context-menu's compound branch. Fetched once per source.
+  //
+  // The query's dep key is a STABLE sorted-joined string of compound
+  // ids — NOT the `placements` array itself. `placements` comes from
+  // `useSourceBoardPlacements`, which returns a fresh array reference
+  // on every Dexie change (any table). Without this memo, every
+  // unrelated DB write (e.g., a sync pull on `tasks`) would cascade
+  // a re-render of all three chained live queries here.
+  const compoundIdKey = useMemo(() => {
+    return placements
+      .filter((p) => p.task?.type === TaskType.COMPOUND)
+      .map((p) => p.task!.id)
+      .sort()
+      .join(',');
+  }, [placements]);
+
   const compoundChildLinks = useLiveQuery(
     async () => {
-      if (placements.length === 0) return [];
-      const compoundIds = placements
-        .filter((p) => p.task?.type === TaskType.COMPOUND)
-        .map((p) => p.task!.id);
-      if (compoundIds.length === 0) return [];
+      if (compoundIdKey.length === 0) return [];
+      const compoundIds = compoundIdKey.split(',');
       // Use the `compoundTaskId` index (declared in db/database.ts) so
       // Dexie hits only matching rows rather than scanning the whole
       // compoundChildren table. Filter !isDeleted in-process after.
@@ -85,9 +114,18 @@ export function FromBoardGrid({
         .toArray();
       return matching.filter((c) => !c.isDeleted);
     },
-    [placements],
+    [compoundIdKey],
     [],
   ) ?? [];
+
+  // Same stability problem as above: `compoundChildLinks` is a fresh
+  // array on every Dexie write. Key the next-level query on a stable
+  // hash of the link ids so we only re-run when the actual set of
+  // links changes.
+  const childLinkKey = useMemo(
+    () => compoundChildLinks.map((c) => c.id).sort().join(','),
+    [compoundChildLinks],
+  );
 
   // Map compoundTaskId → ordered list of child Task[]. Drives `Add all
   // subtasks to board` (and could power an inline expand later).
@@ -120,7 +158,8 @@ export function FromBoardGrid({
       }
       return byParent;
     },
-    [compoundChildLinks],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [childLinkKey],
     new Map<string, Task[]>(),
   ) ?? new Map<string, Task[]>();
 
@@ -145,11 +184,47 @@ export function FromBoardGrid({
     return grid;
   }, [board?.boardSize, placements]);
 
-  if (!board) {
+  if (board === undefined) {
     return <div className={styles.empty}>Loading board…</div>;
+  }
+  if (board === null) {
+    // The source board was deleted while the grid was open (likely a
+    // sync pull from another device). Bounce back to the picker so
+    // the user isn't stuck on a stale view.
+    return (
+      <div className={styles.empty}>
+        This board is no longer available.{' '}
+        <button
+          type="button"
+          className={styles.changeSourceButton}
+          onClick={onChangeSource}
+        >
+          Pick a different board
+        </button>
+      </div>
+    );
   }
 
   const size = board.boardSize;
+  // FREE / CUSTOM_FREE boards have NO BoardTask placement at the
+  // geometric center — those center squares are virtual (rendered by
+  // BoardPlaySurface from board metadata). Without a special case
+  // here, the source grid would show a dashed "empty" hole where the
+  // play view shows the FREE square, breaking the "render real
+  // geometry" contract.
+  const usesFreeCenter =
+    size % 2 === 1 &&
+    (board.centerSquareType === CenterSquareType.FREE ||
+      board.centerSquareType === CenterSquareType.CUSTOM_FREE);
+  const freeCenterIndex = usesFreeCenter
+    ? Math.floor(size / 2) * size + Math.floor(size / 2)
+    : -1;
+  const freeCenterText = usesFreeCenter
+    ? getCenterDisplayText(
+        board.centerSquareType,
+        board.centerSquareCustomName,
+      )
+    : '';
 
   return (
     <div className={styles.container}>
@@ -178,33 +253,50 @@ export function FromBoardGrid({
             gridTemplateRows: `repeat(${size}, 1fr)`,
           }}
         >
-          {placementGrid.map((entry, idx) => (
-            <SourceCell
-              key={entry?.placement.id ?? `empty-${idx}`}
-              entry={entry}
-              isSelected={
-                entry?.task ? selectedTaskIds.has(entry.task.id) : false
-              }
-              isCopied={
-                entry?.task ? copiedTaskIds.has(entry.task.id) : false
-              }
-              onTap={() => {
-                if (!entry?.task) return;
-                if (isTaskExpired(entry.task)) return;
-                onToggleSelection(entry.task.id);
-              }}
-              onContextMenu={(e) => {
-                if (!entry?.task) return;
-                if (isTaskExpired(entry.task)) return;
-                e.preventDefault();
-                setRowContextMenu({
-                  taskId: entry.task.id,
-                  x: e.clientX,
-                  y: e.clientY,
-                });
-              }}
-            />
-          ))}
+          {placementGrid.map((entry, idx) => {
+            // Render the virtual FREE / CUSTOM_FREE center cell when
+            // the source board has no BoardTask placement at the
+            // geometric center. Non-interactive — there's no real
+            // Task to link or copy.
+            if (!entry && idx === freeCenterIndex) {
+              return (
+                <div
+                  key={`free-${idx}`}
+                  className={`${styles.cell} ${styles.cellFree}`}
+                  aria-label={freeCenterText}
+                >
+                  <span className={styles.cellTitle}>{freeCenterText}</span>
+                </div>
+              );
+            }
+            return (
+              <SourceCell
+                key={entry?.placement.id ?? `empty-${idx}`}
+                entry={entry}
+                isSelected={
+                  entry?.task ? selectedTaskIds.has(entry.task.id) : false
+                }
+                isCopied={
+                  entry?.task ? copiedTaskIds.has(entry.task.id) : false
+                }
+                onTap={() => {
+                  if (!entry?.task) return;
+                  if (isTaskExpired(entry.task)) return;
+                  onToggleSelection(entry.task.id);
+                }}
+                onContextMenu={(e) => {
+                  if (!entry?.task) return;
+                  if (isTaskExpired(entry.task)) return;
+                  e.preventDefault();
+                  setRowContextMenu({
+                    taskId: entry.task.id,
+                    x: e.clientX,
+                    y: e.clientY,
+                  });
+                }}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -349,7 +441,7 @@ function buildMenuItems({
   leaves: Task[];
   onToggleSelection: (taskId: string) => void;
   onCopyTask: (task: Task) => void;
-  onAddAllSubtasks: (task: Task) => void;
+  onAddAllSubtasks: (task: Task, leafTaskIds: string[]) => void;
   onOpenInLibrary: (taskId: string) => void;
   onDerive: (task: Task) => void;
   close: () => void;
@@ -396,7 +488,10 @@ function buildMenuItems({
             label: 'Add all subtasks to board',
             glyph: '⧉',
             action: () => {
-              onAddAllSubtasks(target);
+              onAddAllSubtasks(
+                target,
+                leaves.map((leaf) => leaf.id),
+              );
               close();
             },
           },

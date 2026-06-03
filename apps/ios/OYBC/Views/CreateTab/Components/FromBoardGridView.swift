@@ -27,8 +27,11 @@ struct FromBoardGridView: View {
     let onToggleSelection: (String) -> Void
     /// Open the Copy sheet for `⎘ Add a copy of this task…`.
     let onCopyTask: (OYBC.Task) -> Void
-    /// Auto-add every non-deleted leaf of a compound.
-    let onAddAllSubtasks: (OYBC.Task) -> Void
+    /// Auto-add every non-deleted leaf of a compound. Grid passes the
+    /// already-resolved leaf ids so the parent doesn't have to re-look-
+    /// up via its own library — the source's compound may have children
+    /// outside the wizard's library.
+    let onAddAllSubtasks: (OYBC.Task, [String]) -> Void
     /// `↗ Open in library` — surfaces the task in TaskDetailSheet.
     let onOpenInLibrary: (String) -> Void
     /// Tap the source header `▾` to return to the picker.
@@ -116,19 +119,58 @@ struct FromBoardGridView: View {
                 cells[idx] = placement
             }
         }
+        // FREE / CUSTOM_FREE boards have NO BoardTask placement at the
+        // geometric center — without a special case here the source
+        // grid would render a dashed hole where the play view shows
+        // the FREE square. Mirror BoardPlayView's behavior.
+        let usesFreeCenter = size % 2 == 1
+            && (sourceBoard.centerSquareType == .free
+                || sourceBoard.centerSquareType == .customFree)
+        let freeCenterIndex: Int = usesFreeCenter
+            ? (size / 2) * size + (size / 2)
+            : -1
+        let freeCenterText: String = usesFreeCenter
+            ? CenterSquare.getCenterDisplayText(
+                type: sourceBoard.centerSquareType,
+                customName: sourceBoard.centerSquareCustomName
+            )
+            : ""
 
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(0..<cells.count, id: \.self) { i in
-                cellView(entry: cells[i])
+                cellView(
+                    entry: cells[i],
+                    isVirtualFreeCenter: i == freeCenterIndex && cells[i] == nil,
+                    freeCenterText: freeCenterText
+                )
             }
         }
         .padding(4)
     }
 
     @ViewBuilder
-    private func cellView(entry: SourceBoardPlacement?) -> some View {
+    private func cellView(
+        entry: SourceBoardPlacement?,
+        isVirtualFreeCenter: Bool,
+        freeCenterText: String
+    ) -> some View {
         if let entry, let task = entry.task {
             sourceCell(task: task, placement: entry.placement)
+        } else if isVirtualFreeCenter {
+            // Virtual FREE / CUSTOM_FREE center — non-interactive, no
+            // BoardTask to link or copy.
+            Text(freeCenterText)
+                .font(.system(size: 11, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
+                .background(Color.orange.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.orange, lineWidth: 2)
+                )
+                .accessibilityLabel(freeCenterText)
         } else {
             Rectangle()
                 .fill(Color.clear)
@@ -213,6 +255,14 @@ struct FromBoardGridView: View {
             && task.action != nil
             && task.unit != nil
             && task.maxCount != nil
+        // Source-board-derived leaves (precomputed by the VM in the
+        // same transaction that read the placements). Used both to
+        // gate the menu item (hide when the compound has no leaves —
+        // matches web's `leaves.length > 0`) and to pass through to
+        // the parent's auto-add closure.
+        let compoundLeafIds = isCompound
+            ? (vm.compoundLeafIdsByParent[task.id] ?? [])
+            : []
 
         Button(
             isSelected ? "Remove from board" : "Add to board (link)",
@@ -233,9 +283,9 @@ struct FromBoardGridView: View {
                 deriveError = nil
             }
         }
-        if isCompound {
+        if isCompound && !compoundLeafIds.isEmpty {
             Button("Add all subtasks to board", systemImage: "square.stack.3d.up") {
-                onAddAllSubtasks(task)
+                onAddAllSubtasks(task, compoundLeafIds)
             }
         }
         Button("Open in library", systemImage: "info.circle") {
@@ -278,8 +328,10 @@ struct FromBoardGridView: View {
             isDeleted: false
         )
 
-        derivingFromTask = nil
-
+        // Keep the sheet open until the write either succeeds or fails
+        // visibly. Mirrors the web grid's `onSave`: dismissing
+        // pre-emptively swallows errors and loses the new task from
+        // selection silently.
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try AppDatabase.shared.write { db in
@@ -293,11 +345,14 @@ struct FromBoardGridView: View {
                     ).save(db)
                 }
                 DispatchQueue.main.async {
+                    derivingFromTask = nil
+                    deriveError = nil
                     onTaskCreated(newTask)
                 }
             } catch {
-                // Swallow on background — same pattern as the wizard list's
-                // derive flow. The user can retry.
+                DispatchQueue.main.async {
+                    deriveError = "Failed to save: \(error.localizedDescription)"
+                }
             }
         }
     }

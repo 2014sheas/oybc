@@ -106,6 +106,14 @@
   border-width: 2px;
 }
 
+.cellFree {
+  background: rgba(255, 149, 0, 0.12);
+  border: 2px solid var(--color-warning, #ff9500);
+  cursor: default;
+  pointer-events: none;
+  font-weight: 600;
+}
+
 .cellEmpty {
   aspect-ratio: 1;
   background: transparent;
@@ -130,4 +138,14 @@
   text-align: center;
   font-size: 13px;
   opacity: 0.6;
+}
+
+.changeSourceButton {
+  background: transparent;
+  border: 0;
+  color: var(--color-accent, #0a84ff);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
 }
