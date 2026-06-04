@@ -965,6 +965,96 @@ The Boards-tab **Core boards** rows previously opened the per-timeframe browser 
 - **Timezone**: the web route's date-only `:date` param is parsed as **local noon** (`new Date(\`${date}T12:00:00\`)`), not `new Date(date)` — a date-only ISO string parses as UTC midnight, which lands the daily pager on *yesterday's* window for users west of UTC.
 - **Platform divergence (intentional)**: web extracts a presentational `BoardPlaySurface` from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; iOS embeds the existing `BoardPlayView` whole behind a new `embedded` flag (it is 1350 lines and already self-loads by `boardId`, so embedding is lower-risk than extraction). Same behavior on both platforms.
 
+## Wizard "From a board" picker
+
+> Design captured 2026-06-01; not yet shipped. Section is the canonical record — kept in sync as decisions evolve. PR link added under **Status** when opened.
+
+The wizard's Step 2 (Tasks) currently lets the user pick from their library list, filter by type, and surface tasks from currently-active **parent** boards via the `From parent boards` chip ([Phase 6.1](#three-phase-vision)). There is no way to visually browse another board's grid and pull its tasks across — every cross-board task add happens as a flat-list selection. "From a board" adds a sibling chip `From a board…` that swaps the list region for a source-board picker, then for the chosen board's actual grid, so users can compose a new board against the spatial layout of an existing one.
+
+### Motivation
+
+The strongest cross-board task-reuse pattern in OYBC's data ("I want this week's board to be like last week's, plus a few changes") has no first-class affordance. Today the user remembers the task titles, then types into search or scrolls the library. The `From parent boards` filter only helps when the source is a currently-active parent (a daily wizard can see its active weekly/monthly/yearly — not last week's daily or an unrelated yearly). This feature generalizes that path to "any board you've been working in recently" and adds a graphical grid view so recognition replaces recall.
+
+**Non-goals**: a board-builder copy/clone tool (the wizard itself remains the only board-creation path); a way to copy an entire board's geometry + tasks in one shot (users can `⧉ Add all subtasks to board` on a compound or tap individual squares — bulk-add of all squares is intentionally not offered, to keep curation explicit).
+
+### Locked design
+
+#### Entry
+
+New filter chip `From a board…` in the wizard's Tasks step (`BoardWizardTasksStep` / `BoardWizardTasksStepView`), sibling to `From parent boards`. Unlike the parent-boards chip, this one is **not** timeframe-gated — any wizard timeframe is a valid context for browsing another board. Tapping the chip swaps the list region inline (no modal, no nav push), matching how the existing filter chips already drive list-region content.
+
+#### Source-board picker
+
+When the chip is active and no source is selected, the list region renders a vertical list of **mini-grid cards**, one per eligible source board. Each card shows a tiny rendering of that board (filled cell = completed, empty cell = not, distinct marker for the center square) + the board name + timeframe + window label + completion ratio. Reusable as its own component (`BoardThumbnail` / `BoardThumbnailView`) — a candidate for later extraction into the Boards-tab board cells, recognized as out-of-scope here.
+
+**Eligibility**: `Board.status === ACTIVE` ∪ `(status === COMPLETED && completedAt within last 30 days)`. Drafts and archived boards are excluded — drafts have no real task set; archived are intentionally out-of-view. Sorted recently-active first (`updatedAt desc`). Empty state: "No boards to browse. Create another board first, or build this one from scratch."
+
+#### Source-board grid
+
+After the user picks a source, the list region renders the source board at its actual geometry (3×3, 4×4, 5×5, or chosen variants). Each square is a tappable button with the task title centered. A header line shows `Source: <name> ▾` — the chevron lets the user swap to a different source without losing the running selection (selection lives in wizard state, not in the picker).
+
+#### Per-square interaction
+
+| Gesture                 | Behavior                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| Single tap              | **Link** the underlying `Task` into the new board's selection. No new Task is created.            |
+| Long-press / right-click | Floating context menu (reuses existing `RowContextMenu` / SwiftUI `.contextMenu`) — see below.    |
+
+#### Context-menu vocabulary
+
+Reuses the existing `RowContextMenu` items + glyphs verbatim where they apply (so the user's mental model of the wizard's quick actions extends to the grid for free). Items only render when applicable to the square's type:
+
+- `+ Add to board (link)` / `− Remove from board` — toggle; `(link)` hint disambiguates from the copy item below
+- `⎘ Add a copy of this task…` — opens the Copy modal (see below)
+- `⇣ Derive smaller version…` — counting tasks only; reuses the existing `DeriveCounterModal`
+- `⧉ Add all subtasks to board` — compound tasks only (flattens the compound's primitive leaves into the new board's selection). The grid is fixed-geometry per the source's layout, so the list view's inline `▼ Expand subtasks` affordance has no analogue here — compounds either link as one square or get flattened via this item.
+- `↗ Open in library` — always
+
+#### Square visual states
+
+All state communicated via color / border, never overlay text (preserves title centering):
+
+- **Linked**: blue tint background (`selectedTaskIds.has(task.id)`)
+- **Copied this session**: amber tint background (id in local `copiedThisSession: Set<string>`)
+- **Expired**: 35% opacity, non-tappable, small "expired" pill (matches the existing `isTaskExpired` filter convention in the wizard list)
+- **Source's center**: orange border. Tap still Links the task; the ★ does *not* transfer — the user can mark the new board's center via the existing list-view `★ Set as center task` flow after linking
+- **Compound parent**: existing `C` badge; tapping links the compound as one square (`+ Add to board (link)` semantics); `⧉ Add all subtasks` from the menu flattens it
+- **Achievement**: full parity (no dimming, no special restriction) — see invariants below
+
+#### Copy modal
+
+Opened from `⎘ Add a copy of this task…`. Pre-fills every field from the source task; per-type editable surface:
+
+| Source type | Editable fields                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
+| Normal      | Title                                                                                                 |
+| Counting    | Title, `action`, `maxCount`, `unit`                                                                   |
+| Compound    | Title only — children references stay shared (shallow copy; new parent, same children)                |
+| Achievement | Title, `achievementTrigger`, reference picker (`referencedBoardId` XOR `referencedTemplateId`), `requiredCount` (when template mode) |
+
+On Save: calls `copyTask(userId, sourceTask, overrides)` or `copyCompound(userId, sourceTask, overrides)` in `db/operations/tasks.ts` (web) / new helper in `AppDatabase.swift` (iOS). For Achievement copies, cycle detection (`hasCycle` from `packages/shared/src/algorithms/cycleDetection.ts`) is **not** invoked at copy time — the copy creates a Task that has no placements yet, so `parentBoardIds` is empty and the algorithm trivially returns `{ ok: true }`. The real cycle check fires at the existing Phase 6.3 gate: when the wizard's "Create board" commit places the (possibly newly-copied) Task on the new board. Edge surfaced inline at that step, same as a brand-new ACHIEVEMENT task placed via `+ New task`.
+
+### Data flow
+
+- **Reads**: `useSourceBoards(userId)` mirrors `useParentBoardTasks` (Dexie `useLiveQuery` + `boardId` index). `useSourceBoardPlacements(boardId)` fetches `BoardTask[]` + the matching `Task[]`. iOS twins live on `SourceBoardsViewModel` and reload on `.onAppear` (no SwiftUI `useLiveQuery`).
+- **Writes**: Link is a normal placement — same write path the existing wizard's "Next ›" already uses for the selection set; no new code. Copy is a normal `createTask` / `createCompound` call with field overrides; for Achievement copies, gated by the existing cycle-detection algorithm.
+
+### Invariants
+
+- **Link is a UI filter, never a clone path** — same invariant Phase 6.1 locked for `From parent boards`. The user selecting a linked square places the *same* `Task` on the new board; completion remains globally shared per Task.
+- **Copy is a normal `createTask` / `createCompound`** — no special table, no special validation. The Zod refinements in `packages/shared/src/validation/schemas.ts` (`referencedFieldsOnTaskMutuallyExclusive`, `achievementRequiresReference`) already cover the Copy modal's commit path because it routes through the same helpers as the `+ New task` sheet.
+- **Compound copies are shallow** by default — new parent, same children (which are themselves first-class `Task`s under the unified model). A deep-clone path is not provided; the user can always create independent primitives via `+ New task` if that's what they want.
+- **Achievement copies are gated at wizard commit, not at copy commit** — Phase 6.3's cycle-detection (`hasCycle`) runs when the wizard *places* the (copied) Task on the new board, not when the Copy modal saves. A brand-new copy has no placements, so a pre-commit `hasCycle` call is trivially `{ ok: true }`. This matches how a fresh ACHIEVEMENT task created via `+ New task` flows: validation happens at placement time. Cycle errors surface inline on the wizard's commit step.
+- **No bulk-add-all-squares affordance** — `⧉ Add all subtasks to board` on a compound is intentionally the only bulk-add path. "Add every square from this source" would defeat the curation step the wizard exists to enable.
+
+### Status
+
+| Step | State |
+| --- | --- |
+| Design (this section) | Locked 2026-06-01 |
+| Branch | `feature/wizard-from-a-board` |
+| PR | TBD — link added when opened |
+
 ---
 
 This plan represents a complete rebuild of OYBC with offline-first architecture, designed to provide instant UX and work perfectly without internet connection.

@@ -12,6 +12,8 @@ export * from './useSyncStatus';
 export * from './useSyncLoop';
 export * from './usePendingRecurringBoards';
 export * from './useParentBoardTasks';
+export * from './useSourceBoards';
+export * from './useSourceBoardPlacements';
 export * from './useRecurringBoardTemplates';
 export * from './useRecurringBoardSpawn';
 export * from './useDefaultPools';

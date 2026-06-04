@@ -1,0 +1,30 @@
+.thumbnail {
+  display: grid;
+  gap: 1px;
+  padding: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.cell {
+  display: block;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cell.done {
+  background: var(--color-accent, #0a84ff);
+}
+
+.cell.pending {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.cell.center {
+  background: var(--color-warning, #ff9500);
+}
+
+.cell.empty {
+  background: transparent;
+}

@@ -522,6 +522,54 @@ extension AppDatabase {
         }
     }
 
+    /// Boards eligible to act as a "source" in the wizard's
+    /// `From a board…` filter — active boards plus boards completed
+    /// within the last 30 days. Drafts and archived are excluded.
+    /// Sorted recently-active first (`updatedAt desc`). Mirror of
+    /// web's `useSourceBoards` hook.
+    ///
+    /// Opens its own `read` block. For callers that already hold a
+    /// transaction (e.g., `SourceBoardsViewModel.reload` which also
+    /// needs to read board_tasks atomically with the eligibility
+    /// list), use `fetchEligibleSourceBoards(_:userId:)` instead so
+    /// both queries see one consistent snapshot.
+    func fetchEligibleSourceBoards(userId: String) throws -> [Board] {
+        try read { db in
+            try AppDatabase.fetchEligibleSourceBoards(db, userId: userId)
+        }
+    }
+
+    /// Transaction-aware variant. Runs the same eligibility filter as
+    /// `fetchEligibleSourceBoards(userId:)` but inside the caller's
+    /// `read` block so the resulting boards + any subsequent reads
+    /// (placements, tasks) share a single snapshot.
+    static func fetchEligibleSourceBoards(_ db: Database, userId: String) throws -> [Board] {
+        let completedLookbackDays = 30
+        let cutoff = Date().addingTimeInterval(
+            -Double(completedLookbackDays) * 24 * 60 * 60
+        )
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoFormatterNoFrac = ISO8601DateFormatter()
+
+        let boards = try Board
+            .filter(Column("userId") == userId && Column("isDeleted") == false)
+            .order(Column("updatedAt").desc)
+            .fetchAll(db)
+        return boards.filter { board in
+            if board.status == .active { return true }
+            guard board.status == .completed else { return false }
+            guard let completedAt = board.completedAt else { return false }
+            // ISO8601 strings round-trip from JS (fractional) and Swift
+            // (no fractional). Try both parsers so we don't reject valid
+            // timestamps from either platform.
+            let parsed = isoFormatter.date(from: completedAt)
+                ?? isoFormatterNoFrac.date(from: completedAt)
+            guard let ts = parsed else { return false }
+            return ts >= cutoff
+        }
+    }
+
     func fetchBoard(id: String) throws -> Board? {
         return try read { db in
             try Board.fetchOne(db, key: id)
@@ -591,6 +639,253 @@ extension AppDatabase {
                 now: Self.currentTimestamp(),
             ).save(db)
         }
+    }
+
+    // MARK: - Copy-from-source helpers
+    //
+    // The wizard's `From a board…` filter long-press menu exposes
+    // `⎘ Add a copy of this task…`. The Copy modal collects per-type
+    // editable fields, pre-filled from the source. These helpers
+    // construct the new Task value, persist it + its compound children
+    // (when applicable), and enqueue the sync write — all atomically.
+    // iOS twin of web's `copyTask` / `copyCompound` in
+    // `apps/web/src/db/operations/tasks.ts`. See
+    // docs/ARCHITECTURE.md § "Wizard 'From a board' picker" for the
+    // shallow-compound-copy invariant. Achievement copies are NOT
+    // cycle-checked here — the gate runs at wizard-commit time when
+    // the Task is placed on the new board (Phase 6.3 behavior).
+
+    /// Editable fields the Copy sheet may override when copying a
+    /// primitive (normal / counting / achievement) task. Any property
+    /// left `nil` inherits from the source.
+    ///
+    /// For achievement copies: if EITHER `referencedBoardId` or
+    /// `referencedTemplateId` is provided, both override values are
+    /// used as-is (treating the other's `nil` as "clear"). This is
+    /// how the sheet switches between specific-board and
+    /// recurring-template modes. If neither is provided, both
+    /// inherit from the source.
+    struct CopyTaskOverrides {
+        var title: String?
+        var description: String?
+        // Counting
+        var action: String?
+        var unit: String?
+        var maxCount: Int?
+        // Achievement
+        var achievementTrigger: AchievementTrigger?
+        var referencedBoardId: String?
+        var referencedTemplateId: String?
+        var requiredCount: Int?
+
+        init(
+            title: String? = nil,
+            description: String? = nil,
+            action: String? = nil,
+            unit: String? = nil,
+            maxCount: Int? = nil,
+            achievementTrigger: AchievementTrigger? = nil,
+            referencedBoardId: String? = nil,
+            referencedTemplateId: String? = nil,
+            requiredCount: Int? = nil,
+            overrodeReference: Bool = false
+        ) {
+            self.title = title
+            self.description = description
+            self.action = action
+            self.unit = unit
+            self.maxCount = maxCount
+            self.achievementTrigger = achievementTrigger
+            self.referencedBoardId = referencedBoardId
+            self.referencedTemplateId = referencedTemplateId
+            self.requiredCount = requiredCount
+            self.overrodeReference = overrodeReference
+        }
+
+        /// True when the sheet touched the reference fields. Distinguishes
+        /// "inherit from source" (false → use source's pair) from
+        /// "user picked board mode but left template blank" (true → use
+        /// overrides as-is, blanks become clears). Swift can't infer this
+        /// from `nil` alone the way TS infers from `=== undefined`.
+        var overrodeReference: Bool = false
+    }
+
+    /// Copy a primitive task (normal / counting / achievement). Throws
+    /// if the source is a compound — call `copyCompound` instead.
+    @discardableResult
+    func copyTask(
+        userId: String,
+        source: Task,
+        overrides: CopyTaskOverrides = CopyTaskOverrides()
+    ) throws -> Task {
+        if source.type == .compound {
+            throw NSError(
+                domain: "AppDatabase.copyTask",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "copyTask cannot copy a compound source — use copyCompound instead"]
+            )
+        }
+
+        let now = Self.currentTimestamp()
+        let newId = Self.generateUUID()
+
+        // Resolve reference fields: if the sheet touched either field,
+        // both come from overrides (nil-as-clear so a switch from
+        // board → template doesn't leave both set and trip the XOR
+        // refinement). Otherwise inherit from the source.
+        let refBoard: String? = overrides.overrodeReference
+            ? overrides.referencedBoardId
+            : source.referencedBoardId
+        let refTemplate: String? = overrides.overrodeReference
+            ? overrides.referencedTemplateId
+            : source.referencedTemplateId
+
+        let newTask = Task(
+            id: newId,
+            userId: userId,
+            title: overrides.title ?? source.title,
+            description: overrides.description ?? source.description,
+            type: source.type,
+            action: source.type == .counting
+                ? (overrides.action ?? source.action) : nil,
+            unit: source.type == .counting
+                ? (overrides.unit ?? source.unit) : nil,
+            maxCount: source.type == .counting
+                ? (overrides.maxCount ?? source.maxCount) : nil,
+            referencedBoardId: source.type == .achievement ? refBoard : nil,
+            referencedTemplateId: source.type == .achievement ? refTemplate : nil,
+            achievementTrigger: source.type == .achievement
+                ? (overrides.achievementTrigger ?? source.achievementTrigger) : nil,
+            requiredCount: source.type == .achievement
+                ? (overrides.requiredCount ?? source.requiredCount) : nil,
+            totalCompletions: 0,
+            totalInstances: 0,
+            isCompleted: false,
+            currentCount: source.type == .counting ? 0 : nil,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+            timeframe: source.timeframe,
+            startDate: source.startDate,
+            endDate: source.endDate
+        )
+
+        try write { db in
+            try newTask.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: newId,
+                operationType: .create,
+                payload: newTask,
+                now: now
+            ).save(db)
+        }
+        return newTask
+    }
+
+    /// Copy a compound task. Shallow: the new compound parent has a
+    /// fresh id but its `compound_children` rows reference the SAME
+    /// primitive child Tasks the source had. Deep-clone is intentionally
+    /// not provided (see ARCHITECTURE.md doc).
+    @discardableResult
+    func copyCompound(
+        userId: String,
+        source: Task,
+        title: String? = nil,
+        description: String? = nil
+    ) throws -> Task {
+        guard source.type == .compound else {
+            throw NSError(
+                domain: "AppDatabase.copyCompound",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "copyCompound requires a compound source task"]
+            )
+        }
+        guard let op = source.operatorType else {
+            throw NSError(
+                domain: "AppDatabase.copyCompound",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "compound source missing operatorType field"]
+            )
+        }
+        guard let isOrdered = source.isOrdered else {
+            throw NSError(
+                domain: "AppDatabase.copyCompound",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "compound source missing isOrdered field"]
+            )
+        }
+
+        let now = Self.currentTimestamp()
+        let newParentId = Self.generateUUID()
+
+        let newParent = Task(
+            id: newParentId,
+            userId: userId,
+            title: title ?? source.title,
+            description: description ?? source.description,
+            type: .compound,
+            operatorType: op,
+            threshold: source.threshold,
+            isOrdered: isOrdered,
+            totalCompletions: 0,
+            totalInstances: 0,
+            isCompleted: false,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+            timeframe: source.timeframe,
+            startDate: source.startDate,
+            endDate: source.endDate
+        )
+
+        // Read children OUTSIDE the write transaction so we don't hold a
+        // writer lock open across the read. `fetchCompoundChildren`
+        // already filters !isDeleted and orders by childIndex.
+        let sourceChildren = try fetchCompoundChildren(compoundTaskId: source.id)
+
+        try write { db in
+            try newParent.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: newParentId,
+                operationType: .create,
+                payload: newParent,
+                now: now
+            ).save(db)
+
+            for (index, child) in sourceChildren.enumerated() {
+                let linkId = Self.generateUUID()
+                let link = CompoundChild(
+                    id: linkId,
+                    compoundTaskId: newParentId,
+                    childTaskId: child.childTaskId,
+                    childIndex: index,
+                    createdAt: now,
+                    updatedAt: now,
+                    lastSyncedAt: nil,
+                    version: 1,
+                    isDeleted: false,
+                    deletedAt: nil
+                )
+                try link.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren",
+                    entityId: linkId,
+                    operationType: .create,
+                    payload: link,
+                    now: now
+                ).save(db)
+            }
+        }
+
+        return newParent
     }
 
     /// Soft-delete a task. See `deleteBoard` for the version-bump rationale.

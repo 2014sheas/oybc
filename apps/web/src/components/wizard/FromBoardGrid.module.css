@@ -1,0 +1,151 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sourceLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.sourcePrefix {
+  opacity: 0.55;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sourceName {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.sourceChevron {
+  opacity: 0.55;
+  font-size: 12px;
+}
+
+.grid {
+  display: grid;
+  gap: 6px;
+  padding: 4px;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: hidden;
+}
+
+.cell:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cellTitle {
+  font-size: 11px;
+  line-height: 1.25;
+  max-height: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.cellLinked {
+  background: rgba(10, 132, 255, 0.22);
+  border-color: rgba(10, 132, 255, 0.5);
+}
+
+.cellLinked:hover:not(:disabled) {
+  background: rgba(10, 132, 255, 0.28);
+}
+
+.cellCopied {
+  background: rgba(255, 193, 7, 0.18);
+  border-color: rgba(255, 193, 7, 0.45);
+}
+
+.cellCopied:hover:not(:disabled) {
+  background: rgba(255, 193, 7, 0.24);
+}
+
+.cellExpired {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cellCenter {
+  border-color: var(--color-warning, #ff9500);
+  border-width: 2px;
+}
+
+.cellFree {
+  background: rgba(255, 149, 0, 0.12);
+  border: 2px solid var(--color-warning, #ff9500);
+  cursor: default;
+  pointer-events: none;
+  font-weight: 600;
+}
+
+.cellEmpty {
+  aspect-ratio: 1;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.cellExpiredPill {
+  position: absolute;
+  bottom: 4px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 4px;
+  opacity: 0.8;
+}
+
+.empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.changeSourceButton {
+  background: transparent;
+  border: 0;
+  color: var(--color-accent, #0a84ff);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}

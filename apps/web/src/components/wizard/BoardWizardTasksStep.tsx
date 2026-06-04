@@ -14,7 +14,12 @@ import { useParentBoardTasks } from '../../hooks';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { TypeBadge } from '../TypeBadge';
 import { FilterTabs } from '../FilterTabs';
+import { CopyTaskModal } from './CopyTaskModal';
+import { DeriveCounterModal } from './DeriveCounterModal';
+import { FromBoardGrid } from './FromBoardGrid';
+import { FromBoardPicker } from './FromBoardPicker';
 import { NewTaskSheet } from './NewTaskSheet';
+import { RowContextMenu } from './RowContextMenu';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import styles from './BoardWizardTasksStep.module.css';
 
@@ -35,12 +40,18 @@ const FROM_PARENTS_TAB: { value: TasksFilter; label: string } = {
   label: 'From parent boards',
 };
 
+const FROM_BOARD_TAB: { value: TasksFilter; label: string } = {
+  value: 'from-board',
+  label: 'From a board…',
+};
+
 export type TasksFilter =
   | 'all'
   | TaskType
   | 'progress'
   | 'composite'
-  | 'from-parents';
+  | 'from-parents'
+  | 'from-board';
 
 export interface BoardWizardTasksStepProps {
   /** User's full task + composite library (from `useTaskLibrary`). */
@@ -142,9 +153,15 @@ export function BoardWizardTasksStep({
   // recurrence. Hide the chip otherwise to avoid an always-empty filter.
   const hasParentTimeframes = PARENT_TIMEFRAMES[currentTimeframe].length > 0;
 
+  // `From a board…` is unconditionally available (no timeframe gating)
+  // since any wizard timeframe is a valid context for browsing another
+  // board. Sits AFTER `From parent boards` so the parent-tasks chip
+  // stays in its established position.
   const filterTabs = useMemo(
     () =>
-      hasParentTimeframes ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB] : BASE_FILTER_TABS,
+      hasParentTimeframes
+        ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB, FROM_BOARD_TAB]
+        : [...BASE_FILTER_TABS, FROM_BOARD_TAB],
     [hasParentTimeframes]
   );
 
@@ -179,6 +196,18 @@ export function BoardWizardTasksStep({
   const [derivingFromTask, setDerivingFromTask] = useState<Task | null>(null);
   const [deriveMaxCountInput, setDeriveMaxCountInput] = useState('');
   const [deriveError, setDeriveError] = useState<string | null>(null);
+  /** `From a board…` filter state. `null` = picker mode (no source
+   *  chosen yet); set = grid mode for that board. Selection itself
+   *  lives in `selectedTaskIds` (wizard-owned), so swapping sources
+   *  doesn't lose what the user has already linked. */
+  const [pickedSourceBoardId, setPickedSourceBoardId] = useState<string | null>(null);
+  /** Task ids copied via the From-a-board grid's `⎘ Add a copy…`
+   *  this session. Used to render the amber-tint indicator on source
+   *  squares whose original we've already copied. Cleared on remount
+   *  (session-scoped). */
+  const [copiedTaskIds, setCopiedTaskIds] = useState<Set<string>>(new Set());
+  /** Source task whose Copy modal is currently mounted. Null = no modal. */
+  const [copyingTask, setCopyingTask] = useState<Task | null>(null);
   /** When set, mounts TaskDetailSheet over the wizard so the user can
    *  inspect a task's full library detail without losing wizard state.
    *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
@@ -377,26 +406,71 @@ export function BoardWizardTasksStep({
           </button>
         </div>
 
-        <input
-          type="search"
-          className={styles.search}
-          placeholder="Search your tasks…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+        {activeFilter !== 'from-board' && (
+          <input
+            type="search"
+            className={styles.search}
+            placeholder="Search your tasks…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        )}
 
         <FilterTabs
           tabs={filterTabs}
           activeTab={activeFilter}
           onTabChange={(value) => {
-            setActiveFilter(value as TasksFilter);
+            const next = value as TasksFilter;
+            setActiveFilter(next);
             setExpandedCompositeId(null);
+            // Re-entering the From-a-board flow resets the picker so
+            // the user always lands in "pick a board" mode.
+            if (next === 'from-board') {
+              setPickedSourceBoardId(null);
+            }
           }}
         />
       </div>
 
-      {/* List */}
-      {visible.tasks.length === 0 && visible.composites.length === 0 ? (
+      {/* From-a-board flow — picker (no source) or grid (source picked) */}
+      {activeFilter === 'from-board' ? (
+        pickedSourceBoardId === null ? (
+          <FromBoardPicker
+            userId={userId}
+            onPickBoard={(id) => setPickedSourceBoardId(id)}
+          />
+        ) : (
+          <FromBoardGrid
+            boardId={pickedSourceBoardId}
+            userId={userId}
+            selectedTaskIds={selectedTaskIds}
+            copiedTaskIds={copiedTaskIds}
+            onToggleSelection={handleToggle}
+            onCopyTask={(task) => setCopyingTask(task)}
+            onAddAllSubtasks={(_compoundTask, leafTaskIds) => {
+              // Grid passes its already-resolved leaf ids (from the
+              // SOURCE board's compound, which may not be in the
+              // wizard's own library). Don't fall back to a parent-
+              // side lookup — it would silently no-op for compounds
+              // not yet in the library map.
+              for (const leafId of leafTaskIds) {
+                if (!selectedTaskIds.has(leafId)) {
+                  onToggleSelection(leafId);
+                }
+              }
+            }}
+            onOpenInLibrary={(id) => setOpenedTaskInLibrary(id)}
+            onChangeSource={() => setPickedSourceBoardId(null)}
+            onTaskCreated={(task) => {
+              // Derived counter — auto-add to selection like the list
+              // flow does.
+              if (!selectedTaskIds.has(task.id)) {
+                onToggleSelection(task.id);
+              }
+            }}
+          />
+        )
+      ) : visible.tasks.length === 0 && visible.composites.length === 0 ? (
         <div className={styles.emptyState}>
           {searchQuery.trim().length > 0
             ? `No tasks match "${searchQuery}".`
@@ -697,217 +771,28 @@ export function BoardWizardTasksStep({
           }}
         />
       )}
-    </div>
-  );
-}
 
-// ─── Row context menu (right-click popover) ───────────────────────────────────
-
-interface RowContextMenuItem {
-  label: string;
-  glyph: string;
-  action: () => void;
-  /** Render the item dimmed + non-clickable. Used for already-selected
-   *  subtask leaves under a compound's "Add a subtask" submenu. */
-  disabled?: boolean;
-}
-
-function RowContextMenu({
-  x, y, items, onClose,
-}: {
-  x: number;
-  y: number;
-  items: RowContextMenuItem[];
-  onClose: () => void;
-}): React.ReactElement {
-  // Click-outside / Escape dismisses. Mirrors the FloatingContextMenu
-  // pattern from `InteractiveTaskSquare` so right-click feels consistent
-  // across the app.
-  useEffect(() => {
-    const onDocClick = (): void => onClose();
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
-    // Defer addEventListener by a frame so the click that opened the menu
-    // doesn't immediately trigger the close handler.
-    const id = window.setTimeout(() => {
-      document.addEventListener('click', onDocClick);
-      document.addEventListener('keydown', onKey);
-    }, 0);
-    return () => {
-      window.clearTimeout(id);
-      document.removeEventListener('click', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      role="menu"
-      style={{
-        position: 'fixed',
-        left: x,
-        top: y,
-        zIndex: 1000,
-        background: 'var(--color-bg-elevated, #1c1c1e)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 8,
-        padding: '4px 0',
-        minWidth: 180,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-      }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {items.map((it) => (
-        <button
-          key={it.label}
-          type="button"
-          role="menuitem"
-          onClick={it.action}
-          disabled={it.disabled}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            width: '100%',
-            padding: '8px 14px',
-            background: 'transparent',
-            border: 0,
-            color: 'inherit',
-            font: 'inherit',
-            cursor: it.disabled ? 'default' : 'pointer',
-            textAlign: 'left',
-            opacity: it.disabled ? 0.5 : 1,
-          }}
-          onMouseEnter={(e) => {
-            if (!it.disabled) {
-              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)';
+      {copyingTask && (
+        <CopyTaskModal
+          source={copyingTask}
+          userId={userId}
+          onCancel={() => setCopyingTask(null)}
+          onCopied={(newTask) => {
+            // Mark the source as "copied this session" for the
+            // amber-tint indicator on the grid, and link the new
+            // task into the wizard's selection.
+            setCopiedTaskIds((prev) => {
+              const next = new Set(prev);
+              next.add(copyingTask.id);
+              return next;
+            });
+            if (!selectedTaskIds.has(newTask.id)) {
+              onToggleSelection(newTask.id);
             }
-          }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-        >
-          <span aria-hidden="true" style={{ width: 16, textAlign: 'center', opacity: 0.7 }}>{it.glyph}</span>
-          <span>{it.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ─── Derive smaller counter modal ─────────────────────────────────────────────
-
-function DeriveCounterModal({
-  source, maxCountInput, onMaxCountChange, error, onCancel, onSave,
-}: {
-  source: Task;
-  maxCountInput: string;
-  onMaxCountChange: (v: string) => void;
-  error: string | null;
-  onCancel: () => void;
-  onSave: () => void;
-}): React.ReactElement {
-  // Minimal modal — backdrop click + Escape dismiss. Single field for
-  // the new maxCount; action+unit are inherited from `source` so the
-  // user only enters the scaled-down target.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onCancel(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
-  const action = (source.action ?? '').trim();
-  const unit = (source.unit ?? '').trim();
-  const previewMax = parseInt(maxCountInput.trim(), 10);
-  const previewTitle =
-    Number.isFinite(previewMax) && previewMax > 0
-      ? `${action} ${previewMax} ${unit}`
-      : '';
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Derive smaller counter"
-      onClick={onCancel}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1100,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--color-bg-elevated, #1c1c1e)',
-          color: 'inherit',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          padding: 20,
-          minWidth: 320,
-          maxWidth: 420,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
-        }}
-      >
-        <h3 style={{ margin: '0 0 12px', fontSize: 17 }}>Derive smaller version</h3>
-        <div style={{ marginBottom: 12, fontSize: 14, opacity: 0.75 }}>
-          From <strong>{source.title}</strong>
-          {source.maxCount != null && (
-            <span> — {action} {source.maxCount} {unit}</span>
-          )}
-        </div>
-        <label style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>
-          New max count
-        </label>
-        <input
-          type="number"
-          autoFocus
-          inputMode="numeric"
-          min={1}
-          value={maxCountInput}
-          onChange={(e) => onMaxCountChange(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }}
-          style={{
-            width: '100%',
-            padding: '8px 10px',
-            borderRadius: 6,
-            border: '1px solid rgba(255,255,255,0.15)',
-            background: 'rgba(255,255,255,0.04)',
-            color: 'inherit',
-            font: 'inherit',
-            boxSizing: 'border-box',
+            setCopyingTask(null);
           }}
         />
-        {previewTitle && (
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.6 }}>
-            New title: <strong>{previewTitle}</strong>
-          </div>
-        )}
-        {error && (
-          <div style={{ marginTop: 8, fontSize: 13, color: '#ff6b6b' }}>{error}</div>
-        )}
-        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              padding: '8px 14px', borderRadius: 6, background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.2)', color: 'inherit',
-              cursor: 'pointer', font: 'inherit',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            style={{
-              padding: '8px 14px', borderRadius: 6, background: '#0a84ff',
-              border: 0, color: '#fff', cursor: 'pointer', font: 'inherit',
-              fontWeight: 600,
-            }}
-          >
-            Save
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
