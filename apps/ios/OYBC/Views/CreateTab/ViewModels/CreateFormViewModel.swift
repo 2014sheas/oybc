@@ -2,6 +2,29 @@ import Foundation
 import GRDB
 import Observation
 
+// MARK: - PendingTaskPayload
+
+/// Bug #85 — Payload for a wizard-created task that has NOT yet been
+/// written to the DB. Mirrors web's `PendingTaskPayload` interface in
+/// `useCreateFormState.ts`.
+///
+/// `BoardWizardViewModel` stores these keyed by `task.id`. At board-save
+/// time, `persistWizardBoard` drains the map inside the existing GRDB
+/// write block — parent task first, then child tasks, then
+/// `compound_children` links — before writing `board_tasks` rows that
+/// reference them. Abandoning the wizard silently discards the map
+/// with zero cleanup because nothing was ever persisted.
+struct PendingTaskPayload {
+    /// The parent (or standalone) task built in memory.
+    let task: OYBC.Task
+    /// Inline-created child tasks for compound/progress types. Empty
+    /// for NORMAL / COUNTING / ACHIEVEMENT tasks.
+    let childTasks: [OYBC.Task]
+    /// `CompoundChild` link rows corresponding to `childTasks`. Same
+    /// count and same order. Empty for non-compound types.
+    let childLinks: [CompoundChild]
+}
+
 /// Task type picker that includes Composite alongside the three
 /// `TaskType` cases. Mirrors the web `TaskTypeOrComposite` union.
 enum CreateTaskType: String, CaseIterable {
@@ -136,18 +159,33 @@ final class CreateFormViewModel {
 
     // MARK: - Actions
 
-    /// Validates the form, persists the task (and any steps), adds the
-    /// new task to the pool via `onTaskCreated`, and resets the form.
+    /// Validates the form and either persists the task immediately (default)
+    /// or builds it fully in memory and fires the deferred callbacks
+    /// (Bug #85 — wizard mode).
     ///
     /// - Parameters:
     ///   - userId: Authenticated user id for the new Task's `userId`.
     ///   - onTaskCreated: Called on the main queue with the resolved
-    ///     title + type once the task is saved. Typical implementation
-    ///     is "add to pool + show success toast".
+    ///     title + type once the task is saved (or built in deferred mode).
+    ///     Typical implementation is "add to pool + show success toast".
     ///   - onLibraryReloadRequested: Called on the main queue after a
     ///     successful save so the library can refresh — without this
     ///     the new task wouldn't show up under Existing Tasks until
-    ///     the next tab switch.
+    ///     the next tab switch. Ignored in deferred mode (no DB write).
+    ///   - defaultTimeframe: Inherited timeframe triple from the wizard
+    ///     or nil for indefinite tasks (standalone Tasks-tab quick-add).
+    ///   - deferPersist: Bug #85 — When `true`, the form builds the task
+    ///     (and any inline compound children) fully in memory and fires
+    ///     `onTaskCreated` + `onPendingCreated` WITHOUT writing anything
+    ///     to GRDB or the sync queue. The wizard is responsible for
+    ///     persisting inside `persistWizardBoard`'s write block.
+    ///     When `false` (default), existing immediate-persist behaviour
+    ///     is preserved so standalone quick-add is unchanged.
+    ///   - onPendingCreated: Bug #85 — Called alongside `onTaskCreated`
+    ///     when `deferPersist == true`. Receives the full
+    ///     `PendingTaskPayload` (task + any child tasks + link rows) so
+    ///     the wizard can store it for the board-save transaction. Ignored
+    ///     when `deferPersist == false`.
     func handleCreateAndAddToPool(
         userId: String,
         onTaskCreated: @escaping (_ taskId: String, _ title: String, _ type: String) -> Void,
@@ -158,7 +196,9 @@ final class CreateFormViewModel {
         // tab usage passes nil and the task is indefinite.
         defaultTimeframe: Timeframe? = nil,
         defaultStartDate: String? = nil,
-        defaultEndDate: String? = nil
+        defaultEndDate: String? = nil,
+        deferPersist: Bool = false,
+        onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil
     ) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDesc = description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -318,6 +358,32 @@ final class CreateFormViewModel {
             progressChildLinks = []
         }
 
+        // ── Bug #85: Deferred-persist path ──────────────────────────────────
+        // When invoked from the board wizard, skip all DB writes. Build the
+        // PendingTaskPayload in memory and hand it to the wizard via
+        // `onPendingCreated` so it can be written atomically inside the
+        // board-save transaction. `onTaskCreated` still fires so the wizard
+        // adds the id to `selectedTaskIds` and the Tasks step shows the row.
+        if deferPersist {
+            let payload = PendingTaskPayload(
+                task: newTask,
+                childTasks: progressChildTasks,
+                childLinks: progressChildLinks
+            )
+            isSubmitting = false
+            let successText = "Created & added to pool: \"\(resolvedTitle)\""
+            successMessage = successText
+            resetForm()
+            onTaskCreated(taskId, resolvedTitle, resolvedType.rawValue)
+            onPendingCreated?(payload)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self else { return }
+                if self.successMessage == successText { self.successMessage = nil }
+            }
+            return
+        }
+
+        // ── Immediate-persist path (default — standalone quick-add) ─────────
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {

@@ -5,10 +5,29 @@ import {
   OperatorType,
   generateCounterTaskTitle,
   type Task,
+  type CompoundChild,
   type CreateCompoundChildEntry,
 } from '@oybc/shared';
 import { createTask, createCompound } from '../../db/operations/tasks';
+import { generateUUID, currentTimestamp } from '../../db/utils';
 import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
+
+/**
+ * Payload returned by the form's deferred-persist path (wizard mode).
+ * The wizard holds these in memory and writes them atomically inside
+ * the board-save transaction when the user completes the wizard.
+ *
+ * For a compound/progress task the caller also receives the inline-
+ * created child tasks and their `compound_children` links so the
+ * persist path can write the full structure in one shot.
+ */
+export interface PendingTaskPayload {
+  task: Task;
+  /** Inline-created child tasks (progress / compound only). */
+  childTasks: Task[];
+  /** CompoundChild link rows (progress / compound only). */
+  childLinks: CompoundChild[];
+}
 /**
  * Union of TaskType values plus the form-only sentinels `'progress'` and
  * `'composite'`. Both sentinels are submission strategies — neither exists
@@ -200,8 +219,20 @@ export function validateForm(
 export interface UseCreateFormStateArgs {
   userId: string | undefined;
   /** Called when a task was successfully created. Gives the container
-   *  a single integration point for "add to pool + flash a toast". */
+   *  a single integration point for "add to pool + flash a toast".
+   *  In deferred-persist mode (deferPersist=true) this fires with the
+   *  in-memory task — no DB write has occurred yet. */
   onTaskCreated: (task: Task) => void;
+  /**
+   * Bug #85 — Deferred-persist mode supplemental callback.
+   * When `deferPersist=true`, called alongside `onTaskCreated` with
+   * the full `PendingTaskPayload` (main task + any compound children +
+   * compound-child link rows). The wizard stores this payload so
+   * `persistWizardBoard` can write everything in the board-save txn.
+   *
+   * Not called in immediate-persist mode (deferPersist=false / default).
+   */
+  onPendingCreated?: (payload: PendingTaskPayload) => void;
   /** Phase 6.Y — Timeboxed Tasks. When provided (typically from the
    *  board wizard), every task created through this form auto-inherits
    *  this triple. Standalone Tasks-tab quick-add passes nothing and
@@ -212,6 +243,18 @@ export interface UseCreateFormStateArgs {
   defaultTimeframe?: import('@oybc/shared').Timeframe;
   defaultStartDate?: string;
   defaultEndDate?: string;
+  /**
+   * Bug #85 — Deferred-persist mode. When `true`, the form builds
+   * the task (and any inline-created compound children) fully in
+   * memory and fires `onTaskCreated` + `onPendingCreated` WITHOUT
+   * writing anything to the DB or enqueueing sync items. The caller
+   * (wizard) is responsible for persisting inside the board-save
+   * transaction.
+   *
+   * When `false` (default), the existing immediate-persist behavior
+   * is preserved so standalone quick-add is unchanged.
+   */
+  deferPersist?: boolean;
 }
 
 export interface UseCreateFormState {
@@ -287,9 +330,11 @@ export interface UseCreateFormState {
 export function useCreateFormState({
   userId,
   onTaskCreated,
+  onPendingCreated,
   defaultTimeframe,
   defaultStartDate,
   defaultEndDate,
+  deferPersist = false,
 }: UseCreateFormStateArgs): UseCreateFormState {
   const [taskType, setTaskType] = useState<TaskTypeOrComposite>(TaskType.NORMAL);
   const [title, setTitle] = useState('');
@@ -496,6 +541,175 @@ export function useCreateFormState({
       try {
         let newTask: Task;
 
+        if (deferPersist) {
+          // ── Bug #85: Deferred-persist path ──────────────────────────────
+          // Build the task fully in memory without touching the DB or the
+          // sync queue. The wizard will write everything inside the same
+          // transaction as the board + board_tasks at final board-save.
+          const now = currentTimestamp();
+
+          if (taskType === TaskType.NORMAL) {
+            newTask = {
+              id: generateUUID(),
+              userId,
+              title: title.trim(),
+              description: description.trim() || undefined,
+              type: TaskType.NORMAL,
+              isCompleted: false,
+              totalCompletions: 0,
+              totalInstances: 0,
+              createdAt: now,
+              updatedAt: now,
+              version: 1,
+              isDeleted: false,
+              timeframe: defaultTimeframe,
+              startDate: defaultStartDate,
+              endDate: defaultEndDate,
+            };
+            const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
+            onTaskCreated(newTask);
+            onPendingCreated?.(payload);
+          } else if (taskType === TaskType.COUNTING) {
+            const parsedMaxCount = parseInt(maxCountStr, 10);
+            const resolvedTitle = generateCounterTaskTitle(
+              action.trim(),
+              parsedMaxCount,
+              unit.trim(),
+              title.trim() || undefined
+            );
+            newTask = {
+              id: generateUUID(),
+              userId,
+              title: resolvedTitle,
+              description: description.trim() || undefined,
+              type: TaskType.COUNTING,
+              action: action.trim(),
+              unit: unit.trim(),
+              maxCount: parsedMaxCount,
+              currentCount: 0,
+              isCompleted: false,
+              totalCompletions: 0,
+              totalInstances: 0,
+              createdAt: now,
+              updatedAt: now,
+              version: 1,
+              isDeleted: false,
+              timeframe: defaultTimeframe,
+              startDate: defaultStartDate,
+              endDate: defaultEndDate,
+            };
+            const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
+            onTaskCreated(newTask);
+            onPendingCreated?.(payload);
+          } else if (taskType === TaskType.ACHIEVEMENT) {
+            const isTemplateMode = achievementMode === 'recurringTemplate';
+            const parsedCount = Number(achievementRequiredCountStr);
+            newTask = {
+              id: generateUUID(),
+              userId,
+              title: title.trim(),
+              description: description.trim() || undefined,
+              type: TaskType.ACHIEVEMENT,
+              referencedBoardId:
+                achievementMode === 'specificBoard' && achievementReferenceId
+                  ? achievementReferenceId
+                  : undefined,
+              referencedTemplateId:
+                isTemplateMode && achievementReferenceId
+                  ? achievementReferenceId
+                  : undefined,
+              achievementTrigger,
+              requiredCount: isTemplateMode ? parsedCount : undefined,
+              isCompleted: false,
+              totalCompletions: 0,
+              totalInstances: 0,
+              createdAt: now,
+              updatedAt: now,
+              version: 1,
+              isDeleted: false,
+              timeframe: defaultTimeframe,
+              startDate: defaultStartDate,
+              endDate: defaultEndDate,
+            };
+            const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
+            onTaskCreated(newTask);
+            onPendingCreated?.(payload);
+          } else {
+            // Progress (compound + isOrdered=true) — inline-create child Tasks
+            // and CompoundChild link rows fully in memory.
+            const compoundId = generateUUID();
+            newTask = {
+              id: compoundId,
+              userId,
+              title: title.trim(),
+              description: description.trim() || undefined,
+              type: TaskType.COMPOUND,
+              operator: OperatorType.AND,
+              isOrdered: true,
+              isCompleted: false,
+              totalCompletions: 0,
+              totalInstances: 0,
+              createdAt: now,
+              updatedAt: now,
+              version: 1,
+              isDeleted: false,
+              timeframe: defaultTimeframe,
+              startDate: defaultStartDate,
+              endDate: defaultEndDate,
+            };
+            const childTasks: Task[] = [];
+            const childLinks: import('@oybc/shared').CompoundChild[] = [];
+            for (let i = 0; i < steps.length; i++) {
+              const s = steps[i];
+              const trimmedStepTitle = s.title.trim();
+              const trimmedAction = s.action.trim();
+              const trimmedUnit = s.unit.trim();
+              const maxCount = parseInt(s.maxCount, 10);
+              const resolvedStepTitle =
+                s.type === 'counting'
+                  ? generateCounterTaskTitle(trimmedAction, maxCount, trimmedUnit, trimmedStepTitle || undefined)
+                  : trimmedStepTitle;
+              const childId = generateUUID();
+              const childTask: Task = {
+                id: childId,
+                userId,
+                title: resolvedStepTitle,
+                description: undefined,
+                type: s.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL,
+                ...(s.type === 'counting' ? { action: trimmedAction, unit: trimmedUnit, maxCount, currentCount: 0 } : {}),
+                isCompleted: false,
+                totalCompletions: 0,
+                totalInstances: 0,
+                createdAt: now,
+                updatedAt: now,
+                version: 1,
+                isDeleted: false,
+                timeframe: defaultTimeframe,
+                startDate: defaultStartDate,
+                endDate: defaultEndDate,
+              };
+              const link: import('@oybc/shared').CompoundChild = {
+                id: generateUUID(),
+                compoundTaskId: compoundId,
+                childTaskId: childId,
+                childIndex: i,
+                createdAt: now,
+                updatedAt: now,
+                version: 1,
+                isDeleted: false,
+              };
+              childTasks.push(childTask);
+              childLinks.push(link);
+            }
+            const payload: PendingTaskPayload = { task: newTask, childTasks, childLinks };
+            onTaskCreated(newTask);
+            onPendingCreated?.(payload);
+          }
+          resetForm();
+          return;
+        }
+
+        // ── Immediate-persist path (default — standalone quick-add) ────────
         if (taskType === TaskType.NORMAL) {
           newTask = await createTask(userId, {
             title: title.trim(),
@@ -608,7 +822,7 @@ export function useCreateFormState({
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
+    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, onPendingCreated, deferPersist, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
   );
 
   return {

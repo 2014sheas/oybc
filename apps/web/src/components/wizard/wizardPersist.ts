@@ -1,11 +1,14 @@
 import {
   BoardStatus,
   CenterSquareType,
+  SyncOperationType,
+  SyncStatus,
   Timeframe,
   deriveSpawnedBoardName,
   fisherYatesShuffle,
   getTimeframeBoundaries,
   toLocalISO,
+  type CompoundChild,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
@@ -27,7 +30,9 @@ import {
   spawnTemplateBoard,
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
+import { generateUUID, currentTimestamp } from '../../db/utils';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
+import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 
 /** Per-cell placement for the preview grid and the persisted
@@ -40,17 +45,34 @@ export type WizardPlacement = (Task | null)[];
  * geometry. Used as the single source of truth for both the preview
  * grid and the `createBoardTask` calls so what the user sees and what
  * gets persisted are identical.
+ *
+ * Bug #85 — `pendingTasks` (when supplied) are merged into the candidate
+ * pool so newly-created (not-yet-persisted) tasks appear in the preview
+ * and placement just like library tasks. The optional parameter means
+ * callers that don't pass it (e.g. `BoardWizardPreviewStep` via the
+ * library prop) still compile; `BoardWizardPage` passes both.
  */
 export function buildWizardPlacement(
   controller: BoardWizardController,
   library: TaskLibrary,
+  pendingTasksArg?: Map<string, PendingTaskPayload>,
 ): WizardPlacement {
   const { size, centerType, centerTaskId, isRandomized, selectedTaskIds } = controller;
   const totalCells = size * size;
   const isOdd = size % 2 !== 0;
   const centerIdx = Math.floor(size / 2) * size + Math.floor(size / 2);
 
-  const selected: Task[] = library.allTasks.filter((t) => selectedTaskIds.has(t.id));
+  // Merge pending (in-memory, not-yet-DB) tasks with the live library.
+  // Pending tasks win on id collision (shouldn't happen, but defensive).
+  const pendingMap = pendingTasksArg ?? controller.pendingTasks;
+  const libraryById = new Map<string, Task>(library.allTasks.map((t) => [t.id, t]));
+  for (const [id, payload] of pendingMap) {
+    libraryById.set(id, payload.task);
+  }
+
+  const selected: Task[] = Array.from(selectedTaskIds)
+    .map((id) => libraryById.get(id))
+    .filter((t): t is Task => t !== undefined);
 
   const chosenCenter: Task | null =
     isOdd && centerType === CenterSquareType.CHOSEN && centerTaskId !== null
@@ -142,6 +164,14 @@ export interface PersistWizardBoardArgs {
    *  `resolveWizardDates` error BEFORE calling this. */
   dates: { startDate: string; endDate: string };
   status: WizardStatus;
+  /**
+   * Bug #85 — In-memory pending tasks to write atomically BEFORE the
+   * board + board_tasks rows. When omitted, falls back to
+   * `controller.pendingTasks` so callers that don't thread it
+   * separately still work. Pass an explicit value when the controller's
+   * state may not be current (e.g., after a `reset()` call).
+   */
+  pendingTasks?: Map<string, PendingTaskPayload>;
 }
 
 /**
@@ -162,6 +192,7 @@ export async function persistWizardBoard({
   placement,
   dates,
   status,
+  pendingTasks: pendingTasksArg,
 }: PersistWizardBoardArgs): Promise<string> {
   const trimmedName = controller.name.trim();
   const customName =
@@ -190,17 +221,77 @@ export async function persistWizardBoard({
   const centerRow = Math.floor(size / 2);
   const centerCol = Math.floor(size / 2);
 
+  // Resolve the pending-tasks map. Prefer the explicit arg (snapshot
+  // taken by the caller before any state mutation); fall back to the
+  // controller property for callers that don't thread it separately.
+  const pendingMap: Map<string, PendingTaskPayload> =
+    pendingTasksArg ?? controller.pendingTasks;
+
   // Wrap the whole write path in a single Dexie transaction so the
   // board record + its BoardTask rows commit or roll back together.
   // Splitting across sequential awaits would leave partially-updated
   // boards on disk (and in the sync queue) if one step failed mid-flight.
   // `syncQueue` is included in the scope because the inner helpers fire
   // sync entries inline after their row writes.
+  // Bug #85 — tasks + compoundChildren tables are added to the scope so
+  // pending tasks can be written atomically before board_tasks that
+  // reference them.
   let boardId: string = '';
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.syncQueue],
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
+      // ── Bug #85: Write pending tasks first ────────────────────────────
+      // Pending tasks (created inside the wizard's New Task sheet) have
+      // never been written to the DB. Write them now — parent task first,
+      // then child tasks, then compound_children links — before any
+      // board_tasks rows that would reference them. All inside the same
+      // Dexie transaction so a board-write failure rolls everything back.
+      const now = currentTimestamp();
+      for (const payload of pendingMap.values()) {
+        await db.tasks.add(payload.task);
+        await db.syncQueue.add({
+          id: generateUUID(),
+          entityType: 'tasks',
+          entityId: payload.task.id,
+          operationType: SyncOperationType.CREATE,
+          payload: JSON.stringify(payload.task),
+          status: SyncStatus.PENDING,
+          retryCount: 0,
+          createdAt: now,
+          priority: 0,
+        });
+        for (const childTask of payload.childTasks) {
+          await db.tasks.add(childTask);
+          await db.syncQueue.add({
+            id: generateUUID(),
+            entityType: 'tasks',
+            entityId: childTask.id,
+            operationType: SyncOperationType.CREATE,
+            payload: JSON.stringify(childTask),
+            status: SyncStatus.PENDING,
+            retryCount: 0,
+            createdAt: now,
+            priority: 0,
+          });
+        }
+        for (const link of payload.childLinks) {
+          await db.compoundChildren.add(link as CompoundChild);
+          await db.syncQueue.add({
+            id: generateUUID(),
+            entityType: 'compoundChildren',
+            entityId: link.id,
+            operationType: SyncOperationType.CREATE,
+            payload: JSON.stringify(link),
+            status: SyncStatus.PENDING,
+            retryCount: 0,
+            createdAt: now,
+            priority: 0,
+          });
+        }
+      }
+
+      // ── Board + BoardTask rows ─────────────────────────────────────────
       if (controller.draftBoardId !== null) {
         boardId = controller.draftBoardId;
         // Preserve the original draft's isCore (set at first wizard

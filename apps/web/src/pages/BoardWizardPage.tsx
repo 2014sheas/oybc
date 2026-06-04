@@ -138,7 +138,7 @@ export function BoardWizardPage({
     const resolvedDates = { startDate: dates.startDate, endDate: dates.endDate };
     setIsSavingFromCancel(true);
     try {
-      const placement = buildWizardPlacement(wizard, library);
+      const placement = buildWizardPlacement(wizard, library, wizard.pendingTasks);
       const boardId = await persistWizardBoard({
         controller: wizard,
         library,
@@ -146,6 +146,7 @@ export function BoardWizardPage({
         placement,
         dates: resolvedDates,
         status: 'draft',
+        pendingTasks: wizard.pendingTasks,
       });
       setShowCancelDialog(false);
       onComplete(boardId, 'draft');
@@ -214,7 +215,9 @@ export function BoardWizardPage({
             currentTimeframe={wizard.timeframe}
             currentStartDate={'error' in dates ? undefined : dates.startDate}
             currentEndDate={'error' in dates ? undefined : dates.endDate}
+            pendingTasks={wizard.pendingTasks}
             onTaskCreated={(task) => wizard.toggleTaskSelection(task.id)}
+            onPendingCreated={(payload) => wizard.addPendingTask(payload)}
             onCompositeCreated={() => {
               /* Composites are not boardable; the live library query
                  will surface the new composite automatically. */

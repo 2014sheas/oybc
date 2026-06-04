@@ -71,6 +71,20 @@ struct BoardWizardTasksStepView: View {
     /// view-model can refresh in the same turn the sheet dismisses.
     let onLibraryReloadRequested: () -> Void
 
+    /// Bug #85 — Called alongside `onTaskCreated` when a task is created
+    /// in deferred-persist mode (no DB write). The wizard stores the
+    /// payload for the board-save transaction. Nil disables deferred mode
+    /// (immediate persist). iOS twin of web `onPendingCreated` prop.
+    var onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil
+
+    /// Bug #85 — In-memory pending tasks owned by the wizard. Keyed by
+    /// `task.id`. Passed here so the Tasks step can surface newly-created
+    /// (not-yet-persisted) tasks as selected rows in the visible list —
+    /// without this, a created task appears to vanish because the Dexie /
+    /// GRDB live query hasn't seen it yet. When nil, pending tasks are
+    /// not shown (safe fallback — the selection count is still correct).
+    var pendingTasks: [String: PendingTaskPayload]? = nil
+
     /// Navigates to the previous wizard step.
     let onBack: () -> Void
 
@@ -132,15 +146,35 @@ struct BoardWizardTasksStepView: View {
         !TasksTabViewModel.isTaskExpired(t)
     }
 
+    /// Bug #85 — Effective task pool: live library tasks merged with any
+    /// in-memory pending tasks (created this session, not yet in GRDB).
+    /// Pending tasks are appended after library tasks; ids are deduplicated
+    /// so a task that somehow appears in both is shown only once.
+    private var effectiveAllTasks: [Task] {
+        guard let pending = pendingTasks, !pending.isEmpty else {
+            return library.libraryTasks
+        }
+        var seen = Set(library.libraryTasks.map { $0.id })
+        var combined = library.libraryTasks
+        for payload in pending.values {
+            if !seen.contains(payload.task.id) {
+                combined.append(payload.task)
+                seen.insert(payload.task.id)
+            }
+        }
+        return combined
+    }
+
     private var visibleTasks: [Task] {
         let pool: [Task]
         switch activeFilter {
         // Under the unified compound model, all compound tasks (progress and
         // composite) are rendered in the composites region below, so the
         // primitives pool never includes compounds.
-        case .all:       pool = library.libraryTasks.filter { notExpired($0) && $0.type != .compound }
-        case .normal:    pool = library.libraryTasks.filter { notExpired($0) && $0.type == .normal }
-        case .counting:  pool = library.libraryTasks.filter { notExpired($0) && $0.type == .counting }
+        // Bug #85 — use effectiveAllTasks to include pending tasks.
+        case .all:       pool = effectiveAllTasks.filter { notExpired($0) && $0.type != .compound }
+        case .normal:    pool = effectiveAllTasks.filter { notExpired($0) && $0.type == .normal }
+        case .counting:  pool = effectiveAllTasks.filter { notExpired($0) && $0.type == .counting }
         case .progress:  pool = []
         case .composite: pool = []
         // Phase 6.1: source is the parent-board-tasks query, not the
@@ -163,15 +197,16 @@ struct BoardWizardTasksStepView: View {
     private var visibleComposites: [OYBC.Task] {
         switch activeFilter {
         case .all:
-            return library.libraryTasks
+            // Bug #85 — include pending compound tasks.
+            return effectiveAllTasks
                 .filter { notExpired($0) && $0.type == .compound }
                 .filter { matches($0.title) }
         case .composite:
-            return library.libraryTasks
+            return effectiveAllTasks
                 .filter { notExpired($0) && $0.type == .compound && $0.isOrdered != true }
                 .filter { matches($0.title) }
         case .progress:
-            return library.libraryTasks
+            return effectiveAllTasks
                 .filter { notExpired($0) && $0.type == .compound && $0.isOrdered == true }
                 .filter { matches($0.title) }
         // .fromParents: compounds surfaced through this filter render in
@@ -322,7 +357,9 @@ struct BoardWizardTasksStepView: View {
                 onLibraryReloadRequested: onLibraryReloadRequested,
                 defaultTimeframe: currentTimeframe,
                 defaultStartDate: currentStartDate,
-                defaultEndDate: currentEndDate
+                defaultEndDate: currentEndDate,
+                deferPersist: onPendingCreated != nil,
+                onPendingCreated: onPendingCreated
             )
         }
         // Quick "Derive smaller version" sheet — opened from a counting

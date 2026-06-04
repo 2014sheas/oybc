@@ -11,6 +11,7 @@ import {
 import { db } from '../../db/database';
 import { createTask } from '../../db/operations/tasks';
 import { useParentBoardTasks } from '../../hooks';
+import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { TypeBadge } from '../TypeBadge';
 import { FilterTabs } from '../FilterTabs';
@@ -94,6 +95,25 @@ export interface BoardWizardTasksStepProps {
   /** Fired after a non-composite task is created from the sheet — the
    *  wizard should auto-add the new id to `selectedTaskIds`. */
   onTaskCreated: (task: Task) => void;
+  /**
+   * Bug #85 — Deferred-persist supplemental callback. When provided,
+   * the Tasks step enables deferPersist mode on the New Task sheet so
+   * no DB write occurs at creation time. The full pending payload
+   * (task + any compound child tasks + links) is passed here so the
+   * wizard can store it for atomic board-save later. Called alongside
+   * `onTaskCreated` for every deferred create.
+   */
+  onPendingCreated?: (payload: PendingTaskPayload) => void;
+  /**
+   * Bug #85 — In-memory pending tasks owned by the wizard. Passed here
+   * so the Tasks step can surface newly-created (not-yet-persisted)
+   * tasks in the visible list as selected rows. Without this, the user
+   * creates a task via the New Task sheet and it appears to vanish until
+   * the board is saved (because it's not yet in the DB that the live
+   * library query reads from). When omitted, pending tasks won't be
+   * shown in the list (safe fallback — the count is still correct).
+   */
+  pendingTasks?: Map<string, PendingTaskPayload>;
   /** Fired after a compound (formerly composite) task is created from the
    *  sheet — the wizard should reload the library so the compound shows up.
    *  Under the unified model composites are Tasks, so the callback uses Task. */
@@ -141,10 +161,30 @@ export function BoardWizardTasksStep({
   currentStartDate,
   currentEndDate,
   onTaskCreated,
+  onPendingCreated,
+  pendingTasks,
   onCompositeCreated,
   onBack,
   onNext,
 }: BoardWizardTasksStepProps): React.ReactElement {
+  // Bug #85 — Build a merged task map that includes in-memory pending
+  // tasks alongside the live library so they appear in the list as
+  // selected rows. Pending tasks won't be in the Dexie live query yet.
+  const effectiveTaskMap = useMemo<Record<string, Task>>(() => {
+    if (!pendingTasks || pendingTasks.size === 0) return library.taskMap;
+    const merged = { ...library.taskMap };
+    for (const payload of pendingTasks.values()) {
+      merged[payload.task.id] = payload.task;
+    }
+    return merged;
+  }, [library.taskMap, pendingTasks]);
+  const effectiveAllTasks = useMemo<Task[]>(() => {
+    if (!pendingTasks || pendingTasks.size === 0) return library.allTasks;
+    const pendingArr = Array.from(pendingTasks.values()).map((p) => p.task);
+    // Deduplicate: library tasks first, pending tasks fill any gaps.
+    const ids = new Set(library.allTasks.map((t) => t.id));
+    return [...library.allTasks, ...pendingArr.filter((t) => !ids.has(t.id))];
+  }, [library.allTasks, pendingTasks]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<TasksFilter>('all');
 
@@ -264,13 +304,13 @@ export function BoardWizardTasksStep({
       // children are pre-sorted by childIndex in useTaskLibrary.
       const titles: string[] = [];
       for (const child of children.slice(0, 3)) {
-        const t = library.taskMap[child.childTaskId];
+        const t = effectiveTaskMap[child.childTaskId];
         if (t) titles.push(t.title);
       }
       previews[compoundId] = { titles, totalLeaves: children.length };
     }
     return previews;
-  }, [library.compoundChildrenByCompound, library.taskMap]);
+  }, [library.compoundChildrenByCompound, effectiveTaskMap]);
 
   // Resolve a compound's primitive task leaves (flat — nested compounds
   // aren't boardable). Mirrors the legacy "taskId-only" semantic of
@@ -280,7 +320,7 @@ export function BoardWizardTasksStep({
     for (const [compoundId, children] of Object.entries(library.compoundChildrenByCompound)) {
       const tasks: Task[] = [];
       for (const child of children) {
-        const t = library.taskMap[child.childTaskId];
+        const t = effectiveTaskMap[child.childTaskId];
         if (!t) continue;
         // Skip nested compounds — only flat primitive task leaves can be
         // placed directly on a board.
@@ -290,7 +330,7 @@ export function BoardWizardTasksStep({
       byCompound[compoundId] = tasks;
     }
     return byCompound;
-  }, [library.compoundChildrenByCompound, library.taskMap]);
+  }, [library.compoundChildrenByCompound, effectiveTaskMap]);
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -324,29 +364,29 @@ export function BoardWizardTasksStep({
     //   - "All" pool = primitives only (all compounds render in the composites region)
     const tasks =
       activeFilter === 'all'
-        ? library.allTasks.filter((t) => notExpired(t) && t.type !== TaskType.COMPOUND && matches(t.title))
+        ? effectiveAllTasks.filter((t) => notExpired(t) && t.type !== TaskType.COMPOUND && matches(t.title))
         : activeFilter === 'composite' || activeFilter === 'progress'
           ? []
-          : library.allTasks.filter((t) => notExpired(t) && t.type === activeFilter && matches(t.title));
+          : effectiveAllTasks.filter((t) => notExpired(t) && t.type === activeFilter && matches(t.title));
 
     // Composites region shows ALL compound tasks under "All" and type-specific
     // compound subsets under "Progress" / "Composite" filters so every compound
     // is reachable, selectable as a whole, and expandable into its leaves.
     const composites =
       activeFilter === 'all'
-        ? library.allTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t.title))
+        ? effectiveAllTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t.title))
         : activeFilter === 'composite'
-          ? library.allTasks.filter(
+          ? effectiveAllTasks.filter(
               (t) => notExpired(t) && t.type === TaskType.COMPOUND && t.isOrdered !== true && matches(t.title),
             )
           : activeFilter === 'progress'
-            ? library.allTasks.filter(
+            ? effectiveAllTasks.filter(
                 (t) => notExpired(t) && t.type === TaskType.COMPOUND && t.isOrdered === true && matches(t.title),
               )
             : [];
 
     return { tasks, composites };
-  }, [library, activeFilter, searchQuery, parentBoardTasks]);
+  }, [effectiveAllTasks, activeFilter, searchQuery, parentBoardTasks]);
 
   const selectedCount = selectedTaskIds.size;
   const isCountSatisfied = selectedCount >= tasksRequired;
@@ -629,12 +669,14 @@ export function BoardWizardTasksStep({
         onTaskCreated={(task) => {
           onTaskCreated(task);
         }}
+        onPendingCreated={onPendingCreated}
         onCompositeCreated={(ct) => {
           onCompositeCreated(ct);
         }}
         defaultTimeframe={currentTimeframe}
         defaultStartDate={currentStartDate}
         defaultEndDate={currentEndDate}
+        deferPersist={onPendingCreated !== undefined}
       />
 
       {rowContextMenu && (() => {
