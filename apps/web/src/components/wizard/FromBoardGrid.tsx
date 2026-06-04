@@ -101,7 +101,11 @@ export function FromBoardGrid({
       .join(',');
   }, [placements]);
 
-  const compoundChildLinks = useLiveQuery(
+  // useLiveQuery returns `T | undefined`; the `?? []` fallback would
+  // create a fresh array reference on every render, retriggering any
+  // downstream memo keyed on this value. Memoise the fallback once so
+  // the reference is stable until Dexie returns a new result.
+  const compoundChildLinksRaw = useLiveQuery(
     async () => {
       if (compoundIdKey.length === 0) return [];
       const compoundIds = compoundIdKey.split(',');
@@ -116,20 +120,18 @@ export function FromBoardGrid({
     },
     [compoundIdKey],
     [],
-  ) ?? [];
-
-  // Same stability problem as above: `compoundChildLinks` is a fresh
-  // array on every Dexie write. Key the next-level query on a stable
-  // hash of the link ids so we only re-run when the actual set of
-  // links changes.
-  const childLinkKey = useMemo(
-    () => compoundChildLinks.map((c) => c.id).sort().join(','),
-    [compoundChildLinks],
+  );
+  const compoundChildLinks = useMemo(
+    () => compoundChildLinksRaw ?? [],
+    [compoundChildLinksRaw],
   );
 
   // Map compoundTaskId → ordered list of child Task[]. Drives `Add all
   // subtasks to board` (and could power an inline expand later).
-  const compoundLeavesByParent = useLiveQuery(
+  // `compoundChildLinks` is already memoised above, so depending on it
+  // directly is stable — re-runs only when Dexie returns a new link
+  // set, not on every unrelated DB write.
+  const compoundLeavesByParentRaw = useLiveQuery(
     async () => {
       if (compoundChildLinks.length === 0)
         return new Map<string, Task[]>();
@@ -158,10 +160,13 @@ export function FromBoardGrid({
       }
       return byParent;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [childLinkKey],
+    [compoundChildLinks],
     new Map<string, Task[]>(),
-  ) ?? new Map<string, Task[]>();
+  );
+  const compoundLeavesByParent = useMemo(
+    () => compoundLeavesByParentRaw ?? new Map<string, Task[]>(),
+    [compoundLeavesByParentRaw],
+  );
 
   const [rowContextMenu, setRowContextMenu] = useState<
     { taskId: string; x: number; y: number } | null
