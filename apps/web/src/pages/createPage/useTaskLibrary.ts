@@ -35,6 +35,12 @@ export interface TaskLibrary {
   allCompoundChildren: CompoundChild[];
   taskMap: Record<string, Task>;
   compoundChildrenByCompound: Record<string, CompoundChild[]>;
+  /** Every task id that appears as a child of at least one compound.
+   *  Used by the nesting chip to suppress children from the top-level pool. */
+  childTaskIds: Set<string>;
+  /** Reverse map: child task id → array of parent compound task ids.
+   *  A child can belong to multiple parents (multi-parent display). */
+  childToParents: Record<string, string[]>;
 }
 
 export function useTaskLibrary(userId: string | undefined): TaskLibrary {
@@ -81,11 +87,28 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     return m;
   }, [allCompoundChildren]);
 
+  // Issue #73 — derive the child-id set + reverse (child → parents) map
+  // from the already-grouped links. Both are pure functions of
+  // `compoundChildrenByCompound`, so they recompute only when it does.
+  const { childTaskIds, childToParents } = useMemo(() => {
+    const ids = new Set<string>();
+    const parents: Record<string, string[]> = {};
+    for (const [compoundId, children] of Object.entries(compoundChildrenByCompound)) {
+      for (const c of children) {
+        ids.add(c.childTaskId);
+        (parents[c.childTaskId] ??= []).push(compoundId);
+      }
+    }
+    return { childTaskIds: ids, childToParents: parents };
+  }, [compoundChildrenByCompound]);
+
   return {
     allTasks,
     allCompoundChildren,
     taskMap,
     compoundChildrenByCompound,
+    childTaskIds,
+    childToParents,
   };
 }
 
