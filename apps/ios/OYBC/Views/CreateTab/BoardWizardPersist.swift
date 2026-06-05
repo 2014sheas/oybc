@@ -24,6 +24,10 @@ enum WizardStatus: String {
 /// grid and the `saveBoardTask` calls so what the user sees and what
 /// gets persisted are identical. iOS twin of web's
 /// `buildWizardPlacement`.
+///
+/// Bug #85 — pending tasks (in `controller.pendingTasks`) are merged into
+/// the candidate pool so newly-created (not-yet-persisted) tasks appear
+/// in the preview and placement just like library tasks.
 func buildWizardPlacement(
     controller: BoardWizardViewModel,
     library: TaskLibraryViewModel
@@ -33,7 +37,17 @@ func buildWizardPlacement(
     let isOdd = size % 2 != 0
     let centerIdx = (size / 2) * size + (size / 2)
 
-    let selected = library.libraryTasks.filter { controller.selectedTaskIds.contains($0.id) }
+    // Merge pending tasks with the live library so both appear in the grid.
+    // Build a combined id → Task map; pending wins on collision (shouldn't
+    // occur, but defensive). Then resolve selectedTaskIds against it.
+    var taskById: [String: Task] = Dictionary(
+        uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) }
+    )
+    for payload in controller.pendingTasks.values {
+        taskById[payload.task.id] = payload.task
+    }
+
+    let selected = controller.selectedTaskIds.compactMap { taskById[$0] }
 
     let chosenCenter: Task? = {
         guard isOdd, controller.centerType == .chosen, let id = controller.centerTaskId else {
@@ -137,6 +151,11 @@ func persistWizardBoard(
     let boardStatusRaw = status == .active ? "active" : "draft"
     let capturedTimeframe = controller.timeframe
     let capturedIsRandomized = controller.isRandomized
+    // Bug #85 — snapshot the pending tasks dictionary from the controller
+    // before going async so we don't race against concurrent mutations on
+    // the main actor. Dictionary is a value type (copy-on-write) so this
+    // is a safe O(n) snapshot.
+    let capturedPendingTasks = controller.pendingTasks
 
     DispatchQueue.global(qos: .userInitiated).async {
         do {
@@ -202,13 +221,50 @@ func persistWizardBoard(
                 boardTasks.append(bt)
             }
 
-            // Single atomic transaction: deleting the existing
-            // BoardTask rows then writing the new board + its rows —
-            // plus their matching SyncQueueItem records — must commit
-            // or roll back together. Without the sync items the board
-            // stays local-only (SyncService.pushSync reads exclusively
-            // from sync_queue), so every write path below enqueues one.
+            // Single atomic transaction: writing pending new tasks, then
+            // the board record + its BoardTask rows — plus all matching
+            // SyncQueueItem records — must commit or roll back together.
+            // Without the sync items the board stays local-only
+            // (SyncService.pushSync reads exclusively from sync_queue),
+            // so every write path below enqueues one.
+            //
+            // Bug #85: pending tasks are written FIRST (before board_tasks)
+            // so the referential integrity of task → board_task is never
+            // violated even during a crash mid-write (the txn rolls back).
             try AppDatabase.shared.write { db in
+                // ── Bug #85: pending tasks ─────────────────────────────
+                for payload in capturedPendingTasks.values {
+                    try payload.task.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "tasks",
+                        entityId: payload.task.id,
+                        operationType: .create,
+                        payload: payload.task,
+                        now: now
+                    ).save(db)
+                    for childTask in payload.childTasks {
+                        try childTask.save(db)
+                        try SyncQueueBuilder.makeItem(
+                            entityType: "tasks",
+                            entityId: childTask.id,
+                            operationType: .create,
+                            payload: childTask,
+                            now: now
+                        ).save(db)
+                    }
+                    for link in payload.childLinks {
+                        try link.save(db)
+                        try SyncQueueBuilder.makeItem(
+                            entityType: "compoundChildren",
+                            entityId: link.id,
+                            operationType: .create,
+                            payload: link,
+                            now: now
+                        ).save(db)
+                    }
+                }
+
+                // ── Board + BoardTask rows ─────────────────────────────
                 try board.save(db)
 
                 let boardSyncOp: SyncOperationType = isUpdate ? .update : .create

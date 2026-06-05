@@ -1,11 +1,13 @@
 import {
   BoardStatus,
   CenterSquareType,
+  SyncOperationType,
   Timeframe,
   deriveSpawnedBoardName,
   fisherYatesShuffle,
   getTimeframeBoundaries,
   toLocalISO,
+  type CompoundChild,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
@@ -23,11 +25,15 @@ import {
   createRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
+import { addToSyncQueue } from '../../db/operations/syncQueue';
 import {
   spawnTemplateBoard,
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
+// `generateUUID` / `currentTimestamp` no longer needed here — pending-task
+// sync writes now route through `addToSyncQueue` which owns both.
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
+import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 
 /** Per-cell placement for the preview grid and the persisted
@@ -40,17 +46,48 @@ export type WizardPlacement = (Task | null)[];
  * geometry. Used as the single source of truth for both the preview
  * grid and the `createBoardTask` calls so what the user sees and what
  * gets persisted are identical.
+ *
+ * Bug #85 — `pendingTasks` (when supplied) are merged into the candidate
+ * pool so newly-created (not-yet-persisted) tasks appear in the preview
+ * and placement just like library tasks. The optional parameter means
+ * callers that don't pass it (e.g. `BoardWizardPreviewStep` via the
+ * library prop) still compile; `BoardWizardPage` passes both.
  */
 export function buildWizardPlacement(
   controller: BoardWizardController,
   library: TaskLibrary,
+  pendingTasksArg?: Map<string, PendingTaskPayload>,
 ): WizardPlacement {
   const { size, centerType, centerTaskId, isRandomized, selectedTaskIds } = controller;
   const totalCells = size * size;
   const isOdd = size % 2 !== 0;
   const centerIdx = Math.floor(size / 2) * size + Math.floor(size / 2);
 
-  const selected: Task[] = library.allTasks.filter((t) => selectedTaskIds.has(t.id));
+  // Merge pending (in-memory, not-yet-DB) tasks with the live library.
+  // Pending tasks win on id collision (shouldn't happen, but defensive).
+  const pendingMap = pendingTasksArg ?? controller.pendingTasks;
+  const libraryById = new Map<string, Task>(library.allTasks.map((t) => [t.id, t]));
+  for (const [id, payload] of pendingMap) {
+    libraryById.set(id, payload.task);
+  }
+
+  // Preserve library order for non-randomized boards (post-`always-
+  // randomize`, isRandomized is true everywhere in production, but the
+  // ordering still matters for snapshot determinism and any legacy /
+  // test path that toggles it). Library order is title-sorted in
+  // `useTaskLibrary`, so deterministic given the same selected set.
+  // Pending tasks (not in the library order) are appended after so
+  // they still appear in the placement.
+  const selectedSet = selectedTaskIds;
+  const fromLibrary = library.allTasks.filter((t) => selectedSet.has(t.id));
+  const fromLibraryIds = new Set(fromLibrary.map((t) => t.id));
+  const pendingExtras: Task[] = [];
+  for (const id of selectedSet) {
+    if (fromLibraryIds.has(id)) continue;
+    const t = libraryById.get(id);
+    if (t !== undefined) pendingExtras.push(t);
+  }
+  const selected: Task[] = [...fromLibrary, ...pendingExtras];
 
   const chosenCenter: Task | null =
     isOdd && centerType === CenterSquareType.CHOSEN && centerTaskId !== null
@@ -142,6 +179,14 @@ export interface PersistWizardBoardArgs {
    *  `resolveWizardDates` error BEFORE calling this. */
   dates: { startDate: string; endDate: string };
   status: WizardStatus;
+  /**
+   * Bug #85 — In-memory pending tasks to write atomically BEFORE the
+   * board + board_tasks rows. When omitted, falls back to
+   * `controller.pendingTasks` so callers that don't thread it
+   * separately still work. Pass an explicit value when the controller's
+   * state may not be current (e.g., after a `reset()` call).
+   */
+  pendingTasks?: Map<string, PendingTaskPayload>;
 }
 
 /**
@@ -162,6 +207,7 @@ export async function persistWizardBoard({
   placement,
   dates,
   status,
+  pendingTasks: pendingTasksArg,
 }: PersistWizardBoardArgs): Promise<string> {
   const trimmedName = controller.name.trim();
   const customName =
@@ -190,17 +236,66 @@ export async function persistWizardBoard({
   const centerRow = Math.floor(size / 2);
   const centerCol = Math.floor(size / 2);
 
+  // Resolve the pending-tasks map. Prefer the explicit arg (snapshot
+  // taken by the caller before any state mutation); fall back to the
+  // controller property for callers that don't thread it separately.
+  const pendingMap: Map<string, PendingTaskPayload> =
+    pendingTasksArg ?? controller.pendingTasks;
+
   // Wrap the whole write path in a single Dexie transaction so the
   // board record + its BoardTask rows commit or roll back together.
   // Splitting across sequential awaits would leave partially-updated
   // boards on disk (and in the sync queue) if one step failed mid-flight.
   // `syncQueue` is included in the scope because the inner helpers fire
   // sync entries inline after their row writes.
+  // Bug #85 — tasks + compoundChildren tables are added to the scope so
+  // pending tasks can be written atomically before board_tasks that
+  // reference them.
   let boardId: string = '';
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.syncQueue],
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
+      // ── Bug #85: Write pending tasks first ────────────────────────────
+      // Pending tasks (created inside the wizard's New Task sheet) have
+      // never been written to the DB. Write them now — parent task first,
+      // then child tasks, then compound_children links — before any
+      // board_tasks rows that would reference them. All inside the same
+      // Dexie transaction so a board-write failure rolls everything back.
+      //
+      // Route every enqueue through `addToSyncQueue` (not a direct
+      // `db.syncQueue.add`) so the DEV playground-user-1 guard fires
+      // here too — otherwise playground sessions can leak pending
+      // tasks into the real sync queue.
+      for (const payload of pendingMap.values()) {
+        await db.tasks.add(payload.task);
+        await addToSyncQueue(
+          'tasks',
+          payload.task.id,
+          SyncOperationType.CREATE,
+          payload.task,
+        );
+        for (const childTask of payload.childTasks) {
+          await db.tasks.add(childTask);
+          await addToSyncQueue(
+            'tasks',
+            childTask.id,
+            SyncOperationType.CREATE,
+            childTask,
+          );
+        }
+        for (const link of payload.childLinks) {
+          await db.compoundChildren.add(link as CompoundChild);
+          await addToSyncQueue(
+            'compoundChildren',
+            link.id,
+            SyncOperationType.CREATE,
+            link,
+          );
+        }
+      }
+
+      // ── Board + BoardTask rows ─────────────────────────────────────────
       if (controller.draftBoardId !== null) {
         boardId = controller.draftBoardId;
         // Preserve the original draft's isCore (set at first wizard

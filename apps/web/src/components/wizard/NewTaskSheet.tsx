@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useCreateFormState } from '../../pages/createPage/useCreateFormState';
+import { useCreateFormState, type PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
 import type { Task, Timeframe } from '@oybc/shared';
 import styles from './NewTaskSheet.module.css';
@@ -12,6 +12,14 @@ export interface NewTaskSheetProps {
    *  should auto-add the new id to its `selectedTaskIds` set; the Tasks
    *  tab just dismisses the sheet (the live-query refreshes the list). */
   onTaskCreated: (task: Task) => void;
+  /**
+   * Bug #85 — Deferred-persist supplemental callback. When provided,
+   * `deferPersist` is implicitly enabled. Called with the full pending
+   * payload alongside `onTaskCreated` so the wizard can store it for
+   * the board-save transaction. Absent for standalone Tasks-tab usage
+   * (immediate persist, no wizard context).
+   */
+  onPendingCreated?: (payload: PendingTaskPayload) => void;
   /** Fired when a compound (formerly composite) task is created. The
    *  wizard typically reloads the library so the compound shows up under
    *  filters. Under the unified compound model composites are Tasks, so
@@ -28,6 +36,14 @@ export interface NewTaskSheetProps {
   defaultTimeframe?: Timeframe;
   defaultStartDate?: string;
   defaultEndDate?: string;
+  /**
+   * Bug #85 — When `true`, the form builds the task fully in memory
+   * and fires `onTaskCreated` + `onPendingCreated` without any DB
+   * write. Defaults to `false` (immediate persist). The wizard sets
+   * this to `true` via the Tasks step; standalone Tasks-tab usage
+   * keeps it `false`.
+   */
+  deferPersist?: boolean;
 }
 
 /**
@@ -47,11 +63,13 @@ export function NewTaskSheet({
   onClose,
   userId,
   onTaskCreated,
+  onPendingCreated,
   onCompositeCreated,
   submitLabel,
   defaultTimeframe,
   defaultStartDate,
   defaultEndDate,
+  deferPersist = false,
 }: NewTaskSheetProps): React.ReactElement | null {
   useEffect(() => {
     if (!isOpen) return;
@@ -69,11 +87,13 @@ export function NewTaskSheet({
       onClose={onClose}
       userId={userId}
       onTaskCreated={onTaskCreated}
+      onPendingCreated={onPendingCreated}
       onCompositeCreated={onCompositeCreated}
       submitLabel={submitLabel}
       defaultTimeframe={defaultTimeframe}
       defaultStartDate={defaultStartDate}
       defaultEndDate={defaultEndDate}
+      deferPersist={deferPersist}
     />
   );
 }
@@ -86,11 +106,13 @@ function NewTaskSheetBody({
   onClose,
   userId,
   onTaskCreated,
+  onPendingCreated,
   onCompositeCreated,
   submitLabel,
   defaultTimeframe,
   defaultStartDate,
   defaultEndDate,
+  deferPersist = false,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
   const form = useCreateFormState({
     userId,
@@ -98,9 +120,11 @@ function NewTaskSheetBody({
       onTaskCreated(task);
       onClose();
     },
+    onPendingCreated,
     defaultTimeframe,
     defaultStartDate,
     defaultEndDate,
+    deferPersist,
   });
 
   return (

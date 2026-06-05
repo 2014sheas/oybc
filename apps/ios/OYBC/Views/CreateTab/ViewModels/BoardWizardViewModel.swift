@@ -64,6 +64,17 @@ final class BoardWizardViewModel {
     var selectedTaskIds: Set<String> = []
     var centerTaskId: String? = nil
 
+    /// Bug #85 — In-memory pending tasks created inside the wizard's
+    /// New Task sheet. Keyed by `task.id`. These have NOT been written
+    /// to GRDB yet; `persistWizardBoard` drains this dictionary inside
+    /// its existing `AppDatabase.shared.write { }` block (tasks first,
+    /// then child tasks, then `compound_children` links, then
+    /// `board_tasks`). Abandoning the wizard silently discards the
+    /// dictionary — nothing needs cleanup because nothing was persisted.
+    ///
+    /// iOS twin of web's `pendingTasks: Map<string, PendingTaskPayload>`.
+    var pendingTasks: [String: PendingTaskPayload] = [:]
+
     // MARK: - Wizard navigation
 
     var currentStep: WizardStep = 1
@@ -278,14 +289,28 @@ final class BoardWizardViewModel {
     }
 
     /// Toggles a task's selection; clears the center mark if the user
-    /// is deselecting the current center.
+    /// is deselecting the current center. Also removes the task from
+    /// `pendingTasks` when the user deselects a newly-created (not-yet-
+    /// persisted) task — Bug #85.
     func toggleTaskSelection(_ taskId: String) {
         if selectedTaskIds.contains(taskId) {
             selectedTaskIds.remove(taskId)
             if centerTaskId == taskId { centerTaskId = nil }
+            // Bug #85 — purge the pending payload if this was a not-yet-
+            // persisted task. No-op for library tasks (won't be in the map).
+            pendingTasks.removeValue(forKey: taskId)
         } else {
             selectedTaskIds.insert(taskId)
         }
+    }
+
+    /// Bug #85 — Store a pending task payload in the wizard's in-memory
+    /// dictionary. Must be called AFTER `toggleTaskSelection` adds the
+    /// task id to `selectedTaskIds`.
+    ///
+    /// iOS twin of web's `addPendingTask` action in `useBoardWizard.ts`.
+    func addPendingTask(_ payload: PendingTaskPayload) {
+        pendingTasks[payload.task.id] = payload
     }
 
     func setCenterTaskId(_ id: String?) {
@@ -323,6 +348,7 @@ final class BoardWizardViewModel {
         isRecurring = false
         selectedTaskIds = []
         centerTaskId = nil
+        pendingTasks = [:]
         currentStep = 1
     }
 

@@ -11,6 +11,7 @@ import {
   type UserPreferences,
   type WeekStartDay,
 } from '@oybc/shared';
+import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 
 /** A wizard step. 1 = Setup, 2 = Tasks, 3 = Preview & Activate. */
 export type WizardStep = 1 | 2 | 3;
@@ -79,6 +80,20 @@ export interface BoardWizardState {
   selectedTaskIds: Set<string>;
   centerTaskId: string | null;
 
+  /**
+   * Bug #85 — In-memory pending tasks created inside the wizard.
+   *
+   * Keyed by task id. These have NOT been written to the DB yet.
+   * `persistWizardBoard` writes them inside the board-save transaction
+   * before writing board_tasks, so the window between "task exists"
+   * and "board references it" is zero. Abandoning the wizard simply
+   * discards this map — nothing needs to be cleaned up.
+   *
+   * Compounds store the parent task under its own id; `childTasks` and
+   * `childLinks` hold the inline-created children and link rows.
+   */
+  pendingTasks: Map<string, PendingTaskPayload>;
+
   // Wizard navigation
   currentStep: WizardStep;
 
@@ -127,6 +142,14 @@ export interface BoardWizardActions {
   goNext: () => void;
   goBack: () => void;
   reset: () => void;
+  /**
+   * Bug #85 — Store a newly-created pending task payload in the wizard's
+   * in-memory map. Called by the Tasks step's `onPendingCreated` callback
+   * immediately after `toggleTaskSelection` adds the task id to
+   * `selectedTaskIds`. Deselecting the task via `toggleTaskSelection`
+   * automatically removes its pending payload.
+   */
+  addPendingTask: (payload: PendingTaskPayload) => void;
 }
 
 /** Computed flags exposed to step components for validation + display. */
@@ -385,6 +408,17 @@ export function useBoardWizard({
     () => draftBoard?.centerTaskId ?? null,
   );
 
+  /**
+   * Bug #85 — In-memory pending tasks. Keyed by task id. These tasks
+   * were created inside the wizard's New Task sheet but have NOT been
+   * written to the DB. `persistWizardBoard` drains this map inside the
+   * board-save transaction. Abandoning the wizard discards the map with
+   * zero cleanup because nothing was ever persisted.
+   */
+  const [pendingTasks, setPendingTasks] = useState<Map<string, PendingTaskPayload>>(
+    () => new Map(),
+  );
+
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const draftBoardId = draftBoard?.id ?? null;
   const editingTemplateId = effectiveTemplate?.id ?? null;
@@ -451,6 +485,32 @@ export function useBoardWizard({
     });
     // Clear center mark if the task being deselected was the center.
     setCenterTaskIdRaw((prev) => (prev === taskId ? null : prev));
+    // Bug #85 — When the user deselects a pending (not-yet-persisted)
+    // task, remove it from the pending map so it won't be written at
+    // board-save time. If it was never pending (library task), this is
+    // a no-op because `pendingTasks` won't contain its id.
+    setPendingTasks((prev) => {
+      if (!prev.has(taskId)) return prev;
+      const next = new Map(prev);
+      next.delete(taskId);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Bug #85 — Store a pending task payload in the wizard's in-memory
+   * map. Called by the Tasks step immediately after the New Task sheet
+   * fires `onTaskCreated` (which calls `toggleTaskSelection` to add
+   * the id to the selection set). The caller is responsible for calling
+   * `toggleTaskSelection` first so the id is always in `selectedTaskIds`
+   * before this fires.
+   */
+  const addPendingTask = useCallback((payload: PendingTaskPayload) => {
+    setPendingTasks((prev) => {
+      const next = new Map(prev);
+      next.set(payload.task.id, payload);
+      return next;
+    });
   }, []);
 
   const setCenterTaskId = useCallback((id: string | null) => {
@@ -488,6 +548,7 @@ export function useBoardWizard({
     setIsRecurringRaw(false);
     setSelectedTaskIds(new Set());
     setCenterTaskIdRaw(null);
+    setPendingTasks(new Map());
     setCurrentStep(1);
   }, [preferences]);
 
@@ -572,6 +633,7 @@ export function useBoardWizard({
     weekStartDay,
     selectedTaskIds,
     centerTaskId,
+    pendingTasks,
     currentStep,
     draftBoardId,
     editingTemplateId,
@@ -588,6 +650,7 @@ export function useBoardWizard({
     setCenterCustomName,
     toggleTaskSelection,
     setCenterTaskId,
+    addPendingTask,
     goToStep,
     goNext,
     goBack,

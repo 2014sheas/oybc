@@ -39,6 +39,19 @@ struct NewTaskSheetView: View {
     var defaultStartDate: String? = nil
     var defaultEndDate: String? = nil
 
+    /// Bug #85 — Deferred-persist mode. When `true`, the form builds
+    /// the task fully in memory and fires `onTaskCreated` + `onPendingCreated`
+    /// WITHOUT writing anything to GRDB or the sync queue. The wizard
+    /// is responsible for persisting inside `persistWizardBoard`.
+    /// When `false` (default), existing immediate-persist behaviour is
+    /// preserved so standalone Tasks-tab quick-add is unchanged.
+    var deferPersist: Bool = false
+
+    /// Bug #85 — Called alongside `onTaskCreated` when `deferPersist == true`.
+    /// Receives the full `PendingTaskPayload` so the wizard can store it for
+    /// the board-save transaction. Nil in immediate-persist mode.
+    var onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil
+
     @State private var form = CreateFormViewModel()
     @Environment(\.dismiss) private var dismiss
 
@@ -73,13 +86,20 @@ struct NewTaskSheetView: View {
             userId: userId,
             onTaskCreated: { taskId, title, type in
                 onTaskCreated(taskId, title, type)
-                onLibraryReloadRequested()
+                // CreateFormViewModel.handleCreateAndAddToPool already
+                // calls onLibraryReloadRequested() inline after a
+                // successful immediate save. Calling it again here
+                // triggered a second reload + extra UI churn — drop it.
+                // Deferred mode skips the reload entirely (nothing
+                // landed in GRDB).
                 dismiss()
             },
             onLibraryReloadRequested: onLibraryReloadRequested,
             defaultTimeframe: defaultTimeframe,
             defaultStartDate: defaultStartDate,
-            defaultEndDate: defaultEndDate
+            defaultEndDate: defaultEndDate,
+            deferPersist: deferPersist,
+            onPendingCreated: onPendingCreated
         )
     }
 }

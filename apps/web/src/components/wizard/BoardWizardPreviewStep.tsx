@@ -74,7 +74,7 @@ export function BoardWizardPreviewStep({
   );
 
   const placement: WizardPlacement = useMemo(
-    () => buildWizardPlacement(controller, library),
+    () => buildWizardPlacement(controller, library, controller.pendingTasks),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       controller.size,
@@ -82,6 +82,7 @@ export function BoardWizardPreviewStep({
       controller.centerTaskId,
       selectionKey,
       library.allTasks,
+      controller.pendingTasks,
     ],
   );
 
@@ -208,6 +209,7 @@ export function BoardWizardPreviewStep({
         placement: placementRef.current,
         dates,
         status,
+        pendingTasks: controller.pendingTasks,
       });
       onComplete(boardId, status);
     } catch (err) {
