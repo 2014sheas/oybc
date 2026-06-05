@@ -121,3 +121,40 @@
   outline-offset: 2px;
   text-decoration: none;
 }
+
+/* ── Group subtasks chip (issue #73) ──────────────────────────────────────── */
+
+.groupChipRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.groupChip {
+  padding: 4px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.groupChip:hover {
+  background-color: var(--bg-hover, var(--bg-secondary));
+  color: var(--text-primary);
+}
+
+.groupChipActive {
+  background-color: var(--active-bg-soft, rgba(13, 110, 253, 0.1));
+  border-color: var(--active-bg);
+  color: var(--active-bg);
+}
+
+.groupChip:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: 2px;
+}

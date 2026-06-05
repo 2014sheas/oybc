@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Task } from '@oybc/shared';
+import { TaskType, type Task } from '@oybc/shared';
 import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
 import {
   computeTaskDeletionImpact,
@@ -49,6 +49,25 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   const [deleteImpact, setDeleteImpact] = useState<TaskDeletionImpact | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Issue #73 — which top-level compounds the user has manually expanded.
+  // Merged with filter hook's search-driven autoExpandCompoundIds so a
+  // search match under a collapsed compound is revealed automatically.
+  const [expandedCompoundIds, setExpandedCompoundIds] = useState<Set<string>>(() => new Set());
+
+  const effectiveExpanded = useMemo(
+    () => new Set<string>([...expandedCompoundIds, ...filters.autoExpandCompoundIds]),
+    [expandedCompoundIds, filters.autoExpandCompoundIds],
+  );
+
+  const toggleExpand = (taskId: string): void => {
+    setExpandedCompoundIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
 
   // Resolve the row-level quick-action callbacks. The Tasks page owns
   // the dialog state so the row stays presentational; the row only
@@ -111,6 +130,8 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         onSortByChange={filters.setSortBy}
         showExpired={filters.showExpired}
         onShowExpiredChange={filters.setShowExpired}
+        groupByCompound={filters.groupByCompound}
+        onGroupByCompoundChange={filters.setGroupByCompound}
       />
 
       {deleteError !== null && (
@@ -123,23 +144,65 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         <EmptyState hasAnyTasks={library.allTasks.length > 0} />
       ) : (
         <ul className={styles.list} aria-label="Task list">
-          {filters.filteredTasks.map((task) => (
-            <li key={task.id}>
-              <TaskRow
-                task={task}
-                placementCount={filters.placementCountByTaskId[task.id] ?? 0}
-                activePlacementCount={
-                  filters.activePlacementCountByTaskId[task.id] ?? 0
-                }
-                childCount={
-                  library.compoundChildrenByCompound[task.id]?.length ?? 0
-                }
-                onClick={(id) => navigate(`/tasks/${id}`)}
-                onEdit={handleRowEdit}
-                onDelete={handleRowDelete}
-              />
-            </li>
-          ))}
+          {filters.filteredTasks.map((task) => {
+            const children = library.compoundChildrenByCompound[task.id] ?? [];
+            // Expandable: only compound tasks with children, and only when
+            // grouping is on (off = flat list, no disclosure chevron).
+            const isExpandable =
+              filters.groupByCompound &&
+              task.type === TaskType.COMPOUND &&
+              children.length > 0;
+            const isExpanded = isExpandable && effectiveExpanded.has(task.id);
+            return (
+              <li key={task.id}>
+                <TaskRow
+                  task={task}
+                  placementCount={filters.placementCountByTaskId[task.id] ?? 0}
+                  activePlacementCount={
+                    filters.activePlacementCountByTaskId[task.id] ?? 0
+                  }
+                  childCount={children.length}
+                  onClick={(id) => navigate(`/tasks/${id}`)}
+                  onEdit={handleRowEdit}
+                  onDelete={handleRowDelete}
+                  isExpandable={isExpandable}
+                  isExpanded={isExpanded}
+                  onToggleExpand={toggleExpand}
+                />
+                {isExpanded && (
+                  <ul
+                    className={styles.childList}
+                    aria-label={`${task.title || 'Compound'} subtasks`}
+                  >
+                    {children.map((link) => {
+                      const child = library.taskMap[link.childTaskId];
+                      if (!child) return null;
+                      // Single level only (#73): a child that is itself a
+                      // compound shows its subtask count but is not itself
+                      // expandable here — open its detail to go deeper.
+                      const grandchildren =
+                        library.compoundChildrenByCompound[child.id]?.length ?? 0;
+                      return (
+                        <li key={link.id}>
+                          <TaskRow
+                            task={child}
+                            placementCount={
+                              filters.placementCountByTaskId[child.id] ?? 0
+                            }
+                            activePlacementCount={
+                              filters.activePlacementCountByTaskId[child.id] ?? 0
+                            }
+                            childCount={grandchildren}
+                            onClick={(id) => navigate(`/tasks/${id}`)}
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 

@@ -23,6 +23,11 @@ export interface TasksFilterControlsProps {
    *  hides tasks whose `endDate < now`. Toggle to show them. */
   showExpired: boolean;
   onShowExpiredChange: (value: boolean) => void;
+  /** Issue #73 — when true (the default), compound children without direct
+   *  placements are nested under their parent instead of shown at top level.
+   *  Toggle to flatten. */
+  groupByCompound: boolean;
+  onGroupByCompoundChange: (value: boolean) => void;
 }
 
 const TYPE_TABS: { value: TypeFilter; label: string }[] = [
@@ -59,6 +64,7 @@ const DEFAULT_SORT: SortOption = 'updated-desc';
 const DEFAULT_STATUS: StatusFilter = 'any';
 const DEFAULT_USAGE: UsageFilter = 'any';
 const DEFAULT_SHOW_EXPIRED = false;
+const DEFAULT_GROUP_BY_COMPOUND = true;
 
 /**
  * TasksFilterControls — Two primary rows (search + type chips) always
@@ -86,6 +92,8 @@ export function TasksFilterControls({
   onSortByChange,
   showExpired,
   onShowExpiredChange,
+  groupByCompound,
+  onGroupByCompoundChange,
 }: TasksFilterControlsProps): React.ReactElement {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -93,13 +101,15 @@ export function TasksFilterControls({
     sortBy !== DEFAULT_SORT ||
     statusFilter !== DEFAULT_STATUS ||
     usageFilter !== DEFAULT_USAGE ||
-    showExpired !== DEFAULT_SHOW_EXPIRED;
+    showExpired !== DEFAULT_SHOW_EXPIRED ||
+    groupByCompound !== DEFAULT_GROUP_BY_COMPOUND;
 
   const handleClearAll = (): void => {
     onSortByChange(DEFAULT_SORT);
     onStatusFilterChange(DEFAULT_STATUS);
     onUsageFilterChange(DEFAULT_USAGE);
     onShowExpiredChange(DEFAULT_SHOW_EXPIRED);
+    onGroupByCompoundChange(DEFAULT_GROUP_BY_COMPOUND);
   };
 
   return (
@@ -138,6 +148,25 @@ export function TasksFilterControls({
           activeTab={typeFilter}
           onTabChange={(v) => onTypeFilterChange(v as TypeFilter)}
         />
+      </div>
+
+      {/* Issue #73 — Group subtasks chip. Placed after type chips so it reads
+          as a secondary modifier, not a type filter. Pill style matches the
+          wizard's "From parent boards" chip. */}
+      <div className={styles.groupChipRow}>
+        <button
+          type="button"
+          className={`${styles.groupChip} ${groupByCompound ? styles.groupChipActive : ''}`}
+          onClick={() => onGroupByCompoundChange(!groupByCompound)}
+          aria-pressed={groupByCompound}
+          title={
+            groupByCompound
+              ? 'Grouping ON — subtasks nested under parent. Tap to show flat list.'
+              : 'Grouping OFF — all tasks at top level. Tap to group subtasks under parents.'
+          }
+        >
+          {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
+        </button>
       </div>
 
       {isExpanded && (
