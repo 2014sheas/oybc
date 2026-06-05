@@ -232,6 +232,10 @@ export function BoardWizardTasksStep({
   // so it's effectively a no-op for yearly/custom.
   const parentBoardTasks = useParentBoardTasks(userId, currentTimeframe);
   const [expandedCompositeId, setExpandedCompositeId] = useState<string | null>(null);
+  /** #73 — default on. Hides compound children from the primitives pool;
+   *  they're reachable by expanding the parent compound in the composites region.
+   *  Wizard rule: no independently-placed exception (simpler than Tasks tab). */
+  const [groupByCompound, setGroupByCompound] = useState(true);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   /** Right-click context menu state. Null when no menu is open. Stores
    *  the target task's id + cursor position; actions are derived at render
@@ -391,6 +395,13 @@ export function BoardWizardTasksStep({
       return { tasks: filtered, composites: [] };
     }
 
+    // Issue #73 — when grouping is on, hide ALL children from the primitives pool
+    // (wizard rule: no independently-placed exception — children are reachable via
+    // the composites region expand). fromParents is excluded from this rule since
+    // it uses its own curated source list.
+    const notGroupedChild = (t: Task): boolean =>
+      !groupByCompound || !library.childTaskIds.has(t.id);
+
     // Under the unified compound model:
     //   - "Progress" filter = type=COMPOUND && isOrdered=true  → show in composites region
     //   - "Composite" filter (and the composites region) = type=COMPOUND && isOrdered!=true
@@ -398,10 +409,14 @@ export function BoardWizardTasksStep({
     //   - "All" pool = primitives only (all compounds render in the composites region)
     const tasks =
       activeFilter === 'all'
-        ? effectiveAllTasks.filter((t) => notExpired(t) && t.type !== TaskType.COMPOUND && matches(t.title))
+        ? effectiveAllTasks.filter(
+            (t) => notExpired(t) && t.type !== TaskType.COMPOUND && notGroupedChild(t) && matches(t.title)
+          )
         : activeFilter === 'composite' || activeFilter === 'progress'
           ? []
-          : effectiveAllTasks.filter((t) => notExpired(t) && t.type === activeFilter && matches(t.title));
+          : effectiveAllTasks.filter(
+              (t) => notExpired(t) && t.type === activeFilter && notGroupedChild(t) && matches(t.title)
+            );
 
     // Composites region shows ALL compound tasks under "All" and type-specific
     // compound subsets under "Progress" / "Composite" filters so every compound
@@ -420,7 +435,7 @@ export function BoardWizardTasksStep({
             : [];
 
     return { tasks, composites };
-  }, [effectiveAllTasks, activeFilter, searchQuery, parentBoardTasks]);
+  }, [effectiveAllTasks, activeFilter, searchQuery, parentBoardTasks, groupByCompound, library.childTaskIds]);
 
   const selectedCount = selectedTaskIds.size;
   const isCountSatisfied = selectedCount >= tasksRequired;
@@ -504,6 +519,41 @@ export function BoardWizardTasksStep({
             }
           }}
         />
+
+        {/* Issue #73 — Group subtasks chip. When on (default), compound children
+            are hidden from the primitives pool — reach them via the composites
+            region expand. Inline styles match the wizard's existing ad-hoc chip
+            pattern (From parent boards uses FilterTabs; this one is standalone). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          <button
+            type="button"
+            style={{
+              padding: '4px 12px',
+              border: `1px solid ${groupByCompound ? 'var(--active-bg)' : 'var(--border-color)'}`,
+              borderRadius: 20,
+              background: groupByCompound
+                ? 'var(--active-bg-soft, rgba(13,110,253,0.1))'
+                : 'transparent',
+              color: groupByCompound ? 'var(--active-bg)' : 'var(--text-secondary)',
+              fontSize: '0.82rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+            aria-pressed={groupByCompound}
+            onClick={() => {
+              setGroupByCompound((v) => !v);
+              setExpandedCompositeId(null);
+            }}
+            title={
+              groupByCompound
+                ? 'Grouping ON — subtasks hidden from flat list'
+                : 'Grouping OFF — show all tasks at top level'
+            }
+          >
+            {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
+          </button>
+        </div>
       </div>
 
       {/* From-a-board flow — picker (no source) or grid (source picked) */}
