@@ -371,7 +371,11 @@ final class CreateFormViewModel {
                 childLinks: progressChildLinks
             )
             isSubmitting = false
-            let successText = "Created & added to pool: \"\(resolvedTitle)\""
+            // Deferred-persist banner — the task is NOT yet in GRDB; it
+            // only commits when the wizard saves the board. Wording
+            // reflects that so the user doesn't think the task already
+            // exists in their library.
+            let successText = "Pending: \"\(resolvedTitle)\" — saved with the board"
             successMessage = successText
             resetForm()
             onTaskCreated(taskId, resolvedTitle, resolvedType.rawValue)

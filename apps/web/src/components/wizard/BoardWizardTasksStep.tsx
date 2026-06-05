@@ -6,6 +6,7 @@ import {
   Timeframe,
   generateCounterTaskTitle,
   isTaskExpired,
+  type CompoundChild,
   type Task,
 } from '@oybc/shared';
 import { db } from '../../db/database';
@@ -170,11 +171,19 @@ export function BoardWizardTasksStep({
   // Bug #85 — Build a merged task map that includes in-memory pending
   // tasks alongside the live library so they appear in the list as
   // selected rows. Pending tasks won't be in the Dexie live query yet.
+  //
+  // The map includes BOTH the pending parent task AND any pending
+  // childTasks (inline-created compound children). Without the children,
+  // leaf previews / expanded leaves for a pending compound would fail
+  // to resolve child titles via taskMap lookup.
   const effectiveTaskMap = useMemo<Record<string, Task>>(() => {
     if (!pendingTasks || pendingTasks.size === 0) return library.taskMap;
     const merged = { ...library.taskMap };
     for (const payload of pendingTasks.values()) {
       merged[payload.task.id] = payload.task;
+      for (const childTask of payload.childTasks) {
+        merged[childTask.id] = childTask;
+      }
     }
     return merged;
   }, [library.taskMap, pendingTasks]);
@@ -275,17 +284,40 @@ export function BoardWizardTasksStep({
     return counts;
   }, [allBoardTasks]);
 
+  // Bug #85 — Merge in-memory pending `childLinks` with the live
+  // `compoundChildrenByCompound` map so a newly-created (not-yet-
+  // persisted) compound shows the right step count + leaf previews +
+  // expandable leaves in the Tasks step. Without this, a pending
+  // compound rendered with 0 steps and couldn't expand.
+  const effectiveChildrenByCompound = useMemo<Record<string, CompoundChild[]>>(() => {
+    if (!pendingTasks || pendingTasks.size === 0) {
+      return library.compoundChildrenByCompound;
+    }
+    const merged: Record<string, CompoundChild[]> = {
+      ...library.compoundChildrenByCompound,
+    };
+    for (const payload of pendingTasks.values()) {
+      if (payload.childLinks.length === 0) continue;
+      // childLinks are pre-sorted by childIndex when assembled in
+      // useCreateFormState. Use them as-is (matching how
+      // useTaskLibrary returns library compoundChildren).
+      merged[payload.task.id] = payload.childLinks;
+    }
+    return merged;
+  }, [library.compoundChildrenByCompound, pendingTasks]);
+
   // Subtask counts for compounds (formerly composites + progress). Both
   // tabs render counts from the same `compound_children` source — the
   // legacy `taskStepCounts` and `compositeSubtaskCounts` collapse into
-  // one map keyed by the parent compoundTaskId.
+  // one map keyed by the parent compoundTaskId. Sources from the
+  // effective map so pending compounds show real counts.
   const compoundChildCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const [compoundId, children] of Object.entries(library.compoundChildrenByCompound)) {
+    for (const [compoundId, children] of Object.entries(effectiveChildrenByCompound)) {
       counts[compoundId] = children.length;
     }
     return counts;
-  }, [library.compoundChildrenByCompound]);
+  }, [effectiveChildrenByCompound]);
 
   // Alias kept for the existing call sites that still pass
   // `taskStepCounts` and `compositeSubtaskCounts` separately. Both
@@ -295,12 +327,13 @@ export function BoardWizardTasksStep({
   const compositeSubtaskCounts = compoundChildCounts;
 
   // First-3 child titles + total subtask count, keyed by parent
-  // compoundTaskId. Looks each child up via `taskMap` — under the unified
-  // model, composites *are* tasks, so a single map handles both primitive
-  // and nested compound children.
+  // compoundTaskId. Looks each child up via `effectiveTaskMap` — under
+  // the unified model, composites *are* tasks, so a single map handles
+  // both primitive and nested compound children. Sources from the
+  // effective children map so pending compounds get their previews.
   const compositeLeafPreviews = useMemo(() => {
     const previews: Record<string, { titles: string[]; totalLeaves: number }> = {};
-    for (const [compoundId, children] of Object.entries(library.compoundChildrenByCompound)) {
+    for (const [compoundId, children] of Object.entries(effectiveChildrenByCompound)) {
       // children are pre-sorted by childIndex in useTaskLibrary.
       const titles: string[] = [];
       for (const child of children.slice(0, 3)) {
@@ -310,14 +343,15 @@ export function BoardWizardTasksStep({
       previews[compoundId] = { titles, totalLeaves: children.length };
     }
     return previews;
-  }, [library.compoundChildrenByCompound, effectiveTaskMap]);
+  }, [effectiveChildrenByCompound, effectiveTaskMap]);
 
   // Resolve a compound's primitive task leaves (flat — nested compounds
   // aren't boardable). Mirrors the legacy "taskId-only" semantic of
-  // CompositeNode leaves.
+  // CompositeNode leaves. Sources from the effective children map so
+  // pending compounds expand correctly.
   const compositeLeafTasks = useMemo(() => {
     const byCompound: Record<string, Task[]> = {};
-    for (const [compoundId, children] of Object.entries(library.compoundChildrenByCompound)) {
+    for (const [compoundId, children] of Object.entries(effectiveChildrenByCompound)) {
       const tasks: Task[] = [];
       for (const child of children) {
         const t = effectiveTaskMap[child.childTaskId];
@@ -330,7 +364,7 @@ export function BoardWizardTasksStep({
       byCompound[compoundId] = tasks;
     }
     return byCompound;
-  }, [library.compoundChildrenByCompound, effectiveTaskMap]);
+  }, [effectiveChildrenByCompound, effectiveTaskMap]);
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

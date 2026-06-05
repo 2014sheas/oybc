@@ -2,7 +2,6 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
-  SyncStatus,
   Timeframe,
   deriveSpawnedBoardName,
   fisherYatesShuffle,
@@ -26,11 +25,13 @@ import {
   createRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
+import { addToSyncQueue } from '../../db/operations/syncQueue';
 import {
   spawnTemplateBoard,
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
-import { generateUUID, currentTimestamp } from '../../db/utils';
+// `generateUUID` / `currentTimestamp` no longer needed here — pending-task
+// sync writes now route through `addToSyncQueue` which owns both.
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
@@ -70,9 +71,23 @@ export function buildWizardPlacement(
     libraryById.set(id, payload.task);
   }
 
-  const selected: Task[] = Array.from(selectedTaskIds)
-    .map((id) => libraryById.get(id))
-    .filter((t): t is Task => t !== undefined);
+  // Preserve library order for non-randomized boards (post-`always-
+  // randomize`, isRandomized is true everywhere in production, but the
+  // ordering still matters for snapshot determinism and any legacy /
+  // test path that toggles it). Library order is title-sorted in
+  // `useTaskLibrary`, so deterministic given the same selected set.
+  // Pending tasks (not in the library order) are appended after so
+  // they still appear in the placement.
+  const selectedSet = selectedTaskIds;
+  const fromLibrary = library.allTasks.filter((t) => selectedSet.has(t.id));
+  const fromLibraryIds = new Set(fromLibrary.map((t) => t.id));
+  const pendingExtras: Task[] = [];
+  for (const id of selectedSet) {
+    if (fromLibraryIds.has(id)) continue;
+    const t = libraryById.get(id);
+    if (t !== undefined) pendingExtras.push(t);
+  }
+  const selected: Task[] = [...fromLibrary, ...pendingExtras];
 
   const chosenCenter: Task | null =
     isOdd && centerType === CenterSquareType.CHOSEN && centerTaskId !== null
@@ -247,47 +262,36 @@ export async function persistWizardBoard({
       // then child tasks, then compound_children links — before any
       // board_tasks rows that would reference them. All inside the same
       // Dexie transaction so a board-write failure rolls everything back.
-      const now = currentTimestamp();
+      //
+      // Route every enqueue through `addToSyncQueue` (not a direct
+      // `db.syncQueue.add`) so the DEV playground-user-1 guard fires
+      // here too — otherwise playground sessions can leak pending
+      // tasks into the real sync queue.
       for (const payload of pendingMap.values()) {
         await db.tasks.add(payload.task);
-        await db.syncQueue.add({
-          id: generateUUID(),
-          entityType: 'tasks',
-          entityId: payload.task.id,
-          operationType: SyncOperationType.CREATE,
-          payload: JSON.stringify(payload.task),
-          status: SyncStatus.PENDING,
-          retryCount: 0,
-          createdAt: now,
-          priority: 0,
-        });
+        await addToSyncQueue(
+          'tasks',
+          payload.task.id,
+          SyncOperationType.CREATE,
+          payload.task,
+        );
         for (const childTask of payload.childTasks) {
           await db.tasks.add(childTask);
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'tasks',
-            entityId: childTask.id,
-            operationType: SyncOperationType.CREATE,
-            payload: JSON.stringify(childTask),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue(
+            'tasks',
+            childTask.id,
+            SyncOperationType.CREATE,
+            childTask,
+          );
         }
         for (const link of payload.childLinks) {
           await db.compoundChildren.add(link as CompoundChild);
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'compoundChildren',
-            entityId: link.id,
-            operationType: SyncOperationType.CREATE,
-            payload: JSON.stringify(link),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue(
+            'compoundChildren',
+            link.id,
+            SyncOperationType.CREATE,
+            link,
+          );
         }
       }
 

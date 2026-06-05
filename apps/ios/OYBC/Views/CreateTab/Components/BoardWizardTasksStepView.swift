@@ -246,13 +246,48 @@ struct BoardWizardTasksStepView: View {
         return buckets.mapValues { $0.count }
     }
 
+    /// Bug #85 — Effective compound-children map merging the live
+    /// `library.compoundChildrenByCompound` (DB-backed) with any
+    /// in-memory pending `childLinks` (newly-created compound tasks
+    /// inside the wizard that aren't yet persisted). Without this,
+    /// a pending compound rendered with 0 steps and couldn't expand.
+    private var effectiveChildrenByCompound: [String: [CompoundChild]] {
+        guard let pending = pendingTasks, !pending.isEmpty else {
+            return library.compoundChildrenByCompound
+        }
+        var merged = library.compoundChildrenByCompound
+        for payload in pending.values where !payload.childLinks.isEmpty {
+            // childLinks are pre-sorted by childIndex in
+            // CreateFormViewModel — use as-is to match the library shape.
+            merged[payload.task.id] = payload.childLinks
+        }
+        return merged
+    }
+
+    /// Bug #85 — Per-id task lookup that includes pending parent + child
+    /// tasks alongside the live library. Pending tasks aren't in
+    /// `library.libraryTasks` until the board-save txn commits.
+    private var effectiveTaskById: [String: OYBC.Task] {
+        var by: [String: OYBC.Task] = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
+        if let pending = pendingTasks {
+            for payload in pending.values {
+                by[payload.task.id] = payload.task
+                for childTask in payload.childTasks {
+                    by[childTask.id] = childTask
+                }
+            }
+        }
+        return by
+    }
+
     /// Subtask counts for compound (formerly composite + progress) tasks.
     /// Both "Composite" and "Progress" tabs render counts from the same
     /// `compound_children` source; the only thing that differs is which
-    /// subset of compound tasks gets shown in the row list.
+    /// subset of compound tasks gets shown in the row list. Sources
+    /// from the effective map so pending compounds get their real count.
     private var compositeSubtaskCounts: [String: Int] {
         var counts: [String: Int] = [:]
-        for (compoundId, children) in library.compoundChildrenByCompound {
+        for (compoundId, children) in effectiveChildrenByCompound {
             counts[compoundId] = children.count
         }
         return counts
@@ -265,17 +300,18 @@ struct BoardWizardTasksStepView: View {
 
     /// First-3 child titles + total subtask count, keyed by parent
     /// compoundTaskId. Children are looked up by `childTaskId` against
-    /// `library.libraryTasks` (composites are themselves Tasks under the
+    /// the effective task-by-id map so pending compounds' inline children
+    /// resolve correctly. Composites are themselves Tasks under the
     /// unified model, so a single map handles both primitive and nested
-    /// compound children).
+    /// compound children.
     private var compositeLeafPreviews: [String: LeafPreview] {
-        let taskTitleById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0.title) })
+        let taskById = effectiveTaskById
         var out: [String: LeafPreview] = [:]
-        for (compoundId, children) in library.compoundChildrenByCompound {
+        for (compoundId, children) in effectiveChildrenByCompound {
             // children are pre-sorted by childIndex in the view-model.
             var titles: [String] = []
             for child in children.prefix(3) {
-                if let title = taskTitleById[child.childTaskId] {
+                if let title = taskById[child.childTaskId]?.title {
                     titles.append(title)
                 }
             }
@@ -288,9 +324,11 @@ struct BoardWizardTasksStepView: View {
     /// children are returned, since boards don't accept nested compounds
     /// as inline taps. Caller filters out nested compound children
     /// (they show up as their own "compound row" elsewhere in the tab).
+    /// Sources from the effective children + task maps so pending
+    /// compounds expand correctly.
     private func leafTasks(for compoundId: String) -> [OYBC.Task] {
-        let children = library.compoundChildrenByCompound[compoundId] ?? []
-        let taskById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
+        let children = effectiveChildrenByCompound[compoundId] ?? []
+        let taskById = effectiveTaskById
         return children.compactMap { child -> OYBC.Task? in
             guard let task = taskById[child.childTaskId] else { return nil }
             // Skip nested compounds — only flat task leaves can be placed
@@ -1039,7 +1077,9 @@ struct BoardWizardTasksStepView: View {
         case .compound where task.isOrdered == true:
             // Former Progress tasks: show "N step(s)" subtitle from compound
             // children (the unified replacement for legacy task_steps).
-            let n = library.compoundChildrenByCompound[task.id]?.count ?? 0
+            // Bug #85 — read from effective map so pending compounds show
+            // a real count, not 0.
+            let n = effectiveChildrenByCompound[task.id]?.count ?? 0
             if n == 0 { return "" }
             return "\(n) step\(n == 1 ? "" : "s")"
         default:

@@ -86,10 +86,12 @@ struct NewTaskSheetView: View {
             userId: userId,
             onTaskCreated: { taskId, title, type in
                 onTaskCreated(taskId, title, type)
-                if !deferPersist {
-                    // Immediate mode: reload library after DB write.
-                    onLibraryReloadRequested()
-                }
+                // CreateFormViewModel.handleCreateAndAddToPool already
+                // calls onLibraryReloadRequested() inline after a
+                // successful immediate save. Calling it again here
+                // triggered a second reload + extra UI churn — drop it.
+                // Deferred mode skips the reload entirely (nothing
+                // landed in GRDB).
                 dismiss()
             },
             onLibraryReloadRequested: onLibraryReloadRequested,
