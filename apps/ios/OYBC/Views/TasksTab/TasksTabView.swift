@@ -108,8 +108,7 @@ struct TasksTabView: View {
                                 task: task,
                                 placementCount: placementCounts[task.id] ?? 0,
                                 activePlacementCount: activeCounts[task.id] ?? 0,
-                                childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0,
-                                onTap: { /* swallowed: outer Button handles tap */ }
+                                childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0
                             )
                         }
                         .buttonStyle(.plain)

@@ -3,6 +3,10 @@ import SwiftUI
 /// Tasks-tab list row. Title + type badge + a one-line status/usage
 /// hint. Mirrors web's `TaskRow.tsx`; kept deliberately simpler than
 /// `BoardWizardTasksStepView`'s row (no selection, no center-pinning).
+///
+/// This view is intentionally not a `Button` — the caller (TasksTabView)
+/// wraps each row in its own `Button { path.append(task.id) }` so that
+/// swipe actions and navigation are both handled at the list level.
 struct TaskRowView: View {
     let task: Task
     /// Pre-computed count of `BoardTask` placements (any board status).
@@ -12,40 +16,36 @@ struct TaskRowView: View {
     /// Pre-computed count of compound children. Ignored for non-compound
     /// types.
     let childCount: Int
-    let onTap: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                TypeBadgeView(type: typeLabel, size: .small, letterOnly: true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title.isEmpty ? "(untitled task)" : task.title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+        HStack(spacing: 12) {
+            TypeBadgeView(type: typeLabel, size: .small, letterOnly: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title.isEmpty ? "(untitled task)" : task.title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                if let meta = metaLine {
+                    Text(meta)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
-                    if let meta = metaLine {
-                        Text(meta)
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color(.separator), lineWidth: 0.5)
-            )
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color(.separator), lineWidth: 0.5)
+        )
         .accessibilityLabel("Open \(task.title.isEmpty ? "untitled task" : task.title) details")
     }
 
