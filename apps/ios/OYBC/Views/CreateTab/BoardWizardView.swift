@@ -255,14 +255,14 @@ struct BoardWizardView: View {
                 onLibraryReloadRequested: {
                     library.loadLibrary(userId: userId)
                 },
-                onBack: { wizard.goBack() },
-                onNext: { wizard.goNext() },
                 onPendingCreated: { payload in
                     // Bug #85 — store the deferred payload so persistWizardBoard
                     // can write it atomically inside the board-save transaction.
                     wizard.addPendingTask(payload)
                 },
-                pendingTasks: wizard.pendingTasks
+                pendingTasks: wizard.pendingTasks,
+                onBack: { wizard.goBack() },
+                onNext: { wizard.goNext() }
             )
         default:
             BoardWizardPreviewStepView(
