@@ -67,6 +67,11 @@ final class TasksTabViewModel {
     /// no `endDate` (indefinite) are always visible regardless.
     var showExpired: Bool = false
 
+    /// Issue #73 — Default true. When on, compound children with no direct
+    /// BoardTask placements are suppressed from the top-level list; they
+    /// are reachable by expanding their parent compound row.
+    var groupByCompound: Bool = true
+
     // MARK: - Joined board-status data
 
     /// Status map for non-deleted boards. Loaded once per `reload`; the
@@ -133,8 +138,19 @@ final class TasksTabViewModel {
         let placementCounts = placementCounts(boardTasks: library.allLibraryBoardTasks)
         let activeCounts = activePlacementCounts(boardTasks: library.allLibraryBoardTasks)
 
+        let independentlyPlaced = Self.independentlyPlacedTaskIds(
+            childTaskIds: library.childTaskIds,
+            placementCounts: placementCounts
+        )
+
         let typed = library.libraryTasks
             .filter { Self.matchesType($0, typeFilter) }
+            .filter { task in
+                // Issue #73 — suppress non-independent children from top level when on.
+                guard groupByCompound else { return true }
+                guard library.childTaskIds.contains(task.id) else { return true }
+                return independentlyPlaced.contains(task.id)
+            }
             .filter { Self.matchesSearch($0, trimmedLower: trimmed) }
             .filter { Self.matchesStatus($0, library: library, filter: statusFilter) }
 
@@ -275,6 +291,43 @@ final class TasksTabViewModel {
         case .unused: return tasks.filter { (placementCounts[$0.id] ?? 0) == 0 }
         case .onActiveBoards: return tasks.filter { (activeCounts[$0.id] ?? 0) > 0 }
         }
+    }
+
+    // MARK: - Issue #73 helpers
+
+    /// Child task ids that have at least one BoardTask placement of their own.
+    /// These children appear at top level EVEN when grouping is on — plus nested
+    /// under each parent. Mirrors web's `independentlyPlacedTaskIds`.
+    static func independentlyPlacedTaskIds(
+        childTaskIds: Set<String>,
+        placementCounts: [String: Int]
+    ) -> Set<String> {
+        Set(childTaskIds.filter { (placementCounts[$0] ?? 0) > 0 })
+    }
+
+    /// Parent compound ids that should be auto-expanded because the current
+    /// search query matches one of their non-independent children. Mirrors
+    /// web's `autoExpandCompoundIds` derived value.
+    static func autoExpandCompoundIds(
+        search: String,
+        library: TaskLibraryViewModel,
+        groupByCompound: Bool,
+        independentlyPlaced: Set<String>
+    ) -> Set<String> {
+        let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty, groupByCompound else { return [] }
+        var ids = Set<String>()
+        for (childId, parentIds) in library.childToParents {
+            // Skip independently-placed children — they already appear at top level.
+            guard !independentlyPlaced.contains(childId) else { continue }
+            guard let child = library.task(byId: childId) else { continue }
+            if child.title.lowercased().contains(trimmed) {
+                for parentId in parentIds {
+                    ids.insert(parentId)
+                }
+            }
+        }
+        return ids
     }
 
     static func compare(
