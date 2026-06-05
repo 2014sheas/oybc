@@ -14,7 +14,7 @@ import {
   computeTaskDeletionImpact,
   deleteTaskWithCascade,
   fetchCompoundParentsForTask,
-  updateTask,
+  updateTaskAndCascade,
   type TaskDeletionImpact,
 } from '../../db/operations/tasks';
 import { fetchTemplatesReferencingTask } from '../../db/operations/recurringBoardTemplates';
@@ -445,7 +445,7 @@ export function TaskDetailContent({
           task={task}
           onSubmit={async (patch) => {
             try {
-              await updateTask(taskId, patch);
+              await updateTaskAndCascade(taskId, patch);
               onChanged();
               setIsEditing(false);
             } catch (e) {

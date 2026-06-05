@@ -439,3 +439,95 @@ describe('hasCycle — referencedTemplateId edges', () => {
     expect(result.ok).toBe(true);
   });
 });
+
+// ─── Live-edit M1: Achievement re-target cycle detection ─────────────────────
+//
+// When the user edits an existing Achievement task and changes its target
+// (referencedBoardId or referencedTemplateId), hasCycle() is called with
+// the NEW candidate value before the DB write. These tests document the
+// two key outcomes: rejection when the new target would close a cycle,
+// and acceptance when the new target is safe.
+
+describe('hasCycle — Achievement re-target (live-edit M1)', () => {
+  it('re-target to a board that would close a cycle → rejected', () => {
+    // Pre-existing graph: achievement Task on board B watches board A.
+    // User edits an existing achievement Task on board A to now watch board B.
+    // This closes A → B → A.
+    const a = board('a');
+    const b = board('b');
+    const existingTask = achievementTask('tBA', { referencedBoardId: 'a' });
+    const existingPlacement = placement('b', 'tBA');
+    // Candidate: existing task being re-targeted, currently on board A, new target = B.
+    const result = hasCycle(
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [existingPlacement],
+        allTasks: [existingTask],
+        allBoards: [a, b],
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.cyclePath).toContain('a');
+      expect(result.cyclePath).toContain('b');
+    }
+  });
+
+  it('re-target to a board with no return path → accepted', () => {
+    // Pre-existing graph: achievement Task on board A watches board C.
+    // User re-targets the task to watch board B instead.
+    // B has no path back to A, so the new reference is safe.
+    const a = board('a');
+    const b = board('b');
+    const c = board('c');
+    const existingTask = achievementTask('tAC', { referencedBoardId: 'c' });
+    const existingPlacement = placement('a', 'tAC');
+    // Candidate: re-targeting from C to B (parentBoardIds stays ['a']).
+    const result = hasCycle(
+      { parentBoardIds: ['a'], referencedBoardId: 'b' },
+      {
+        allBoardTasks: [existingPlacement],
+        allTasks: [existingTask],
+        allBoards: [a, b, c],
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('re-target to a template whose spawns close a cycle → rejected', () => {
+    // Board P is the parent of the achievement task being edited.
+    // Template T has a spawn S. S already has a task watching P.
+    // If P's achievement now watches T (which fans out to S → P), cycle.
+    const p = board('p');
+    const s = board('s', { spawnedFromTemplateId: 'T' });
+    const backTask = achievementTask('tBack', { referencedBoardId: 'p' });
+    const backPlacement = placement('s', 'tBack');
+    const result = hasCycle(
+      { parentBoardIds: ['p'], referencedTemplateId: 'T' },
+      {
+        allBoardTasks: [backPlacement],
+        allTasks: [backTask],
+        allBoards: [p, s],
+      },
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('re-target to a template with no cycle-closing spawn → accepted', () => {
+    // Board P watches template T. T has spawn S. S has no reference to P.
+    const p = board('p');
+    const s = board('s', { spawnedFromTemplateId: 'T' });
+    const unrelatedTask = achievementTask('tSX', { referencedBoardId: 'x' });
+    const unrelatedPlacement = placement('s', 'tSX');
+    const unrelatedBoard = board('x');
+    const result = hasCycle(
+      { parentBoardIds: ['p'], referencedTemplateId: 'T' },
+      {
+        allBoardTasks: [unrelatedPlacement],
+        allTasks: [unrelatedTask],
+        allBoards: [p, s, unrelatedBoard],
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+});

@@ -641,6 +641,113 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - Task cascade helpers (M1 — live-edit)
+
+    /// Run the cross-board derivation cascade for a task that just changed.
+    ///
+    /// Mirrors `bpvRunCrossBoardCascade` in `BoardPlayView.swift` but lives
+    /// on `AppDatabase` so it can be called from the Tasks-tab edit path
+    /// without importing the Board play surface.
+    ///
+    /// - Parameters:
+    ///   - db: GRDB database handle (must be inside a write transaction).
+    ///   - changedTaskId: The task whose state just changed.
+    ///   - now: ISO8601 timestamp for stamping updated board rows.
+    ///
+    /// Must be called inside an active write transaction covering
+    /// `tasks`, `boardTasks`, `compoundChildren`, `boards`, and `syncQueue`.
+    static func runBoardCascadeForTask(
+        db: Database,
+        changedTaskId: String,
+        now: String
+    ) throws {
+        let allChildren: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allTasks: [Task] = try Task.fetchAll(db)
+        let allBoards: [Board] = try Board.fetchAll(db)
+
+        var taskById: [String: Task] = [:]
+        for t in allTasks { taskById[t.id] = t }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allChildren {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+
+        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: changedTaskId,
+            children: allChildren
+        )
+        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+            changedTaskId: changedTaskId,
+            parentCompounds: parentCompounds,
+            boardTasks: allBoardTasks
+        )
+
+        for boardId in affectedBoardIds {
+            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+            let update = DerivationPass.computeBoardStatsUpdate(
+                board: board,
+                boardTasksOnBoard: boardTasksOnBoard,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoards
+            )
+
+            let totalSquares = board.boardSize * board.boardSize
+            let isGreenlogNow = update.completedTasks >= totalSquares
+
+            board.completedTasks = update.completedTasks
+            board.totalTasks = totalSquares
+            board.linesCompleted = update.linesCompleted
+            board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+            board.updatedAt = now
+            board.version += 1
+
+            if isGreenlogNow, board.status == .active {
+                board.status = .completed
+                board.completedAt = now
+            } else if !isGreenlogNow, board.status == .completed {
+                board.status = .active
+                board.completedAt = nil
+            }
+
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: boardId,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).save(db)
+        }
+    }
+
+    /// Save a task + enqueue sync + run the board derivation cascade.
+    ///
+    /// UI-edit path wrapper (Tasks tab + Task detail sheet). Keeps the
+    /// cascade write in the same transaction as the task save so a crash
+    /// mid-write can't leave boards stale.
+    ///
+    /// - Parameter task: The updated task value (caller has already bumped
+    ///   `updatedAt` and `version`).
+    func saveTaskAndCascade(_ task: Task) throws {
+        try write { db in
+            try task.save(db)
+            let now = Self.currentTimestamp()
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .update,
+                payload: task,
+                now: now
+            ).save(db)
+            try Self.runBoardCascadeForTask(db: db, changedTaskId: task.id, now: now)
+        }
+    }
+
     // MARK: - Copy-from-source helpers
     //
     // The wizard's `From a board…` filter long-press menu exposes

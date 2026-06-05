@@ -27,6 +27,11 @@ struct TaskDetailContentView: View {
     /// Recurring templates whose seedTaskIds include this task's ID.
     let templates: [RecurringBoardTemplate]
     var saveError: String? = nil
+    /// Workspace-wide boards for the Achievement re-target picker. Only
+    /// displayed when `task.type == .achievement`.
+    var allBoardsForPicker: [Board] = []
+    /// Workspace-wide templates for the Achievement re-target picker.
+    var allTemplatesForPicker: [RecurringBoardTemplate] = []
     let onEditSubmit: (EditTaskSheet.Patch) -> Void
     let onDeleteTap: () -> Void
     /// Called when the user taps a parent compound chip or child task row
@@ -71,6 +76,8 @@ struct TaskDetailContentView: View {
         .sheet(isPresented: $showEditSheet) {
             EditTaskSheet(
                 task: task,
+                availableBoards: allBoardsForPicker,
+                availableTemplates: allTemplatesForPicker,
                 onSubmit: { patch in
                     showEditSheet = false
                     onEditSubmit(patch)

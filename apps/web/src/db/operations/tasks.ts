@@ -6,10 +6,13 @@ import type {
   CreateTaskInput,
   CreateCompoundTaskInput,
   CompoundChild,
+  CycleCheckCandidate,
+  CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, SyncStatus, TaskType, OperatorType } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, SyncStatus, TaskType, OperatorType, hasCycle } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { runBoardCascadeForTask } from './orchestration';
 
 /**
  * Task CRUD Operations
@@ -268,6 +271,32 @@ export async function createCompound(
 }
 
 /**
+ * Patch type for task updates that carries null sentinels for clearable
+ * fields. Used by `updateTask` and `updateTaskAndCascade`.
+ *
+ * `null` clears the field; `undefined` leaves it unchanged;
+ * a value replaces it.
+ */
+export type UpdateTaskPatch = Omit<
+  Partial<Task>,
+  | 'referencedBoardId'
+  | 'referencedTemplateId'
+  | 'achievementTrigger'
+  | 'requiredCount'
+  | 'timeframe'
+  | 'startDate'
+  | 'endDate'
+> & {
+  referencedBoardId?: string | null;
+  referencedTemplateId?: string | null;
+  achievementTrigger?: AchievementTrigger | null;
+  requiredCount?: number | null;
+  timeframe?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+};
+
+/**
  * Update a task.
  *
  * Phase 6.3 — Pass the `null` sentinel as the patch value to explicitly
@@ -286,12 +315,7 @@ export async function createCompound(
  */
 export async function updateTask(
   id: string,
-  updates: Partial<Task> & {
-    referencedBoardId?: string | null;
-    referencedTemplateId?: string | null;
-    achievementTrigger?: AchievementTrigger | null;
-    requiredCount?: number | null;
-  },
+  updates: UpdateTaskPatch,
 ): Promise<void> {
   const existing = await db.tasks.get(id);
   if (!existing) return;
@@ -363,7 +387,7 @@ export async function updateTask(
   }
 
   const patch: Partial<Task> = {
-    ...updates,
+    ...(updates as Partial<Task>),
     updatedAt: currentTimestamp(),
     version: (existing.version ?? 0) + 1,
   };
@@ -372,6 +396,9 @@ export async function updateTask(
   if (updates.referencedTemplateId === null) patch.referencedTemplateId = undefined;
   if (updates.achievementTrigger === null) patch.achievementTrigger = undefined;
   if (updates.requiredCount === null) patch.requiredCount = undefined;
+  if (updates.timeframe === null) patch.timeframe = undefined;
+  if (updates.startDate === null) patch.startDate = undefined;
+  if (updates.endDate === null) patch.endDate = undefined;
 
   await db.transaction('rw', [db.tasks, db.syncQueue], async () => {
     await db.tasks.update(id, patch);
@@ -396,6 +423,85 @@ export async function updateTask(
       priority: 0,
     });
   });
+}
+
+/**
+ * Update a task and run the board derivation cascade for every board that
+ * places the task.
+ *
+ * For UI-initiated edits (TaskEditSheet save path) ONLY. Sync-pull callers
+ * keep using `updateTask` directly — the pull path already has its own
+ * cascade via `runBoardCascadeForTask` inside the pull transaction.
+ *
+ * Sequence:
+ *   1. Write the patch via `updateTask` (validates rules, bumps version,
+ *      enqueues task sync entry).
+ *   2. Fetch every BoardTask that places this task.
+ *   3. Run `runBoardCascadeForTask` inside a transaction covering all the
+ *      required tables. One cascade call covers all affected boards — it
+ *      resolves the full affected-board set internally.
+ *
+ * For Achievement re-target edits, the caller is responsible for running
+ * `checkAchievementRetargetCycle` BEFORE calling this wrapper and surfacing
+ * any cycle error to the user. This function does NOT repeat the check.
+ *
+ * @param id - Task id to update.
+ * @param updates - Patch to apply (same type as `updateTask`).
+ */
+export async function updateTaskAndCascade(
+  id: string,
+  updates: UpdateTaskPatch,
+): Promise<void> {
+  // 1. Write the task patch (validates business rules + enqueues sync).
+  await updateTask(id, updates);
+
+  // 2. Check if any board places this task.
+  const placements = await db.boardTasks.where('taskId').equals(id).toArray();
+  if (placements.length === 0) return;
+
+  // 3. Run the derivation cascade in a single transaction. One call to
+  //    `runBoardCascadeForTask` covers all affected boards for this task —
+  //    the function resolves the full affected-board set internally.
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      await runBoardCascadeForTask(id);
+    },
+  );
+}
+
+/**
+ * For Achievement re-target: build the cycle-check context from current
+ * workspace state and run `hasCycle` from @oybc/shared. Returns `null` if
+ * no cycle, or an error string the caller can surface in the UI.
+ *
+ * @param taskId - The Achievement task being re-targeted.
+ * @param candidate - The proposed new reference (referencedBoardId XOR referencedTemplateId).
+ */
+export async function checkAchievementRetargetCycle(
+  taskId: string,
+  candidate: Pick<CycleCheckCandidate, 'referencedBoardId' | 'referencedTemplateId'>,
+): Promise<string | null> {
+  const placements = await db.boardTasks.where('taskId').equals(taskId).toArray();
+  const parentBoardIds = Array.from(new Set(placements.map((bt) => bt.boardId)));
+
+  const allBoardTasks = await db.boardTasks.toArray();
+  const allTasks = await db.tasks.filter((t) => !t.isDeleted).toArray();
+  const allBoards = await db.boards.filter((b) => !b.isDeleted).toArray();
+
+  const context: CycleCheckContext = { allBoardTasks, allTasks, allBoards };
+  const cycleCandidate: CycleCheckCandidate = {
+    parentBoardIds,
+    referencedBoardId: candidate.referencedBoardId,
+    referencedTemplateId: candidate.referencedTemplateId,
+  };
+
+  const result = hasCycle(cycleCandidate, context);
+  if (!result.ok) {
+    return `This reference would create a cycle: ${result.cyclePath?.join(' → ') ?? 'cycle detected'}`;
+  }
+  return null;
 }
 
 /**

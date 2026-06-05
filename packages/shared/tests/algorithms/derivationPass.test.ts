@@ -671,6 +671,75 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
   });
 });
 
+// ─── Live-edit M1: maxCount edits + cascade invariants ───────────────────────
+//
+// These tests document the isCompleted-latch contract:
+//  - Derivation reads t.isCompleted directly; it does NOT recompute
+//    currentCount >= maxCount at cascade time.
+//  - Raising maxCount on a latched-complete task DOES NOT un-complete it.
+//  - Lowering maxCount below a still-incomplete task DOES NOT auto-complete it
+//    (isCompleted is only set by the UI, not recomputed here).
+// This also verifies there is no Math.min clamp on save or re-derive paths.
+
+describe('computeBoardStatsUpdate — counting task maxCount edit (live-edit M1)', () => {
+  it('counting task: isCompleted=true latch survives maxCount raise — board still shows cell complete', () => {
+    // Before edit: maxCount=3, currentCount=3, isCompleted=true (latched).
+    // After edit: user raises maxCount to 10. isCompleted stays true.
+    // Cascade must re-derive board as still having 1 completedTask.
+    const b = board('b', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const t = task('counting1', {
+      type: TaskType.COUNTING,
+      action: 'Run',
+      maxCount: 10, // raised from 3
+      isCompleted: true, // latch unchanged — NOT re-evaluated from currentCount
+    });
+    const bt = boardTask('b', 'counting1', 0, 0);
+    const result = computeBoardStatsUpdate(b, [bt], {}, { counting1: t }, [b]);
+    expect(result.completedTasks).toBe(1);
+  });
+
+  it('counting task: isCompleted=false is NOT auto-completed when maxCount drops to currentCount level', () => {
+    // Before edit: maxCount=10, currentCount=3, isCompleted=false.
+    // After edit: user lowers maxCount to 3. The UI would set isCompleted=true
+    // only on the NEXT counter tap — the cascade itself must NOT set it.
+    // Derivation reads isCompleted=false and returns 0 completedTasks.
+    const b = board('b', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const t = task('counting2', {
+      type: TaskType.COUNTING,
+      action: 'Walk',
+      maxCount: 3, // lowered to match currentCount, but isCompleted not yet set by UI
+      isCompleted: false,
+    });
+    const bt = boardTask('b', 'counting2', 0, 0);
+    const result = computeBoardStatsUpdate(b, [bt], {}, { counting2: t }, [b]);
+    expect(result.completedTasks).toBe(0);
+  });
+
+  it('counting task: isCompleted=false stays incomplete when maxCount is raised well above currentCount', () => {
+    // Verifies no accidental completion when editing a not-yet-done task.
+    const b = board('b', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const t = task('counting3', {
+      type: TaskType.COUNTING,
+      action: 'Bike',
+      maxCount: 20,
+      isCompleted: false,
+    });
+    const bt = boardTask('b', 'counting3', 0, 0);
+    const result = computeBoardStatsUpdate(b, [bt], {}, { counting3: t }, [b]);
+    expect(result.completedTasks).toBe(0);
+  });
+
+  it('mixed board: latched counting task + incomplete normal task — only the latched one counts', () => {
+    const b = board('b', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    const done = task('cDone', { type: TaskType.COUNTING, maxCount: 5, isCompleted: true });
+    const pending = task('cPending', { type: TaskType.COUNTING, maxCount: 5, isCompleted: false });
+    const bt1 = boardTask('b', 'cDone', 0, 0);
+    const bt2 = boardTask('b', 'cPending', 0, 1);
+    const result = computeBoardStatsUpdate(b, [bt1, bt2], {}, { cDone: done, cPending: pending }, [b]);
+    expect(result.completedTasks).toBe(1);
+  });
+});
+
 describe('computeBoardStatsUpdate — Phase 6.3 bad-data precedence', () => {
   it('both referencedBoardId AND referencedTemplateId set on Task → referencedBoardId wins', () => {
     // Zod refinement rejects rows with both set, but a malicious remote
