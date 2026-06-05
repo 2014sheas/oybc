@@ -50,6 +50,10 @@ export interface TasksFiltersState {
    *  the user complained about). Toggle reveals them. Tasks with
    *  no `endDate` (indefinite) are always visible regardless. */
   showExpired: boolean;
+  /** Issue #73 — When true (default), compound children that have no
+   *  direct BoardTask placements of their own are removed from the top-
+   *  level list; reach them by expanding their parent compound. Off = flat list. */
+  groupByCompound: boolean;
 }
 
 export interface TasksFiltersApi extends TasksFiltersState {
@@ -59,6 +63,7 @@ export interface TasksFiltersApi extends TasksFiltersState {
   setUsageFilter: (value: UsageFilter) => void;
   setSortBy: (value: SortOption) => void;
   setShowExpired: (value: boolean) => void;
+  setGroupByCompound: (value: boolean) => void;
   /** Filtered + sorted task list ready to render. */
   filteredTasks: Task[];
   /** Per-task placement count on non-deleted boards (active OR completed
@@ -67,6 +72,10 @@ export interface TasksFiltersApi extends TasksFiltersState {
   /** Same as above but restricted to ACTIVE boards. Used by the usage
    *  filter's "on active boards" value and by the row's "active" hint. */
   activePlacementCountByTaskId: Record<string, number>;
+  /** Issue #73 — Parent compound ids that should be auto-expanded because
+   *  the current search query matches one of their non-independent children.
+   *  Derived — not stored. */
+  autoExpandCompoundIds: Set<string>;
 }
 
 const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
@@ -85,6 +94,8 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   const [usageFilter, setUsageFilter] = useState<UsageFilter>('any');
   const [sortBy, setSortBy] = useState<SortOption>('updated-desc');
   const [showExpired, setShowExpired] = useState(false);
+  // Issue #73 — group compound children under their parent by default.
+  const [groupByCompound, setGroupByCompound] = useState(true);
 
   // Workspace-wide BoardTasks. `BoardTask` has no `isDeleted` field
   // (deletes are hard via `deleteBoardTasksForBoard`), so the table
@@ -118,10 +129,53 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     return { placementCountByTaskId: all, activePlacementCountByTaskId: active };
   }, [allBoardTasks, boardStatusById]);
 
+  // Issue #73 — child task ids that have at least one BoardTask placement
+  // of their own. These children are NOT suppressed from the top level even
+  // when grouping is on (they appear at top level AND nested under each parent).
+  const independentlyPlacedTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const childId of library.childTaskIds) {
+      if ((placementCountByTaskId[childId] ?? 0) > 0) {
+        ids.add(childId);
+      }
+    }
+    return ids;
+  }, [library.childTaskIds, placementCountByTaskId]);
+
+  // Issue #73 — when a search query matches a collapsed non-independent child's
+  // title, include its parent compound ids here so the view auto-expands them.
+  const autoExpandCompoundIds = useMemo<Set<string>>(() => {
+    const trimmed = search.trim().toLowerCase();
+    if (!trimmed || !groupByCompound) return new Set();
+    const ids = new Set<string>();
+    for (const [childId, parentIds] of Object.entries(library.childToParents)) {
+      const child = library.taskMap[childId];
+      if (!child) continue;
+      // Only auto-expand for non-independent children (independent ones already
+      // appear at top level so the user can already see them).
+      if (
+        !independentlyPlacedTaskIds.has(childId) &&
+        child.title.toLowerCase().includes(trimmed)
+      ) {
+        for (const parentId of parentIds) {
+          ids.add(parentId);
+        }
+      }
+    }
+    return ids;
+  }, [search, groupByCompound, library.childToParents, library.taskMap, independentlyPlacedTaskIds]);
+
   const filteredTasks = useMemo(() => {
     const trimmed = search.trim().toLowerCase();
     const typed = library.allTasks
       .filter((t) => matchesTypeFilter(t, typeFilter))
+      .filter((t) => {
+        // Issue #73 — suppress non-independent children from top level when on.
+        // Children with placements of their own appear at top level AND nested.
+        if (!groupByCompound) return true;
+        if (!library.childTaskIds.has(t.id)) return true;
+        return independentlyPlacedTaskIds.has(t.id);
+      })
       .filter((t) => matchesSearch(t, trimmed))
       .filter((t) => matchesStatusFilter(t, library, statusFilter));
     const used = applyUsageFilter(
@@ -143,6 +197,8 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     typeFilter,
     statusFilter,
     showExpired,
+    groupByCompound,
+    independentlyPlacedTaskIds,
     usageFilter,
     sortBy,
     placementCountByTaskId,
@@ -162,9 +218,12 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     setSortBy,
     showExpired,
     setShowExpired,
+    groupByCompound,
+    setGroupByCompound,
     filteredTasks,
     placementCountByTaskId,
     activePlacementCountByTaskId,
+    autoExpandCompoundIds,
   };
 }
 
