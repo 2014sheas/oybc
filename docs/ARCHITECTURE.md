@@ -1055,6 +1055,216 @@ On Save: calls `copyTask(userId, sourceTask, overrides)` or `copyCompound(userId
 | Branch | `feature/wizard-from-a-board` |
 | PR | TBD — link added when opened |
 
+## Shared counters (Issue #84 — Phase 0 design)
+
+> Design captured 2026-06-04; investigation / Phase 0 only — no implementation yet. Section is the canonical record for the locked design decisions that unblock Phases 1–4 (playground spike → UI → increment integration → sync), kept in sync as those phases land. PR link added under **Status** when each phase opens.
+
+The create-task interface lets a user pick an existing counting task as a "template" (`CountingTemplatePicker` / `CountingTemplatePickerView`), but the picker only prefills `action` + `unit` into a brand-new, fully independent task — there is no mechanism for two distinct counting tasks to share a running total. Dormant scaffolding exists: `ProgressCounter` + `TaskProgressCounter` types live on both platforms (no production callers, not in `SYNCABLE_COLLECTIONS`); `calculateCountingRollup()` lives in the shared TS algorithms only (no Swift twin, no production callers — only `packages/shared/tests/algorithms/crossBoardSharing.test.ts` exercises it). This section locks the seven design decisions called out in [Issue #84](https://github.com/2014sheas/oybc/issues/84) so the Phase 1 playground spike, Phase 2 UI, Phase 3 increment integration, and Phase 4 sync can proceed without re-litigating the model on each PR.
+
+### Motivation
+
+The example from the issue body: a user has **"Read 100 pages"** as a daily task and wants to create **"Read 5,000 pages"** as a yearly task that draws on the *same* page-count total. Every page logged on the daily should also advance the yearly. Two flavors of new-task semantics:
+
+- **Inherit**: the yearly shows pages already logged historically.
+- **Start from zero**: the yearly shows `0 / 5000` today, but each new page still increments the shared total (and the daily) going forward.
+
+Today the user has no first-class way to do this. The shallow "template" affordance creates a duplicate, fully independent counter — completing one has no effect on the other. The feature closes that gap by introducing a **shared accumulator** that multiple counting tasks read from, each with its own **threshold** and **baseline offset**.
+
+**Non-goals**: a separate user-managed "Counter" object surfaced in its own tab or library; cross-user shared counters; aggregating counts from non-counting task types into a counter. Phase 0 explicitly chooses to keep "existing counters" = "existing COUNTING tasks" (see decision #1).
+
+### Locked design
+
+#### Decision 1 — Model: per-Task `sharedCounterId` FK, NOT revive `ProgressCounter`
+
+**Locked**: Add `sharedCounterId: string | null` to `Task`. A counter-sharing task is a `TaskType.COUNTING` task whose `sharedCounterId` points at another COUNTING task — the **source** — whose `currentCount` becomes the shared accumulator. The dormant `ProgressCounter` / `TaskProgressCounter` / `calculateCountingRollup` scaffolding stays dead and is removed in Phase 4 (see the cleanup note under [Phasing](#phasing)).
+
+**Rationale**: "existing counters = existing COUNTING tasks" (per the issue's first open question) is the user's mental model — they pick a source counting task from `CountingTemplatePicker`, which already filters to `TaskType.COUNTING`. Promoting `ProgressCounter` to a first-class user-visible object would mean a second concept ("counter" vs "task") competing for library shelf space, plus a migration to convert existing counting tasks into counters. The FK model keeps the user-visible vocabulary at one noun (Task), reuses every existing counting-task UI surface (library row, detail sheet, type filter), and makes the source/derived relationship inspectable from either end. The trade-off is that "the accumulator lives on a Task" means deleting the source Task needs a defined behavior (see invariants below) — but `ProgressCounter` had the same problem in a different shape (orphaned counter rows).
+
+**Implication for the other six decisions**:
+- Decision 2 baseline lives on the *derived* Task (`baseline: number | null`), not on a link row.
+- Decision 3 threshold = `Task.maxCount` (no schema change needed).
+- Decision 4 hot path walks tasks by `sharedCounterId === sourceTaskId`, not a link table join.
+- Decision 5 the syncable entity is `tasks` (already syncable) — we don't add `progress_counters` to `SYNCABLE_COLLECTIONS`. The additive-merge problem moves onto `Task.currentCount`.
+- Decision 6 timeframe-scoped reset becomes a baseline-mutation operation on the derived Task, not a counter-reset operation.
+- Decision 7 file pairs reduce to existing `tasks.ts` / `Task.swift` plus the picker + increment hot path; no new tables, no new sync collections.
+
+**Schema delta**:
+
+| Surface | Change |
+| --- | --- |
+| `packages/shared/src/types/task.ts` | Add `sharedCounterId?: string` and `baseline?: number` to `Task` interface. Both optional; absent ⇒ task is a standalone counter (today's behavior). |
+| `packages/shared/src/validation/schemas.ts` | Add fields to `TaskSchema`. Add a refinement: `sharedCounterId` non-null ⇒ `type === COUNTING` AND `baseline` is a non-negative number. |
+| `apps/web/src/db/database.ts` (Dexie) | New migration: add `sharedCounterId` to the `tasks` schema string (`'id, userId, type, sharedCounterId, ...'`) so Dexie can index it. No data backfill (existing rows get `undefined`). |
+| `apps/ios/OYBC/Database/Schema.sql` | `ALTER TABLE tasks ADD COLUMN sharedCounterId TEXT;` + `ALTER TABLE tasks ADD COLUMN baseline REAL;`. New index `idx_tasks_shared_counter ON tasks(sharedCounterId) WHERE sharedCounterId IS NOT NULL`. |
+| `apps/ios/OYBC/Database/Models/Task.swift` | Add `var sharedCounterId: String?` and `var baseline: Double?`. Update the `init(from:)` mirror in `UserPreferences`-style forward-compatible decode (decode-if-present, default nil). |
+| Both platforms — migration version bump | iOS adds a numbered migration (`migrate_addSharedCounterColumns`). Web bumps the Dexie schema version and adds the index in the `.upgrade()` callback (no data transform). |
+
+The retired `ProgressCounter` / `TaskProgressCounter` / `calculateCountingRollup` scaffolding is **not removed in Phase 1** — left in place during the spike so the diff is reviewable. Removed in Phase 4 alongside the sync work (so the cleanup commit and the sync commit ship in the same PR — one decision, one diff). Follows the Phase 8 cleanup precedent from the compound-tasks unification.
+
+#### Decision 2 — Baseline semantics: per-Task `baseline` field, displayed = `sourceTask.currentCount - thisTask.baseline`
+
+**Locked**: A derived task carries a `baseline: number` (default 0). Its displayed count = `sourceTask.currentCount - thisTask.baseline`, clamped at zero on the low end only (see [Counter-overshoot invariant](#counter-overshoot-invariant) for the high end). Completion latches when `displayed >= thisTask.maxCount` (same one-way latch as today's counting tasks). "Inherit existing count" sets `baseline = 0`; "Start from zero" sets `baseline = sourceTask.currentCount` at the moment the derived task is created.
+
+**Rationale**: A per-Task offset is the minimum new state needed to express both inherit (offset 0) and start-from-zero (offset = current value at creation) without forking the accumulator. The alternative — duplicate the accumulator value per-task and add increments to all of them on every write — works but recreates the "n independent counters" problem the feature is trying to escape, and trades a single source-of-truth value (one `Task.currentCount` on the source) for n separate per-derived-task counters that must be kept in sync. Offset math has a single accumulator and n stateless derivations; LWW conflicts on the offset itself are inert (the offset is only set at creation; if it ever changes — see Decision 6 — that's a deliberate user action, so plain LWW on `baseline` is correct).
+
+**Implication for the other six decisions**:
+- Decision 4 the derivation pass reads `sourceTask.currentCount` and computes `displayed = max(0, sourceTask.currentCount - baseline)` for every derived Task that has `sharedCounterId === sourceTaskId`. No write to derived rows in the simple case (count + completion are pure functions of source + baseline + maxCount).
+- Decision 5 since `displayed` is computed, conflicts on the *derived* Task only matter for `baseline` (set-once at creation, near-impossible conflict) and `maxCount` (the user editing the threshold — normal LWW is fine).
+- Decision 6 "timeframe-scoped baseline reset" = `baseline := sourceTask.currentCount` re-applied at window boundaries. v1 scope: see Decision 6.
+
+**Storage of derived `currentCount`**: open question whether to store `Task.currentCount` on derived tasks at all, or compute it lazily everywhere. Locked answer: **don't store it on derived tasks**. The derived Task's `currentCount` field becomes computed-only (`source.currentCount - baseline`). The cell renderer, the increment hot path, and the cascade pass all read it via a shared helper (`deriveDisplayedCount(task, sourceTask)`) from `packages/shared/src/algorithms/`. Reasons:
+- Two values that must agree (stored derived count + source accumulator) is the silent-divergence bug class we already burn time on for board stats.
+- Sync is simpler — only the source's `currentCount` ever changes from a user increment; the derived rows don't need write traffic on every tap.
+- `isCompleted` is still stored on the derived Task (one-way latch, sync-relevant — see overshoot invariant).
+
+#### Decision 3 — Threshold: reuse existing `Task.maxCount`
+
+**Locked**: The derived task's "larger or smaller" target is its own `Task.maxCount`. No new field. The Phase 2 picker UI exposes a `Threshold` input that maps 1:1 to `maxCount` on the new Task being created.
+
+**Rationale**: `maxCount` already exists on every counting Task and is the field every existing renderer (`InteractiveTaskSquare`, `TaskDetailPage`, the counting-row in the wizard) reads to compute progress percentage and decide cell completion. Inventing a new field would just create a parallel state. The `TaskProgressCounter.targetValue` field from the dead scaffolding is also a `targetValue: number` — same shape — but since `TaskProgressCounter` is being retired (Decision 1), `maxCount` is the surviving home.
+
+**Implication for the other six decisions**: none — this decision is the smallest. Decision 1's `sharedCounterId` is the only schema addition driven by the threshold/source-of-truth concern; `maxCount` does not need to change.
+
+#### Decision 4 — Increment hot-path rewrite: derivation pass extends `runBoardCascadeForTask`
+
+**Locked**: The existing `runBoardCascadeForTask(changedTaskId)` (web `apps/web/src/db/operations/orchestration.ts`; iOS twin embedded in `BoardPlayView.swift`'s cascade block) becomes the single hook point. On any write to a counting Task's `currentCount`, after the existing parent-compound / affected-board derivation, a **new sub-pass** runs:
+
+1. Query all Tasks where `sharedCounterId === changedTaskId AND isDeleted === false`. Call this set `derivedTasks`.
+2. For each derived Task `dt`:
+   a. Compute `displayed = max(0, changedTask.currentCount - dt.baseline)`.
+   b. Compute `newCompleted = displayed >= dt.maxCount` (one-way latch — if `dt.isCompleted` was already true, leave it true even on `displayed` decrease; see overshoot invariant for the > maxCount case).
+   c. If `newCompleted !== dt.isCompleted`, write the new `isCompleted` + `completedAt` + bumped `version` on `dt`. This is the only derived-Task write the pass performs.
+   d. Recursively call `runBoardCascadeForTask(dt.id)` so the board stats / bingo detection / status transitions for every board `dt` is on get recomputed. The recursion is bounded — `dt` has `sharedCounterId !== null`, and a derived task cannot itself be a source (see invariants), so depth is exactly one extra hop.
+
+The recursive call into `runBoardCascadeForTask(dt.id)` already exists as the right primitive — it's the same cascade that fires today when a compound child completes. The new sub-pass only adds the "find shared-counter consumers" lookup and the derived-Task completion write. The bingo / greenlog / board-status transitions are handled by the existing recursion.
+
+**Rationale**: Extending `runBoardCascadeForTask` rather than introducing a parallel "counter cascade" function reuses the existing transactional boundary (the function is already required to be called inside the Dexie / GRDB transaction), reuses the existing sync-enqueue path, and means the new code is reviewable as a single addition to one already-well-tested function. The alternative — a separate `runSharedCounterCascade` that is called alongside — duplicates the find-affected-boards and enqueue-sync logic and creates two transactional boundaries that must agree. One function, one transaction, one mental model.
+
+**Implication for the other six decisions**:
+- Decision 5 the sub-pass is inside the existing transaction, so additive-merge work (Decision 5) operates on the *push/pull* layer, not on the local-write layer. The local hot path stays linear.
+- Decision 7 only `orchestration.ts` and the iOS cascade block in `BoardPlayView.swift` need touching for the hot-path rewrite. The render layer (cell, detail) needs the new `deriveDisplayedCount` helper.
+
+**Where the new hook attaches**: in `runBoardCascadeForTask`, immediately after the `for (const affectedBoardId of affectedBoardIds)` loop completes for the source Task's own boards, before the function returns. iOS twin: same position in the `await db.write { ... }` block inside the cascade closure.
+
+#### Decision 5 — Sync / conflict: additive merge on `Task.currentCount` for shared-counter sources
+
+**Locked**: A counting Task with at least one derived Task (i.e., another Task references it via `sharedCounterId`) becomes an **additive-merge source**. On sync conflict (local version + remote version both incremented since `lastSyncedAt`), instead of plain LWW on `currentCount`, the resolver computes:
+
+```
+mergedCount = remoteCount + (localCount - baseAtLastSync)
+```
+
+where `baseAtLastSync` is the locally-stored `lastSyncedCount` value (new field on `Task`, populated at every successful push of a counting Task). The semantics: "apply our local delta on top of whatever the remote agreed value is." Both devices' increments contribute; concurrent increments are summed, not lost.
+
+Plain LWW silently loses counts in the multi-device case: if device A increments 100→105 and device B independently increments 100→103, the higher-version write wins and 2 (or 5) of the 8 total increments evaporate. Additive merge preserves both deltas: `103 + (105 - 100) = 108`.
+
+**Rationale**: The semantically-correct merge for a monotonically-increasing accumulator on a deterministic-action ledger ("the user logged 5 more pages, then the user logged 3 more pages") is to sum the deltas — anything else throws away user-recorded data. Plain LWW is correct for the `maxCount` / `title` / `action` fields of a counting Task (those are user edits, not increments), so the rule is scoped: **additive merge applies to `currentCount` only, and only when the Task is a shared-counter source**. Standalone counters (no derived Tasks pointing at them) stay on plain LWW for v1 — the additive-merge complexity is paid only where it matters. (Whether to extend additive merge to *all* counting Tasks regardless of derived consumers is left to a future cleanup once the shared-counter codepath is proven; the issue's third open question raises this and v1 doesn't force a global answer.)
+
+**Reference**: Phase 6.3 handled a comparable additive concern with the cycle-detection algorithm in `packages/shared/src/algorithms/cycleDetection.ts` and the achievement-trigger sync invariants in [§Phase 6.3](#phase-6-recurring-boards--shipped). The pattern there — put the merge logic in `packages/shared/src/algorithms/`, call it from both `syncService.ts` (web) and `SyncService.swift` (iOS), validate the inputs with shared Zod refinements — is the precedent. The new file: `packages/shared/src/algorithms/sharedCounterMerge.ts` exporting `mergeCounterValue(local: number, remote: number, base: number): number` plus a Jest spec covering: clean local-wins, clean remote-wins, both-incremented, both-incremented-with-decrement (a user editing `currentCount` down to correct a typo — the merge still sums the local delta, so a decrement local + increment remote produces a smaller-than-remote result, which is the correct interpretation of "the user said the local count is wrong by this much").
+
+**Implication for the other six decisions**:
+- Decision 1 the new `lastSyncedCount` field is per-Task (lives on `Task`, sets at push completion) — fits the FK model.
+- Decision 4 the local hot path doesn't change — additive merge only fires on pull/push conflict resolution, never on local increment.
+- Decision 7 sync changes touch `syncService.ts` (web) + `SyncService.swift` (iOS) + the new shared algorithm file.
+
+#### Decision 6 — "…for the specified timeframe": static baseline only in v1; no timeframe-scoped resets
+
+**Locked**: v1 ships with a **static baseline** set once at derived-Task creation. There is no automatic baseline reset on timeframe windows (daily / weekly / monthly / yearly rollover). The Phase 2 picker UI exposes only the binary "Inherit" / "Start from zero" choice.
+
+**Rationale**: Timeframe-scoped baseline resets — e.g., "the derived weekly task starts from zero every Monday but the yearly accumulator keeps climbing" — are a real user need but introduce three new sub-problems that v1 does not need to solve: (a) when exactly the reset fires (lazy on app open vs. background scheduler — see the Recurring Boards lazy-detection invariant), (b) how the reset interacts with multi-device sync (two devices both detecting the rollover and both writing a new baseline), and (c) how it interacts with the `isCompleted` latch (does completion clear on rollover? for which timeframe?). All three are tractable but each is its own design discussion. Shipping static baselines first lets the feature land, get usage feedback, and lets timeframe resets be added in a v2 PR once we know which combinations users actually want.
+
+**Implication for the other six decisions**:
+- Decision 2 `baseline` is set on Task creation only. Edits to it are not exposed in v1 UI.
+- Decision 4 the derivation pass never mutates `baseline` — it's pure read-side state in the cascade.
+- Decision 5 since `baseline` doesn't change after creation in v1, sync conflicts on it are degenerate (two devices creating two different derived Tasks with two different baselines is fine — they're different Tasks).
+- Decision 7 no calendar/window code touched in v1.
+
+#### Decision 7 — Cross-platform parity: file pairs that must change in lockstep
+
+**Locked**: Every PR across Phases 1–4 ships web + iOS together per the CLAUDE.md cross-platform rule. The representative file pairs (not exhaustive):
+
+| Concern | Web | iOS |
+| --- | --- | --- |
+| Shared model + schema | `packages/shared/src/types/task.ts`, `validation/schemas.ts` | (consumed via Codable; mirror updates in `Database/Models/Task.swift`) |
+| Local DB schema | `apps/web/src/db/database.ts` (Dexie migration) | `apps/ios/OYBC/Database/Schema.sql` + numbered migration in `AppDatabase.swift` |
+| Picker UI (Phase 2) | `apps/web/src/components/wizard/CountingTemplatePicker.tsx` | `apps/ios/OYBC/Views/CreateTab/Components/CountingTemplatePickerView.swift` |
+| Increment hot path (Phase 3) | `apps/web/src/db/operations/orchestration.ts` (`runBoardCascadeForTask`) | `apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift` cascade block + `apps/ios/OYBC/Database/AppDatabase.swift` |
+| Derivation helper (Phase 1+) | `packages/shared/src/algorithms/sharedCounterDerivation.ts` (new) | (consumed via shared; iOS reads it through the TS-mirrored Swift port — by convention this file gets a Swift twin in `apps/ios/OYBC/Algorithms/` since cross-platform algorithms aren't bridged from `@oybc/shared` at runtime) |
+| Sync conflict resolver (Phase 4) | `apps/web/src/firebase/syncService.ts` + new `packages/shared/src/algorithms/sharedCounterMerge.ts` | `apps/ios/OYBC/Services/SyncService.swift` + Swift port of the merge function |
+| Cell renderer | `apps/web/src/components/InteractiveTaskSquare.tsx` (read displayed via helper) | `apps/ios/OYBC/Views/Components/InteractiveTaskSquareView.swift` |
+
+**Rationale**: Matches the cross-platform file-structure rule in CLAUDE.md (`Cross-Platform File Structure` §) and the iOS-twin convention. The shared algorithm pattern is the same one Phase 6.3 used for cycle detection — TypeScript home in `packages/shared/src/algorithms/`, hand-mirrored Swift port for iOS consumers. Listed by concern (not by Phase) because Phases 1–4 each touch a subset; the playground spike (Phase 1) only touches the derivation helper, the UI phase only touches the picker, etc.
+
+**Implication for the other six decisions**: none — this decision is purely the implementation map. It does constrain the Phasing order: nothing that touches the hot path or picker can land without its twin in the same commit.
+
+### Data flow
+
+End-to-end on a single shared-counter increment (post-Phase 3):
+
+1. **User taps `+` on the source task's cell** (e.g., "Read 100 pages") on board X. `InteractiveTaskSquare` calls `handleTaskCompletion(boardX, btSourceOnX, { currentCount: source.currentCount + N })`.
+2. **`handleTaskCompletion` writes the new `currentCount` on the source Task** (existing code — no change). Inside the same transaction it calls `runBoardCascadeForTask(sourceTaskId)`.
+3. **`runBoardCascadeForTask`** runs its existing pass for board X (recomputes stats, status, sync queue for board X), then the **new sub-pass**:
+   a. Look up `derivedTasks = tasks.where({ sharedCounterId: sourceTaskId, isDeleted: false })`.
+   b. For each derived Task `dt`, recompute `displayed = max(0, source.currentCount - dt.baseline)` and `newCompleted = displayed >= dt.maxCount` (one-way latch).
+   c. If `dt.isCompleted` changed, write the new latch state on `dt` (bumped version, syncQueue entry).
+   d. Recursively call `runBoardCascadeForTask(dt.id)` — this handles every board `dt` is placed on, plus any compound parents `dt` belongs to (existing recursion does this).
+4. **Sync (Phase 4)**: `pushSync` drains the `tasks` queue. The source Task push carries `currentCount + version`. On a conflict-detected push, the resolver invokes `mergeCounterValue(localCount, remoteCount, lastSyncedCount)` and writes the merged value back to local (bumping version again) before re-attempting the push.
+5. **Pull (Phase 4)**: when a remote source-Task update arrives, `runBoardCascadeForTask(remoteTaskId)` fires the same sub-pass on the receiving device, so all derived Tasks re-derive without needing their own per-device push.
+
+### Invariants
+
+- **No cycles in `sharedCounterId`** — a Task `A` with `sharedCounterId = B` cannot itself be a source. The check needs DB context (must query the task table for any other Task with `sharedCounterId = thisTask.id`), so Zod's shape-only refinements can't enforce it. Implement as: (a) a pure predicate `isValidSharedCounterChain(candidate, allTasks)` in `packages/shared/src/algorithms/` (mirroring Phase 6.3's `hasCycle`), (b) called by the create / update helpers (`createTask` / `updateTask` web; `AppDatabase.shared.createTask` / `updateTask` iOS) before the write commits, with `allTasks` fetched from the live DB at call time. Zod stays responsible for shape (the field is a valid Task id or null); the chain check is the write-helper's job. (Two-level chains would force the derivation pass to recurse beyond depth 1 and make the additive-merge semantics ambiguous — what's the "source of truth" accumulator when there are three of them? Not a feature, just a footgun.)
+- **Deleting the source Task soft-deletes its derived Tasks too** (cascade, mirrors `deleteTaskWithCascade` for compound children). The derived Tasks become useless without their accumulator; orphaning them produces "always 0 / N" zombie squares. The cascade preview modal (existing `computeTaskDeletionImpact`) gets a new branch for "this task is a shared counter source for N other tasks — they will be deleted too."
+- **`baseline` is set once at creation and not user-editable in v1** (per Decision 6). The Task-detail-view edit sheet hides the field. Phase 5 v2 might expose it; v1 does not.
+- **Additive merge applies only to shared-counter sources** (Decision 5). Standalone counters keep plain LWW. The conflict resolver checks `derivedTasks.length > 0` before invoking the additive path.
+- **Derived Task `currentCount` is computed, never stored** (Decision 2). The Dexie / GRDB row keeps the field nullable; reads always go through `deriveDisplayedCount(task, sourceTask)` from the shared algorithm. Storing it would re-introduce the silent-divergence bug class.
+- **Compound containment is orthogonal** — a shared-counter derived Task can itself be a child of a compound Task (it's still a normal `Task`). The compound-rollup math reads the derived Task's `isCompleted` latch, which is already maintained by the derivation pass. No special case needed in the compound cascade.
+
+### Counter-overshoot invariant
+
+Per agent memory `feedback_counter_overshoot_is_valid`: counter tasks may legitimately have `currentCount > maxCount`, and the cell stays completed forever — overshoot is a load-bearing UX affordance, never "fixed" by clamping. The new derivation MUST preserve this:
+
+- **`displayed = max(0, source.currentCount - baseline)` clamps the *low* end only** (a baseline larger than the source value yields 0, not a negative). The high end is **not clamped** — if `source.currentCount = 5500` and `baseline = 0` and `dt.maxCount = 5000`, the displayed value is `5500`, the cell shows `5500 / 5000`, and `isCompleted = true` stays latched.
+- **The one-way latch on `dt.isCompleted` stays the same as today**: once `displayed >= dt.maxCount` is reached, `isCompleted = true` and does not flip back even if a subsequent edit decreases the source or increases the threshold. The Phase 3 sub-pass only ever sets `isCompleted := true`; it never sets it back to `false`.
+- **Editing `dt.maxCount` down below `displayed` does not block, does not auto-clamp** — same rule as today's standalone counters. The Phase 2 picker's threshold field validates only that `maxCount > 0`.
+
+The `calculateCountingRollup()` function in `packages/shared/src/algorithms/rollup.ts` (no production callers — only exercised by `crossBoardSharing.test.ts`) uses `Math.min(parentCurrentCount + subtaskMaxCount, parentMaxCount)` — that's an artifact of the (now-retired) per-board cascade math for the legacy `progress` task type and is irrelevant here. The new `deriveDisplayedCount` helper must **not** copy that clamp pattern. Reviewer checklist for any PR touching the derivation: grep for `Math.min(` in any new line of the derivation helper and reject if found.
+
+### Phasing
+
+Re-stated from the issue body so the parallel-triage plan's Wave 2–5 stream names match. Each phase is its own PR (or group of paired PRs per cross-platform parity).
+
+- **Phase 0 — design doc + decisions (this section).** No code. Locks decisions 1–7 + invariants. Status: this section.
+- **Phase 1 — playground spike**: shared-counter math in a `SharedCounterPlayground.tsx` + `SharedCounterPlaygroundView.swift` pair. Increment a source, derive `displayed` + `isCompleted` for N linked tasks, render the results in real reusable components per the "Build real components, not demos" rule in `CLAUDE.md` → Feature Implementation Guidelines → Core Principles. No boards, no real DB writes — synthetic in-memory fixtures only. Verifies the math + the derivation helper + the no-overshoot-clamp invariant.
+- **Phase 2 — create-interface UI**: extend `CountingTemplatePicker` / `CountingTemplatePickerView` with a `Link to existing counter` mode (sibling to the existing "use as template" mode), a `Threshold` input, and an `Inherit` / `Start from zero` radio. Wires to a stub increment that surfaces "linked but increment not yet wired" so the UI ships before the hot-path rewrite. Both platforms, same PR.
+- **Phase 3 — increment integration**: the `runBoardCascadeForTask` sub-pass per Decision 4 above. Removes the Phase 2 stub. Includes the cascade-delete update for `deleteTaskWithCascade`, the cycle-detection refinement in Zod, and the new `deriveDisplayedCount` helper consumed by the cell renderer.
+- **Phase 4 — sync**: `mergeCounterValue` shared algorithm, conflict resolver in `syncService.ts` + `SyncService.swift`, `lastSyncedCount` field added to Task, end-to-end multi-device test scenario in `docs/SYNC_STRATEGY.md`. **Also** the dead-scaffolding cleanup commit (delete `progress_counters` table + index, delete `ProgressCounter` types + model + CRUD, delete `TaskProgressCounter` + `calculateCountingRollup`). Cleanup ships with sync, not separately, so reviewer sees both halves of the model decision (locked-in + scaffolding-removed) in one diff.
+
+### Open questions
+
+The following remain undecidable without user input. Phase 1 should not start until these are resolved:
+
+1. **Picker placement**: the existing `CountingTemplatePicker` is rendered inside the counting-variant of `CreateNewTaskForm`. Does the new "Link to existing counter" mode live as a third tab inside that picker, a sibling button outside it, or a wholly separate entry point in the create flow? (UX call — not a model decision.)
+2. **What does the new task's *title* default to?** "Read 5000 pages" is the user's example, but the picker would naturally autofill `<action> <maxCount> <unit>` from the threshold input (e.g., the same `generateCounterTaskTitle()` helper today's standalone counters use). Confirm that's the right default or specify an override.
+3. **Visual indicator on linked tasks in the library list / cell**: should derived counters get a glyph or badge (analogous to compound's `C` badge or achievement's marker) to communicate "this is shared"? Or is the shared-ness invisible at the cell level and only surfaced in the detail sheet? (UX call.)
+
+### Out of scope
+
+- **Cross-user shared counters** — Phase 0 / v1 is single-user only. Shared counters across friends / family is a separate cross-cutting feature that requires the auth + sharing model OYBC doesn't have yet.
+- **Counter math involving non-counting task types** — a `NORMAL` task completion does not increment a counter. Only `COUNTING` source Tasks can be sources, only `COUNTING` derived Tasks can consume.
+- **A standalone "Counters" tab or library section** — derived counters are normal counting Tasks; they show up in the Tasks tab counter filter exactly like standalone ones do. No new top-level navigation.
+- **Timeframe-scoped baseline resets** (per Decision 6) — explicit v2.
+- **Performance benchmarks for the additive-merge pull path** — Phase 4 should validate correctness; performance benchmarking against multi-thousand-Task workspaces is a future tooling sweep.
+
+### Status
+
+| Step | State |
+| --- | --- |
+| Design (this section) | Locked 2026-06-04 |
+| Branch | `docs/shared-counters-design-phase-0` |
+| PR | TBD — link added when opened |
+| Issue | [#84](https://github.com/2014sheas/oybc/issues/84) (investigation only; Phase 0 doc resolves the 7 design decisions) |
+
 ---
 
 This plan represents a complete rebuild of OYBC with offline-first architecture, designed to provide instant UX and work perfectly without internet connection.
