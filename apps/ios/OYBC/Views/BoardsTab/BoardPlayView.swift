@@ -185,6 +185,18 @@ private struct BoardPlayTitleChrome: ViewModifier {
     }
 }
 
+// MARK: - SwapTarget
+
+/// Lightweight `Identifiable` wrapper used to drive the `.sheet(item:)` for
+/// the M3 cell-swap picker. Carries the boardTask id + the current task id so
+/// `CellSwapSheet` can exclude the current task from the eligible list.
+private struct SwapTarget: Identifiable {
+    /// The `BoardTask.id` whose cell is being swapped.
+    let id: String
+    /// The `Task.id` currently occupying the square (excluded from the picker).
+    let currentTaskId: String
+}
+
 // MARK: - BoardPlayView
 
 /// Full interactive bingo board play screen.
@@ -237,6 +249,8 @@ struct BoardPlayView: View {
     @State private var taskDetailSheetTaskId: TaskIdItem?
     /// M2 — edit-board sheet (ACTIVE boards only).
     @State private var isEditBoardPresented: Bool = false
+    /// M3 — live-edit cell swap: the square whose task the user wants to replace.
+    @State private var swapTarget: SwapTarget? = nil
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
     /// sheet is dismissing — SwiftUI swallows the path change during
@@ -368,6 +382,26 @@ struct BoardPlayView: View {
                     }
                 )
             }
+        }
+        // M3 — Cell swap sheet. Presented when the user taps "⎘ Swap with
+        // another task…" in the context menu of a non-center ACTIVE square.
+        .sheet(
+            item: $swapTarget,
+            onDismiss: {
+                // Reload so the grid reflects any completed swap.
+                loadBoardTasks()
+                loadTaskData()
+            }
+        ) { target in
+            CellSwapSheet(
+                currentTaskId: target.currentTaskId,
+                candidateTasks: allTasks,
+                onDismiss: { swapTarget = nil },
+                onConfirm: { newTaskId in
+                    swapTarget = nil
+                    handleCellSwap(boardTaskId: target.id, newTaskId: newTaskId)
+                }
+            )
         }
         .onAppear {
             loadBoard()
@@ -624,6 +658,14 @@ struct BoardPlayView: View {
                 Button("Open in library", systemImage: "book") {
                     taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
                 }
+
+                // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                    Divider()
+                    Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
+                        swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                    }
+                }
             }
 
         case .counting:
@@ -666,6 +708,14 @@ struct BoardPlayView: View {
 
                     Button("Open in library", systemImage: "book") {
                         taskDetailSheetTaskId = TaskIdItem(id: t.id)
+                    }
+
+                    // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                    if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                        Divider()
+                        Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
+                            swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                        }
                     }
                 }
             }
@@ -717,6 +767,13 @@ struct BoardPlayView: View {
                 Button("Open in library", systemImage: "book") {
                     taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
                 }
+                // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                    Divider()
+                    Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
+                        swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                    }
+                }
             }
 
         case .achievement:
@@ -737,6 +794,13 @@ struct BoardPlayView: View {
                 }
                 Button("Open in library", systemImage: "book") {
                     taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+                }
+                // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                    Divider()
+                    Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
+                        swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                    }
                 }
             }
         }
@@ -1222,6 +1286,46 @@ struct BoardPlayView: View {
                 print("⚠️ BoardPlayView compoundChildToggle error: \(error)")
                 await MainActor.run {
                     isProcessing = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Cell Swap (M3)
+
+    /// Swap the task occupying a non-center square to a different task from the library.
+    ///
+    /// Delegates to `AppDatabase.shared.updateBoardTaskAndCascade`, which:
+    ///   1. Patches `BoardTask.taskId` atomically (version bump + sync enqueue).
+    ///   2. Computes the union of boards affected by the OLD and NEW task.
+    ///   3. Re-derives stats + GREENLOG transitions for each affected board.
+    ///
+    /// The swap runs on a detached `_Concurrency.Task` to avoid blocking the main thread.
+    /// UI is refreshed via `loadBoardTasks()` + `loadTaskData()` on completion (the
+    /// sheet's `onDismiss` also triggers a reload as a defensive belt-and-suspenders).
+    ///
+    /// - Parameters:
+    ///   - boardTaskId: The `BoardTask.id` whose cell is being swapped.
+    ///   - newTaskId: The replacement `Task.id`.
+    private func handleCellSwap(boardTaskId: String, newTaskId: String) {
+        isProcessing = true
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                try AppDatabase.shared.updateBoardTaskAndCascade(
+                    boardTaskId: boardTaskId,
+                    newTaskId: newTaskId
+                )
+                await MainActor.run {
+                    isProcessing = false
+                    loadBoard()
+                    loadBoardTasks()
+                    loadTaskData()
+                }
+            } catch {
+                print("⚠️ BoardPlayView cell swap error: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                    bingoMessage = "Swap failed — please try again"
                 }
             }
         }

@@ -18,6 +18,7 @@ import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
 import { addToSyncQueue } from '../db/operations/syncQueue';
+import { updateBoardTaskAndCascade } from '../db/operations/boardTasks';
 import {
   InteractiveTaskSquare,
   DetailModal,
@@ -25,6 +26,7 @@ import {
   type AchievementSquareBadgeData,
 } from './InteractiveTaskSquare';
 import type { ContextMenuState } from './interactiveTaskSquareUtils';
+import { CellSwapModal } from './CellSwapModal';
 import { BoardStatusBadge } from './BoardStatusBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
@@ -114,6 +116,8 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // M2 — edit-board sheet (ACTIVE boards only).
   const [editBoardOpen, setEditBoardOpen] = useState(false);
+  // M3 — cell swap: the boardTaskId whose square the user requested a swap for.
+  const [swapBoardTaskId, setSwapBoardTaskId] = useState<string | null>(null);
 
   // User preferences (for weekStartDay, used by EditBoardSheet).
   const [prefs] = usePreferences();
@@ -576,6 +580,10 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         );
         const menuCurrentCount = task.currentCount ?? 0;
 
+        // M3 — Swap is only available on ACTIVE non-expired, non-center squares.
+        const swapEligible =
+          board.status === BoardStatus.ACTIVE && !isExpired && !bt.isCenter;
+
         return (
           <FloatingContextMenu
             sq={squareData}
@@ -607,6 +615,37 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
             onOpenInLibrary={(taskId) => {
               setOpenedTaskInLibrary(taskId);
               setContextMenu(null);
+            }}
+            onSwapTask={swapEligible ? () => {
+              setSwapBoardTaskId(bt.id);
+              setContextMenu(null);
+            } : undefined}
+          />
+        );
+      })()}
+
+      {/* M3 — Cell Swap Modal */}
+      {swapBoardTaskId && (() => {
+        const bt = boardTasks.find((b) => b.id === swapBoardTaskId);
+        if (!bt) return null;
+        return (
+          <CellSwapModal
+            currentTaskId={bt.taskId}
+            candidateTasks={Object.values(taskMap)}
+            onClose={() => setSwapBoardTaskId(null)}
+            onConfirm={async (newTaskId) => {
+              setSwapBoardTaskId(null);
+              try {
+                await updateBoardTaskAndCascade(swapBoardTaskId, newTaskId);
+              } catch (err) {
+                console.error('Cell swap failed:', err);
+                // `showFlash` is a stable event-time callback; the ref access
+                // happens inside a catch block (not during render). False positive
+                // from the react-hooks/refs analyzer — same pattern as the
+                // DetailModal `onToggleComplete` disable above.
+                // eslint-disable-next-line react-hooks/refs
+                showFlash('Swap failed — please try again', 'bingo');
+              }
             }}
           />
         );

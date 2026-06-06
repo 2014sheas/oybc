@@ -1395,6 +1395,138 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - updateBoardTaskAndCascade (M3 — live-edit cell swap)
+
+    /// Patch a BoardTask's `taskId` (cell swap) and re-derive stats for every board
+    /// affected by either the OLD task or the NEW task.
+    ///
+    /// Design mirrors `saveTaskAndCascade` (M1) and the batched cascade in
+    /// `updateBoardAndCascade` (M2/PR #95):
+    ///   1. Validate + no-op guard (swap to same task returns immediately).
+    ///   2. Apply the taskId patch atomically (bumps version, enqueues boardTask sync).
+    ///   3. Compute the union of affected board IDs across both old and new tasks,
+    ///      using pre- and post-patch boardTask snapshots.
+    ///   4. Re-derive stats + GREENLOG transitions for each affected board (one pass).
+    ///
+    /// Counter-overshoot invariant: this function never clamps `currentCount`.
+    /// The derivation delegates to `DerivationPass.computeBoardStatsUpdate` which
+    /// reads `task.isCompleted` — the actual count value on the Task row is untouched.
+    ///
+    /// - Parameters:
+    ///   - boardTaskId: The `BoardTask.id` placement record to update.
+    ///   - newTaskId: The new `Task.id` to write into `BoardTask.taskId`.
+    /// - Throws: GRDB write errors.
+    func updateBoardTaskAndCascade(boardTaskId: String, newTaskId: String) throws {
+        try write { db in
+            guard var boardTask = try BoardTask.fetchOne(db, key: boardTaskId) else { return }
+
+            let oldTaskId = boardTask.taskId
+            // No-op guard: swapping to the same task writes nothing.
+            guard oldTaskId != newTaskId else { return }
+
+            let now = Self.currentTimestamp()
+
+            // ── Pre-patch workspace snapshot (for old-task cascade side) ──
+
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let allBoardTasksPre: [BoardTask] = try BoardTask.fetchAll(db)
+
+            // ── Apply the boardTask patch ──
+
+            boardTask.taskId = newTaskId
+            boardTask.updatedAt = now
+            boardTask.version += 1
+            try boardTask.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boardTasks",
+                entityId: boardTaskId,
+                operationType: .update,
+                payload: boardTask,
+                now: now
+            ).save(db)
+
+            // ── Post-patch workspace snapshot (for new-task cascade side) ──
+
+            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            // ── Compute union of affected board IDs ──
+
+            let oldParents = DerivationPass.findTransitiveParentCompounds(
+                changedTaskId: oldTaskId, children: allChildren
+            )
+            let oldAffected = DerivationPass.findAffectedBoardIds(
+                changedTaskId: oldTaskId,
+                parentCompounds: oldParents,
+                boardTasks: allBoardTasksPre
+            )
+
+            let newParents = DerivationPass.findTransitiveParentCompounds(
+                changedTaskId: newTaskId, children: allChildren
+            )
+            let newAffected = DerivationPass.findAffectedBoardIds(
+                changedTaskId: newTaskId,
+                parentCompounds: newParents,
+                boardTasks: allBoardTasksPost
+            )
+
+            let affectedBoardIds = Set(oldAffected).union(newAffected)
+
+            // ── One derivation pass per affected board ──
+
+            for affectedBoardId in affectedBoardIds {
+                guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
+                      !affectedBoard.isDeleted else { continue }
+
+                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: affectedBoard,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards
+                )
+
+                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                affectedBoard.completedTasks = update.completedTasks
+                affectedBoard.totalTasks = totalSquares
+                affectedBoard.linesCompleted = update.linesCompleted
+                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                affectedBoard.updatedAt = now
+                affectedBoard.version += 1
+
+                if isGreenlogNow, affectedBoard.status == .active {
+                    affectedBoard.status = .completed
+                    affectedBoard.completedAt = now
+                } else if !isGreenlogNow, affectedBoard.status == .completed {
+                    affectedBoard.status = .active
+                    affectedBoard.completedAt = nil
+                }
+
+                try affectedBoard.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: affectedBoardId,
+                    operationType: .update,
+                    payload: affectedBoard,
+                    now: now
+                ).save(db)
+            }
+        }
+    }
+
     /// Fetch every BoardTask in the workspace. Used by the derivation pass
     /// to find which boards contain a given task (directly or via a compound).
     /// Small-N: typical user has under a few thousand BoardTasks.
