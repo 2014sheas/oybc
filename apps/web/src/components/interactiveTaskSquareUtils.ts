@@ -61,10 +61,21 @@ export interface TaskSquareData {
   /**
    * Phase 2 — Shared Counters. Non-null when this is a linked derived
    * counter. The board-play surface maps `Task.sharedCounterId` into
-   * this field so the DetailModal can surface the stub message instead
-   * of the increment controls (Phase 3 will wire the actual hot-path).
+   * this field so the DetailModal and FloatingContextMenu can gate
+   * decrement/reset actions (linked counters are read-only; increments
+   * must go through the source).
    */
   sharedCounterId?: string | null;
+  /**
+   * Phase 3 — Shared Counters. The baseline offset for a linked derived
+   * counter. Mirrors `Task.baseline`. Used by `taskToSquareState` to
+   * baseline-adjust `state.currentCount` via `deriveDisplayedCount` so
+   * the rendered value reflects the derived count, not the raw source
+   * accumulator.
+   *
+   * Non-null only when `sharedCounterId` is non-null.
+   */
+  baseline?: number | null;
   /** progress only */
   steps?: ProgressStep[];
   /** compound only */

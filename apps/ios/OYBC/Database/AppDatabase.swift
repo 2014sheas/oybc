@@ -1256,6 +1256,8 @@ extension AppDatabase {
 
             // 1. Fetch and validate the source task.
             guard var source = try Task.fetchOne(db, key: sourceTaskId) else { return }
+            // Soft-delete guard: a deleted source must not be incremented or synced.
+            guard !source.isDeleted else { return }
             guard source.type == .counting else {
                 throw NSError(
                     domain: "AppDatabase.incrementSharedCounter",
@@ -1274,9 +1276,16 @@ extension AppDatabase {
             }
 
             // 2. Compute new source count — NO high-end clamp.
+            guard let sourceMaxCount = source.maxCount else {
+                throw NSError(
+                    domain: "AppDatabase.incrementSharedCounter",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "incrementSharedCounter: source task \(sourceTaskId) has nil maxCount — data integrity error"]
+                )
+            }
             let prevSourceCount = source.currentCount ?? 0
             let newSourceCount = prevSourceCount + by
-            let sourceMaxCount = source.maxCount ?? 0
 
             // ONE-WAY LATCH on source completion.
             let sourceWasCompleted = source.isCompleted

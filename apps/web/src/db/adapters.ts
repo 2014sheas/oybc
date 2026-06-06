@@ -1,5 +1,6 @@
 import {
   TaskType,
+  deriveDisplayedCount,
   type Task,
   type TaskStep,
   type CompoundChild,
@@ -71,6 +72,11 @@ export function taskToSquareData(
     action: task.action ?? undefined,
     maxCount: task.maxCount ?? undefined,
     unit: task.unit ?? undefined,
+    // Phase 3 — Shared Counters: map link fields so the render layer can
+    // (a) baseline-adjust the displayed count via `deriveDisplayedCount`,
+    // and (b) gate decrement/reset actions for linked derived counters.
+    sharedCounterId: task.sharedCounterId ?? undefined,
+    baseline: task.baseline ?? undefined,
   };
 }
 
@@ -103,6 +109,24 @@ export function taskToSquareState(
     return {
       isCompleted: evaluateCompound(task, cbMap, map),
       currentCount: 0,
+      completedStepIds: new Set<string>(),
+    };
+  }
+
+  // Phase 3 — Shared Counters: linked tasks store the source's raw
+  // `currentCount` as a mirrored accumulator. The UI must display the
+  // baseline-adjusted derived value, not the raw source total. Apply
+  // `deriveDisplayedCount` here so every consumer of `SquareState`
+  // (grid squares, DetailModal, FloatingContextMenu, progress bar)
+  // automatically sees the correct derived count without a second call.
+  if (task.sharedCounterId != null) {
+    const { displayed } = deriveDisplayedCount(
+      { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
+      { currentCount: task.currentCount ?? 0 },
+    );
+    return {
+      isCompleted: task.isCompleted,
+      currentCount: displayed,
       completedStepIds: new Set<string>(),
     };
   }

@@ -501,7 +501,9 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                   task, taskChildren, taskMap, compoundChildrenByCompound,
                 );
                 const taskIsCompleted = squareState.isCompleted;
-                const taskCurrentCount = task.currentCount ?? 0;
+                // Use squareState.currentCount (baseline-adjusted for linked
+                // counters). For standalone counters this equals task.currentCount.
+                const taskCurrentCount = squareState.currentCount;
 
                 cells.push(
                   <InteractiveTaskSquare
@@ -585,7 +587,14 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound,
         );
-        const modalCurrentCount = task.currentCount ?? 0;
+        // Use squareState.currentCount (baseline-adjusted for linked counters)
+        // rather than the raw task.currentCount accumulator. For standalone
+        // counters the two values are identical; for linked derived counters
+        // taskToSquareState has already applied deriveDisplayedCount.
+        const modalCurrentCount = squareState.currentCount;
+        // Linked derived counters are read-only: their value is driven by the
+        // source task. Decrement and reset must be disabled for them.
+        const isLinkedCounter = squareData.sharedCounterId != null;
 
         return (
           <DetailModal
@@ -620,7 +629,10 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
               /* eslint-enable react-hooks/refs */
             }}
             onDecrementCount={() => {
-              if (isExpired) return;
+              // Linked derived counters are read-only — decrement must go through
+              // the source. Silently ignore the action here; the UI should hide/
+              // disable the button when isLinkedCounter is true.
+              if (isExpired || isLinkedCounter) return;
               if (modalCurrentCount > 0) {
                 void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
               }
@@ -668,7 +680,10 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound,
         );
-        const menuCurrentCount = task.currentCount ?? 0;
+        // Use squareState.currentCount (baseline-adjusted for linked counters).
+        const menuCurrentCount = squareState.currentCount;
+        // Linked derived counters are read-only — decrement/reset must be gated.
+        const isLinkedCounter = squareData.sharedCounterId != null;
 
         return (
           <FloatingContextMenu
@@ -692,12 +707,16 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
               setContextMenu(null);
             }}
             onDecrementCount={() => {
+              // Linked derived counters are read-only — no decrement.
+              if (isLinkedCounter) { setContextMenu(null); return; }
               if (menuCurrentCount > 0) {
                 void handleComplete(bt.id, { currentCount: menuCurrentCount - 1 });
               }
               setContextMenu(null);
             }}
             onResetCount={() => {
+              // Linked derived counters are read-only — no reset.
+              if (isLinkedCounter) { setContextMenu(null); return; }
               void handleComplete(bt.id, { currentCount: 0, isCompleted: false });
               setContextMenu(null);
             }}

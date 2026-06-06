@@ -510,7 +510,7 @@ export async function incrementSharedCounter(
   sourceTaskId: string,
   by = 1,
 ): Promise<void> {
-  if (by <= 0) throw new Error('incrementSharedCounter: `by` must be a positive integer');
+  if (by <= 0 || !Number.isInteger(by)) throw new Error('incrementSharedCounter: `by` must be a positive integer');
 
   await db.transaction(
     'rw',
@@ -534,8 +534,13 @@ export async function incrementSharedCounter(
       }
 
       // 2. Compute new source count — NO high-end clamp (overshoot is intentional).
+      if (source.maxCount == null) {
+        throw new Error(
+          `incrementSharedCounter: source task ${sourceTaskId} has null/undefined maxCount — data integrity error`,
+        );
+      }
       const newSourceCount = (source.currentCount ?? 0) + by;
-      const sourceMaxCount = source.maxCount ?? 0;
+      const sourceMaxCount = source.maxCount;
 
       // isCompleted: one-way latch. Source uses a simpler logic than derived tasks:
       // the source tracks its own maxCount independently. We apply the latch here too.

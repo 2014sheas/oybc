@@ -616,10 +616,25 @@ struct BoardPlayView: View {
 
         case .counting:
             // currentCount lives on Task after compound-tasks unification.
-            let current = task?.currentCount ?? 0
+            // For linked derived counters (task.sharedCounterId != nil), the
+            // stored `currentCount` mirrors the source's raw accumulator. Apply
+            // deriveDisplayedCount so the rendered value is baseline-adjusted.
+            let rawCount = task?.currentCount ?? 0
             let maxVal = task?.maxCount ?? 0
             let unitText = task?.unit ?? ""
             let actionLabel = task?.action ?? "item"
+            let isLinkedCounter = task?.sharedCounterId != nil
+            let current: Int = {
+                if let t = task, let _ = t.sharedCounterId {
+                    let result = deriveDisplayedCount(
+                        derivedBaseline: t.baseline ?? 0,
+                        derivedMaxCount: t.maxCount ?? 0,
+                        sourceCurrentCount: rawCount
+                    )
+                    return result.displayed
+                }
+                return rawCount
+            }()
 
             InteractiveTaskSquareView(
                 title: task?.title ?? "Unknown",
@@ -646,7 +661,9 @@ struct BoardPlayView: View {
                         guard !isBoardLocked else { return }
                         handleCountingDecrement(boardTask: boardTask, task: t)
                     }
-                    .disabled(current == 0 || isProcessing || isBoardLocked)
+                    // Linked derived counters are read-only — decrement must go
+                    // through the source task. Disable the minus button for them.
+                    .disabled(current == 0 || isLinkedCounter || isProcessing || isBoardLocked)
 
                     Button("View Details", systemImage: "info.circle") {
                         detailBoardTaskId = boardTask.id
@@ -851,9 +868,23 @@ struct BoardPlayView: View {
     @ViewBuilder
     private func countingDetailContent(boardTask: BoardTask, task: Task) -> some View {
         // currentCount lives on Task after compound-tasks unification.
-        let current = task.currentCount ?? 0
+        // For linked derived counters (sharedCounterId != nil), apply
+        // deriveDisplayedCount so the detail sheet shows the baseline-adjusted
+        // value rather than the raw source accumulator.
+        let rawCount = task.currentCount ?? 0
         let maxVal = task.maxCount ?? 0
         let unitText = task.unit ?? ""
+        let isLinkedCounter = task.sharedCounterId != nil
+        let current: Int = {
+            if let _ = task.sharedCounterId {
+                return deriveDisplayedCount(
+                    derivedBaseline: task.baseline ?? 0,
+                    derivedMaxCount: maxVal,
+                    sourceCurrentCount: rawCount
+                ).displayed
+            }
+            return rawCount
+        }()
 
         Section("Progress") {
             ProgressView(
@@ -873,9 +904,10 @@ struct BoardPlayView: View {
                 } label: {
                     Image(systemName: "minus.circle")
                         .font(.title)
-                        .foregroundColor(current > 0 ? .orange : .secondary)
+                        .foregroundColor(current > 0 && !isLinkedCounter ? .orange : .secondary)
                 }
-                .disabled(current == 0 || isProcessing || isBoardLocked)
+                // Linked derived counters are read-only — decrement is disabled.
+                .disabled(current == 0 || isLinkedCounter || isProcessing || isBoardLocked)
                 .buttonStyle(.borderless)
 
                 Spacer()

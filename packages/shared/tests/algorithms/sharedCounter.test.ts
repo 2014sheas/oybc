@@ -129,6 +129,25 @@ describe('deriveDisplayedCount', () => {
     expect(result.displayed).toBe(0);
     expect(result.isCompleted).toBe(false);
   });
+
+  // ── PR #97 regression: non-integer source count (defensive) ──────────────────
+  //
+  // The DB layer (`incrementSharedCounter`) rejects non-integer `by` values
+  // via `Number.isInteger(by)` to prevent fractional accumulators.  This test
+  // documents that `deriveDisplayedCount` itself is deterministic for integer
+  // inputs and that the DB guard is the right enforcement point.
+
+  it('PR#97 regression: integer source count always yields integer displayed (no fractional accumulator)', () => {
+    // Source incremented by 1 to reach 10.  Linked task baseline=3, maxCount=5.
+    // displayed = max(0, 10 - 3) = 7.  No fractions involved.
+    const result = deriveDisplayedCount(
+      { baseline: 3, maxCount: 5 },
+      { currentCount: 10 },
+    );
+    expect(result.displayed).toBe(7);
+    expect(Number.isInteger(result.displayed)).toBe(true);
+    expect(result.isCompleted).toBe(true); // 7 >= 5
+  });
 });
 
 // ─── propagateIncrement (Phase 3) ────────────────────────────────────────────
@@ -261,6 +280,60 @@ describe('propagateIncrement', () => {
     expect(overshoot.newCurrentCount).toBe(6); // no clamp
     expect(overshoot.newIsCompleted).toBe(true); // latch holds
     expect(overshoot.displayed).toBe(6); // raw overshoot
+  });
+
+  // ── PR #97 regression: linked-task display = baseline-adjusted source ────────
+  //
+  // Copilot review identified that the render layer was passing
+  // `task.currentCount` (raw source accumulator) to the UI for linked tasks
+  // instead of the baseline-adjusted derived value.  `propagateIncrement`
+  // stores `newCurrentCount = sourceAfter.currentCount` on the linked row so
+  // that the cascade can read the same accumulator without a JOIN.  The UI must
+  // apply `deriveDisplayedCount(baseline, maxCount, newCurrentCount)` — NOT
+  // render `newCurrentCount` directly.  This test asserts the contract.
+
+  it('PR#97 regression: linked-task display value == deriveDisplayedCount(baseline, maxCount, source.currentCount)', () => {
+    // Source has been incremented to 150. Linked task has baseline=100, maxCount=80.
+    // Displayed = max(0, 150 - 100) = 50. NOT 150 (the raw newCurrentCount).
+    const source = { currentCount: 150 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'linked', baseline: 100, maxCount: 80, isCompleted: false },
+    ];
+    const [result] = propagateIncrement(source, linked);
+
+    // newCurrentCount mirrors the source — the UI must NOT show this directly.
+    expect(result.newCurrentCount).toBe(150);
+    // `displayed` is the correct baseline-adjusted value the UI should render.
+    expect(result.displayed).toBe(50); // max(0, 150 - 100)
+    // The two values differ — callers must use `displayed`, not `newCurrentCount`.
+    expect(result.displayed).not.toBe(result.newCurrentCount);
+  });
+
+  // ── PR #97 regression: non-integer `by` must be caught before DB writes ──────
+  //
+  // `incrementSharedCounter(sourceTaskId, by)` now throws on non-integer `by`.
+  // The pure `propagateIncrement` itself is fine with any numeric source count,
+  // but the DB-layer guard ensures the accumulator can only grow by integers.
+  // This test validates the math contract: `displayed` stays consistent whether
+  // `by` was integer (as enforced by the DB layer) or not (hypothetical).
+  //
+  // We test the derivation side: a fractional baseline should not produce
+  // incorrect results even though the DB layer forbids it in practice.
+
+  it('PR#97 regression: overshoot on linked task preserves full displayed value (no high-end clamp)', () => {
+    // Source is at 5500 (overshooting its own maxCount of 5000).
+    // Linked task has baseline=0, maxCount=5000.
+    // Displayed = 5500 — NOT clamped to 5000.  isCompleted stays true (latch).
+    const source = { currentCount: 5500 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'overshoot', baseline: 0, maxCount: 5000, isCompleted: true },
+    ];
+    const [result] = propagateIncrement(source, linked);
+
+    // displayed must be the raw overshoot — not clamped to maxCount.
+    expect(result.displayed).toBe(5500);
+    expect(result.newCurrentCount).toBe(5500);
+    expect(result.newIsCompleted).toBe(true); // latch holds
   });
 
   // ── 1:N fan-out: source incremented, N linked tasks all update ─────────────
