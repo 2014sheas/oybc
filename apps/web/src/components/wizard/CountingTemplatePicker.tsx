@@ -123,14 +123,21 @@ export function CountingTemplatePicker({
   function handleLinkSourceSelect(task: Task): void {
     setLinkSource(task);
     setLinkOpen(false);
-    // Auto-generate title using the existing action/unit from the source.
+    // Auto-generate title only when a valid threshold already exists.
+    // Without the guard, selecting a source before entering a threshold
+    // would generate titles like "Read 0 pages" (maxCount = 0 fallback).
     const maxCountNum = parseInt(thresholdStr, 10);
-    const autoTitle = generateCounterTaskTitle(
-      task.action ?? '',
-      isNaN(maxCountNum) ? 0 : maxCountNum,
-      task.unit ?? '',
-    );
-    setLinkedTitle(autoTitle);
+    const thresholdIsValid = Number.isInteger(maxCountNum) && maxCountNum >= 1;
+    if (thresholdIsValid) {
+      const autoTitle = generateCounterTaskTitle(
+        task.action ?? '',
+        maxCountNum,
+        task.unit ?? '',
+      );
+      setLinkedTitle(autoTitle);
+    }
+    // If no valid threshold yet, leave linkedTitle empty so the placeholder
+    // ("Auto-generated from source") shows and autogen fires in handleThresholdChange.
   }
 
   function handleThresholdChange(val: string): void {

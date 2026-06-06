@@ -222,7 +222,9 @@ export const CreateTaskInputSchema = z.object({
   endDate: z.string().optional(),
   // Phase 2 — Shared Counters. Co-present or both absent.
   // Refinement `sharedCounterFieldsConsistent` enforces the shape invariant.
-  sharedCounterId: z.string().nullable().optional(),
+  // UUID constraint matches how other nullable ID fields are typed in this
+  // file (e.g. `referencedBoardId`, `centerTaskId`) — rejects empty strings.
+  sharedCounterId: z.string().uuid().nullable().optional(),
   baseline: z.number().int().min(0).nullable().optional(),
 }).refine(
   (data) => {
@@ -279,7 +281,9 @@ export const UpdateTaskInputSchema = z.object({
   startDate: z.string().nullable().optional(),
   endDate: z.string().nullable().optional(),
   // Phase 2 — Shared Counters. `null` clears; `undefined` leaves unchanged.
-  sharedCounterId: z.string().nullable().optional(),
+  // UUID constraint matches CreateTaskInputSchema and other nullable ID fields
+  // (e.g. referencedBoardId/referencedTemplateId) — rejects empty strings.
+  sharedCounterId: z.string().uuid().nullable().optional(),
   baseline: z.number().int().min(0).nullable().optional(),
 }).refine(
   referencedFieldsOnTaskMutuallyExclusive,
@@ -299,6 +303,23 @@ export const UpdateTaskInputSchema = z.object({
 ).refine(
   sharedCounterFieldsConsistent,
   { message: "sharedCounterId and baseline must both be set (with baseline >= 0) or both be absent/null" },
+).refine(
+  // Issue #3: reject asymmetric null patches on UPDATE. If baseline is being
+  // explicitly cleared (null) but sharedCounterId is still set (non-null), the
+  // resulting row would be inconsistent. The `sharedCounterFieldsConsistent`
+  // refinement above catches the symmetric case; this one catches the patch-
+  // specific asymmetry where one sentinel is null and the other is a value.
+  (data) => {
+    const idCleared = data.sharedCounterId === null;
+    const baselineCleared = data.baseline === null;
+    // Both cleared together → valid (symmetric clear, caught by the refine above).
+    // baseline cleared but sharedCounterId still set → invalid.
+    if (baselineCleared && !idCleared) return false;
+    // sharedCounterId cleared but baseline still set → invalid.
+    if (idCleared && !baselineCleared && data.baseline !== undefined) return false;
+    return true;
+  },
+  { message: "Clearing baseline requires clearing sharedCounterId in the same patch, and vice versa" },
 );
 
 // ===== Compound creation input =====

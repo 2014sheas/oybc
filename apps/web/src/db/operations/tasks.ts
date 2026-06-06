@@ -120,8 +120,15 @@ export async function createTask(
     endDate: input.endDate,
     // Phase 2 — Shared Counters. Both null for non-linked tasks (default).
     // The Zod refinement on CreateTaskInputSchema ensures co-presence.
-    sharedCounterId: input.sharedCounterId ?? null,
-    baseline: input.sharedCounterId != null ? (input.baseline ?? 0) : null,
+    // Use `|| null` (not `?? null`) so empty strings collapse to null — the
+    // schema's z.string().uuid() constraint should already reject them, but
+    // this is an extra belt-and-suspenders guard at the write layer.
+    // `baseline` is written as-is (the refinement guarantees it is present
+    // and >= 0 when sharedCounterId is set); we do NOT default it to 0 here
+    // so that a misconfigured call site surfaces a type error rather than
+    // silently writing an inconsistent row.
+    sharedCounterId: input.sharedCounterId || null,
+    baseline: input.sharedCounterId ? (input.baseline ?? null) : null,
     isCompleted: false,
     totalCompletions: 0,
     totalInstances: 0,
