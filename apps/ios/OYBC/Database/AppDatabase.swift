@@ -483,6 +483,15 @@ final class AppDatabase {
                 """, arguments: [nowISO])
         }
 
+        // v15: Phase 2 — Shared Counters. Adds `sharedCounterId` (TEXT)
+        // and `baseline` (INTEGER) to `tasks`. Both are NULL for non-linked
+        // tasks. No index needed — source lookups are small-N in practice.
+        // Additive nullable columns; no data backfill required.
+        migrator.registerMigration("v15") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN sharedCounterId TEXT")
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN baseline INTEGER")
+        }
+
         return migrator
     }
 

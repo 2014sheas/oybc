@@ -496,36 +496,47 @@ export function DetailModal({
             <p className={styles.modalMeta}>
               {sq.action} · {sq.maxCount} {sq.unit}
             </p>
-            {/* Progress bar */}
-            <div className={styles.modalProgressBar}>
-              <div
-                className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting}`}
-                style={{ width: `${fraction * 100}%` }}
-              />
-              <div className={styles.modalProgressLabel}>{barLabel}</div>
-            </div>
-            {/* Counter controls */}
-            <div className={styles.counterRow}>
-              <button
-                className={styles.counterButton}
-                disabled={state.currentCount <= 0}
-                onClick={() => onDecrementCount(sq.id)}
-                aria-label="Decrease"
-              >
-                −
-              </button>
-              <span className={styles.counterValue}>
-                {state.currentCount} / {sq.maxCount}
-              </span>
-              <button
-                className={styles.counterButton}
-                disabled={state.currentCount >= (sq.maxCount ?? 1)}
-                onClick={() => onIncrementCount(sq.id)}
-                aria-label="Increase"
-              >
-                +
-              </button>
-            </div>
+            {/* Phase 2 — Shared Counters: linked tasks show a stub message
+                instead of increment controls. Phase 3 will wire the actual
+                hot-path increment via runBoardCascadeForTask. */}
+            {sq.sharedCounterId != null ? (
+              <p className={styles.linkedCounterStub}>
+                Linked counter — increments via source task (wire-up in Phase 3)
+              </p>
+            ) : (
+              <>
+                {/* Progress bar */}
+                <div className={styles.modalProgressBar}>
+                  <div
+                    className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting}`}
+                    style={{ width: `${fraction * 100}%` }}
+                  />
+                  <div className={styles.modalProgressLabel}>{barLabel}</div>
+                </div>
+                {/* Counter controls */}
+                <div className={styles.counterRow}>
+                  <button
+                    className={styles.counterButton}
+                    disabled={state.currentCount <= 0}
+                    onClick={() => onDecrementCount(sq.id)}
+                    aria-label="Decrease"
+                  >
+                    −
+                  </button>
+                  <span className={styles.counterValue}>
+                    {state.currentCount} / {sq.maxCount}
+                  </span>
+                  <button
+                    className={styles.counterButton}
+                    disabled={state.currentCount >= (sq.maxCount ?? 1)}
+                    onClick={() => onIncrementCount(sq.id)}
+                    aria-label="Increase"
+                  >
+                    +
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
 

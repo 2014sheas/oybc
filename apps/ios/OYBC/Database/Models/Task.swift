@@ -91,6 +91,22 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var startDate: String? // ISO8601
     var endDate: String? // ISO8601
 
+    // Phase 2 — Shared Counters. Points at the source counting task whose
+    // `currentCount` drives this task's displayed value via
+    // `deriveDisplayedCount()`. Nil for non-linked tasks. Only meaningful
+    // when `type == .counting`. Stored as TEXT; no DB-level FK constraint
+    // (soft-delete semantics make hard constraints unworkable).
+    var sharedCounterId: String?
+
+    // Phase 2 — Shared Counters. The source task's `currentCount` at the
+    // moment this task was linked. Mirrors the TypeScript `Task.baseline`
+    // field. Must be non-nil when `sharedCounterId` is non-nil, and nil
+    // when `sharedCounterId` is nil.
+    //   - "Inherit" mode: baseline = 0 → displayed = source.currentCount.
+    //   - "Start from zero" mode: baseline = source.currentCount_at_link_time
+    //     → displayed = source.currentCount − baseline.
+    var baseline: Int?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -132,7 +148,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         deletedAt: String? = nil,
         timeframe: Timeframe? = nil,
         startDate: String? = nil,
-        endDate: String? = nil
+        endDate: String? = nil,
+        sharedCounterId: String? = nil,
+        baseline: Int? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -166,6 +184,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.timeframe = timeframe
         self.startDate = startDate
         self.endDate = endDate
+        self.sharedCounterId = sharedCounterId
+        self.baseline = baseline
     }
 
     // MARK: - Codable
@@ -184,6 +204,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case lastSyncedAt, version, isDeleted, deletedAt
         // Phase 6.Y
         case timeframe, startDate, endDate
+        // Phase 2 — Shared Counters
+        case sharedCounterId, baseline
     }
 
     // Custom decoding for progressCounters (stored as JSON string)
@@ -232,6 +254,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         timeframe = try container.decodeIfPresent(Timeframe.self, forKey: .timeframe)
         startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
         endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
+        // Phase 2 — Shared Counters. Forward-compat: pre-v15 rows decode as nil.
+        sharedCounterId = try container.decodeIfPresent(String.self, forKey: .sharedCounterId)
+        baseline = try container.decodeIfPresent(Int.self, forKey: .baseline)
     }
 
     // Custom encoding for progressCounters (store as JSON string)
@@ -277,6 +302,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encodeIfPresent(timeframe, forKey: .timeframe)
         try container.encodeIfPresent(startDate, forKey: .startDate)
         try container.encodeIfPresent(endDate, forKey: .endDate)
+        // Phase 2 — Shared Counters
+        try container.encodeIfPresent(sharedCounterId, forKey: .sharedCounterId)
+        try container.encodeIfPresent(baseline, forKey: .baseline)
     }
 }
 

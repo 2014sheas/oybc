@@ -229,6 +229,9 @@ struct BoardPlayView: View {
 
     @State private var isProcessing = false
     @State private var bingoMessage: String?
+    /// Phase 2 — Shared Counters: shown when the user taps a linked derived
+    /// counter cell; the increment hot-path is not yet wired (Phase 3).
+    @State private var showLinkedCounterStub = false
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
@@ -410,6 +413,15 @@ struct BoardPlayView: View {
                     taskDetailSheetTaskId = nil
                 }
             )
+        }
+        // Phase 2 — Shared Counters: inform the user that tapping a linked
+        // derived-counter cell does not yet increment. The increment hot-path
+        // (reading the source Task's progressCounter, applying the baseline
+        // offset, and writing back) is deferred to Phase 3.
+        .alert("Linked counter", isPresented: $showLinkedCounterStub) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Linked counter — increments via source task (wire-up in Phase 3)")
         }
     }
 
@@ -1086,6 +1098,13 @@ struct BoardPlayView: View {
     ///   - boardTask: The counting task's `BoardTask` record.
     ///   - task: The `Task` providing `maxCount`.
     private func handleCountingTap(boardTask: BoardTask, task: Task) {
+        // Phase 2 — Shared Counters: linked derived counters are read-only
+        // until Phase 3 wires the source-increment cascade. Surface the stub
+        // alert and return early — no count write happens.
+        if task.sharedCounterId != nil {
+            showLinkedCounterStub = true
+            return
+        }
         guard !isProcessing, !task.isCompleted, let maxCount = task.maxCount else { return }
         let now = AppDatabase.currentTimestamp()
         let newCount = min((task.currentCount ?? 0) + 1, maxCount)
