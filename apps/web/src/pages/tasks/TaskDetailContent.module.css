@@ -439,6 +439,22 @@
   color: var(--text-secondary);
 }
 
+.fieldset {
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 6px;
+  padding: var(--spacing-sm);
+  margin: 0;
+}
+
+.fieldsetLegend {
+  padding: 0 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .sheetActions {
   display: flex;
   gap: var(--spacing-sm);

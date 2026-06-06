@@ -1,4 +1,5 @@
 import SwiftUI
+import GRDB
 
 /// Tasks tab — dedicated surface for browsing, searching, filtering,
 /// and editing the user's task library. iOS twin of web's `TasksPage`.
@@ -50,6 +51,9 @@ struct TasksTabView: View {
     /// Task currently being edited via swipe-Edit. `.sheet(item:)` opens
     /// `EditTaskSheet` when this is non-nil.
     @State private var editingTask: Task?
+    /// Loaded lazily when `editingTask` is set for an Achievement task.
+    @State private var editPickerBoards: [Board] = []
+    @State private var editPickerTemplates: [RecurringBoardTemplate] = []
     /// Set once the impact computation finishes; presenting the confirm
     /// sheet off this single item guarantees the impact is available when
     /// the sheet renders.
@@ -243,11 +247,38 @@ struct TasksTabView: View {
         .sheet(item: $editingTask) { task in
             EditTaskSheet(
                 task: task,
+                availableBoards: editPickerBoards,
+                availableTemplates: editPickerTemplates,
                 onSubmit: { patch in
                     _Concurrency.Task { await saveEdits(task: task, patch: patch) }
                 },
                 onCancel: { editingTask = nil }
             )
+        }
+        .onChange(of: editingTask?.id) { _, newId in
+            guard newId != nil else {
+                editPickerBoards = []
+                editPickerTemplates = []
+                return
+            }
+            guard editingTask?.type == .achievement else { return }
+            let uid = userId
+            _Concurrency.Task {
+                do {
+                    let boards = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                        try AppDatabase.shared.fetchBoards(userId: uid)
+                    }.value
+                    let templates = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                        try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
+                    }.value
+                    await MainActor.run {
+                        editPickerBoards = boards
+                        editPickerTemplates = templates
+                    }
+                } catch {
+                    // Non-fatal: picker loads empty; user can save without re-targeting.
+                }
+            }
         }
         .sheet(item: $pendingDelete, onDismiss: {
             // Reload only after the sheet has fully dismissed. Mutating the
@@ -361,9 +392,8 @@ struct TasksTabView: View {
     }
 
     /// Save the row-level edit patch off-main. Mirrors the patch logic
-    /// in `TaskDetailView.saveEdits` so the two surfaces behave the
-    /// same — extracting the shared bit is a follow-up once a third
-    /// caller appears.
+    /// in `TaskDetailView.saveEdits` — full M1 field set including timeboxed
+    /// and Achievement re-target with cycle detection.
     private func saveEdits(task: Task, patch: EditTaskSheet.Patch) async {
         var t = task
         t.title = patch.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -377,9 +407,53 @@ struct TasksTabView: View {
         }
         if t.type == .achievement {
             t.achievementTrigger = patch.trigger
-            if t.referencedTemplateId != nil {
-                if let req = Int(patch.requiredCountStr), req > 0 { t.requiredCount = req }
+            if patch.refMode == .board {
+                guard !patch.selectedBoardId.isEmpty else {
+                    await MainActor.run { quickActionError = "Please select a specific board to watch." }
+                    return
+                }
+                if let cycleError = await checkCycleForTask(
+                    taskId: t.id,
+                    referencedBoardId: patch.selectedBoardId,
+                    referencedTemplateId: nil
+                ) {
+                    await MainActor.run { quickActionError = cycleError }
+                    return
+                }
+                t.referencedBoardId = patch.selectedBoardId
+                t.referencedTemplateId = nil
+                t.requiredCount = nil
+            } else {
+                guard !patch.selectedTemplateId.isEmpty else {
+                    await MainActor.run { quickActionError = "Please select a recurring template to watch." }
+                    return
+                }
+                guard let req = Int(patch.requiredCountStr), req > 0 else {
+                    await MainActor.run { quickActionError = "Required count must be a whole number greater than 0." }
+                    return
+                }
+                if let cycleError = await checkCycleForTask(
+                    taskId: t.id,
+                    referencedBoardId: nil,
+                    referencedTemplateId: patch.selectedTemplateId
+                ) {
+                    await MainActor.run { quickActionError = cycleError }
+                    return
+                }
+                t.referencedTemplateId = patch.selectedTemplateId
+                t.referencedBoardId = nil
+                t.requiredCount = req
             }
+        }
+        // Timeboxed fields
+        if let tf = patch.timeframe {
+            t.timeframe = tf
+            t.startDate = patch.startDate
+            t.endDate = patch.endDate
+        } else if patch.clearTimeboxed {
+            t.timeframe = nil
+            t.startDate = nil
+            t.endDate = nil
         }
         t.updatedAt = AppDatabase.currentTimestamp()
         t.version += 1
@@ -387,7 +461,7 @@ struct TasksTabView: View {
         let patched = t
         do {
             try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.saveTaskAndEnqueueUpdate(patched)
+                try AppDatabase.shared.saveTaskAndCascade(patched)
             }.value
             await MainActor.run {
                 editingTask = nil
@@ -398,6 +472,47 @@ struct TasksTabView: View {
             await MainActor.run {
                 quickActionError = "Failed to save: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// Cycle detection helper for the Tasks-tab inline edit path.
+    private func checkCycleForTask(
+        taskId: String,
+        referencedBoardId: String?,
+        referencedTemplateId: String?
+    ) async -> String? {
+        do {
+            let result = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                let placements = try AppDatabase.shared.fetchBoardTasksForTask(taskId: taskId)
+                let parentBoardIds = Array(Set(placements.map { $0.boardId }))
+                let allBoardTasks = try AppDatabase.shared.fetchAllBoardTasks()
+                let allTasks = try AppDatabase.shared.read { db -> [Task] in
+                    try Task.filter(Column("isDeleted") == false).fetchAll(db)
+                }
+                let allBoards = try AppDatabase.shared.read { db -> [Board] in
+                    try Board.filter(Column("isDeleted") == false).fetchAll(db)
+                }
+                let candidate = CycleCheckCandidate(
+                    parentBoardIds: parentBoardIds,
+                    referencedBoardId: referencedBoardId,
+                    referencedTemplateId: referencedTemplateId
+                )
+                let context = CycleCheckContext(
+                    allBoardTasks: allBoardTasks,
+                    allTasks: allTasks,
+                    allBoards: allBoards
+                )
+                return CycleDetection.hasCycle(candidate: candidate, context: context)
+            }.value
+
+            switch result {
+            case .ok:
+                return nil
+            case .cycle(let path):
+                return "This reference would create a cycle: \(path.joined(separator: " → "))"
+            }
+        } catch {
+            return "Cycle check failed: \(error.localizedDescription)"
         }
     }
 

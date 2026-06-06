@@ -5,7 +5,7 @@ import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
 import {
   computeTaskDeletionImpact,
   deleteTaskWithCascade,
-  updateTask,
+  updateTaskAndCascade,
   type TaskDeletionImpact,
 } from '../db/operations/tasks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
@@ -224,7 +224,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
           task={editingTask}
           onSubmit={async (patch) => {
             try {
-              await updateTask(editingTask.id, patch);
+              await updateTaskAndCascade(editingTask.id, patch);
               setEditingTask(null);
             } catch (e) {
               setEditError(`Failed to save: ${(e as Error).message}`);
