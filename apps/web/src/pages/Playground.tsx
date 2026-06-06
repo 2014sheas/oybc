@@ -8,6 +8,7 @@ import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardR
 import { BoardWizardTasksPlayground } from '../components/playground/BoardWizardTasksPlayground';
 import { CreateHubPlayground } from '../components/playground/CreateHubPlayground';
 import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
+import { SharedCounterPlayground } from '../components/playground/SharedCounterPlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import styles from './Playground.module.css';
 
@@ -36,6 +37,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'shared-counter',
+      title: 'Shared Counters — Phase 1 spike (deriveDisplayedCount)',
+      content: <SharedCounterPlayground />,
+    },
     {
       id: 'create-hub',
       title: 'Create Hub — full flow (hub + wizard)',

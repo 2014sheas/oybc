@@ -110,3 +110,6 @@ export type {
 } from './recurringBoardTemplates';
 
 export { isTaskExpired } from './taskExpiry';
+
+// ===== Phase 1 — Shared counter spike =====
+export { deriveDisplayedCount } from './sharedCounter';

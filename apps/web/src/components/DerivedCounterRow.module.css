@@ -1,0 +1,147 @@
+/* ─── Row container ─────────────────────────────────────────────────────────── */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background-color: var(--card-bg);
+  transition: border-color 0.15s, background-color 0.15s;
+  flex-wrap: wrap;
+}
+
+.rowCompleted {
+  border-color: var(--success-border, #c3e6cb);
+  background-color: var(--success-bg, #d4edda);
+}
+
+/* ─── Title block (left) ────────────────────────────────────────────────────── */
+
+.titleBlock {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowCompleted .title {
+  color: var(--success-text, #155724);
+}
+
+/* ─── Progress block (center) ───────────────────────────────────────────────── */
+
+.progressBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 120px;
+}
+
+.baselineLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.fraction {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.fractionSep {
+  margin: 0 0.15rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* Progress bar */
+.progressBar {
+  width: 100%;
+  height: 4px;
+  background-color: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background-color: var(--active-bg, #007bff);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
+.progressFillComplete {
+  background-color: var(--success-text, #155724);
+}
+
+/* ─── Status block (right) ──────────────────────────────────────────────────── */
+
+.statusBlock {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.completedBadge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background-color: var(--success-border, #c3e6cb);
+  color: var(--success-text, #155724);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pendingBadge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.removeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  transition: background-color 0.15s, color 0.15s;
+  padding: 0;
+}
+
+.removeButton:hover {
+  background-color: var(--error-bg, #f8d7da);
+  color: var(--error-text, #721c24);
+}
