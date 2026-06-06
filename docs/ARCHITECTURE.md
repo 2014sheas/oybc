@@ -1258,12 +1258,69 @@ The three open questions below were unresolvable without user input and blocked 
 - **Timeframe-scoped baseline resets** (per Decision 6) — explicit v2.
 - **Performance benchmarks for the additive-merge pull path** — Phase 4 should validate correctness; performance benchmarking against multi-thousand-Task workspaces is a future tooling sweep.
 
+### Phase 4 — Conflict resolution for shared counters (this section)
+
+> Design locked 2026-06-06 before any Phase 4 code. Decisions below supplement Decision 5 from the Phase 0 doc above, adding the implementation specifics that are safe to resolve without user input.
+
+#### Storage: `lastSyncedCount` on `Task` (option a)
+
+**Chosen**: `lastSyncedCount?: number | null` added to `Task` (lives on the same row as `sharedCounterId`). Fits Decision 1's "everything on Task" FK model; no new tables, no new sync collections.
+
+**Rejected alternative**: separate `sync_state` keyed by `(taskId, deviceId)` — heavier, requires a new sync collection, adds a join to the conflict-resolution path.
+
+**When it is set**:
+- After a **successful push** of a counting Task: `lastSyncedCount := currentCount` at the moment the push completes. This records "Firestore now knows about this count value."
+- After a **remote-wins pull** of a counting Task: `lastSyncedCount := remote.currentCount`. This records "remote's state is now our common ancestor."
+- `lastSyncedCount` is NOT updated on local increments — only on confirmed Firestore round-trips.
+
+#### Merge trigger: source tasks only, on pull-path `applyRemoteSubdoc`
+
+**Chosen**: The additive merge fires in `applyRemoteSubdoc` (web) / `applyRemoteSubdoc` (iOS) when ALL of:
+1. `collectionName === 'tasks'`
+2. The Task has `type === COUNTING`
+3. At least one non-deleted Task in local DB has `sharedCounterId === remoteTask.id` (i.e. it is a source)
+4. Both local and remote have incremented since `lastSyncedCount` (detected via: `local.currentCount !== lastSyncedCount AND remote.currentCount !== lastSyncedCount`)
+
+If condition 4 fails (no concurrent edit), LWW resolves as today.
+If `lastSyncedCount` is null (first sync, no common ancestor), fall back to LWW (no merge possible — Document "null baseline → LWW fallback" in the test suite).
+
+**Formula** (from Decision 5):
+```
+mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)
+```
+
+After merge: write merged value to local DB, bump `version`, set `lastSyncedCount := remote.currentCount`, enqueue push so the merged value reaches Firestore.
+
+#### Propagation after merge
+
+After additive merge resolves the source `currentCount`, Phase 3's `runBoardCascadeForTask` / `runPullCascade` runs on the source task id. This re-derives all linked tasks' `isCompleted` and all affected board stats atomically inside the same transaction.
+
+#### All writes stay atomic
+
+The merge write (update local `currentCount` + `lastSyncedCount` + `version`) + the cascade (`runBoardCascadeForTask`) happen in the **same Dexie / GRDB transaction** as the upsert. A cascade failure rolls back the merge so the safety-net pull can retry cleanly — same invariant as the existing pull cascade.
+
+#### `lastSyncedCount` update on push
+
+In `pushSync`, after a **local-wins** push completes successfully:
+- If `entityType === 'tasks'` AND `payload.type === 'counting'`: update local `lastSyncedCount := payload.currentCount` (the value just confirmed remote).
+- This is a targeted `db.tasks.update(id, { lastSyncedCount })` (web) / `UPDATE tasks SET lastSyncedCount = ? WHERE id = ?` (iOS) — NOT a full Task rewrite, NOT a version bump (it's sync bookkeeping, not a user edit).
+
+#### Migration versions
+
+- **Web**: Dexie v11 — adds `lastSyncedCount` to tasks schema string. No data transform (existing rows get `undefined`; treated as null by merge logic).
+- **iOS**: GRDB v16 — `ALTER TABLE tasks ADD COLUMN lastSyncedCount INTEGER;`. No index needed. No data backfill.
+
+#### Dead-scaffolding cleanup (ships with Phase 4)
+
+Per the Phase 0 Phasing section: `ProgressCounter` types, Dexie / GRDB table definitions, and `calculateCountingRollup` from `rollup.ts` are removed in this PR. The `progress_counters` Dexie table is dropped via a `v11.stores({ progressCounters: null })` declaration. The GRDB table is left in place (SQLite cannot drop tables cleanly across migrations without recreating — inert rows are the least-risk cleanup; marked with a GRDB comment).
+
 ### Status
 
 | Step | State |
 | --- | --- |
 | Design (this section) | Locked 2026-06-04 |
-| Branch | `docs/shared-counters-design-phase-0` |
+| Phase 4 design | Locked 2026-06-06 |
+| Branch | `feature/shared-counter-sync-additive` |
 | PR | TBD — link added when opened |
 | Issue | [#84](https://github.com/2014sheas/oybc/issues/84) (investigation only; Phase 0 doc resolves the 7 design decisions) |
 

@@ -492,6 +492,28 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN baseline INTEGER")
         }
 
+        // v16: Phase 4 — Shared Counter Sync. Adds `lastSyncedCount` (INTEGER)
+        // to `tasks`. This is the common-ancestor value used by SyncService's
+        // additive-merge conflict resolver: when both local and remote have
+        // incremented since `lastSyncedCount`, the resolver sums the deltas
+        // instead of picking a winner (which would lose one device's work).
+        //
+        // NULL for existing rows: the nil value causes the conflict resolver to
+        // fall back to plain LWW on first conflict after migration — correct,
+        // since no common ancestor is known yet.
+        //
+        // Dead-scaffolding note (Decision 1 / Phase 4 cleanup): the `progress_counters`
+        // SQLite table remains in place — SQLite cannot drop a table without
+        // recreating all referencing tables, and the table is already inert (no
+        // live reads/writes, not in SYNCABLE_COLLECTIONS). The v11 Dexie
+        // migration drops the IndexedDB equivalent. The iOS table is intentionally
+        // left as a zero-row artifact; a future major-version cleanup could
+        // replace the schema with a fresh `CREATE TABLE` at a higher migration
+        // version if disk space becomes a concern.
+        migrator.registerMigration("v16") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN lastSyncedCount INTEGER")
+        }
+
         return migrator
     }
 

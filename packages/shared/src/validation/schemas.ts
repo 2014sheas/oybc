@@ -445,6 +445,14 @@ export const TaskSchema = z.object({
   timeframe: z.nativeEnum(Timeframe).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  // Phase 2 — Shared Counters. `sharedCounterId` points at the source counting
+  // task whose `currentCount` drives this task's displayed value.
+  sharedCounterId: z.string().uuid().nullable().optional(),
+  // Phase 2 — Shared Counters. Baseline offset (source count at link time).
+  baseline: z.number().int().min(0).nullable().optional(),
+  // Phase 4 — Shared Counter Sync. Common-ancestor value for additive-merge
+  // conflict resolution. Null/absent means no confirmed Firestore round-trip yet.
+  lastSyncedCount: z.number().int().nonnegative().nullable().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.

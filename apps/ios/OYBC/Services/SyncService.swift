@@ -514,6 +514,9 @@ final class SyncService: ObservableObject {
                 // No remote document — push directly.
                 try await writeFirestoreDoc(docRef: docRef, data: payload)
                 try markCompleted(item)
+                // Phase 4: After a successful push of a counting task, advance
+                // lastSyncedCount so subsequent conflicts can compute the local delta.
+                updateLastSyncedCountAfterPush(entityType: item.entityType, entityId: item.entityId, payload: payload)
                 result.pushed += 1
                 recordEvent(.pushed)
                 let msg = "Pushed \(item.entityType)/\(item.entityId) (new)"
@@ -532,6 +535,10 @@ final class SyncService: ObservableObject {
             if winner == "local" {
                 try await writeFirestoreDoc(docRef: docRef, data: payload)
                 try markCompleted(item)
+                // Phase 4: After a successful local-wins push of a counting task,
+                // advance lastSyncedCount so subsequent conflicts can compute the
+                // local delta correctly.
+                updateLastSyncedCountAfterPush(entityType: item.entityType, entityId: item.entityId, payload: payload)
                 result.pushed += 1
                 recordEvent(.pushed)
                 let localV = payload["version"] as? Int ?? 0
@@ -733,17 +740,44 @@ final class SyncService: ObservableObject {
                         didWrite = true
                         pullOutcome = (true, "new")
                     } else {
-                        let winner = resolveConflict(local: localData!, remote: remoteData)
-                        if winner == "remote" {
-                            try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                        // Phase 4 — Additive merge for shared-counter sources on pull.
+                        let mergeResult: Int? = collection.firestoreName == "tasks"
+                            ? try tryAdditiveMerge(
+                                db: db,
+                                remoteId: remoteId,
+                                localData: localData!,
+                                remoteData: remoteData
+                              )
+                            : nil
+                        if let merged = mergeResult {
+                            // Enqueue push of the merged value (full JSON serialisation
+                            // happens after the transaction via the SyncQueue path).
+                            try db.execute(sql: """
+                                INSERT INTO sync_queue
+                                    (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                                SELECT ?, 'tasks', id,
+                                       'update',
+                                       (SELECT json_object('id', id, 'currentCount', currentCount, 'version', version,
+                                                           'updatedAt', updatedAt, 'lastSyncedCount', lastSyncedCount,
+                                                           'userId', userId) FROM tasks WHERE id = ?),
+                                       'pending', 0, ?, 0
+                                FROM tasks WHERE id = ?
+                                """, arguments: [UUID().uuidString, remoteId, AppDatabase.currentTimestamp(), remoteId])
                             didWrite = true
-                            let remoteV = remoteData["version"] as? Int ?? 0
-                            let localV = localData!["version"] as? Int ?? 0
-                            pullOutcome = (true, "remote v\(remoteV) > local v\(localV)")
+                            pullOutcome = (true, "additive-merge merged=\(merged)")
                         } else {
-                            let localV = localData!["version"] as? Int ?? 0
-                            let remoteV = remoteData["version"] as? Int ?? 0
-                            pullOutcome = (false, "local v\(localV) >= remote v\(remoteV)")
+                            let winner = resolveConflict(local: localData!, remote: remoteData)
+                            if winner == "remote" {
+                                try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                                didWrite = true
+                                let remoteV = remoteData["version"] as? Int ?? 0
+                                let localV = localData!["version"] as? Int ?? 0
+                                pullOutcome = (true, "remote v\(remoteV) > local v\(localV)")
+                            } else {
+                                let localV = localData!["version"] as? Int ?? 0
+                                let remoteV = remoteData["version"] as? Int ?? 0
+                                pullOutcome = (false, "local v\(localV) >= remote v\(remoteV)")
+                            }
                         }
                     }
 
@@ -1354,18 +1388,47 @@ extension SyncService {
                     didWrite = true
                     log("Pulled \(collection.firestoreName)/\(remoteId) (new, listener)")
                 } else {
-                    let winner = resolveConflict(local: localData!, remote: remoteData)
-                    if winner == "remote" {
-                        try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                    // Phase 4 — Additive merge for shared-counter sources on pull.
+                    // Fires before LWW resolution when both local and remote have
+                    // incremented a counting task's currentCount since lastSyncedCount.
+                    let listenerMergeResult: Int? = collection.firestoreName == "tasks"
+                        ? try tryAdditiveMerge(
+                            db: db,
+                            remoteId: remoteId,
+                            localData: localData!,
+                            remoteData: remoteData
+                          )
+                        : nil
+                    if let merged = listenerMergeResult {
+                        // Merged value written; enqueue push of merged result.
+                        try db.execute(sql: """
+                            INSERT INTO sync_queue
+                                (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                            SELECT ?, 'tasks', id,
+                                   'update',
+                                   (SELECT json_object('id', id, 'currentCount', currentCount, 'version', version,
+                                                       'updatedAt', updatedAt, 'lastSyncedCount', lastSyncedCount,
+                                                       'userId', userId) FROM tasks WHERE id = ?),
+                                   'pending', 0, ?, 0
+                            FROM tasks WHERE id = ?
+                            """, arguments: [UUID().uuidString, remoteId, AppDatabase.currentTimestamp(), remoteId])
                         didWrite = true
-                        let remoteV = remoteData["version"] as? Int ?? 0
-                        let localV = localData!["version"] as? Int ?? 0
-                        log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
+                        log("Pulled \(collection.firestoreName)/\(remoteId) (additive-merge, merged=\(merged), listener)")
+                    } else {
+                        let winner = resolveConflict(local: localData!, remote: remoteData)
+                        if winner == "remote" {
+                            try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                            didWrite = true
+                            let remoteV = remoteData["version"] as? Int ?? 0
+                            let localV = localData!["version"] as? Int ?? 0
+                            log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
+                        }
                     }
                 }
                 // Pull cascade — runs in the same transaction as the upsert so
                 // a cascade error rolls back the upsert. Task.version is NOT
-                // bumped — the pulled value is authoritative.
+                // bumped — the pulled value is authoritative (except additive merge
+                // which writes a new local version above).
                 if didWrite {
                     if collection.firestoreName == "tasks" {
                         try runPullCascade(db: db, changedTaskId: remoteId)
@@ -1379,6 +1442,107 @@ extension SyncService {
             }
         } catch {
             log("Listener apply failed for \(collection.firestoreName)/\(remoteId): \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Phase 4: Additive-Merge Helpers
+
+    /// Attempts additive-merge conflict resolution for a COUNTING source task.
+    ///
+    /// Called from both the real-time listener path and the safety-net pull path,
+    /// INSIDE an existing GRDB write transaction.
+    ///
+    /// Returns the merged count if additive merge was applied, or `nil` if the
+    /// caller should fall through to standard LWW resolution.
+    ///
+    /// When merge fires:
+    ///   1. Writes merged `currentCount`, advances `lastSyncedCount` to remote's value,
+    ///      bumps `version`, updates `updatedAt` — all in the enclosing transaction.
+    ///   2. Returns the merged count so the caller can log it and enqueue a push.
+    ///
+    /// - Parameters:
+    ///   - db: The active GRDB write transaction.
+    ///   - remoteId: The task id.
+    ///   - localData: Local GRDB row as a dictionary (from `fetchLocalRecord`).
+    ///   - remoteData: Remote Firestore document as a dictionary.
+    /// - Returns: Merged count if merge fired; `nil` if LWW should resolve.
+    private func tryAdditiveMerge(
+        db: Database,
+        remoteId: String,
+        localData: [String: Any],
+        remoteData: [String: Any]
+    ) throws -> Int? {
+        // Only applies to COUNTING tasks.
+        guard let remoteType = remoteData["type"] as? String, remoteType == "counting" else { return nil }
+        guard let localType = localData["type"] as? String, localType == "counting" else { return nil }
+
+        let localCount = (localData["currentCount"] as? Int64).map(Int.init) ?? (localData["currentCount"] as? Int) ?? 0
+        let remoteCount = (remoteData["currentCount"] as? Int64).map(Int.init) ?? (remoteData["currentCount"] as? Int) ?? 0
+        let lastSyncedCount: Int? = (localData["lastSyncedCount"] as? Int64).map(Int.init) ?? (localData["lastSyncedCount"] as? Int)
+
+        guard needsAdditiveMerge(localCount: localCount, remoteCount: remoteCount, lastSyncedCount: lastSyncedCount) else {
+            return nil
+        }
+
+        // Check if this task is a shared-counter source (any task references it).
+        let linkedCount = try Int.fetchOne(
+            db,
+            sql: "SELECT COUNT(*) FROM tasks WHERE sharedCounterId = ? AND isDeleted = 0",
+            arguments: [remoteId]
+        ) ?? 0
+        guard linkedCount > 0 else { return nil }
+
+        let mergeResult = additiveMergeCount(
+            localCount: localCount,
+            remoteCount: remoteCount,
+            lastSyncedCount: lastSyncedCount
+        )
+        let merged = mergeResult.merged
+        let localVersion = (localData["version"] as? Int64).map(Int.init) ?? (localData["version"] as? Int) ?? 0
+        let now = AppDatabase.currentTimestamp()
+
+        try db.execute(sql: """
+            UPDATE tasks
+            SET currentCount = ?,
+                lastSyncedCount = ?,
+                version = ?,
+                updatedAt = ?
+            WHERE id = ?
+            """, arguments: [merged, remoteCount, localVersion + 1, now, remoteId])
+
+        return merged
+    }
+
+    /// After a successful local-wins push of a COUNTING task to Firestore,
+    /// advance `lastSyncedCount` to the pushed `currentCount` value so the
+    /// next conflict can compute the local delta correctly.
+    ///
+    /// This is a fire-and-forget bookkeeping write: non-fatal on failure
+    /// (the next conflict simply falls back to LWW).
+    ///
+    /// - Parameters:
+    ///   - entityType: The sync queue item's `entityType`.
+    ///   - entityId: The task id.
+    ///   - payload: The sync payload that was just pushed to Firestore.
+    private func updateLastSyncedCountAfterPush(
+        entityType: String,
+        entityId: String,
+        payload: [String: Any]
+    ) {
+        guard entityType == "tasks" else { return }
+        guard let taskType = payload["type"] as? String, taskType == "counting" else { return }
+        let pushed64 = payload["currentCount"] as? Int64
+        let pushedInt = payload["currentCount"] as? Int
+        guard let pushedCount = pushed64.map(Int.init) ?? pushedInt else { return }
+
+        do {
+            try AppDatabase.shared.write { db in
+                try db.execute(sql: """
+                    UPDATE tasks SET lastSyncedCount = ? WHERE id = ?
+                    """, arguments: [pushedCount, entityId])
+            }
+        } catch {
+            log("Warning: could not advance lastSyncedCount for tasks/\(entityId): \(error.localizedDescription)")
         }
     }
 

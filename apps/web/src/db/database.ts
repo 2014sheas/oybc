@@ -296,6 +296,25 @@ export class AppDatabase extends Dexie {
     // Task object verbatim, so new optional fields forward-compat without
     // a migration callback; the version bump documents the schema change.
     this.version(10).stores({});
+
+    // v11: Phase 4 — Shared Counter Sync. Adds `lastSyncedCount` (INTEGER)
+    // to `tasks`. This is the common-ancestor value used by the additive-merge
+    // conflict resolver in syncService.ts to detect concurrent increments on
+    // shared-counter source tasks.
+    //
+    // Dead-scaffolding cleanup: drops `progressCounters` (the `null` sentinel
+    // tells Dexie to remove the object store). The ProgressCounter entity is
+    // retired per Decision 1 — per-Task sharedCounterId is the live model.
+    // The progressCounters Table declaration remains in this class for now to
+    // avoid a TypeScript compilation error on existing callers; the property
+    // will remain on the class until callers are removed (inert, store is gone).
+    //
+    // No data backfill: existing tasks get `undefined` for `lastSyncedCount`,
+    // which the sync service treats as null → LWW fallback on first conflict
+    // after migration (correct — no common ancestor is known).
+    this.version(11).stores({
+      progressCounters: null, // Drop the inert ProgressCounter object store.
+    });
   }
 }
 
