@@ -72,6 +72,16 @@ final class TaskLibraryViewModel {
     /// fetching the full table and tallying in-memory is fine at small N.
     var allLibraryBoardTasks: [BoardTask] = []
 
+    /// Every task id that appears as a child of at least one compound.
+    /// Recomputed on each reload alongside compoundChildrenByCompound.
+    /// iOS twin of web's `TaskLibrary.childTaskIds`. (#73)
+    var childTaskIds: Set<String> = []
+
+    /// Reverse map: child task id → array of parent compound task ids.
+    /// A child may belong to multiple parents.
+    /// iOS twin of web's `TaskLibrary.childToParents`. (#73)
+    var childToParents: [String: [String]] = [:]
+
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
@@ -132,6 +142,17 @@ final class TaskLibraryViewModel {
                     grouped[id]?.sort { $0.childIndex < $1.childIndex }
                 }
                 self.compoundChildrenByCompound = grouped
+                // #73 — derive child-id set + reverse (child → parents) map.
+                var ids = Set<String>()
+                var reverseMap: [String: [String]] = [:]
+                for (compoundId, links) in grouped {
+                    for link in links {
+                        ids.insert(link.childTaskId)
+                        reverseMap[link.childTaskId, default: []].append(compoundId)
+                    }
+                }
+                self.childTaskIds = ids
+                self.childToParents = reverseMap
                 self.loadError = nil
             }
         } catch {

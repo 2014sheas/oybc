@@ -33,6 +33,9 @@ struct TasksTabView: View {
     @State private var vm = TasksTabViewModel()
     @State private var showNewTaskSheet = false
 
+    /// Issue #73 — compounds the user manually expanded in this session.
+    @State private var expandedCompoundIds: Set<String> = []
+
     /// Task + its precomputed deletion impact, bundled so the confirm
     /// sheet is driven by a single Identifiable. Presenting off two
     /// separate `@State` (the task plus a companion impact) let the sheet
@@ -74,7 +77,8 @@ struct TasksTabView: View {
                 statusFilter: $vm.statusFilter,
                 usageFilter: $vm.usageFilter,
                 sortBy: $vm.sortBy,
-                showExpired: $vm.showExpired
+                showExpired: $vm.showExpired,
+                groupByCompound: $vm.groupByCompound
             )
             .padding(16)
 
@@ -94,43 +98,113 @@ struct TasksTabView: View {
             } else {
                 let placementCounts = vm.placementCounts(boardTasks: library.allLibraryBoardTasks)
                 let activeCounts = vm.activePlacementCounts(boardTasks: library.allLibraryBoardTasks)
+
+                // Issue #73 — merge manual expand state with search-driven
+                // auto-expand. Mirrors web's `effectiveExpanded` useMemo.
+                let independentlyPlaced = TasksTabViewModel.independentlyPlacedTaskIds(
+                    childTaskIds: library.childTaskIds,
+                    placementCounts: placementCounts
+                )
+                let autoExpand = TasksTabViewModel.autoExpandCompoundIds(
+                    search: vm.search,
+                    library: library,
+                    groupByCompound: vm.groupByCompound,
+                    independentlyPlaced: independentlyPlaced
+                )
+                let effectiveExpanded = expandedCompoundIds.union(autoExpand)
+
                 List {
                     ForEach(filtered, id: \.id) { task in
-                        // Plain Button (not NavigationLink) so we can
-                        // route through the same path-append the LazyVStack
-                        // version used — keeps the existing
-                        // `navigationDestination(for: String.self)` wiring
-                        // below untouched.
-                        Button {
-                            path.append(task.id)
-                        } label: {
-                            TaskRowView(
+                        let children = library.compoundChildrenByCompound[task.id] ?? []
+                        // Expandable only when grouping is on and the task
+                        // is a compound with at least one child.
+                        let isExpandable = vm.groupByCompound
+                            && task.type == .compound
+                            && !children.isEmpty
+                        let isExpanded = isExpandable && effectiveExpanded.contains(task.id)
+
+                        if isExpandable {
+                            // Compound group row: disclosure chevron +
+                            // optional nested children below.
+                            CompoundGroupRowView(
                                 task: task,
                                 placementCount: placementCounts[task.id] ?? 0,
                                 activePlacementCount: activeCounts[task.id] ?? 0,
-                                childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0
+                                childCount: children.count,
+                                isExpandable: true,
+                                isExpanded: isExpanded,
+                                onToggleExpand: {
+                                    if expandedCompoundIds.contains(task.id) {
+                                        expandedCompoundIds.remove(task.id)
+                                    } else {
+                                        expandedCompoundIds.insert(task.id)
+                                    }
+                                },
+                                children: children.map { link in
+                                    (link: link, task: library.task(byId: link.childTaskId))
+                                },
+                                childPlacementCounts: placementCounts,
+                                childActivePlacementCounts: activeCounts,
+                                onChildTap: { childId in path.append(childId) }
                             )
-                        }
-                        .buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            Button {
-                                editingTask = task
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
+                            // Tapping the compound row body navigates to its detail.
+                            .contentShape(Rectangle())
+                            .onTapGesture { path.append(task.id) }
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    editingTask = task
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
                             }
-                            .tint(.blue)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            // `allowsFullSwipe: false` — destructive
-                            // commit requires a deliberate tap on the
-                            // revealed button, not a gesture flick.
-                            Button(role: .destructive) {
-                                prepareDelete(for: task)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    prepareDelete(for: task)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        } else {
+                            // Plain Button (not NavigationLink) so we can
+                            // route through the same path-append the LazyVStack
+                            // version used — keeps the existing
+                            // `navigationDestination(for: String.self)` wiring
+                            // below untouched.
+                            Button {
+                                path.append(task.id)
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                TaskRowView(
+                                    task: task,
+                                    placementCount: placementCounts[task.id] ?? 0,
+                                    activePlacementCount: activeCounts[task.id] ?? 0,
+                                    childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    editingTask = task
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                // `allowsFullSwipe: false` — destructive
+                                // commit requires a deliberate tap on the
+                                // revealed button, not a gesture flick.
+                                Button(role: .destructive) {
+                                    prepareDelete(for: task)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }

@@ -97,6 +97,11 @@ struct BoardWizardTasksStepView: View {
     @State private var activeFilter: LibraryFilter = .all
     @State private var expandedCompositeId: String? = nil
     @State private var isSheetPresented: Bool = false
+    /// Issue #73 — Default true. When on, primitive tasks that are children
+    /// of a compound are hidden from the flat list. Compounds already render
+    /// as expandable rows in the composites section below; this toggle hides
+    /// their leaf primitives from the top list so they aren't double-counted.
+    @State private var groupByCompound: Bool = true
     /// Phase 6.1: parent-board tasks for the "From parent boards" filter.
     /// Reloaded on appear and whenever `currentTimeframe` changes.
     @State private var parentTasksVM = ParentBoardTasksViewModel()
@@ -146,6 +151,17 @@ struct BoardWizardTasksStepView: View {
         !TasksTabViewModel.isTaskExpired(t)
     }
 
+    /// Issue #73 — When groupByCompound is on, returns false for any task
+    /// that is a direct child of a compound (i.e., already surfaced in the
+    /// composites region below the flat list). Mirrors web's `notGroupedChild`
+    /// predicate in `BoardWizardTasksStep.tsx`. Uses the wizard rule: ALL
+    /// children hidden when grouping on (no independent-placement exception —
+    /// the wizard doesn't have BoardTask placements for tasks not yet placed).
+    private func notGroupedChild(_ t: Task) -> Bool {
+        guard groupByCompound else { return true }
+        return !library.childTaskIds.contains(t.id)
+    }
+
     /// Bug #85 — Effective task pool: live library tasks merged with any
     /// in-memory pending tasks (created this session, not yet in GRDB).
     /// Pending tasks are appended after library tasks; ids are deduplicated
@@ -172,9 +188,11 @@ struct BoardWizardTasksStepView: View {
         // composite) are rendered in the composites region below, so the
         // primitives pool never includes compounds.
         // Bug #85 — use effectiveAllTasks to include pending tasks.
-        case .all:       pool = effectiveAllTasks.filter { notExpired($0) && $0.type != .compound }
-        case .normal:    pool = effectiveAllTasks.filter { notExpired($0) && $0.type == .normal }
-        case .counting:  pool = effectiveAllTasks.filter { notExpired($0) && $0.type == .counting }
+        // Issue #73 — notGroupedChild hides primitives that are children of
+        // a compound (they're already accessible by expanding the parent row).
+        case .all:       pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type != .compound }
+        case .normal:    pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .normal }
+        case .counting:  pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .counting }
         case .progress:  pool = []
         case .composite: pool = []
         // Phase 6.1: source is the parent-board-tasks query, not the
@@ -672,6 +690,38 @@ struct BoardWizardTasksStepView: View {
                 ),
                 onTabChange: { _ in }
             )
+
+            // Issue #73 — Group subtasks chip. Only shown when the from-board
+            // branch is not active (it has its own grid UI). Capsule pill
+            // matching the style in `TasksFilterControlsView`.
+            if activeFilter != .fromBoard {
+                HStack(spacing: 0) {
+                    Button {
+                        groupByCompound.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Group subtasks")
+                                .font(.system(size: 12, weight: .medium))
+                            if groupByCompound {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                        }
+                        .foregroundColor(groupByCompound ? .blue : .secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(groupByCompound ? Color.blue.opacity(0.12) : Color(.systemGray6))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(groupByCompound ? Color.blue : Color(.systemGray4), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(groupByCompound
+                        ? "Group subtasks, on. Tap to show flat list."
+                        : "Group subtasks, off. Tap to group subtasks under parents.")
+                    .accessibilityAddTraits(.isToggle)
+                    Spacer()
+                }
+            }
         }
     }
 

@@ -116,3 +116,27 @@
   outline: 2px solid var(--error-text, #dc3545);
   outline-offset: -2px;
 }
+
+/* ── Leading disclosure (compound expand/collapse — issue #73) ─────────────── */
+
+.disclosureButton {
+  flex-shrink: 0;
+  width: 2.25rem;
+  border: none;
+  border-right: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.disclosureButton:hover {
+  background-color: var(--bg-hover, var(--bg-secondary));
+  color: var(--text-primary);
+}
+
+.disclosureButton:focus-visible {
+  outline: 2px solid var(--active-bg);
+  outline-offset: -2px;
+}

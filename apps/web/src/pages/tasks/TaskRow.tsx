@@ -20,6 +20,13 @@ export interface TaskRowProps {
   /** Quick-action: open the delete confirm dialog for this task without
    *  navigating to the detail page. Omit to hide the ✕ button. */
   onDelete?: (taskId: string) => void;
+  /** Issue #73 — when set, render a leading disclosure chevron (used for a
+   *  top-level compound that has children to nest). */
+  isExpandable?: boolean;
+  /** Whether this expandable row is currently open. */
+  isExpanded?: boolean;
+  /** Fired when the disclosure chevron is tapped. */
+  onToggleExpand?: (taskId: string) => void;
 }
 
 /**
@@ -51,6 +58,9 @@ export function TaskRow({
   onClick,
   onEdit,
   onDelete,
+  isExpandable = false,
+  isExpanded = false,
+  onToggleExpand,
 }: TaskRowProps): React.ReactElement {
   const status = computeStatusLabel(task);
   const subtitle = computeSubtitle(task, childCount);
@@ -60,6 +70,18 @@ export function TaskRow({
 
   return (
     <div className={styles.row}>
+      {isExpandable && (
+        <button
+          type="button"
+          className={styles.disclosureButton}
+          onClick={() => onToggleExpand?.(task.id)}
+          aria-label={isExpanded ? `Collapse ${titleForA11y}` : `Expand ${titleForA11y}`}
+          aria-expanded={isExpanded}
+          title={isExpanded ? 'Collapse subtasks' : 'Expand subtasks'}
+        >
+          <span aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
+        </button>
+      )}
       <button
         type="button"
         className={styles.mainButton}

@@ -17,6 +17,10 @@ struct TasksFilterControlsView: View {
     /// Phase 6.Y — Timeboxed Tasks toggle. False (the default) hides
     /// tasks whose `endDate < now`; toggle reveals them.
     @Binding var showExpired: Bool
+    /// Issue #73 — When true (default), compound children with no direct
+    /// BoardTask placements are nested under their parent instead of shown
+    /// at top level. Toggle to flatten.
+    @Binding var groupByCompound: Bool
 
     @State private var isExpanded: Bool = false
 
@@ -60,6 +64,35 @@ struct TasksFilterControlsView: View {
                 activeTab: typeFilterRaw,
                 onTabChange: { _ in }
             )
+
+            // Issue #73 — Group subtasks chip. After type chips so it reads as
+            // a secondary modifier. Capsule pill matching the existing chip vocabulary.
+            HStack(spacing: 0) {
+                Button {
+                    groupByCompound.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Group subtasks")
+                            .font(.system(size: 12, weight: .medium))
+                        if groupByCompound {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                    }
+                    .foregroundColor(groupByCompound ? .blue : .secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(groupByCompound ? Color.blue.opacity(0.12) : Color(.secondarySystemBackground))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(groupByCompound ? Color.blue : Color(.separator), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(groupByCompound
+                    ? "Group subtasks, on. Tap to show flat list."
+                    : "Group subtasks, off. Tap to group subtasks under parents.")
+                .accessibilityAddTraits(.isToggle)
+                Spacer()
+            }
 
             if isExpanded {
                 expandedPanel
