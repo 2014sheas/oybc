@@ -81,8 +81,11 @@ export function EditBoardSheet({
   const [centerType, setCenterType] = useState<CenterSquareType>(CenterSquareType.FREE);
   const [centerCustomName, setCenterCustomName] = useState('');
 
-  // CHOSEN-to-FREE guard: disable the CHOSEN option when there are no
-  // candidate tasks already on this board.
+  // CHOSEN guard: CHOSEN is only available when the board already has a
+  // centerTaskId (i.e., it was previously created with a chosen center AND
+  // the placement still exists). Merely having candidate tasks in boardTasks
+  // is insufficient — the sheet has no mechanism to collect a new centerTaskId,
+  // so we cannot allow FREE → CHOSEN when centerTaskId is null.
   const [hasCandidateTasks, setHasCandidateTasks] = useState(false);
 
   const [saving, setSaving] = useState(false);
@@ -143,10 +146,12 @@ export function EditBoardSheet({
       }
     }
 
-    // Validate center-switch: FREE → CHOSEN is disabled without candidates.
-    if (centerType === CenterSquareType.CHOSEN && !hasCandidateTasks) {
+    // Validate center-switch: CHOSEN is only valid when board already has a
+    // centerTaskId. The sheet has no mechanism to select a new center task,
+    // so FREE → CHOSEN with centerTaskId == null would persist invalid state.
+    if (centerType === CenterSquareType.CHOSEN && (board.centerTaskId == null || !hasCandidateTasks)) {
       setValidationError(
-        'No tasks are placed on this board — switch to CHOSEN is unavailable.',
+        'CHOSEN is unavailable — this board has no existing center task to restore.',
       );
       return;
     }
@@ -226,9 +231,9 @@ export function EditBoardSheet({
         )}
 
         {/* Center-switch guard note */}
-        {!hasCandidateTasks && centerType !== CenterSquareType.CHOSEN && (
+        {(board.centerTaskId == null || !hasCandidateTasks) && centerType !== CenterSquareType.CHOSEN && (
           <p className={editStyles.infoNote}>
-            "Pick one of my board tasks" is unavailable — no tasks are placed on this board.
+            "Pick one of my board tasks" is unavailable — this board has no existing center task.
           </p>
         )}
 
@@ -253,7 +258,7 @@ export function EditBoardSheet({
             isRecurring={false}
             isCore={false}
             weekStartDay={weekStartDay}
-            chosenCenterDisabled={!hasCandidateTasks}
+            chosenCenterDisabled={board.centerTaskId == null || !hasCandidateTasks}
           />
         </div>
       </div>

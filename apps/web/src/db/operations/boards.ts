@@ -1,9 +1,17 @@
 import { db } from '../database';
-import type { Board, CreateBoardInput } from '@oybc/shared';
-import { BoardStatus, SyncOperationType } from '@oybc/shared';
+import type { Board, Task, CompoundChild, CreateBoardInput } from '@oybc/shared';
+import {
+  BoardStatus,
+  SyncOperationType,
+  SyncStatus,
+  findTransitiveParentCompounds,
+  findAffectedBoardIds,
+  computeBoardStatsUpdate,
+} from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { runBoardCascadeForTask } from './orchestration';
+import { fetchAllCompoundChildren } from './compoundChildren';
+import { fetchAllBoardTasks } from './boardTasks';
 
 /**
  * Board CRUD Operations
@@ -99,8 +107,13 @@ export async function updateBoardAndCascade(
     sanitized.centerSquareType = patch.centerSquareType;
     // Sanitize auxiliary center fields based on the new type.
     if (patch.centerSquareType === CenterSquareType.CUSTOM_FREE) {
-      if (patch.centerSquareCustomName != null) {
-        sanitized.centerSquareCustomName = patch.centerSquareCustomName;
+      // Fix #1: distinguish undefined (skip field entirely) from null (user
+      // explicitly cleared the name — write undefined so IndexedDB's structured
+      // clone omits the property, clearing the prior stored value).
+      // The old `!= null` check swallowed null and left the prior value in place.
+      if (patch.centerSquareCustomName !== undefined) {
+        // null from the UI → undefined (clear); string from the UI → write it.
+        sanitized.centerSquareCustomName = patch.centerSquareCustomName ?? undefined;
       }
     } else {
       // Switching away from CUSTOM_FREE → clear the custom name.
@@ -131,17 +144,91 @@ export async function updateBoardAndCascade(
 
   if (placements.length === 0) return;
 
-  // 3. Re-derive every placed task inside one transaction. One
-  //    `runBoardCascadeForTask` call resolves the full affected-board set,
-  //    so multiple calls for tasks on the same board are safe (idempotent
-  //    stat writes) — they all see the freshly-written board row.
+  // 3. Batch cascade: load shared tables ONCE, find the union of affected
+  //    board IDs across all placed tasks, then write one stats update per
+  //    affected board. This replaces the previous per-task loop which did
+  //    O(N) full-table scans for a 5×5 board (25 cascade calls).
   const taskIds = Array.from(new Set(placements.map((bt) => bt.taskId)));
   await db.transaction(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
+      const now = currentTimestamp();
+      const allChildren = await fetchAllCompoundChildren();
+      const allBoardTasks = await fetchAllBoardTasks();
+      const allTasks = await db.tasks.toArray();
+      const allBoards = await db.boards.toArray();
+
+      const taskById: Record<string, Task> = {};
+      for (const t of allTasks) taskById[t.id] = t;
+
+      const childrenByCompound: Record<string, CompoundChild[]> = {};
+      for (const c of allChildren) {
+        (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+      }
+
+      // Collect the union of all affected board IDs across every placed task.
+      const affectedBoardIds = new Set<string>();
       for (const taskId of taskIds) {
-        await runBoardCascadeForTask(taskId);
+        const parents = findTransitiveParentCompounds(taskId, allChildren);
+        for (const bid of findAffectedBoardIds(taskId, parents, allBoardTasks)) {
+          affectedBoardIds.add(bid);
+        }
+      }
+
+      // Update each affected board exactly once.
+      for (const affectedBoardId of affectedBoardIds) {
+        const affectedBoard = allBoards.find((b) => b.id === affectedBoardId);
+        if (!affectedBoard || affectedBoard.isDeleted) continue;
+
+        // Re-fetch so we see the just-written metadata update (updateBoard ran above).
+        const freshBoard = await db.boards.get(affectedBoardId);
+        if (!freshBoard || freshBoard.isDeleted) continue;
+
+        const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
+        const stats = computeBoardStatsUpdate(
+          freshBoard,
+          boardTasksOnBoard,
+          childrenByCompound,
+          taskById,
+          allBoards,
+        );
+
+        const isGreenlog = stats.completedTasks >= freshBoard.boardSize * freshBoard.boardSize;
+
+        const boardUpdate: Partial<Board> = {
+          completedTasks: stats.completedTasks,
+          linesCompleted: stats.linesCompleted,
+          completedLineIds: stats.completedLineIds,
+          updatedAt: now,
+          version: (freshBoard.version ?? 1) + 1,
+        };
+
+        if (isGreenlog && freshBoard.status === BoardStatus.ACTIVE) {
+          boardUpdate.status = BoardStatus.COMPLETED;
+          boardUpdate.completedAt = now;
+        }
+        if (!isGreenlog && freshBoard.status === BoardStatus.COMPLETED) {
+          boardUpdate.status = BoardStatus.ACTIVE;
+          boardUpdate.completedAt = undefined;
+        }
+
+        await db.boards.update(affectedBoardId, boardUpdate);
+
+        const updatedBoard = await db.boards.get(affectedBoardId);
+        if (updatedBoard) {
+          await db.syncQueue.add({
+            id: generateUUID(),
+            entityType: 'boards',
+            entityId: affectedBoardId,
+            operationType: SyncOperationType.UPDATE,
+            payload: JSON.stringify(updatedBoard),
+            status: SyncStatus.PENDING,
+            retryCount: 0,
+            createdAt: now,
+            priority: 0,
+          });
+        }
       }
     },
   );

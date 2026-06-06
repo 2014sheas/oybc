@@ -137,11 +137,11 @@ describe('center-square switch semantics', () => {
       centerTaskId: 'center-task', // row preserved (not cleared)
     });
     const statsFree = computeBoardStatsUpdate(boardFree, bts, {}, taskById);
-    // FREE center auto-completes (counts as +1) AND the preserved BoardTask
-    // is still at (1,1) but derivation treats the center slot as FREE for
-    // an odd board when no BoardTask occupies it at bingo-detection level.
-    // The key assertion: at minimum 1 completed task (the task itself).
-    expect(statsFree.completedTasks).toBeGreaterThanOrEqual(1);
+    // FREE center on an odd board auto-completes the center cell ONLY when no
+    // BoardTask occupies it. Here a BoardTask IS at (1,1), so the center is
+    // treated as a normal placed task — isCenterAutoCompleted returns false.
+    // The completed count is exactly 1 (the center-task itself, which isCompleted).
+    expect(statsFree.completedTasks).toBe(1);
   });
 
   it('board stats with CUSTOM_FREE center behave like FREE (center auto-completed)', () => {

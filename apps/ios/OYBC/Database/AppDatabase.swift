@@ -863,13 +863,87 @@ extension AppDatabase {
                 now: now
             ).save(db)
 
-            // 3. Re-derive every placed task.
+            // 3. Batch cascade: load shared tables ONCE, find the union of
+            //    affected board IDs across all placed tasks, then write one
+            //    stats update per affected board. This replaces the previous
+            //    per-task loop which did O(N) full-table scans (one per task
+            //    on a 5×5 board = 25 cascade calls). (Copilot review #9)
             let placements = try BoardTask
                 .filter(Column("boardId") == boardId)
                 .fetchAll(db)
             let taskIds = Array(Set(placements.map { $0.taskId }))
+
+            guard !taskIds.isEmpty else { return }
+
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            // Collect the union of all affected board IDs across every placed task.
+            var affectedBoardIds = Set<String>()
             for taskId in taskIds {
-                try Self.runBoardCascadeForTask(db: db, changedTaskId: taskId, now: now)
+                let parents = DerivationPass.findTransitiveParentCompounds(
+                    changedTaskId: taskId,
+                    children: allChildren
+                )
+                let ids = DerivationPass.findAffectedBoardIds(
+                    changedTaskId: taskId,
+                    parentCompounds: parents,
+                    boardTasks: allBoardTasks
+                )
+                affectedBoardIds.formUnion(ids)
+            }
+
+            // Update each affected board exactly once.
+            for affectedBoardId in affectedBoardIds {
+                // Re-fetch to see the just-written metadata update above.
+                guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
+                      !affectedBoard.isDeleted else { continue }
+                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == affectedBoardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: affectedBoard,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards
+                )
+
+                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                affectedBoard.completedTasks = update.completedTasks
+                affectedBoard.totalTasks = totalSquares
+                affectedBoard.linesCompleted = update.linesCompleted
+                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                affectedBoard.updatedAt = now
+                affectedBoard.version += 1
+
+                if isGreenlogNow, affectedBoard.status == .active {
+                    affectedBoard.status = .completed
+                    affectedBoard.completedAt = now
+                } else if !isGreenlogNow, affectedBoard.status == .completed {
+                    affectedBoard.status = .active
+                    affectedBoard.completedAt = nil
+                }
+
+                try affectedBoard.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: affectedBoardId,
+                    operationType: .update,
+                    payload: affectedBoard,
+                    now: now
+                ).save(db)
             }
         }
     }

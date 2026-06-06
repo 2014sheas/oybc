@@ -66,7 +66,13 @@ struct BoardSetupFormView: View {
 
     @ViewBuilder
     private var createBody: some View {
-        if let ctrl = controller {
+        // Wrap the optional controller in a local @Bindable so SwiftUI installs
+        // proper observation tracking for the @Observable BoardWizardViewModel.
+        // Without @Bindable, a plain stored `var controller: BoardWizardViewModel?`
+        // may not trigger body re-evaluation when ctrl.size / ctrl.centerType
+        // change, even though the object is @Observable. (Copilot review #6)
+        if let unwrapped = controller {
+            @Bindable var ctrl = unwrapped
             VStack(alignment: .leading, spacing: 16) {
                 if ctrl.isCore {
                     // Issue #70 — core boards only configure size + center.

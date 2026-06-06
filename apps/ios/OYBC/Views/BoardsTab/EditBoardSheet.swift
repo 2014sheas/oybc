@@ -40,7 +40,10 @@ struct EditBoardSheet: View {
     @State private var centerType: CenterSquareType = .free
     @State private var centerCustomName: String = ""
 
-    // Guard for FREE → CHOSEN: disabled when no tasks are placed on the board.
+    // Guard for CHOSEN: CHOSEN is only available when the board already has a
+    // centerTaskId (previously created with a chosen center AND the placement
+    // still exists). The sheet has no mechanism to collect a new centerTaskId,
+    // so FREE → CHOSEN with centerTaskId == nil would persist invalid state.
     @State private var hasCandidateTasks: Bool = false
 
     @State private var saving: Bool = false
@@ -96,7 +99,7 @@ struct EditBoardSheet: View {
                     centerType: $centerType,
                     centerCustomName: $centerCustomName,
                     weekStartDay: weekStartDay,
-                    chosenCenterDisabled: !hasCandidateTasks
+                    chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks
                 )
             }
             .navigationTitle("Edit board")
@@ -142,8 +145,12 @@ struct EditBoardSheet: View {
             validationError = "Board name is required."
             return
         }
-        if centerType == .chosen && !hasCandidateTasks {
-            validationError = "No tasks are placed on this board — switch to CHOSEN is unavailable."
+        // CHOSEN is only valid when the board already has a centerTaskId.
+        // The sheet has no mechanism to select a new center task, so
+        // FREE → CHOSEN with centerTaskId == nil would persist invalid state
+        // (violates the shared Zod invariant: CHOSEN requires centerTaskId).
+        if centerType == .chosen && (board.centerTaskId == nil || !hasCandidateTasks) {
+            validationError = "CHOSEN is unavailable — this board has no existing center task to restore."
             return
         }
 
