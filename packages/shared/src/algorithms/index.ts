@@ -111,5 +111,11 @@ export type {
 
 export { isTaskExpired } from './taskExpiry';
 
-// ===== Phase 1 — Shared counter spike =====
-export { deriveDisplayedCount } from './sharedCounter';
+// ===== Phase 1 + Phase 3 — Shared counter =====
+export { deriveDisplayedCount, propagateIncrement } from './sharedCounter';
+
+export type {
+  PropagateIncrementSource,
+  PropagateIncrementLinkedTask,
+  LinkedTaskIncrementResult,
+} from './sharedCounter';

@@ -1217,6 +1217,201 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - Phase 3: Shared-counter increment hot-path
+
+    /// Increment the shared-counter source task's `currentCount` by `by` (default 1),
+    /// then re-derive every linked task (tasks where `sharedCounterId == sourceTaskId`
+    /// and `!isDeleted`) and run the board derivation cascade for the source AND
+    /// every linked task — all inside a single GRDB write transaction.
+    ///
+    /// Invariants enforced:
+    ///   - NO HIGH-END CLAMP on the source `currentCount`. Overshoot is intentional.
+    ///   - ONE-WAY LATCH on each linked task's `isCompleted`: once `true`, stays `true`.
+    ///   - All writes (task rows + board cascade + sync entries) are atomic.
+    ///
+    /// The caller (BoardPlayView) calls this instead of the legacy
+    /// `handleCountingTap` when the task being tapped has `sharedCounterId != nil`
+    /// (linked task → increment source) OR when the task is a known source
+    /// (has linked tasks pointing at it → increment source + fan-out).
+    ///
+    /// IMPORTANT: Uses `_Concurrency.Task` explicitly to avoid shadowing by the
+    /// GRDB `Task` model. This function itself is synchronous (throws); callers
+    /// wrap it in `_Concurrency.Task.detached` for off-main-thread execution.
+    ///
+    /// - Parameters:
+    ///   - sourceTaskId: The id of the source (template) counting task.
+    ///   - by: Amount to increment. Must be >= 1.
+    func incrementSharedCounter(sourceTaskId: String, by: Int = 1) throws {
+        guard by >= 1 else {
+            throw NSError(
+                domain: "AppDatabase.incrementSharedCounter",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "incrementSharedCounter: `by` must be >= 1"]
+            )
+        }
+
+        try write { db in
+            let now = Self.currentTimestamp()
+
+            // 1. Fetch and validate the source task.
+            guard var source = try Task.fetchOne(db, key: sourceTaskId) else { return }
+            guard source.type == .counting else {
+                throw NSError(
+                    domain: "AppDatabase.incrementSharedCounter",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "incrementSharedCounter: source task \(sourceTaskId) is not a COUNTING task"]
+                )
+            }
+            guard source.sharedCounterId == nil else {
+                throw NSError(
+                    domain: "AppDatabase.incrementSharedCounter",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "incrementSharedCounter: task \(sourceTaskId) is a linked derived counter; pass the source (template) task id instead"]
+                )
+            }
+
+            // 2. Compute new source count — NO high-end clamp.
+            let prevSourceCount = source.currentCount ?? 0
+            let newSourceCount = prevSourceCount + by
+            let sourceMaxCount = source.maxCount ?? 0
+
+            // ONE-WAY LATCH on source completion.
+            let sourceWasCompleted = source.isCompleted
+            let sourceNowCompleted = sourceWasCompleted || newSourceCount >= sourceMaxCount
+
+            source.currentCount = newSourceCount
+            source.isCompleted = sourceNowCompleted
+            if !sourceWasCompleted && sourceNowCompleted {
+                source.completedAt = now
+            }
+            source.updatedAt = now
+            source.version += 1
+            try source.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: sourceTaskId,
+                operationType: .update,
+                payload: source,
+                now: now
+            ).save(db)
+
+            // 3. Fetch all linked (derived) tasks for this source.
+            let linkedTasks = try Task
+                .filter(Column("sharedCounterId") == sourceTaskId)
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+
+            // 4. Re-derive each linked task.
+            for var linked in linkedTasks {
+                let baseline = linked.baseline ?? 0
+                let derivedMaxCount = linked.maxCount ?? 0
+
+                // deriveDisplayedCount math (mirrors SharedCounter.swift / sharedCounter.ts).
+                // LOW-END CLAMP ONLY — no high-end clamp.
+                let displayed = max(0, newSourceCount - baseline)
+                let derivedCompleted = displayed >= derivedMaxCount
+
+                // ONE-WAY LATCH.
+                let linkedWasCompleted = linked.isCompleted
+                let linkedNowCompleted = linkedWasCompleted || derivedCompleted
+
+                linked.currentCount = newSourceCount  // mirror source count for easy reads
+                linked.isCompleted = linkedNowCompleted
+                if !linkedWasCompleted && linkedNowCompleted {
+                    linked.completedAt = now
+                }
+                linked.updatedAt = now
+                linked.version += 1
+                try linked.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: linked.id,
+                    operationType: .update,
+                    payload: linked,
+                    now: now
+                ).save(db)
+            }
+
+            // 5. Run the board derivation cascade for the source AND each linked task.
+            //    Fetch the workspace data once (all tasks, boardTasks, etc.) — the
+            //    cascade reads will see the rows we just wrote since we're in the
+            //    same transaction.
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            let allChangedTaskIds = [sourceTaskId] + linkedTasks.map { $0.id }
+            // Collect all affected board ids across all changed tasks, deduplicated.
+            var allAffectedBoardIds = Set<String>()
+            for taskId in allChangedTaskIds {
+                let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+                    changedTaskId: taskId,
+                    children: allChildren
+                )
+                let boardIds = DerivationPass.findAffectedBoardIds(
+                    changedTaskId: taskId,
+                    parentCompounds: parentCompounds,
+                    boardTasks: allBoardTasks
+                )
+                allAffectedBoardIds.formUnion(boardIds)
+            }
+
+            for boardId in allAffectedBoardIds {
+                guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else {
+                    continue
+                }
+                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: board,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards
+                )
+
+                let totalSquares = board.boardSize * board.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                board.completedTasks = update.completedTasks
+                board.totalTasks = totalSquares
+                board.linesCompleted = update.linesCompleted
+                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                board.updatedAt = now
+                board.version += 1
+
+                if isGreenlogNow, board.status == .active {
+                    board.status = .completed
+                    board.completedAt = now
+                } else if !isGreenlogNow, board.status == .completed {
+                    board.status = .active
+                    board.completedAt = nil
+                }
+
+                try board.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: boardId,
+                    operationType: .update,
+                    payload: board,
+                    now: now
+                ).save(db)
+            }
+        }
+    }
+
     /// Summary of what `deleteTaskWithCascade` would remove. Lets the
     /// detail view surface affected counts in the confirm dialog before
     /// the user commits. Mirrors web's `TaskDeletionImpact`.

@@ -131,7 +131,12 @@ export function FloatingContextMenu({
               onIncrementCount?.(sq.id);
               onClose();
             }}
-            disabled={state.currentCount >= (sq.maxCount ?? 1)}
+            // Phase 3 — Shared Counters: overshoot is intentional, so
+            // the add button is never disabled based on count alone. For
+            // linked counters (sharedCounterId != null) there is no
+            // meaningful high-end limit — the source drives completion.
+            // For standalone counters we also allow overshoot per the
+            // feedback_counter_overshoot_is_valid invariant.
           >
             + Add {sq.action} (+1)
           </button>
@@ -496,13 +501,47 @@ export function DetailModal({
             <p className={styles.modalMeta}>
               {sq.action} · {sq.maxCount} {sq.unit}
             </p>
-            {/* Phase 2 — Shared Counters: linked tasks show a stub message
-                instead of increment controls. Phase 3 will wire the actual
-                hot-path increment via runBoardCascadeForTask. */}
+            {/* Phase 3 — Shared Counters: linked derived counters show a
+                caption indicating they are driven by a source task, then
+                display their own progress bar and an increment button that
+                routes through incrementSharedCounter in BoardPlaySurface.
+                Decrement is intentionally disabled for linked counters —
+                the source accumulator only goes up on normal flow. */}
             {sq.sharedCounterId != null ? (
-              <p className={styles.linkedCounterStub}>
-                Linked counter — increments via source task (wire-up in Phase 3)
-              </p>
+              <>
+                <p className={styles.linkedCounterCaption}>
+                  Linked counter — tap + to increment the shared source
+                </p>
+                {/* Progress bar (derived view) */}
+                <div className={styles.modalProgressBar}>
+                  <div
+                    className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting}`}
+                    style={{ width: `${fraction * 100}%` }}
+                  />
+                  <div className={styles.modalProgressLabel}>{barLabel}</div>
+                </div>
+                {/* Increment only — decrement is not available on linked counters */}
+                <div className={styles.counterRow}>
+                  <button
+                    className={styles.counterButton}
+                    disabled
+                    aria-label="Decrease (unavailable for linked counters)"
+                    title="Linked counters cannot be decremented directly"
+                  >
+                    −
+                  </button>
+                  <span className={styles.counterValue}>
+                    {state.currentCount} / {sq.maxCount}
+                  </span>
+                  <button
+                    className={styles.counterButton}
+                    onClick={() => onIncrementCount(sq.id)}
+                    aria-label="Increase source counter"
+                  >
+                    +
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 {/* Progress bar */}
@@ -528,7 +567,6 @@ export function DetailModal({
                   </span>
                   <button
                     className={styles.counterButton}
-                    disabled={state.currentCount >= (sq.maxCount ?? 1)}
                     onClick={() => onIncrementCount(sq.id)}
                     aria-label="Increase"
                   >

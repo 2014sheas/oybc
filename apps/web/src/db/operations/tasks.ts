@@ -9,7 +9,7 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, SyncStatus, TaskType, OperatorType, hasCycle } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, SyncStatus, TaskType, OperatorType, hasCycle, propagateIncrement } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
@@ -478,6 +478,150 @@ export async function updateTaskAndCascade(
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
       await runBoardCascadeForTask(id);
+    },
+  );
+}
+
+/**
+ * Phase 3 — Shared Counters increment hot-path.
+ *
+ * Increments the source task's `currentCount` by `by` (default 1), then
+ * re-derives every linked task (tasks where `sharedCounterId === sourceTaskId`
+ * and `!isDeleted`) and runs the board derivation cascade for the source AND
+ * every linked task — all inside one Dexie transaction.
+ *
+ * Invariants enforced:
+ *   - NO HIGH-END CLAMP on the source's `currentCount`. Overshoot is intentional.
+ *   - ONE-WAY LATCH on each linked task's `isCompleted`: once `true`, stays
+ *     `true` regardless of the re-derived value.
+ *   - All writes (task rows + board cascade + sync entries) are atomic. A
+ *     partial failure rolls back everything.
+ *
+ * Callers must NOT call this for a linked (derived) task — pass the source
+ * task's id. A linked task's `sharedCounterId` points at the source; tapping
+ * a linked task on a board should call `incrementSharedCounter` with the
+ * source id, not the linked id.
+ *
+ * @param sourceTaskId - The id of the source (template) task whose `currentCount`
+ *   is the shared accumulator.
+ * @param by - Amount to increment (default 1). Must be a positive integer.
+ */
+export async function incrementSharedCounter(
+  sourceTaskId: string,
+  by = 1,
+): Promise<void> {
+  if (by <= 0) throw new Error('incrementSharedCounter: `by` must be a positive integer');
+
+  await db.transaction(
+    'rw',
+    [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      const now = currentTimestamp();
+
+      // 1. Fetch and validate the source task.
+      const source = await db.tasks.get(sourceTaskId);
+      if (!source || source.isDeleted) return;
+      if (source.type !== TaskType.COUNTING) {
+        throw new Error(
+          `incrementSharedCounter: source task ${sourceTaskId} is not a COUNTING task`,
+        );
+      }
+      // Source must NOT be a linked task itself (it must be the accumulator).
+      if (source.sharedCounterId != null) {
+        throw new Error(
+          `incrementSharedCounter: task ${sourceTaskId} is a linked derived counter; pass the source (template) task id instead`,
+        );
+      }
+
+      // 2. Compute new source count — NO high-end clamp (overshoot is intentional).
+      const newSourceCount = (source.currentCount ?? 0) + by;
+      const sourceMaxCount = source.maxCount ?? 0;
+
+      // isCompleted: one-way latch. Source uses a simpler logic than derived tasks:
+      // the source tracks its own maxCount independently. We apply the latch here too.
+      const sourceWasCompleted = source.isCompleted;
+      const sourceNowCompleted = sourceWasCompleted || newSourceCount >= sourceMaxCount;
+
+      const updatedSource: Partial<Task> = {
+        currentCount: newSourceCount,
+        isCompleted: sourceNowCompleted,
+        completedAt: !sourceWasCompleted && sourceNowCompleted ? now : source.completedAt,
+        updatedAt: now,
+        version: (source.version ?? 0) + 1,
+      };
+      await db.tasks.update(sourceTaskId, updatedSource);
+      // Enqueue sync for the source task.
+      const savedSource = await db.tasks.get(sourceTaskId);
+      if (savedSource) {
+        await db.syncQueue.add({
+          id: generateUUID(),
+          entityType: 'tasks',
+          entityId: sourceTaskId,
+          operationType: SyncOperationType.UPDATE,
+          payload: JSON.stringify(savedSource),
+          status: SyncStatus.PENDING,
+          retryCount: 0,
+          createdAt: now,
+          priority: 0,
+        });
+      }
+
+      // 3. Find all linked (derived) tasks for this source.
+      const linkedTasks = await db.tasks
+        .filter((t) => !t.isDeleted && t.sharedCounterId === sourceTaskId)
+        .toArray();
+
+      // 4. Compute propagation results using the pure shared helper.
+      const propagationResults = propagateIncrement(
+        { currentCount: newSourceCount },
+        linkedTasks.map((t) => ({
+          id: t.id,
+          baseline: t.baseline,
+          maxCount: t.maxCount,
+          isCompleted: t.isCompleted,
+        })),
+      );
+
+      // 5. Write each linked task's new state + enqueue its sync entry.
+      for (const result of propagationResults) {
+        const linkedTask = linkedTasks.find((t) => t.id === result.taskId);
+        if (!linkedTask) continue;
+
+        const wasCompleted = linkedTask.isCompleted;
+        const nowCompleted = result.newIsCompleted;
+
+        const linkedPatch: Partial<Task> = {
+          currentCount: result.newCurrentCount,
+          isCompleted: nowCompleted,
+          completedAt: !wasCompleted && nowCompleted ? now : linkedTask.completedAt,
+          updatedAt: now,
+          version: (linkedTask.version ?? 0) + 1,
+        };
+        await db.tasks.update(result.taskId, linkedPatch);
+        const savedLinked = await db.tasks.get(result.taskId);
+        if (savedLinked) {
+          await db.syncQueue.add({
+            id: generateUUID(),
+            entityType: 'tasks',
+            entityId: result.taskId,
+            operationType: SyncOperationType.UPDATE,
+            payload: JSON.stringify(savedLinked),
+            status: SyncStatus.PENDING,
+            retryCount: 0,
+            createdAt: now,
+            priority: 0,
+          });
+        }
+      }
+
+      // 6. Run the board derivation cascade for the source AND each linked task.
+      // The cascade reads from the already-updated task rows (same transaction),
+      // so board stats, bingo lines, and completion flags are all recomputed
+      // with the fresh counts in one pass.
+      const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
+      for (const taskId of allChangedTaskIds) {
+        await runBoardCascadeForTask(taskId);
+      }
     },
   );
 }

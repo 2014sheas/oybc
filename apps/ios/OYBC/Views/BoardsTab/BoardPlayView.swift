@@ -229,9 +229,6 @@ struct BoardPlayView: View {
 
     @State private var isProcessing = false
     @State private var bingoMessage: String?
-    /// Phase 2 — Shared Counters: shown when the user taps a linked derived
-    /// counter cell; the increment hot-path is not yet wired (Phase 3).
-    @State private var showLinkedCounterStub = false
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
@@ -413,15 +410,6 @@ struct BoardPlayView: View {
                     taskDetailSheetTaskId = nil
                 }
             )
-        }
-        // Phase 2 — Shared Counters: inform the user that tapping a linked
-        // derived-counter cell does not yet increment. The increment hot-path
-        // (reading the source Task's progressCounter, applying the baseline
-        // offset, and writing back) is deferred to Phase 3.
-        .alert("Linked counter", isPresented: $showLinkedCounterStub) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Linked counter — increments via source task (wire-up in Phase 3)")
         }
     }
 
@@ -1092,32 +1080,129 @@ struct BoardPlayView: View {
         runOrchestration(updatedTask: task, boardTask: boardTask)
     }
 
-    /// Increments a counting task's `currentCount` by 1, marking complete at `maxCount`.
+    /// Increments a counting task's `currentCount` by 1.
+    ///
+    /// Phase 3 — Shared Counters routing:
+    ///  (a) Linked derived counter (`task.sharedCounterId != nil`): tap increments
+    ///      the source task and propagates to all sibling linked tasks.
+    ///  (b) Source counter (`task.id` appears as a `sharedCounterId` on any task
+    ///      in `taskMap`): tap increments source + propagates to all linked tasks.
+    ///  (c) Standalone counter (no shared link): falls through to the legacy
+    ///      `runOrchestration` path.
+    ///
+    /// All shared-counter paths go through `AppDatabase.shared.incrementSharedCounter`,
+    /// which enforces the overshoot (no high-end clamp) and one-way-latch invariants
+    /// inside a single GRDB write transaction.
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
-    ///   - task: The `Task` providing `maxCount`.
+    ///   - task: The `Task` providing `maxCount` and shared-counter fields.
     private func handleCountingTap(boardTask: BoardTask, task: Task) {
-        // Phase 2 — Shared Counters: linked derived counters are read-only
-        // until Phase 3 wires the source-increment cascade. Surface the stub
-        // alert and return early — no count write happens.
-        if task.sharedCounterId != nil {
-            showLinkedCounterStub = true
+        guard !isProcessing else { return }
+
+        // Detect whether this task participates in a shared-counter relationship.
+        if let sourceId = task.sharedCounterId {
+            // (a) Linked derived counter — increment the source.
+            runSharedCounterIncrement(sourceTaskId: sourceId)
             return
         }
-        guard !isProcessing, !task.isCompleted, let maxCount = task.maxCount else { return }
+
+        // (b) Source counter — check if any task in the workspace links to this task.
+        let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
+        if isSource {
+            runSharedCounterIncrement(sourceTaskId: task.id)
+            return
+        }
+
+        // (c) Standalone counter — legacy path. NO high-end clamp per the
+        //     feedback_counter_overshoot_is_valid invariant: overshoot is
+        //     intentional and the count must be allowed to exceed maxCount.
+        guard let maxCount = task.maxCount else { return }
         let now = AppDatabase.currentTimestamp()
-        let newCount = min((task.currentCount ?? 0) + 1, maxCount)
-        let nowCompleted = newCount >= maxCount
+        // NO min(...) clamp: let the count go past maxCount.
+        let newCount = (task.currentCount ?? 0) + 1
+        let wasCompleted = task.isCompleted
+        let nowCompleted = wasCompleted || newCount >= maxCount
 
         var updatedTask = task
         updatedTask.currentCount = newCount
         updatedTask.isCompleted = nowCompleted
-        updatedTask.completedAt = nowCompleted ? now : nil
+        updatedTask.completedAt = !wasCompleted && nowCompleted ? now : task.completedAt
         updatedTask.updatedAt = now
         updatedTask.version += 1
 
         runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
+    }
+
+    /// Runs the shared-counter propagation in a background task, then refreshes
+    /// board + task data on the main thread.
+    ///
+    /// Mirrors the pattern in `runOrchestration` (uses `_Concurrency.Task.detached`
+    /// to avoid shadowing by the GRDB `Task` model).
+    ///
+    /// - Parameter sourceTaskId: The source (template) task id to increment.
+    private func runSharedCounterIncrement(sourceTaskId: String) {
+        guard !isProcessing else { return }
+        isProcessing = true
+        let currentBoardId = board?.id
+
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                // Capture pre-increment board stats for flash-message comparison.
+                let boardBefore: Board? = currentBoardId.flatMap { id in
+                    try? AppDatabase.shared.read { db in try Board.fetchOne(db, key: id) }
+                }
+
+                try AppDatabase.shared.incrementSharedCounter(sourceTaskId: sourceTaskId)
+
+                // Re-fetch the board after the write to detect bingo/greenlog changes.
+                let boardAfter: Board? = currentBoardId.flatMap { id in
+                    try? AppDatabase.shared.read { db in try Board.fetchOne(db, key: id) }
+                }
+
+                var newBingoMsg: String? = nil
+                if let before = boardBefore, let after = boardAfter {
+                    let prevBingos = Set(before.completedLineIds ?? [])
+                    let nextBingos = Set(after.completedLineIds ?? [])
+                    let gained = nextBingos.subtracting(prevBingos).sorted()
+                    let lost = prevBingos.subtracting(nextBingos).sorted()
+                    let totalSquares = after.boardSize * after.boardSize
+                    let isGreenlogNow = after.completedTasks >= totalSquares
+
+                    if before.status == .completed && after.status == .active {
+                        newBingoMsg = "Board reactivated — no longer complete"
+                    } else if !lost.isEmpty {
+                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                    } else if isGreenlogNow && after.status == .completed && before.status == .active {
+                        newBingoMsg = "GREENLOG!"
+                    } else if !gained.isEmpty {
+                        newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
+                    }
+                }
+
+                await MainActor.run {
+                    isProcessing = false
+                    loadBoard()
+                    loadBoardTasks()
+                    loadTaskData()
+                    if let msg = newBingoMsg {
+                        bingoMessage = msg
+                        let dismissAfter: Double = 3.0
+                        _Concurrency.Task.detached { @MainActor in
+                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
+                            if bingoMessage == msg {
+                                bingoMessage = nil
+                            }
+                        }
+                    }
+                }
+            } catch {
+                print("⚠️ BoardPlayView shared-counter increment error: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                }
+            }
+        }
     }
 
     /// Decrements a counting task's `currentCount` by 1 and un-marks completion.

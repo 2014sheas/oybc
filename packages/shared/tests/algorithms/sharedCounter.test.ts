@@ -1,4 +1,5 @@
-import { deriveDisplayedCount } from '../../src/algorithms/sharedCounter';
+import { deriveDisplayedCount, propagateIncrement } from '../../src/algorithms/sharedCounter';
+import type { PropagateIncrementLinkedTask } from '../../src/algorithms/sharedCounter';
 
 /**
  * Tests for deriveDisplayedCount — the Phase 1 shared-counter math helper.
@@ -127,5 +128,163 @@ describe('deriveDisplayedCount', () => {
     );
     expect(result.displayed).toBe(0);
     expect(result.isCompleted).toBe(false);
+  });
+});
+
+// ─── propagateIncrement (Phase 3) ────────────────────────────────────────────
+
+describe('propagateIncrement', () => {
+  // ── Two linked tasks with different baselines ───────────────────────────────
+
+  it('source increments by 5: two linked tasks derive independently', () => {
+    // Source: currentCount = 105 (incremented from 100 by 5)
+    const source = { currentCount: 105 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      // linked-A: baseline 0, maxCount 200 — not yet complete
+      { id: 'a', baseline: 0, maxCount: 200, isCompleted: false },
+      // linked-B: baseline 100, maxCount 10 — 105 - 100 = 5 → not complete
+      { id: 'b', baseline: 100, maxCount: 10, isCompleted: false },
+    ];
+    const results = propagateIncrement(source, linked);
+
+    expect(results).toHaveLength(2);
+
+    const a = results.find((r) => r.taskId === 'a')!;
+    expect(a.displayed).toBe(105); // 105 - 0
+    expect(a.newIsCompleted).toBe(false); // 105 < 200
+    expect(a.newCurrentCount).toBe(105);
+
+    const b = results.find((r) => r.taskId === 'b')!;
+    expect(b.displayed).toBe(5); // 105 - 100
+    expect(b.newIsCompleted).toBe(false); // 5 < 10
+    expect(b.newCurrentCount).toBe(105);
+  });
+
+  // ── Source goes past maxCount (overshoot invariant) ─────────────────────────
+
+  it('source overshoots its own maxCount: no clamp on source currentCount', () => {
+    // Source has maxCount 50 but we've incremented to 75.
+    // This function receives the ALREADY-incremented value — no clamping happens here.
+    const source = { currentCount: 75 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'x', baseline: 0, maxCount: 50, isCompleted: true }, // already latched
+    ];
+    const results = propagateIncrement(source, linked);
+    const x = results[0];
+    // newCurrentCount must be 75 — the raw source value, never clamped to 50.
+    expect(x.newCurrentCount).toBe(75);
+    // displayed is 75 - 0 = 75 (no high-end clamp).
+    expect(x.displayed).toBe(75);
+    // latch preserves true.
+    expect(x.newIsCompleted).toBe(true);
+  });
+
+  // ── Linked task maxCount < source maxCount: completes before source ─────────
+
+  it('linked task with low maxCount completes before source does', () => {
+    // Source count is 30 (not yet at its own maxCount of 100).
+    // Linked task has baseline 0, maxCount 20 → completes at source count 20.
+    const source = { currentCount: 30 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'early', baseline: 0, maxCount: 20, isCompleted: false },
+    ];
+    const results = propagateIncrement(source, linked);
+    const early = results[0];
+    expect(early.displayed).toBe(30);
+    // 30 >= 20 → completes.
+    expect(early.newIsCompleted).toBe(true);
+  });
+
+  // ── Linked task maxCount > source maxCount: stays incomplete after source ───
+
+  it('linked task with high maxCount stays incomplete after source threshold', () => {
+    // Source is at 100 (its own maxCount). Linked task maxCount = 200.
+    const source = { currentCount: 100 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'late', baseline: 0, maxCount: 200, isCompleted: false },
+    ];
+    const results = propagateIncrement(source, linked);
+    const late = results[0];
+    expect(late.displayed).toBe(100);
+    expect(late.newIsCompleted).toBe(false); // 100 < 200
+  });
+
+  // ── One-way latch: isCompleted never flips from true to false ──────────────
+
+  it('isCompleted one-way latch: once true, stays true even if derived value would be false', () => {
+    // Defensive edge: source count dropped below baseline (shouldn't happen in
+    // production, but the latch must hold regardless of derived value).
+    // baseline = 50, source = 30 → displayed = max(0, 30-50) = 0 → isCompleted = false.
+    // But the task was already latched (isCompleted = true) → stays true.
+    const source = { currentCount: 30 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'latched', baseline: 50, maxCount: 10, isCompleted: true },
+    ];
+    const results = propagateIncrement(source, linked);
+    expect(results[0].newIsCompleted).toBe(true); // latch holds
+  });
+
+  // ── Source with no linked tasks: empty result ──────────────────────────────
+
+  it('source with no linked tasks returns empty array', () => {
+    const source = { currentCount: 42 };
+    const results = propagateIncrement(source, []);
+    expect(results).toHaveLength(0);
+  });
+
+  // ── Multiple increments accumulate correctly ───────────────────────────────
+
+  it('multiple sequential increments accumulate correctly', () => {
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'acc', baseline: 0, maxCount: 5, isCompleted: false },
+    ];
+
+    // Simulate 3 increments: source goes 0 → 1 → 2 → 3.
+    let state = linked[0];
+    for (let i = 1; i <= 3; i++) {
+      const [result] = propagateIncrement({ currentCount: i }, [state]);
+      state = { ...state, isCompleted: result.newIsCompleted };
+    }
+    // After 3 increments: displayed = 3, not complete yet (threshold = 5).
+    expect(state.isCompleted).toBe(false);
+
+    // Two more increments: source = 4, 5.
+    for (let i = 4; i <= 5; i++) {
+      const [result] = propagateIncrement({ currentCount: i }, [state]);
+      state = { ...state, isCompleted: result.newIsCompleted };
+    }
+    // At source = 5 (= maxCount = 5) → complete.
+    expect(state.isCompleted).toBe(true);
+
+    // One more overshoot increment: source = 6.
+    const [overshoot] = propagateIncrement({ currentCount: 6 }, [state]);
+    expect(overshoot.newCurrentCount).toBe(6); // no clamp
+    expect(overshoot.newIsCompleted).toBe(true); // latch holds
+    expect(overshoot.displayed).toBe(6); // raw overshoot
+  });
+
+  // ── 1:N fan-out: source incremented, N linked tasks all update ─────────────
+
+  it('1:N fan-out: source links to three tasks that all update', () => {
+    const source = { currentCount: 10 };
+    const linked: PropagateIncrementLinkedTask[] = [
+      { id: 'n1', baseline: 0, maxCount: 5, isCompleted: false },   // completes
+      { id: 'n2', baseline: 0, maxCount: 10, isCompleted: false },  // completes exactly
+      { id: 'n3', baseline: 0, maxCount: 20, isCompleted: false },  // not yet
+    ];
+    const results = propagateIncrement(source, linked);
+    expect(results).toHaveLength(3);
+
+    const n1 = results.find((r) => r.taskId === 'n1')!;
+    expect(n1.newIsCompleted).toBe(true);  // 10 >= 5
+    expect(n1.displayed).toBe(10);         // no clamp
+
+    const n2 = results.find((r) => r.taskId === 'n2')!;
+    expect(n2.newIsCompleted).toBe(true);  // 10 >= 10
+    expect(n2.displayed).toBe(10);
+
+    const n3 = results.find((r) => r.taskId === 'n3')!;
+    expect(n3.newIsCompleted).toBe(false); // 10 < 20
+    expect(n3.displayed).toBe(10);
   });
 });

@@ -18,6 +18,7 @@ import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
 import { addToSyncQueue } from '../db/operations/syncQueue';
+import { incrementSharedCounter } from '../db/operations/tasks';
 import {
   InteractiveTaskSquare,
   DetailModal,
@@ -193,7 +194,17 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
     return out;
   }, [boardTasks, allBoards, allTemplates, taskMap, board.startDate, board.endDate]);
 
-  // taskMap is provided by useTaskLibrary — no need to rebuild it here.
+  // Phase 3 — Shared Counters: Set of task ids that are shared-counter SOURCES
+  // (i.e., at least one other task points to them via `sharedCounterId`).
+  // Computed once per render from taskMap so the grid `onAct` can detect
+  // whether tapping a counting task should route through incrementSharedCounter.
+  const sharedCounterSourceIds = useMemo<Set<string>>(() => {
+    const sources = new Set<string>();
+    for (const t of Object.values(taskMap)) {
+      if (t.sharedCounterId) sources.add(t.sharedCounterId);
+    }
+    return sources;
+  }, [taskMap]);
 
   const sortedBoardTasks = [...boardTasks].sort((a, b) =>
     a.row !== b.row ? a.row - b.row : a.col - b.col
@@ -262,6 +273,64 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
     },
 
     [boardId, showFlash]
+  );
+
+  /**
+   * Phase 3 — Shared Counters: increment the shared-counter accumulator for a
+   * given source task id, then show any bingo/greenlog flash that resulted.
+   *
+   * Used when the tapped/clicked task is either:
+   *   (a) the source (template) counting task itself, or
+   *   (b) a linked (derived) counting task whose `sharedCounterId` points to
+   *       the source.
+   *
+   * Both cases route to `incrementSharedCounter(sourceId)` which handles the
+   * full propagation transactionally (source update → linked task re-derive →
+   * cascade for all affected boards).
+   *
+   * Post-increment bingo/greenlog flash: we re-fetch the board after the
+   * transaction and compare stats against the pre-increment snapshot.
+   * Flash is best-effort — a query failure doesn't undo the write.
+   *
+   * @param sourceTaskId - The source (template) task id to increment.
+   */
+  const handleSharedCounterIncrement = useCallback(
+    async (sourceTaskId: string): Promise<void> => {
+      if (isExpired) return;
+      try {
+        // Capture the pre-increment board stats for flash comparison.
+        const boardBefore = await db.boards.get(boardId);
+        await incrementSharedCounter(sourceTaskId);
+        // Re-fetch to get post-increment board state.
+        const boardAfter = await db.boards.get(boardId);
+        if (!boardBefore || !boardAfter) return;
+
+        const prevBingos = new Set(boardBefore.completedLineIds ?? []);
+        const nextBingos = new Set(boardAfter.completedLineIds ?? []);
+        const newBingos = [...nextBingos].filter((id) => !prevBingos.has(id));
+        const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
+        const totalSquares = boardAfter.boardSize * boardAfter.boardSize;
+        const isGreenlog = boardAfter.completedTasks >= totalSquares;
+        const wasActive = boardBefore.status === BoardStatus.ACTIVE;
+        const isNowCompleted = boardAfter.status === BoardStatus.COMPLETED;
+        const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
+        const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
+
+        if (wasCompleted && isNowActive) {
+          showFlash('Board reactivated — no longer complete', 'bingo');
+        } else if (lostBingos.length > 0) {
+          showFlash(`Bingo lost: ${lostBingos.join(', ')}`, 'bingo');
+        } else if (wasActive && isNowCompleted && isGreenlog) {
+          showFlash('GREENLOG! Board complete!', 'greenlog');
+        } else if (newBingos.length > 0) {
+          showFlash(`Bingo! ${newBingos.join(', ')}`, 'bingo');
+        }
+      } catch (err) {
+        console.error('Shared counter increment failed:', err);
+        showFlash('Something went wrong', 'bingo');
+      }
+    },
+    [boardId, isExpired, showFlash],
   );
 
   /**
@@ -445,9 +514,23 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
                         setSelectedSquareId(bt.id);
                       } else if (squareData.type === 'counting') {
-                        const next = taskCurrentCount + 1;
-                        if (squareData.maxCount && next > squareData.maxCount) return;
-                        void handleComplete(bt.id, { currentCount: next });
+                        // Phase 3 — Shared Counters routing:
+                        //  (a) Linked derived counter (task.sharedCounterId != null):
+                        //      tap increments the source task, propagates to all siblings.
+                        //  (b) Source counter (task.id in sharedCounterSourceIds):
+                        //      tap increments source + propagates to all linked tasks.
+                        //  (c) Standalone counter (no shared link at all):
+                        //      falls through to the legacy handleComplete path.
+                        // All shared-counter paths forbid the old high-end clamp (overshoot allowed).
+                        if (task.sharedCounterId != null) {
+                          void handleSharedCounterIncrement(task.sharedCounterId);
+                        } else if (sharedCounterSourceIds.has(task.id)) {
+                          void handleSharedCounterIncrement(task.id);
+                        } else {
+                          // Standalone (unlinked) counting task — no propagation needed.
+                          const next = taskCurrentCount + 1;
+                          void handleComplete(bt.id, { currentCount: next });
+                        }
                       } else {
                         void handleComplete(bt.id, {
                           isCompleted: !taskIsCompleted,
@@ -523,7 +606,18 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
             }}
             onIncrementCount={() => {
               if (isExpired) return;
-              void handleComplete(bt.id, { currentCount: modalCurrentCount + 1 });
+              // Phase 3 — Shared Counters: same routing as the grid onAct.
+              // handleSharedCounterIncrement transitively writes flashTimerRef.current
+              // from showFlash — same false-positive as the handleComplete case above.
+              /* eslint-disable react-hooks/refs */
+              if (task.sharedCounterId != null) {
+                void handleSharedCounterIncrement(task.sharedCounterId);
+              } else if (sharedCounterSourceIds.has(task.id)) {
+                void handleSharedCounterIncrement(task.id);
+              } else {
+                void handleComplete(bt.id, { currentCount: modalCurrentCount + 1 });
+              }
+              /* eslint-enable react-hooks/refs */
             }}
             onDecrementCount={() => {
               if (isExpired) return;
@@ -587,7 +681,14 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
               setContextMenu(null);
             }}
             onIncrementCount={() => {
-              void handleComplete(bt.id, { currentCount: menuCurrentCount + 1 });
+              // Phase 3 — Shared Counters: same routing as the grid onAct.
+              if (task.sharedCounterId != null) {
+                void handleSharedCounterIncrement(task.sharedCounterId);
+              } else if (sharedCounterSourceIds.has(task.id)) {
+                void handleSharedCounterIncrement(task.id);
+              } else {
+                void handleComplete(bt.id, { currentCount: menuCurrentCount + 1 });
+              }
               setContextMenu(null);
             }}
             onDecrementCount={() => {
