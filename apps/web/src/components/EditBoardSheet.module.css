@@ -1,0 +1,121 @@
+/* ─── Sheet header ───────────────────────────────────────────────────────────── */
+
+.sheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background: var(--bg-primary);
+  z-index: 1;
+}
+
+.sheetTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cancelButton {
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  background: var(--bg-secondary);
+}
+
+.cancelButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.saveButton {
+  padding: 6px 16px;
+  background: var(--active-bg);
+  color: var(--active-text);
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.saveButton:hover {
+  filter: brightness(0.95);
+}
+
+.saveButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Read-only board-size chip ─────────────────────────────────────────────── */
+
+.readOnlyChip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.readOnlyLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.readOnlyValue {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.readOnlyNote {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ─── Validation / info ─────────────────────────────────────────────────────── */
+
+.validationError {
+  margin: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--error-bg, #f8d7da);
+  color: var(--error-text, #dc3545);
+  border: 1px solid var(--error-border, #f5c6cb);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.infoNote {
+  margin: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+/* ─── Form body ─────────────────────────────────────────────────────────────── */
+
+.formBody {
+  padding: 1rem;
+}

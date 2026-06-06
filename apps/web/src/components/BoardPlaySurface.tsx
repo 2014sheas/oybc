@@ -29,6 +29,8 @@ import { BoardStatusBadge } from './BoardStatusBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
+import { EditBoardSheet } from './EditBoardSheet';
+import { usePreferences } from '../hooks/usePreferences';
 import styles from '../pages/BoardPlayPage.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -110,6 +112,11 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // M2 — edit-board sheet (ACTIVE boards only).
+  const [editBoardOpen, setEditBoardOpen] = useState(false);
+
+  // User preferences (for weekStartDay, used by EditBoardSheet).
+  const [prefs] = usePreferences();
 
   // Clean up flash timer on unmount
   useEffect(() => {
@@ -340,7 +347,31 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
           <span className={styles.nowPlaying}>Now Playing</span>
           <h2 className={styles.playBoardName}>{board.name}</h2>
         </div>
-        <BoardStatusBadge status={board.status} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <BoardStatusBadge status={board.status} />
+          {/* M2 — edit button only on ACTIVE boards (DRAFT uses wizard; COMPLETED/ARCHIVED are immutable). */}
+          {board.status === BoardStatus.ACTIVE && (
+            <button
+              type="button"
+              onClick={() => setEditBoardOpen(true)}
+              aria-label="Edit board"
+              title="Edit board"
+              style={{
+                padding: '4px 10px',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                lineHeight: 1.4,
+              }}
+            >
+              Edit
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Expired banner */}
@@ -520,6 +551,15 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         onClose={() => setOpenedTaskInLibrary(null)}
         onOpenTask={(id) => setOpenedTaskInLibrary(id)}
       />
+
+      {/* M2 — Edit board sheet (ACTIVE boards only). */}
+      {editBoardOpen && (
+        <EditBoardSheet
+          board={board.status === BoardStatus.ACTIVE ? board : null}
+          weekStartDay={prefs.weekStartDay}
+          onClose={() => setEditBoardOpen(false)}
+        />
+      )}
 
       {/* Floating Context Menu */}
       {contextMenu && (() => {

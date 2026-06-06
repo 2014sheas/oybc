@@ -1,12 +1,238 @@
 import { db } from '../database';
-import type { Board, CreateBoardInput } from '@oybc/shared';
-import { BoardStatus, SyncOperationType } from '@oybc/shared';
+import type { Board, Task, CompoundChild, CreateBoardInput } from '@oybc/shared';
+import {
+  BoardStatus,
+  SyncOperationType,
+  SyncStatus,
+  findTransitiveParentCompounds,
+  findAffectedBoardIds,
+  computeBoardStatsUpdate,
+} from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { fetchAllCompoundChildren } from './compoundChildren';
+import { fetchAllBoardTasks } from './boardTasks';
 
 /**
  * Board CRUD Operations
  */
+
+// ─── Edit-active patch type ───────────────────────────────────────────────────
+
+/**
+ * Editable fields for an ACTIVE board (M2 — live-edit board metadata).
+ *
+ * Immutable on active boards:
+ *   - `boardSize` — render as read-only chip in the UI (too disruptive to change).
+ *   - `isCore`, `spawnedFromTemplateId`, `isRandomized` — internal state.
+ *   - Placement set (`BoardTask` rows) — M3/M4.
+ */
+export interface UpdateActiveBoardPatch {
+  name?: string;
+  centerSquareType?: Board['centerSquareType'];
+  /**
+   * Cleared automatically by the write helper when `centerSquareType`
+   * switches away from `CUSTOM_FREE`. Callers may still pass the old
+   * value; the helper discards it.
+   */
+  centerSquareCustomName?: string | null;
+  /**
+   * Cleared automatically when `centerSquareType` switches away from
+   * `CHOSEN`. Callers may still pass the old value; the helper discards
+   * it.
+   *
+   * NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
+   * does NOT hard-delete the underlying BoardTask — it preserves the
+   * placement so a later switch back to CHOSEN can reuse it. The cell
+   * renders as FREE/CUSTOM_FREE on top of the placement. This is
+   * intentional; do not treat it as a bug.
+   */
+  centerTaskId?: string | null;
+  timeframe?: Board['timeframe'];
+  /** Local-ISO8601 (via `toLocalISO`) snap to 00:00:00.000 start-of-day. */
+  startDate?: string | null;
+  /** Local-ISO8601 (via `toLocalISO`) snap to 23:59:59.999 end-of-day. */
+  endDate?: string | null;
+}
+
+// ─── updateBoardAndCascade ────────────────────────────────────────────────────
+
+/**
+ * Apply a metadata patch to an ACTIVE board and re-derive stats for every
+ * placed task.
+ *
+ * Sequence:
+ *   1. Apply the patch via `updateBoard` (bumps version + enqueues sync).
+ *   2. Sanitize center-square fields (clear `centerTaskId` when
+ *      `centerSquareType` is not CHOSEN; clear `centerSquareCustomName`
+ *      when not CUSTOM_FREE).
+ *   3. Fetch every `BoardTask` that places a task on this board.
+ *   4. Run `runBoardCascadeForTask` for each placed task inside a single
+ *      Dexie transaction covering the required tables.
+ *
+ * Per-task cascade (not per-board) is deliberate: timeframe/dates changes
+ * can flip expiry state on placed tasks, and each task's derivation reads
+ * from board.timeframe + board.endDate — so every placed task needs a
+ * re-derive.
+ *
+ * NOTE on renaming: board lookups are by id, so renaming propagates
+ * everywhere (Achievement tasks watching this board, recurring-template
+ * spawn metadata, etc.) without any extra work. Renaming a board does NOT
+ * propagate to its spawning template name or to historical spawns —
+ * references are always by id.
+ *
+ * @param boardId - Board to update.
+ * @param patch - Editable fields for ACTIVE boards.
+ */
+export async function updateBoardAndCascade(
+  boardId: string,
+  patch: UpdateActiveBoardPatch,
+): Promise<void> {
+  // Build the sanitized Partial<Board> for updateBoard.
+  // Board.startDate / endDate / centerSquareCustomName / centerTaskId are
+  // typed as `string` (non-nullable) on the Board model, but an edit may
+  // want to clear centerSquareCustomName or centerTaskId. We represent
+  // "clear" as `undefined` in the Partial update (Dexie skips undefined keys).
+  // For startDate/endDate the EditBoardSheet always provides a concrete
+  // string, so null is converted to undefined as a safety net.
+  const { CenterSquareType } = await import('@oybc/shared');
+
+  const sanitized: Partial<Board> = {};
+  if (patch.name !== undefined) sanitized.name = patch.name;
+  if (patch.timeframe !== undefined) sanitized.timeframe = patch.timeframe;
+  if (patch.startDate != null) sanitized.startDate = patch.startDate;
+  if (patch.endDate != null) sanitized.endDate = patch.endDate;
+
+  if (patch.centerSquareType !== undefined) {
+    sanitized.centerSquareType = patch.centerSquareType;
+    // Sanitize auxiliary center fields based on the new type.
+    if (patch.centerSquareType === CenterSquareType.CUSTOM_FREE) {
+      // Fix #1: distinguish undefined (skip field entirely) from null (user
+      // explicitly cleared the name — write undefined so IndexedDB's structured
+      // clone omits the property, clearing the prior stored value).
+      // The old `!= null` check swallowed null and left the prior value in place.
+      if (patch.centerSquareCustomName !== undefined) {
+        // null from the UI → undefined (clear); string from the UI → write it.
+        sanitized.centerSquareCustomName = patch.centerSquareCustomName ?? undefined;
+      }
+    } else {
+      // Switching away from CUSTOM_FREE → clear the custom name.
+      sanitized.centerSquareCustomName = undefined;
+    }
+    if (patch.centerSquareType !== CenterSquareType.CHOSEN) {
+      // Switching away from CHOSEN → clear centerTaskId so no stale
+      // reference remains. The underlying BoardTask row is preserved
+      // (the placement lives in boardTasks, not on the board row itself).
+      // NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
+      // does NOT delete the BoardTask row — the placement is retained so a
+      // later switch back to CHOSEN can reuse it. The board.centerTaskId
+      // field merely controls which type the center cell renders as.
+      sanitized.centerTaskId = undefined;
+    } else if (patch.centerTaskId != null) {
+      sanitized.centerTaskId = patch.centerTaskId;
+    }
+  }
+
+  // 1. Apply patch (bumps version, enqueues boards sync entry).
+  await updateBoard(boardId, sanitized);
+
+  // 2. Fetch placed tasks.
+  const placements = await db.boardTasks
+    .where('boardId')
+    .equals(boardId)
+    .toArray();
+
+  if (placements.length === 0) return;
+
+  // 3. Batch cascade: load shared tables ONCE, find the union of affected
+  //    board IDs across all placed tasks, then write one stats update per
+  //    affected board. This replaces the previous per-task loop which did
+  //    O(N) full-table scans for a 5×5 board (25 cascade calls).
+  const taskIds = Array.from(new Set(placements.map((bt) => bt.taskId)));
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      const now = currentTimestamp();
+      const allChildren = await fetchAllCompoundChildren();
+      const allBoardTasks = await fetchAllBoardTasks();
+      const allTasks = await db.tasks.toArray();
+      const allBoards = await db.boards.toArray();
+
+      const taskById: Record<string, Task> = {};
+      for (const t of allTasks) taskById[t.id] = t;
+
+      const childrenByCompound: Record<string, CompoundChild[]> = {};
+      for (const c of allChildren) {
+        (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+      }
+
+      // Collect the union of all affected board IDs across every placed task.
+      const affectedBoardIds = new Set<string>();
+      for (const taskId of taskIds) {
+        const parents = findTransitiveParentCompounds(taskId, allChildren);
+        for (const bid of findAffectedBoardIds(taskId, parents, allBoardTasks)) {
+          affectedBoardIds.add(bid);
+        }
+      }
+
+      // Update each affected board exactly once.
+      for (const affectedBoardId of affectedBoardIds) {
+        const affectedBoard = allBoards.find((b) => b.id === affectedBoardId);
+        if (!affectedBoard || affectedBoard.isDeleted) continue;
+
+        // Re-fetch so we see the just-written metadata update (updateBoard ran above).
+        const freshBoard = await db.boards.get(affectedBoardId);
+        if (!freshBoard || freshBoard.isDeleted) continue;
+
+        const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
+        const stats = computeBoardStatsUpdate(
+          freshBoard,
+          boardTasksOnBoard,
+          childrenByCompound,
+          taskById,
+          allBoards,
+        );
+
+        const isGreenlog = stats.completedTasks >= freshBoard.boardSize * freshBoard.boardSize;
+
+        const boardUpdate: Partial<Board> = {
+          completedTasks: stats.completedTasks,
+          linesCompleted: stats.linesCompleted,
+          completedLineIds: stats.completedLineIds,
+          updatedAt: now,
+          version: (freshBoard.version ?? 1) + 1,
+        };
+
+        if (isGreenlog && freshBoard.status === BoardStatus.ACTIVE) {
+          boardUpdate.status = BoardStatus.COMPLETED;
+          boardUpdate.completedAt = now;
+        }
+        if (!isGreenlog && freshBoard.status === BoardStatus.COMPLETED) {
+          boardUpdate.status = BoardStatus.ACTIVE;
+          boardUpdate.completedAt = undefined;
+        }
+
+        await db.boards.update(affectedBoardId, boardUpdate);
+
+        const updatedBoard = await db.boards.get(affectedBoardId);
+        if (updatedBoard) {
+          await db.syncQueue.add({
+            id: generateUUID(),
+            entityType: 'boards',
+            entityId: affectedBoardId,
+            operationType: SyncOperationType.UPDATE,
+            payload: JSON.stringify(updatedBoard),
+            status: SyncStatus.PENDING,
+            retryCount: 0,
+            createdAt: now,
+            priority: 0,
+          });
+        }
+      }
+    },
+  );
+}
 
 /**
  * Fetch all boards for a user (excluding deleted)

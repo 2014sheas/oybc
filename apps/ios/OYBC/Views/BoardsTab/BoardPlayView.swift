@@ -235,6 +235,8 @@ struct BoardPlayView: View {
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
+    /// M2 — edit-board sheet (ACTIVE boards only).
+    @State private var isEditBoardPresented: Bool = false
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
     /// sheet is dismissing — SwiftUI swallows the path change during
@@ -339,6 +341,34 @@ struct BoardPlayView: View {
             .padding(.vertical)
         }
         .modifier(BoardPlayTitleChrome(title: board?.name ?? "Board", enabled: !embedded))
+        // M2 — toolbar "Edit" button (ACTIVE boards only; DRAFT uses the wizard;
+        // COMPLETED / ARCHIVED boards are immutable).
+        .toolbar {
+            if let b = board, b.status == .active, !embedded {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Edit") {
+                        isEditBoardPresented = true
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $isEditBoardPresented, onDismiss: {
+            // Reload the board record so the updated name / timeframe
+            // are reflected immediately without a manual scroll or pull.
+            loadBoard()
+            loadBoardTasks()
+            loadTaskData()
+        }) {
+            if let b = board {
+                EditBoardSheet(
+                    board: b,
+                    weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
+                    onSaved: {
+                        isEditBoardPresented = false
+                    }
+                )
+            }
+        }
         .onAppear {
             loadBoard()
             loadBoardTasks()

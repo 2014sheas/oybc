@@ -44,6 +44,20 @@ const RECURRING_CENTER_TYPE_OPTIONS = CENTER_TYPE_OPTIONS.filter(
 );
 
 export interface BoardSetupFormProps {
+  /**
+   * Rendering mode:
+   *   - `'create'` (default): full wizard setup step. Board size is
+   *     editable. "Continue to tasks" affordances may be shown by the wizard.
+   *   - `'edit-active'`: editing an already-active board. Board size is
+   *     rendered as a read-only chip (passed through for display only;
+   *     `onSizeChange` is a no-op). Wizard-only affordances are hidden.
+   *
+   * Existing callers that do not pass `mode` default to `'create'`, so
+   * the wizard, recurring-template setup, and composite wizard are all
+   * unaffected.
+   */
+  mode?: 'create' | 'edit-active';
+
   // Controlled state
   name: string;
   onNameChange: (v: string) => void;
@@ -78,6 +92,13 @@ export interface BoardSetupFormProps {
   isCore: boolean;
 
   weekStartDay: WeekStartDay;
+
+  /**
+   * M2 — `edit-active` mode only. When true, the CHOSEN center-square
+   * option is disabled with an inline explanation (no candidate tasks on
+   * the board yet). Ignored in `create` mode.
+   */
+  chosenCenterDisabled?: boolean;
 }
 
 /**
@@ -102,6 +123,7 @@ export interface BoardSetupFormProps {
  * there's no randomize toggle.
  */
 export function BoardSetupForm({
+  mode = 'create',
   name,
   onNameChange,
   size,
@@ -119,7 +141,9 @@ export function BoardSetupForm({
   isRecurring,
   isCore,
   weekStartDay,
+  chosenCenterDisabled = false,
 }: BoardSetupFormProps): React.ReactElement {
+  const isEditActive = mode === 'edit-active';
   const isOddBoard = size % 2 !== 0;
   const visibleTimeframeOptions = isRecurring
     ? RECURRING_TIMEFRAME_OPTIONS
@@ -138,6 +162,8 @@ export function BoardSetupForm({
     : null;
 
   // Reusable Center-square block — shared by all three layouts.
+  // In `edit-active` mode with `chosenCenterDisabled`, the CHOSEN option
+  // is disabled with an explanatory note (no candidate task in boardTasks).
   const centerBlock = (
     <>
       {isOddBoard && (
@@ -153,15 +179,31 @@ export function BoardSetupForm({
               onCenterTypeChange(e.target.value as CenterSquareType)
             }
           >
-            {visibleCenterTypeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
+            {visibleCenterTypeOptions.map((opt) => {
+              const isChosenDisabled =
+                isEditActive &&
+                chosenCenterDisabled &&
+                opt.value === CenterSquareType.CHOSEN;
+              return (
+                <option
+                  key={opt.value}
+                  value={opt.value}
+                  disabled={isChosenDisabled}
+                >
+                  {opt.label}
+                  {isChosenDisabled ? ' (no placed tasks)' : ''}
+                </option>
+              );
+            })}
           </select>
-          {centerType === CenterSquareType.CHOSEN && (
+          {centerType === CenterSquareType.CHOSEN && !isEditActive && (
             <p className={styles.hint}>
               You'll pick the center in the next step.
+            </p>
+          )}
+          {centerType === CenterSquareType.CHOSEN && isEditActive && (
+            <p className={styles.hint}>
+              The existing center task is kept. Switch away to change the center type.
             </p>
           )}
         </div>
@@ -186,7 +228,11 @@ export function BoardSetupForm({
   );
 
   // Reusable Board-size block — shared by all three layouts.
-  const sizeBlock = (
+  // In `edit-active` mode, size is rendered as a read-only chip (immutable
+  // on active boards — changing it would force re-placement of every cell).
+  // The EditBoardSheet renders its own chip; the form renders nothing here
+  // so there's no double-chip in the sheet layout.
+  const sizeBlock = !isEditActive ? (
     <div className={styles.fieldGroup}>
       <span className={styles.label}>Board size</span>
       <div className={styles.segmented}>
@@ -205,7 +251,7 @@ export function BoardSetupForm({
         ))}
       </div>
     </div>
-  );
+  ) : null;
 
   // Issue #70 — core boards only configure size + center. The title is
   // auto-set from the window label (rendered read-only) and the

@@ -757,6 +757,206 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - Board metadata edit helpers (M2 — live-edit board metadata)
+
+    /// Editable fields for an ACTIVE board (M2).
+    ///
+    /// Immutable on active boards:
+    ///   - `boardSize` — render as read-only chip (too disruptive to change).
+    ///   - `isCore`, `spawnedFromTemplateId`, `isRandomized` — internal state.
+    ///   - Placement set (`BoardTask` rows) — M3/M4.
+    ///
+    /// NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
+    /// preserves the underlying `BoardTask` row; the board.centerTaskId column
+    /// is cleared so the cell renders as FREE on top, but the placement is
+    /// retained in case the user switches back. Do not treat this as a bug.
+    struct UpdateActiveBoardPatch {
+        var name: String?
+        var timeframe: Timeframe?
+        /// Local-ISO8601 snap to 00:00:00.000 start-of-day (via `wizardLocalISOString`).
+        var startDate: String?
+        /// Local-ISO8601 snap to 23:59:59.999 end-of-day (via `wizardLocalISOString`).
+        var endDate: String?
+        var centerSquareType: CenterSquareType?
+        /// Only meaningful when `centerSquareType == .customFree`.
+        var centerSquareCustomName: String?
+        /// Only meaningful when `centerSquareType == .chosen`.
+        var centerTaskId: String?
+
+        init(
+            name: String? = nil,
+            timeframe: Timeframe? = nil,
+            startDate: String? = nil,
+            endDate: String? = nil,
+            centerSquareType: CenterSquareType? = nil,
+            centerSquareCustomName: String? = nil,
+            centerTaskId: String? = nil
+        ) {
+            self.name = name
+            self.timeframe = timeframe
+            self.startDate = startDate
+            self.endDate = endDate
+            self.centerSquareType = centerSquareType
+            self.centerSquareCustomName = centerSquareCustomName
+            self.centerTaskId = centerTaskId
+        }
+    }
+
+    /// Apply a metadata patch to an ACTIVE board and re-derive stats for
+    /// every placed task.
+    ///
+    /// Sequence:
+    ///   1. Apply the patch atomically (bumps version, enqueues boards sync).
+    ///   2. Sanitize center-square auxiliary fields (clear centerTaskId for
+    ///      non-CHOSEN types; clear centerSquareCustomName for non-CUSTOM_FREE).
+    ///   3. Fetch every `BoardTask` that places a task on this board.
+    ///   4. Run `Self.runBoardCascadeForTask` for each unique placed task
+    ///      inside the same write transaction.
+    ///
+    /// Per-task cascade (not per-board) is deliberate: timeframe/dates changes
+    /// can flip expiry state on placed tasks, and each task's derivation reads
+    /// from board.timeframe + board.endDate. Mirrors the web-side
+    /// `updateBoardAndCascade` in `apps/web/src/db/operations/boards.ts`.
+    ///
+    /// NOTE on renaming: references to this board (Achievement tasks,
+    /// recurring-template spawn records) are always by id, so renaming is
+    /// safe with no additional propagation. Renaming does NOT update the
+    /// spawning template name or historical spawn names.
+    ///
+    /// - Parameters:
+    ///   - boardId: Board to update.
+    ///   - patch: Editable fields for ACTIVE boards.
+    func updateBoardAndCascade(boardId: String, patch: UpdateActiveBoardPatch) throws {
+        try write { db in
+            guard var board = try Board.fetchOne(db, key: boardId) else { return }
+            let now = Self.currentTimestamp()
+
+            // 1. Apply scalar fields.
+            if let n = patch.name { board.name = n }
+            if let tf = patch.timeframe { board.timeframe = tf }
+            if let sd = patch.startDate { board.startDate = sd }
+            if let ed = patch.endDate { board.endDate = ed }
+
+            // 2. Center-square fields with sanitization.
+            if let ct = patch.centerSquareType {
+                board.centerSquareType = ct
+                switch ct {
+                case .customFree:
+                    // Keep caller-supplied custom name; clear any stale centerTaskId.
+                    board.centerSquareCustomName = patch.centerSquareCustomName
+                    board.centerTaskId = nil
+                case .chosen:
+                    // Keep caller-supplied centerTaskId; clear custom name.
+                    // NOTE (asymmetry): switching CHOSEN → FREE/CUSTOM_FREE later
+                    // will clear centerTaskId but NOT the BoardTask row, preserving
+                    // the placement for a potential future switch back.
+                    if let tid = patch.centerTaskId { board.centerTaskId = tid }
+                    board.centerSquareCustomName = nil
+                default:
+                    // FREE / NONE: clear both auxiliary fields.
+                    // The BoardTask row (if any) is preserved — only the board-level
+                    // reference is cleared.
+                    board.centerSquareCustomName = nil
+                    board.centerTaskId = nil
+                }
+            }
+
+            board.updatedAt = now
+            board.version += 1
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: boardId,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).save(db)
+
+            // 3. Batch cascade: load shared tables ONCE, find the union of
+            //    affected board IDs across all placed tasks, then write one
+            //    stats update per affected board. This replaces the previous
+            //    per-task loop which did O(N) full-table scans (one per task
+            //    on a 5×5 board = 25 cascade calls). (Copilot review #9)
+            let placements = try BoardTask
+                .filter(Column("boardId") == boardId)
+                .fetchAll(db)
+            let taskIds = Array(Set(placements.map { $0.taskId }))
+
+            guard !taskIds.isEmpty else { return }
+
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            // Collect the union of all affected board IDs across every placed task.
+            var affectedBoardIds = Set<String>()
+            for taskId in taskIds {
+                let parents = DerivationPass.findTransitiveParentCompounds(
+                    changedTaskId: taskId,
+                    children: allChildren
+                )
+                let ids = DerivationPass.findAffectedBoardIds(
+                    changedTaskId: taskId,
+                    parentCompounds: parents,
+                    boardTasks: allBoardTasks
+                )
+                affectedBoardIds.formUnion(ids)
+            }
+
+            // Update each affected board exactly once.
+            for affectedBoardId in affectedBoardIds {
+                // Re-fetch to see the just-written metadata update above.
+                guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
+                      !affectedBoard.isDeleted else { continue }
+                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == affectedBoardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: affectedBoard,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards
+                )
+
+                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                affectedBoard.completedTasks = update.completedTasks
+                affectedBoard.totalTasks = totalSquares
+                affectedBoard.linesCompleted = update.linesCompleted
+                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                affectedBoard.updatedAt = now
+                affectedBoard.version += 1
+
+                if isGreenlogNow, affectedBoard.status == .active {
+                    affectedBoard.status = .completed
+                    affectedBoard.completedAt = now
+                } else if !isGreenlogNow, affectedBoard.status == .completed {
+                    affectedBoard.status = .active
+                    affectedBoard.completedAt = nil
+                }
+
+                try affectedBoard.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: affectedBoardId,
+                    operationType: .update,
+                    payload: affectedBoard,
+                    now: now
+                ).save(db)
+            }
+        }
+    }
+
     // MARK: - Copy-from-source helpers
     //
     // The wizard's `From a board…` filter long-press menu exposes
