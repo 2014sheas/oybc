@@ -140,6 +140,31 @@ const referenceFieldsForbiddenOnNonAchievement = (data: {
 };
 
 /**
+ * Phase 2 — Shared Counters. `sharedCounterId` and `baseline` must be
+ * co-present or both absent:
+ *   - Both null/undefined → valid (non-linked task).
+ *   - sharedCounterId set + baseline set (>= 0 integer) → valid (linked task).
+ *   - sharedCounterId set + baseline absent/null → REJECTED.
+ *   - sharedCounterId absent/null + baseline set → REJECTED.
+ *
+ * Shape-only refinement. No cross-row existence check here — that's Phase 3.
+ */
+const sharedCounterFieldsConsistent = (data: {
+  sharedCounterId?: string | null;
+  baseline?: number | null;
+}): boolean => {
+  const hasId = data.sharedCounterId != null && data.sharedCounterId !== '';
+  const hasBaseline = data.baseline != null;
+  // Both present or both absent.
+  if (hasId !== hasBaseline) return false;
+  // baseline must be a non-negative integer when present.
+  if (hasBaseline && data.baseline !== undefined && data.baseline !== null) {
+    if (!Number.isInteger(data.baseline) || data.baseline < 0) return false;
+  }
+  return true;
+};
+
+/**
  * Phase 6.3 — `achievementTrigger` is only valid on ACHIEVEMENT tasks.
  * (Setting it on NORMAL/COUNTING/COMPOUND is rejected.) When `type` is
  * absent from the patch, skip the check — helper-layer re-validation
@@ -195,6 +220,10 @@ export const CreateTaskInputSchema = z.object({
   timeframe: z.nativeEnum(Timeframe).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  // Phase 2 — Shared Counters. Co-present or both absent.
+  // Refinement `sharedCounterFieldsConsistent` enforces the shape invariant.
+  sharedCounterId: z.string().nullable().optional(),
+  baseline: z.number().int().min(0).nullable().optional(),
 }).refine(
   (data) => {
     // Counting tasks must have action, unit, and maxCount
@@ -219,6 +248,9 @@ export const CreateTaskInputSchema = z.object({
 ).refine(
   requiredCountRulesOk,
   { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
+).refine(
+  sharedCounterFieldsConsistent,
+  { message: "sharedCounterId and baseline must both be set (with baseline >= 0) or both be absent/null" },
 );
 // Note: post-unification, Progress tasks are created via
 // `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
@@ -246,6 +278,9 @@ export const UpdateTaskInputSchema = z.object({
   timeframe: z.nativeEnum(Timeframe).nullable().optional(),
   startDate: z.string().nullable().optional(),
   endDate: z.string().nullable().optional(),
+  // Phase 2 — Shared Counters. `null` clears; `undefined` leaves unchanged.
+  sharedCounterId: z.string().nullable().optional(),
+  baseline: z.number().int().min(0).nullable().optional(),
 }).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -261,6 +296,9 @@ export const UpdateTaskInputSchema = z.object({
 ).refine(
   requiredCountRulesOk,
   { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
+).refine(
+  sharedCounterFieldsConsistent,
+  { message: "sharedCounterId and baseline must both be set (with baseline >= 0) or both be absent/null" },
 );
 
 // ===== Compound creation input =====

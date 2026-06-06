@@ -128,6 +128,14 @@
   transition: width 0.2s;
 }
 
+/* ── Linked counter caption (Phase 2 — counting tasks) ──────────────────────── */
+
+.linkedCounterCaption {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
 /* ── Board list (usage section) ──────────────────────────────────────────────── */
 
 .boardList {

@@ -80,6 +80,27 @@ function StatusPill({ task }: { task: Task }): React.ReactElement {
   return <span className={`${styles.statusPill} ${styles.statusNeverStarted}`}>Never started</span>;
 }
 
+function CountingSourceCaption({ sharedCounterId }: { sharedCounterId: string }): React.ReactElement {
+  // Phase 2 — Shared Counters: single-row lookup for the source task title.
+  // Rendered only when sharedCounterId is present, so the hook always fires.
+  const sourceTask = useLiveQuery(
+    () => db.tasks.get(sharedCounterId),
+    [sharedCounterId],
+  ) as Task | undefined;
+
+  return (
+    <p className={styles.linkedCounterCaption}>
+      Linked to{' '}
+      {sourceTask
+        ? <strong>{sourceTask.title}</strong>
+        : sourceTask === undefined
+          ? <em>loading…</em>
+          : <em>source task (deleted or not found)</em>
+      }
+    </p>
+  );
+}
+
 function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null {
   if (task.type === TaskType.COUNTING) {
     const current = task.currentCount ?? 0;
@@ -95,6 +116,10 @@ function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null 
           <div className={styles.progressBar} aria-label={`Progress ${pct}%`}>
             <div className={styles.progressFill} style={{ width: `${pct}%` }} />
           </div>
+        )}
+        {/* Phase 2 — Linked counter indicator. Detail-sheet only (no list/cell badge). */}
+        {task.sharedCounterId != null && (
+          <CountingSourceCaption sharedCounterId={task.sharedCounterId} />
         )}
       </section>
     );

@@ -118,6 +118,10 @@ export async function createTask(
     timeframe: input.timeframe,
     startDate: input.startDate,
     endDate: input.endDate,
+    // Phase 2 — Shared Counters. Both null for non-linked tasks (default).
+    // The Zod refinement on CreateTaskInputSchema ensures co-presence.
+    sharedCounterId: input.sharedCounterId ?? null,
+    baseline: input.sharedCounterId != null ? (input.baseline ?? 0) : null,
     isCompleted: false,
     totalCompletions: 0,
     totalInstances: 0,

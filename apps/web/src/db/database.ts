@@ -288,6 +288,14 @@ export class AppDatabase extends Dexie {
         });
       }
     });
+
+    // v10: Phase 2 — Shared Counters. Adds `sharedCounterId` (TEXT) and
+    // `baseline` (INTEGER) to `tasks`. Both are optional (null for
+    // non-linked tasks). No new indexes needed — source lookups happen
+    // via JS filter over small-N linked tasks. Dexie stores the full
+    // Task object verbatim, so new optional fields forward-compat without
+    // a migration callback; the version bump documents the schema change.
+    this.version(10).stores({});
   }
 }
 
