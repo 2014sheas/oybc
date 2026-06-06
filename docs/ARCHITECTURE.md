@@ -1240,13 +1240,15 @@ Re-stated from the issue body so the parallel-triage plan's Wave 2–5 stream na
 - **Phase 3 — increment integration**: the `runBoardCascadeForTask` sub-pass per Decision 4 above. Removes the Phase 2 stub. Includes the cascade-delete update for `deleteTaskWithCascade`, the cycle-detection refinement in Zod, and the new `deriveDisplayedCount` helper consumed by the cell renderer.
 - **Phase 4 — sync**: `mergeCounterValue` shared algorithm, conflict resolver in `syncService.ts` + `SyncService.swift`, `lastSyncedCount` field added to Task, end-to-end multi-device test scenario in `docs/SYNC_STRATEGY.md`. **Also** the dead-scaffolding cleanup commit (delete `progress_counters` table + index, delete `ProgressCounter` types + model + CRUD, delete `TaskProgressCounter` + `calculateCountingRollup`). Cleanup ships with sync, not separately, so reviewer sees both halves of the model decision (locked-in + scaffolding-removed) in one diff.
 
-### Open questions
+### Resolved design decisions (Phase 0 — resolved 2026-06-05)
 
-The following remain undecidable without user input. Phase 1 should not start until these are resolved:
+The three open questions below were unresolvable without user input and blocked Phase 1. They are now resolved; Phase 1 implementation has begun on branch `feature/shared-counter-spike`.
 
-1. **Picker placement**: the existing `CountingTemplatePicker` is rendered inside the counting-variant of `CreateNewTaskForm`. Does the new "Link to existing counter" mode live as a third tab inside that picker, a sibling button outside it, or a wholly separate entry point in the create flow? (UX call — not a model decision.)
-2. **What does the new task's *title* default to?** "Read 5000 pages" is the user's example, but the picker would naturally autofill `<action> <maxCount> <unit>` from the threshold input (e.g., the same `generateCounterTaskTitle()` helper today's standalone counters use). Confirm that's the right default or specify an override.
-3. **Visual indicator on linked tasks in the library list / cell**: should derived counters get a glyph or badge (analogous to compound's `C` badge or achievement's marker) to communicate "this is shared"? Or is the shared-ness invisible at the cell level and only surfaced in the detail sheet? (UX call.)
+1. **Picker placement** — **Third mode inside `CountingTemplatePicker`** (sibling to the existing "Use as template" mode). Phase 2 will surface a tab/segmented control inside the picker with two options: "Use as template" (today's behaviour) and "Link to existing counter" (the new shared-counter path). Phase 1 does not touch `CountingTemplatePicker`.
+
+2. **Derived task default title** — **Autofill via `generateCounterTaskTitle()`** from `@oybc/shared`, using the derived task's own `maxCount` with the source task's `action` and `unit`. This is the same convention as a brand-new standalone counting task today. The user can always override the autofilled title. The Phase 1 playground demonstrates this behaviour: the "Add derived task" form shows the live autofilled title as the user types `maxCount`.
+
+3. **Visual indicator on linked/derived tasks** — **Detail-sheet only — no list/cell badge**. The linked-counter relationship is surfaced only when the user opens the task's detail sheet; derived tasks look identical to standalone counting tasks in the library list and on the bingo board cell. Phase 1 playground does not add any badge. Phase 3/Phase 2 will add detail-sheet text indicating the source task.
 
 ### Out of scope
 

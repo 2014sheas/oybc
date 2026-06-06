@@ -36,6 +36,11 @@ struct PlaygroundView: View {
     private var features: [Feature] {
         [
         Feature(
+            id: "shared-counter",
+            title: "Shared Counters — Phase 1 spike (deriveDisplayedCount)",
+            content: AnyView(SharedCounterPlayground())
+        ),
+        Feature(
             id: "create-hub",
             title: "Create Hub — full flow (hub + wizard)",
             content: AnyView(CreateHubPlayground())

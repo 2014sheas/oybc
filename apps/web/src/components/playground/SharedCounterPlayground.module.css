@@ -1,0 +1,328 @@
+/* ─── Container ─────────────────────────────────────────────────────────────── */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ─── Phase note ────────────────────────────────────────────────────────────── */
+
+.note {
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-md, 8px);
+  background-color: var(--info-bg, #e7f3ff);
+  color: var(--info-text, #0056b3);
+  font-size: 0.85rem;
+  border: 1px solid rgba(0, 86, 179, 0.2);
+}
+
+.note em {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+/* ─── Section card ───────────────────────────────────────────────────────────── */
+
+.section {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 12px);
+  overflow: hidden;
+  background-color: var(--card-bg);
+}
+
+.sectionTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0.6rem 1rem;
+  background-color: var(--feature-header-bg, #f8f9fa);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ─── Source card ───────────────────────────────────────────────────────────── */
+
+.sourceCard {
+  padding: 0.875rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sourceHeader {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.sourceMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.sourceLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.sourceValue {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sourceCountRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sourceCountLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.sourceCountControl {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.countButton {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background-color: var(--button-bg, #f5f5f5);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+  font-variant-numeric: tabular-nums;
+}
+
+.countButton:hover:not(:disabled) {
+  background-color: var(--button-hover-bg, #e0e0e0);
+  border-color: var(--button-hover-border, #c0c0c0);
+}
+
+.countButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.currentCount {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--active-bg, #007bff);
+  min-width: 3ch;
+  text-align: center;
+}
+
+.sourceProgress {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.overshootNote {
+  font-size: 0.8rem;
+  color: var(--warning-text, #856404);
+  background-color: var(--warning-bg, #fff3cd);
+  border: 1px solid var(--warning-border, #ffeeba);
+  border-radius: var(--radius-sm, 6px);
+  padding: 0.4rem 0.6rem;
+  margin: 0;
+}
+
+/* ─── Add form ───────────────────────────────────────────────────────────────── */
+
+.addForm {
+  padding: 0.875rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.formLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Mode toggle buttons */
+.modeButtons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.modeButton {
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background-color: var(--button-bg, #f5f5f5);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.modeButton:hover:not(.modeButtonActive) {
+  background-color: var(--hover-bg, #f0f0f0);
+  border-color: var(--active-bg, #007bff);
+  color: var(--text-primary);
+}
+
+.modeButtonActive {
+  background-color: var(--active-bg, #007bff);
+  border-color: var(--active-bg, #007bff);
+  color: #ffffff;
+}
+
+.modeHint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 0;
+}
+
+/* maxCount row */
+.maxCountRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.maxCountInput {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  width: 100px;
+}
+
+.maxCountInput:focus {
+  outline: 2px solid var(--active-bg, #007bff);
+  outline-offset: 1px;
+  border-color: var(--active-bg, #007bff);
+}
+
+.inputError {
+  border-color: var(--error-text, #721c24);
+}
+
+.titlePreview {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.titlePreview em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fieldError {
+  font-size: 0.78rem;
+  color: var(--error-text, #721c24);
+  margin: 0;
+}
+
+/* Add button */
+.addButton {
+  align-self: flex-start;
+  padding: 0.45rem 1.1rem;
+  background-color: var(--active-bg, #007bff);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.addButton:hover {
+  opacity: 0.88;
+}
+
+/* ─── Derived list ───────────────────────────────────────────────────────────── */
+
+.derivedList {
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.emptyState {
+  padding: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 0;
+}
+
+.invariantNote {
+  margin: 0 1rem 0.75rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--info-text, #0056b3);
+  background-color: var(--info-bg, #e7f3ff);
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(0, 86, 179, 0.2);
+}
+
+/* ─── Raw state debug ────────────────────────────────────────────────────────── */
+
+.rawState {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+}
+
+.rawState summary {
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  font-weight: 500;
+  background-color: var(--feature-header-bg, #f8f9fa);
+  user-select: none;
+}
+
+.rawState summary:hover {
+  background-color: var(--feature-header-hover, #e9ecef);
+}
+
+.rawStateCode {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.72rem;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
