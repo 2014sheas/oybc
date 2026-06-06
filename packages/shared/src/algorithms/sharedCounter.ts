@@ -1,5 +1,9 @@
 /**
- * sharedCounter.ts — Phase 1 playground spike math helper.
+ * sharedCounter.ts — Shared-counter math helpers (Phase 1 + Phase 3).
+ *
+ * Phase 1: `deriveDisplayedCount` — snapshot math for the derived display.
+ * Phase 3: `propagateIncrement` — pure propagation result for writing back
+ *   to derived tasks after a source increment. The DB layer owns the writes.
  *
  * Computes the displayed count and completion status for a derived counting
  * task that shares a source task's running total via `sharedCounterId`.
@@ -20,6 +24,12 @@
  *    `maxCount = 5000`, then `displayed = 5500` and `isCompleted = true`.
  *    The Phase 0 doc explicitly forbids a `Math.min(displayed, maxCount)` clamp —
  *    overshoot is intentional and must be visible to the user.
+ *  - ONE-WAY LATCH: once `isCompleted` is `true` on a linked task, it stays
+ *    `true`. Re-deriving with a source count that would yield `false` does NOT
+ *    un-complete the task. Resetting requires explicit user action (not in
+ *    Phase 3 scope). The latch is enforced by `propagateIncrement` which
+ *    accepts the task's existing `isCompleted` flag and never flips it from
+ *    `true` to `false`.
  *
  * This TypeScript implementation is the source of truth. A manual Swift port
  * lives in `apps/ios/OYBC/Helpers/SharedCounter.swift` and must be mirrored
@@ -57,4 +67,105 @@ export function deriveDisplayedCount(
   const isCompleted = displayed >= maxCount;
 
   return { displayed, isCompleted };
+}
+
+// ─── Phase 3: propagation result ─────────────────────────────────────────────
+
+/**
+ * Minimal slice of the source task as needed by `propagateIncrement`.
+ */
+export interface PropagateIncrementSource {
+  /** The live running total AFTER the increment has been applied. */
+  currentCount: number;
+}
+
+/**
+ * Minimal slice of one linked (derived) task as needed by `propagateIncrement`.
+ */
+export interface PropagateIncrementLinkedTask {
+  id: string;
+  /** The baseline offset for this linked task (0 = inherit). */
+  baseline?: number | null;
+  /** This linked task's personal threshold. */
+  maxCount?: number | null;
+  /**
+   * The task's current persisted `isCompleted` value BEFORE this increment.
+   * One-way latch: if already `true`, the result keeps it `true` even if the
+   * freshly derived value would return `false` (shouldn't happen in practice
+   * since source count only goes up on an increment, but defensive).
+   */
+  isCompleted: boolean;
+}
+
+/**
+ * The new state to write for one linked task after a source increment.
+ */
+export interface LinkedTaskIncrementResult {
+  taskId: string;
+  /** New `currentCount` to store on the linked task (mirrors source's new count
+   *  so cascade readers see the same number without re-deriving). */
+  newCurrentCount: number;
+  /**
+   * New `isCompleted` to store. One-way latch — never transitions from `true`
+   * to `false`. May transition `false` → `true` when the derived displayed
+   * value first reaches or exceeds `maxCount`.
+   */
+  newIsCompleted: boolean;
+  /**
+   * The derived display value (= `source.currentCount - baseline`, clamped to
+   * 0). Useful for the caller to pass to the cascade display layer without a
+   * second `deriveDisplayedCount` call.
+   */
+  displayed: number;
+}
+
+/**
+ * Pure propagation helper for Phase 3's increment hot-path.
+ *
+ * Given the source task's new `currentCount` (AFTER the increment) and an
+ * array of all linked (derived) tasks, returns the new `currentCount` and
+ * `isCompleted` to write for each linked task — one entry per linked task.
+ *
+ * Invariants enforced:
+ *  - NO HIGH-END CLAMP on source: callers must never clamp `sourceAfter.currentCount`
+ *    before passing it in. This function does not touch the source count.
+ *  - ONE-WAY LATCH: if `linked.isCompleted` is already `true`, the result
+ *    keeps `newIsCompleted = true` regardless of the derived value.
+ *  - LOW-END CLAMP on display: `displayed` is never negative.
+ *  - Tasks with no `maxCount` (null/undefined/0) are immediately complete
+ *    (same rule as `deriveDisplayedCount`).
+ *
+ * Pure function — no DB calls, no side effects. The DB layer owns writes.
+ *
+ * @param sourceAfter - Source task state AFTER the increment (only `currentCount`
+ *   is read).
+ * @param linkedTasks - All tasks whose `sharedCounterId` === source task id.
+ *   Pass only non-deleted tasks.
+ * @returns One `LinkedTaskIncrementResult` per entry in `linkedTasks`, in the
+ *   same order.
+ */
+export function propagateIncrement(
+  sourceAfter: PropagateIncrementSource,
+  linkedTasks: readonly PropagateIncrementLinkedTask[],
+): LinkedTaskIncrementResult[] {
+  return linkedTasks.map((linked) => {
+    const { displayed, isCompleted: derivedCompleted } = deriveDisplayedCount(
+      { baseline: linked.baseline ?? 0, maxCount: linked.maxCount ?? 0 },
+      { currentCount: sourceAfter.currentCount },
+    );
+
+    // ONE-WAY LATCH: once true, always true.
+    const newIsCompleted = linked.isCompleted || derivedCompleted;
+
+    return {
+      taskId: linked.id,
+      // Mirror the source's current count so the linked task row carries the
+      // same accumulator value. Cascade readers don't need to look up the
+      // source; they can just read this task's currentCount and call
+      // deriveDisplayedCount with the baseline.
+      newCurrentCount: sourceAfter.currentCount,
+      newIsCompleted,
+      displayed,
+    };
+  });
 }

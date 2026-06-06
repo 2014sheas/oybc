@@ -200,14 +200,15 @@
   margin: 0;
 }
 
-/* Phase 2 — Shared Counters: stub shown in the detail modal for linked tasks. */
-.linkedCounterStub {
+/* Phase 3 — Shared Counters: caption shown in the detail modal for linked tasks. */
+.linkedCounterCaption {
   font-size: 0.82rem;
   color: var(--text-secondary);
   font-style: italic;
-  margin: 0.5rem 0 0;
-  padding: 0.5rem 0.75rem;
-  border: 1px dashed var(--border-color);
+  margin: 0.5rem 0 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: color-mix(in srgb, var(--accent-orange, #f97316) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-orange, #f97316) 20%, transparent);
   border-radius: var(--radius-sm);
   text-align: center;
 }
