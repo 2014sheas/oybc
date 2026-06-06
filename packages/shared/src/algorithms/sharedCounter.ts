@@ -21,9 +21,9 @@
  *    The Phase 0 doc explicitly forbids a `Math.min(displayed, maxCount)` clamp —
  *    overshoot is intentional and must be visible to the user.
  *
- * Swift source-of-truth: this function has a manual port in
- * `apps/ios/OYBC/Algorithms/SharedCounter.swift`. Any change to the math here
- * must be mirrored there to avoid cross-platform divergence.
+ * This TypeScript implementation is the source of truth. A manual Swift port
+ * lives in `apps/ios/OYBC/Helpers/SharedCounter.swift` and must be mirrored
+ * on any math change to avoid cross-platform divergence.
  */
 
 /**

@@ -77,8 +77,11 @@ export function SharedCounterPlayground(): React.ReactElement {
   // ── Add derived task ───────────────────────────────────────────────────────
 
   const handleAddDerived = useCallback(() => {
-    const parsed = parseInt(addMaxCount, 10);
-    if (isNaN(parsed) || parsed < 1) {
+    // Use Number + isInteger so the validator matches the "positive
+    // integer" error text — `parseInt('2.9')` would silently accept the
+    // string as 2, and `parseInt('1e3')` as 1, contradicting the UI.
+    const parsed = Number(addMaxCount);
+    if (!Number.isInteger(parsed) || parsed < 1) {
       setAddMaxCountError('Enter a positive integer target count.');
       return;
     }
@@ -91,7 +94,9 @@ export function SharedCounterPlayground(): React.ReactElement {
     const title = generateCounterTaskTitle(source.action, parsed, source.unit);
 
     const newDerived: DerivedFixture = {
-      id: `derived-${Date.now()}`,
+      // crypto.randomUUID() avoids collisions when multiple rows get added
+      // in the same millisecond (Date.now() would yield duplicate React keys).
+      id: crypto.randomUUID(),
       title,
       maxCount: parsed,
       baseline,

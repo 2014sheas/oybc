@@ -75,8 +75,17 @@ export function DerivedCounterRow({
           {data.maxCount}
         </span>
 
-        {/* Progress bar */}
-        <div className={styles.progressBar} role="progressbar" aria-valuenow={result.displayed} aria-valuemax={data.maxCount}>
+        {/* Progress bar — percent-based ARIA so screen readers don't trip on
+            overshoot (displayed can exceed maxCount intentionally). aria-valuetext
+            carries the raw fraction for users who want the underlying numbers. */}
+        <div
+          className={styles.progressBar}
+          role="progressbar"
+          aria-valuenow={Math.min(100, Math.round(progressPercent))}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuetext={`${result.displayed} of ${data.maxCount}`}
+        >
           <div
             className={`${styles.progressFill} ${result.isCompleted ? styles.progressFillComplete : ''}`}
             style={{ width: `${progressPercent}%` }}
@@ -87,7 +96,9 @@ export function DerivedCounterRow({
       {/* Right: completion badge + optional remove */}
       <div className={styles.statusBlock}>
         {result.isCompleted ? (
-          <span className={styles.completedBadge} role="img" aria-label="Completed">
+          // Plain text status — no role="img" so assistive tech announces
+          // the actual "Done" text rather than treating the span as an image.
+          <span className={styles.completedBadge}>
             Done
           </span>
         ) : (

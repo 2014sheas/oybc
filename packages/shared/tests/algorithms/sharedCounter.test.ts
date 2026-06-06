@@ -12,7 +12,7 @@ import { deriveDisplayedCount } from '../../src/algorithms/sharedCounter';
  *   3. `isCompleted` flips once `displayed >= maxCount` — it is a snapshot,
  *      not a latch. The latch is Phase 3's responsibility.
  *
- * Swift mirror: `apps/ios/OYBC/Algorithms/SharedCounter.swift` (same 6+ cases).
+ * Swift mirror: `apps/ios/OYBC/Helpers/SharedCounter.swift` (same 6+ cases).
  */
 
 describe('deriveDisplayedCount', () => {
