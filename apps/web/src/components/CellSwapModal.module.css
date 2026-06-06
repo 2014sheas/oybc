@@ -128,8 +128,7 @@
 
 .taskRowSelected {
   border-color: var(--accent-color, #6366f1);
-  background-color: var(--accent-color, #6366f1);
-  background-opacity: 0.08;
+  background-color: var(--accent-bg-subtle, rgba(99, 102, 241, 0.08));
 }
 
 .taskRowTitle {

@@ -144,7 +144,7 @@ export async function fetchBoardsUsingTask(taskId: string): Promise<string[]> {
  *
  * Caller is responsible for:
  *   - Confirming the board is ACTIVE (not expired/archived) before calling.
- *   - Providing a `newTaskId` that is not the center square.
+ *   - Ensuring the target `BoardTask` cell (identified by `boardTaskId`) is not the center square.
  *   - Providing a `newTaskId` that is NOT the same as the current `taskId` (no-op
  *     guard: if they are equal, the function returns immediately without writing).
  *
