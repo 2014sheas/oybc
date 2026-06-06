@@ -200,6 +200,18 @@
   margin: 0;
 }
 
+/* Phase 2 — Shared Counters: stub shown in the detail modal for linked tasks. */
+.linkedCounterStub {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
 .modalProgressBar {
   position: relative;
   height: 16px;

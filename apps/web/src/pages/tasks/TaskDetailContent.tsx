@@ -80,6 +80,43 @@ function StatusPill({ task }: { task: Task }): React.ReactElement {
   return <span className={`${styles.statusPill} ${styles.statusNeverStarted}`}>Never started</span>;
 }
 
+function CountingSourceCaption({ sharedCounterId }: { sharedCounterId: string }): React.ReactElement {
+  // Phase 2 — Shared Counters: single-row lookup for the source task title.
+  // Rendered only when sharedCounterId is present, so the hook always fires.
+  //
+  // useLiveQuery returns `undefined` as the initial (loading) value regardless
+  // of what the query eventually resolves to. `db.tasks.get()` resolves to
+  // `undefined` when the row doesn't exist — so both "loading" and "not found"
+  // would be indistinguishable if we relied on `undefined` alone.
+  //
+  // Fix: pass `null` as the initial value so the three states are distinct:
+  //   undefined  → loading (initial value not yet overwritten by the query)
+  //   null       → not found (query resolved to undefined → we map to null)
+  //   Task       → loaded successfully
+  const rawResult = useLiveQuery(
+    () => db.tasks.get(sharedCounterId),
+    [sharedCounterId],
+  );
+  // Map query result: undefined (DB miss) → null (not-found sentinel).
+  // Until the first query result arrives rawResult is the initial `undefined`.
+  const isLoading = rawResult === undefined;
+  const sourceTask = (rawResult as Task | undefined) ?? null;
+  // Also treat soft-deleted rows as not-found.
+  const found = sourceTask !== null && !sourceTask.isDeleted;
+
+  return (
+    <p className={styles.linkedCounterCaption}>
+      Linked to{' '}
+      {isLoading
+        ? <em>loading…</em>
+        : found
+          ? <strong>{(sourceTask as Task).title}</strong>
+          : <em>source task (deleted or not found)</em>
+      }
+    </p>
+  );
+}
+
 function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null {
   if (task.type === TaskType.COUNTING) {
     const current = task.currentCount ?? 0;
@@ -95,6 +132,10 @@ function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null 
           <div className={styles.progressBar} aria-label={`Progress ${pct}%`}>
             <div className={styles.progressFill} style={{ width: `${pct}%` }} />
           </div>
+        )}
+        {/* Phase 2 — Linked counter indicator. Detail-sheet only (no list/cell badge). */}
+        {task.sharedCounterId != null && (
+          <CountingSourceCaption sharedCounterId={task.sharedCounterId} />
         )}
       </section>
     );

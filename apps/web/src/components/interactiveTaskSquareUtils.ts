@@ -58,6 +58,13 @@ export interface TaskSquareData {
   action?: string;
   maxCount?: number;
   unit?: string;
+  /**
+   * Phase 2 — Shared Counters. Non-null when this is a linked derived
+   * counter. The board-play surface maps `Task.sharedCounterId` into
+   * this field so the DetailModal can surface the stub message instead
+   * of the increment controls (Phase 3 will wire the actual hot-path).
+   */
+  sharedCounterId?: string | null;
   /** progress only */
   steps?: ProgressStep[];
   /** compound only */

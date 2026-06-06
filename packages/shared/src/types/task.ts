@@ -129,6 +129,33 @@ export interface Task {
   timeframe?: Timeframe;         // DAILY / WEEKLY / MONTHLY / YEARLY / CUSTOM
   startDate?: string;            // ISO8601
   endDate?: string;              // ISO8601
+
+  /**
+   * Phase 2 — Shared Counters. Points at the source counting task whose
+   * `currentCount` drives this task's displayed value via
+   * `deriveDisplayedCount()`. Null/undefined for non-linked tasks.
+   * Only meaningful when `type === TaskType.COUNTING`.
+   *
+   * The FK is stored in SQLite / IndexedDB as a plain TEXT column with no
+   * database-level FOREIGN KEY constraint enforced at runtime (soft-delete
+   * semantics make hard constraints unworkable). Callers are responsible for
+   * not pointing at a deleted source.
+   */
+  sharedCounterId?: string | null;
+
+  /**
+   * Phase 2 — Shared Counters. The source task's `currentCount` at the
+   * moment this task was linked. Used by `deriveDisplayedCount()`:
+   *   - "Inherit" mode: `baseline = 0` → displayed = source.currentCount.
+   *   - "Start from zero" mode: `baseline = source.currentCount_at_link_time`
+   *     → displayed = source.currentCount − baseline.
+   *
+   * Must be set (non-negative integer) when `sharedCounterId` is non-null,
+   * and must be null/undefined when `sharedCounterId` is null/undefined.
+   * The Zod refinement on `CreateTaskInputSchema` / `UpdateTaskInputSchema`
+   * enforces this shape invariant.
+   */
+  baseline?: number | null;
 }
 
 /**
@@ -207,6 +234,22 @@ export interface CreateTaskInput {
   timeframe?: Timeframe;
   startDate?: string;
   endDate?: string;
+
+  /**
+   * Phase 2 — Shared Counters. When set, the new task is a *linked*
+   * derived counter that reads its displayed value from the source task
+   * identified by `sharedCounterId`. Only valid on `type === COUNTING`.
+   *
+   * See `Task.sharedCounterId` for the full invariant documentation.
+   */
+  sharedCounterId?: string | null;
+
+  /**
+   * Phase 2 — Shared Counters. The baseline offset for the linked derived
+   * counter. Must be provided (>= 0) when `sharedCounterId` is set, and
+   * must be absent when `sharedCounterId` is absent. See `Task.baseline`.
+   */
+  baseline?: number | null;
 }
 
 /**
@@ -252,6 +295,20 @@ export interface UpdateTaskInput {
   timeframe?: Timeframe | null;
   startDate?: string | null;
   endDate?: string | null;
+
+  /**
+   * Phase 2 — Shared Counters. `null` clears the shared-counter link
+   * (unlinks the task); `undefined` leaves unchanged.
+   * When setting a non-null value both `sharedCounterId` and `baseline`
+   * must be provided together — the Zod refinement enforces co-presence.
+   */
+  sharedCounterId?: string | null;
+
+  /**
+   * Phase 2 — Shared Counters. `null` clears the baseline (use only in
+   * conjunction with clearing `sharedCounterId`). See `Task.baseline`.
+   */
+  baseline?: number | null;
 }
 
 /**
