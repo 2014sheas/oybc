@@ -133,8 +133,17 @@ struct TaskDetailSheetView: View {
                     children = try AppDatabase.shared.fetchCompoundChildrenTasks(parentTaskId: id)
                     tpls = try AppDatabase.shared.fetchTemplatesReferencingTask(id)
                 }
-                let pickerBoards = try AppDatabase.shared.fetchBoards(userId: loaded?.userId ?? "")
-                let pickerTemplates = try AppDatabase.shared.fetchRecurringBoardTemplates(userId: loaded?.userId ?? "")
+                // Load picker data for Achievement re-target — only when
+                // the loaded task is actually an achievement. Skipping for
+                // other task types avoids two extra GRDB reads per sheet
+                // open. The `loaded != nil && type == .achievement` gate
+                // also guarantees we never call `fetchBoards(userId: "")`.
+                var pickerBoards: [Board] = []
+                var pickerTemplates: [RecurringBoardTemplate] = []
+                if let loaded = loaded, loaded.type == .achievement {
+                    pickerBoards = try AppDatabase.shared.fetchBoards(userId: loaded.userId)
+                    pickerTemplates = try AppDatabase.shared.fetchRecurringBoardTemplates(userId: loaded.userId)
+                }
                 return (loaded, bts, boards, parents, children, tpls, pickerBoards, pickerTemplates)
             }.value
             await MainActor.run {

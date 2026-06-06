@@ -224,8 +224,20 @@ struct EditTaskSheet: View {
         let nowHasTimeboxed = timeframe != nil
         let clearTimeboxed = hadTimeboxed && !nowHasTimeboxed
 
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        // Snap to local start-of-day / end-of-day and serialize via
+        // `wizardLocalISOString` so the calendar window matches the
+        // wizard's storage convention (no timezone suffix, full-day
+        // coverage). Earlier `ISO8601DateFormatter` path stored UTC
+        // strings with `Z` suffix, which shifted the day in non-UTC
+        // zones and didn't sit on day boundaries.
+        let cal = Calendar.current
+        func snapStart(_ d: Date) -> String {
+            wizardLocalISOString(cal.startOfDay(for: d))
+        }
+        func snapEnd(_ d: Date) -> String {
+            let startNext = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: d))!
+            return wizardLocalISOString(startNext.addingTimeInterval(-0.001))
+        }
 
         onSubmit(
             Patch(
@@ -235,8 +247,8 @@ struct EditTaskSheet: View {
                 unit: unit,
                 maxCountStr: maxCountStr,
                 timeframe: timeframe,
-                startDate: startDate.map { fmt.string(from: $0) },
-                endDate: endDate.map { fmt.string(from: $0) },
+                startDate: startDate.map { snapStart($0) },
+                endDate: endDate.map { snapEnd($0) },
                 clearTimeboxed: clearTimeboxed,
                 trigger: trigger,
                 requiredCountStr: requiredCountStr,

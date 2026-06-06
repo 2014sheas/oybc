@@ -499,7 +499,15 @@ export async function checkAchievementRetargetCycle(
 
   const result = hasCycle(cycleCandidate, context);
   if (!result.ok) {
-    return `This reference would create a cycle: ${result.cyclePath?.join(' → ') ?? 'cycle detected'}`;
+    // Map raw board ids in the cycle path to display names so the error
+    // is readable in the edit sheet. Fall back to the id when the board
+    // can't be resolved (deleted, or a template id that lives on a
+    // different collection).
+    const nameById = new Map(allBoards.map((b) => [b.id, b.name]));
+    const friendly = result.cyclePath
+      ?.map((id) => nameById.get(id) ?? id)
+      .join(' → ') ?? 'cycle detected';
+    return `This reference would create a cycle: ${friendly}`;
   }
   return null;
 }

@@ -686,11 +686,15 @@ describe('computeBoardStatsUpdate — counting task maxCount edit (live-edit M1)
     // Before edit: maxCount=3, currentCount=3, isCompleted=true (latched).
     // After edit: user raises maxCount to 10. isCompleted stays true.
     // Cascade must re-derive board as still having 1 completedTask.
+    // `currentCount` set explicitly so a regression that recomputed
+    // completion from `currentCount >= maxCount` would now flip this
+    // task to incomplete and fail the assertion.
     const b = board('b', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const t = task('counting1', {
       type: TaskType.COUNTING,
       action: 'Run',
       maxCount: 10, // raised from 3
+      currentCount: 3, // still at original level — would now be < new maxCount
       isCompleted: true, // latch unchanged — NOT re-evaluated from currentCount
     });
     const bt = boardTask('b', 'counting1', 0, 0);
@@ -703,11 +707,15 @@ describe('computeBoardStatsUpdate — counting task maxCount edit (live-edit M1)
     // After edit: user lowers maxCount to 3. The UI would set isCompleted=true
     // only on the NEXT counter tap — the cascade itself must NOT set it.
     // Derivation reads isCompleted=false and returns 0 completedTasks.
+    // `currentCount` set explicitly so a regression that auto-completed
+    // when `currentCount >= maxCount` would now report 1 completedTask
+    // and fail the assertion.
     const b = board('b', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const t = task('counting2', {
       type: TaskType.COUNTING,
       action: 'Walk',
       maxCount: 3, // lowered to match currentCount, but isCompleted not yet set by UI
+      currentCount: 3, // newly == maxCount post-edit; UI hasn't latched yet
       isCompleted: false,
     });
     const bt = boardTask('b', 'counting2', 0, 0);

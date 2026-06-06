@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AchievementTrigger, TaskType, Timeframe, type Task } from '@oybc/shared';
+import { AchievementTrigger, TaskType, Timeframe, toLocalISO, type Task } from '@oybc/shared';
 import type { Board, RecurringBoardTemplate } from '@oybc/shared';
 import { db } from '../../db/database';
 import {
@@ -117,15 +117,34 @@ export function TaskEditSheet({
       }
     }
 
-    // Timeboxed fields — all task types
+    // Timeboxed fields — all task types.
+    // Dates come from <input type="date"> as YYYY-MM-DD strings. Snap
+    // start to local 00:00:00.000 and end to local 23:59:59.999 so the
+    // calendar window covers the whole day, and serialize via
+    // `toLocalISO` (no timezone suffix) to match the convention used by
+    // the wizard and by `calendarBoundaries`. The earlier
+    // `new Date(s + 'T12:00:00').toISOString()` path produced a UTC
+    // mid-day string that could shift the date in non-UTC zones and
+    // didn't sit at day boundaries.
+    function snapStart(ymd: string): string {
+      const [y, m, d] = ymd.split('-').map(Number);
+      return toLocalISO(new Date(y, m - 1, d, 0, 0, 0, 0));
+    }
+    function snapEnd(ymd: string): string {
+      const [y, m, d] = ymd.split('-').map(Number);
+      return toLocalISO(new Date(y, m - 1, d, 23, 59, 59, 999));
+    }
     if (timeframe) {
       patch.timeframe = timeframe as Timeframe;
-      patch.startDate = startDate
-        ? new Date(startDate + 'T12:00:00').toISOString()
-        : null;
-      patch.endDate = endDate
-        ? new Date(endDate + 'T12:00:00').toISOString()
-        : null;
+      // Validate ordering — matches the wizard's "End date must be on or
+      // after the start date" check so live edits can't produce inverted
+      // windows.
+      if (startDate && endDate && endDate < startDate) {
+        setValidationError('End date must be on or after the start date.');
+        return;
+      }
+      patch.startDate = startDate ? snapStart(startDate) : null;
+      patch.endDate = endDate ? snapEnd(endDate) : null;
     } else if (task.timeframe !== undefined) {
       // Cleared by the user — send null sentinels to wipe the fields.
       patch.timeframe = null;
