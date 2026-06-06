@@ -1,26 +1,39 @@
 import SwiftUI
 
+// MARK: - CellSwapMode
+
+/// Controls CellSwapSheet behavior and labeling.
+///
+/// - `swap`: Excludes `currentTaskId` from the list and labels the CTA "Swap" (M3).
+/// - `add`: Shows all eligible tasks with no exclusion; labels the CTA "Add" (M4).
+enum CellSwapMode {
+    case swap
+    case add
+}
+
 // MARK: - CellSwapSheet
 
-/// Task-picker sheet for the live-edit cell swap (M3).
+/// Task-picker sheet for the live-edit cell swap (M3) and empty-cell add (M4).
 ///
 /// Displays the user's full task library filtered to types eligible for a
-/// non-center square (NORMAL / COUNTING / COMPOUND / ACHIEVEMENT), excluding
-/// the Task currently occupying the square being swapped.
+/// non-center square (NORMAL / COUNTING / COMPOUND / ACHIEVEMENT). In swap
+/// mode the Task currently occupying the square is excluded; in add mode all
+/// eligible tasks are shown.
 ///
 /// UX mirrors the web `CellSwapModal`:
 ///   - Search field filters by title (case-insensitive substring).
 ///   - Single-select list row; selected row gets a checkmark.
-///   - "Swap" button is disabled until a task is chosen.
+///   - CTA button ("Swap" or "Add") is disabled until a task is chosen.
 ///   - Tapping the same row again deselects (no forced selection).
 ///
 /// The caller is responsible for:
 ///   - Providing `candidateTasks` filtered to non-deleted tasks for the user.
-///   - Calling `onConfirm(newTaskId:)` to write the swap (the sheet does NOT
+///   - Calling `onConfirm(newTaskId:)` to write the change (the sheet does NOT
 ///     write to the database itself).
 ///
 /// - Parameters:
-///   - currentTaskId: The Task currently in the square (excluded from the list).
+///   - mode: `.swap` (default) or `.add`. Controls exclusion + CTA label.
+///   - currentTaskId: The Task currently in the square (excluded in swap mode).
 ///   - candidateTasks: All non-deleted tasks in the user's library.
 ///   - onDismiss: Called when the user cancels without selecting.
 ///   - onConfirm: Called with the chosen Task's id.
@@ -28,6 +41,7 @@ struct CellSwapSheet: View {
 
     // MARK: - Parameters
 
+    var mode: CellSwapMode = .swap
     let currentTaskId: String
     let candidateTasks: [Task]
     let onDismiss: () -> Void
@@ -47,12 +61,23 @@ struct CellSwapSheet: View {
     private var filtered: [Task] {
         candidateTasks.filter { task in
             guard !task.isDeleted else { return false }
-            guard task.id != currentTaskId else { return false }
+            // In swap mode, exclude the task currently occupying the square.
+            if mode == .swap, task.id == currentTaskId { return false }
             guard eligibleTypes.contains(task.type) else { return false }
             if query.trimmingCharacters(in: .whitespaces).isEmpty { return true }
             return task.title.localizedCaseInsensitiveContains(query)
         }
         .sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
+    }
+
+    /// CTA button label — "Swap" for M3, "Add" for M4.
+    private var ctaLabel: String {
+        mode == .add ? "Add" : "Swap"
+    }
+
+    /// Navigation title — differs by mode.
+    private var sheetTitle: String {
+        mode == .add ? "Add a task to this cell…" : "Swap with another task…"
     }
 
     // MARK: - Body
@@ -86,14 +111,14 @@ struct CellSwapSheet: View {
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle("Swap with another task…")
+            .navigationTitle(sheetTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Swap") {
+                    Button(ctaLabel) {
                         if let id = selectedTaskId {
                             onConfirm(id)
                         }

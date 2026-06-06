@@ -533,3 +533,12 @@
   background-color: var(--border-color);
   margin: 4px 0;
 }
+
+/* Danger variant for destructive actions (e.g. Remove from board) */
+.contextMenuItemDanger {
+  color: var(--danger, #dc2626);
+}
+
+.contextMenuItemDanger:hover:not(:disabled) {
+  background-color: var(--danger-bg, rgba(220, 38, 38, 0.07));
+}

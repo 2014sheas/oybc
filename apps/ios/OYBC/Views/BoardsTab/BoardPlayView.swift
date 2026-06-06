@@ -248,6 +248,10 @@ struct BoardPlayView: View {
     @State private var isEditBoardPresented: Bool = false
     /// M3 — live-edit cell swap: the square whose task the user wants to replace.
     @State private var swapTarget: SwapTarget? = nil
+    /// M4 — live-edit remove from board: the boardTaskId pending confirmation.
+    @State private var removeBoardTaskId: String? = nil
+    /// M4 — live-edit add to empty cell: the grid position awaiting task selection.
+    @State private var addCellPos: (row: Int, col: Int)? = nil
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
     /// sheet is dismissing — SwiftUI swallows the path change during
@@ -391,6 +395,7 @@ struct BoardPlayView: View {
             }
         ) { target in
             CellSwapSheet(
+                mode: .swap,
                 currentTaskId: target.currentTaskId,
                 candidateTasks: allTasks,
                 onDismiss: { swapTarget = nil },
@@ -399,6 +404,57 @@ struct BoardPlayView: View {
                     handleCellSwap(boardTaskId: target.id, newTaskId: newTaskId)
                 }
             )
+        }
+        // M4 — Remove from board confirmation. Presented when the user taps
+        // "⎘ Remove from board" in the context menu of a non-center ACTIVE square.
+        .alert(
+            "Remove from board?",
+            isPresented: Binding(
+                get: { removeBoardTaskId != nil },
+                set: { if !$0 { removeBoardTaskId = nil } }
+            ),
+            actions: {
+                Button("Cancel", role: .cancel) { removeBoardTaskId = nil }
+                Button("Remove", role: .destructive) {
+                    guard let targetId = removeBoardTaskId else { return }
+                    removeBoardTaskId = nil
+                    handleRemoveFromBoard(boardTaskId: targetId)
+                }
+            },
+            message: {
+                if let btId = removeBoardTaskId,
+                   let bt = boardTasks.first(where: { $0.id == btId }),
+                   let task = taskMap[bt.taskId] {
+                    Text("\"\(task.title)\" will be removed from this board. The task stays in your library and on any other boards where it appears.")
+                } else {
+                    Text("This task will be removed from this board. The task stays in your library and on any other boards where it appears.")
+                }
+            }
+        )
+        // M4 — Add task to empty cell sheet. Presented when the user taps
+        // the "+" affordance on an empty cell.
+        .sheet(
+            isPresented: Binding(
+                get: { addCellPos != nil },
+                set: { if !$0 { addCellPos = nil } }
+            ),
+            onDismiss: {
+                loadBoardTasks()
+                loadTaskData()
+            }
+        ) {
+            if let pos = addCellPos {
+                CellSwapSheet(
+                    mode: .add,
+                    currentTaskId: "",
+                    candidateTasks: allTasks,
+                    onDismiss: { addCellPos = nil },
+                    onConfirm: { taskId in
+                        addCellPos = nil
+                        handleAddTaskToCell(taskId: taskId, row: pos.row, col: pos.col)
+                    }
+                )
+            }
         }
         .onAppear {
             loadBoard()
@@ -567,6 +623,24 @@ struct BoardPlayView: View {
                             isCompleted: true,
                             isReadOnly: true
                         )
+                    } else if !isCenter,
+                              let b = board,
+                              b.status == .active,
+                              !isBoardLocked {
+                        // M4 — Empty non-center cell on an ACTIVE board: show a "+" affordance.
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                .frame(width: 90, height: 90)
+                            Button {
+                                addCellPos = (row: row, col: col)
+                            } label: {
+                                Image(systemName: "plus.circle")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     } else {
                         // Empty placeholder to preserve grid alignment
                         Color.clear
@@ -648,10 +722,14 @@ struct BoardPlayView: View {
                 }
 
                 // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                // M4 — Remove from board (same guard).
                 if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
                     Divider()
                     Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                         swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                    }
+                    Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
+                        removeBoardTaskId = boardTask.id
                     }
                 }
             }
@@ -716,10 +794,14 @@ struct BoardPlayView: View {
                     }
 
                     // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                    // M4 — Remove from board (same guard).
                     if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
                         Divider()
                         Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                             swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                        }
+                        Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
+                            removeBoardTaskId = boardTask.id
                         }
                     }
                 }
@@ -773,10 +855,14 @@ struct BoardPlayView: View {
                     taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
                 }
                 // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                // M4 — Remove from board (same guard).
                 if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
                     Divider()
                     Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                         swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                    }
+                    Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
+                        removeBoardTaskId = boardTask.id
                     }
                 }
             }
@@ -801,10 +887,14 @@ struct BoardPlayView: View {
                     taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
                 }
                 // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
+                // M4 — Remove from board (same guard).
                 if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
                     Divider()
                     Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                         swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                    }
+                    Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
+                        removeBoardTaskId = boardTask.id
                     }
                 }
             }
@@ -1443,6 +1533,73 @@ struct BoardPlayView: View {
                 await MainActor.run {
                     isProcessing = false
                     bingoMessage = "Swap failed — please try again"
+                }
+            }
+        }
+    }
+
+    // MARK: - Placement Add / Remove (M4)
+
+    /// Remove a task placement from the current board.
+    ///
+    /// Delegates to `AppDatabase.shared.removeBoardTaskFromBoard`, which hard-deletes
+    /// the `BoardTask` row, enqueues a DELETE sync tombstone, and re-derives stats for
+    /// every board affected by the removed task. The underlying `Task` is untouched.
+    ///
+    /// - Parameter boardTaskId: The `BoardTask.id` to remove.
+    private func handleRemoveFromBoard(boardTaskId: String) {
+        isProcessing = true
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                try AppDatabase.shared.removeBoardTaskFromBoard(boardTaskId)
+                await MainActor.run {
+                    isProcessing = false
+                    loadBoard()
+                    loadBoardTasks()
+                    loadTaskData()
+                }
+            } catch {
+                print("⚠️ BoardPlayView remove-from-board error: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                    bingoMessage = "Remove failed — please try again"
+                }
+            }
+        }
+    }
+
+    /// Add a task to an empty cell on the current board.
+    ///
+    /// Delegates to `AppDatabase.shared.addBoardTaskToBoard`, which creates a new
+    /// `BoardTask` placement, enqueues a CREATE sync entry, and re-derives stats for
+    /// every board affected by the placed task. If the task is already globally
+    /// completed, the cascade immediately credits this cell as completed.
+    ///
+    /// - Parameters:
+    ///   - taskId: The `Task.id` to place.
+    ///   - row: 0-based grid row.
+    ///   - col: 0-based grid column.
+    private func handleAddTaskToCell(taskId: String, row: Int, col: Int) {
+        guard let b = board else { return }
+        isProcessing = true
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                try AppDatabase.shared.addBoardTaskToBoard(
+                    b.id,
+                    taskId: taskId,
+                    position: (row: row, col: col)
+                )
+                await MainActor.run {
+                    isProcessing = false
+                    loadBoard()
+                    loadBoardTasks()
+                    loadTaskData()
+                }
+            } catch {
+                print("⚠️ BoardPlayView add-to-cell error: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                    bingoMessage = "Add failed — please try again"
                 }
             }
         }

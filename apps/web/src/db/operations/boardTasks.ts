@@ -121,6 +121,283 @@ export async function fetchBoardsUsingTask(taskId: string): Promise<string[]> {
   return [...new Set(boardTasks.map((bt) => bt.boardId))];
 }
 
+// ─── removeBoardTaskFromBoard ────────────────────────────────────────────────
+
+/**
+ * Remove a single BoardTask placement from an ACTIVE board (live-edit M4).
+ *
+ * Semantics:
+ *   - Hard-deletes the BoardTask row (BoardTask has no isDeleted field; removal
+ *     is always a physical delete, consistent with `deleteBoardTasksForBoard`).
+ *   - Enqueues a DELETE sync entry so the tombstone propagates to Firestore.
+ *   - Runs the batched cascade pattern from M2/M3: computes affected board IDs
+ *     for the removed task (and any compound parents), then re-derives board stats
+ *     + status for every affected board in one Dexie transaction.
+ *
+ * The underlying Task is NOT touched — it stays in the library and on other boards.
+ * Only this board loses the placement.
+ *
+ * Caller is responsible for:
+ *   - Confirming the board is ACTIVE (not expired) before calling.
+ *   - Ensuring the target BoardTask is not the center square.
+ *
+ * @param boardTaskId - The `BoardTask.id` placement record to remove.
+ */
+export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<void> {
+  const existing = await db.boardTasks.get(boardTaskId);
+  if (!existing) return;
+
+  const now = currentTimestamp();
+  const removedTaskId = existing.taskId;
+
+  // Gather workspace data BEFORE the delete so we can compute affected boards.
+  const allBoardTasksPre = await db.boardTasks.toArray();
+  const allCompoundChildren = await fetchAllCompoundChildren();
+
+  // Affected boards: those placing the removed task directly OR via a compound parent.
+  const parents = findTransitiveParentCompounds(removedTaskId, allCompoundChildren);
+  const affectedBoardIds = Array.from(findAffectedBoardIds(removedTaskId, parents, allBoardTasksPre));
+
+  await db.transaction(
+    'rw',
+    [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      // 1. Hard-delete the BoardTask placement.
+      await db.boardTasks.delete(boardTaskId);
+
+      // Enqueue DELETE tombstone for sync.
+      await db.syncQueue.add({
+        id: generateUUID(),
+        entityType: 'boardTasks',
+        entityId: boardTaskId,
+        operationType: SyncOperationType.DELETE,
+        payload: JSON.stringify(existing),
+        status: SyncStatus.PENDING,
+        retryCount: 0,
+        createdAt: now,
+        priority: 0,
+      });
+
+      // 2. Fetch post-delete state for cascade pass.
+      const allBoardTasksPost = await db.boardTasks.toArray();
+      const allTasks = await db.tasks.toArray();
+      const allBoards = await db.boards.toArray();
+      const allChildren = await db.compoundChildren.toArray();
+
+      const taskById: Record<string, Task> = {};
+      for (const t of allTasks) taskById[t.id] = t;
+
+      const childrenByCompound: Record<string, CompoundChild[]> = {};
+      for (const c of allChildren) {
+        if (!c.isDeleted) {
+          (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+        }
+      }
+
+      // 3. One cascade pass per affected board.
+      for (const affectedBoardId of affectedBoardIds) {
+        const affectedBoard = await db.boards.get(affectedBoardId);
+        if (!affectedBoard || affectedBoard.isDeleted) continue;
+
+        const boardTasksOnBoard = allBoardTasksPost.filter(
+          (bt) => bt.boardId === affectedBoardId,
+        );
+
+        const stats: BoardStatsUpdate = computeBoardStatsUpdate(
+          affectedBoard,
+          boardTasksOnBoard,
+          childrenByCompound,
+          taskById,
+          allBoards,
+        );
+
+        const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
+        const isGreenlog = stats.completedTasks >= totalSquares;
+
+        const boardUpdate: Partial<Board> = {
+          completedTasks: stats.completedTasks,
+          linesCompleted: stats.linesCompleted,
+          completedLineIds: stats.completedLineIds,
+          updatedAt: now,
+          version: (affectedBoard.version ?? 1) + 1,
+        };
+
+        if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
+          boardUpdate.status = BoardStatus.COMPLETED;
+          boardUpdate.completedAt = now;
+        } else if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
+          boardUpdate.status = BoardStatus.ACTIVE;
+          boardUpdate.completedAt = undefined;
+        }
+
+        await db.boards.update(affectedBoardId, boardUpdate);
+
+        const updatedBoard = await db.boards.get(affectedBoardId);
+        if (updatedBoard) {
+          await db.syncQueue.add({
+            id: generateUUID(),
+            entityType: 'boards',
+            entityId: affectedBoardId,
+            operationType: SyncOperationType.UPDATE,
+            payload: JSON.stringify(updatedBoard),
+            status: SyncStatus.PENDING,
+            retryCount: 0,
+            createdAt: now,
+            priority: 0,
+          });
+        }
+      }
+    },
+  );
+}
+
+// ─── addBoardTaskToBoard ──────────────────────────────────────────────────────
+
+/**
+ * Add a Task to an empty cell on an ACTIVE board (live-edit M4).
+ *
+ * Creates a new BoardTask placement record at the given grid position and runs
+ * the batched cascade pattern (same approach as M2/M3) to re-derive stats for
+ * every board affected by the newly-placed task.
+ *
+ * Shared-task semantics: if the task is already globally completed (isCompleted
+ * is true on the Task row), the cascade immediately counts this cell as
+ * completed and increments board.completedTasks. No cloning, no reset.
+ *
+ * Caller is responsible for:
+ *   - Confirming the target cell is currently empty.
+ *   - Confirming the board is ACTIVE (not expired) before calling.
+ *   - Confirming the cell is not the center square.
+ *   - Confirming the task is not already placed at this exact cell on this board.
+ *
+ * @param boardId - The board receiving the new placement.
+ * @param taskId - The task to place.
+ * @param row - Grid row (0-based).
+ * @param col - Grid column (0-based).
+ * @returns The newly-created BoardTask record.
+ */
+export async function addBoardTaskToBoard(
+  boardId: string,
+  taskId: string,
+  row: number,
+  col: number,
+): Promise<BoardTask> {
+  const now = currentTimestamp();
+
+  const newBoardTask: BoardTask = {
+    id: generateUUID(),
+    boardId,
+    taskId,
+    row,
+    col,
+    isCenter: false,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+  };
+
+  // Gather workspace data BEFORE the insert for affected-board computation.
+  const allBoardTasksPre = await db.boardTasks.toArray();
+  const allCompoundChildren = await fetchAllCompoundChildren();
+
+  // Compute affected boards using the post-insert state (the new placement is included).
+  const syntheticBoardTasks: BoardTask[] = [...allBoardTasksPre, newBoardTask];
+  const parents = findTransitiveParentCompounds(taskId, allCompoundChildren);
+  const affectedBoardIds = Array.from(findAffectedBoardIds(taskId, parents, syntheticBoardTasks));
+
+  await db.transaction(
+    'rw',
+    [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      // 1. Write the new BoardTask placement.
+      await db.boardTasks.add(newBoardTask);
+      await db.syncQueue.add({
+        id: generateUUID(),
+        entityType: 'boardTasks',
+        entityId: newBoardTask.id,
+        operationType: SyncOperationType.CREATE,
+        payload: JSON.stringify(newBoardTask),
+        status: SyncStatus.PENDING,
+        retryCount: 0,
+        createdAt: now,
+        priority: 0,
+      });
+
+      // 2. Fetch post-insert state for cascade pass.
+      const allBoardTasksPost = await db.boardTasks.toArray();
+      const allTasks = await db.tasks.toArray();
+      const allBoards = await db.boards.toArray();
+      const allChildren = await db.compoundChildren.toArray();
+
+      const taskById: Record<string, Task> = {};
+      for (const t of allTasks) taskById[t.id] = t;
+
+      const childrenByCompound: Record<string, CompoundChild[]> = {};
+      for (const c of allChildren) {
+        if (!c.isDeleted) {
+          (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+        }
+      }
+
+      // 3. One cascade pass per affected board.
+      for (const affectedBoardId of affectedBoardIds) {
+        const affectedBoard = await db.boards.get(affectedBoardId);
+        if (!affectedBoard || affectedBoard.isDeleted) continue;
+
+        const boardTasksOnBoard = allBoardTasksPost.filter(
+          (bt) => bt.boardId === affectedBoardId,
+        );
+
+        const stats: BoardStatsUpdate = computeBoardStatsUpdate(
+          affectedBoard,
+          boardTasksOnBoard,
+          childrenByCompound,
+          taskById,
+          allBoards,
+        );
+
+        const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
+        const isGreenlog = stats.completedTasks >= totalSquares;
+
+        const boardUpdate: Partial<Board> = {
+          completedTasks: stats.completedTasks,
+          linesCompleted: stats.linesCompleted,
+          completedLineIds: stats.completedLineIds,
+          updatedAt: now,
+          version: (affectedBoard.version ?? 1) + 1,
+        };
+
+        if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
+          boardUpdate.status = BoardStatus.COMPLETED;
+          boardUpdate.completedAt = now;
+        } else if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
+          boardUpdate.status = BoardStatus.ACTIVE;
+          boardUpdate.completedAt = undefined;
+        }
+
+        await db.boards.update(affectedBoardId, boardUpdate);
+
+        const updatedBoard = await db.boards.get(affectedBoardId);
+        if (updatedBoard) {
+          await db.syncQueue.add({
+            id: generateUUID(),
+            entityType: 'boards',
+            entityId: affectedBoardId,
+            operationType: SyncOperationType.UPDATE,
+            payload: JSON.stringify(updatedBoard),
+            status: SyncStatus.PENDING,
+            retryCount: 0,
+            createdAt: now,
+            priority: 0,
+          });
+        }
+      }
+    },
+  );
+
+  return newBoardTask;
+}
+
 // ─── updateBoardTaskAndCascade ────────────────────────────────────────────────
 
 /**

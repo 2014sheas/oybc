@@ -1740,6 +1740,216 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - M4 Live-Edit: Placement Add / Remove
+
+    /// Remove a single BoardTask placement from an ACTIVE board (live-edit M4).
+    ///
+    /// Semantics mirror the web `removeBoardTaskFromBoard`:
+    ///   - Hard-deletes the BoardTask row (BoardTask has no isDeleted field;
+    ///     consistent with `deleteBoardTasksForBoard`).
+    ///   - Enqueues a DELETE sync tombstone.
+    ///   - Runs the batched cascade for every board affected by the removed task
+    ///     (directly or via a compound parent), re-deriving stats + status.
+    ///
+    /// The underlying Task is NOT touched. It stays in the library and on any
+    /// other boards where it appears. Only this board loses the placement.
+    ///
+    /// - Parameter boardTaskId: The `BoardTask.id` placement record to remove.
+    func removeBoardTaskFromBoard(_ boardTaskId: String) throws {
+        guard let existing = try fetchBoardTask(id: boardTaskId) else { return }
+        let now = AppDatabase.currentTimestamp()
+        let removedTaskId = existing.taskId
+
+        let allBoardTasksPre = try fetchAllBoardTasks()
+        let allCompoundChildrenPre = try fetchAllCompoundChildren()
+
+        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: removedTaskId,
+            children: allCompoundChildrenPre
+        )
+        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+            changedTaskId: removedTaskId,
+            parentCompounds: parentCompounds,
+            boardTasks: allBoardTasksPre
+        )
+
+        try write { db in
+            try BoardTask.deleteOne(db, key: boardTaskId)
+
+            try SyncQueueBuilder.makeItem(
+                entityType: "boardTasks",
+                entityId: boardTaskId,
+                operationType: .delete,
+                payload: existing,
+                now: now
+            ).save(db)
+
+            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            for boardId in affectedBoardIds {
+                guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: board,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards
+                )
+
+                let totalSquares = board.boardSize * board.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                board.completedTasks = update.completedTasks
+                board.totalTasks = totalSquares
+                board.linesCompleted = update.linesCompleted
+                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                board.updatedAt = now
+                board.version += 1
+
+                if isGreenlogNow, board.status == .active {
+                    board.status = .completed
+                    board.completedAt = now
+                } else if !isGreenlogNow, board.status == .completed {
+                    board.status = .active
+                    board.completedAt = nil
+                }
+
+                try board.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: boardId,
+                    operationType: .update,
+                    payload: board,
+                    now: now
+                ).save(db)
+            }
+        }
+    }
+
+    /// Add a Task to an empty cell on an ACTIVE board (live-edit M4).
+    ///
+    /// Creates a new BoardTask placement at the given grid position and runs the
+    /// batched cascade to re-derive stats for every board affected by the placed task.
+    ///
+    /// Shared-task semantics: if the task is already globally completed, the cascade
+    /// immediately counts this cell as completed and increments `board.completedTasks`.
+    /// No cloning, no reset.
+    ///
+    /// - Parameters:
+    ///   - boardId: The board receiving the new placement.
+    ///   - taskId: The task to place.
+    ///   - position: Grid position `(row, col)` (0-based).
+    /// - Returns: The newly-created `BoardTask` record.
+    @discardableResult
+    func addBoardTaskToBoard(_ boardId: String, taskId: String, position: (row: Int, col: Int)) throws -> BoardTask {
+        let now = AppDatabase.currentTimestamp()
+
+        let newBoardTask = BoardTask(
+            id: AppDatabase.generateUUID(),
+            boardId: boardId,
+            taskId: taskId,
+            row: position.row,
+            col: position.col,
+            isCenter: false,
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+        )
+
+        let allBoardTasksPre = try fetchAllBoardTasks()
+        let allCompoundChildrenPre = try fetchAllCompoundChildren()
+
+        let syntheticBoardTasks = allBoardTasksPre + [newBoardTask]
+        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: taskId,
+            children: allCompoundChildrenPre
+        )
+        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+            changedTaskId: taskId,
+            parentCompounds: parentCompounds,
+            boardTasks: syntheticBoardTasks
+        )
+
+        try write { db in
+            try newBoardTask.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boardTasks",
+                entityId: newBoardTask.id,
+                operationType: .create,
+                payload: newBoardTask,
+                now: now
+            ).save(db)
+
+            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            for affectedBoardId in affectedBoardIds {
+                guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted else { continue }
+                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: board,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards
+                )
+
+                let totalSquares = board.boardSize * board.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                board.completedTasks = update.completedTasks
+                board.totalTasks = totalSquares
+                board.linesCompleted = update.linesCompleted
+                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                board.updatedAt = now
+                board.version += 1
+
+                if isGreenlogNow, board.status == .active {
+                    board.status = .completed
+                    board.completedAt = now
+                } else if !isGreenlogNow, board.status == .completed {
+                    board.status = .active
+                    board.completedAt = nil
+                }
+
+                try board.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: affectedBoardId,
+                    operationType: .update,
+                    payload: board,
+                    now: now
+                ).save(db)
+            }
+        }
+
+        return newBoardTask
+    }
+
     // MARK: - CompoundChildren
 
     /// Fetch every non-deleted compound_children row in the workspace.
