@@ -51,9 +51,14 @@ targets:
           - "**/.DS_Store"
     resources:
       # Download from Firebase Console → Project Settings → iOS app → GoogleService-Info.plist
-      # This file is gitignored — each developer must provide their own copy
+      # This file is gitignored — each developer must provide their own copy.
+      # NOT marked `optional: true` — xcodegen will (intentionally) fail loudly
+      # when the plist is missing, rather than silently dropping the reference
+      # from project.pbxproj. Silent drops have shipped runtime crashes before
+      # (e.g. via agent worktrees that lacked the plist regenerating the
+      # project on commit). If you hit "Generation Error", `cp` the plist from
+      # another OYBC checkout or download from Firebase Console.
       - path: OYBC/GoogleService-Info.plist
-        optional: true
     dependencies:
       - package: GRDB
       - package: FirebaseSDK
