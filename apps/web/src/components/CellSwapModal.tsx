@@ -11,20 +11,8 @@ import styles from './CellSwapModal.module.css';
  */
 export type CellSwapMode = 'swap' | 'add';
 
-interface CellSwapModalProps {
-  /**
-   * Controls the modal mode:
-   * - 'swap' (default): excludes `currentTaskId` from the list and labels
-   *   the CTA "Swap".
-   * - 'add': shows all eligible tasks (no exclusion) and labels the CTA "Add".
-   */
-  mode?: CellSwapMode;
-  /**
-   * The current task occupying the square being swapped (excluded from the
-   * eligible list in 'swap' mode so the user cannot "swap" to the same task).
-   * Ignored in 'add' mode.
-   */
-  currentTaskId?: string;
+/** Shared props present in both modal modes. */
+interface CellSwapModalBaseProps {
   /**
    * All non-deleted tasks in the user's library eligible for placement.
    * The modal filters to non-center types (NORMAL / COUNTING / COMPOUND /
@@ -40,6 +28,24 @@ interface CellSwapModalProps {
    */
   onConfirm: (newTaskId: string) => void;
 }
+
+/** Swap mode — requires `currentTaskId` to exclude the current task from the list. */
+interface CellSwapModalSwapProps extends CellSwapModalBaseProps {
+  mode: 'swap';
+  /**
+   * The current task occupying the square being swapped (excluded from the
+   * eligible list so the user cannot "swap" to the same task).
+   */
+  currentTaskId: string;
+}
+
+/** Add mode — no exclusion, all eligible tasks are shown. */
+interface CellSwapModalAddProps extends CellSwapModalBaseProps {
+  mode?: 'add';
+  currentTaskId?: never;
+}
+
+type CellSwapModalProps = CellSwapModalSwapProps | CellSwapModalAddProps;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -60,8 +66,9 @@ interface CellSwapModalProps {
  *   - Confirm is disabled until a task is selected.
  *   - Escape key or clicking the backdrop closes the modal.
  *
- * @param mode - 'swap' or 'add'; defaults to 'swap'.
- * @param currentTaskId - Task currently occupying the square (excluded in swap mode).
+ * @param mode - 'swap' or 'add'; defaults to 'add'. When 'swap', `currentTaskId` is required
+ *   and TypeScript enforces this via a discriminated union on props.
+ * @param currentTaskId - Task currently occupying the square (required in swap mode; excluded from list).
  * @param candidateTasks - Full library; modal filters internally.
  * @param onClose - Dismiss without changes.
  * @param onConfirm - Called with the chosen Task id.

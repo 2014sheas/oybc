@@ -252,6 +252,9 @@ struct BoardPlayView: View {
     @State private var removeBoardTaskId: String? = nil
     /// M4 — live-edit add to empty cell: the grid position awaiting task selection.
     @State private var addCellPos: (row: Int, col: Int)? = nil
+    /// M4 — tracks whether the add-cell sheet was dismissed via a confirmed selection.
+    /// `onDismiss` skips the reload when true because `handleAddTaskToCell` already reloads.
+    @State private var addTaskConfirmed: Bool = false
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
     /// sheet is dismissing — SwiftUI swallows the path change during
@@ -439,8 +442,16 @@ struct BoardPlayView: View {
                 set: { if !$0 { addCellPos = nil } }
             ),
             onDismiss: {
-                loadBoardTasks()
-                loadTaskData()
+                // Skip reload on confirm: `handleAddTaskToCell` already calls
+                // `loadBoardTasks` + `loadTaskData` after its DB write, so a
+                // second reload here would flash pre-insert state. Only reload
+                // on cancel (user dismissed without selecting a task).
+                if addTaskConfirmed {
+                    addTaskConfirmed = false
+                } else {
+                    loadBoardTasks()
+                    loadTaskData()
+                }
             }
         ) {
             if let pos = addCellPos {
@@ -450,6 +461,7 @@ struct BoardPlayView: View {
                     candidateTasks: allTasks,
                     onDismiss: { addCellPos = nil },
                     onConfirm: { taskId in
+                        addTaskConfirmed = true
                         addCellPos = nil
                         handleAddTaskToCell(taskId: taskId, row: pos.row, col: pos.col)
                     }

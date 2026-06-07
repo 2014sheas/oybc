@@ -815,11 +815,12 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
               role="dialog"
               aria-modal="true"
               aria-labelledby="remove-confirm-title"
+              aria-describedby="remove-confirm-body"
             >
               <h3 id="remove-confirm-title" className={styles.removeConfirmTitle}>
                 Remove from board?
               </h3>
-              <p className={styles.removeConfirmBody}>
+              <p id="remove-confirm-body" className={styles.removeConfirmBody}>
                 <strong>{task?.title ?? 'This task'}</strong> will be removed from this board.
                 The task stays in your library and on any other boards where it appears.
               </p>

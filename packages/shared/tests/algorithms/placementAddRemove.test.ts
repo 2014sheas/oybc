@@ -327,7 +327,7 @@ describe('placement add/remove — affected board computation', () => {
     expect(addAffected.has('board-B')).toBe(true);
     expect(addAffected.has('board-C')).toBe(true);
 
-    // Union covers all four boards involved
+    // Union covers all three boards involved (A, B, C)
     const union = new Set([...removeAffected, ...addAffected]);
     expect(union.has('board-A')).toBe(true);
     expect(union.has('board-B')).toBe(true);
