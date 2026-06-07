@@ -518,10 +518,19 @@ async function applyRemoteSubdoc(
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
       // Phase 4 — Additive merge for shared-counter sources on pull.
+      //
+      // Guard: skip merge when either side is a tombstone. A deleted task
+      // must fall through to standard LWW which handles isDeleted correctly;
+      // running additive merge on a delete would resurrect the record.
+      const remoteIsDeleted = !!(validated as { isDeleted?: boolean }).isDeleted;
+      const localIsDeleted = !!(localData as { isDeleted?: boolean } | undefined)?.isDeleted;
+
       if (
         collectionName === 'tasks' &&
         !isNew &&
-        localData
+        localData &&
+        !remoteIsDeleted &&
+        !localIsDeleted
       ) {
         const remoteTask = validated as { type?: string; currentCount?: number };
         const localTask = localData as { type?: string; currentCount?: number; lastSyncedCount?: number | null; version?: number };
@@ -542,10 +551,22 @@ async function applyRemoteSubdoc(
             if (linkedCount > 0) {
               // Additive merge applies: sum local delta on top of remote count.
               const { merged } = additiveMergeCount(localCount, remoteCount, lastSynced);
-              const newVersion = (typeof localTask.version === 'number' ? localTask.version : 0) + 1;
+
+              // version = max(local, remote) + 1 so LWW on next pull doesn't
+              // silently discard the merge if the remote has version > local + 1.
+              const localVersion = typeof localTask.version === 'number' ? localTask.version : 0;
+              const remoteVersion = typeof (validated as { version?: number }).version === 'number'
+                ? (validated as { version?: number }).version!
+                : 0;
+              const newVersion = Math.max(localVersion, remoteVersion) + 1;
               const now = new Date().toISOString();
 
-              // Write merged value to local (overrides the remote upsert below).
+              // 1. Apply the full remote record (preserves all remote-changed
+              //    fields: title, description, isDeleted, maxCount, etc.)
+              await table.put(validated);
+
+              // 2. Layer the additively-merged count fields on top of the
+              //    remote upsert so the merged count wins.
               await db.tasks.update(validated.id, {
                 currentCount: merged,
                 lastSyncedCount: remoteCount, // common ancestor advances to remote
@@ -572,13 +593,26 @@ async function applyRemoteSubdoc(
               mergeLog = `additive-merge currentCount ${localCount}+${remoteCount}-${lastSynced}=${merged}`;
               // Run cascade on the merged task (re-derives linked tasks + board stats).
               await runBoardCascadeForTask(validated.id);
-              return; // Skip the standard table.put below — we wrote directly.
+              return; // Merge path complete — skip the standard table.put below.
             }
           }
         }
       }
 
       await table.put(validated);
+
+      // Issue #5 (remote-wins LWW on counting task): advance lastSyncedCount
+      // so the next conflict can compute the local delta correctly.
+      // The remote doc is not guaranteed to carry the correct per-device
+      // lastSyncedCount (it's local bookkeeping), so we write it explicitly.
+      if (collectionName === 'tasks' && !isNew) {
+        const remoteTask = validated as { type?: string; currentCount?: number };
+        if (remoteTask.type === 'counting' && typeof remoteTask.currentCount === 'number') {
+          await db.tasks.update(validated.id, {
+            lastSyncedCount: remoteTask.currentCount,
+          });
+        }
+      }
 
       // After pulling a Task or CompoundChild, cascade the board derivation
       // pass so that any board containing the changed task recomputes its

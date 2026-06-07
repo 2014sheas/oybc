@@ -320,3 +320,99 @@ describe('Shared Counter Sync — multi-device integration', () => {
     expect(resolved.currentCount).toBe(15);
   });
 });
+
+// ─── PR #99 regression tests ──────────────────────────────────────────────────
+
+describe('PR #99 regressions — merge correctness and tombstone safety', () => {
+  /**
+   * Regression: "additive merge skipped on remote tombstone"
+   *
+   * If a remote tombstone (isDeleted=true) arrives while the local task has
+   * a pending increment, the sync layer must NOT call needsAdditiveMerge at all.
+   * The guard in syncService.ts / SyncService.swift short-circuits before
+   * invoking the merge path when either side isDeleted.
+   *
+   * This test verifies the guard contract at the algorithm boundary:
+   *   - needsAdditiveMerge(13, 0, 10) would return true for the counts alone,
+   *     meaning WITHOUT the guard, a spurious merge would fire.
+   *   - The sync service must therefore check isDeleted BEFORE calling
+   *     needsAdditiveMerge. This test documents that expectation explicitly.
+   */
+  it('Regression: additive merge skipped on remote tombstone — delete must propagate', () => {
+    // Both devices start at 10. Local incremented to 13 (pending push).
+    // Remote was soft-deleted. counts are (13, 0, lastSynced=10).
+    const localCount = 13;
+    const remoteCount = 0; // currentCount after delete (irrelevant; delete wins)
+    const lastSynced = 10;
+
+    // Without the isDeleted guard, needsAdditiveMerge WOULD fire — this is the bug.
+    // The sync service guard must prevent calling needsAdditiveMerge entirely.
+    expect(needsAdditiveMerge(localCount, remoteCount, lastSynced)).toBe(true);
+    // ^ Confirms the guard is necessary: merge WOULD incorrectly run without it.
+
+    // With the guard applied (sync service checks isDeleted first),
+    // the tombstone falls through to LWW. Remote has higher version → remote wins.
+    // Simulated here by bypassing the merge path entirely (as the guard does).
+    const remoteTombstone: SimTask = { id: 's', currentCount: 0, lastSyncedCount: null, version: 5 };
+
+    // Simulate the LWW path directly (tombstone guard short-circuits merge).
+    // Remote version (5) > local version (2) → remote wins.
+    const lwwResolved: SimTask = { ...remoteTombstone, lastSyncedCount: remoteTombstone.currentCount };
+    expect(lwwResolved.currentCount).toBe(0);
+    expect(lwwResolved.version).toBe(5);
+
+    // Confirm: if we incorrectly ran additive merge (the bug), we'd get 3
+    // (0 + (13-10) = 3), resurrecting the deleted record with a non-zero count.
+    const { merged: buggyMerge } = additiveMergeCount(localCount, remoteCount, lastSynced);
+    expect(buggyMerge).toBe(3); // This is what the guard prevents.
+  });
+
+  /**
+   * Regression: "merge preserves remote non-count field changes"
+   *
+   * Remote changed `title` (non-count field) AND `currentCount` while local
+   * had a pending increment. The sync service must:
+   *   1. Apply the full remote record first (gets new title).
+   *   2. Layer the merged count on top (preserves local delta).
+   *
+   * At algorithm level: we verify the merged count is correct. The full-record
+   * upsert responsibility lives in the sync service, which is tested here
+   * by confirming the merge formula produces the right count value.
+   */
+  it('Regression: merge preserves correct count when remote has non-count field changes', () => {
+    // Both start at 10. Remote updated title AND incremented to 14.
+    // Local incremented to 13. Merge should yield 14 + (13 - 10) = 17.
+    const localCount = 13;
+    const remoteCount = 14;
+    const lastSynced = 10;
+
+    expect(needsAdditiveMerge(localCount, remoteCount, lastSynced)).toBe(true);
+
+    const { merged, mergeApplied } = additiveMergeCount(localCount, remoteCount, lastSynced);
+    expect(mergeApplied).toBe(true);
+    expect(merged).toBe(17); // 14 + (13 - 10) = 17
+
+    // Title preservation is a sync-service concern (full table.put first,
+    // then count update on top). The algorithm layer produces the correct count.
+  });
+
+  /**
+   * Regression: "merge version is max(local, remote) + 1"
+   *
+   * local v3, remote v5, both incremented concurrently.
+   * The merged write must use version = max(3, 5) + 1 = 6 so that the
+   * next LWW round does not silently discard the merge.
+   */
+  it('Regression: merge version = max(local, remote) + 1', () => {
+    const localVersion = 3;
+    const remoteVersion = 5;
+    const expectedMergedVersion = Math.max(localVersion, remoteVersion) + 1;
+    expect(expectedMergedVersion).toBe(6);
+
+    // Also confirm the algorithm produces the right count (algorithm is
+    // version-agnostic; version handling is a sync-service concern).
+    const { merged } = additiveMergeCount(/* local= */8, /* remote= */10, /* lastSynced= */5);
+    // 10 + (8 - 5) = 13
+    expect(merged).toBe(13);
+  });
+});

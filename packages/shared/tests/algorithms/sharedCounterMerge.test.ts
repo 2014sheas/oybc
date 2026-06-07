@@ -125,7 +125,7 @@ describe('additiveMergeCount', () => {
    */
   it('lastSyncedCount=null: falls back to LWW — no additive merge', () => {
     const result = additiveMergeCount(15, 13, null);
-    expect(result.merged).toBe(15); // local wins (higher)
+    expect(result.merged).toBe(15); // local wins (local is higher)
     expect(result.mergeApplied).toBe(false);
   });
 
@@ -135,7 +135,7 @@ describe('additiveMergeCount', () => {
     expect(result.mergeApplied).toBe(false);
   });
 
-  it('lastSyncedCount=null, tie: local wins on tie in LWW fallback', () => {
+  it('lastSyncedCount=null, tie: remote wins on tie in LWW fallback (values equal, so result is same)', () => {
     const result = additiveMergeCount(10, 10, null);
     expect(result.merged).toBe(10);
     expect(result.mergeApplied).toBe(false);

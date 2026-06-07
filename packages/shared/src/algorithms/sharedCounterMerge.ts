@@ -83,7 +83,7 @@ export interface MergeCountResult {
  *   the last time this task was successfully synced (pushed or pulled) by
  *   THIS device. When null/undefined, LWW is used as a safe fallback.
  * @returns `{ merged, mergeApplied }`. If `mergeApplied` is false, `merged`
- *   equals the LWW winner (higher of local/remote, or remote on tie).
+ *   equals the LWW winner (higher of local/remote; remote wins on tie).
  *
  * @example
  * // Both devices start at 10.
@@ -108,8 +108,9 @@ export function additiveMergeCount(
   lastSyncedCount: number | null | undefined,
 ): MergeCountResult {
   // Null/undefined lastSyncedCount → no common ancestor → fall back to LWW.
+  // Remote wins on tie (consistent with overall LWW remote-priority convention).
   if (lastSyncedCount == null) {
-    const lwwWinner = localCount >= remoteCount ? localCount : remoteCount;
+    const lwwWinner = localCount > remoteCount ? localCount : remoteCount;
     return { merged: Math.max(0, lwwWinner), mergeApplied: false };
   }
 

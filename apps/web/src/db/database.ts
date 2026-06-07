@@ -4,7 +4,6 @@ import type {
   Task,
   TaskStep,
   BoardTask,
-  ProgressCounter,
   User,
   SyncQueueItem,
   CompositeTask,
@@ -26,7 +25,6 @@ export class AppDatabase extends Dexie {
   tasks!: Table<Task, string>;
   taskSteps!: Table<TaskStep, string>;
   boardTasks!: Table<BoardTask, string>;
-  progressCounters!: Table<ProgressCounter, string>;
   syncQueue!: Table<SyncQueueItem, string>;
   compositeTasks!: Table<CompositeTask, string>;
   compositeNodes!: Table<CompositeNode, string>;
@@ -86,13 +84,6 @@ export class AppDatabase extends Dexie {
         taskId,
         isAchievementSquare,
         [isAchievementSquare+achievementTimeframe]
-      `,
-
-      // ProgressCounters table
-      progressCounters: `
-        id,
-        [userId+isDeleted],
-        updatedAt
       `,
 
       // SyncQueue table
@@ -302,17 +293,32 @@ export class AppDatabase extends Dexie {
     // conflict resolver in syncService.ts to detect concurrent increments on
     // shared-counter source tasks.
     //
+    // Adds `sharedCounterId` to the `tasks` index spec so that
+    // `db.tasks.where('sharedCounterId').equals(sourceTaskId)` (used in
+    // applyRemoteSubdoc and syncService.ts:~540) does not throw "Index not
+    // found" at runtime. The field is optional/nullable — non-linked tasks
+    // simply have no row in the resulting index entry.
+    //
     // Dead-scaffolding cleanup: drops `progressCounters` (the `null` sentinel
     // tells Dexie to remove the object store). The ProgressCounter entity is
     // retired per Decision 1 — per-Task sharedCounterId is the live model.
-    // The progressCounters Table declaration remains in this class for now to
-    // avoid a TypeScript compilation error on existing callers; the property
-    // will remain on the class until callers are removed (inert, store is gone).
+    // The `progressCounters` Table property, ops module, and barrel export are
+    // also removed in this commit (callers are gone; store is dropped).
     //
     // No data backfill: existing tasks get `undefined` for `lastSyncedCount`,
     // which the sync service treats as null → LWW fallback on first conflict
     // after migration (correct — no common ancestor is known).
     this.version(11).stores({
+      // Re-declare tasks to add the sharedCounterId index. Dexie merges
+      // the new index into the existing spec; columns/rows are unaffected.
+      tasks: `
+        id,
+        [userId+isDeleted],
+        updatedAt,
+        type,
+        parentStepId,
+        sharedCounterId
+      `,
       progressCounters: null, // Drop the inert ProgressCounter object store.
     });
   }
@@ -344,7 +350,6 @@ export type {
   Task,
   TaskStep,
   BoardTask,
-  ProgressCounter,
   User,
   SyncQueueItem,
   CompositeTask,

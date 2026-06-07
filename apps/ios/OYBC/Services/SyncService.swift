@@ -769,6 +769,19 @@ final class SyncService: ObservableObject {
                             let winner = resolveConflict(local: localData!, remote: remoteData)
                             if winner == "remote" {
                                 try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                                // Issue #7 (safety-net pull): advance lastSyncedCount on
+                                // remote-wins LWW of a counting task so the next conflict
+                                // can compute the local delta correctly. The remote doc
+                                // carries whatever the remote device wrote; the per-device
+                                // lastSyncedCount is local bookkeeping, so we set it here.
+                                if collection.firestoreName == "tasks",
+                                   let remoteType = remoteData["type"] as? String, remoteType == "counting",
+                                   let remoteCount = (remoteData["currentCount"] as? Int64).map(Int.init) ?? (remoteData["currentCount"] as? Int) {
+                                    try db.execute(
+                                        sql: "UPDATE tasks SET lastSyncedCount = ? WHERE id = ?",
+                                        arguments: [remoteCount, remoteId]
+                                    )
+                                }
                                 didWrite = true
                                 let remoteV = remoteData["version"] as? Int ?? 0
                                 let localV = localData!["version"] as? Int ?? 0
@@ -1418,6 +1431,18 @@ extension SyncService {
                         let winner = resolveConflict(local: localData!, remote: remoteData)
                         if winner == "remote" {
                             try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
+                            // Issue #8 (listener-path pull): advance lastSyncedCount on
+                            // remote-wins LWW of a counting task so the next conflict
+                            // can compute the local delta correctly. Mirrors the
+                            // safety-net pull fix above.
+                            if collection.firestoreName == "tasks",
+                               let remoteType = remoteData["type"] as? String, remoteType == "counting",
+                               let remoteCount = (remoteData["currentCount"] as? Int64).map(Int.init) ?? (remoteData["currentCount"] as? Int) {
+                                try db.execute(
+                                    sql: "UPDATE tasks SET lastSyncedCount = ? WHERE id = ?",
+                                    arguments: [remoteCount, remoteId]
+                                )
+                            }
                             didWrite = true
                             let remoteV = remoteData["version"] as? Int ?? 0
                             let localV = localData!["version"] as? Int ?? 0
@@ -1472,6 +1497,13 @@ extension SyncService {
         localData: [String: Any],
         remoteData: [String: Any]
     ) throws -> Int? {
+        // Guard: skip merge when either side is a tombstone. A deleted task
+        // must fall through to standard LWW; additive merge on a delete would
+        // resurrect the record. Mirror of web syncService tombstone guard.
+        let remoteIsDeleted = (remoteData["isDeleted"] as? Bool) ?? ((remoteData["isDeleted"] as? Int64) == 1)
+        let localIsDeleted = (localData["isDeleted"] as? Bool) ?? ((localData["isDeleted"] as? Int64) == 1)
+        guard !remoteIsDeleted && !localIsDeleted else { return nil }
+
         // Only applies to COUNTING tasks.
         guard let remoteType = remoteData["type"] as? String, remoteType == "counting" else { return nil }
         guard let localType = localData["type"] as? String, localType == "counting" else { return nil }
@@ -1499,8 +1531,17 @@ extension SyncService {
         )
         let merged = mergeResult.merged
         let localVersion = (localData["version"] as? Int64).map(Int.init) ?? (localData["version"] as? Int) ?? 0
+        let remoteVersion = (remoteData["version"] as? Int64).map(Int.init) ?? (remoteData["version"] as? Int) ?? 0
+        // version = max(local, remote) + 1 so LWW on the next pull doesn't
+        // discard the merge when the remote version is ahead by more than 1.
+        let newVersion = max(localVersion, remoteVersion) + 1
         let now = AppDatabase.currentTimestamp()
 
+        // 1. Apply the full remote record first (preserves all remote-changed
+        //    fields: title, description, isDeleted, maxCount, etc.).
+        try upsertLocalRecord(db: db, grdbTable: "tasks", data: remoteData)
+
+        // 2. Layer the additively-merged count fields on top.
         try db.execute(sql: """
             UPDATE tasks
             SET currentCount = ?,
@@ -1508,7 +1549,7 @@ extension SyncService {
                 version = ?,
                 updatedAt = ?
             WHERE id = ?
-            """, arguments: [merged, remoteCount, localVersion + 1, now, remoteId])
+            """, arguments: [merged, remoteCount, newVersion, now, remoteId])
 
         return merged
     }

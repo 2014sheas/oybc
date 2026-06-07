@@ -6,6 +6,5 @@ export * from './boards';
 export * from './compoundChildren';
 export * from './tasks';
 export * from './boardTasks';
-export * from './progressCounters';
 export * from './syncQueue';
 export * from './users';
