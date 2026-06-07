@@ -19,7 +19,7 @@ import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
 import { addToSyncQueue } from '../db/operations/syncQueue';
 import { incrementSharedCounter } from '../db/operations/tasks';
-import { updateBoardTaskAndCascade } from '../db/operations/boardTasks';
+import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard } from '../db/operations/boardTasks';
 import {
   InteractiveTaskSquare,
   DetailModal,
@@ -119,6 +119,10 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
   const [editBoardOpen, setEditBoardOpen] = useState(false);
   // M3 — cell swap: the boardTaskId whose square the user requested a swap for.
   const [swapBoardTaskId, setSwapBoardTaskId] = useState<string | null>(null);
+  // M4 — remove from board: the boardTaskId pending removal confirmation.
+  const [removeBoardTaskId, setRemoveBoardTaskId] = useState<string | null>(null);
+  // M4 — add to empty cell: the grid position {row, col} awaiting task selection.
+  const [addCellPos, setAddCellPos] = useState<{ row: number; col: number } | null>(null);
 
   // User preferences (for weekStartDay, used by EditBoardSheet).
   const [prefs] = usePreferences();
@@ -482,8 +486,27 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                       </div>
                     );
                   } else {
+                    // M4 — empty cells on ACTIVE non-expired boards show a `+` affordance.
+                    const addEligible =
+                      !isCenter &&
+                      board.status === BoardStatus.ACTIVE &&
+                      !isExpired;
                     cells.push(
-                      <div key={`empty-${row}-${col}`} className={styles.emptySquare} />
+                      <div
+                        key={`empty-${row}-${col}`}
+                        className={styles.emptySquare}
+                      >
+                        {addEligible && (
+                          <button
+                            type="button"
+                            className={styles.addTaskButton}
+                            aria-label="Add task to this cell"
+                            onClick={() => setAddCellPos({ row, col })}
+                          >
+                            +
+                          </button>
+                        )}
+                      </div>
                     );
                   }
                   continue;
@@ -740,6 +763,10 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
               setSwapBoardTaskId(bt.id);
               setContextMenu(null);
             } : undefined}
+            onRemoveFromBoard={swapEligible ? () => {
+              setRemoveBoardTaskId(bt.id);
+              setContextMenu(null);
+            } : undefined}
           />
         );
       })()}
@@ -750,6 +777,7 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         if (!bt) return null;
         return (
           <CellSwapModal
+            mode="swap"
             currentTaskId={bt.taskId}
             candidateTasks={Object.values(taskMap)}
             onClose={() => setSwapBoardTaskId(null)}
@@ -770,6 +798,81 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
           />
         );
       })()}
+
+      {/* M4 — Remove from board confirmation */}
+      {removeBoardTaskId && (() => {
+        const bt = boardTasks.find((b) => b.id === removeBoardTaskId);
+        const task = bt ? taskMap[bt.taskId] : undefined;
+        return (
+          <div
+            className={styles.removeConfirmBackdrop}
+            onClick={() => setRemoveBoardTaskId(null)}
+            role="presentation"
+          >
+            <div
+              className={styles.removeConfirmDialog}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="remove-confirm-title"
+              aria-describedby="remove-confirm-body"
+            >
+              <h3 id="remove-confirm-title" className={styles.removeConfirmTitle}>
+                Remove from board?
+              </h3>
+              <p id="remove-confirm-body" className={styles.removeConfirmBody}>
+                <strong>{task?.title ?? 'This task'}</strong> will be removed from this board.
+                The task stays in your library and on any other boards where it appears.
+              </p>
+              <div className={styles.removeConfirmButtons}>
+                <button
+                  type="button"
+                  className={styles.removeConfirmCancel}
+                  onClick={() => setRemoveBoardTaskId(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles.removeConfirmDanger}
+                  onClick={async () => {
+                    const targetId = removeBoardTaskId;
+                    setRemoveBoardTaskId(null);
+                    try {
+                      await removeBoardTaskFromBoard(targetId);
+                    } catch (err) {
+                      console.error('Remove from board failed:', err);
+                      // eslint-disable-next-line react-hooks/refs
+                      showFlash('Remove failed — please try again', 'bingo');
+                    }
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* M4 — Add task to empty cell modal */}
+      {addCellPos && (
+        <CellSwapModal
+          mode="add"
+          candidateTasks={Object.values(taskMap)}
+          onClose={() => setAddCellPos(null)}
+          onConfirm={async (taskId) => {
+            const pos = addCellPos;
+            setAddCellPos(null);
+            try {
+              await addBoardTaskToBoard(boardId, taskId, pos.row, pos.col);
+            } catch (err) {
+              console.error('Add task to cell failed:', err);
+              showFlash('Add failed — please try again', 'bingo');
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

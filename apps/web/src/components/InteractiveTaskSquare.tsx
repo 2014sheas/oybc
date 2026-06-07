@@ -41,6 +41,12 @@ interface ContextMenuProps {
    * responsible for the center-square exclusion guard.
    */
   onSwapTask?: () => void;
+  /**
+   * M4 — Live-edit remove from board. When provided, a "⎘ Remove from board"
+   * item is added. Must NOT be passed for center squares — the caller is
+   * responsible for the center-square exclusion guard.
+   */
+  onRemoveFromBoard?: () => void;
 }
 
 /**
@@ -72,6 +78,7 @@ export function FloatingContextMenu({
   onViewDetails,
   onOpenInLibrary,
   onSwapTask,
+  onRemoveFromBoard,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -250,6 +257,21 @@ export function FloatingContextMenu({
             }}
           >
             ⎘ Swap with another task…
+          </button>
+        </>
+      )}
+
+      {onRemoveFromBoard && (
+        <>
+          {!onSwapTask && <div className={styles.contextMenuDivider} />}
+          <button
+            className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
+            onClick={() => {
+              onRemoveFromBoard();
+              onClose();
+            }}
+          >
+            ⎘ Remove from board
           </button>
         </>
       )}

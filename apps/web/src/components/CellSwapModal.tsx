@@ -5,35 +5,60 @@ import styles from './CellSwapModal.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface CellSwapModalProps {
-  /**
-   * The current task occupying the square being swapped (excluded from the
-   * eligible list so the user cannot "swap" to the same task).
-   */
-  currentTaskId: string;
+/**
+ * 'swap' — exclude the current task (M3 behavior).
+ * 'add'  — show all eligible tasks with no exclusion (M4 add-to-empty-cell).
+ */
+export type CellSwapMode = 'swap' | 'add';
+
+/** Shared props present in both modal modes. */
+interface CellSwapModalBaseProps {
   /**
    * All non-deleted tasks in the user's library eligible for placement.
    * The modal filters to non-center types (NORMAL / COUNTING / COMPOUND /
-   * ACHIEVEMENT) and excludes the current task.
+   * ACHIEVEMENT) and excludes the current task in 'swap' mode.
    */
   candidateTasks: Task[];
   /** Dismiss without making a change. */
   onClose: () => void;
   /**
-   * Confirm swap. Called with the selected Task's id.
-   * The caller owns the DB write via `updateBoardTaskAndCascade`.
+   * Confirm selection. Called with the selected Task's id.
+   * The caller owns the DB write via `updateBoardTaskAndCascade` (swap)
+   * or `addBoardTaskToBoard` (add).
    */
   onConfirm: (newTaskId: string) => void;
 }
 
+/** Swap mode — requires `currentTaskId` to exclude the current task from the list. */
+interface CellSwapModalSwapProps extends CellSwapModalBaseProps {
+  mode: 'swap';
+  /**
+   * The current task occupying the square being swapped (excluded from the
+   * eligible list so the user cannot "swap" to the same task).
+   */
+  currentTaskId: string;
+}
+
+/** Add mode — no exclusion, all eligible tasks are shown. */
+interface CellSwapModalAddProps extends CellSwapModalBaseProps {
+  mode?: 'add';
+  currentTaskId?: never;
+}
+
+type CellSwapModalProps = CellSwapModalSwapProps | CellSwapModalAddProps;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * CellSwapModal — full-screen modal that lets the user pick a replacement
- * task for a non-center square on an ACTIVE board (live-edit M3).
+ * CellSwapModal — full-screen modal that lets the user pick a task for a
+ * non-center square on an ACTIVE board.
+ *
+ * Supports two modes (live-edit M3 / M4):
+ *   - 'swap' (default, M3): excludes the current task and labels the CTA "Swap".
+ *   - 'add' (M4): shows all eligible tasks with no exclusion; labels the CTA "Add".
  *
  * Eligible tasks: any non-deleted Task of type NORMAL / COUNTING / COMPOUND /
- * ACHIEVEMENT, excluding the Task currently in the square.
+ * ACHIEVEMENT. In swap mode the task currently in the square is excluded.
  *
  * UX:
  *   - Search field filters by title (case-insensitive substring).
@@ -41,12 +66,15 @@ interface CellSwapModalProps {
  *   - Confirm is disabled until a task is selected.
  *   - Escape key or clicking the backdrop closes the modal.
  *
- * @param currentTaskId - Task currently occupying the square (excluded).
+ * @param mode - 'swap' or 'add'; defaults to 'add'. When 'swap', `currentTaskId` is required
+ *   and TypeScript enforces this via a discriminated union on props.
+ * @param currentTaskId - Task currently occupying the square (required in swap mode; excluded from list).
  * @param candidateTasks - Full library; modal filters internally.
  * @param onClose - Dismiss without changes.
  * @param onConfirm - Called with the chosen Task id.
  */
 export function CellSwapModal({
+  mode = 'swap',
   currentTaskId,
   candidateTasks,
   onClose,
@@ -80,7 +108,8 @@ export function CellSwapModal({
 
   const filtered = candidateTasks.filter((t) => {
     if (t.isDeleted) return false;
-    if (t.id === currentTaskId) return false;
+    // In swap mode, exclude the task currently in the square.
+    if (mode === 'swap' && currentTaskId && t.id === currentTaskId) return false;
     if (!ELIGIBLE_TYPES.has(t.type)) return false;
     if (query.trim()) {
       return t.title.toLowerCase().includes(query.trim().toLowerCase());
@@ -109,10 +138,12 @@ export function CellSwapModal({
         <div className={styles.header}>
           <div>
             <h3 id="swap-modal-title" className={styles.title}>
-              Swap with another task…
+              {mode === 'add' ? 'Add a task to this cell…' : 'Swap with another task…'}
             </h3>
             <p className={styles.subtitle}>
-              Pick a task from your library to replace this square.
+              {mode === 'add'
+                ? 'Pick a task from your library to fill this empty cell.'
+                : 'Pick a task from your library to replace this square.'}
             </p>
           </div>
           <button
@@ -173,7 +204,7 @@ export function CellSwapModal({
             disabled={!selectedId}
             onClick={handleConfirm}
           >
-            Swap
+            {mode === 'add' ? 'Add' : 'Swap'}
           </button>
         </div>
       </div>

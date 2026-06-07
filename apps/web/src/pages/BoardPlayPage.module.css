@@ -130,6 +130,98 @@
   color: var(--text-secondary);
 }
 
+/* M4 — "+" button inside an empty cell (ACTIVE boards only) */
+.addTaskButton {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border-color);
+  border-radius: 50%;
+  background: none;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.addTaskButton:hover {
+  border-color: var(--accent, #6366f1);
+  color: var(--accent, #6366f1);
+  background-color: var(--accent-bg, rgba(99, 102, 241, 0.07));
+}
+
+/* M4 — Remove confirmation dialog */
+.removeConfirmBackdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+}
+
+.removeConfirmDialog {
+  background: var(--card-bg, #fff);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 360px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+}
+
+.removeConfirmTitle {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.removeConfirmBody {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.removeConfirmButtons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.removeConfirmCancel {
+  padding: 8px 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  transition: background-color 0.1s;
+}
+
+.removeConfirmCancel:hover {
+  background-color: var(--hover-bg);
+}
+
+.removeConfirmDanger {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--danger, #dc2626);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: opacity 0.1s;
+}
+
+.removeConfirmDanger:hover {
+  opacity: 0.88;
+}
+
 /* ─── Stats bar ─────────────────────────────────────────────────────────────── */
 
 .statsBar {
