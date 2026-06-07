@@ -37,6 +37,8 @@ import {
   RecurringBoardTemplateSchema,
   DefaultPoolSchema,
   mergeUserPreferences,
+  additiveMergeCount,
+  needsAdditiveMerge,
   type User,
 } from '@oybc/shared';
 import { runBoardCascadeForTask } from '../db/operations/orchestration';
@@ -137,6 +139,43 @@ export interface PullResult {
 export interface SyncResult {
   push: PushResult;
   pull: PullResult;
+}
+
+// ─── Phase 4: lastSyncedCount bookkeeping after push ─────────────────────────
+
+/**
+ * After a successful push of a COUNTING task to Firestore, advance the local
+ * `lastSyncedCount` to the pushed `currentCount` value. This records
+ * "Firestore now knows about this count" so the next conflict resolution can
+ * compute the local delta correctly.
+ *
+ * This is a targeted write (no version bump, no sync queue entry) — it is sync
+ * bookkeeping, not a user edit. Only counting tasks carry `lastSyncedCount`.
+ *
+ * @param entityType - The entity type from the sync queue item.
+ * @param entityId - The task ID.
+ * @param payload - The sync payload that was just pushed to Firestore.
+ */
+async function updateLastSyncedCountAfterPush(
+  entityType: string,
+  entityId: string,
+  payload: SyncableEntity,
+): Promise<void> {
+  if (entityType !== 'tasks') return;
+  const payloadAsTask = payload as { type?: string; currentCount?: number };
+  if (payloadAsTask.type !== 'counting') return;
+  const pushedCount = payloadAsTask.currentCount;
+  if (typeof pushedCount !== 'number') return;
+
+  try {
+    // Targeted update — does NOT bump version or write a new sync queue entry.
+    // lastSyncedCount is sync bookkeeping only.
+    await db.tasks.update(entityId, { lastSyncedCount: pushedCount });
+  } catch (err) {
+    // Non-fatal: if this write fails, the next conflict will fall back to LWW
+    // (null lastSyncedCount → LWW). Log but do not propagate.
+    console.warn(`[sync] Could not advance lastSyncedCount for tasks/${entityId}:`, err);
+  }
 }
 
 // ─── Push Sync ────────────────────────────────────────────────────────────────
@@ -246,6 +285,9 @@ export async function pushSync(userId: string): Promise<PushResult> {
         // No remote — push directly
         await writeSingleDoc(docRef, payload);
         await markSyncItemCompleted(item.id);
+        // Phase 4: After a successful push of a counting task, advance
+        // lastSyncedCount so subsequent conflicts can compute the local delta.
+        await updateLastSyncedCountAfterPush(entityType, item.entityId, payload);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(`Pushed ${entityType}/${item.entityId} (new)`);
@@ -260,6 +302,10 @@ export async function pushSync(userId: string): Promise<PushResult> {
         // Local wins — push to Firestore
         await writeSingleDoc(docRef, payload);
         await markSyncItemCompleted(item.id);
+        // Phase 4: After a successful local-wins push of a counting task,
+        // advance lastSyncedCount so subsequent conflicts can compute the
+        // local delta correctly.
+        await updateLastSyncedCountAfterPush(entityType, item.entityId, payload);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(
@@ -448,15 +494,125 @@ async function applyRemoteSubdoc(
     return null; // local-wins → silent no-op
   }
 
-  // Determine if the pulled doc's completion state differs from what we
-  // have locally. Used below to decide whether to trigger the board cascade.
-  // Apply the remote row to local Dexie (does NOT bump version — pulled
-  // value is authoritative; version comes directly from the remote doc).
+  // Apply the remote row to local Dexie, with additive-merge for counting
+  // source tasks (Phase 4). The cascade runs in the same transaction so a
+  // cascade failure rolls back the upsert — pulled value is authoritative
+  // except when additive merge overrides currentCount.
+  //
+  // Additive merge fires when ALL of:
+  //   1. collectionName === 'tasks' (not other entity types)
+  //   2. The remote task is a COUNTING task
+  //   3. The local task exists and has a known lastSyncedCount
+  //   4. Both local and remote currentCount deviate from lastSyncedCount
+  //      (concurrent increments — needsAdditiveMerge returns true)
+  //   5. At least one linked task references this task as a source
+  //      (sharedCounterId === this task's id) — additive merge only pays
+  //      off for sources (the accumulator that multiple views read).
+  //
+  // When merge fires, the merged count replaces the remote count, version
+  // is bumped, and a push entry is enqueued so the merged value reaches
+  // Firestore. The cascade then re-derives all linked tasks + board stats.
+  let mergeLog: string | null = null;
   await db.transaction(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
+      // Phase 4 — Additive merge for shared-counter sources on pull.
+      //
+      // Guard: skip merge when either side is a tombstone. A deleted task
+      // must fall through to standard LWW which handles isDeleted correctly;
+      // running additive merge on a delete would resurrect the record.
+      const remoteIsDeleted = !!(validated as { isDeleted?: boolean }).isDeleted;
+      const localIsDeleted = !!(localData as { isDeleted?: boolean } | undefined)?.isDeleted;
+
+      if (
+        collectionName === 'tasks' &&
+        !isNew &&
+        localData &&
+        !remoteIsDeleted &&
+        !localIsDeleted
+      ) {
+        const remoteTask = validated as { type?: string; currentCount?: number };
+        const localTask = localData as { type?: string; currentCount?: number; lastSyncedCount?: number | null; version?: number };
+
+        if (remoteTask.type === 'counting') {
+          const localCount = typeof localTask.currentCount === 'number' ? localTask.currentCount : 0;
+          const remoteCount = typeof remoteTask.currentCount === 'number' ? remoteTask.currentCount : 0;
+          const lastSynced = typeof localTask.lastSyncedCount === 'number' ? localTask.lastSyncedCount : null;
+
+          if (needsAdditiveMerge(localCount, remoteCount, lastSynced)) {
+            // Check if this task is a shared-counter source (any task references it).
+            const linkedCount = await db.tasks
+              .where('sharedCounterId')
+              .equals(validated.id)
+              .and((t) => !t.isDeleted)
+              .count();
+
+            if (linkedCount > 0) {
+              // Additive merge applies: sum local delta on top of remote count.
+              const { merged } = additiveMergeCount(localCount, remoteCount, lastSynced);
+
+              // version = max(local, remote) + 1 so LWW on next pull doesn't
+              // silently discard the merge if the remote has version > local + 1.
+              const localVersion = typeof localTask.version === 'number' ? localTask.version : 0;
+              const remoteVersion = typeof (validated as { version?: number }).version === 'number'
+                ? (validated as { version?: number }).version!
+                : 0;
+              const newVersion = Math.max(localVersion, remoteVersion) + 1;
+              const now = new Date().toISOString();
+
+              // 1. Apply the full remote record (preserves all remote-changed
+              //    fields: title, description, isDeleted, maxCount, etc.)
+              await table.put(validated);
+
+              // 2. Layer the additively-merged count fields on top of the
+              //    remote upsert so the merged count wins.
+              await db.tasks.update(validated.id, {
+                currentCount: merged,
+                lastSyncedCount: remoteCount, // common ancestor advances to remote
+                version: newVersion,
+                updatedAt: now,
+              });
+
+              // Enqueue push so the merged value reaches Firestore.
+              const mergedTask = await db.tasks.get(validated.id);
+              if (mergedTask) {
+                await db.syncQueue.add({
+                  id: crypto.randomUUID(),
+                  entityType: 'tasks',
+                  entityId: validated.id,
+                  operationType: SyncOperationType.UPDATE,
+                  payload: JSON.stringify(mergedTask),
+                  status: SyncStatus.PENDING,
+                  retryCount: 0,
+                  createdAt: now,
+                  priority: 0,
+                });
+              }
+
+              mergeLog = `additive-merge currentCount ${localCount}+${remoteCount}-${lastSynced}=${merged}`;
+              // Run cascade on the merged task (re-derives linked tasks + board stats).
+              await runBoardCascadeForTask(validated.id);
+              return; // Merge path complete — skip the standard table.put below.
+            }
+          }
+        }
+      }
+
       await table.put(validated);
+
+      // Issue #5 (remote-wins LWW on counting task): advance lastSyncedCount
+      // so the next conflict can compute the local delta correctly.
+      // The remote doc is not guaranteed to carry the correct per-device
+      // lastSyncedCount (it's local bookkeeping), so we write it explicitly.
+      if (collectionName === 'tasks' && !isNew) {
+        const remoteTask = validated as { type?: string; currentCount?: number };
+        if (remoteTask.type === 'counting' && typeof remoteTask.currentCount === 'number') {
+          await db.tasks.update(validated.id, {
+            lastSyncedCount: remoteTask.currentCount,
+          });
+        }
+      }
 
       // After pulling a Task or CompoundChild, cascade the board derivation
       // pass so that any board containing the changed task recomputes its
@@ -489,6 +645,9 @@ async function applyRemoteSubdoc(
   recordSyncEvent('pulled');
   if (isNew) {
     return `Pulled ${collectionName}/${validated.id} (new)`;
+  }
+  if (mergeLog) {
+    return `Pulled ${collectionName}/${validated.id} (additive-merge: ${mergeLog})`;
   }
   return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
 }

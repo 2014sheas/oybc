@@ -119,3 +119,8 @@ export type {
   PropagateIncrementLinkedTask,
   LinkedTaskIncrementResult,
 } from './sharedCounter';
+
+// ===== Phase 4 — Shared counter sync / additive-merge conflict resolution =====
+export { additiveMergeCount, needsAdditiveMerge } from './sharedCounterMerge';
+
+export type { MergeCountResult } from './sharedCounterMerge';

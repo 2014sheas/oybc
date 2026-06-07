@@ -107,6 +107,20 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     //     → displayed = source.currentCount − baseline.
     var baseline: Int?
 
+    // Phase 4 — Shared Counter Sync. The `currentCount` value that was last
+    // confirmed pushed to (or pulled from) Firestore for this Task. Used as the
+    // common-ancestor baseline for additive-merge conflict resolution:
+    //
+    //   mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)
+    //
+    // Set after every successful push of this counting Task and after every
+    // remote-wins pull. NOT updated on local increments — only on confirmed
+    // Firestore round-trips.
+    //
+    // When nil (first sync, or Task pre-dates Phase 4): the conflict resolver
+    // falls back to plain LWW. Stored as INTEGER in SQLite (GRDB v16 migration).
+    var lastSyncedCount: Int?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -150,7 +164,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         startDate: String? = nil,
         endDate: String? = nil,
         sharedCounterId: String? = nil,
-        baseline: Int? = nil
+        baseline: Int? = nil,
+        lastSyncedCount: Int? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -186,6 +201,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.endDate = endDate
         self.sharedCounterId = sharedCounterId
         self.baseline = baseline
+        self.lastSyncedCount = lastSyncedCount
     }
 
     // MARK: - Codable
@@ -206,6 +222,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case timeframe, startDate, endDate
         // Phase 2 — Shared Counters
         case sharedCounterId, baseline
+        // Phase 4 — Shared Counter Sync
+        case lastSyncedCount
     }
 
     // Custom decoding for progressCounters (stored as JSON string)
@@ -257,6 +275,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Phase 2 — Shared Counters. Forward-compat: pre-v15 rows decode as nil.
         sharedCounterId = try container.decodeIfPresent(String.self, forKey: .sharedCounterId)
         baseline = try container.decodeIfPresent(Int.self, forKey: .baseline)
+        // Phase 4 — Shared Counter Sync. Forward-compat: pre-v16 rows decode as nil.
+        lastSyncedCount = try container.decodeIfPresent(Int.self, forKey: .lastSyncedCount)
     }
 
     // Custom encoding for progressCounters (store as JSON string)
@@ -305,6 +325,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Phase 2 — Shared Counters
         try container.encodeIfPresent(sharedCounterId, forKey: .sharedCounterId)
         try container.encodeIfPresent(baseline, forKey: .baseline)
+        // Phase 4 — Shared Counter Sync
+        try container.encodeIfPresent(lastSyncedCount, forKey: .lastSyncedCount)
     }
 }
 

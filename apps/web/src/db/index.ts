@@ -10,7 +10,6 @@ export type {
   Task,
   TaskStep,
   BoardTask,
-  ProgressCounter,
   User,
   SyncQueueItem,
 } from './database';

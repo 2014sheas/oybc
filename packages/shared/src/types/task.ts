@@ -156,6 +156,28 @@ export interface Task {
    * enforces this shape invariant.
    */
   baseline?: number | null;
+
+  /**
+   * Phase 4 — Shared Counter Sync. The `currentCount` value that was last
+   * confirmed pushed to (or pulled from) Firestore for this Task. Used as the
+   * common-ancestor baseline for additive-merge conflict resolution:
+   *
+   *   mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)
+   *
+   * Set after every successful push of this counting Task and after every
+   * remote-wins pull. Not bumped on local increments — only on confirmed
+   * Firestore round-trips.
+   *
+   * When null/undefined (first sync, or Task pre-dates Phase 4 migration):
+   * the conflict resolver falls back to plain LWW — no common ancestor is
+   * known so additive merge is not safe.
+   *
+   * Only meaningful on `type === COUNTING` tasks that are shared-counter
+   * sources (i.e. at least one other Task has `sharedCounterId === this.id`).
+   * Stored on ALL counting tasks for forward-compatibility (if the source
+   * designation changes, the field is already present).
+   */
+  lastSyncedCount?: number | null;
 }
 
 /**
