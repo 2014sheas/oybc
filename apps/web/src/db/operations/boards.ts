@@ -332,6 +332,41 @@ export async function deleteBoard(id: string): Promise<void> {
 }
 
 /**
+ * Delete a DRAFT board and its attached BoardTask placements atomically.
+ *
+ * Used by the Create Hub's drafts-list delete affordance. Soft-deletes the
+ * Board (so sync propagates the tombstone) and hard-deletes the BoardTask
+ * rows (BoardTask has no isDeleted field — placement removal is always
+ * a literal delete; see `deleteBoardTasksForBoard`). Both happen inside one
+ * Dexie transaction so a mid-flight failure rolls back instead of leaving
+ * orphan BoardTask rows pointing at a soft-deleted Board.
+ *
+ * Caller is responsible for confirming the user wants the deletion.
+ */
+export async function deleteDraftWithCascade(id: string): Promise<void> {
+  await db.transaction('rw', [db.boards, db.boardTasks, db.syncQueue], async () => {
+    const existing = await db.boards.get(id);
+    if (!existing) return;
+
+    const placements = await db.boardTasks.where('boardId').equals(id).toArray();
+    for (const bt of placements) {
+      await db.boardTasks.delete(bt.id);
+      await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+    }
+
+    const now = currentTimestamp();
+    await db.boards.update(id, {
+      isDeleted: true,
+      deletedAt: now,
+      updatedAt: now,
+      version: (existing.version ?? 0) + 1,
+    });
+    const board = await db.boards.get(id);
+    if (board) await addToSyncQueue('boards', id, SyncOperationType.DELETE, board);
+  });
+}
+
+/**
  * Update board stats (denormalized)
  */
 export async function updateBoardStats(

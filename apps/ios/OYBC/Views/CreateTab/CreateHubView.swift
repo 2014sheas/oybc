@@ -200,6 +200,9 @@ struct CreateHubView: View {
                     drafts: vm.drafts,
                     onResume: { board in
                         vm.loadDraftAndEnterWizard(board: board)
+                    },
+                    onDelete: { board in
+                        vm.deleteDraft(board: board, userId: userId)
                     }
                 )
             }

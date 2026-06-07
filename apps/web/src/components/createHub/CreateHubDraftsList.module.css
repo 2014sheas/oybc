@@ -43,21 +43,56 @@
 
 .row {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  width: 100%;
-  padding: var(--spacing-md) var(--spacing-lg);
+  align-items: stretch;
+  gap: 0;
   background-color: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.15s, border-color 0.15s;
+  overflow: hidden;
+  transition: border-color 0.15s;
 }
 
 .row:hover {
-  background-color: var(--hover-bg);
   border-color: var(--button-hover-border);
+}
+
+.rowResume {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s;
+}
+
+.rowResume:hover {
+  background-color: var(--hover-bg);
+}
+
+.rowDelete {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.rowDelete:hover {
+  background-color: rgba(239, 68, 68, 0.08);
+  color: rgb(220, 38, 38);
 }
 
 .rowInfo {

@@ -631,6 +631,52 @@ extension AppDatabase {
         }
     }
 
+    /// Delete a DRAFT board and its attached BoardTask placements atomically.
+    ///
+    /// Used by the Create Hub's drafts-list swipe-to-delete affordance.
+    /// Soft-deletes the Board (sync queue carries the tombstone) and
+    /// hard-deletes the BoardTask rows (BoardTask has no isDeleted flag —
+    /// placement removal is always a literal delete; see
+    /// `deleteBoardTasksForBoard`). Both happen inside one GRDB write
+    /// transaction so a mid-flight failure rolls back instead of leaving
+    /// orphan BoardTask rows pointing at a soft-deleted Board.
+    ///
+    /// Caller is responsible for confirming the user wants the deletion.
+    /// Web twin: `deleteDraftWithCascade` in `apps/web/src/db/operations/boards.ts`.
+    func deleteDraftWithCascade(id: String) throws {
+        try write { db in
+            guard var board = try Board.fetchOne(db, key: id) else { return }
+            let now = Self.currentTimestamp()
+
+            let placements = try BoardTask
+                .filter(Column("boardId") == id)
+                .fetchAll(db)
+            for bt in placements {
+                try bt.delete(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: bt.id,
+                    operationType: .delete,
+                    payload: bt,
+                    now: now
+                ).save(db)
+            }
+
+            board.isDeleted = true
+            board.deletedAt = now
+            board.updatedAt = now
+            board.version += 1
+            try board.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: id,
+                operationType: .delete,
+                payload: board,
+                now: now
+            ).save(db)
+        }
+    }
+
     // MARK: - Tasks
 
     func fetchTasks(userId: String) throws -> [Task] {

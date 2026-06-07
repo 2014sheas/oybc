@@ -10,6 +10,7 @@ import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframePar
 import { useEditTemplateParam } from './createHub/useEditTemplateParam';
 import { useResumableDraft } from './createHub/useResumableDraft';
 import { useCoreBoardSlots } from '../hooks';
+import { deleteDraftWithCascade } from '../db/operations/boards';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
@@ -125,6 +126,10 @@ export function CreateHubPage({
     [resolveDraft],
   );
 
+  const handleDeleteDraft = useCallback(async (board: Board): Promise<void> => {
+    await deleteDraftWithCascade(board.id);
+  }, []);
+
   const handleWizardComplete = useCallback(
     (boardId: string, status: 'active' | 'draft'): void => {
       onBoardCompleted?.(boardId, status);
@@ -209,6 +214,7 @@ export function CreateHubPage({
         <CreateHubDraftsList
           drafts={drafts}
           onResume={(d) => void handleResumeDraft(d)}
+          onDelete={(d) => void handleDeleteDraft(d)}
         />
       )}
     </div>
