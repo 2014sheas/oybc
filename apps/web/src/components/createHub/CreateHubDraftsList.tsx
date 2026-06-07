@@ -66,7 +66,7 @@ function DraftRow({ draft, onResume, onDelete }: DraftRowProps): React.ReactElem
         type="button"
         className={styles.rowResume}
         onClick={() => onResume(draft)}
-        aria-label={`Resume "${displayName}", ${draft.boardSize}×${draft.boardSize} board with ${taskCount} tasks`}
+        aria-label={`Resume "${displayName}", ${draft.boardSize}×${draft.boardSize} board with ${taskCount} task${taskCount === 1 ? '' : 's'}`}
       >
         <div className={styles.rowInfo}>
           <span className={styles.rowName}>{displayName}</span>

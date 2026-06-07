@@ -14,9 +14,9 @@ struct DraftRowData: Identifiable {
 /// can be resumed. iOS twin of web's `CreateHubDraftsList`. Only
 /// rendered when `drafts.count > 0`.
 ///
-/// Each row supports swipe-to-delete (trailing `.swipeActions`). The
-/// destructive action opens a confirmation alert before invoking the
-/// caller-supplied `onDelete` callback; parent runs
+/// Each row pairs the tappable resume area with a trailing `xmark`
+/// button. The destructive button opens a confirmation `Alert` before
+/// invoking the caller-supplied `onDelete` callback; parent runs
 /// `AppDatabase.deleteDraftWithCascade(id:)` and triggers a reload.
 struct CreateHubDraftsListView: View {
     let drafts: [DraftRowData]
@@ -75,17 +75,20 @@ private struct DraftRow: View {
     let onDeleteTap: () -> Void
 
     var body: some View {
+        let displayName = row.board.name.isEmpty ? "(untitled draft)" : row.board.name
+        let plural = row.taskCount == 1 ? "" : "s"
+
         HStack(spacing: 8) {
             Button {
                 onResume(row.board)
             } label: {
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.board.name.isEmpty ? "(untitled draft)" : row.board.name)
+                        Text(displayName)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(1)
-                        Text("\(row.board.boardSize)×\(row.board.boardSize) · \(row.taskCount) task\(row.taskCount == 1 ? "" : "s")")
+                        Text("\(row.board.boardSize)×\(row.board.boardSize) · \(row.taskCount) task\(plural)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -99,7 +102,7 @@ private struct DraftRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Resume \"\(row.board.name)\", \(row.board.boardSize) by \(row.board.boardSize) board with \(row.taskCount) tasks")
+            .accessibilityLabel("Resume \"\(displayName)\", \(row.board.boardSize) by \(row.board.boardSize) board with \(row.taskCount) task\(plural)")
 
             Button(role: .destructive, action: onDeleteTap) {
                 Image(systemName: "xmark")
@@ -109,7 +112,7 @@ private struct DraftRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Delete draft \"\(row.board.name)\"")
+            .accessibilityLabel("Delete draft \"\(displayName)\"")
         }
         .background(Color(.systemBackground))
         .overlay(

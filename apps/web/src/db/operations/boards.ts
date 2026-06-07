@@ -347,6 +347,17 @@ export async function deleteDraftWithCascade(id: string): Promise<void> {
   await db.transaction('rw', [db.boards, db.boardTasks, db.syncQueue], async () => {
     const existing = await db.boards.get(id);
     if (!existing) return;
+    // Helper is draft-only by design — the caller (Create Hub drafts list)
+    // never passes a non-draft board. Throwing on misuse keeps the
+    // helper from silently destroying ACTIVE/COMPLETED placements if a
+    // future caller forgets the gate. For "delete an active board",
+    // use `deleteBoard(id)` (which leaves BoardTask rows in place).
+    if (existing.status !== BoardStatus.DRAFT) {
+      throw new Error(
+        `deleteDraftWithCascade: board ${id} has status "${existing.status}", not "draft". ` +
+          `Use deleteBoard() for non-draft boards.`,
+      );
+    }
 
     const placements = await db.boardTasks.where('boardId').equals(id).toArray();
     for (const bt of placements) {

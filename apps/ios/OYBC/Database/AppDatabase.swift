@@ -633,19 +633,32 @@ extension AppDatabase {
 
     /// Delete a DRAFT board and its attached BoardTask placements atomically.
     ///
-    /// Used by the Create Hub's drafts-list swipe-to-delete affordance.
-    /// Soft-deletes the Board (sync queue carries the tombstone) and
-    /// hard-deletes the BoardTask rows (BoardTask has no isDeleted flag —
-    /// placement removal is always a literal delete; see
-    /// `deleteBoardTasksForBoard`). Both happen inside one GRDB write
-    /// transaction so a mid-flight failure rolls back instead of leaving
-    /// orphan BoardTask rows pointing at a soft-deleted Board.
+    /// Used by the Create Hub's drafts-list delete affordance (per-row
+    /// `xmark` button gated behind a confirmation `Alert`). Soft-deletes
+    /// the Board (sync queue carries the tombstone) and hard-deletes the
+    /// BoardTask rows (BoardTask has no isDeleted flag — placement removal
+    /// is always a literal delete; see `deleteBoardTasksForBoard`). Both
+    /// happen inside one GRDB write transaction so a mid-flight failure
+    /// rolls back instead of leaving orphan BoardTask rows pointing at a
+    /// soft-deleted Board.
+    ///
+    /// Helper is draft-only by design — throws if called with a
+    /// non-DRAFT board so misuse from a future caller surfaces loudly
+    /// rather than silently destroying ACTIVE/COMPLETED placements.
+    /// For "delete an active board", use `deleteBoard(id:)` (which
+    /// leaves BoardTask rows in place).
     ///
     /// Caller is responsible for confirming the user wants the deletion.
     /// Web twin: `deleteDraftWithCascade` in `apps/web/src/db/operations/boards.ts`.
     func deleteDraftWithCascade(id: String) throws {
         try write { db in
             guard var board = try Board.fetchOne(db, key: id) else { return }
+            guard board.status == .draft else {
+                throw DatabaseError(
+                    message: "deleteDraftWithCascade: board \(id) has status \"\(board.status.rawValue)\", not \"draft\". " +
+                    "Use deleteBoard(id:) for non-draft boards."
+                )
+            }
             let now = Self.currentTimestamp()
 
             let placements = try BoardTask
