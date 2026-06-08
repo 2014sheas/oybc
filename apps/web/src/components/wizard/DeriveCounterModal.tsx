@@ -89,7 +89,7 @@ export function DeriveCounterModal({
           )}
         </div>
         <label style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>
-          New max count
+          New goal
         </label>
         <input
           type="number"

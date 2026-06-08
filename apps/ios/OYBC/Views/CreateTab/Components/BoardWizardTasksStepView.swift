@@ -497,7 +497,7 @@ struct BoardWizardTasksStepView: View {
                         }
                     }
                     Section("New target") {
-                        TextField("Max count", text: $deriveMaxCountInput)
+                        TextField("Goal", text: $deriveMaxCountInput)
                             .keyboardType(.numberPad)
                         if let action = source.action, let unit = source.unit,
                            let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),

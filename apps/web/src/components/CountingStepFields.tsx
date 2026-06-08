@@ -68,10 +68,11 @@ export function CountingStepFields({
         )}
       </div>
 
-      {/* Max Count */}
+      {/* Goal (drives completion threshold; user input may exceed it
+          intentionally — see feedback_counter_overshoot_is_valid). */}
       <div className={styles.fieldGroup}>
         <label className={styles.label} htmlFor={`${idPrefix}-maxcount`}>
-          Max<span className={styles.required}>*</span>
+          Goal<span className={styles.required}>*</span>
         </label>
         <input
           id={`${idPrefix}-maxcount`}

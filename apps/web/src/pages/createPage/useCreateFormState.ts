@@ -123,11 +123,11 @@ export function validateForm(
     }
 
     if (maxCountStr.trim().length === 0) {
-      errors.maxCount = 'Max count is required';
+      errors.maxCount = 'Goal is required';
     } else {
       const parsed = parseInt(maxCountStr, 10);
       if (isNaN(parsed) || parsed <= 0) {
-        errors.maxCount = 'Max count must be a positive integer';
+        errors.maxCount = 'Goal must be a positive integer';
       }
     }
   }
@@ -191,11 +191,11 @@ export function validateForm(
         }
 
         if (step.maxCount.trim().length === 0) {
-          errs.maxCount = 'Max count is required for counting steps';
+          errs.maxCount = 'Goal is required for counting steps';
         } else {
           const parsed = parseInt(step.maxCount, 10);
           if (isNaN(parsed) || parsed <= 0) {
-            errs.maxCount = 'Max count must be a positive number';
+            errs.maxCount = 'Goal must be a positive number';
           }
         }
       }

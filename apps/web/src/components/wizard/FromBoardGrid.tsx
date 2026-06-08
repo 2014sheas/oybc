@@ -349,7 +349,7 @@ export function FromBoardGrid({
           onSave={async () => {
             const parsed = parseInt(deriveMaxCountInput.trim(), 10);
             if (!Number.isFinite(parsed) || parsed <= 0) {
-              setDeriveError('Max count must be a positive integer');
+              setDeriveError('Goal must be a positive integer');
               return;
             }
             const action = (derivingFromTask.action ?? '').trim();

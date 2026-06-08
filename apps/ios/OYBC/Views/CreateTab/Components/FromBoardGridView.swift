@@ -301,7 +301,7 @@ struct FromBoardGridView: View {
               let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
               parsed > 0
         else {
-            deriveError = "Max count must be a positive integer"
+            deriveError = "Goal must be a positive integer"
             return
         }
 

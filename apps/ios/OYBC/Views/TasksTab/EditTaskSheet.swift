@@ -125,7 +125,7 @@ struct EditTaskSheet: View {
                 if task.type == .counting {
                     Section("Counting") {
                         TextField("Action (e.g. Run)", text: $action)
-                        TextField("Max count", text: $maxCountStr)
+                        TextField("Goal", text: $maxCountStr)
                             .keyboardType(.numberPad)
                         TextField("Unit (e.g. miles)", text: $unit)
                     }

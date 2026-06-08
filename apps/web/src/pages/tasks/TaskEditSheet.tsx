@@ -109,7 +109,7 @@ export function TaskEditSheet({
       patch.unit = unit.trim();
       const result = parsePositiveInt(maxCountStr);
       if (result === null) {
-        setValidationError('Max Count must be a whole number greater than 0.');
+        setValidationError('Goal must be a whole number greater than 0.');
         return;
       }
       if (result !== 'empty') {
@@ -246,7 +246,7 @@ export function TaskEditSheet({
               />
             </label>
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Max Count</span>
+              <span className={styles.fieldLabel}>Goal</span>
               <input
                 type="number"
                 min={1}
