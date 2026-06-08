@@ -63,6 +63,12 @@ export interface BoardWizardPageProps {
    *  Profile templates list. See `BoardWizardPreviewStep`'s prop docs
    *  for why this isn't folded into `onComplete`. */
   onTemplateComplete?: (templateId: string) => void;
+  /** Called when the user picks "Delete draft" from the cancel
+   *  dialog. Only wired (and rendered as a button) when the wizard
+   *  is resuming an existing draft — there's nothing to delete in a
+   *  fresh wizard session. Parent runs `deleteDraftWithCascade(id)`
+   *  and closes the wizard. */
+  onDeleteDraft?: (boardId: string) => void;
 }
 
 /**
@@ -86,6 +92,7 @@ export function BoardWizardPage({
   onCancel,
   onComplete,
   onTemplateComplete,
+  onDeleteDraft,
 }: BoardWizardPageProps): React.ReactElement {
   const wizard = useBoardWizard({
     preferences,
@@ -253,6 +260,14 @@ export function BoardWizardPage({
         onSaveDraft={() => void handleDialogSaveDraft()}
         onDiscard={handleDialogDiscard}
         onKeepEditing={handleDialogKeepEditing}
+        onDeleteDraft={
+          wizard.draftBoardId !== null && onDeleteDraft
+            ? () => {
+                const id = wizard.draftBoardId;
+                if (id) onDeleteDraft(id);
+              }
+            : undefined
+        }
       />
 
       {cancelDialogError && (

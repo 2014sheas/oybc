@@ -15,6 +15,13 @@ export interface BoardWizardCancelDialogProps {
   onSaveDraft: () => void;
   onDiscard: () => void;
   onKeepEditing: () => void;
+  /** Optional destructive action — only present when the wizard is
+   *  resuming an existing draft (there's nothing to delete during a
+   *  brand-new wizard session). When set, a "Delete draft" button
+   *  appears between Discard and Keep Editing, behind a native
+   *  `confirm()` so the user can back out. Parent runs
+   *  `deleteDraftWithCascade` and closes the wizard. */
+  onDeleteDraft?: () => void;
 }
 
 /**
@@ -39,7 +46,16 @@ export function BoardWizardCancelDialog({
   onSaveDraft,
   onDiscard,
   onKeepEditing,
+  onDeleteDraft,
 }: BoardWizardCancelDialogProps): React.ReactElement | null {
+  function handleDeleteClick(): void {
+    const ok = window.confirm(
+      'Delete this draft? Its placed tasks will be removed from the board. ' +
+        'The underlying tasks stay in your library. This can’t be undone.',
+    );
+    if (ok && onDeleteDraft) onDeleteDraft();
+  }
+
   useEffect(() => {
     if (!isOpen) return;
     function onKey(e: KeyboardEvent): void {
@@ -83,6 +99,15 @@ export function BoardWizardCancelDialog({
           >
             Discard
           </button>
+          {onDeleteDraft && (
+            <button
+              type="button"
+              className={styles.deleteButton}
+              onClick={handleDeleteClick}
+            >
+              Delete draft
+            </button>
+          )}
           <button
             type="button"
             className={styles.keepButton}

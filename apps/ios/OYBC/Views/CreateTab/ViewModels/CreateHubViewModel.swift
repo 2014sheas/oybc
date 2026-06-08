@@ -138,12 +138,13 @@ final class CreateHubViewModel {
     }
 
     /// Delete a draft + its attached BoardTask placements atomically.
-    /// Caller (the drafts list) has already shown a confirm alert,
-    /// so we go straight to the DB call. The `reloadDrafts` follow-up
-    /// keeps the list in sync with what's in GRDB. Errors are logged
-    /// and the draft stays visible — the user can retry.
-    func deleteDraft(board: Board, userId: String) {
-        let boardId = board.id
+    /// Caller (the drafts list × button OR the wizard's cancel-dialog
+    /// "Delete draft" button) has already shown a confirm before
+    /// invoking this, so we go straight to the DB call. The
+    /// `reloadDrafts` follow-up keeps the list in sync with GRDB.
+    /// Errors are logged and the draft stays visible — the user can
+    /// retry.
+    func deleteDraft(boardId: String, userId: String) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {

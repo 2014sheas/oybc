@@ -45,6 +45,11 @@ struct BoardWizardView: View {
     /// spawnable board (skip OR edit). Optional — one-off call sites
     /// don't need to wire it.
     var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
+    /// Called when the user picks "Delete draft" from the cancel
+    /// dialog. Only wired (and rendered as a button) when the wizard
+    /// is resuming an existing draft. Parent runs
+    /// `AppDatabase.deleteDraftWithCascade(id:)` and closes the wizard.
+    var onDeleteDraft: ((_ boardId: String) -> Void)? = nil
 
     @State private var wizard: BoardWizardViewModel
     @State private var library = TaskLibraryViewModel()
@@ -62,7 +67,8 @@ struct BoardWizardView: View {
         startRecurring: Bool = false,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void,
-        onTemplateComplete: ((_ templateId: String) -> Void)? = nil
+        onTemplateComplete: ((_ templateId: String) -> Void)? = nil,
+        onDeleteDraft: ((_ boardId: String) -> Void)? = nil
     ) {
         self.userId = userId
         self.preferences = preferences
@@ -74,6 +80,7 @@ struct BoardWizardView: View {
         self.onCancel = onCancel
         self.onComplete = onComplete
         self.onTemplateComplete = onTemplateComplete
+        self.onDeleteDraft = onDeleteDraft
         _wizard = State(initialValue: BoardWizardViewModel(
             preferences: preferences,
             draft: draft,
@@ -219,7 +226,10 @@ struct BoardWizardView: View {
                     : (wizard.draftBoardId != nil ? "Save Changes" : "Save Draft"),
                 onSaveDraft: handleDialogSaveDraft,
                 onDiscard: handleDialogDiscard,
-                onKeepEditing: handleDialogKeepEditing
+                onKeepEditing: handleDialogKeepEditing,
+                onDeleteDraft: (wizard.draftBoardId != nil && onDeleteDraft != nil)
+                    ? { if let id = wizard.draftBoardId { onDeleteDraft?(id) } }
+                    : nil
             )
             .presentationDetents([.medium])
         }
