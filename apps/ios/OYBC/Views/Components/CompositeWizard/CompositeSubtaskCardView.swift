@@ -293,7 +293,7 @@ struct CompositeSubtaskCardView: View {
             let max = Int(item.inlineMaxCountStr) ?? 0
             if a.isEmpty { return Readiness(ready: false, message: "Add an action (e.g. \"Run\").") }
             if u.isEmpty { return Readiness(ready: false, message: "Add a unit (e.g. \"miles\").") }
-            if max < 1 { return Readiness(ready: false, message: "Add a max count of at least 1.") }
+            if max < 1 { return Readiness(ready: false, message: "Add a goal of at least 1.") }
             return Readiness(ready: true, message: nil)
         case .progress:
             let t = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -315,7 +315,7 @@ struct CompositeSubtaskCardView: View {
                         return Readiness(ready: false, message: "Each counting step needs a unit.")
                     }
                     if (Int(step.maxCount) ?? 0) < 1 {
-                        return Readiness(ready: false, message: "Each counting step needs a max count of at least 1.")
+                        return Readiness(ready: false, message: "Each counting step needs a goal of at least 1.")
                     }
                 default:
                     break

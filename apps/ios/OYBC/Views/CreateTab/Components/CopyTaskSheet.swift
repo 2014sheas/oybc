@@ -77,7 +77,7 @@ struct CopyTaskSheet: View {
                 if isCounting {
                     Section("Counting") {
                         TextField("Action", text: $action)
-                        TextField("Max count", text: $maxCountInput)
+                        TextField("Goal", text: $maxCountInput)
                             .keyboardType(.numberPad)
                         TextField("Unit", text: $unit)
                     }
@@ -179,7 +179,7 @@ struct CopyTaskSheet: View {
                                 domain: "CopyTaskSheet",
                                 code: 1,
                                 userInfo: [NSLocalizedDescriptionKey:
-                                    "Max count must be a positive integer"]
+                                    "Goal must be a positive integer"]
                             )
                         }
                         overrides.action = action.trimmingCharacters(in: .whitespacesAndNewlines)

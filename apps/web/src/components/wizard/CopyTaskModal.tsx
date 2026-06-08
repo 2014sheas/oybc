@@ -88,7 +88,7 @@ export function CopyTaskModal({
         if (isCounting) {
           const parsedMax = parseInt(maxCountInput.trim(), 10);
           if (!Number.isFinite(parsedMax) || parsedMax <= 0) {
-            throw new Error('Max count must be a positive integer');
+            throw new Error('Goal must be a positive integer');
           }
           overrides.action = action.trim();
           overrides.unit = unit.trim();
@@ -168,7 +168,7 @@ export function CopyTaskModal({
                 style={fieldInputStyle}
               />
             </Field>
-            <Field label="Max count">
+            <Field label="Goal">
               <input
                 type="number"
                 inputMode="numeric"

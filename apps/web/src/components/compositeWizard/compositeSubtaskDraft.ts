@@ -71,7 +71,7 @@ export function evaluateSubtaskReadiness(
       if (!draft.unit.trim()) return { ready: false, message: 'Add a unit (e.g. "miles").' };
       const count = parseInt(draft.maxCountStr, 10);
       if (isNaN(count) || count < 1) {
-        return { ready: false, message: 'Add a max count of at least 1.' };
+        return { ready: false, message: 'Add a goal of at least 1.' };
       }
       return { ready: true, message: null };
     }
@@ -90,7 +90,7 @@ export function evaluateSubtaskReadiness(
           if (!step.unit.trim()) return { ready: false, message: 'Each counting step needs a unit.' };
           const c = parseInt(step.maxCount, 10);
           if (isNaN(c) || c < 1) {
-            return { ready: false, message: 'Each counting step needs a max count of at least 1.' };
+            return { ready: false, message: 'Each counting step needs a goal of at least 1.' };
           }
         }
       }

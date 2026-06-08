@@ -30,7 +30,7 @@ struct CountingStepFieldsView: View {
                     .foregroundColor(.red)
                     .font(.caption)
             }
-            TextField("Max count", text: $maxCount)
+            TextField("Goal", text: $maxCount)
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.numberPad)
             if let error = maxCountError {
