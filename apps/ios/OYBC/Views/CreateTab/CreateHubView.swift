@@ -142,6 +142,13 @@ struct CreateHubView: View {
             onTemplateComplete: { templateId in
                 onTemplateCompleted?(templateId)
                 handleHubReturn()
+            },
+            onDeleteDraft: { boardId in
+                // Cancel-dialog "Delete draft" path: drop the draft + its
+                // placements, then close the wizard back to the hub. The
+                // drafts list refreshes via the standard reloadDrafts path.
+                vm.deleteDraft(boardId: boardId, userId: userId)
+                handleHubReturn()
             }
         )
     }
@@ -200,6 +207,9 @@ struct CreateHubView: View {
                     drafts: vm.drafts,
                     onResume: { board in
                         vm.loadDraftAndEnterWizard(board: board)
+                    },
+                    onDelete: { board in
+                        vm.deleteDraft(boardId: board.id, userId: userId)
                     }
                 )
             }

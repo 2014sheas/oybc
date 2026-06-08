@@ -10,6 +10,7 @@ import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframePar
 import { useEditTemplateParam } from './createHub/useEditTemplateParam';
 import { useResumableDraft } from './createHub/useResumableDraft';
 import { useCoreBoardSlots } from '../hooks';
+import { deleteDraftWithCascade } from '../db/operations/boards';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
@@ -125,6 +126,22 @@ export function CreateHubPage({
     [resolveDraft],
   );
 
+  const handleDeleteDraft = useCallback(async (board: Board): Promise<void> => {
+    await deleteDraftWithCascade(board.id);
+  }, []);
+
+  // Wizard-cancel-dialog "Delete draft" path: delete the draft AND
+  // close the wizard back to the hub. The drafts-list `useLiveQuery`
+  // refreshes automatically. Separate from `handleDeleteDraft` (which
+  // is the per-row × button — no wizard-close side effect).
+  const handleDeleteDraftFromWizard = useCallback(
+    async (boardId: string): Promise<void> => {
+      await deleteDraftWithCascade(boardId);
+      returnToHub();
+    },
+    [returnToHub],
+  );
+
   const handleWizardComplete = useCallback(
     (boardId: string, status: 'active' | 'draft'): void => {
       onBoardCompleted?.(boardId, status);
@@ -158,6 +175,7 @@ export function CreateHubPage({
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
         onTemplateComplete={handleTemplateComplete}
+        onDeleteDraft={(id) => void handleDeleteDraftFromWizard(id)}
       />
     );
   }
@@ -209,6 +227,7 @@ export function CreateHubPage({
         <CreateHubDraftsList
           drafts={drafts}
           onResume={(d) => void handleResumeDraft(d)}
+          onDelete={(d) => void handleDeleteDraft(d)}
         />
       )}
     </div>

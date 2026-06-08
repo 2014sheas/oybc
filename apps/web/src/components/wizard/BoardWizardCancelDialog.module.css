@@ -46,6 +46,7 @@
 
 .saveButton,
 .discardButton,
+.deleteButton,
 .keepButton {
   padding: 0.7rem 1rem;
   font-size: 0.95rem;
@@ -79,6 +80,21 @@
 
 .discardButton:hover {
   filter: brightness(0.95);
+}
+
+/* Delete-draft is more destructive than Discard (drops persisted DB
+   rows, not just unsaved in-memory state). Use solid red so the
+   visual weight reflects the consequence. */
+.deleteButton {
+  background-color: rgb(220, 38, 38);
+  color: white;
+  border-color: rgb(220, 38, 38);
+  font-weight: 600;
+}
+
+.deleteButton:hover {
+  background-color: rgb(185, 28, 28);
+  border-color: rgb(185, 28, 28);
 }
 
 .keepButton {

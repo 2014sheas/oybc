@@ -137,6 +137,27 @@ final class CreateHubViewModel {
         }
     }
 
+    /// Delete a draft + its attached BoardTask placements atomically.
+    /// Caller (the drafts list × button OR the wizard's cancel-dialog
+    /// "Delete draft" button) has already shown a confirm before
+    /// invoking this, so we go straight to the DB call. The
+    /// `reloadDrafts` follow-up keeps the list in sync with GRDB.
+    /// Errors are logged and the draft stays visible — the user can
+    /// retry.
+    func deleteDraft(boardId: String, userId: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                try AppDatabase.shared.deleteDraftWithCascade(id: boardId)
+                DispatchQueue.main.async {
+                    self.reloadDrafts(userId: userId)
+                }
+            } catch {
+                print("⚠️ Failed to delete draft \(boardId): \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// Cross-tab edit hydration. Sets `wizardEditTemplate` mode
     /// immediately (so the view can show a loading state) and then
     /// fetches the template. A concurrently-deleted template falls
