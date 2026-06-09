@@ -56,15 +56,10 @@ struct CompositeWizardSetupStepView: View {
                 Toggle("Ordered steps", isOn: $isOrdered)
                     .font(.subheadline)
 
-                Text("Complete subtasks in order.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 if isOrdered {
-                    // Ordered mode forces AND — show a static note instead
-                    // of the operator picker. Matches web behavior exactly.
-                    Text("All steps, completed in order.")
+                    // Ordered mode forces AND — show the hint instead of the
+                    // operator picker. Matches web behavior exactly.
+                    Text("Complete subtasks in order.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

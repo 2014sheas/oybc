@@ -26,8 +26,9 @@ struct PendingTaskPayload {
 }
 
 /// Task type picker that maps to the 4 unified `TaskType` cases.
-/// Mirrors the web `TaskTypeOrComposite` union after the
-/// Progress/Composite merge (both authored via the compound wizard).
+/// Mirrors the web create form, which uses `TaskType` directly after
+/// the Progress/Composite merge (the old `TaskTypeOrComposite` union
+/// was removed). Compound is authored via the compound wizard.
 enum CreateTaskType: String, CaseIterable {
     case normal = "Normal"
     case counting = "Counting"

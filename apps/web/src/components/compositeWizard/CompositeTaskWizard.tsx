@@ -288,7 +288,7 @@ export function CompositeTaskWizard({
         children,
       });
 
-      setSuccessMessage('Composite task created!');
+      setSuccessMessage('Compound task created!');
       onCreated?.(compound);
       resetForm();
       setTimeout(() => setSuccessMessage(null), SUCCESS_DISMISS_MS);

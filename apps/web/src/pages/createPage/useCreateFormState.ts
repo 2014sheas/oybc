@@ -15,15 +15,17 @@ import { type StepFormState, createEmptyStep } from '../../components/progressSt
  * The wizard holds these in memory and writes them atomically inside
  * the board-save transaction when the user completes the wizard.
  *
- * For a compound/progress task the caller also receives the inline-
- * created child tasks and their `compound_children` links so the
- * persist path can write the full structure in one shot.
+ * Since the Progress/Composite merge, this hook only authors NORMAL /
+ * COUNTING / ACHIEVEMENT tasks — compound creation routes through the
+ * compound wizard, not here — so `childTasks` / `childLinks` are always
+ * empty from this hook. They remain on the shared payload shape for
+ * callers (e.g. the compound wizard) that do populate them.
  */
 export interface PendingTaskPayload {
   task: Task;
-  /** Inline-created child tasks (progress / compound only). */
+  /** Inline-created child tasks. Empty from this hook (compound is authored elsewhere). */
   childTasks: Task[];
-  /** CompoundChild link rows (progress / compound only). */
+  /** CompoundChild link rows. Empty from this hook (compound is authored elsewhere). */
   childLinks: CompoundChild[];
 }
 // ─── Constants (shared with the Create-tab UIs that consume this hook) ──────
