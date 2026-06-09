@@ -68,6 +68,20 @@
   margin-top: 0.35rem;
 }
 
+/* "Ordered steps" checkbox toggle — styled like a labelled checkbox,
+ * matching the form density of the surrounding fieldGroup. */
+.orderedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  margin-top: 0.15rem;
+}
+
 .footer {
   display: flex;
   justify-content: flex-end;

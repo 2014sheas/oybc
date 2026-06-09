@@ -1,26 +1,24 @@
 import { AchievementTrigger, TaskType, type Board, type RecurringBoardTemplate, type Task } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
-import { ProgressStepRow } from '../../components/ProgressStepRow';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
 import { CountingTemplatePicker } from '../../components/wizard/CountingTemplatePicker';
 import { useBoards, useRecurringBoardTemplates } from '../../hooks';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
-import { COMPOSITE_TYPE, PROGRESS_TYPE, type TaskTypeOrComposite } from './useCreateFormState';
 import {
   type UseCreateFormState,
   TITLE_MAX_LENGTH,
   DESCRIPTION_MAX_LENGTH,
   ACTION_MAX_LENGTH,
   UNIT_MAX_LENGTH,
-  STEP_TITLE_MAX_LENGTH,
 } from './useCreateFormState';
 import styles from './CreateNewTaskForm.module.css';
 
-const TASK_TYPES: { value: TaskTypeOrComposite; label: string }[] = [
+const TASK_TYPES: { value: TaskType; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
-  { value: PROGRESS_TYPE, label: 'Progress' },
-  { value: COMPOSITE_TYPE, label: 'Composite' },
+  // Compound opens the wizard (ordered vs unordered is chosen inside
+  // the wizard via the "Ordered steps" toggle on SetupStep).
+  { value: TaskType.COMPOUND, label: 'Compound' },
   // Phase 6.3 — Achievement (cross-board watcher).
   { value: TaskType.ACHIEVEMENT, label: 'Achievement' },
 ];
@@ -67,11 +65,11 @@ export function CreateNewTaskForm({
         <TaskTypeSelector
           types={TASK_TYPES}
           selectedType={form.taskType}
-          onTypeChange={(value) => form.handleTypeChange(value as TaskTypeOrComposite)}
+          onTypeChange={(value) => form.handleTypeChange(value as TaskType)}
         />
       </div>
 
-      {form.taskType === COMPOSITE_TYPE ? (
+      {form.taskType === TaskType.COMPOUND ? (
         <CompositeTaskWizard userId={userId} onCreated={onCompositeCreated} />
       ) : (
         <form className={styles.form} onSubmit={form.handleSubmit}>
@@ -312,31 +310,6 @@ export function CreateNewTaskForm({
                 />
                 {form.errors.unit && <span className={styles.fieldError}>{form.errors.unit}</span>}
               </div>
-            </div>
-          )}
-
-          {/* Progress steps */}
-          {form.taskType === PROGRESS_TYPE && (
-            <div className={styles.stepsSection}>
-              <span className={styles.stepsHeader}>Steps</span>
-              <div className={styles.stepsList}>
-                {form.steps.map((step, index) => (
-                  <ProgressStepRow
-                    key={step.id}
-                    index={index}
-                    idPrefix={`create-step-${step.id}`}
-                    step={step}
-                    errors={form.errors.steps?.[step.id]}
-                    canRemove={form.steps.length > 1}
-                    stepTitleMaxLength={STEP_TITLE_MAX_LENGTH}
-                    onFieldChange={(field, value) => form.updateStep(step.id, field, value)}
-                    onRemove={() => form.removeStep(step.id)}
-                  />
-                ))}
-              </div>
-              <button type="button" className={styles.addStepButton} onClick={form.addStep}>
-                + Add Step
-              </button>
             </div>
           )}
 

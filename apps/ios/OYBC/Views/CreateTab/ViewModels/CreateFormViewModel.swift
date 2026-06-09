@@ -25,13 +25,13 @@ struct PendingTaskPayload {
     let childLinks: [CompoundChild]
 }
 
-/// Task type picker that includes Composite alongside the three
-/// `TaskType` cases. Mirrors the web `TaskTypeOrComposite` union.
+/// Task type picker that maps to the 4 unified `TaskType` cases.
+/// Mirrors the web `TaskTypeOrComposite` union after the
+/// Progress/Composite merge (both authored via the compound wizard).
 enum CreateTaskType: String, CaseIterable {
     case normal = "Normal"
     case counting = "Counting"
-    case progress = "Progress"
-    case composite = "Composite"
+    case compound = "Compound"
     /// Phase 6.3 — Achievement (cross-board watcher).
     case achievement = "Achievement"
 
@@ -45,10 +45,10 @@ enum CreateTaskType: String, CaseIterable {
     /// so the abbreviation never loses meaning.
     ///
     /// All abbreviations are exactly 4 chars: first-4-letters for
-    /// most (Norm, Prog, Comp) plus mild vowel-drop for the words
-    /// where first-4 doesn't read well (Achv vs "Achi"). Counting's
-    /// first-4 ("Coun") is the cleanest 4-letter option that avoids
-    /// awkward 3-letter forms.
+    /// most (Norm, Coun) plus a consonant-drop form for Compound
+    /// (Cmpd) and mild vowel-drop for Achievement (Achv). "Comp" was
+    /// retired alongside the Composite label to avoid visual
+    /// confusion; "Cmpd" matches the web badge abbreviation.
     ///
     /// All other surfaces (badges, filter chips, detail views)
     /// continue to display the full `rawValue` — this property is
@@ -57,8 +57,7 @@ enum CreateTaskType: String, CaseIterable {
         switch self {
         case .normal:      return "Norm"
         case .counting:    return "Coun"
-        case .progress:    return "Prog"
-        case .composite:   return "Comp"
+        case .compound:    return "Cmpd"
         case .achievement: return "Achv"
         }
     }
@@ -91,8 +90,8 @@ enum CreateFormLimits {
 /// to the pool (via `onTaskCreated`) → reset the form → ask the
 /// library to reload so the new task appears under Existing Tasks.
 ///
-/// Composite tasks are handled by `CompositeTaskWizardView`; this view
-/// model only covers NORMAL / COUNTING / PROGRESS.
+/// Compound tasks are handled by `CompositeTaskWizardView`; this view
+/// model only covers NORMAL / COUNTING / ACHIEVEMENT.
 @Observable
 final class CreateFormViewModel {
 
@@ -113,10 +112,6 @@ final class CreateFormViewModel {
     /// this task. Only relevant when `taskType == .counting`.
     var countingDeriveFromTask: OYBC.Task? = nil
 
-    // Progress fields
-    var progressSteps: [ProgressStepFormState] = [ProgressStepFormState()]
-    var progressStepErrors: [UUID: ProgressStepFormErrors] = [:]
-
     // UI state
     var isSubmitting: Bool = false
     var errorMessage: String?
@@ -125,16 +120,13 @@ final class CreateFormViewModel {
     // MARK: - Derived
 
     /// Maps the form-level `taskType` to the resulting `TaskType` written
-    /// to GRDB. Progress submissions resolve to `.compound` (with
-    /// operator=AND + isOrdered=true set in `buildCreateTask`) — under the
-    /// unified compound model former Progress tasks are just a compound
-    /// shape. Composite returns `nil` because it routes to its own wizard.
+    /// to GRDB. Compound returns `nil` because it routes to its own wizard
+    /// (`CompositeTaskWizardView`) which owns the full creation transaction.
     var selectedType: TaskType? {
         switch taskType {
         case .normal:      return .normal
         case .counting:    return .counting
-        case .progress:    return .compound
-        case .composite:   return nil
+        case .compound:    return nil
         case .achievement: return .achievement
         }
     }
@@ -225,38 +217,11 @@ final class CreateFormViewModel {
             break
 
         case .compound:
-            // Reached only for the Progress form mode (selectedType maps
-            // .progress → .compound). Composites are excluded by the
-            // earlier `guard let resolvedType = selectedType else` since
-            // selectedType returns nil for .composite.
-            if progressSteps.isEmpty {
-                errorMessage = "Progress tasks require at least one step"
-                return
-            }
-            var stepErrors: [UUID: ProgressStepFormErrors] = [:]
-            for step in progressSteps {
-                var err = ProgressStepFormErrors()
-                if step.type != .counting && step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    err.title = "Step title is required"
-                }
-                if step.type == .counting {
-                    if step.action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        err.action = "Action is required"
-                    }
-                    if step.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        err.unit = "Unit is required"
-                    }
-                    if (Int(step.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) <= 0 {
-                        err.maxCount = "Must be a positive number"
-                    }
-                }
-                if err.hasErrors { stepErrors[step.id] = err }
-            }
-            progressStepErrors = stepErrors
-            if !stepErrors.isEmpty {
-                errorMessage = "Please fix the errors below"
-                return
-            }
+            // .compound is never reached here — selectedType returns nil for
+            // the .compound CreateTaskType case, which routes to
+            // CompositeTaskWizardView. This branch satisfies exhaustive
+            // switching on TaskType but should never execute.
+            break
 
         case .counting:
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -335,28 +300,12 @@ final class CreateFormViewModel {
             startDate: defaultStartDate,
             endDate: defaultEndDate
         )
-        // Progress submit becomes a compound write: one Task with
-        // type=.compound + isOrdered=true, plus one CompoundChild row per
-        // step (linked to an inline-created primitive child Task). Mirrors
-        // web's `useCreateFormState.handleSubmit` which routes Progress
-        // through `createCompound`.
-        let progressChildTasks: [Task]
-        let progressChildLinks: [CompoundChild]
-        if resolvedType == .compound {
-            let pair = buildCompoundChildrenForProgress(
-                parentId: taskId,
-                userId: userId,
-                now: now,
-                timeframe: defaultTimeframe,
-                startDate: defaultStartDate,
-                endDate: defaultEndDate
-            )
-            progressChildTasks = pair.tasks
-            progressChildLinks = pair.children
-        } else {
-            progressChildTasks = []
-            progressChildLinks = []
-        }
+        // Compound tasks are never submitted through this path — selectedType
+        // returns nil for .compound so the guard above always exits early.
+        // These arrays remain empty; the write block below short-circuits
+        // through the non-compound path.
+        let progressChildTasks: [Task] = []
+        let progressChildLinks: [CompoundChild] = []
 
         // ── Bug #85: Deferred-persist path ──────────────────────────────────
         // When invoked from the board wizard, skip all DB writes. Build the
@@ -464,8 +413,6 @@ final class CreateFormViewModel {
         countingUnit = ""
         countingMaxCount = ""
         countingDeriveFromTask = nil
-        progressSteps = [ProgressStepFormState()]
-        progressStepErrors = [:]
         achievementMode = .specificBoard
         achievementReferenceId = nil
         achievementTrigger = .greenlog
@@ -537,12 +484,15 @@ final class CreateFormViewModel {
                 timeframe: timeframe, startDate: startDate, endDate: endDate
             )
         case .compound:
+            // Unreachable — compound CreateTaskType returns nil from
+            // selectedType, so this path never executes. Kept for
+            // exhaustive switching on TaskType.
             return Task(
                 id: id, userId: userId, title: title, description: desc,
                 type: .compound,
                 operatorType: .and,
                 threshold: nil,
-                isOrdered: true,
+                isOrdered: false,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false,
                 timeframe: timeframe, startDate: startDate, endDate: endDate
@@ -566,70 +516,5 @@ final class CreateFormViewModel {
         }
     }
 
-    /// Builds the unified-compound write set for a Progress submit:
-    /// one freshly-allocated child Task per step (so each step is
-    /// independently pool-addable, mirroring legacy progress-step
-    /// behavior) plus the corresponding CompoundChild link rows.
-    /// Counting steps with a blank title get an auto-generated title.
-    /// Mirrors web's `createCompound(...autoCreate...)` path.
-    private func buildCompoundChildrenForProgress(
-        parentId: String,
-        userId: String,
-        now: String,
-        timeframe: Timeframe? = nil,
-        startDate: String? = nil,
-        endDate: String? = nil
-    ) -> (tasks: [Task], children: [CompoundChild]) {
-        var tasks: [Task] = []
-        var children: [CompoundChild] = []
-        for (index, stepForm) in progressSteps.enumerated() {
-            let trimmedAction = stepForm.action.trimmingCharacters(in: .whitespacesAndNewlines)
-            let trimmedUnit = stepForm.unit.trimmingCharacters(in: .whitespacesAndNewlines)
-            let trimmedTitle = stepForm.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let resolvedStepTitle: String
-            if stepForm.type == .counting && trimmedTitle.isEmpty {
-                let m = Int(stepForm.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                resolvedStepTitle = "\(trimmedAction) \(m) \(trimmedUnit)"
-            } else {
-                resolvedStepTitle = trimmedTitle
-            }
-            let childTaskId = AppDatabase.generateUUID()
-            let childTask = Task(
-                id: childTaskId,
-                userId: userId,
-                title: resolvedStepTitle,
-                description: nil,
-                type: stepForm.type == .counting ? .counting : .normal,
-                action: stepForm.type == .counting ? trimmedAction : nil,
-                unit: stepForm.type == .counting ? trimmedUnit : nil,
-                maxCount: stepForm.type == .counting ? Int(stepForm.maxCount.trimmingCharacters(in: .whitespacesAndNewlines)) : nil,
-                totalCompletions: 0,
-                totalInstances: 0,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-                // Inherit parent compound's timeframe triple at create time.
-                timeframe: timeframe,
-                startDate: startDate,
-                endDate: endDate
-            )
-            let link = CompoundChild(
-                id: AppDatabase.generateUUID(),
-                compoundTaskId: parentId,
-                childTaskId: childTaskId,
-                childIndex: index,
-                createdAt: now,
-                updatedAt: now,
-                lastSyncedAt: nil,
-                version: 1,
-                isDeleted: false,
-                deletedAt: nil
-            )
-            tasks.append(childTask)
-            children.append(link)
-        }
-        return (tasks, children)
-    }
-
 }
+

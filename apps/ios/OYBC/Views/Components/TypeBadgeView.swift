@@ -9,11 +9,13 @@ enum TypeBadgeSize {
 /// Colored badge showing a task type label.
 ///
 /// Used across task library cards, derivation panels, pool items, and
-/// composite subtask lists to display a consistent type indicator.
+/// compound subtask lists to display a consistent type indicator.
 /// Mirrors the web `TypeBadge` component in `TypeBadge.tsx`.
 ///
 /// - Parameters:
-///   - type: Task type string (e.g. "normal", "counting", "progress", "composite").
+///   - type: Task type string (e.g. "normal", "counting", "compound").
+///     The legacy "progress" and "composite" strings are mapped to
+///     "compound" color + label so old data renders correctly.
 ///   - size: Optional size variant. `.small` renders a compact badge.
 struct TypeBadgeView: View {
 
@@ -22,38 +24,47 @@ struct TypeBadgeView: View {
     let type: String
     var size: TypeBadgeSize = .default
     /// When true, renders a fixed-width 4-letter abbreviation instead
-    /// of the full type name. Used by list layouts (e.g. the composite-
+    /// of the full type name. Used by list layouts (e.g. the compound-
     /// task picker) so rows stack without the badge width varying per
     /// type.
     var letterOnly: Bool = false
 
     // MARK: - Derived Properties
 
-    /// Background/foreground color based on the task type.
-    private var badgeColor: Color {
+    /// Normalise legacy type strings to the current vocabulary so
+    /// existing data (which may carry "progress"/"composite" as
+    /// rawValues from before the unification) renders with the
+    /// correct Compound badge color.
+    private var normalisedType: String {
         switch type.lowercased() {
-        case "normal":    return .blue
-        case "counting":  return .orange
-        case "progress":  return .green
-        case "composite": return .indigo
-        default:          return .gray
+        case "progress", "composite": return "compound"
+        default: return type.lowercased()
         }
     }
 
-    /// Label text — either the 4-letter abbreviation (first 4 letters
-    /// of the type name, uppercased) or the full uppercase type name.
+    /// Background/foreground color based on the task type.
+    private var badgeColor: Color {
+        switch normalisedType {
+        case "normal":   return .blue
+        case "counting": return .orange
+        case "compound": return .indigo
+        default:         return .gray
+        }
+    }
+
+    /// Label text — either the 4-letter abbreviation or the full
+    /// uppercase type name.
     private var label: String {
         if letterOnly {
-            switch type.lowercased() {
-            case "normal":    return "NORM"
-            case "counting":  return "COUN"
-            case "progress":  return "PROG"
-            case "composite": return "COMP"
+            switch normalisedType {
+            case "normal":   return "NORM"
+            case "counting": return "COUN"
+            case "compound": return "CMPD"
             default:
-                return String(type.prefix(4)).uppercased()
+                return String(normalisedType.prefix(4)).uppercased()
             }
         }
-        return type.uppercased()
+        return normalisedType.uppercased()
     }
 
     /// Fixed width when rendering the 4-letter variant. Sized to fit
@@ -96,8 +107,8 @@ struct TypeBadgeView: View {
     HStack(spacing: 8) {
         TypeBadgeView(type: "normal")
         TypeBadgeView(type: "counting")
-        TypeBadgeView(type: "progress")
-        TypeBadgeView(type: "composite")
+        TypeBadgeView(type: "compound")
+        TypeBadgeView(type: "achievement")
     }
     .padding()
 }
@@ -106,8 +117,8 @@ struct TypeBadgeView: View {
     HStack(spacing: 6) {
         TypeBadgeView(type: "normal", size: .small)
         TypeBadgeView(type: "counting", size: .small)
-        TypeBadgeView(type: "progress", size: .small)
-        TypeBadgeView(type: "composite", size: .small)
+        TypeBadgeView(type: "compound", size: .small)
+        TypeBadgeView(type: "achievement", size: .small)
     }
     .padding()
 }

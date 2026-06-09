@@ -34,8 +34,7 @@ const TYPE_TABS: { value: TypeFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'normal', label: 'Normal' },
   { value: 'counting', label: 'Counting' },
-  { value: 'progress', label: 'Progress' },
-  { value: 'composite', label: 'Composite' },
+  { value: 'compound', label: 'Compound' },
   { value: 'achievement', label: 'Achievement' },
 ];
 

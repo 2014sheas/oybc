@@ -10,6 +10,9 @@ export interface SetupStepProps {
   onTitleChange: (next: string) => void;
   operator: OperatorType;
   onOperatorChange: (next: OperatorType) => void;
+  /** When true, subtasks must be completed in order; forces operator to AND. */
+  isOrdered: boolean;
+  onOrderedChange: (next: boolean) => void;
   onCancel: () => void;
   onNext: () => void;
 }
@@ -24,6 +27,8 @@ export function SetupStep({
   onTitleChange,
   operator,
   onOperatorChange,
+  isOrdered,
+  onOrderedChange,
   onCancel,
   onNext,
 }: SetupStepProps): React.ReactElement {
@@ -60,11 +65,40 @@ export function SetupStep({
 
       <div className={styles.fieldGroup}>
         <span className={styles.label}>Completion rule</span>
-        <OperatorSelector selectedOperator={operator} onOperatorChange={onOperatorChange} />
-        {operator === OperatorType.M_OF_N && (
-          <span className={styles.operatorHint}>
-            You'll set the required count with your subtasks.
-          </span>
+
+        {/* Ordered-steps toggle — when on, forces AND operator and hides
+            the OperatorSelector since "all steps, in sequence" is the
+            only meaningful completion rule for an ordered compound. */}
+        <label className={styles.orderedToggle}>
+          <input
+            type="checkbox"
+            checked={isOrdered}
+            onChange={(e) => {
+              const next = e.target.checked;
+              onOrderedChange(next);
+              if (next) {
+                // Force AND when ordered: all steps must complete in sequence.
+                onOperatorChange(OperatorType.AND);
+              }
+            }}
+          />
+          <span>Ordered steps</span>
+        </label>
+        <span className={styles.operatorHint}>
+          {isOrdered
+            ? 'Complete subtasks in order.'
+            : null}
+        </span>
+
+        {!isOrdered && (
+          <>
+            <OperatorSelector selectedOperator={operator} onOperatorChange={onOperatorChange} />
+            {operator === OperatorType.M_OF_N && (
+              <span className={styles.operatorHint}>
+                You'll set the required count with your subtasks.
+              </span>
+            )}
+          </>
         )}
       </div>
 

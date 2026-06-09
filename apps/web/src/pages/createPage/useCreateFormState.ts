@@ -2,13 +2,11 @@ import { useCallback, useState } from 'react';
 import {
   AchievementTrigger,
   TaskType,
-  OperatorType,
   generateCounterTaskTitle,
   type Task,
   type CompoundChild,
-  type CreateCompoundChildEntry,
 } from '@oybc/shared';
-import { createTask, createCompound } from '../../db/operations/tasks';
+import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
 import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
 
@@ -28,17 +26,6 @@ export interface PendingTaskPayload {
   /** CompoundChild link rows (progress / compound only). */
   childLinks: CompoundChild[];
 }
-/**
- * Union of TaskType values plus the form-only sentinels `'progress'` and
- * `'composite'`. Both sentinels are submission strategies — neither exists
- * in the runtime TaskType enum after the compound-tasks unification:
- *   - `'progress'` → `createCompound({ operator: 'AND', isOrdered: true, ... })`
- *   - `'composite'` → opens the dedicated `CompositeTaskWizard`
- */
-export type TaskTypeOrComposite = TaskType | typeof PROGRESS_TYPE | typeof COMPOSITE_TYPE;
-export const COMPOSITE_TYPE = 'composite' as const;
-export const PROGRESS_TYPE = 'progress' as const;
-
 // ─── Constants (shared with the Create-tab UIs that consume this hook) ──────
 
 export const TITLE_MAX_LENGTH = 200;
@@ -85,13 +72,12 @@ export interface FormErrors {
  * can't see).
  */
 export function validateForm(
-  type: TaskTypeOrComposite,
+  type: TaskType,
   title: string,
   description: string,
   action: string,
   unit: string,
   maxCountStr: string,
-  steps: StepFormState[],
   achievementMode?: AchievementMode,
   achievementReferenceId?: string | null,
   achievementRequiredCountStr?: string,
@@ -163,54 +149,6 @@ export function validateForm(
     }
   }
 
-  if (type === PROGRESS_TYPE) {
-    const stepErrors: FormErrors['steps'] = {};
-    let hasStepErrors = false;
-
-    for (const step of steps) {
-      const errs: { title?: string; action?: string; unit?: string; maxCount?: string } = {};
-
-      const trimmedStepTitle = step.title.trim();
-      if (step.type !== 'counting' && trimmedStepTitle.length === 0) {
-        errs.title = 'Step title is required';
-      } else if (trimmedStepTitle.length > STEP_TITLE_MAX_LENGTH) {
-        errs.title = `Step title must be ${STEP_TITLE_MAX_LENGTH} characters or less`;
-      }
-
-      if (step.type === 'counting') {
-        if (step.action.trim().length === 0) {
-          errs.action = 'Action is required for counting steps';
-        } else if (step.action.trim().length > ACTION_MAX_LENGTH) {
-          errs.action = `Action must be ${ACTION_MAX_LENGTH} characters or less`;
-        }
-
-        if (step.unit.trim().length === 0) {
-          errs.unit = 'Unit is required for counting steps';
-        } else if (step.unit.trim().length > UNIT_MAX_LENGTH) {
-          errs.unit = `Unit must be ${UNIT_MAX_LENGTH} characters or less`;
-        }
-
-        if (step.maxCount.trim().length === 0) {
-          errs.maxCount = 'Goal is required for counting steps';
-        } else {
-          const parsed = parseInt(step.maxCount, 10);
-          if (isNaN(parsed) || parsed <= 0) {
-            errs.maxCount = 'Goal must be a positive number';
-          }
-        }
-      }
-
-      if (Object.keys(errs).length > 0) {
-        stepErrors![step.id] = errs;
-        hasStepErrors = true;
-      }
-    }
-
-    if (hasStepErrors) {
-      errors.steps = stepErrors;
-    }
-  }
-
   return errors;
 }
 
@@ -259,7 +197,7 @@ export interface UseCreateFormStateArgs {
 
 export interface UseCreateFormState {
   // Form fields
-  taskType: TaskTypeOrComposite;
+  taskType: TaskType;
   title: string;
   description: string;
   action: string;
@@ -293,7 +231,7 @@ export interface UseCreateFormState {
   setAction: (v: string) => void;
   setUnit: (v: string) => void;
   setMaxCountStr: (v: string) => void;
-  handleTypeChange: (v: TaskTypeOrComposite) => void;
+  handleTypeChange: (v: TaskType) => void;
 
   /**
    * Applies a counting task as the derivation template: sets `action` and
@@ -322,10 +260,10 @@ export interface UseCreateFormState {
  * input field, its validation errors, and the submit pipeline.
  *
  * Submit is async: on success it trims fields, calls `createTask`
- * with the right shape per task type (NORMAL / COUNTING / PROGRESS),
+ * with the right shape per task type (NORMAL / COUNTING / ACHIEVEMENT),
  * hands the new task to `onTaskCreated`, and resets the form.
- * Errors surface as `errors.general`. Composite creation doesn't
- * flow through this hook — the Composite form is its own component.
+ * Errors surface as `errors.general`. Compound creation doesn't flow
+ * through this hook — it goes through the CompositeTaskWizard.
  */
 export function useCreateFormState({
   userId,
@@ -336,7 +274,7 @@ export function useCreateFormState({
   defaultEndDate,
   deferPersist = false,
 }: UseCreateFormStateArgs): UseCreateFormState {
-  const [taskType, setTaskType] = useState<TaskTypeOrComposite>(TaskType.NORMAL);
+  const [taskType, setTaskType] = useState<TaskType>(TaskType.NORMAL);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [action, setAction] = useState('');
@@ -394,7 +332,7 @@ export function useCreateFormState({
     clearFieldError('maxCount');
   }, [clearFieldError]);
 
-  const handleTypeChange = useCallback((newType: TaskTypeOrComposite) => {
+  const handleTypeChange = useCallback((newType: TaskType) => {
     setTaskType(newType);
     // Clear the template AND the fields it populated — otherwise switching
     // away from Counting and back leaves stale `action` / `unit` populated
@@ -520,7 +458,7 @@ export function useCreateFormState({
     async (e: React.FormEvent): Promise<void> => {
       e.preventDefault();
 
-      if (taskType === COMPOSITE_TYPE || !userId) return;
+      if (taskType === TaskType.COMPOUND || !userId) return;
 
       const validationErrors = validateForm(
         taskType,
@@ -529,7 +467,6 @@ export function useCreateFormState({
         action,
         unit,
         maxCountStr,
-        steps,
         achievementMode,
         achievementReferenceId,
         achievementRequiredCountStr,
@@ -601,7 +538,8 @@ export function useCreateFormState({
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
             onTaskCreated(newTask);
             onPendingCreated?.(payload);
-          } else if (taskType === TaskType.ACHIEVEMENT) {
+          } else {
+            // TaskType.ACHIEVEMENT
             const isTemplateMode = achievementMode === 'recurringTemplate';
             const parsedCount = Number(achievementRequiredCountStr);
             newTask = {
@@ -632,76 +570,6 @@ export function useCreateFormState({
               endDate: defaultEndDate,
             };
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
-            onTaskCreated(newTask);
-            onPendingCreated?.(payload);
-          } else {
-            // Progress (compound + isOrdered=true) — inline-create child Tasks
-            // and CompoundChild link rows fully in memory.
-            const compoundId = generateUUID();
-            newTask = {
-              id: compoundId,
-              userId,
-              title: title.trim(),
-              description: description.trim() || undefined,
-              type: TaskType.COMPOUND,
-              operator: OperatorType.AND,
-              isOrdered: true,
-              isCompleted: false,
-              totalCompletions: 0,
-              totalInstances: 0,
-              createdAt: now,
-              updatedAt: now,
-              version: 1,
-              isDeleted: false,
-              timeframe: defaultTimeframe,
-              startDate: defaultStartDate,
-              endDate: defaultEndDate,
-            };
-            const childTasks: Task[] = [];
-            const childLinks: import('@oybc/shared').CompoundChild[] = [];
-            for (let i = 0; i < steps.length; i++) {
-              const s = steps[i];
-              const trimmedStepTitle = s.title.trim();
-              const trimmedAction = s.action.trim();
-              const trimmedUnit = s.unit.trim();
-              const maxCount = parseInt(s.maxCount, 10);
-              const resolvedStepTitle =
-                s.type === 'counting'
-                  ? generateCounterTaskTitle(trimmedAction, maxCount, trimmedUnit, trimmedStepTitle || undefined)
-                  : trimmedStepTitle;
-              const childId = generateUUID();
-              const childTask: Task = {
-                id: childId,
-                userId,
-                title: resolvedStepTitle,
-                description: undefined,
-                type: s.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL,
-                ...(s.type === 'counting' ? { action: trimmedAction, unit: trimmedUnit, maxCount, currentCount: 0 } : {}),
-                isCompleted: false,
-                totalCompletions: 0,
-                totalInstances: 0,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-                timeframe: defaultTimeframe,
-                startDate: defaultStartDate,
-                endDate: defaultEndDate,
-              };
-              const link: import('@oybc/shared').CompoundChild = {
-                id: generateUUID(),
-                compoundTaskId: compoundId,
-                childTaskId: childId,
-                childIndex: i,
-                createdAt: now,
-                updatedAt: now,
-                version: 1,
-                isDeleted: false,
-              };
-              childTasks.push(childTask);
-              childLinks.push(link);
-            }
-            const payload: PendingTaskPayload = { task: newTask, childTasks, childLinks };
             onTaskCreated(newTask);
             onPendingCreated?.(payload);
           }
@@ -741,13 +609,13 @@ export function useCreateFormState({
             startDate: defaultStartDate,
             endDate: defaultEndDate,
           });
-        } else if (taskType === TaskType.ACHIEVEMENT) {
-          // Phase 6.3 — Achievement task: serialise the mode + picker
-          // selection into the appropriate reference field. Trigger
-          // + count come from the form state. Cycle detection runs at
-          // placement time (BoardWizardTasksStep) because creating the
-          // Task itself doesn't place it on any board — there are no
-          // parents to form a cycle with yet.
+        } else {
+          // TaskType.ACHIEVEMENT — serialise the mode + picker selection
+          // into the appropriate reference field. Trigger + count come
+          // from the form state. Cycle detection runs at placement time
+          // (BoardWizardTasksStep) because creating the Task itself
+          // doesn't place it on any board — no parents to form a cycle
+          // with yet.
           const isTemplateMode = achievementMode === 'recurringTemplate';
           // Use Number / Number.isInteger to match the stricter
           // validator above — parseInt would accept "3.5" and "3abc".
@@ -772,45 +640,6 @@ export function useCreateFormState({
             startDate: defaultStartDate,
             endDate: defaultEndDate,
           });
-        } else {
-          // Progress tasks: route through createCompound (compound + isOrdered=true).
-          // Each step becomes an inline-created primitive child Task linked via
-          // compoundChildren — preserves the "step is independently pool-addable"
-          // semantic that legacy progress tasks had.
-          const children: CreateCompoundChildEntry[] = steps.map((s) => {
-            const trimmedStepTitle = s.title.trim();
-            const trimmedAction = s.action.trim();
-            const trimmedUnit = s.unit.trim();
-            const maxCount = parseInt(s.maxCount, 10);
-            const resolvedStepTitle =
-              s.type === 'counting'
-                ? generateCounterTaskTitle(
-                    trimmedAction,
-                    maxCount,
-                    trimmedUnit,
-                    trimmedStepTitle || undefined
-                  )
-                : trimmedStepTitle;
-            return {
-              autoCreate: {
-                title: resolvedStepTitle,
-                type: s.type === 'counting' ? TaskType.COUNTING : TaskType.NORMAL,
-                ...(s.type === 'counting'
-                  ? { action: trimmedAction, unit: trimmedUnit, maxCount }
-                  : {}),
-              },
-            };
-          });
-          newTask = await createCompound(userId, {
-            title: title.trim(),
-            description: description.trim() || undefined,
-            operator: OperatorType.AND,
-            isOrdered: true,
-            children,
-            timeframe: defaultTimeframe,
-            startDate: defaultStartDate,
-            endDate: defaultEndDate,
-          });
         }
 
         onTaskCreated(newTask);
@@ -822,7 +651,7 @@ export function useCreateFormState({
         setIsSubmitting(false);
       }
     },
-    [taskType, title, description, action, unit, maxCountStr, steps, userId, onTaskCreated, onPendingCreated, deferPersist, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
+    [taskType, title, description, action, unit, maxCountStr, userId, onTaskCreated, onPendingCreated, deferPersist, achievementMode, achievementReferenceId, achievementTrigger, achievementRequiredCountStr, defaultTimeframe, defaultStartDate, defaultEndDate]
   );
 
   return {

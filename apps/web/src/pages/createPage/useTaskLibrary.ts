@@ -4,7 +4,7 @@ import { TaskType, type Task, type CompoundChild } from '@oybc/shared';
 import { db } from '../../db/database';
 import { useTasks } from '../../hooks';
 
-export type ExistingFilter = 'all' | 'normal' | 'counting' | 'progress' | 'composite';
+export type ExistingFilter = 'all' | 'normal' | 'counting' | 'compound';
 
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
 const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
@@ -113,17 +113,14 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
 }
 
 /**
- * Apply the Existing-Tasks filter to the library. Five user-facing tabs
- * map onto two underlying classifications:
- *   - 'all'       — every task
- *   - 'normal'    — type=normal
- *   - 'counting'  — type=counting
- *   - 'progress'  — type=compound && isOrdered=true   (former Progress UX)
- *   - 'composite' — type=compound && isOrdered=false  (former Composite UX)
+ * Apply the Existing-Tasks filter to the library.
+ *   - 'all'      — every task
+ *   - 'normal'   — type=normal
+ *   - 'counting' — type=counting
+ *   - 'compound' — type=compound (both ordered and unordered)
  *
- * Returns a single flat list (no separate composite array — the legacy
- * `filteredCompositeTasks` field is gone). Consumers iterate `filteredTasks`
- * and inspect `task.type` + `task.isOrdered` to render appropriately.
+ * Returns a single flat list. Consumers iterate `filteredTasks` and
+ * inspect `task.type` + `task.isOrdered` to render appropriately.
  */
 export function filterLibraryForDisplay(
   library: TaskLibrary,
@@ -137,10 +134,8 @@ export function filterLibraryForDisplay(
         return t.type === TaskType.NORMAL;
       case 'counting':
         return t.type === TaskType.COUNTING;
-      case 'progress':
-        return t.type === TaskType.COMPOUND && t.isOrdered === true;
-      case 'composite':
-        return t.type === TaskType.COMPOUND && t.isOrdered !== true;
+      case 'compound':
+        return t.type === TaskType.COMPOUND;
       default:
         return false;
     }

@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Presentational view for the Create-New tab — type picker,
-/// per-type fields, progress-step rows, feedback banners, and the
-/// submit button. Composite selection falls through to
-/// `CompositeTaskWizardView` which owns its own state.
+/// per-type fields, feedback banners, and the submit button.
+/// Compound selection falls through to `CompositeTaskWizardView`
+/// which owns its own state (including the Ordered steps toggle).
 ///
 /// Mirrors the web `CreateNewTaskForm.tsx` component. No data-layer
 /// calls live here; the `form` / `userId` / callbacks the parent
@@ -12,7 +12,7 @@ struct CreateNewTaskFormView: View {
     @Bindable var form: CreateFormViewModel
     let userId: String?
     /// Called when the user taps "Create & Add to Pool" on the
-    /// NORMAL/COUNTING/PROGRESS form. Parent binds this to
+    /// NORMAL/COUNTING form. Parent binds this to
     /// `form.handleCreateAndAddToPool(userId:...)` with the right
     /// onTaskCreated + onLibraryReloadRequested callbacks.
     var onSubmit: () -> Void
@@ -80,7 +80,10 @@ struct CreateNewTaskFormView: View {
                 form.achievementReferenceId = nil
             }
 
-            if form.taskType == .composite {
+            if form.taskType == .compound {
+                // Compound creation is fully owned by CompositeTaskWizardView,
+                // which now includes the Ordered steps toggle for choosing
+                // between unordered (any/n-of) and ordered (sequential steps).
                 if let userId = userId {
                     CompositeTaskWizardView(userId: userId, onCreated: onCompositeCreated)
                 }
@@ -112,14 +115,6 @@ struct CreateNewTaskFormView: View {
                 // Counting-specific fields
                 if form.selectedType == .counting {
                     countingFields
-                }
-
-                // Progress-specific fields. Detect via the form-level
-                // taskType — `selectedType` (TaskType?) maps .progress →
-                // .compound under the unified model since Progress writes
-                // a compound Task with isOrdered=true.
-                if form.taskType == .progress {
-                    progressFields
                 }
 
                 // Achievement-specific fields (Phase 6.3).
@@ -308,32 +303,4 @@ struct CreateNewTaskFormView: View {
         }
     }
 
-    // MARK: - Progress fields
-
-    @ViewBuilder
-    private var progressFields: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Steps")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-
-            ForEach(form.progressSteps.indices, id: \.self) { i in
-                ProgressStepRowView(
-                    index: i,
-                    step: $form.progressSteps[i],
-                    stepCount: form.progressSteps.count,
-                    errors: form.progressStepErrors[form.progressSteps[i].id],
-                    onRemove: {
-                        guard form.progressSteps.count > 1 else { return }
-                        form.progressSteps.remove(at: i)
-                    }
-                )
-            }
-
-            Button("Add Step") {
-                form.progressSteps.append(ProgressStepFormState())
-            }
-            .font(.subheadline)
-        }
-    }
 }

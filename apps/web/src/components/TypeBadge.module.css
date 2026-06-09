@@ -24,14 +24,9 @@
   color: var(--warning-text, #856404);
 }
 
-.typeBadgeProgress {
+.typeBadgeCompound {
   background-color: var(--success-bg);
   color: var(--success-text);
-}
-
-.typeBadgeComposite {
-  background-color: var(--info-bg, #cfe2ff);
-  color: var(--info-text, #084298);
 }
 
 /* Phase 6.3 — Achievement (cross-board watcher). Distinct tint from

@@ -29,12 +29,10 @@ const BASE_FILTER_TABS: { value: TasksFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
-  // 'progress' is a local string sentinel (NOT TaskType.PROGRESS, which is
-  // a deprecated alias being removed in Phase 8). The filter logic below
-  // maps it to compound+isOrdered=true. Same pattern as 'composite' for
-  // compound+isOrdered=false.
-  { value: 'progress', label: 'Progress' },
-  { value: 'composite', label: 'Composite' },
+  // 'compound' matches ALL compound tasks (both ordered and unordered).
+  // The ordered/unordered distinction is an internal model detail; users
+  // see a single "Compound" chip here and in the Tasks-tab filters.
+  { value: 'compound', label: 'Compound' },
 ];
 
 const FROM_PARENTS_TAB: { value: TasksFilter; label: string } = {
@@ -50,8 +48,7 @@ const FROM_BOARD_TAB: { value: TasksFilter; label: string } = {
 export type TasksFilter =
   | 'all'
   | TaskType
-  | 'progress'
-  | 'composite'
+  | 'compound'
   | 'from-parents'
   | 'from-board';
 
@@ -403,8 +400,7 @@ export function BoardWizardTasksStep({
       !groupByCompound || !library.childTaskIds.has(t.id);
 
     // Under the unified compound model:
-    //   - "Progress" filter = type=COMPOUND && isOrdered=true  → show in composites region
-    //   - "Composite" filter (and the composites region) = type=COMPOUND && isOrdered!=true
+    //   - "Compound" filter = all tasks with type=COMPOUND → shown in composites region
     //   - "Normal"/"Counting" = primitives
     //   - "All" pool = primitives only (all compounds render in the composites region)
     const tasks =
@@ -412,27 +408,19 @@ export function BoardWizardTasksStep({
         ? effectiveAllTasks.filter(
             (t) => notExpired(t) && t.type !== TaskType.COMPOUND && notGroupedChild(t) && matches(t.title)
           )
-        : activeFilter === 'composite' || activeFilter === 'progress'
+        : activeFilter === 'compound'
           ? []
           : effectiveAllTasks.filter(
               (t) => notExpired(t) && t.type === activeFilter && notGroupedChild(t) && matches(t.title)
             );
 
-    // Composites region shows ALL compound tasks under "All" and type-specific
-    // compound subsets under "Progress" / "Composite" filters so every compound
-    // is reachable, selectable as a whole, and expandable into its leaves.
+    // Composites region shows ALL compound tasks under "All" and under
+    // the "Compound" filter so every compound is reachable, selectable,
+    // and expandable into its leaves. isOrdered is not surfaced here.
     const composites =
-      activeFilter === 'all'
+      activeFilter === 'all' || activeFilter === 'compound'
         ? effectiveAllTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t.title))
-        : activeFilter === 'composite'
-          ? effectiveAllTasks.filter(
-              (t) => notExpired(t) && t.type === TaskType.COMPOUND && t.isOrdered !== true && matches(t.title),
-            )
-          : activeFilter === 'progress'
-            ? effectiveAllTasks.filter(
-                (t) => notExpired(t) && t.type === TaskType.COMPOUND && t.isOrdered === true && matches(t.title),
-              )
-            : [];
+        : [];
 
     return { tasks, composites };
   }, [effectiveAllTasks, activeFilter, searchQuery, parentBoardTasks, groupByCompound, library.childTaskIds]);
@@ -654,7 +642,7 @@ export function BoardWizardTasksStep({
                     }}
                     aria-pressed={isCompoundSelected}
                   >
-                    <TypeBadge type="composite" size="small" letterOnly />
+                    <TypeBadge type="compound" size="small" letterOnly />
                     <div className={styles.rowCenter}>
                       <span className={styles.rowTitle}>{ct.title}</span>
                       {previewSubtitle && (

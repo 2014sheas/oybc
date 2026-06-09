@@ -9,7 +9,6 @@ import {
   type SubtaskDraft,
   evaluateSubtaskReadiness,
 } from './compositeSubtaskDraft';
-import type { StepFormState } from '../progressStepUtils';
 import styles from './BuildStep.module.css';
 
 /** Preview payload for a composite: first few leaf titles + total. Used
@@ -19,20 +18,19 @@ export interface CompositeLeafPreview {
   totalLeaves: number;
 }
 
-type LibraryFilter = 'all' | 'normal' | 'counting' | 'progress' | 'composite';
+type LibraryFilter = 'all' | 'normal' | 'counting' | 'compound';
 
 const FILTER_TABS: { value: LibraryFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'normal', label: 'Normal' },
   { value: 'counting', label: 'Counting' },
-  { value: 'progress', label: 'Progress' },
-  { value: 'composite', label: 'Composite' },
+  { value: 'compound', label: 'Compound' },
 ];
 
 interface LibraryRow {
   id: string;
   title: string;
-  type: 'normal' | 'counting' | 'progress' | 'composite';
+  type: 'normal' | 'counting' | 'compound';
   subtitle: string;
   usageHint: string;
   kind: 'task' | 'composite';
@@ -58,9 +56,6 @@ export interface BuildStepProps {
   compositeLeafPreviews: Record<string, CompositeLeafPreview>;
   onUpdateSubtask: (id: string, updates: Partial<SubtaskDraft>) => void;
   onRemoveSubtask: (id: string) => void;
-  onStepFieldChange: (subtaskId: string, stepId: string, field: keyof StepFormState, value: string) => void;
-  onAddStep: (subtaskId: string) => void;
-  onRemoveStep: (subtaskId: string, stepId: string) => void;
   /** Toggle a library item in/out of the composite. Add (not present) or
    *  remove (already an existing-mode subtask) decided by the parent. */
   onToggleLibraryItem: (id: string, kind: 'task' | 'composite') => void;
@@ -93,9 +88,6 @@ export function BuildStep({
   compositeLeafPreviews,
   onUpdateSubtask,
   onRemoveSubtask,
-  onStepFieldChange,
-  onAddStep,
-  onRemoveStep,
   onToggleLibraryItem,
   onAddInline,
   onBack,
@@ -160,7 +152,7 @@ export function BuildStep({
       return {
         id: t.id,
         title: t.title,
-        type: t.type as 'normal' | 'counting' | 'progress',
+        type: t.type as 'normal' | 'counting',
         subtitle: buildTaskSubtitle(t, taskStepCounts),
         usageHint,
         kind: 'task',
@@ -171,7 +163,7 @@ export function BuildStep({
       return {
         id: ct.id,
         title: ct.title,
-        type: 'composite',
+        type: 'compound',
         subtitle: buildCompositeSubtitle(ct.id, compositeLeafPreviews),
         usageHint: `${leaves} subtask${leaves === 1 ? '' : 's'}`,
         kind: 'composite',
@@ -193,6 +185,10 @@ export function BuildStep({
     if (q.length === 0) return true;
     return row.title.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q);
   });
+  // Note: 'compound' filter matches ALL compound tasks (both ordered and
+  // unordered), because both kinds appear in the compositeRows list with
+  // type='compound'. The ordered/unordered distinction is an implementation
+  // detail users don't see at this picker level.
 
   const showEmptyLibrary = libraryRows.length === 0;
   const showNoMatches = !showEmptyLibrary && visibleRows.length === 0;
@@ -245,9 +241,6 @@ export function BuildStep({
               compositeLeafPreviews={compositeLeafPreviews}
               onUpdate={(updates) => onUpdateSubtask(s.id, updates)}
               onRemove={() => onRemoveSubtask(s.id)}
-              onStepFieldChange={(stepId, field, value) => onStepFieldChange(s.id, stepId, field, value)}
-              onAddStep={() => onAddStep(s.id)}
-              onRemoveStep={(stepId) => onRemoveStep(s.id, stepId)}
               onOpenTask={onOpenTask}
             />
           ))}
