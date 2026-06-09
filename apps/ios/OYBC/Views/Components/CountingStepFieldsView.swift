@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Reusable counting step sub-fields view (Action → Max Count → Unit).
+/// Reusable counting step sub-fields view (Action → Goal → Unit).
 ///
 /// Used inside progress task step rows to display the three fields required
 /// for a counting-type step. The field order matches the canonical web
