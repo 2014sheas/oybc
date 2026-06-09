@@ -111,6 +111,18 @@
   color: var(--error-text);
 }
 
+/* Inline explanatory copy (e.g. Achievement watcher blurb, trigger meanings). */
+.helpText {
+  display: block;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.helpText.helpTextLead {
+  margin-bottom: 0.5rem;
+}
+
 /* Counting Fields */
 .countingFields {
   display: flex;

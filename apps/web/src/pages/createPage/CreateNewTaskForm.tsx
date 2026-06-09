@@ -122,6 +122,13 @@ export function CreateNewTaskForm({
           {/* Achievement-task fields (Phase 6.3) */}
           {form.taskType === TaskType.ACHIEVEMENT && (
             <div className={styles.fieldGroup}>
+              {/* Closes the "create it, then can't place it" trap: Achievement
+                  tasks are cross-board watchers, never squares on a board. */}
+              <span className={`${styles.helpText} ${styles.helpTextLead}`}>
+                An Achievement isn't placed on a board. It watches the board or
+                template you pick and completes on its own when that board hits
+                the trigger below.
+              </span>
               <label className={styles.label}>
                 Watch
                 <span className={styles.required}>*</span>
@@ -222,6 +229,10 @@ export function CreateNewTaskForm({
                   Bingo
                 </label>
               </div>
+              <span className={styles.helpText}>
+                Greenlog — the whole board is completed. Bingo — any single line
+                (row, column, or diagonal).
+              </span>
 
               {/* Count input (template mode only). Specific-board mode
                   is implicitly count=1. */}

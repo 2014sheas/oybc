@@ -199,6 +199,12 @@ struct CreateNewTaskFormView: View {
     @ViewBuilder
     private var achievementFields: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Closes the "create it, then can't place it" trap: Achievement
+            // tasks are cross-board watchers, never squares on a board.
+            Text("An Achievement isn't placed on a board. It watches the board or template you pick and completes on its own when that board hits the trigger below.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
             Text("Watch")
                 .font(.subheadline)
                 .fontWeight(.semibold)
@@ -264,6 +270,9 @@ struct CreateNewTaskFormView: View {
                 Text("Bingo").tag(AchievementTrigger.bingo)
             }
             .pickerStyle(.segmented)
+            Text("Greenlog — the whole board is completed. Bingo — any single line (row, column, or diagonal).")
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             // Count input (template mode only). Specific-board mode
             // is implicitly count=1.
