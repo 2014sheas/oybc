@@ -37,7 +37,7 @@ the overhaul**, because it corrects the conceptual model, not the visual design.
 | 4 | Warm first-run: inline first-board CTA on empty states + one recurring timeframe on by default | High | Medium | B (overhaul) |
 | 5 | Resolve Create-tab vs Tasks-tab "create" overlap (Create ≠ create-anything) | Medium | Medium | B (overhaul) |
 
-Phase A items ship now (see [§5](#5-phased-roadmap)); Phase B/C ride the overhaul.
+Phase A items ship now (see [§6](#6-phased-roadmap)); Phase B/C ride the overhaul.
 
 ---
 
