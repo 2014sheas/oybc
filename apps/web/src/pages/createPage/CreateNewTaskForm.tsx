@@ -122,12 +122,13 @@ export function CreateNewTaskForm({
           {/* Achievement-task fields (Phase 6.3) */}
           {form.taskType === TaskType.ACHIEVEMENT && (
             <div className={styles.fieldGroup}>
-              {/* Closes the "create it, then can't place it" trap: Achievement
-                  tasks are cross-board watchers, never squares on a board. */}
+              {/* Explains what makes an Achievement square different: you place
+                  it on a board like any square, but it completes itself when the
+                  board/template it watches hits the trigger, not by check-off. */}
               <span className={`${styles.helpText} ${styles.helpTextLead}`}>
-                An Achievement isn't placed on a board. It watches the board or
-                template you pick and completes on its own when that board hits
-                the trigger below.
+                An Achievement is an auto-completing square: place it on a board,
+                and it completes on its own when the board or template you pick
+                below reaches the trigger — instead of you checking it off.
               </span>
               <label className={styles.label}>
                 Watch

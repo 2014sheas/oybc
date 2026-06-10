@@ -199,9 +199,10 @@ struct CreateNewTaskFormView: View {
     @ViewBuilder
     private var achievementFields: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Closes the "create it, then can't place it" trap: Achievement
-            // tasks are cross-board watchers, never squares on a board.
-            Text("An Achievement isn't placed on a board. It watches the board or template you pick and completes on its own when that board hits the trigger below.")
+            // Explains what makes an Achievement square different: you place it
+            // on a board like any square, but it completes itself when the
+            // board/template it watches hits the trigger, not by check-off.
+            Text("An Achievement is an auto-completing square: place it on a board, and it completes on its own when the board or template you pick below reaches the trigger — instead of you checking it off.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
