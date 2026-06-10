@@ -26,7 +26,7 @@ interface CountingStepFieldsProps {
 }
 
 /**
- * CountingStepFields - Reusable counting step sub-fields (Action → Max Count → Unit)
+ * CountingStepFields - Reusable counting step sub-fields (Action → Goal → Unit)
  *
  * Renders the three required fields for a counting task step in the canonical order.
  * Used inside progress task step rows in both ProgressTaskCreationPlayground and
