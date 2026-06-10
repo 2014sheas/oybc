@@ -120,6 +120,14 @@ export function CreateNewTaskForm({
           {/* Achievement-task fields (Phase 6.3) */}
           {form.taskType === TaskType.ACHIEVEMENT && (
             <div className={styles.fieldGroup}>
+              {/* Explains what makes an Achievement square different: you place
+                  it on a board like any square, but it completes itself when the
+                  board/template it watches hits the trigger, not by check-off. */}
+              <span className={`${styles.helpText} ${styles.helpTextLead}`}>
+                An Achievement is an auto-completing square: place it on a board,
+                and it completes on its own when the board or template you pick
+                below reaches the trigger — instead of you checking it off.
+              </span>
               <label className={styles.label}>
                 Watch
                 <span className={styles.required}>*</span>
@@ -220,6 +228,10 @@ export function CreateNewTaskForm({
                   Bingo
                 </label>
               </div>
+              <span className={styles.helpText}>
+                Greenlog — the whole board is completed. Bingo — any single line
+                (row, column, or diagonal).
+              </span>
 
               {/* Count input (template mode only). Specific-board mode
                   is implicitly count=1. */}

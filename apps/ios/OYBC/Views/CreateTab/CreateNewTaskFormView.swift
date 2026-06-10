@@ -194,6 +194,13 @@ struct CreateNewTaskFormView: View {
     @ViewBuilder
     private var achievementFields: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Explains what makes an Achievement square different: you place it
+            // on a board like any square, but it completes itself when the
+            // board/template it watches hits the trigger, not by check-off.
+            Text("An Achievement is an auto-completing square: place it on a board, and it completes on its own when the board or template you pick below reaches the trigger — instead of you checking it off.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
             Text("Watch")
                 .font(.subheadline)
                 .fontWeight(.semibold)
@@ -259,6 +266,9 @@ struct CreateNewTaskFormView: View {
                 Text("Bingo").tag(AchievementTrigger.bingo)
             }
             .pickerStyle(.segmented)
+            Text("Greenlog — the whole board is completed. Bingo — any single line (row, column, or diagonal).")
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             // Count input (template mode only). Specific-board mode
             // is implicitly count=1.
