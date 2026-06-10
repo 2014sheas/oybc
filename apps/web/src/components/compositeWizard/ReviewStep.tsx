@@ -185,9 +185,6 @@ function SubtaskReviewChip({
     if (!isNaN(count) && draft.action.trim() && draft.unit.trim()) {
       meta = `${count} ${draft.unit.trim()}`;
     }
-  } else if (draft.inlineType === 'progress') {
-    title = draft.title.trim() || '(untitled)';
-    meta = `${draft.steps.length} step${draft.steps.length === 1 ? '' : 's'}`;
   } else {
     title = draft.title.trim() || '(untitled)';
   }

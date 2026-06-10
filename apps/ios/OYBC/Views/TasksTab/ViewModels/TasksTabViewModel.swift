@@ -4,13 +4,14 @@ import Observation
 
 /// Type-filter chips on the Tasks tab. Mirrors the wizard's filter set
 /// but adds `.achievement` (which the wizard hides because achievements
-/// aren't placeable on a board pool).
+/// aren't placeable on a board pool). Progress and Composite have been
+/// unified into a single `.compound` chip — both ordered and unordered
+/// compound tasks match this filter.
 enum TasksTabTypeFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case normal = "Normal"
     case counting = "Counting"
-    case progress = "Progress"
-    case composite = "Composite"
+    case compound = "Compound"
     case achievement = "Achievement"
     var id: String { rawValue }
 }
@@ -231,8 +232,7 @@ final class TasksTabViewModel {
         case .all: return true
         case .normal: return task.type == .normal
         case .counting: return task.type == .counting
-        case .progress: return task.type == .compound && task.isOrdered == true
-        case .composite: return task.type == .compound && task.isOrdered != true
+        case .compound: return task.type == .compound
         case .achievement: return task.type == .achievement
         }
     }

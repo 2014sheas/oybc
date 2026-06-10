@@ -51,13 +51,10 @@ struct TaskRowView: View {
 
     // MARK: - Derived display
 
-    /// Compound tasks map to "progress" or "composite" so the badge
-    /// colour matches the Tasks-tab filter chip the user followed to
-    /// find this row. Other types pass through unchanged.
+    /// All compound tasks map to "compound" — the single unified type
+    /// label after the Progress/Composite merge. Other types pass through
+    /// unchanged.
     private var typeLabel: String {
-        if task.type == .compound {
-            return task.isOrdered == true ? "progress" : "composite"
-        }
         return task.type.rawValue
     }
 

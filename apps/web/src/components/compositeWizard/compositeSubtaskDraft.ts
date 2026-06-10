@@ -1,8 +1,10 @@
 import type { StepFormState } from '../progressStepUtils';
 
 /** The inline task types a SubtaskCard can create. Composite sub-composites
- *  can't be built inline — they must already exist in the library. */
-export type InlineSubtaskType = 'normal' | 'counting' | 'progress';
+ *  can't be built inline — they must already exist in the library. Ordered
+ *  compounds (formerly "progress") are created through the Compound wizard,
+ *  not as inline subtasks. */
+export type InlineSubtaskType = 'normal' | 'counting';
 
 /** Existing-mode draft: points at a Task or CompositeTask already in the
  *  library. `selectionType` is derived from which list the id came from
@@ -76,26 +78,6 @@ export function evaluateSubtaskReadiness(
       return { ready: true, message: null };
     }
 
-    case 'progress': {
-      if (!draft.title.trim()) return { ready: false, message: 'Add a title for this progress task.' };
-      if (draft.steps.length === 0) {
-        return { ready: false, message: 'Add at least one step.' };
-      }
-      for (const step of draft.steps) {
-        if (step.type === 'normal' && !step.title.trim()) {
-          return { ready: false, message: 'Each normal step needs a title.' };
-        }
-        if (step.type === 'counting') {
-          if (!step.action.trim()) return { ready: false, message: 'Each counting step needs an action.' };
-          if (!step.unit.trim()) return { ready: false, message: 'Each counting step needs a unit.' };
-          const c = parseInt(step.maxCount, 10);
-          if (isNaN(c) || c < 1) {
-            return { ready: false, message: 'Each counting step needs a goal of at least 1.' };
-          }
-        }
-      }
-      return { ready: true, message: null };
-    }
   }
 }
 
@@ -116,17 +98,6 @@ export function hasInlineDirtyFields(draft: InlineSubtaskDraft): boolean {
         draft.unit.trim().length > 0 ||
         draft.maxCountStr.trim().length > 0
       );
-    case 'progress':
-      return (
-        titleDirty ||
-        draft.steps.some(
-          (s) =>
-            s.title.trim().length > 0 ||
-            s.action.trim().length > 0 ||
-            s.unit.trim().length > 0 ||
-            s.maxCount.trim().length > 0,
-        )
-      );
   }
 }
 
@@ -138,7 +109,6 @@ export function hasInlineDirtyFields(draft: InlineSubtaskDraft): boolean {
 export function switchInlineType(
   draft: InlineSubtaskDraft,
   nextType: InlineSubtaskType,
-  freshSteps: () => StepFormState[],
 ): InlineSubtaskDraft {
   return {
     id: draft.id,
@@ -148,7 +118,7 @@ export function switchInlineType(
     action: '',
     unit: '',
     maxCountStr: '',
-    steps: nextType === 'progress' ? freshSteps() : [],
+    steps: [],
     pendingTypeSwitch: undefined,
   };
 }

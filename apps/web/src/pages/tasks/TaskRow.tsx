@@ -131,12 +131,12 @@ export function TaskRow({
   );
 }
 
-/** Map COMPOUND tasks to the user-facing "progress" or "composite"
- *  label so the badge colour matches the Tasks-tab filter chip the
- *  user used to find it. Other types pass through unchanged. */
+/** Map a task to its badge type string. COMPOUND tasks always map to
+ *  'compound' regardless of isOrdered — the ordered/unordered distinction
+ *  is an internal model detail not surfaced in the UI. */
 function typeLabel(task: Task): string {
   if (task.type !== TaskType.COMPOUND) return task.type;
-  return task.isOrdered === true ? 'progress' : 'composite';
+  return 'compound';
 }
 
 function computeStatusLabel(task: Task): string {

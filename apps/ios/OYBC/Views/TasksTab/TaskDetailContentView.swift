@@ -398,9 +398,6 @@ struct TaskDetailContentView: View {
     // MARK: - Helpers
 
     private func typeLabel(_ t: Task) -> String {
-        if t.type == .compound {
-            return t.isOrdered == true ? "progress" : "composite"
-        }
         return t.type.rawValue
     }
 

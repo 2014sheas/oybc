@@ -13,8 +13,7 @@ struct CompositeLeafPreview: Equatable {
 private struct CompositeLibraryRow: Identifiable {
     let id: String
     let title: String
-    /// "normal" / "counting" / "progress" / "composite" — matches
-    /// `TypeBadgeView` input.
+    /// "normal" / "counting" / "compound" — matches `TypeBadgeView` input.
     let typeLabel: String
     let subtitle: String
     let usageHint: String
@@ -22,15 +21,14 @@ private struct CompositeLibraryRow: Identifiable {
 }
 
 private enum CompositeLibraryFilter: String, CaseIterable, Identifiable {
-    case all, normal, counting, progress, composite
+    case all, normal, counting, compound
     var id: String { rawValue }
     var displayName: String {
         switch self {
         case .all: return "All"
         case .normal: return "Normal"
         case .counting: return "Counting"
-        case .progress: return "Progress"
-        case .composite: return "Composite"
+        case .compound: return "Compound"
         }
     }
 }
@@ -96,22 +94,6 @@ struct CompositeWizardBuildStepView: View {
                 let u = item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines)
                 let max = Int(item.inlineMaxCountStr) ?? 0
                 return !a.isEmpty && !u.isEmpty && max >= 1
-            case .progress:
-                if t.isEmpty { return false }
-                if item.inlineSteps.isEmpty { return false }
-                for step in item.inlineSteps {
-                    switch step.type {
-                    case .normal:
-                        if step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
-                    case .counting:
-                        if step.action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
-                        if step.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
-                        if (Int(step.maxCount) ?? 0) < 1 { return false }
-                    default:
-                        return false
-                    }
-                }
-                return true
             }
         }
     }
@@ -151,7 +133,7 @@ struct CompositeWizardBuildStepView: View {
         for s in subtaskList.items where s.mode == .existing {
             if s.selectionType == .task, !s.selectedTaskId.isEmpty {
                 ids.insert(s.selectedTaskId)
-            } else if s.selectionType == .composite, !s.selectedCompositeId.isEmpty {
+            } else if s.selectionType == .compound, !s.selectedCompositeId.isEmpty {
                 ids.insert(s.selectedCompositeId)
             }
         }
@@ -183,10 +165,10 @@ struct CompositeWizardBuildStepView: View {
             return CompositeLibraryRow(
                 id: ct.id,
                 title: ct.title,
-                typeLabel: "composite",
+                typeLabel: "compound",
                 subtitle: Self.buildCompositeSubtitle(for: ct.id, previews: compositeLeafPreviews),
                 usageHint: "\(leaves) subtask\(leaves == 1 ? "" : "s")",
-                kind: .composite
+                kind: .compound
             )
         }
         return (taskRows + compositeRows).sorted {

@@ -50,9 +50,11 @@ export interface TaskDetailContentProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Map a task to its badge type string. COMPOUND tasks always map to
+ *  'compound' — the ordered/unordered distinction is not surfaced in UI. */
 function typeLabel(task: Task): string {
   if (task.type !== TaskType.COMPOUND) return task.type;
-  return task.isOrdered === true ? 'progress' : 'composite';
+  return 'compound';
 }
 
 function formatDate(iso: string): string {

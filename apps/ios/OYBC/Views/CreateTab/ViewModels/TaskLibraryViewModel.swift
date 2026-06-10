@@ -2,19 +2,19 @@ import Foundation
 import GRDB
 import Observation
 
-/// Filter options for the Existing Tasks tab. Five user-facing tabs map
-/// onto two underlying classifications (mirrors web's ExistingFilter):
-///   - .all       → every task
-///   - .normal    → type=.normal
-///   - .counting  → type=.counting
-///   - .progress  → type=.compound && isOrdered=true
-///   - .composite → type=.compound && isOrdered!=true
+/// Filter options for the Existing Tasks tab. Four user-facing tabs map
+/// onto the unified TaskType values (mirrors web's ExistingFilter):
+///   - .all      → every task
+///   - .normal   → type=.normal
+///   - .counting → type=.counting
+///   - .compound → type=.compound (both ordered and unordered)
+/// The former .progress / .composite split is retired — both authored via
+/// the compound wizard with the Ordered steps toggle.
 enum LibraryFilter: String, CaseIterable {
     case all = "All"
     case normal = "Normal"
     case counting = "Counting"
-    case progress = "Progress"
-    case composite = "Composite"
+    case compound = "Compound"
     /// Phase 6.1: tasks placed on currently-active longer-window parent
     /// boards. Only surfaced in the board wizard's tasks step (and only
     /// when the wizard's timeframe has parents — daily/weekly/monthly).
@@ -97,10 +97,8 @@ final class TaskLibraryViewModel {
             return libraryTasks.filter { $0.type == .normal }
         case .counting:
             return libraryTasks.filter { $0.type == .counting }
-        case .progress:
-            return libraryTasks.filter { $0.type == .compound && $0.isOrdered == true }
-        case .composite:
-            return libraryTasks.filter { $0.type == .compound && $0.isOrdered != true }
+        case .compound:
+            return libraryTasks.filter { $0.type == .compound }
         case .fromParents:
             // Source is a separate ParentBoardTasksViewModel — see
             // BoardWizardTasksStepView. Returning [] here is correct;

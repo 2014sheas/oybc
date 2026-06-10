@@ -69,7 +69,7 @@ struct CompositeWizardReviewStepView: View {
                                 .scaleEffect(0.7)
                                 .tint(.white)
                         }
-                        Text(isSubmitting ? "Creating…" : "Create Composite")
+                        Text(isSubmitting ? "Creating…" : "Create Compound")
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -213,7 +213,7 @@ struct CompositeWizardReviewStepView: View {
                 return ChipInfo(badge: badge, title: title, meta: nil)
             } else {
                 let ct = libraryCompositeTasks.first(where: { $0.id == item.selectedCompositeId })
-                return ChipInfo(badge: "COMPOSITE", title: ct?.title ?? "(unknown composite)", meta: nil)
+                return ChipInfo(badge: "COMPOUND", title: ct?.title ?? "(unknown compound)", meta: nil)
             }
         case .inline_:
             let badge = item.inlineType.rawValue.uppercased()
@@ -228,11 +228,6 @@ struct CompositeWizardReviewStepView: View {
                 let count = Int(c) ?? 0
                 let meta = (count > 0 && !u.isEmpty) ? "\(count) \(u)" : nil
                 return ChipInfo(badge: badge, title: title, meta: meta)
-            case .progress:
-                let t = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                let title = t.isEmpty ? "(untitled)" : t
-                let n = item.inlineSteps.count
-                return ChipInfo(badge: badge, title: title, meta: "\(n) step\(n == 1 ? "" : "s")")
             case .normal:
                 let t = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 return ChipInfo(badge: badge, title: t.isEmpty ? "(untitled)" : t, meta: nil)

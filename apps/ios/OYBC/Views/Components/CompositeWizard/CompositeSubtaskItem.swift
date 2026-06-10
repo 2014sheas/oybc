@@ -8,13 +8,14 @@ enum SubtaskMode {
     case inline_
 }
 
-/// Inline subtask types available from the card. Composites can't be
-/// authored inline — a nested composite has to be created separately
-/// and selected as an existing subtask.
+/// Inline subtask types available from the card. Composites and compound
+/// tasks can't be authored inline — they must be created separately and
+/// selected as existing subtasks. The former "Progress" inline option is
+/// retired alongside the Progress vocabulary; compound tasks with ordered
+/// steps are now created via the wizard's Ordered steps toggle.
 enum InlineSubtaskType: String, CaseIterable, Identifiable {
     case normal = "Normal"
     case counting = "Counting"
-    case progress = "Progress"
     var id: String { rawValue }
 }
 
@@ -52,7 +53,7 @@ class SubtaskItem: ObservableObject, Identifiable {
 
     enum SelectionType {
         case task
-        case composite
+        case compound
     }
 
     init(mode: SubtaskMode = .existing) {

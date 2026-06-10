@@ -184,17 +184,16 @@ struct BoardWizardTasksStepView: View {
     private var visibleTasks: [Task] {
         let pool: [Task]
         switch activeFilter {
-        // Under the unified compound model, all compound tasks (progress and
-        // composite) are rendered in the composites region below, so the
-        // primitives pool never includes compounds.
+        // Under the unified compound model, all compound tasks are rendered in
+        // the composites region below, so the primitives pool never includes
+        // compounds regardless of isOrdered.
         // Bug #85 — use effectiveAllTasks to include pending tasks.
         // Issue #73 — notGroupedChild hides primitives that are children of
         // a compound (they're already accessible by expanding the parent row).
-        case .all:       pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type != .compound }
-        case .normal:    pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .normal }
-        case .counting:  pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .counting }
-        case .progress:  pool = []
-        case .composite: pool = []
+        case .all:      pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type != .compound }
+        case .normal:   pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .normal }
+        case .counting: pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .counting }
+        case .compound: pool = []
         // Phase 6.1: source is the parent-board-tasks query, not the
         // user's library. Compounds surfaced through this filter render
         // here too (no separate composites region) since the user is
@@ -209,23 +208,15 @@ struct BoardWizardTasksStepView: View {
     }
 
     /// Compound-typed tasks shown in the composites region.
-    /// "All" shows every compound; "Composite" filter shows isOrdered=false;
-    /// "Progress" filter shows isOrdered=true. This makes every compound
-    /// reachable, selectable as a whole, and expandable into its leaves.
+    /// "All" and "Compound" show all compound tasks (ordered and unordered).
+    /// This makes every compound reachable, selectable as a whole, and
+    /// expandable into its leaves.
     private var visibleComposites: [OYBC.Task] {
         switch activeFilter {
-        case .all:
+        case .all, .compound:
             // Bug #85 — include pending compound tasks.
             return effectiveAllTasks
                 .filter { notExpired($0) && $0.type == .compound }
-                .filter { matches($0.title) }
-        case .composite:
-            return effectiveAllTasks
-                .filter { notExpired($0) && $0.type == .compound && $0.isOrdered != true }
-                .filter { matches($0.title) }
-        case .progress:
-            return effectiveAllTasks
-                .filter { notExpired($0) && $0.type == .compound && $0.isOrdered == true }
                 .filter { matches($0.title) }
         // .fromParents: compounds surfaced through this filter render in
         // the primitives region (visibleTasks), not as separate
@@ -961,7 +952,7 @@ struct BoardWizardTasksStepView: View {
                             .fill(isCompoundSelected ? Color.blue : Color.clear)
                             .frame(width: 3)
                         HStack(spacing: 12) {
-                            TypeBadgeView(type: "composite", size: .small, letterOnly: true)
+                            TypeBadgeView(type: "compound", size: .small, letterOnly: true)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(ct.title)
                                     .font(.system(size: 16, weight: .semibold))
@@ -1057,7 +1048,7 @@ struct BoardWizardTasksStepView: View {
                 // irrelevant when picking leaves for a board.
                 VStack(spacing: 0) {
                     if leaves.isEmpty {
-                        Text("This composite has no task leaves — nothing boardable here.")
+                        Text("This compound task has no task leaves — nothing boardable here.")
                             .font(.footnote)
                             .italic()
                             .foregroundColor(.secondary)
@@ -1125,10 +1116,9 @@ struct BoardWizardTasksStepView: View {
             }
             return derived
         case .compound where task.isOrdered == true:
-            // Former Progress tasks: show "N step(s)" subtitle from compound
-            // children (the unified replacement for legacy task_steps).
-            // Bug #85 — read from effective map so pending compounds show
-            // a real count, not 0.
+            // Ordered compound — show "N step(s)" subtitle from compound
+            // children (reads from effective map so pending compounds show
+            // a real count, not 0). Bug #85.
             let n = effectiveChildrenByCompound[task.id]?.count ?? 0
             if n == 0 { return "" }
             return "\(n) step\(n == 1 ? "" : "s")"

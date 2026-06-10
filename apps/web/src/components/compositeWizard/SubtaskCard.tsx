@@ -3,8 +3,6 @@ import type { Task } from '@oybc/shared';
 import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
 import { TypeBadge } from '../TypeBadge';
 import { CountingStepFields } from '../CountingStepFields';
-import { ProgressStepRow } from '../ProgressStepRow';
-import { type StepFormState, createEmptyStep } from '../progressStepUtils';
 import type { CompositeLeafPreview } from './BuildStep';
 import {
   type SubtaskDraft,
@@ -20,7 +18,7 @@ import styles from './SubtaskCard.module.css';
 /** Max title length — matches the shared CreateForm limits. */
 const TITLE_MAX_LENGTH = 200;
 
-const INLINE_TYPES: readonly InlineSubtaskType[] = ['normal', 'counting', 'progress'] as const;
+const INLINE_TYPES: readonly InlineSubtaskType[] = ['normal', 'counting'] as const;
 
 export interface SubtaskCardProps {
   /** The draft this card displays and mutates. */
@@ -44,11 +42,6 @@ export interface SubtaskCardProps {
    *  detail. Inline-mode subtasks ignore this — they're not yet saved
    *  Tasks. When omitted, the row's center area is non-interactive. */
   onOpenTask?: (taskId: string) => void;
-  /** Progress-subtask step mutators — hoisted so the composite form's
-   *  single `subtasks` state stays canonical. */
-  onStepFieldChange: (stepId: string, field: keyof StepFormState, value: string) => void;
-  onAddStep: () => void;
-  onRemoveStep: (stepId: string) => void;
 }
 
 /**
@@ -87,8 +80,10 @@ function ExistingFlatRow({
       const task = allTasks.find((t) => t.id === draft.selectedId);
       if (!task) return null;
       const boards = taskBoardCounts[task.id] ?? 0;
+      // Compound tasks (both ordered and unordered) show 'compound' badge.
+      const badgeType = task.type === 'compound' ? 'compound' : task.type as 'normal' | 'counting';
       return {
-        type: task.type as 'normal' | 'counting' | 'progress',
+        type: badgeType,
         title: task.title,
         subtitle: buildTaskSubtitle(task, taskStepCounts),
         usageHint: boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`,
@@ -98,7 +93,7 @@ function ExistingFlatRow({
     if (!ct) return null;
     const leaves = compositeSubtaskCounts[ct.id] ?? 0;
     return {
-      type: 'composite' as const,
+      type: 'compound' as const,
       title: ct.title,
       subtitle: buildCompositeSubtitle(ct.id, compositeLeafPreviews),
       usageHint: `${leaves} subtask${leaves === 1 ? '' : 's'}`,
@@ -174,9 +169,6 @@ function InlineCard({
   draft,
   onUpdate,
   onRemove,
-  onStepFieldChange,
-  onAddStep,
-  onRemoveStep,
 }: InlineCardProps): React.ReactElement {
   const readiness = useMemo(
     () => evaluateSubtaskReadiness(draft, new Set()),
@@ -200,9 +192,6 @@ function InlineCard({
       <InlineFields
         draft={draft}
         onUpdate={onUpdate}
-        onStepFieldChange={onStepFieldChange}
-        onAddStep={onAddStep}
-        onRemoveStep={onRemoveStep}
       />
 
       <div
@@ -224,17 +213,11 @@ function InlineCard({
 interface InlineFieldsProps {
   draft: InlineSubtaskDraft;
   onUpdate: (updates: Partial<SubtaskDraft>) => void;
-  onStepFieldChange: (stepId: string, field: keyof StepFormState, value: string) => void;
-  onAddStep: () => void;
-  onRemoveStep: (stepId: string) => void;
 }
 
 function InlineFields({
   draft,
   onUpdate,
-  onStepFieldChange,
-  onAddStep,
-  onRemoveStep,
 }: InlineFieldsProps): React.ReactElement {
   // Type-switch confirm panel takes over when a pending switch is set.
   if (draft.pendingTypeSwitch) {
@@ -258,7 +241,7 @@ function InlineFields({
             type="button"
             className={styles.switchConfirmButton}
             onClick={() => {
-              const next = switchInlineType(draft, draft.pendingTypeSwitch!, () => [createEmptyStep()]);
+              const next = switchInlineType(draft, draft.pendingTypeSwitch!);
               onUpdate(next);
             }}
           >
@@ -275,7 +258,7 @@ function InlineFields({
       onUpdate({ pendingTypeSwitch: nextType } as Partial<InlineSubtaskDraft>);
       return;
     }
-    const next = switchInlineType(draft, nextType, () => [createEmptyStep()]);
+    const next = switchInlineType(draft, nextType);
     onUpdate(next);
   };
 
@@ -337,25 +320,6 @@ function InlineFields({
         />
       )}
 
-      {draft.inlineType === 'progress' && (
-        <div className={styles.stepsContainer}>
-          <span className={styles.stepsLabel}>Steps</span>
-          {draft.steps.map((step, idx) => (
-            <ProgressStepRow
-              key={step.id}
-              index={idx}
-              idPrefix={`subtask-${draft.id}-step-${step.id}`}
-              step={step}
-              canRemove={draft.steps.length > 1}
-              onFieldChange={(field, value) => onStepFieldChange(step.id, field, value)}
-              onRemove={() => onRemoveStep(step.id)}
-            />
-          ))}
-          <button type="button" className={styles.addStepButton} onClick={onAddStep}>
-            + Add step
-          </button>
-        </div>
-      )}
     </div>
   );
 }

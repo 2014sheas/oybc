@@ -61,7 +61,7 @@ test.describe('Phase 6.3 achievement task creator', () => {
     });
   });
 
-  test('task type selector includes "Achievement" alongside Normal/Counting/Progress/Composite', async ({ page }) => {
+  test('task type selector includes "Achievement" alongside Normal/Counting/Compound', async ({ page }) => {
     await page.goto('/tasks?__oybc_test_bypass=1');
     // Tasks tab gates the create form behind a sheet; open it first.
     await page.getByRole('button', { name: /\+ Create task/i }).click();

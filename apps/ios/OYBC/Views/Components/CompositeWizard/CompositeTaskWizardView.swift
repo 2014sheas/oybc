@@ -20,6 +20,11 @@ struct CompositeTaskWizardView: View {
     @State private var compositeTitle = ""
     @State private var operatorType: OperatorType = .and
     @State private var threshold: Int = 2
+    /// Whether the compound task requires subtasks completed in strict
+    /// order. Surfaced in the Setup step as an "Ordered steps" toggle.
+    /// When true, the operator is forced to AND and the operator picker
+    /// is hidden. Maps to `Task.isOrdered` at save time.
+    @State private var isOrdered: Bool = false
     /// Wrapped observable so parent-level derived state (readiness,
     /// threshold clamp) picks up edits inside child cards. See
     /// `CompositeSubtaskList` for the rebroadcast wiring.
@@ -68,6 +73,7 @@ struct CompositeTaskWizardView: View {
                 CompositeWizardSetupStepView(
                     title: $compositeTitle,
                     operatorType: $operatorType,
+                    isOrdered: $isOrdered,
                     onCancel: resetForm,
                     onNext: { currentStep = 2 }
                 )
@@ -181,6 +187,7 @@ struct CompositeTaskWizardView: View {
         compositeTitle = ""
         operatorType = .and
         threshold = 2
+        isOrdered = false
         subtaskList.removeAll()
         currentStep = 1
         errorMessage = nil
@@ -199,7 +206,10 @@ struct CompositeTaskWizardView: View {
                         .order(Column("title"))
                         .fetchAll(db)
                 }
-                // Split into primitives + compound (composite) tasks.
+                // Split into primitives + nestable compound tasks.
+                // Only unordered compounds are offered as nested children —
+                // nesting an ordered (step-based) compound inside another
+                // compound has undefined evaluation semantics.
                 let primitives = allTasks.filter { $0.type != .compound }
                 let compounds  = allTasks.filter { $0.type == .compound && $0.isOrdered != true }
 
@@ -271,26 +281,12 @@ struct CompositeTaskWizardView: View {
     // MARK: - Submit
 
     /// Creates the compound task in the unified schema:
-    /// 1. Insert a Task row with type=.compound + operator/threshold fields.
+    /// 1. Insert a Task row with type=.compound + operator/threshold/isOrdered fields.
     /// 2. For each existing-reference subtask: create CompoundChild row.
     /// 3. For each inline-created primitive (.normal / .counting): insert
     ///    the new Task first, then the CompoundChild row.
-    /// 4. Inline progress-subtask creation is NOT supported here — drop with
-    ///    a TODO for Phase 8 (matches web's decision in commit 63e90f3).
     /// All writes are atomic in a single AppDatabase.write block.
     private func handleCreateCompositeTask() {
-        // Precondition: inline progress subtasks aren't yet supported under the unified
-        // model — autoCreate doesn't carry nested children. Block submission with a clear
-        // error so the user understands the workaround, rather than silently skipping the
-        // item and losing data (which is what the `continue` in the save loop would do).
-        let hasInlineProgress = subtaskList.items.contains { item in
-            item.mode == .inline_ && item.inlineType == .progress
-        }
-        if hasInlineProgress {
-            errorMessage = "Inline Progress subtasks aren't supported yet — create the inner Progress task first as a standalone task, then add it here as an existing subtask."
-            return
-        }
-
         errorMessage = nil
         isSubmitting = true
 
@@ -298,8 +294,12 @@ struct CompositeTaskWizardView: View {
         let compoundTaskId = AppDatabase.generateUUID()
         let capturedSubtasks = subtaskList.items
         let capturedTitle = compositeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let capturedOperator = operatorType
+        // When ordered, force operator to AND regardless of picker state —
+        // the ordered path requires all steps and the operator picker is
+        // hidden in the Setup step.
+        let capturedOperator: OperatorType = isOrdered ? .and : operatorType
         let capturedThreshold = threshold
+        let capturedIsOrdered = isOrdered
         let capturedUserId = userId
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -307,7 +307,9 @@ struct CompositeTaskWizardView: View {
                 // Items to enqueue for sync AFTER the transaction.
                 var syncItems: [(entityType: String, entityId: String, payload: String)] = []
 
-                // Build the parent compound Task.
+                // Build the parent compound Task. `isOrdered` is written
+                // from the Setup step's toggle; when true the operator is
+                // forced to AND (already captured above).
                 let compoundTask = OYBC.Task(
                     id: compoundTaskId,
                     userId: capturedUserId,
@@ -316,7 +318,7 @@ struct CompositeTaskWizardView: View {
                     type: .compound,
                     operatorType: capturedOperator,
                     threshold: capturedOperator == .mOfN ? capturedThreshold : nil,
-                    isOrdered: false,
+                    isOrdered: capturedIsOrdered,
                     totalCompletions: 0,
                     totalInstances: 0,
                     createdAt: now,
@@ -347,19 +349,13 @@ struct CompositeTaskWizardView: View {
                                 : item.selectedCompositeId
 
                         case .inline_:
-                            // Inline-created primitive child task.
+                            // Inline-created primitive child task (Normal or Counting only).
                             let trimmedTitle  = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                             let trimmedAction = item.inlineAction.trimmingCharacters(in: .whitespacesAndNewlines)
                             let trimmedUnit   = item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines)
                             let parsedMax     = Int(item.inlineMaxCountStr.trimmingCharacters(in: .whitespacesAndNewlines))
 
                             switch item.inlineType {
-                            case .progress:
-                                // TODO Phase 8: inline progress subtasks in the composite
-                                // wizard are not yet supported in the unified model.
-                                // Matches web's same decision (commit 63e90f3). Skip.
-                                continue
-
                             case .normal:
                                 let newId   = AppDatabase.generateUUID()
                                 let newTask = OYBC.Task(

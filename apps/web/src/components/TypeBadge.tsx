@@ -3,7 +3,7 @@ import styles from './TypeBadge.module.css';
 /**
  * Maps a task type string to its capitalised CSS class suffix.
  *
- * @param type - Task type string (e.g. 'normal', 'counting', 'progress', 'composite')
+ * @param type - Task type string (e.g. 'normal', 'counting', 'compound', 'achievement')
  * @returns Capitalised string matching the CSS module convention (e.g. 'Normal')
  */
 function typeBadgeClass(type: string): string {
@@ -11,7 +11,7 @@ function typeBadgeClass(type: string): string {
 }
 
 interface TypeBadgeProps {
-  /** Task type string (e.g. 'normal', 'counting', 'progress', 'composite') */
+  /** Task type string (e.g. 'normal', 'counting', 'compound', 'achievement') */
   type: string;
   /** Optional size variant */
   size?: 'small' | 'default';
@@ -24,14 +24,12 @@ interface TypeBadgeProps {
   className?: string;
 }
 
-/** 4-letter abbreviation for each task type — first four letters of
- *  the type name, uppercased. Kept uniform-width so stacked badges
- *  align row-to-row in list layouts. */
+/** 4-letter abbreviation for each task type — kept uniform-width so
+ *  stacked badges align row-to-row in list layouts. */
 const TYPE_ABBREV: Record<string, string> = {
   normal: 'NORM',
   counting: 'COUN',
-  progress: 'PROG',
-  composite: 'COMP',
+  compound: 'CMPD',
   // Phase 6.3 — ACHIEVEMENT (cross-board watcher). "ACHV" is the
   // 4-letter abbreviation; the full label "Achievement task" still
   // appears in `aria-label` and the hover tooltip.

@@ -11,7 +11,7 @@ import {
 import { db } from '../../db/database';
 import { createCompound } from '../../db/operations/tasks';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from '../playground/playgroundUtils';
-import { type StepFormState, createEmptyStep } from '../progressStepUtils';
+import { createEmptyStep } from '../progressStepUtils';
 import {
   CompositeWizardStepper,
   type CompositeWizardStep,
@@ -81,6 +81,7 @@ export function CompositeTaskWizard({
   const [title, setTitle] = useState('');
   const [operator, setOperator] = useState<OperatorType>(OperatorType.AND);
   const [threshold, setThreshold] = useState(2);
+  const [isOrdered, setIsOrdered] = useState(false);
   const [subtasks, setSubtasks] = useState<SubtaskDraft[]>([]);
 
   // UI state
@@ -224,40 +225,11 @@ export function CompositeTaskWizard({
     );
   }
 
-  function updateInlineStep(subtaskId: string, stepId: string, field: keyof StepFormState, value: string): void {
-    setSubtasks((prev) =>
-      prev.map((s) => {
-        if (s.id !== subtaskId || s.mode !== 'inline') return s;
-        return {
-          ...s,
-          steps: s.steps.map((step) => (step.id === stepId ? { ...step, [field]: value } : step)),
-        };
-      }),
-    );
-  }
-
-  function addStep(subtaskId: string): void {
-    setSubtasks((prev) =>
-      prev.map((s) => {
-        if (s.id !== subtaskId || s.mode !== 'inline') return s;
-        return { ...s, steps: [...s.steps, createEmptyStep()] };
-      }),
-    );
-  }
-
-  function removeStep(subtaskId: string, stepId: string): void {
-    setSubtasks((prev) =>
-      prev.map((s) => {
-        if (s.id !== subtaskId || s.mode !== 'inline') return s;
-        return { ...s, steps: s.steps.filter((step) => step.id !== stepId) };
-      }),
-    );
-  }
-
   function resetForm(): void {
     setTitle('');
     setOperator(OperatorType.AND);
     setThreshold(2);
+    setIsOrdered(false);
     setSubtasks([]);
     setCurrentStep(1);
     setErrorMessage(null);
@@ -270,12 +242,9 @@ export function CompositeTaskWizard({
    * to createCompound() from db/operations/tasks.ts. That function writes
    * everything atomically (tasks + compoundChildren) in one Dexie transaction.
    *
-   * Inline progress-subtask creation is intentionally not supported here:
-   * CreateCompoundChildEntry.autoCreate only accepts 'normal' | 'counting',
-   * matching the current createCompound spec. Users should create an inner
-   * compound task first, then reference it as an existing child.
-   * TODO (Phase 5/8): revisit inline nested compound creation when the spec
-   * defines the UX for editing nested compounds.
+   * Inline subtasks support 'normal' and 'counting' types only.
+   * Users wanting a compound subtask should create it first, then
+   * reference it from the library picker (existing-mode).
    */
   async function handleCreate(): Promise<void> {
     setErrorMessage(null);
@@ -287,7 +256,6 @@ export function CompositeTaskWizard({
         }
 
         // Inline-created subtask — map to autoCreate shape.
-        // Progress inline subtasks are treated as 'normal' for now (see TODO above).
         if (subtask.inlineType === 'counting') {
           const maxCount = parseInt(subtask.maxCountStr, 10);
           const trimmedAction = subtask.action.trim();
@@ -303,7 +271,7 @@ export function CompositeTaskWizard({
           };
         }
 
-        // 'normal' or 'progress' (progress falls back to normal — see TODO above)
+        // 'normal'
         return {
           autoCreate: {
             type: TaskType.NORMAL,
@@ -316,11 +284,11 @@ export function CompositeTaskWizard({
         title: title.trim(),
         operator,
         threshold: operator === OperatorType.M_OF_N ? threshold : undefined,
-        isOrdered: false,
+        isOrdered,
         children,
       });
 
-      setSuccessMessage('Composite task created!');
+      setSuccessMessage('Compound task created!');
       onCreated?.(compound);
       resetForm();
       setTimeout(() => setSuccessMessage(null), SUCCESS_DISMISS_MS);
@@ -348,6 +316,8 @@ export function CompositeTaskWizard({
           onTitleChange={setTitle}
           operator={operator}
           onOperatorChange={setOperator}
+          isOrdered={isOrdered}
+          onOrderedChange={setIsOrdered}
           onCancel={resetForm}
           onNext={() => setCurrentStep(2)}
         />
@@ -367,9 +337,6 @@ export function CompositeTaskWizard({
           compositeLeafPreviews={compoundLeafPreviews}
           onUpdateSubtask={updateSubtask}
           onRemoveSubtask={removeSubtask}
-          onStepFieldChange={updateInlineStep}
-          onAddStep={addStep}
-          onRemoveStep={removeStep}
           onToggleLibraryItem={toggleLibraryItem}
           onAddInline={addInlineSubtask}
           onBack={() => setCurrentStep(1)}

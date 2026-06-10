@@ -180,8 +180,6 @@ struct CompositeSubtaskCardView: View {
                 maxCount: $item.inlineMaxCountStr,
                 unit: $item.inlineUnit
             )
-        case .progress:
-            progressStepsContent
         }
     }
 
@@ -238,38 +236,8 @@ struct CompositeSubtaskCardView: View {
         item.inlineAction = ""
         item.inlineUnit = ""
         item.inlineMaxCountStr = ""
-        item.inlineSteps = target == .progress ? [ProgressStepFormState()] : []
+        item.inlineSteps = []
         item.pendingTypeSwitch = nil
-    }
-
-    @ViewBuilder
-    private var progressStepsContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Steps")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-            ForEach(Array(item.inlineSteps.indices), id: \.self) { index in
-                ProgressStepRowView(
-                    index: index,
-                    step: Binding(
-                        get: { item.inlineSteps[index] },
-                        set: { item.inlineSteps[index] = $0 }
-                    ),
-                    stepCount: item.inlineSteps.count,
-                    onRemove: { item.inlineSteps.remove(at: index) }
-                )
-            }
-            Button("+ Add Step") {
-                item.inlineSteps.append(ProgressStepFormState())
-            }
-            .font(.caption)
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(.systemGray6))
-        )
     }
 
     // MARK: - Readiness
@@ -295,33 +263,6 @@ struct CompositeSubtaskCardView: View {
             if u.isEmpty { return Readiness(ready: false, message: "Add a unit (e.g. \"miles\").") }
             if max < 1 { return Readiness(ready: false, message: "Add a goal of at least 1.") }
             return Readiness(ready: true, message: nil)
-        case .progress:
-            let t = item.inlineTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            if t.isEmpty { return Readiness(ready: false, message: "Add a title for this progress task.") }
-            if item.inlineSteps.isEmpty {
-                return Readiness(ready: false, message: "Add at least one step.")
-            }
-            for step in item.inlineSteps {
-                switch step.type {
-                case .normal:
-                    if step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        return Readiness(ready: false, message: "Each normal step needs a title.")
-                    }
-                case .counting:
-                    if step.action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        return Readiness(ready: false, message: "Each counting step needs an action.")
-                    }
-                    if step.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        return Readiness(ready: false, message: "Each counting step needs a unit.")
-                    }
-                    if (Int(step.maxCount) ?? 0) < 1 {
-                        return Readiness(ready: false, message: "Each counting step needs a goal of at least 1.")
-                    }
-                default:
-                    break
-                }
-            }
-            return Readiness(ready: true, message: nil)
         }
     }
 
@@ -335,15 +276,6 @@ struct CompositeSubtaskCardView: View {
                 || !item.inlineAction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || !item.inlineUnit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || !item.inlineMaxCountStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .progress:
-            if !t.isEmpty { return true }
-            for step in item.inlineSteps {
-                if !step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-                if !step.action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-                if !step.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-                if !step.maxCount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-            }
-            return false
         }
     }
 
@@ -402,7 +334,7 @@ struct CompositeSubtaskCardView: View {
             let leaves = compositeSubtaskCounts[ct.id] ?? 0
             return ExistingRow(
                 title: ct.title,
-                typeLabel: "composite",
+                typeLabel: "compound",
                 subtitle: Self.buildCompositeSubtitle(for: ct.id, previews: compositeLeafPreviews),
                 usageHint: "\(leaves) subtask\(leaves == 1 ? "" : "s")"
             )
@@ -430,7 +362,7 @@ struct CompositeSubtaskCardView: View {
             }
             return derived
         case .compound where task.isOrdered == true:
-            // Former Progress = compound + isOrdered=true under the unified model.
+            // Ordered compound — show step count from compound_children.
             let n = stepCounts[task.id] ?? 0
             if n == 0 { return "" }
             return "\(n) step\(n == 1 ? "" : "s")"
