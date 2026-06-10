@@ -32,7 +32,7 @@ the overhaul**, because it corrects the conceptual model, not the visual design.
 | # | Move | Impact | Effort | Phase |
 |---|------|--------|--------|-------|
 | 1 | Merge user-facing Progress/Composite → one **Compound** type + "Ordered steps" toggle | High | Medium | A (now) |
-| 2 | Explain Achievement jargon (Greenlog/Bingo) + stop the create-then-can't-place trap | High | Low | A (now) |
+| 2 | Explain Achievement jargon (Greenlog/Bingo) + its auto-complete-from-another-board behavior | High | Low | A (now) |
 | 3 | Goal-first creation entry ("What are you tracking?") that picks the type for the user | High | High | B (overhaul) |
 | 4 | Warm first-run: inline first-board CTA on empty states + one recurring timeframe on by default | High | Medium | B (overhaul) |
 | 5 | Resolve Create-tab vs Tasks-tab "create" overlap (Create ≠ create-anything) | Medium | Medium | B (overhaul) |
@@ -65,16 +65,18 @@ the option (ordered or not). *This is Phase A, Fix 2.*
 ### 2.2 Achievement is a jargon trap — **Major**
 Achievement creation surfaces the domain terms **Greenlog** and **Bingo** as
 trigger choices with zero in-UI explanation (`CreateNewTaskForm.tsx:199-213`, iOS
-`CreateNewTaskFormView.swift:258-266`). Worse, a user can create an Achievement on
-the Tasks tab, then discover it is silently **absent from the board wizard's task
-picker** (Achievements are cross-board watchers, never placed). Create-then-hunt is
-a dead-end.
+`CreateNewTaskFormView.swift:258-266`). The unique completion model is also
+unexplained: an Achievement *is* placed on a board (as a square — via the square
+place/swap flow; `CellSwapModal` includes `ACHIEVEMENT`, `BoardPlaySurface`
+renders the badge), but instead of being checked off it **auto-completes when the
+board/template it watches hits the trigger**. It's also hidden from the board
+*creation* wizard's bulk task picker (placement happens on the board via
+place/swap, not in the wizard), which can briefly confuse someone who looks there.
 
 **Recommendation:** keep the domain terms verbatim (they are correct vocabulary)
-but add a one-line explainer at the point of choice; and signal in the type picker
-/ Tasks-tab chip that Achievement is a watcher/meta task, not a board square.
-*Phase A, Fix 3.* Cycle-detection feedback (currently only on save failure) should
-move inline — Phase B.
+but add a one-line explainer at the point of choice describing the auto-completing
+behavior. *Phase A, Fix 3.* Cycle-detection feedback (currently only on save
+failure) should move inline — Phase B.
 
 ### 2.3 Counting label drift: "Max" vs "Goal" — **Minor**
 Commit f318ef4 standardized counting on "Goal" but missed two live inputs:
@@ -205,8 +207,8 @@ Corrects mental model + terminology; survives any visual redesign.
 - **Fix 1** — counting "Max" → "Goal" (resolves 2.3).
 - **Fix 2** — merge Progress/Composite → unified Compound + "Ordered steps" toggle;
   merge filter chips/badges; drop half-broken inline "progress" (resolves 2.1, 2.4).
-- **Fix 3** — Achievement Greenlog/Bingo explainers + watcher/meta signposting
-  (resolves 2.2 jargon + trap).
+- **Fix 3** — Achievement Greenlog/Bingo explainers + auto-completing-square
+  behavior explained at point of choice (resolves 2.2).
 
 ### Phase B — overhaul-coupled (design + build with the redesign)
 Goal-first creation (§5.1), unified "+" (§5.2), warm onboarding (§5.3, resolves 4.1),
