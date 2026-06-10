@@ -421,7 +421,7 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 - **Don't copy from old code**: If archived/legacy code exists, it's reference only.
 - **Don't use Firestore as primary storage**: Local DB is source of truth.
 - **Don't trust denormalized values during conflicts**: Recompute from source data.
-- **Counting task field order**: Action → Max Count → Unit (not Action → Unit → Max Count).
+- **Counting task field order**: Action → Goal → Unit (not Action → Unit → Goal). The "Goal" field is the `maxCount` value/column — labelled "Goal" in the UI.
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
 - **Compound child auto-creation**: creating a compound task with inline subtasks creates a standalone `Task` per subtask, linked via `compound_children.childTaskId`, so subtasks are immediately pool-addable and enable cross-board rollup. Applies to `createTask()` (web), playground write blocks (iOS), and `CompositeTaskWizard` inline subtasks.
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.

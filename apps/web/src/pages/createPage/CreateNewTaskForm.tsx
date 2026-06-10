@@ -283,7 +283,7 @@ export function CreateNewTaskForm({
 
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-maxcount">
-                  Max<span className={styles.required}>*</span>
+                  Goal<span className={styles.required}>*</span>
                 </label>
                 <input
                   id="create-task-maxcount"
