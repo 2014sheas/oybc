@@ -29,5 +29,15 @@
 	<string>1</string>
 	<key>GIDClientID</key>
 	<string>401044947930-j31aflmqoltb2gm4luj6gt2l5opn0beb.apps.googleusercontent.com</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>BricolageGrotesque-Bold.ttf</string>
+		<string>BricolageGrotesque-ExtraBold.ttf</string>
+		<string>Archivo-Regular.ttf</string>
+		<string>Archivo-Medium.ttf</string>
+		<string>Archivo-SemiBold.ttf</string>
+		<string>Archivo-Bold.ttf</string>
+		<string>Archivo-ExtraBold.ttf</string>
+	</array>
 </dict>
 </plist>

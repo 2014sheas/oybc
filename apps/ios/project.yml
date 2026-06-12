@@ -59,6 +59,10 @@ targets:
       # project on commit). If you hit "Generation Error", `cp` the plist from
       # another OYBC checkout or download from Firebase Console.
       - path: OYBC/GoogleService-Info.plist
+      # Riso redesign — bundled display/body fonts (Bricolage Grotesque +
+      # Archivo, static weights instanced from the OFL variable fonts).
+      # Registered for use via UIAppFonts below. OFL.txt licenses ship alongside.
+      - path: OYBC/Resources/Fonts
     dependencies:
       - package: GRDB
       - package: FirebaseSDK
@@ -73,6 +77,14 @@ targets:
       path: OYBC/Info.plist
       properties:
         GIDClientID: "401044947930-j31aflmqoltb2gm4luj6gt2l5opn0beb.apps.googleusercontent.com"
+        UIAppFonts:
+          - BricolageGrotesque-Bold.ttf
+          - BricolageGrotesque-ExtraBold.ttf
+          - Archivo-Regular.ttf
+          - Archivo-Medium.ttf
+          - Archivo-SemiBold.ttf
+          - Archivo-Bold.ttf
+          - Archivo-ExtraBold.ttf
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - "com.googleusercontent.apps.401044947930-j31aflmqoltb2gm4luj6gt2l5opn0beb"
