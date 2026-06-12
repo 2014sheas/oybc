@@ -2,11 +2,14 @@ import SwiftUI
 
 /// 5×5 thumbnail grid shown in each `RisoBoardCard`.
 ///
-/// Renders `completedCount` out of `totalCount` cells as filled (red) using
-/// a deterministic scatter seeded by `boardId`. This is a **count-based
-/// approximation** — the actual completed squares are not fetched per-card
-/// to avoid per-board DB reads on the list. The scatter is stable across
-/// renders (same id → same pattern) so snapshot tests are deterministic.
+/// Always a fixed 5×5 (matching the prototype's `.r-mini`, `repeat(5,1fr)`)
+/// for visual consistency across cards regardless of the board's real size.
+/// The number of filled (red) cells is the `completedCount / totalCount`
+/// fraction scaled to 25 — so a 4/9 board fills ~11/25, not 4/25. Fills are a
+/// deterministic scatter seeded by `boardId` (stable across renders →
+/// snapshot-deterministic). This is a **count-based approximation**: the
+/// actual completed squares aren't fetched per-card, to avoid per-board DB
+/// reads on the list.
 ///
 /// `size` controls the rendered width/height of the whole grid; each cell
 /// scales to fill the grid with 1px gaps.
@@ -23,11 +26,15 @@ struct RisoMiniGrid: View {
     private let rows = 5
     private let totalCells = 25
 
-    /// Deterministically scatter `completedCount` fills across 25 cells.
+    /// Deterministically scatter the proportional fill across 25 cells.
     /// Seeds a simple LCG from the board id hash so the pattern is stable
     /// without depending on `boardId` having any particular format.
     private var filledIndices: Set<Int> {
-        let clamp = min(max(0, completedCount), totalCells)
+        // Scale completed/total onto the fixed 25-cell grid so non-5×5 boards
+        // (e.g. 4/9) read proportionally (~11/25), not as a raw count.
+        let fraction = totalCount > 0 ? Double(completedCount) / Double(totalCount) : 0
+        let scaled = Int((fraction * Double(totalCells)).rounded())
+        let clamp = min(max(0, scaled), totalCells)
         guard clamp > 0 else { return [] }
 
         // Build a pseudo-random ordering of 0..<25 seeded by the board id.

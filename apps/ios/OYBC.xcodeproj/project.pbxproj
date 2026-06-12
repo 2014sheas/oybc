@@ -91,7 +91,6 @@
 		5D6288C62B25E12BE7E77F71 /* testMiniGridEmpty.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 1BB6F0143586A54794A2D260 /* testMiniGridEmpty.1.png */; };
 		5E33E657583B995E01848CEA /* Archivo-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6EFFAB3FCECFD0D68C67249D /* Archivo-ExtraBold.ttf */; };
 		5EC6C50E4798BA11E0925C02 /* Archivo-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A20F7576E6311C71B7255FA /* Archivo-Bold.ttf */; };
-		5F33DA346C8E917527339609 /* testBoardsHomeComposedDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = F36E5452D766F95B6B77DD94 /* testBoardsHomeComposedDark.1.png */; };
 		605EE795A48A1A9E762147F6 /* testSetupStepCoreBoard.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6409CA3CC321B490B56B7287 /* testSetupStepCoreBoard.1.png */; };
 		619A5E4D57F256C847CC9A50 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0436CC51A477FF70932A9546 /* SyncQueue.swift */; };
 		62B6681E15366A8DFDF4BD91 /* ProgressDerivationPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B60E3F0ADD35659E672AC1 /* ProgressDerivationPanelView.swift */; };
@@ -114,7 +113,6 @@
 		71078EBFB398E4806C6E73D7 /* testBoardCardActiveDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 2EDE0F9BA72EC7E52EDBD5ED /* testBoardCardActiveDark.1.png */; };
 		727E408F7B9D151588B89A3E /* CompositeSubtaskCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5C0E05C2992D5367E4DFF6 /* CompositeSubtaskCardView.swift */; };
 		73FEA31DFBD72C8B2E3173C5 /* testPreviewStepRecurring.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C492F972D8DDACDCB86592D5 /* testPreviewStepRecurring.1.png */; };
-		7613517111B35FA6866547FC /* testBoardsHomeComposedLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6E2675810D7F504404133320 /* testBoardsHomeComposedLight.1.png */; };
 		78B919CA0E248AC5C374B5A0 /* CellSwapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80F12FD6113B77ED9069745C /* CellSwapSheet.swift */; };
 		791DEFB79CC96B53EB75A769 /* OperatorSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16692D5EE31A40B7686E3C2E /* OperatorSelectorView.swift */; };
 		798B9D5E6A5156AB6B789C1A /* testBlipPlaceholderDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6603E6FD9314A565C3D4C35B /* testBlipPlaceholderDark.1.png */; };
@@ -363,7 +361,6 @@
 		6AAEEFFDD3526743C95A13D7 /* SubtaskChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtaskChipView.swift; sourceTree = "<group>"; };
 		6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
 		6DEA8E9D24B3205D81595221 /* BoardPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardPlayView.swift; sourceTree = "<group>"; };
-		6E2675810D7F504404133320 /* testBoardsHomeComposedLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBoardsHomeComposedLight.1.png; sourceTree = "<group>"; };
 		6EFFAB3FCECFD0D68C67249D /* Archivo-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-ExtraBold.ttf"; sourceTree = "<group>"; };
 		6F64CB8E17DA10D57D43FFB1 /* CoreBoardBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardBrowserView.swift; sourceTree = "<group>"; };
 		6FD904B6FD6BEEB84E59BB51 /* SyncQueueMaintenanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueueMaintenanceTests.swift; sourceTree = "<group>"; };
@@ -452,7 +449,6 @@
 		EF0197805BBDEC8D2A8EE5BD /* BoardWizardStepsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardStepsSnapshotTests.swift; sourceTree = "<group>"; };
 		F1B2ACE126705714BD4250D8 /* testMiniGridFull.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testMiniGridFull.1.png; sourceTree = "<group>"; };
 		F30F6D8151D9EDB04EF26A15 /* SyncDashboardPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDashboardPlayground.swift; sourceTree = "<group>"; };
-		F36E5452D766F95B6B77DD94 /* testBoardsHomeComposedDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBoardsHomeComposedDark.1.png; sourceTree = "<group>"; };
 		F466D95B8863BB7F8688582C /* testCoreGridAllReadyLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreGridAllReadyLight.1.png; sourceTree = "<group>"; };
 		F5C010E67EB720199154237F /* CompositeTaskWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositeTaskWizardView.swift; sourceTree = "<group>"; };
 		F6D35D62C9AA4E9927899346 /* RisoBoardsHomeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardsHomeSnapshotTests.swift; sourceTree = "<group>"; };
@@ -464,7 +460,7 @@
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF05FDF400BEB2A8666662F9 /* testSetupStepBlank.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepBlank.1.png; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_01FBE3EA-628F-45A1-A91F-2CBAD0EFDC46" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_A07899F6-CFBB-4A59-9640-F2F660D800DF" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -536,8 +532,6 @@
 				5B16D598F6ECDDED77B30C53 /* testBoardCardCompletedLight.1.png */,
 				0C16FC390F02A93B4BBE03EE /* testBoardCardDraftLight.1.png */,
 				317B3E5BBBD2A1CC00924B5F /* testBoardCardExpiringLight.1.png */,
-				F36E5452D766F95B6B77DD94 /* testBoardsHomeComposedDark.1.png */,
-				6E2675810D7F504404133320 /* testBoardsHomeComposedLight.1.png */,
 				4E5286277270766E6AD2D9CC /* testCoreGridAllDoneLight.1.png */,
 				960DDDCDDC6676B323DA630C /* testCoreGridAllReadyDark.1.png */,
 				F466D95B8863BB7F8688582C /* testCoreGridAllReadyLight.1.png */,
@@ -1011,10 +1005,10 @@
 			path = BoardWizardStepsSnapshotTests;
 			sourceTree = "<group>";
 		};
-		"TEMP_4F8BF188-65ED-4AF7-BC08-7FF3AB123116" /* ios */ = {
+		"TEMP_72FC4A58-AF90-4124-9EE9-85596D2A1656" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_01FBE3EA-628F-45A1-A91F-2CBAD0EFDC46" /* Signing.xcconfig */,
+				"TEMP_A07899F6-CFBB-4A59-9640-F2F660D800DF" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1150,8 +1144,6 @@
 				97F2BFB33EAF310F1B46DF1A /* testBoardCardCompletedLight.1.png in Resources */,
 				D2B9369898AD88DB0B81E6B3 /* testBoardCardDraftLight.1.png in Resources */,
 				FAE5B0C3C176408D8752FB5F /* testBoardCardExpiringLight.1.png in Resources */,
-				5F33DA346C8E917527339609 /* testBoardsHomeComposedDark.1.png in Resources */,
-				7613517111B35FA6866547FC /* testBoardsHomeComposedLight.1.png in Resources */,
 				3B948BD8C841788777A7506A /* testCoreBoardsSectionAllFour.1.png in Resources */,
 				9E1091222FCFFB577CD21371 /* testCoreBoardsSectionSingleDaily.1.png in Resources */,
 				68C30BC933E0EE6E7694AAB6 /* testCoreGridAllDoneLight.1.png in Resources */,
@@ -1426,7 +1418,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_01FBE3EA-628F-45A1-A91F-2CBAD0EFDC46" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_A07899F6-CFBB-4A59-9640-F2F660D800DF" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1523,7 +1515,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_01FBE3EA-628F-45A1-A91F-2CBAD0EFDC46" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_A07899F6-CFBB-4A59-9640-F2F660D800DF" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

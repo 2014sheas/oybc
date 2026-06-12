@@ -60,6 +60,9 @@ struct BoardListView: View {
     @State private var deleteError: String?
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
     @State private var spawnVM = RecurringBoardSpawnViewModel()
+    /// User's week-start pref ("monday"/"sunday") for the core grid's local
+    /// window-boundary fallback. Loaded in `onAppearLoad`.
+    @State private var weekStartDayPref: String = "monday"
 
     // MARK: - Constants
 
@@ -221,6 +224,7 @@ struct BoardListView: View {
         RisoCoreTimeframeGrid(
             slots: pendingRecurringVM.slots,
             now: Date(),
+            weekStartDay: weekStartDayPref,
             onSelect: { timeframe, windowStart in
                 // If there's a current board for this slot, open the pager.
                 // Otherwise open the browser so the user can create or browse.
@@ -339,23 +343,23 @@ struct BoardListView: View {
 
     // MARK: - Create action
 
-    /// Fires the create-board callback. Because MainTabView doesn't yet pass
-    /// `onCreateBoard`, we fall back to `onCreateForWindow` with the current
-    /// window for the user's default timeframe (daily) as a reasonable default,
-    /// mirroring the original banner-tap behavior. If neither callback is wired,
-    /// the tap is a no-op (playground / preview path).
+    /// Fires the create-board callback. The production path is `onCreateBoard`
+    /// (wired by MainTabView to switch to the Create tab with no pre-fill). The
+    /// `onCreateForWindow` fallback covers the playground / preview path where
+    /// only that callback is wired — note it *does* pre-fill the current daily
+    /// window. If neither callback is wired, the tap is a no-op.
     private func handleCreateTap() {
         if let onCreateBoard {
             onCreateBoard()
             return
         }
-        // Fallback: navigate to Create tab with no pre-fill by calling
-        // onCreateForWindow with the current daily window.
+        // Fallback (playground/preview): open the wizard pre-filled with the
+        // current daily window via onCreateForWindow.
         if let onCreateForWindow,
            let window = computeTimeframeBoundaries(
                timeframe: .daily,
                referenceDate: Date(),
-               weekStartDay: "monday"
+               weekStartDay: weekStartDayPref
            ) {
             onCreateForWindow(.daily, window.start)
         }
@@ -394,6 +398,7 @@ struct BoardListView: View {
             _Concurrency.Task {
                 let user = (try? AppDatabase.shared.fetchUser(id: userId)) ?? nil
                 let weekStartDay = user?.decodedPreferences.weekStartDay ?? .monday
+                await MainActor.run { weekStartDayPref = weekStartDay.rawValue }
                 await spawnVM.runSpawnPass(userId: userId, weekStartDay: weekStartDay)
                 await MainActor.run { loadBoards() }
             }

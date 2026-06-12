@@ -25,6 +25,11 @@ struct RisoCoreTimeframeGrid: View {
     /// Current date used to fill in missing slots and compute expiry.
     var now: Date = Date()
 
+    /// User's week-start preference ("monday"/"sunday"), used only for the
+    /// local window-boundary fallback when a weekly slot isn't loaded — keeps
+    /// the Weekly card's window in sync with the rest of the app.
+    var weekStartDay: String = "monday"
+
     /// Fired when the user taps a card. Receives the timeframe and the
     /// ISO8601 local window-start string for that card.
     var onSelect: ((Timeframe, String) -> Void)?
@@ -47,6 +52,7 @@ struct RisoCoreTimeframeGrid: View {
                     timeframe: timeframe,
                     slot: slot,
                     now: now,
+                    weekStartDay: weekStartDay,
                     onTap: { windowStart in
                         onSelect?(timeframe, windowStart)
                     }
@@ -64,16 +70,18 @@ private struct CoreTimeframeCard: View {
     let timeframe: Timeframe
     let slot: CoreBoardSlot?
     let now: Date
+    let weekStartDay: String
     let onTap: (String) -> Void
 
     private var windowStart: String {
         if let slot { return slot.windowStart }
         // Fallback: compute boundaries locally so the card still has a
-        // valid windowStart even if the slot was not loaded yet.
+        // valid windowStart even if the slot was not loaded yet. Respect the
+        // user's week-start pref so the Weekly window matches the rest of the app.
         guard let window = computeTimeframeBoundaries(
             timeframe: timeframe,
             referenceDate: now,
-            weekStartDay: "monday"
+            weekStartDay: weekStartDay
         ) else { return "" }
         return wizardLocalISOString(window.start)
     }
@@ -103,10 +111,13 @@ private struct CoreTimeframeCard: View {
         switch board.status {
         case .completed: return .done
         case .active:
-            // "Expiring" = the board's end date is within 24 hours of now.
+            // "Expiring" = the board's end date is within the next 24 hours.
+            // Already-past end dates (negative hoursLeft) are NOT expiring —
+            // a current-window core board shouldn't be expired, but guard it
+            // so past-window boards read as Active rather than Expiring.
             if let end = parseISO8601Date(board.endDate) {
                 let hoursLeft = end.timeIntervalSince(now) / 3600
-                return hoursLeft < 24 ? .expiring : .active
+                return (hoursLeft >= 0 && hoursLeft < 24) ? .expiring : .active
             }
             return .active
         default:

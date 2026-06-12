@@ -16,6 +16,12 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
+    /// Fixed "now" for core-grid status computation so snapshots stay
+    /// deterministic as the real clock moves (the grid's Ready/Active/Expiring
+    /// derivation is relative to `now`). Noon, 2026-06-12 — inside the fixture
+    /// windows. Parsed with the same helper the grid uses for board dates.
+    private let fixedNow: Date = parseISO8601Date("2026-06-12T12:00:00.000") ?? Date(timeIntervalSince1970: 1_781_265_600)
+
     // MARK: - RisoMiniGrid
 
     func testMiniGridEmpty() {
@@ -203,8 +209,8 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
             id: "b-monthly", name: "June Goals",
             timeframe: .monthly, status: .active,
             startDate: "2026-06-01T00:00:00.000",
-            // End date set to yesterday to force "expiring" (past = expiring calc skips, use active)
-            endDate: "2026-06-12T01:00:00.000"
+            // End date within 24h after fixedNow (noon Jun 12) → "Expiring".
+            endDate: "2026-06-12T20:00:00.000"
         )
         let yearlyBoard = SnapshotFixtures.makeBoard(
             id: "b-yearly", name: "2026 Goals",
@@ -350,7 +356,7 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
         ]
         return ZStack {
             Color.risoPaper
-            RisoCoreTimeframeGrid(slots: slots, now: Date())
+            RisoCoreTimeframeGrid(slots: slots, now: fixedNow)
                 .padding(20)
         }
     }
@@ -370,7 +376,7 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
                 currentBoard: SnapshotFixtures.makeBoard(id: "bw", name: "Weekly Wellness", timeframe: .weekly, status: .active)),
             CoreBoardSlot(timeframe: .monthly, windowStart: "2026-06-01T00:00:00.000", windowEnd: "2026-06-30T23:59:59.999", windowLabel: "June 2026",
                 currentBoard: SnapshotFixtures.makeBoard(id: "bm", name: "June Goals", timeframe: .monthly, status: .active,
-                    startDate: "2026-06-01T00:00:00.000", endDate: "2026-06-12T01:00:00.000")),
+                    startDate: "2026-06-01T00:00:00.000", endDate: "2026-06-12T20:00:00.000")),
             CoreBoardSlot(timeframe: .yearly, windowStart: "2026-01-01T00:00:00.000", windowEnd: "2026-12-31T23:59:59.999", windowLabel: "2026",
                 currentBoard: SnapshotFixtures.makeBoard(id: "by", name: "2026 Goals", timeframe: .yearly, status: .active)),
         ]
@@ -401,7 +407,7 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
                     .padding(.bottom, 16)
 
                     // Core grid
-                    RisoCoreTimeframeGrid(slots: slots, now: Date())
+                    RisoCoreTimeframeGrid(slots: slots, now: fixedNow)
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 4)
 
