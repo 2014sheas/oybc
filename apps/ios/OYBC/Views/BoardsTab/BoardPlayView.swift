@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import GRDB
 
 // MARK: - Sync Queue Helpers (private to this file)
@@ -176,9 +177,13 @@ private struct BoardPlayTitleChrome: ViewModifier {
     let enabled: Bool
     func body(content: Content) -> some View {
         if enabled {
+            // Riso play board owns its header in-content (back square + name +
+            // status badge), so suppress the system nav title AND back button
+            // to avoid duplicate back/name affordances. The Edit toolbar item
+            // (defined separately) is unaffected.
             content
-                .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(true)
         } else {
             content
         }
@@ -241,6 +246,15 @@ struct BoardPlayView: View {
 
     @State private var isProcessing = false
     @State private var bingoMessage: String?
+    // MARK: Riso visual layer state
+    /// Whether to show the GREENLOG full-bleed celebration overlay.
+    @State private var showGreenlogOverlay: Bool = false
+    /// Whether to show the bingo toast (drops from top).
+    @State private var showBingoToast: Bool = false
+    /// Subtitle for the current bingo toast (e.g. "Row 2 complete!").
+    @State private var bingoToastSubtitle: String = ""
+    /// Board task id of the counting cell whose stepper sheet is open.
+    @State private var countingStepperBoardTaskId: String?
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
@@ -308,55 +322,114 @@ struct BoardPlayView: View {
         return isBoardExpired(b)
     }
 
+    /// Set of 0-based cell indices (row * gridSize + col) that are part of a
+    /// completed bingo line. Drives the gold-ring highlight on `RisoBoardPlayCell`.
+    private var highlightedSquareIndices: Set<Int> {
+        guard let lines = board?.completedLineIds, !lines.isEmpty else { return [] }
+        return BingoDetection.getHighlightedSquares(completedLines: lines, gridSize: gridSize)
+    }
+
+    /// Kicker text derived from the board's timeframe (e.g. "WEEKLY BOARD").
+    private var boardKicker: String {
+        guard let b = board else { return "BOARD" }
+        switch b.timeframe {
+        case .daily:   return "DAILY BOARD"
+        case .weekly:  return "WEEKLY BOARD"
+        case .monthly: return "MONTHLY BOARD"
+        case .yearly:  return "YEARLY BOARD"
+        case .custom:  return "CUSTOM BOARD"
+        }
+    }
+
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        ZStack(alignment: .top) {
+            // ── Paper background ──
+            RisoPaperBackground()
+                .ignoresSafeArea()
 
-                // ── Flash message banner ──
-                if let msg = bingoMessage {
-                    Text(msg)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            msg == "GREENLOG!"
-                                ? Color.green.opacity(0.2)
-                                : Color.accentColor.opacity(0.15)
+            // ── Main scrollable content ──
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+
+                    // ── In-content header ──
+                    risoPlayHeader
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.top, 12)
+
+                    // ── Stat bar ──
+                    if let b = board {
+                        RisoStatBar(
+                            completedTasks: b.completedTasks,
+                            totalTasks: b.totalTasks,
+                            linesCompleted: b.linesCompleted,
+                            expiryText: risoExpiryText(board: b)
                         )
-                        .foregroundColor(msg == "GREENLOG!" ? .green : .accentColor)
-                        .cornerRadius(8)
-                        .padding(.horizontal)
-                }
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.top, 14)
+                        .padding(.bottom, 13)
+                    }
 
-                // ── Stats bar ──
-                if let b = board {
-                    statsBar(board: b)
-                        .padding(.horizontal)
-                }
+                    // ── Grid ──
+                    if board != nil {
+                        risoGridSection
+                            .padding(.horizontal, Riso.gutter)
+                    }
 
-                // ── Grid ──
-                if board != nil {
-                    gridSection
-                        .padding(.horizontal)
-                }
+                    // ── Expired banner (below grid) ──
+                    if isBoardLocked {
+                        Text("Board expired — interactions disabled")
+                            .font(.risoBody(12, .semibold))
+                            .foregroundStyle(Color.risoRed)
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.top, 8)
+                    }
 
-                // ── Expiry banner ──
-                if isBoardLocked, let b = board {
-                    let expiredDate = DateFormatting.displayDate(from: b.endDate)
-                    Text("Board expired on \(expiredDate) — interactions disabled")
-                        .font(.subheadline)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.red.opacity(0.12))
-                        .foregroundColor(.red)
-                        .cornerRadius(8)
-                        .padding(.horizontal)
+                    Spacer(minLength: 20)
                 }
             }
-            .padding(.vertical)
+
+            // ── Bingo toast (drops from top) ──
+            if showBingoToast {
+                RisoBingoToast(
+                    subtitle: bingoToastSubtitle,
+                    bingoCount: board?.linesCompleted ?? 1
+                )
+                .padding(.horizontal, Riso.gutter)
+                .padding(.top, 54)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    )
+                )
+                .zIndex(10)
+            }
+
+            // ── GREENLOG overlay (full-bleed) ──
+            if showGreenlogOverlay, let b = board {
+                RisoGreenlogOverlay(
+                    completedTasks: b.completedTasks,
+                    totalTasks: b.totalTasks,
+                    linesCompleted: b.linesCompleted,
+                    boardName: b.name,
+                    onShare: {
+                        // Share sheet stub — wire to ShareSheet when available
+                    },
+                    onDismiss: {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            showGreenlogOverlay = false
+                        }
+                    }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(20)
+            }
+
+            // ── Counting stepper sheet ──
+            // Presented as a sheet (see .sheet modifier below)
         }
         .modifier(BoardPlayTitleChrome(title: board?.name ?? "Board", enabled: !embedded))
         // M2 — toolbar "Edit" button (ACTIVE boards only; DRAFT uses the wizard;
@@ -482,6 +555,48 @@ struct BoardPlayView: View {
             loadBoardTasks()
             loadTaskData()
         }
+        // Counting stepper sheet — Riso pill stepper for counting cells.
+        // Wires to handleCountingTap / handleCountingDecrement; dismiss clears state.
+        .sheet(
+            isPresented: Binding(
+                get: { countingStepperBoardTaskId != nil },
+                set: { if !$0 { countingStepperBoardTaskId = nil } }
+            )
+        ) {
+            if let btId = countingStepperBoardTaskId,
+               let bt = boardTasks.first(where: { $0.id == btId }),
+               let task = taskMap[bt.taskId] {
+                let rawCount = task.currentCount ?? 0
+                let maxVal = task.maxCount ?? 0
+                let isLinked = task.sharedCounterId != nil
+                let displayed: Int = {
+                    if let _ = task.sharedCounterId {
+                        return deriveDisplayedCount(
+                            derivedBaseline: task.baseline ?? 0,
+                            derivedMaxCount: maxVal,
+                            sourceCurrentCount: rawCount
+                        ).displayed
+                    }
+                    return rawCount
+                }()
+                RisoCountingStepperSheet(
+                    taskTitle: task.title,
+                    currentCount: displayed,
+                    maxCount: maxVal,
+                    unitText: task.unit ?? "",
+                    isLinkedCounter: isLinked,
+                    onIncrement: {
+                        handleCountingTap(boardTask: bt, task: task)
+                    },
+                    onDecrement: {
+                        handleCountingDecrement(boardTask: bt, task: task)
+                    },
+                    onDismiss: {
+                        countingStepperBoardTaskId = nil
+                    }
+                )
+            }
+        }
         .sheet(isPresented: Binding(
             get: { detailBoardTaskId != nil },
             set: { if !$0 { detailBoardTaskId = nil } }
@@ -568,120 +683,191 @@ struct BoardPlayView: View {
         return nil
     }
 
-    // MARK: - Stats Bar
+    // MARK: - Riso Play Header
 
-    /// Horizontal stats row: progress fraction, bingo line count, status badge.
-    ///
-    /// - Parameter board: The current board record.
+    /// In-content header: back button (non-embedded only) + kicker + board name + status badge.
     @ViewBuilder
-    private func statsBar(board: Board) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(board.completedTasks)/\(board.totalTasks) tasks · \(board.linesCompleted) \(board.linesCompleted == 1 ? "bingo" : "bingos")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    // Expiry label
-                    let expiry = getExpiryLabel(board)
-                    Text(expiry)
-                        .font(.caption2)
-                        .foregroundColor(isBoardExpired(board) ? .red : .secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                BoardStatusBadgeView(status: board.status)
+    private var risoPlayHeader: some View {
+        HStack(alignment: .top, spacing: 10) {
+            // Back button — hidden when embedded (host owns navigation chrome)
+            if !embedded {
+                // SwiftUI's NavigationStack owns the back gesture; this button
+                // is a visual affordance only. Calling dismiss via the environment
+                // is the idiomatic way to pop without a NavigationLink.
+                risoBackButton
             }
 
-            ProgressView(
-                value: board.totalTasks > 0
-                    ? Double(board.completedTasks) / Double(board.totalTasks)
-                    : 0
-            )
-            .tint(
-                board.completedTasks == board.totalTasks && board.totalTasks > 0
-                    ? .green
-                    : .accentColor
-            )
+            // Kicker + board name
+            VStack(alignment: .leading, spacing: 3) {
+                Text(boardKicker)
+                    .risoKicker()
+                Text(board?.name ?? "")
+                    .font(.risoHead(22, .extraBold))
+                    .tracking(-0.44)
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Status badge
+            if let b = board {
+                risoStatusBadge(status: b.status)
+                    .padding(.top, 4)
+            }
         }
     }
 
-    // MARK: - Grid Section
+    @ViewBuilder
+    private var risoBackButton: some View {
+        // We render a visual back square. The NavigationStack automatically
+        // attaches swipe-back and adds a back button in the nav bar when
+        // !embedded; this in-content square is supplemental UX.
+        // Using the environment's dismiss action is the right hook.
+        BackButton()
+    }
 
     @ViewBuilder
-    private var gridSection: some View {
-        let columns = Array(repeating: GridItem(.fixed(90), spacing: 8), count: gridSize)
+    private func risoStatusBadge(status: BoardStatus) -> some View {
+        let (label, fill, fore): (String, Color, Color) = {
+            switch status {
+            case .active:    return ("ACTIVE",    Color.risoBlue,  Color.risoPaper)
+            case .completed: return ("COMPLETE",  Color.risoGreen, Color.risoPaper)
+            case .draft:     return ("DRAFT",     Color.risoPaper2, Color.risoMuted)
+            case .archived:  return ("ARCHIVED",  Color.risoPaper2, Color.risoMuted)
+            }
+        }()
+        Text(label)
+            .font(.risoHead(10, .bold))
+            .foregroundStyle(fore)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(fill))
+            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+    }
 
-        // Centre the grid horizontally on wide screens.
-        HStack {
-            Spacer(minLength: 0)
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(0..<(gridSize * gridSize), id: \.self) { index in
-                    let row = index / gridSize
-                    let col = index % gridSize
-                    let isCenter = gridSize % 2 == 1
-                        && row == gridSize / 2
-                        && col == gridSize / 2
+    /// Compact expiry string for the stat bar — "4d", "Expired", "Today", etc.
+    private func risoExpiryText(board: Board) -> String {
+        guard board.timeframe != .custom else { return "No end" }
+        guard let end = parseISO8601Date(board.endDate) else { return "—" }
+        let now = Date()
+        guard now <= end else { return "Expired" }
+        let secs = end.timeIntervalSince(now)
+        if secs < 86_400 { return "Today" }
+        let days = Int(ceil(secs / 86_400))
+        return "\(days)d"
+    }
 
-                    if let bt = btByPosition["\(row)-\(col)"] {
-                        playSquare(boardTask: bt)
-                    } else if isCenter,
-                              let b = board,
-                              (b.centerSquareType == .free || b.centerSquareType == .customFree) {
-                        // FREE center — always completed, non-interactive.
-                        InteractiveTaskSquareView(
-                            title: "FREE",
-                            taskType: .normal,
-                            isCompleted: true,
-                            isReadOnly: true
-                        )
-                    } else if !isCenter,
-                              let b = board,
-                              b.status == .active,
-                              !isBoardLocked {
-                        // M4 — Empty non-center cell on an ACTIVE board: show a "+" affordance.
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10)
-                                .strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                                .frame(width: 90, height: 90)
-                            Button {
-                                addCellPos = (row: row, col: col)
-                            } label: {
-                                Image(systemName: "plus.circle")
-                                    .font(.title2)
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
+    // MARK: - Riso Notification helpers
+
+    /// Called on the Main thread after every orchestration / shared-counter run.
+    /// Interprets the `bingoMessage` string set by the existing plumbing and
+    /// triggers the appropriate Riso visual:
+    ///   - "GREENLOG!" → full-bleed overlay (after ~520ms to let the cell pop land)
+    ///   - "Bingo! …" → drop-in toast (~2.8s then auto-dismiss)
+    ///   - other messages (reactivation, swap errors) → no Riso visual (bingoMessage
+    ///     remains set for potential legacy readers, but we don't toast these)
+    ///
+    /// The method is idempotent — calling it with the same message while the toast
+    /// is already showing is a no-op.
+    private func triggerRisoNotification(from message: String) {
+        if message == "GREENLOG!" {
+            // Delay to let the 25th cell pop animation finish (~340ms + margin)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+                withAnimation(.easeIn(duration: 0.3)) {
+                    showGreenlogOverlay = true
+                }
+            }
+        } else if message.lowercased().contains("bingo") && !message.lowercased().contains("lost") {
+            // Extract a short subtitle from the message
+            // Original format: "Bingo! (row_1, col_2)" → "Line complete!"
+            bingoToastSubtitle = "Line complete!"
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                showBingoToast = true
+            }
+            // Auto-dismiss after ~2.8s
+            _Concurrency.Task.detached { @MainActor in
+                try? await _Concurrency.Task.sleep(nanoseconds: 2_800_000_000)
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showBingoToast = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Riso Grid Section
+
+    @ViewBuilder
+    private var risoGridSection: some View {
+        let cols = Array(repeating: GridItem(.flexible(), spacing: Riso.cellGap), count: gridSize)
+        let highlighted = highlightedSquareIndices
+
+        LazyVGrid(columns: cols, spacing: Riso.cellGap) {
+            ForEach(0..<(gridSize * gridSize), id: \.self) { index in
+                let row = index / gridSize
+                let col = index % gridSize
+                let isCenter = gridSize % 2 == 1
+                    && row == gridSize / 2
+                    && col == gridSize / 2
+
+                if let bt = btByPosition["\(row)-\(col)"] {
+                    risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
+                } else if isCenter,
+                          let b = board,
+                          (b.centerSquareType == .free || b.centerSquareType == .customFree) {
+                    // FREE center cell
+                    RisoBoardPlayCell(
+                        title: "FREE",
+                        taskType: .normal,
+                        isCompleted: false,
+                        isBingoLine: highlighted.contains(index),
+                        isCenter: true
+                    )
+                } else if !isCenter,
+                          let b = board,
+                          b.status == .active,
+                          !isBoardLocked {
+                    // M4 — Empty non-center cell on an ACTIVE board: dashed "+" affordance.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Riso.cellRadius)
+                            .strokeBorder(
+                                Color.risoInk.opacity(0.35),
+                                style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                            )
+                        Button {
+                            addCellPos = (row: row, col: col)
+                        } label: {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(Color.risoMuted)
                         }
-                    } else {
-                        // Empty placeholder to preserve grid alignment
-                        Color.clear
-                            .frame(width: 90, height: 90)
+                        .buttonStyle(.plain)
                     }
+                    .aspectRatio(1, contentMode: .fit)
+                } else {
+                    // Empty placeholder
+                    Color.clear.aspectRatio(1, contentMode: .fit)
                 }
             }
-            Spacer(minLength: 0)
         }
+        .padding(.bottom, 8)
     }
 
-    /// Renders a tappable `InteractiveTaskSquareView` cell for a non-center board task.
+    // MARK: - Riso Play Square
+
+    /// Renders one `RisoBoardPlayCell` for a placed BoardTask, wiring all tap
+    /// handlers to the existing write/cascade/detection call sites.
     ///
-    /// - Normal: tap toggles completion; context menu for explicit mark/unmark + details.
-    /// - Counting: tap increments +1; context menu for +/- and details.
-    /// - Progress: tap opens the step detail sheet; context menu for complete-all / reset.
-    ///
-    /// All taps are no-ops while `isBoardLocked` or `isProcessing` is true.
-    ///
-    /// - Parameter boardTask: The `BoardTask` to render.
+    /// - Parameters:
+    ///   - boardTask: The `BoardTask` placement record.
+    ///   - index: 0-based grid index (row * gridSize + col) — used for bingo-line lookup.
+    ///   - highlighted: Set of indices that are on a completed bingo line.
     @ViewBuilder
-    private func playSquare(boardTask: BoardTask) -> some View {
+    private func risoPlaySquare(boardTask: BoardTask, index: Int, highlighted: Set<Int>) -> some View {
         let task = taskMap[boardTask.taskId]
         let taskType = task?.type ?? .normal
-        // Completion state lives on Task (not BoardTask) after compound-tasks unification.
-        // Compounds: NEVER read Task.isCompleted (spec §4.1 — NEVER WRITTEN, NEVER READ on
-        // compound rows). Derive completion via CompoundEvaluation so the green-complete
-        // background + checkmark render correctly when all children are done.
-        // Primitives: read the stored column directly.
+        // Completion derivation — preserved verbatim from original playSquare.
+        // Compounds: NEVER read Task.isCompleted. Achievements: derive from
+        // cross-board references. Primitives: read Task.isCompleted directly.
         let isCompleted: Bool = {
             guard let task = task else { return false }
             if task.type == .compound {
@@ -692,49 +878,141 @@ struct BoardPlayView: View {
                 )
             }
             if task.type == .achievement {
-                // ACHIEVEMENT cells derive completion from cross-board
-                // references — mirror DerivationPass's logic locally
-                // so the cell's tint + checkmark match the persisted
-                // board.completedTasks count without a round-trip.
                 return achievementCellIsCompleted(for: task)
             }
             return task.isCompleted
         }()
 
-        let badge = achievementBadge(for: boardTask)
+        // Counting display values — mirrors original playSquare.
+        let rawCount = task?.currentCount ?? 0
+        let maxVal = task?.maxCount ?? 0
+        let isLinkedCounter = task?.sharedCounterId != nil
+        let current: Int = {
+            if let t = task, let _ = t.sharedCounterId {
+                return deriveDisplayedCount(
+                    derivedBaseline: t.baseline ?? 0,
+                    derivedMaxCount: t.maxCount ?? 0,
+                    sourceCurrentCount: rawCount
+                ).displayed
+            }
+            return rawCount
+        }()
 
+        // Compound child progress — mirrors original playSquare.
+        let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
+        let compoundDoneCount = compoundLinks.filter { link in
+            guard let childTask = taskMap[link.childTaskId], !childTask.isDeleted else { return false }
+            if childTask.type == .compound {
+                return CompoundEvaluation.evaluate(
+                    compound: childTask,
+                    childrenByCompound: compoundChildrenByCompound,
+                    taskById: taskMap
+                )
+            }
+            return childTask.isCompleted
+        }.count
+
+        let cellKind: CellTaskType = {
+            switch taskType {
+            case .normal:      return .normal
+            case .counting:    return .counting
+            case .compound:    return .compound
+            case .achievement: return .achievement
+            }
+        }()
+
+        RisoBoardPlayCell(
+            title: task?.title ?? "Unknown",
+            taskType: cellKind,
+            isCompleted: isCompleted,
+            isBingoLine: highlighted.contains(index),
+            isCenter: boardTask.isCenter,
+            isLocked: isBoardLocked,
+            currentCount: current,
+            maxCount: maxVal,
+            compoundDoneCount: compoundDoneCount,
+            compoundChildCount: compoundLinks.count,
+            onTap: {
+                guard !isBoardLocked, !isProcessing else { return }
+                // Haptic feedback — fire immediately on tap (before async write lands)
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
+                switch taskType {
+                case .normal:
+                    handleNormalTap(boardTask: boardTask)
+                case .counting:
+                    // Tap → open counting stepper sheet
+                    countingStepperBoardTaskId = boardTask.id
+                case .compound:
+                    detailBoardTaskId = boardTask.id
+                case .achievement:
+                    break // read-only
+                }
+            }
+        )
+        .contextMenu {
+            risoContextMenu(boardTask: boardTask, task: task, isCompleted: isCompleted, taskType: taskType, current: current, maxVal: maxVal, isLinkedCounter: isLinkedCounter)
+        }
+    }
+
+    /// Context menu items — preserved exactly from original `playSquare`, now
+    /// extracted so they can be attached to `RisoBoardPlayCell`.
+    @ViewBuilder
+    private func risoContextMenu(
+        boardTask: BoardTask,
+        task: Task?,
+        isCompleted: Bool,
+        taskType: TaskType,
+        current: Int,
+        maxVal: Int,
+        isLinkedCounter: Bool
+    ) -> some View {
         switch taskType {
         case .normal:
-            InteractiveTaskSquareView(
-                title: task?.title ?? "Unknown",
-                taskType: .normal,
-                isCompleted: isCompleted,
-                onTap: {
-                    guard !isBoardLocked else { return }
-                    handleNormalTap(boardTask: boardTask)
-                },
-                achievementBadge: badge
-            )
-            .contextMenu {
-                Button(
-                    isCompleted ? "Mark Incomplete" : "Mark Complete",
-                    systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
-                ) {
-                    guard !isBoardLocked else { return }
-                    handleNormalTap(boardTask: boardTask)
-                }
-                .disabled(isProcessing || isBoardLocked)
+            Button(
+                isCompleted ? "Mark Incomplete" : "Mark Complete",
+                systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
+            ) {
+                guard !isBoardLocked else { return }
+                handleNormalTap(boardTask: boardTask)
+            }
+            .disabled(isProcessing || isBoardLocked)
 
+            Button("View Details", systemImage: "info.circle") {
+                detailBoardTaskId = boardTask.id
+            }
+            Button("Open in library", systemImage: "book") {
+                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+            }
+            if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                Divider()
+                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
+                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
+                }
+                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
+                    removeBoardTaskId = boardTask.id
+                }
+            }
+
+        case .counting:
+            if let t = task {
+                let actionLabel = t.action ?? "item"
+                Button("+ Add \(actionLabel)", systemImage: "plus") {
+                    guard !isBoardLocked else { return }
+                    handleCountingTap(boardTask: boardTask, task: t)
+                }
+                .disabled(current >= maxVal || isProcessing || isBoardLocked)
+                Button("− Remove \(actionLabel)", systemImage: "minus") {
+                    guard !isBoardLocked else { return }
+                    handleCountingDecrement(boardTask: boardTask, task: t)
+                }
+                .disabled(current == 0 || isLinkedCounter || isProcessing || isBoardLocked)
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
                 }
-
                 Button("Open in library", systemImage: "book") {
-                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+                    taskDetailSheetTaskId = TaskIdItem(id: t.id)
                 }
-
-                // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
-                // M4 — Remove from board (same guard).
                 if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
                     Divider()
                     Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
@@ -742,172 +1020,41 @@ struct BoardPlayView: View {
                     }
                     Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
                         removeBoardTaskId = boardTask.id
-                    }
-                }
-            }
-
-        case .counting:
-            // currentCount lives on Task after compound-tasks unification.
-            // For linked derived counters (task.sharedCounterId != nil), the
-            // stored `currentCount` mirrors the source's raw accumulator. Apply
-            // deriveDisplayedCount so the rendered value is baseline-adjusted.
-            let rawCount = task?.currentCount ?? 0
-            let maxVal = task?.maxCount ?? 0
-            let unitText = task?.unit ?? ""
-            let actionLabel = task?.action ?? "item"
-            let isLinkedCounter = task?.sharedCounterId != nil
-            let current: Int = {
-                if let t = task, let _ = t.sharedCounterId {
-                    let result = deriveDisplayedCount(
-                        derivedBaseline: t.baseline ?? 0,
-                        derivedMaxCount: t.maxCount ?? 0,
-                        sourceCurrentCount: rawCount
-                    )
-                    return result.displayed
-                }
-                return rawCount
-            }()
-
-            InteractiveTaskSquareView(
-                title: task?.title ?? "Unknown",
-                taskType: .counting,
-                isCompleted: isCompleted,
-                currentCount: current,
-                maxCount: maxVal,
-                unit: unitText,
-                onTap: {
-                    guard !isBoardLocked else { return }
-                    if let t = task { handleCountingTap(boardTask: boardTask, task: t) }
-                },
-                achievementBadge: badge
-            )
-            .contextMenu {
-                if let t = task {
-                    Button("+ Add \(actionLabel)", systemImage: "plus") {
-                        guard !isBoardLocked else { return }
-                        handleCountingTap(boardTask: boardTask, task: t)
-                    }
-                    .disabled(current >= maxVal || isProcessing || isBoardLocked)
-
-                    Button("- Remove \(actionLabel)", systemImage: "minus") {
-                        guard !isBoardLocked else { return }
-                        handleCountingDecrement(boardTask: boardTask, task: t)
-                    }
-                    // Linked derived counters are read-only — decrement must go
-                    // through the source task. Disable the minus button for them.
-                    .disabled(current == 0 || isLinkedCounter || isProcessing || isBoardLocked)
-
-                    Button("View Details", systemImage: "info.circle") {
-                        detailBoardTaskId = boardTask.id
-                    }
-
-                    Button("Open in library", systemImage: "book") {
-                        taskDetailSheetTaskId = TaskIdItem(id: t.id)
-                    }
-
-                    // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
-                    // M4 — Remove from board (same guard).
-                    if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
-                        Divider()
-                        Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                            swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                        }
-                        Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                            removeBoardTaskId = boardTask.id
-                        }
                     }
                 }
             }
 
         case .compound:
-            let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
-            let compoundChildCount = compoundLinks.count
-            let compoundDoneCount = compoundLinks.filter { link in
-                guard let childTask = taskMap[link.childTaskId], !childTask.isDeleted else { return false }
-                if childTask.type == .compound {
-                    return CompoundEvaluation.evaluate(
-                        compound: childTask,
-                        childrenByCompound: compoundChildrenByCompound,
-                        taskById: taskMap
-                    )
-                }
-                return childTask.isCompleted
-            }.count
-
-            ZStack {
-                InteractiveTaskSquareView(
-                    title: task?.title ?? "Unknown",
-                    taskType: .compound,
-                    isCompleted: isCompleted,
-                    compoundOperator: task?.operatorType,
-                    compoundThreshold: task?.threshold,
-                    compoundChildCount: compoundChildCount,
-                    compoundDoneCount: compoundDoneCount,
-                    onTap: {
-                        guard !isBoardLocked else { return }
-                        detailBoardTaskId = boardTask.id
-                    },
-                    achievementBadge: badge
-                )
-                // Transparent overlay ensures compound taps always open the detail sheet,
-                // matching the progress-square pattern.
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !isBoardLocked else { return }
-                        detailBoardTaskId = boardTask.id
-                    }
+            Button("View Children", systemImage: "list.bullet") {
+                detailBoardTaskId = boardTask.id
             }
-            .frame(width: 90, height: 90)
-            .contextMenu {
-                Button("View Children", systemImage: "list.bullet") {
-                    detailBoardTaskId = boardTask.id
+            Button("Open in library", systemImage: "book") {
+                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+            }
+            if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                Divider()
+                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
+                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
                 }
-                Button("Open in library", systemImage: "book") {
-                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-                }
-                // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
-                // M4 — Remove from board (same guard).
-                if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
-                    Divider()
-                    Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                        swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                    }
-                    Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                        removeBoardTaskId = boardTask.id
-                    }
+                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
+                    removeBoardTaskId = boardTask.id
                 }
             }
 
         case .achievement:
-            // Phase 6.3 — ACHIEVEMENT cells are non-interactive: their
-            // completion is derived from cross-board references. Render
-            // like a NORMAL cell with no tap action; the badge labels
-            // what the cell is watching.
-            InteractiveTaskSquareView(
-                title: task?.title ?? "Unknown",
-                taskType: .normal,
-                isCompleted: isCompleted,
-                isReadOnly: true,
-                achievementBadge: badge
-            )
-            .contextMenu {
-                Button("View Details", systemImage: "info.circle") {
-                    detailBoardTaskId = boardTask.id
+            Button("View Details", systemImage: "info.circle") {
+                detailBoardTaskId = boardTask.id
+            }
+            Button("Open in library", systemImage: "book") {
+                taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
+            }
+            if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                Divider()
+                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
+                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
                 }
-                Button("Open in library", systemImage: "book") {
-                    taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-                }
-                // M3 — Cell swap. Only on ACTIVE non-center non-expired squares.
-                // M4 — Remove from board (same guard).
-                if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
-                    Divider()
-                    Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                        swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                    }
-                    Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                        removeBoardTaskId = boardTask.id
-                    }
+                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
+                    removeBoardTaskId = boardTask.id
                 }
             }
         }
@@ -1385,6 +1532,7 @@ struct BoardPlayView: View {
                     loadTaskData()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
+                        triggerRisoNotification(from: msg)
                         let dismissAfter: Double = 3.0
                         _Concurrency.Task.detached { @MainActor in
                             try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
@@ -1492,6 +1640,7 @@ struct BoardPlayView: View {
                     loadTaskData()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
+                        triggerRisoNotification(from: msg)
                         let dismissAfter: Double = 3.0
                         _Concurrency.Task.detached { @MainActor in
                             try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
@@ -1728,6 +1877,7 @@ struct BoardPlayView: View {
                     loadTaskData()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
+                        triggerRisoNotification(from: msg)
                         let dismissAfter: Double = 3.0
                         _Concurrency.Task.detached { @MainActor in
                             try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
@@ -1796,6 +1946,38 @@ struct BoardPlayView: View {
                 allBoardTasksInWorkspace = workspaceBoardTasks
             }
         }
+    }
+}
+
+// MARK: - BackButton
+
+/// 40×40 Riso back-chevron square button for the in-content play-board header.
+/// Uses the SwiftUI environment's `dismiss` action so it integrates correctly
+/// with `NavigationStack`'s internal path management.
+private struct BackButton: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color.risoInk)
+                .frame(width: 40, height: 40)
+                .background(Color.risoPaper2)
+                .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .fill(Color.risoInk)
+                        .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
     }
 }
 
