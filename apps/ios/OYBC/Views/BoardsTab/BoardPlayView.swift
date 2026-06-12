@@ -253,6 +253,10 @@ struct BoardPlayView: View {
     @State private var showBingoToast: Bool = false
     /// Subtitle for the current bingo toast (e.g. "Row 2 complete!").
     @State private var bingoToastSubtitle: String = ""
+    /// Monotonic token so only the latest toast's auto-dismiss fires —
+    /// rapid bingos no longer spawn overlapping dismiss tasks that cut a
+    /// fresh toast short.
+    @State private var bingoToastGeneration: Int = 0
     /// Board task id of the counting cell whose stepper sheet is open.
     @State private var countingStepperBoardTaskId: String?
     @State private var detailBoardTaskId: String?
@@ -590,10 +594,9 @@ struct BoardPlayView: View {
                     },
                     onDecrement: {
                         handleCountingDecrement(boardTask: bt, task: task)
-                    },
-                    onDismiss: {
-                        countingStepperBoardTaskId = nil
                     }
+                    // Dismissal clears `countingStepperBoardTaskId` via the
+                    // .sheet(isPresented:) binding setter above.
                 )
             }
         }
@@ -719,10 +722,10 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private var risoBackButton: some View {
-        // We render a visual back square. The NavigationStack automatically
-        // attaches swipe-back and adds a back button in the nav bar when
-        // !embedded; this in-content square is supplemental UX.
-        // Using the environment's dismiss action is the right hook.
+        // In-content back square. When !embedded, BoardPlayTitleChrome hides
+        // the system nav-bar back button, so this IS the primary back
+        // affordance (the swipe-back gesture still works); when embedded the
+        // host owns the chrome. Uses the environment dismiss action.
         BackButton()
     }
 
@@ -767,8 +770,9 @@ struct BoardPlayView: View {
     ///   - other messages (reactivation, swap errors) → no Riso visual (bingoMessage
     ///     remains set for potential legacy readers, but we don't toast these)
     ///
-    /// The method is idempotent — calling it with the same message while the toast
-    /// is already showing is a no-op.
+    /// Rapid bingos re-arm the toast: each one bumps `bingoToastGeneration`, and
+    /// only the latest generation's auto-dismiss fires, so a fresh toast isn't
+    /// cut short by an earlier one's timer.
     private func triggerRisoNotification(from message: String) {
         if message == "GREENLOG!" {
             // Delay to let the 25th cell pop animation finish (~340ms + margin)
@@ -781,12 +785,16 @@ struct BoardPlayView: View {
             // Extract a short subtitle from the message
             // Original format: "Bingo! (row_1, col_2)" → "Line complete!"
             bingoToastSubtitle = "Line complete!"
+            bingoToastGeneration &+= 1
+            let generation = bingoToastGeneration
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                 showBingoToast = true
             }
-            // Auto-dismiss after ~2.8s
+            // Auto-dismiss after ~2.8s — but only if no newer toast has been
+            // shown since (otherwise this stale timer would cut it short).
             _Concurrency.Task.detached { @MainActor in
                 try? await _Concurrency.Task.sleep(nanoseconds: 2_800_000_000)
+                guard generation == bingoToastGeneration else { return }
                 withAnimation(.easeOut(duration: 0.25)) {
                     showBingoToast = false
                 }

@@ -25,7 +25,6 @@ struct RisoCountingStepperSheet: View {
 
     var onIncrement: () -> Void = {}
     var onDecrement: () -> Void = {}
-    var onDismiss: () -> Void = {}
 
     // MARK: - Body
 

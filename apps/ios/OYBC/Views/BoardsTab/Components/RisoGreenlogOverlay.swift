@@ -5,8 +5,8 @@ import SwiftUI
 /// Full-bleed blue celebration overlay triggered when every square on
 /// the board is completed (GREENLOG event). Shows a Blip mascot,
 /// "GREENLOG!" title, three stat cards, a confetti field, and two
-/// action buttons. Dismissible via the "Start a new board" button or
-/// by the caller setting `isPresented = false`.
+/// action buttons. Dismissed via the `onDismiss` closure (wired to the
+/// "Start a new board" button); the caller hides the overlay in response.
 ///
 /// The confetti loops indefinitely while the overlay is visible.
 /// Animations (confetti fall) need user verification since they cannot
@@ -42,9 +42,6 @@ struct RisoGreenlogOverlay: View {
             )
         }
     }()
-
-    @State private var confettiOffset: CGFloat = 0
-    @State private var confettiVisible = false
 
     // MARK: - Body
 
@@ -162,9 +159,6 @@ struct RisoGreenlogOverlay: View {
                 Spacer()
             }
             .padding(.horizontal, Riso.gutter + 6)
-        }
-        .onAppear {
-            confettiVisible = true
         }
     }
 

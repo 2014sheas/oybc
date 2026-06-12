@@ -109,6 +109,29 @@ struct RisoBoardPlayCell: View {
             guard !isLocked, !isCenter else { return }
             onTap?()
         }
+        // Accessibility: collapse the cell's text/badges into one element with
+        // a descriptive label + button trait, so VoiceOver announces and
+        // activates it like InteractiveTaskSquareView did (the `.onTapGesture`
+        // alone exposes no actionable element).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits((isCenter || isLocked) ? [] : .isButton)
+        .accessibilityAddTraits(isCompleted ? .isSelected : [])
+    }
+
+    /// VoiceOver label: task name + type-appropriate progress/state.
+    private var accessibilityLabel: String {
+        if isCenter { return "Free space" }
+        switch taskType {
+        case .counting:
+            return "\(title), counting, \(currentCount) of \(maxCount)"
+        case .compound:
+            return "\(title), compound, \(compoundDoneCount) of \(compoundChildCount) subtasks done"
+        case .achievement:
+            return "\(title), achievement, \(isCompleted ? "earned" : "not yet earned")"
+        case .normal:
+            return "\(title), \(isCompleted ? "completed" : "not completed")"
+        }
     }
 
     // MARK: - Subviews
