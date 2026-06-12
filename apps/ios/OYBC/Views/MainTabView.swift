@@ -91,6 +91,11 @@ struct MainTabView: View {
                     onOpenCoreWindow: { timeframe, windowStart in
                         // Core board row tap → per-window pager.
                         boardsPath.append(CoreWindowRoute(timeframe: timeframe, windowStart: windowStart))
+                    },
+                    onCreateBoard: {
+                        // Riso header + button tapped: switch to Create
+                        // tab with no pre-fill (fresh board flow).
+                        selectedTab = 2
                     }
                 )
                 .navigationDestination(for: CoreBrowserRoute.self) { route in
