@@ -26,7 +26,7 @@ enum Riso {
     }
 
     // Hard-shadow offsets (no blur, ink color). Press = translate by the
-    // offset and collapse the shadow to 0 — see `.risoPressable()`.
+    // offset and collapse the shadow to 0 — see `RisoButtonStyle`.
     enum Shadow {
         static let card: CGFloat = 4
         static let button: CGFloat = 3
@@ -100,14 +100,15 @@ enum RisoBodyWeight {
 }
 
 extension Font {
-    /// Bricolage Grotesque at `size`. Scales with Dynamic Type (snapshots
-    /// run at the default size, so they stay deterministic).
+    /// Bricolage Grotesque at `size`, scaling with Dynamic Type relative to
+    /// `.title`. (Snapshots run at the default content size, so they stay
+    /// deterministic.)
     static func risoHead(_ size: CGFloat, _ weight: RisoHeadWeight = .extraBold) -> Font {
-        .custom(weight.psName, size: size)
+        .custom(weight.psName, size: size, relativeTo: .title)
     }
 
-    /// Archivo at `size`.
+    /// Archivo at `size`, scaling with Dynamic Type relative to `.body`.
     static func risoBody(_ size: CGFloat, _ weight: RisoBodyWeight = .regular) -> Font {
-        .custom(weight.psName, size: size)
+        .custom(weight.psName, size: size, relativeTo: .body)
     }
 }

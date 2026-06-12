@@ -109,7 +109,11 @@ struct RisoPaperBackground: View {
 
 private struct RisoHalftone: ViewModifier {
     var tile: CGFloat = 7
-    var opacity: Double = 0.55
+    /// Opacity of the whole multiply overlay layer. Mirrors `riso.css`: the
+    /// dot screen is ink at 0.5 alpha (the `rgba(…, .5)` radial-gradient dots)
+    /// painted under a layer at this opacity. The two alphas are intentional
+    /// (faithful to the source), not a double-application bug.
+    var layerOpacity: Double = 0.55
     func body(content: Content) -> some View {
         content.overlay(
             Canvas { ctx, size in
@@ -129,7 +133,7 @@ private struct RisoHalftone: ViewModifier {
                 }
             }
             .blendMode(.multiply)
-            .opacity(opacity)
+            .opacity(layerOpacity)
             .allowsHitTesting(false)
         )
     }
@@ -137,7 +141,7 @@ private struct RisoHalftone: ViewModifier {
 
 extension View {
     /// Radial-dot overprint screen drawn over a completed (ink-filled) cell.
-    func risoHalftone(tile: CGFloat = 7, opacity: Double = 0.55) -> some View {
-        modifier(RisoHalftone(tile: tile, opacity: opacity))
+    func risoHalftone(tile: CGFloat = 7, layerOpacity: Double = 0.55) -> some View {
+        modifier(RisoHalftone(tile: tile, layerOpacity: layerOpacity))
     }
 }

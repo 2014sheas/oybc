@@ -207,8 +207,8 @@ struct RisoTypeBadge: View {
                 .font(.risoHead(10, .extraBold))
                 .foregroundStyle(kind.foreground)
                 .frame(width: 20, height: 20)
-                .background(RoundedRectangle(cornerRadius: 6).fill(kind.fill))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                .background(RoundedRectangle(cornerRadius: Riso.cellRadius).fill(kind.fill))
+                .overlay(RoundedRectangle(cornerRadius: Riso.cellRadius).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
         }
     }
 }
