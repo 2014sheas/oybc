@@ -1,136 +1,116 @@
 import SwiftUI
 import GRDB
 
-/// Tasks tab — dedicated surface for browsing, searching, filtering,
-/// and editing the user's task library. iOS twin of web's `TasksPage`.
+/// Tasks tab — Riso-styled library browser.
 ///
-/// Composes:
-/// - Toolbar trailing `+` button that presents `NewTaskSheetView` as
-///   a modal. Keeps the library (filter row + list) as the primary
-///   page content so it doesn't get pushed below the fold.
-/// - `TasksFilterControlsView` (search + type chips + status / usage
-///   dropdowns + sort dropdown), pinned above the list so the user
-///   keeps filter access while scrolling.
-/// - A `List` of `TaskRowView` rows with **leading-swipe Edit** (blue,
-///   full-swipe enabled) and **trailing-swipe Delete** (red, no full
-///   swipe — the destructive action requires a deliberate tap, not a
-///   gesture commit). Mirrors Mail.app convention. Tapping a row
-///   pushes `TaskDetailView` onto the navigation stack.
+/// Reskinned in the "Riso" direction: cream paper background, Bricolage
+/// Grotesque headings, Archivo body copy, ink keylines, hard-shadow buttons,
+/// and type letter-square badges. All filter/sort/grouping/detail/delete/
+/// edit/create logic is preserved from the pre-Riso implementation.
 ///
-/// Library data comes from `TaskLibraryViewModel`; filter/sort state
-/// + board-status lookups for the usage filter come from
-/// `TasksTabViewModel`.
+/// **Presentation decision**: row taps push `TaskDetailView` via the existing
+/// `NavigationPath` (keeping the cross-tab "open board from detail" path
+/// intact). A bottom-sheet approach would require a separate sheet layer on
+/// top of the existing edit/delete/new-task sheets; the push path is simpler
+/// and already wired correctly for board navigation. Noted as a divergence
+/// from the prototype's sheet tap in the phase summary.
+///
+/// iOS twin of web's `TasksPage.tsx`.
 struct TasksTabView: View {
     let userId: String
-    /// Bound from MainTabView so the row's `NavigationLink` reads the
-    /// same `tasksPath` the parent owns. Lets us reset on tab switch
-    /// (parity with how `boardsPath` resets after `onBoardCompleted`).
     @Binding var path: NavigationPath
-    /// Cross-tab navigation: passed down to each TaskDetailView so the
-    /// Usage section's board taps can jump the user to the Boards tab.
     let onOpenBoard: (String) -> Void
 
     @State private var library = TaskLibraryViewModel()
     @State private var vm = TasksTabViewModel()
     @State private var showNewTaskSheet = false
-
-    /// Issue #73 — compounds the user manually expanded in this session.
     @State private var expandedCompoundIds: Set<String> = []
 
-    /// Task + its precomputed deletion impact, bundled so the confirm
-    /// sheet is driven by a single Identifiable. Presenting off two
-    /// separate `@State` (the task plus a companion impact) let the sheet
-    /// render before the impact landed — a blank modal that then crashed.
     private struct PendingTaskDeletion: Identifiable {
         let task: Task
         let impact: AppDatabase.TaskDeletionImpact
         var id: String { task.id }
     }
 
-    // ── Quick-action state ────────────────────────────────────────────
-    /// Task currently being edited via swipe-Edit. `.sheet(item:)` opens
-    /// `EditTaskSheet` when this is non-nil.
     @State private var editingTask: Task?
-    /// Loaded lazily when `editingTask` is set for an Achievement task.
     @State private var editPickerBoards: [Board] = []
     @State private var editPickerTemplates: [RecurringBoardTemplate] = []
-    /// Set once the impact computation finishes; presenting the confirm
-    /// sheet off this single item guarantees the impact is available when
-    /// the sheet renders.
     @State private var pendingDelete: PendingTaskDeletion?
-    /// Monotonic token for in-flight impact computations. Each
-    /// `prepareDelete(for:)` bumps it; the completion only assigns
-    /// `pendingDelete` if its token is still current, so a slow earlier
-    /// request can't overwrite a newer one (rapid swipe-delete on
-    /// different rows) and re-introduce the content-swap-under-sheet bug.
     @State private var prepareDeleteToken = 0
-    /// Set by a successful delete; consumed by the confirm sheet's
-    /// `onDismiss`. Reloading the library mutates the `List` data source,
-    /// and doing that *during* the sheet-dismiss transition crashed
-    /// UICollectionView with a stale batch-delete. We instead wait for
-    /// `onDismiss` (sheet fully gone) before reloading. Only a successful
-    /// delete flips this, so cancel/dismiss don't trigger a reload.
     @State private var reloadAfterDeleteDismiss = false
     @State private var quickActionError: String?
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TasksFilterControlsView(
-                search: $vm.search,
-                typeFilter: $vm.typeFilter,
-                statusFilter: $vm.statusFilter,
-                usageFilter: $vm.usageFilter,
-                sortBy: $vm.sortBy,
-                showExpired: $vm.showExpired,
-                groupByCompound: $vm.groupByCompound
-            )
-            .padding(16)
+    // MARK: - Body
 
-            if let err = quickActionError {
-                Text(err)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-            }
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RisoPaperBackground()
 
             let filtered = vm.filteredTasks(library: library)
-            if filtered.isEmpty {
-                emptyState(hasAnyTasks: !library.libraryTasks.isEmpty)
-                    .padding(16)
-                Spacer()
-            } else {
-                let placementCounts = vm.placementCounts(boardTasks: library.allLibraryBoardTasks)
-                let activeCounts = vm.activePlacementCounts(boardTasks: library.allLibraryBoardTasks)
+            let placementCounts = vm.placementCounts(boardTasks: library.allLibraryBoardTasks)
+            let activeCounts = vm.activePlacementCounts(boardTasks: library.allLibraryBoardTasks)
+            let independentlyPlaced = TasksTabViewModel.independentlyPlacedTaskIds(
+                childTaskIds: library.childTaskIds,
+                placementCounts: placementCounts
+            )
+            let autoExpand = TasksTabViewModel.autoExpandCompoundIds(
+                search: vm.search,
+                library: library,
+                groupByCompound: vm.groupByCompound,
+                independentlyPlaced: independentlyPlaced
+            )
+            let effectiveExpanded = expandedCompoundIds.union(autoExpand)
 
-                // Issue #73 — merge manual expand state with search-driven
-                // auto-expand. Mirrors web's `effectiveExpanded` useMemo.
-                let independentlyPlaced = TasksTabViewModel.independentlyPlacedTaskIds(
-                    childTaskIds: library.childTaskIds,
-                    placementCounts: placementCounts
-                )
-                let autoExpand = TasksTabViewModel.autoExpandCompoundIds(
-                    search: vm.search,
-                    library: library,
-                    groupByCompound: vm.groupByCompound,
-                    independentlyPlaced: independentlyPlaced
-                )
-                let effectiveExpanded = expandedCompoundIds.union(autoExpand)
+            List {
+                // ── Scrolling header (not sticky) ────────────────────
+                Group {
+                    headerRow
+                        .listRowInsets(EdgeInsets(top: 16, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
 
-                List {
+                    // Controls (search + chips + sort + filters)
+                    RisoTasksControlsView(
+                        search: $vm.search,
+                        typeFilter: $vm.typeFilter,
+                        statusFilter: $vm.statusFilter,
+                        usageFilter: $vm.usageFilter,
+                        sortBy: $vm.sortBy,
+                        showExpired: $vm.showExpired,
+                        groupByCompound: $vm.groupByCompound,
+                        resultCount: filtered.count
+                    )
+                    .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 8, trailing: Riso.gutter))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+
+                    if let err = quickActionError {
+                        Text(err)
+                            .font(.risoBody(13, .regular))
+                            .foregroundStyle(Color.risoRed)
+                            .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 4, trailing: Riso.gutter))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                }
+
+                // ── Empty state ─────────────────────────────────────
+                if filtered.isEmpty {
+                    emptyState(hasAnyTasks: !library.libraryTasks.isEmpty)
+                        .listRowInsets(EdgeInsets(top: 8, leading: Riso.gutter, bottom: 8, trailing: Riso.gutter))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                } else {
+                    // ── Task rows ────────────────────────────────────
                     ForEach(filtered, id: \.id) { task in
                         let children = library.compoundChildrenByCompound[task.id] ?? []
-                        // Expandable only when grouping is on and the task
-                        // is a compound with at least one child.
                         let isExpandable = vm.groupByCompound
                             && task.type == .compound
                             && !children.isEmpty
                         let isExpanded = isExpandable && effectiveExpanded.contains(task.id)
 
                         if isExpandable {
-                            // Compound group row: disclosure chevron +
-                            // optional nested children below.
-                            CompoundGroupRowView(
+                            RisoCompoundGroupRowView(
                                 task: task,
                                 placementCount: placementCounts[task.id] ?? 0,
                                 activePlacementCount: activeCounts[task.id] ?? 0,
@@ -151,10 +131,9 @@ struct TasksTabView: View {
                                 childActivePlacementCounts: activeCounts,
                                 onChildTap: { childId in path.append(childId) }
                             )
-                            // Tapping the compound row body navigates to its detail.
                             .contentShape(Rectangle())
                             .onTapGesture { path.append(task.id) }
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: 4, leading: Riso.gutter, bottom: 4, trailing: Riso.gutter))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -173,15 +152,10 @@ struct TasksTabView: View {
                                 }
                             }
                         } else {
-                            // Plain Button (not NavigationLink) so we can
-                            // route through the same path-append the LazyVStack
-                            // version used — keeps the existing
-                            // `navigationDestination(for: String.self)` wiring
-                            // below untouched.
                             Button {
                                 path.append(task.id)
                             } label: {
-                                TaskRowView(
+                                RisoTaskRowView(
                                     task: task,
                                     placementCount: placementCounts[task.id] ?? 0,
                                     activePlacementCount: activeCounts[task.id] ?? 0,
@@ -189,7 +163,7 @@ struct TasksTabView: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: 4, leading: Riso.gutter, bottom: 4, trailing: Riso.gutter))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -201,9 +175,6 @@ struct TasksTabView: View {
                                 .tint(.blue)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                // `allowsFullSwipe: false` — destructive
-                                // commit requires a deliberate tap on the
-                                // revealed button, not a gesture flick.
                                 Button(role: .destructive) {
                                     prepareDelete(for: task)
                                 } label: {
@@ -212,20 +183,19 @@ struct TasksTabView: View {
                             }
                         }
                     }
+
+                    // Bottom breathing room
+                    Color.clear
+                        .frame(height: 20)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
-                .listStyle(.plain)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Tasks")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("+ Create task") {
-                    showNewTaskSheet = true
-                }
-                .accessibilityLabel("Create task")
-            }
-        }
+        .navigationBarHidden(true)
+        // ── Sheets ────────────────────────────────────────────────────
         .sheet(isPresented: $showNewTaskSheet) {
             NewTaskSheetView(
                 userId: userId,
@@ -276,16 +246,11 @@ struct TasksTabView: View {
                         editPickerTemplates = templates
                     }
                 } catch {
-                    // Non-fatal: picker loads empty; user can save without re-targeting.
+                    // Non-fatal: picker loads empty.
                 }
             }
         }
         .sheet(item: $pendingDelete, onDismiss: {
-            // Reload only after the sheet has fully dismissed. Mutating the
-            // List's data source mid-transition crashed UICollectionView
-            // with a stale batch-delete; deferring to onDismiss removes the
-            // competing animation. Guarded so only a successful delete
-            // (which actually changed the data) triggers the reload.
             guard reloadAfterDeleteDismiss else { return }
             reloadAfterDeleteDismiss = false
             reloadLibraryAndStatuses()
@@ -301,6 +266,7 @@ struct TasksTabView: View {
                 }
             )
         }
+        // ── Navigation destination ────────────────────────────────────
         .navigationDestination(for: String.self) { taskId in
             TaskDetailView(
                 taskId: taskId,
@@ -323,12 +289,56 @@ struct TasksTabView: View {
         }
     }
 
+    // MARK: - Header
+
+    /// Scrolling header row: kicker "YOUR LIBRARY" + "Tasks" title + gold + button.
+    @ViewBuilder
+    private var headerRow: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your library")
+                    .risoKicker()
+                Text("Tasks")
+                    .risoH1()
+            }
+            Spacer(minLength: 12)
+            RisoIconButton(systemImage: "plus") {
+                showNewTaskSheet = true
+            }
+            .accessibilityLabel("New task")
+        }
+    }
+
+    // MARK: - Empty state
+
+    @ViewBuilder
+    private func emptyState(hasAnyTasks: Bool) -> some View {
+        VStack(alignment: .center, spacing: 10) {
+            if hasAnyTasks {
+                Text("No tasks match your filters.")
+                    .font(.risoBody(15, .semibold))
+                    .foregroundStyle(Color.risoInk)
+                Text("Try clearing the search, switching the type chip to All, or resetting Status / Usage.")
+                    .font(.risoBody(13, .regular))
+                    .foregroundStyle(Color.risoMuted)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("No tasks yet.")
+                    .font(.risoBody(15, .semibold))
+                    .foregroundStyle(Color.risoInk)
+                Text("Tap + to add one, or build a board on the Create tab — tasks you make there appear here too.")
+                    .font(.risoBody(13, .regular))
+                    .foregroundStyle(Color.risoMuted)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .risoCard(keyline: Riso.Keyline.dense, fill: .risoPaper2)
+    }
+
     // MARK: - Quick-action handlers
 
-    /// Async-compute the deletion impact (including the affected-boards
-    /// list) before opening the confirm sheet, so the sheet can render
-    /// the per-board name + status pill synchronously without
-    /// flickering loading state.
     private func prepareDelete(for task: Task) {
         quickActionError = nil
         let id = task.id
@@ -340,8 +350,6 @@ struct TasksTabView: View {
                     try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
                 }.value
                 await MainActor.run {
-                    // A newer prepareDelete superseded this one — drop the
-                    // stale result so it can't present the wrong task.
                     guard token == prepareDeleteToken else { return }
                     pendingDelete = PendingTaskDeletion(task: task, impact: impact)
                 }
@@ -354,10 +362,6 @@ struct TasksTabView: View {
         }
     }
 
-    /// Run the cascade delete off-main. On success we only dismiss the
-    /// sheet here — the library reload (which mutates the List) is deferred
-    /// to the sheet's `onDismiss` so it can't run during the dismiss
-    /// transition and crash UICollectionView.
     private func performDelete(taskId: String) async {
         do {
             try await _Concurrency.Task.detached(priority: .userInitiated) {
@@ -369,21 +373,12 @@ struct TasksTabView: View {
             }
         } catch {
             await MainActor.run {
-                // Dismiss the confirm sheet: it disables its controls and
-                // shows "Deleting…" after the tap, so leaving it up on
-                // failure strands the user with frozen buttons while the
-                // error renders behind it. Dropping the sheet reveals the
-                // error text in the parent view.
                 pendingDelete = nil
                 quickActionError = "Failed to delete task: \(error.localizedDescription)"
             }
         }
     }
 
-    /// Sequenced reload after a delete, run from the confirm sheet's
-    /// `onDismiss`. Awaiting library then statuses (rather than firing both
-    /// fire-and-forget) keeps the two `@Observable` updates from coalescing
-    /// into a single inconsistent batch update against the List.
     private func reloadLibraryAndStatuses() {
         _Concurrency.Task {
             await library.reload(userId: userId)
@@ -391,9 +386,6 @@ struct TasksTabView: View {
         }
     }
 
-    /// Save the row-level edit patch off-main. Mirrors the patch logic
-    /// in `TaskDetailView.saveEdits` — full M1 field set including timeboxed
-    /// and Achievement re-target with cycle detection.
     private func saveEdits(task: Task, patch: EditTaskSheet.Patch) async {
         var t = task
         t.title = patch.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -412,11 +404,7 @@ struct TasksTabView: View {
                     await MainActor.run { quickActionError = "Please select a specific board to watch." }
                     return
                 }
-                if let cycleError = await checkCycleForTask(
-                    taskId: t.id,
-                    referencedBoardId: patch.selectedBoardId,
-                    referencedTemplateId: nil
-                ) {
+                if let cycleError = await checkCycleForTask(taskId: t.id, referencedBoardId: patch.selectedBoardId, referencedTemplateId: nil) {
                     await MainActor.run { quickActionError = cycleError }
                     return
                 }
@@ -432,11 +420,7 @@ struct TasksTabView: View {
                     await MainActor.run { quickActionError = "Required count must be a whole number greater than 0." }
                     return
                 }
-                if let cycleError = await checkCycleForTask(
-                    taskId: t.id,
-                    referencedBoardId: nil,
-                    referencedTemplateId: patch.selectedTemplateId
-                ) {
+                if let cycleError = await checkCycleForTask(taskId: t.id, referencedBoardId: nil, referencedTemplateId: patch.selectedTemplateId) {
                     await MainActor.run { quickActionError = cycleError }
                     return
                 }
@@ -445,7 +429,6 @@ struct TasksTabView: View {
                 t.requiredCount = req
             }
         }
-        // Timeboxed fields
         if let tf = patch.timeframe {
             t.timeframe = tf
             t.startDate = patch.startDate
@@ -475,7 +458,6 @@ struct TasksTabView: View {
         }
     }
 
-    /// Cycle detection helper for the Tasks-tab inline edit path.
     private func checkCycleForTask(
         taskId: String,
         referencedBoardId: String?,
@@ -504,42 +486,12 @@ struct TasksTabView: View {
                 )
                 return CycleDetection.hasCycle(candidate: candidate, context: context)
             }.value
-
             switch result {
-            case .ok:
-                return nil
-            case .cycle(let path):
-                return "This reference would create a cycle: \(path.joined(separator: " → "))"
+            case .ok: return nil
+            case .cycle(let path): return "This reference would create a cycle: \(path.joined(separator: " → "))"
             }
         } catch {
             return "Cycle check failed: \(error.localizedDescription)"
         }
-    }
-
-    @ViewBuilder
-    private func emptyState(hasAnyTasks: Bool) -> some View {
-        VStack(alignment: .center, spacing: 8) {
-            if hasAnyTasks {
-                Text("No tasks match your filters.")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Try clearing the search, switching the type chip back to “All”, or resetting Status / Usage to “Any”.")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            } else {
-                Text("No tasks yet.")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Tap the + button above to add one, or build a board on the Create tab — tasks you make there appear here too.")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [4]))
-        )
     }
 }
