@@ -247,8 +247,9 @@ struct ProfileView: View {
                             do {
                                 try authService.signOut()
                             } catch {
+                                // Keep the confirm card visible so the error
+                                // (rendered inside it) is actually seen.
                                 signOutError = error.localizedDescription
-                                showSignOutConfirm = false
                             }
                         }
                     }
@@ -354,12 +355,13 @@ struct ProfileView: View {
     /// one-time badge count.
     private func loadCounts() {
         guard let userId = authService.currentUser?.id else { return }
-        _Concurrency.Task {
+        // Push the GRDB reads off the main actor (both fetches already filter
+        // isDeleted at the SQL level — no in-memory re-filter needed).
+        _Concurrency.Task.detached(priority: .userInitiated) {
             let templates = try? AppDatabase.shared.fetchRecurringBoardTemplates(userId: userId)
-            let nonDeleted = templates?.filter { !$0.isDeleted } ?? []
-            await MainActor.run { recurringTemplateCount = nonDeleted.count }
+            await MainActor.run { recurringTemplateCount = templates?.count }
         }
-        _Concurrency.Task {
+        _Concurrency.Task.detached(priority: .userInitiated) {
             let pools = try? AppDatabase.shared.fetchDefaultPools(userId: userId)
             await MainActor.run { defaultPoolCount = pools?.count }
         }
