@@ -2540,20 +2540,4 @@ extension AppDatabase {
             }
         }
     }
-
-    /// Delete all rows from every table — used by the Playground to reset test data
-    func clearAllData() throws {
-        try write { db in
-            // Order: children before parents to satisfy FK constraints
-            try db.execute(sql: "DELETE FROM sync_queue")
-            try db.execute(sql: "DELETE FROM board_tasks")
-            try db.execute(sql: "DELETE FROM progress_counters")
-            try db.execute(sql: "DELETE FROM composite_nodes")
-            try db.execute(sql: "DELETE FROM composite_tasks")
-            try db.execute(sql: "DELETE FROM task_steps")
-            try db.execute(sql: "DELETE FROM tasks")
-            try db.execute(sql: "DELETE FROM boards")
-            try db.execute(sql: "DELETE FROM users")
-        }
-    }
 }
