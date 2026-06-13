@@ -18,7 +18,8 @@ import SwiftUI
 ///   - `RisoTasksPoolHeaderView`   — pool header card
 ///   - `RisoQuickAddRowView`       — text input + red Add button
 ///   - `RisoSpecialTaskPanel`      — collapsed/expanded type-specific panel
-///   - `RisoLibrarySheetView`      — dashed entry button + bottom sheet
+///   - `RisoLibrarySheetView`      — dashed entry button + bottom sheet (owns search,
+///                                    filters, derive, from-a-board, compound expand)
 ///   - `RisoPoolListView`          — selected task rows + empty state
 struct BoardWizardTasksStepView: View {
 
@@ -75,47 +76,19 @@ struct BoardWizardTasksStepView: View {
     /// Navigates to the next wizard step. Disabled when validation fails.
     let onNext: () -> Void
 
-    // MARK: - Internal state (PRESERVED from pre-3b — all logic kept intact)
+    // MARK: - Internal state
 
-    @State private var searchQuery: String = ""
-    @State private var activeFilter: LibraryFilter = .all
-    @State private var expandedCompositeId: String? = nil
-    @State private var isSheetPresented: Bool = false
-    @State private var groupByCompound: Bool = true
-
-    /// Phase 6.1: parent-board tasks for the "From parent boards" filter.
-    @State private var parentTasksVM = ParentBoardTasksViewModel()
-
-    /// Derive-smaller state (PRESERVED — existing saveDerivedCounter logic).
-    @State private var derivingFromTask: OYBC.Task? = nil
-    @State private var deriveMaxCountInput: String = ""
-
+    /// Drives the task-detail sheet opened from a library row's "Open in library".
     @State private var openedTaskInLibrary: TaskIdItem? = nil
 
-    // From-a-board state (PRESERVED)
+    /// From-a-board picker/copy state (the picker + grid live in the library sheet;
+    /// the source VM and copy sheet are owned here so they survive sheet dismissal).
     @State private var sourceBoardsVM = SourceBoardsViewModel()
     @State private var pickedSourceBoardId: String? = nil
     @State private var copiedTaskIds: Set<String> = []
     @State private var copyingTask: OYBC.Task? = nil
 
-    // MARK: - Derived (ALL PRESERVED — no changes)
-
-    private var trimmedQuery: String {
-        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private func matches(_ title: String) -> Bool {
-        trimmedQuery.isEmpty || title.lowercased().contains(trimmedQuery)
-    }
-
-    private func notExpired(_ t: Task) -> Bool {
-        !TasksTabViewModel.isTaskExpired(t)
-    }
-
-    private func notGroupedChild(_ t: Task) -> Bool {
-        guard groupByCompound else { return true }
-        return !library.childTaskIds.contains(t.id)
-    }
+    // MARK: - Derived
 
     /// Bug #85 — Effective task pool: live library tasks merged with any in-memory pending tasks.
     private var effectiveAllTasks: [Task] {
@@ -133,30 +106,6 @@ struct BoardWizardTasksStepView: View {
         return combined
     }
 
-    private var visibleTasks: [Task] {
-        let pool: [Task]
-        switch activeFilter {
-        case .all:      pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type != .compound }
-        case .normal:   pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .normal }
-        case .counting: pool = effectiveAllTasks.filter { notExpired($0) && notGroupedChild($0) && $0.type == .counting }
-        case .compound: pool = []
-        case .fromParents: pool = parentTasksVM.tasks.filter { notExpired($0) }
-        case .fromBoard: pool = []
-        }
-        return pool.filter { matches($0.title) }
-    }
-
-    private var visibleComposites: [OYBC.Task] {
-        switch activeFilter {
-        case .all, .compound:
-            return effectiveAllTasks
-                .filter { notExpired($0) && $0.type == .compound }
-                .filter { matches($0.title) }
-        default:
-            return []
-        }
-    }
-
     private var selectedCount: Int { selectedTaskIds.count }
     private var isCountSatisfied: Bool { selectedCount >= tasksRequired }
     private var isCenterSatisfied: Bool {
@@ -166,10 +115,7 @@ struct BoardWizardTasksStepView: View {
     }
     private var canAdvance: Bool { isCountSatisfied && isCenterSatisfied }
 
-    private var countSuffix: String { isRecurring ? " min" : "" }
-
-    // MARK: - Usage / leaf data (PRESERVED)
-
+    /// taskId → count of distinct boards it's placed on (library usage hint).
     private var taskBoardCounts: [String: Int] {
         var buckets: [String: Set<String>] = [:]
         for bt in library.allLibraryBoardTasks {
@@ -204,49 +150,8 @@ struct BoardWizardTasksStepView: View {
         return by
     }
 
-    private var compositeSubtaskCounts: [String: Int] {
-        var counts: [String: Int] = [:]
-        for (compoundId, children) in effectiveChildrenByCompound {
-            counts[compoundId] = children.count
-        }
-        return counts
-    }
-
-    private struct LeafPreview: Equatable {
-        let titles: [String]
-        let totalLeaves: Int
-    }
-
-    private var compositeLeafPreviews: [String: LeafPreview] {
-        let taskById = effectiveTaskById
-        var out: [String: LeafPreview] = [:]
-        for (compoundId, children) in effectiveChildrenByCompound {
-            var titles: [String] = []
-            for child in children.prefix(3) {
-                if let title = taskById[child.childTaskId]?.title {
-                    titles.append(title)
-                }
-            }
-            out[compoundId] = LeafPreview(titles: titles, totalLeaves: children.count)
-        }
-        return out
-    }
-
-    private func leafTasks(for compoundId: String) -> [OYBC.Task] {
-        let children = effectiveChildrenByCompound[compoundId] ?? []
-        let taskById = effectiveTaskById
-        return children.compactMap { child -> OYBC.Task? in
-            guard let task = taskById[child.childTaskId] else { return nil }
-            if task.type == .compound { return nil }
-            return task
-        }
-    }
-
-    private var visibleFilterTabs: [LibraryFilter] {
-        let hasParents = !(parentTimeframesByChild[currentTimeframe] ?? []).isEmpty
-        return LibraryFilter.allCases.filter { $0 != .fromParents || hasParents }
-    }
-
+    /// Whether the current timeframe has parent timeframes (drives the
+    /// "From parent boards" filter chip's visibility in the library sheet).
     private var hasParentBoards: Bool {
         !(parentTimeframesByChild[currentTimeframe] ?? []).isEmpty
     }
@@ -346,39 +251,7 @@ struct BoardWizardTasksStepView: View {
         .safeAreaInset(edge: .bottom) {
             footer
         }
-        .onAppear {
-            parentTasksVM.reloadAsync(userId: userId, childTimeframe: currentTimeframe)
-        }
-        .onChange(of: currentTimeframe) { _, newTimeframe in
-            parentTasksVM.reloadAsync(userId: userId, childTimeframe: newTimeframe)
-            let newHasParents = !(parentTimeframesByChild[newTimeframe] ?? []).isEmpty
-            if !newHasParents && activeFilter == .fromParents {
-                activeFilter = .all
-            }
-        }
-        // New task sheet (old sheet access path — kept for legacy callers)
-        .sheet(isPresented: $isSheetPresented) {
-            NewTaskSheetView(
-                userId: userId,
-                onTaskCreated: { taskId, title, type in
-                    onTaskCreated(taskId, title, type)
-                },
-                onCompositeCreated: { ct in
-                    onCompositeCreated(ct)
-                },
-                onLibraryReloadRequested: onLibraryReloadRequested,
-                defaultTimeframe: currentTimeframe,
-                defaultStartDate: currentStartDate,
-                defaultEndDate: currentEndDate,
-                deferPersist: onPendingCreated != nil,
-                onPendingCreated: onPendingCreated
-            )
-        }
-        // Derive-smaller sheet (PRESERVED — same logic as pre-3b)
-        .sheet(item: derivePickerItemBinding) { _ in
-            deriveCounterSheet
-        }
-        // Task detail sheet (PRESERVED)
+        // Task detail sheet (opened from a library row's "Open in library").
         .sheet(item: $openedTaskInLibrary) { item in
             TaskDetailSheetView(
                 taskId: item.id,
@@ -386,7 +259,7 @@ struct BoardWizardTasksStepView: View {
                 onOpenBoard: { _ in openedTaskInLibrary = nil }
             )
         }
-        // Copy sheet for From-a-board (PRESERVED)
+        // Copy sheet for From-a-board.
         .sheet(item: $copyingTask) { source in
             CopyTaskSheet(
                 source: source,
@@ -413,8 +286,10 @@ struct BoardWizardTasksStepView: View {
             RisoButton(title: "Next ›", kind: .primary, fullWidth: true) {
                 onNext()
             }
+            // Real disabled state (not just .allowsHitTesting) so VoiceOver
+            // reports + blocks it; dim cue retained.
             .opacity(canAdvance ? 1 : 0.45)
-            .allowsHitTesting(canAdvance)
+            .disabled(!canAdvance)
         }
         .padding(.horizontal, Riso.gutter)
         .padding(.vertical, 16)
@@ -430,138 +305,7 @@ struct BoardWizardTasksStepView: View {
         )
     }
 
-    // MARK: - Derive sheet (PRESERVED verbatim from pre-3b)
-
-    private var derivePickerItemBinding: Binding<DeriveCounterPayload?> {
-        Binding(
-            get: {
-                if let t = derivingFromTask { return DeriveCounterPayload(task: t) }
-                return nil
-            },
-            set: { newValue in
-                if newValue == nil { derivingFromTask = nil }
-            }
-        )
-    }
-
-    private struct DeriveCounterPayload: Identifiable {
-        let task: OYBC.Task
-        var id: String { task.id }
-    }
-
-    @ViewBuilder
-    private var deriveCounterSheet: some View {
-        if let source = derivingFromTask {
-            NavigationStack {
-                Form {
-                    Section("Derived from") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(source.title)
-                                .font(.headline)
-                            if let action = source.action,
-                               let unit = source.unit,
-                               let max = source.maxCount {
-                                Text("\(action) \(max) \(unit)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    Section("New target") {
-                        TextField("Goal", text: $deriveMaxCountInput)
-                            .keyboardType(.numberPad)
-                        if let action = source.action, let unit = source.unit,
-                           let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-                           parsed > 0 {
-                            Text("Title: \(action) \(parsed) \(unit)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .navigationTitle("Derive smaller version")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            derivingFromTask = nil
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            saveDerivedCounter(source: source)
-                        }
-                        .disabled(!isDeriveInputValid(source: source))
-                    }
-                }
-            }
-        }
-    }
-
-    private func isDeriveInputValid(source: OYBC.Task) -> Bool {
-        guard source.action != nil, source.unit != nil, source.maxCount != nil else { return false }
-        guard let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
-        return parsed > 0
-    }
-
-    // TODO(riso 3b-follow-up): Shared-counter-linked derive — currently creates a
-    // standalone derived counter. The full linked path (↔ source, shared counters
-    // Phase 4) is deferred. Keep current standalone behavior.
-    private func saveDerivedCounter(source: OYBC.Task) {
-        guard let action = source.action,
-              let unit = source.unit,
-              let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-              parsed > 0
-        else { return }
-
-        let now = AppDatabase.currentTimestamp()
-        let newId = AppDatabase.generateUUID()
-        let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = "\(trimmedAction) \(parsed) \(trimmedUnit)"
-
-        let newTask = OYBC.Task(
-            id: newId,
-            userId: userId,
-            title: title,
-            description: nil,
-            type: .counting,
-            action: trimmedAction,
-            unit: trimmedUnit,
-            maxCount: parsed,
-            totalCompletions: 0,
-            totalInstances: 0,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            isDeleted: false
-        )
-
-        derivingFromTask = nil
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try AppDatabase.shared.write { db in
-                    try newTask.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: newId,
-                        operationType: .create,
-                        payload: newTask,
-                        now: now
-                    ).save(db)
-                }
-                DispatchQueue.main.async {
-                    onTaskCreated(newId, title, "counting")
-                    onLibraryReloadRequested()
-                }
-            } catch {
-                // Swallow on background; user can retry.
-            }
-        }
-    }
-
-    // MARK: - Selection helper (PRESERVED verbatim)
+    // MARK: - Selection helper
 
     private func toggleSelection(_ taskId: String) {
         let wasSelected = selectedTaskIds.contains(taskId)
