@@ -1,45 +1,35 @@
 import SwiftUI
 
-/// BoardWizardPreviewStepView — Step 3 of the wizard. iOS twin of
-/// web's `BoardWizardPreviewStep`.
+/// BoardWizardPreviewStepView — Step 3 of the wizard.
 ///
-/// Renders a read-only `BingoBoard` preview, a summary card with
-/// edit-jumps, and Activate / Save Draft buttons. The actual DB
-/// writes delegate to `persistWizardBoard` in `BoardWizardPersist.swift`
-/// so the same logic can be reused by the cancel dialog's Save-Draft
-/// path.
+/// **Riso reskin** — wizard-only view, reskinned in place. All persist logic,
+/// callback wiring, and branch behaviour are preserved verbatim:
+///   - `performCreation(status:)` with its recurring / one-off branches.
+///   - Three button-set variants (one-off: Back/Draft/Activate; recurring: Back/Create or Save).
+///   - `persistWizardBoard`, `persistRecurringTemplate` call sites unchanged.
 ///
-/// The placement (which task goes where) is computed once via the
-/// `placement` computed property, keyed off the wizard's selection
-/// signature so the visual preview and the persisted records stay in
-/// sync.
+/// Layout (per README §3 Step-3 + wizard.jsx):
+///   - Centred board name (Bricolage 800 24px) + meta line (timeframe · size · task count).
+///   - Riso preview mini-grid: keyline cells, task titles, ink FREE + gold star.
+///   - Dashed note: "Tap Create and your board goes live right away."
+///   - Summary card rows: Name / Size / Timeframe / Center / Tasks [/ Recurring] with
+///     Edit jumps per step.
+///   - Riso footer buttons per variant.
 struct BoardWizardPreviewStepView: View {
     @Bindable var controller: BoardWizardViewModel
     let library: TaskLibraryViewModel
     let userId: String
     let onBack: () -> Void
-    /// Called after the board record + all `BoardTask` rows have been
-    /// written. In recurring mode this fires only when the spawn produced
-    /// a board — the parent appends `boardId` to its NavigationPath, so
-    /// passing a templateId here would navigate to a non-existent board.
-    /// Use `onTemplateComplete` for template-only outcomes.
     let onComplete: (_ boardId: String, _ status: WizardStatus) -> Void
-    /// Phase 6.2: called when a recurring template was saved without a
-    /// spawnable board (skip OR edit). The parent should switch to the
-    /// Profile tab so the user lands on the templates list, not on a
-    /// board id that doesn't exist. Optional so existing one-off call
-    /// sites that wire the old `onComplete` only continue to work.
     var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
 
     @State private var isCreating: Bool = false
     @State private var errorMessage: String? = nil
 
+    // MARK: - Computed helpers
+
     private var selectionKey: String {
         Array(controller.selectedTaskIds).sorted().joined(separator: "|")
-    }
-
-    private var selectedTasks: [Task] {
-        library.libraryTasks.filter { controller.selectedTaskIds.contains($0.id) }
     }
 
     private var placement: WizardPlacement {
@@ -60,9 +50,6 @@ struct BoardWizardPreviewStepView: View {
         guard let b = controller.computedBoundaries else { return "—" }
         let windowLabel = playgroundTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
         if controller.isRecurring {
-            // Recurring: lead with the cadence ("Every week") and show
-            // the first-spawn window after, so the row can't be confused
-            // with a one-off board for that single window.
             return "\(recurringCadenceLabel(timeframe: controller.timeframe)) · starting \(windowLabel)"
         }
         return windowLabel
@@ -87,134 +74,245 @@ struct BoardWizardPreviewStepView: View {
         }
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-
-            // Live preview using existing BingoBoard in readOnly mode
-            HStack { Spacer(); previewBoard; Spacer() }
-
-            // Summary card with edit jumps
-            VStack(alignment: .leading, spacing: 4) {
-                summaryRow(label: "Name", value: controller.name.isEmpty ? "(unset)" : controller.name, jumpTo: 1)
-                summaryRow(label: "Size", value: "\(controller.size)×\(controller.size)", jumpTo: 1)
-                summaryRow(label: "Timeframe", value: timeframeSummary, jumpTo: 1)
-                summaryRow(label: "Center", value: centerSummary, jumpTo: 1)
-                summaryRow(
-                    label: "Tasks",
-                    value: "\(controller.selectedTaskIds.count) selected · \(controller.tasksRequired) required",
-                    jumpTo: 2
-                )
-                if controller.isRecurring {
-                    summaryRow(
-                        label: "Recurring",
-                        value: recurringSummary,
-                        jumpTo: 1
-                    )
-                }
-            }
-            .padding(12)
-            .background(Color(.systemGray6))
-            .cornerRadius(8)
-
-            if let msg = errorMessage {
-                Text(msg)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(6)
-            }
-
-            Divider()
-
-            // Three button-set variants — see web `BoardWizardPreviewStep`
-            // for parallel rationale. The actual write branching lives
-            // in `BoardWizardPersist` (see Commit B); this view only
-            // chooses the label.
-            HStack {
-                Button("‹ Back", action: onBack)
-                    .buttonStyle(.bordered)
-                    .disabled(isCreating)
-                Spacer()
-                if !controller.isRecurring {
-                    Button(isCreating ? "Saving…" : "Save as Draft") {
-                        performCreation(status: .draft)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isCreating)
-                    Button(isCreating ? "Activating…" : "Activate Board") {
-                        performCreation(status: .active)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .disabled(isCreating)
-                } else {
-                    Button(recurringPrimaryLabel) {
-                        performCreation(status: .active)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .disabled(isCreating)
-                }
-            }
-        }
-        .padding(16)
-        .background(Color(.systemBackground))
-    }
-
-    @ViewBuilder
-    private var previewBoard: some View {
-        BingoBoard(
-            taskNames: taskNames,
-            gridSize: controller.size,
-            squareSize: 70,
-            centerSquareType: controller.centerType,
-            centerSquareCustomName: controller.centerCustomName.isEmpty ? nil : controller.centerCustomName,
-            readOnly: true
-        )
-        // Force re-mount on layout-affecting changes since BingoBoard
-        // snapshots its task labels on first render. (Placement is always
-        // randomized — #69 — so there's no randomize term in the id.)
-        .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")")
-    }
-
     private var recurringSummary: String {
-        return "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (random subset each window)."
+        "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (random subset each window)."
     }
 
     private var recurringPrimaryLabel: String {
         if isCreating { return "Saving…" }
         if controller.editingTemplateId != nil { return "Save changes" }
-        return "Create template & spawn first board"
+        return "Create template & spawn"
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Centred name + meta
+                    previewHeader
+
+                    // Mini board grid
+                    HStack { Spacer(); previewGrid; Spacer() }
+
+                    // Dashed note
+                    previewNote
+
+                    // Summary card
+                    summaryCard
+
+                    // Error
+                    if let msg = errorMessage {
+                        Text(msg)
+                            .font(.risoBody(12, .semibold))
+                            .foregroundStyle(Color.risoRed)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .risoCard(fill: Color.risoRed.opacity(0.08))
+                    }
+                }
+                .padding(.horizontal, Riso.gutter)
+                .padding(.top, 4)
+                .padding(.bottom, 16)
+            }
+
+            risoFooter
+        }
+    }
+
+    // MARK: - Header
+
+    @ViewBuilder
+    private var previewHeader: some View {
+        VStack(spacing: 4) {
+            Text(controller.name.isEmpty ? "Unnamed Board" : controller.name)
+                .font(.risoHead(24, .extraBold))
+                .tracking(-0.48)
+                .foregroundStyle(Color.risoInk)
+                .multilineTextAlignment(.center)
+
+            Text("\(controller.timeframe.rawValue.capitalized) · \(controller.size)×\(controller.size) · \(controller.selectedTaskIds.count) tasks")
+                .font(.risoBody(12, .bold))
+                .foregroundStyle(Color.risoMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    // MARK: - Preview grid
+
+    @ViewBuilder
+    private var previewGrid: some View {
+        // Reuse the existing BingoBoard widget in readOnly mode — it already
+        // renders correctly and is the established verification surface.
+        // `.id(...)` forces re-mount on layout-affecting changes (same as
+        // the original implementation).
+        BingoBoard(
+            taskNames: taskNames,
+            gridSize: controller.size,
+            squareSize: 60,
+            centerSquareType: controller.centerType,
+            centerSquareCustomName: controller.centerCustomName.isEmpty ? nil : controller.centerCustomName,
+            readOnly: true
+        )
+        .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")")
+        .padding(8)
+        .risoCard(fill: .risoPaper2)
+        .risoHardShadow(Riso.Shadow.card)
+    }
+
+    // MARK: - Note
+
+    @ViewBuilder
+    private var previewNote: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "star.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.risoGold)
+            Group {
+                Text("Tap ") + Text("Create").bold() + Text(" and your board goes live right away.")
+            }
+            .font(.risoBody(12, .semibold))
+            .foregroundStyle(Color.risoMuted)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
+                .foregroundStyle(Color.risoInk)
+        )
+    }
+
+    // MARK: - Summary card
+
+    @ViewBuilder
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            previewRow(label: "Name",
+                       value: controller.name.isEmpty ? "(unset)" : controller.name,
+                       jumpTo: 1)
+            Divider().background(Color.risoInk.opacity(0.12))
+            previewRow(label: "Size",
+                       value: "\(controller.size)×\(controller.size)",
+                       jumpTo: 1)
+            Divider().background(Color.risoInk.opacity(0.12))
+            previewRow(label: "Timeframe",
+                       value: timeframeSummary,
+                       jumpTo: 1)
+            Divider().background(Color.risoInk.opacity(0.12))
+            previewRow(label: "Center",
+                       value: centerSummary,
+                       jumpTo: 1)
+            Divider().background(Color.risoInk.opacity(0.12))
+            previewRow(
+                label: "Tasks",
+                value: "\(controller.selectedTaskIds.count) selected · \(controller.tasksRequired) required",
+                jumpTo: 2
+            )
+            if controller.isRecurring {
+                Divider().background(Color.risoInk.opacity(0.12))
+                previewRow(label: "Recurring",
+                           value: recurringSummary,
+                           jumpTo: 1)
+            }
+        }
+        .risoCard()
     }
 
     @ViewBuilder
-    private func summaryRow(label: String, value: String, jumpTo step: WizardStep) -> some View {
-        HStack(alignment: .top) {
+    private func previewRow(label: String, value: String, jumpTo step: WizardStep) -> some View {
+        HStack(alignment: .top, spacing: 8) {
             Text(label)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-                .frame(width: 88, alignment: .leading)
+                .risoSectionLabel()
+                .frame(width: 80, alignment: .leading)
+
             Text(value)
-                .font(.caption)
-                .foregroundColor(.primary)
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
             Button("Edit") {
                 controller.goToStep(step)
             }
-            .font(.caption)
-            .buttonStyle(.borderless)
+            .font(.risoHead(11, .bold))
+            .foregroundStyle(Color.risoBlue)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Footer
+
+    @ViewBuilder
+    private var risoFooter: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.risoInk)
+                .frame(height: Riso.Keyline.container)
+
+            if !controller.isRecurring {
+                oneOffFooter
+            } else {
+                recurringFooter
+            }
         }
     }
+
+    /// One-off: ‹ Back · Save as Draft · Activate Board
+    @ViewBuilder
+    private var oneOffFooter: some View {
+        HStack(spacing: 10) {
+            RisoButton(title: "‹ Back", kind: .neutral, action: onBack)
+                .disabled(isCreating)
+
+            Spacer()
+
+            RisoButton(title: isCreating ? "Saving…" : "Save as Draft", kind: .neutral) {
+                performCreation(status: .draft)
+            }
+            .disabled(isCreating)
+
+            RisoButton(title: isCreating ? "Activating…" : "Activate Board", kind: .primary) {
+                performCreation(status: .active)
+            }
+            .disabled(isCreating)
+        }
+        .padding(.horizontal, Riso.gutter)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
+        .background(Color.risoPaper)
+    }
+
+    /// Recurring: ‹ Back · Create template & spawn (or Save changes)
+    @ViewBuilder
+    private var recurringFooter: some View {
+        HStack(spacing: 10) {
+            RisoButton(title: "‹ Back", kind: .neutral, action: onBack)
+                .disabled(isCreating)
+
+            Spacer()
+
+            RisoButton(title: recurringPrimaryLabel, kind: .primary) {
+                performCreation(status: .active)
+            }
+            .disabled(isCreating)
+        }
+        .padding(.horizontal, Riso.gutter)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
+        .background(Color.risoPaper)
+    }
+
+    // MARK: - Creation logic (verbatim from original)
 
     private func performCreation(status: WizardStatus) {
         errorMessage = nil
 
-        // Recurring branch — persist the template and (for fresh creates)
-        // immediately spawn the current window's board. The status arg
-        // is ignored: recurring templates have no draft concept.
         if controller.isRecurring {
             isCreating = true
             persistRecurringTemplate(
@@ -224,22 +322,11 @@ struct BoardWizardPreviewStepView: View {
                     isCreating = false
                     switch outcome {
                     case .createdAndSpawned(let templateId, let boardId):
-                        // Pass the spawned board id so cross-tab nav can
-                        // land on the actual board (matches web behavior).
                         _ = templateId
                         onComplete(boardId, status)
                     case .createdSpawnSkipped(let templateId, _):
-                        // Template saved; spawn skipped — route the user
-                        // to the Profile templates list (via the parent's
-                        // `onTemplateComplete`) so they see the attention
-                        // badge. Falling back to `onComplete(templateId, …)`
-                        // would push the templateId onto the boards
-                        // NavigationPath and try to render BoardPlayView
-                        // for a non-existent board.
                         onTemplateComplete?(templateId)
                     case .updated(let templateId):
-                        // Edit path — no spawn. Same routing as the skip
-                        // case so the user lands back on the templates list.
                         onTemplateComplete?(templateId)
                     }
                 },
@@ -253,7 +340,6 @@ struct BoardWizardPreviewStepView: View {
             return
         }
 
-        // One-off branch — existing behavior unchanged.
         let resolved = resolveWizardDates(controller: controller)
         let dates: (start: String, end: String)
         switch resolved {

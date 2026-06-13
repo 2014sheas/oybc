@@ -227,9 +227,31 @@ enum SnapshotFixtures {
         case previewRecurring
     }
 
+    /// Fixed reference date used by all wizard-controller fixtures so
+    /// `computedBoundaries` / `timeframeDisplayLabel` resolve to a
+    /// stable calendar window regardless of when the tests run.
+    ///
+    /// Chosen as 2026-04-01 (Wednesday) — a known Wednesday so weekly
+    /// boundaries (Mon–Sun with the monday weekStartDay pref) resolve
+    /// to "Week of Mar 30 – Apr 5, 2026" deterministically. The same
+    /// date is already the `fixedTimestamp` epoch used elsewhere in
+    /// the fixtures, which keeps everything consistent.
+    static let fixedReferenceDate: Date = {
+        var comps = DateComponents()
+        comps.year = 2026; comps.month = 4; comps.day = 1
+        comps.hour = 12; comps.minute = 0; comps.second = 0
+        return Calendar.current.date(from: comps)!
+    }()
+
     static func makeWizardController(stage: WizardStage = .setupBlank) -> BoardWizardViewModel {
         let prefs = makeUserPreferences()
-        let controller = BoardWizardViewModel(preferences: prefs)
+        // Pass a fixed targetWindowDate so computedBoundaries (and the Riso
+        // date note in RisoBoardSetupForm) resolves to a deterministic calendar
+        // window instead of Date() — prevents month-rollover snapshot flakiness.
+        let controller = BoardWizardViewModel(
+            preferences: prefs,
+            targetWindowDate: fixedReferenceDate
+        )
         switch stage {
         case .setupBlank:
             break
