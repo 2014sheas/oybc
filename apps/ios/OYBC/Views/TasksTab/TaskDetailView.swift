@@ -42,7 +42,7 @@ struct TaskDetailView: View {
                     .foregroundColor(.red)
                     .padding()
             } else if let task {
-                TaskDetailContentView(
+                RisoTaskDetailContentView(
                     task: task,
                     placements: placements,
                     affectedBoards: affectedBoards,
