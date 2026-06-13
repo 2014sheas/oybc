@@ -174,7 +174,7 @@ final class CoreBoardBrowserViewModel {
             let cell = CoreBoardWindowCell(
                 windowStart: startIso,
                 windowEnd: endIso,
-                windowLabel: playgroundTimeframeLabel(timeframe: timeframe, startDate: window.start),
+                windowLabel: formatTimeframeLabel(timeframe: timeframe, startDate: window.start),
                 board: boardsByStart[startIso],
                 isCurrentWindow: nowRef >= window.start && nowRef <= window.end,
                 isPastWindow: nowRef > window.end

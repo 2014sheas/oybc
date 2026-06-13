@@ -318,8 +318,8 @@ enum SnapshotFixtures {
 
     // MARK: - Internal builders
 
-    /// Returns realistic primitive (.normal) tasks. Titles match the
-    /// flavor of `generateSampleTaskTitles()` so renders feel natural.
+    /// Returns realistic primitive (.normal) tasks with everyday-goal
+    /// titles so renders feel natural.
     private static func normalTasks() -> [Task] {
         [
             makeTask(id: "t-normal-1", title: "Morning workout", type: .normal),

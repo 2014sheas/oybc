@@ -372,7 +372,7 @@ struct BoardListView: View {
         guard let startDate = parseISO8601Date(board.startDate) else {
             return board.timeframe.rawValue.capitalized
         }
-        let base = playgroundTimeframeLabel(timeframe: board.timeframe, startDate: startDate)
+        let base = formatTimeframeLabel(timeframe: board.timeframe, startDate: startDate)
         let expiry = getExpiryLabel(board)
         guard board.timeframe != .custom, !expiry.isEmpty, expiry != "No deadline" else {
             return base

@@ -328,3 +328,10 @@ struct BingoBoard: View {
             .padding()
     }
 }
+
+/// Generates placeholder task names (`["Task 1", "Task 2", ...]`) for the
+/// previews above. Formerly lived in the removed Playground's `PlaygroundUtils`;
+/// co-located here since these previews are now its only caller.
+private func generateTaskNames(count: Int) -> [String] {
+    (1...max(1, count)).map { "Task \($0)" }
+}

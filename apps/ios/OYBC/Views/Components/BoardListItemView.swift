@@ -33,7 +33,7 @@ struct BoardListItemView: View {
         guard board.timeframe != .custom,
               let startDate = parseISO8601Date(board.startDate)
         else { return nil }
-        return playgroundTimeframeLabel(timeframe: board.timeframe, startDate: startDate)
+        return formatTimeframeLabel(timeframe: board.timeframe, startDate: startDate)
     }
 
     private var expired: Bool {

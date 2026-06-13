@@ -148,7 +148,7 @@ struct RisoBoardSetupForm: View {
                     .foregroundStyle(Color.risoMuted)
                 // For recurring boards, prefix with cadence ("Every week · …").
                 Text(controller.isRecurring
-                     ? "\(recurringCadenceLabel(timeframe: controller.timeframe)) · starting \(label)"
+                     ? "\(formatRecurringCadence(timeframe: controller.timeframe)) · starting \(label)"
                      : label)
                     .font(.risoBody(12, .semibold))
                     .foregroundStyle(Color.risoMuted)

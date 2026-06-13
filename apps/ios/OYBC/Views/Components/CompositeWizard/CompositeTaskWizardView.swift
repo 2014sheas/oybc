@@ -9,8 +9,13 @@ import GRDB
 /// iOS twin of web's `CompositeTaskWizard`.
 struct CompositeTaskWizardView: View {
 
-    /// User ID for task ownership. Defaults to playground user when omitted.
-    var userId: String = playgroundUserId
+    /// User ID for task ownership. Always supplied by callers
+    /// (`RisoSpecialTaskPanel`, `CreateNewTaskFormView`); the empty default
+    /// only keeps `#Preview` / isolated mounts compiling.
+    var userId: String = ""
+
+    /// Seconds the success message lingers before auto-dismissing.
+    private let successDismissSeconds: Double = 3.0
 
     /// Invoked with the newly created compound Task after a successful save.
     var onCreated: ((OYBC.Task) -> Void)? = nil
@@ -122,7 +127,6 @@ struct CompositeTaskWizardView: View {
             }
         }
         .onAppear {
-            ensurePlaygroundUser()
             loadLibrary()
         }
         .sheet(item: $openedTaskInLibrary) { item in

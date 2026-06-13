@@ -22,7 +22,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
     /// Human-readable window label ("Today", "Week of …", "May 2026", "2026").
     /// Stored, not computed: derived once when the window changes in
     /// `init`/`step`, so `body` reads don't re-parse + allocate a
-    /// `DateFormatter` (via `playgroundTimeframeLabel`) on every render.
+    /// `DateFormatter` (via `formatTimeframeLabel`) on every render.
     @Published private(set) var windowLabel: String = ""
 
     // MARK: - Config (immutable after init)
@@ -85,13 +85,13 @@ final class CoreBoardWindowViewModel: ObservableObject {
     // MARK: - Derived
 
     /// Builds the window label from an ISO start string, via
-    /// `playgroundTimeframeLabel` — the same helper
+    /// `formatTimeframeLabel` — the same helper
     /// `CoreBoardBrowserViewModel.rebuildCells` uses for
     /// `CoreBoardWindowCell.windowLabel`. Static so `init` can call it
     /// before all stored properties are initialised.
     private static func makeLabel(timeframe: Timeframe, windowStartISO: String) -> String {
         guard let date = parseISO8601Date(windowStartISO) else { return "" }
-        return playgroundTimeframeLabel(timeframe: timeframe, startDate: date)
+        return formatTimeframeLabel(timeframe: timeframe, startDate: date)
     }
 
     /// `true` when the window's end is strictly before now (past window).

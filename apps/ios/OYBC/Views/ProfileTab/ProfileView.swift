@@ -28,7 +28,6 @@ struct ProfileView: View {
             accountSection
             appSection
             preferencesSection
-            developerSection
             signOutSection
         }
         .navigationTitle("Profile")
@@ -102,18 +101,6 @@ struct ProfileView: View {
                 DefaultPoolsListView()
             } label: {
                 Label("Default pools", systemImage: "tray.full")
-            }
-        }
-    }
-
-    private var developerSection: some View {
-        Section("Developer") {
-            NavigationLink {
-                // Pass the signed-in user's week-start so playground features
-                // that do timeframe boundary math match production behaviour.
-                PlaygroundView(weekStartDay: preferences.weekStartDay.rawValue)
-            } label: {
-                Label("Playground", systemImage: "hammer")
             }
         }
     }
