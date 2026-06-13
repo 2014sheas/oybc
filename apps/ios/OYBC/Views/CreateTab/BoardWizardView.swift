@@ -3,52 +3,29 @@ import SwiftUI
 /// BoardWizardView — Orchestrator for the 3-step board-creation
 /// wizard. iOS twin of web's `BoardWizardPage`.
 ///
-/// Owns the wizard view-model and a `TaskLibraryViewModel`, then
-/// routes them into the active step view. When the user dismisses
-/// the wizard mid-edit, `BoardWizardCancelDialogView` is presented
-/// with the smart 3-option prompt; pristine states dismiss silently.
+/// **Riso reskin (Phase 3a):** Riso header (kicker + H2 title, X-cancel as
+/// a keyline icon button), `RisoBoardWizardStepperView`, and
+/// `RisoPaperBackground`. The Create tab stays visible (it's a tab, not a
+/// modal) — footer buttons in each step view sit above it.
 ///
-/// Supports resuming an existing draft via the optional `draft`
-/// argument — every wizard field hydrates from the Board record and
-/// the selection set rebuilds from its `BoardTask` rows.
+/// All wiring is preserved unchanged:
+///   - `BoardWizardViewModel` owns the full wizard state.
+///   - `stepContent` routes to the three step views.
+///   - `handleCancelRequested` / `BoardWizardCancelDialogView` logic unchanged.
+///   - `persistWizardBoard` / `persistRecurringTemplate` call sites in the
+///     Preview step are untouched.
+///   - `onComplete(boardId, status)` + `onTemplateComplete(templateId)` callbacks.
 struct BoardWizardView: View {
     let userId: String
     let preferences: UserPreferences
     let draft: (board: Board, boardTasks: [BoardTask])?
-    /// Phase 6.1: when set, the wizard was launched from the Boards-
-    /// tab Recurring Boards banner. The setup step locks the timeframe
-    /// field to this value (see BoardWizardViewModel + BoardSetupForm).
-    /// Mutually exclusive with `draft` — drafts already lock semantics
-    /// by hydrating the full record.
     let prefilledRecurringTimeframe: Timeframe?
-    /// Phase B: when set, the wizard was launched from the core-board
-    /// browser to spawn a non-current window (e.g. tomorrow's daily).
-    /// Forwarded into `BoardWizardViewModel` so `computedBoundaries` /
-    /// `resolveWizardDates` / the recurring spawn-window all key off
-    /// this date instead of `Date()`. Nil = legacy "today's window"
-    /// behaviour (banner click or one-off). Only meaningful alongside
-    /// `prefilledRecurringTimeframe`.
     let targetWindowDate: Date?
-    /// Phase 6.2 UX rework: when set, the wizard was launched from
-    /// Profile → Recurring templates → Edit. All fields hydrate from
-    /// the template, `isRecurring` is forced ON, and Save updates the
-    /// template instead of creating a new board.
     let editingTemplate: RecurringBoardTemplate?
-    /// Issue #71 — when true, the wizard was launched from the Create
-    /// hub's "Create a recurring board" CTA. Forces `isRecurring` ON at
-    /// entry (no in-form toggle). The user picks timeframe/size/center +
-    /// pool, and Save creates a template + spawns the first board.
     let startRecurring: Bool
     let onCancel: () -> Void
     let onComplete: (_ boardId: String, _ status: String) -> Void
-    /// Phase 6.2: called when a recurring template was saved with no
-    /// spawnable board (skip OR edit). Optional — one-off call sites
-    /// don't need to wire it.
     var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
-    /// Called when the user picks "Delete draft" from the cancel
-    /// dialog. Only wired (and rendered as a button) when the wizard
-    /// is resuming an existing draft. Parent runs
-    /// `AppDatabase.deleteDraftWithCascade(id:)` and closes the wizard.
     var onDeleteDraft: ((_ boardId: String) -> Void)? = nil
 
     @State private var wizard: BoardWizardViewModel
@@ -94,8 +71,6 @@ struct BoardWizardView: View {
 
     // MARK: - Cancel / save-draft helpers
 
-    /// Resolved dates for the current wizard state (re-evaluates each
-    /// render — inexpensive computed property).
     private var currentDates: ResolvedWizardDates {
         resolveWizardDates(controller: wizard)
     }
@@ -119,9 +94,6 @@ struct BoardWizardView: View {
         return nil
     }
 
-    /// Entry-point called by every "close wizard" affordance (header
-    /// X + Step 1's Cancel footer button). Dismisses silently when
-    /// the wizard is pristine; otherwise shows the smart dialog.
     private func handleCancelRequested() {
         if wizard.isPristine {
             onCancel()
@@ -168,50 +140,85 @@ struct BoardWizardView: View {
         cancelDialogError = nil
     }
 
-    /// Header label reflecting the launch mode (mirrors web's
-    /// `BoardWizardPage` title logic).
-    private var wizardTitle: String {
-        if draft != nil { return "Resume draft" }
+    // MARK: - Kicker text
+
+    /// Header kicker: uppercase short label reflecting the launch mode.
+    /// Mirrors the `step === 2 ? "Last look" : "New board"` pattern in
+    /// `wizard.jsx`, extended to cover all OYBC launch modes.
+    private var kickerText: String {
+        if wizard.currentStep == 3 { return "LAST LOOK" }
+        if draft != nil { return "RESUME DRAFT" }
         if wizard.isRecurring {
-            return editingTemplate != nil ? "Edit recurring board" : "New recurring board"
+            return editingTemplate != nil ? "EDIT RECURRING BOARD" : "NEW RECURRING BOARD"
         }
-        return "New board"
+        return "NEW BOARD"
+    }
+
+    /// H2 title — the name of the current step.
+    private var stepTitle: String {
+        switch wizard.currentStep {
+        case 1: return "Setup"
+        case 2: return "Tasks"
+        default: return "Preview"
+        }
     }
 
     // MARK: - Body
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(wizardTitle)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Spacer()
-                Button {
-                    handleCancelRequested()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
+        ZStack(alignment: .top) {
+            RisoPaperBackground()
+
+            VStack(spacing: 0) {
+                // ── Riso header ──────────────────────────────────────────
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(kickerText)
+                                .risoKicker()
+                            Text(stepTitle)
+                                .risoH2()
+                        }
+
+                        Spacer()
+
+                        // X-cancel: 40pt keyline square (matches `.r-back` in riso.css).
+                        Button {
+                            handleCancelRequested()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Color.risoInk)
+                                .frame(width: 40, height: 40)
+                                .risoCard(fill: .risoPaper2)
+                        }
+                        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
+                        .accessibilityLabel("Close wizard")
+                    }
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.top, 16)
+                    .padding(.bottom, 2)
+
+                    // ── Riso stepper ──────────────────────────────────
+                    RisoBoardWizardStepperView(
+                        currentStep: wizard.currentStep,
+                        onStepClick: { wizard.goToStep($0) }
+                    )
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 8)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close wizard")
-            }
 
-            BoardWizardStepperView(
-                currentStep: wizard.currentStep,
-                onStepClick: { wizard.goToStep($0) }
-            )
+                // ── Step content ────────────────────────────────────────
+                stepContent
 
-            stepContent
-
-            if let err = cancelDialogError {
-                Text(err)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(8)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(6)
+                // ── Cancel-dialog error (shown beneath content) ─────────
+                if let err = cancelDialogError {
+                    Text(err)
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoRed)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.vertical, 8)
+                }
             }
         }
         .onAppear {

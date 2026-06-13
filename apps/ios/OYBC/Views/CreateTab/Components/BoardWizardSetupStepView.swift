@@ -1,40 +1,66 @@
 import SwiftUI
 
-/// BoardWizardSetupStepView — Step 1 of the wizard. iOS twin of web's
-/// `BoardWizardSetupStep`. Renders `BoardSetupFormView` plus a footer
-/// with Cancel and Next ›. The Next button reflects
-/// `controller.isStep1Valid`.
+/// BoardWizardSetupStepView — Step 1 of the wizard.
 ///
-/// The form's layout (one-off / recurring / core) is driven by the
-/// controller's read-only `isRecurring` / `isCore` flags, both set at
-/// wizard entry — there's no in-step timeframe lock or recurring toggle.
+/// **Riso reskin**: renders `RisoBoardSetupForm` (the new wizard-only Riso
+/// styled form) + a Riso-styled footer row (Cancel / Next ›). The shared
+/// `BoardSetupFormView` is NOT used here — it remains untouched for
+/// `EditBoardSheet` and its existing snapshot coverage.
+///
+/// All VM bindings and validation behaviour (`controller.isStep1Valid`,
+/// `controller.step1ValidationMessage`) are preserved unchanged.
 struct BoardWizardSetupStepView: View {
     @Bindable var controller: BoardWizardViewModel
     let onCancel: () -> Void
     let onNext: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            BoardSetupFormView(controller: controller)
+        VStack(spacing: 0) {
+            // Scrollable form area
+            ScrollView {
+                RisoBoardSetupForm(controller: controller)
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
+            }
 
-            Divider()
+            // Validation message (above footer)
+            if !controller.isStep1Valid, let msg = controller.step1ValidationMessage {
+                Text(msg)
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoRed)
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-            HStack {
-                if !controller.isStep1Valid, let msg = controller.step1ValidationMessage {
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                        .italic()
-                }
-                Spacer()
-                Button("Cancel", action: onCancel)
-                    .buttonStyle(.bordered)
-                Button("Next ›", action: onNext)
-                    .buttonStyle(.borderedProminent)
+            // Footer buttons
+            risoFooter
+        }
+    }
+
+    @ViewBuilder
+    private var risoFooter: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.risoInk)
+                .frame(height: Riso.Keyline.container)
+
+            HStack(spacing: 10) {
+                RisoButton(title: "Cancel", kind: .neutral, action: onCancel)
+                    .frame(maxWidth: .infinity)
+
+                RisoButton(title: "Next ›", kind: .primary, action: onNext)
+                    .frame(maxWidth: .infinity)
+                    // Visual dim + a real disabled state (so VoiceOver also
+                    // reports/blocks it) when Step 1 isn't valid yet.
+                    .opacity(controller.isStep1Valid ? 1 : 0.45)
                     .disabled(!controller.isStep1Valid)
             }
+            .padding(.horizontal, Riso.gutter)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+            .background(Color.risoPaper)
         }
-        .padding(16)
-        .background(Color(.systemBackground))
     }
 }

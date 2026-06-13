@@ -58,9 +58,13 @@ func buildWizardPlacement(
     let others: [Task] = chosenCenter != nil
         ? selected.filter { $0.id != chosenCenter!.id }
         : selected
+    // When isRandomized is false (e.g. snapshot tests pin this to get
+    // deterministic baselines), sort by task id so Set iteration order
+    // — which is non-deterministic across process restarts in Swift —
+    // doesn't produce a different grid on every test run.
     let ordered = controller.isRandomized
         ? Shuffle.fisherYatesShuffle(others)
-        : others
+        : others.sorted { $0.id < $1.id }
 
     var grid: WizardPlacement = Array(repeating: nil, count: total)
     var oi = 0
