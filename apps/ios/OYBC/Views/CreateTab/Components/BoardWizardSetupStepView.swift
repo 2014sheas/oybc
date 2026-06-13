@@ -51,9 +51,11 @@ struct BoardWizardSetupStepView: View {
                     .frame(maxWidth: .infinity)
 
                 RisoButton(title: "Next ›", kind: .primary, action: onNext)
-                    .frame(maxWidth: .infinity * 1.7)
+                    .frame(maxWidth: .infinity)
+                    // Visual dim + a real disabled state (so VoiceOver also
+                    // reports/blocks it) when Step 1 isn't valid yet.
                     .opacity(controller.isStep1Valid ? 1 : 0.45)
-                    .allowsHitTesting(controller.isStep1Valid)
+                    .disabled(!controller.isStep1Valid)
             }
             .padding(.horizontal, Riso.gutter)
             .padding(.top, 16)

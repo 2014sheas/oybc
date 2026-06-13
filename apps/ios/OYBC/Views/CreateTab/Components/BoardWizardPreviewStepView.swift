@@ -165,17 +165,27 @@ struct BoardWizardPreviewStepView: View {
 
     // MARK: - Note
 
+    /// Note copy matching the actual primary action for this flow, so it's
+    /// not misleading in the draft / recurring-edit states.
+    private var previewNoteText: String {
+        if controller.editingTemplateId != nil {
+            return "Save changes to update your recurring template."
+        }
+        if controller.isRecurring {
+            return "Create your template and spawn the first board."
+        }
+        return "Activate to go live now, or save it as a draft for later."
+    }
+
     @ViewBuilder
     private var previewNote: some View {
         HStack(spacing: 8) {
             Image(systemName: "star.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.risoGold)
-            Group {
-                Text("Tap ") + Text("Create").bold() + Text(" and your board goes live right away.")
-            }
-            .font(.risoBody(12, .semibold))
-            .foregroundStyle(Color.risoMuted)
+            Text(previewNoteText)
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoMuted)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
