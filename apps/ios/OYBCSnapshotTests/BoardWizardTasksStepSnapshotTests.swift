@@ -3,27 +3,27 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot tests for `BoardWizardTasksStepView` — the wizard step that
-/// motivated this whole harness (the doubled-padding bug lived here).
+/// Snapshot tests for `BoardWizardTasksStepView` — Phase 3b Riso redesign.
 ///
-/// Render variants:
-///   - empty library (the empty-state UI)
+/// Full-step variants (all re-recorded after the 3b restructure):
+///   - empty library (pool header 0/25, quick-add, dashed buttons, empty-pool note)
 ///   - dense library, nothing selected
-///   - dense library, several rows selected (selection-active tint)
-///   - center-task mode active (star affordance shows on selected rows)
+///   - dense library, several rows in the pool (pool list rows visible)
+///   - center-task mode active (center-task indicator in pool header)
+///   - recurring-template variant ("N extra shuffle in each spawn" copy)
 ///
-/// Each test is wrapped in `UIHostingController` and rendered at iPhone
-/// 17 Pro width (393pt) — pinning the device frame keeps diffs stable
-/// across machines. iOS-version pinning is enforced at the scheme level
-/// (see CLAUDE.md → Snapshot Testing).
+/// Leaf-component variants (new in 3b for targeted regression checks):
+///   - pool header: short / satisfied (light + dark)
+///   - pool list: with tasks (light + dark)
+///   - empty pool state (light + dark)
+///
+/// Each test renders at iPhone 16 width (393pt). iOS-version pinning is
+/// enforced at the scheme level (see CLAUDE.md → Snapshot Testing).
 final class BoardWizardTasksStepSnapshotTests: XCTestCase {
 
-    /// Flip to `true` and run once after a UI change to refresh
-    /// baselines. Leave `false` for normal CI / verification runs so
-    /// diffs cause assertion failures instead of silent overwrites.
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // MARK: - Variants
+    // MARK: - Full-step variants (re-recorded after 3b)
 
     func testEmptyLibrary() {
         let view = makeView(libraryState: .empty)
@@ -69,9 +69,6 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
-    /// Recurring-template variant — verifies the count row reads
-    /// "X / N min" instead of the bare count, matching the loose-fit
-    /// pool semantics introduced in commit `1400721`.
     func testDenseLibraryRecurringSomeSelected() {
         let view = makeView(
             libraryState: .dense,
@@ -85,11 +82,148 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - Builder
+    // MARK: - Leaf: Pool header card
 
-    /// Constructs a `BoardWizardTasksStepView` with stable bindings so
-    /// the snapshotted hierarchy matches what users see in production
-    /// without coupling to live wizard state.
+    func testPoolHeaderShortLight() {
+        let view = RisoTasksPoolHeaderView(
+            selectedCount: 3,
+            tasksRequired: 25,
+            isRecurring: false,
+            centerTaskMode: false,
+            centerSatisfied: false
+        )
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 130)),
+            record: recordMode
+        )
+    }
+
+    func testPoolHeaderSatisfiedLight() {
+        let view = RisoTasksPoolHeaderView(
+            selectedCount: 27,
+            tasksRequired: 25,
+            isRecurring: false,
+            centerTaskMode: true,
+            centerSatisfied: true
+        )
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 160)),
+            record: recordMode
+        )
+    }
+
+    func testPoolHeaderShortDark() {
+        let view = RisoTasksPoolHeaderView(
+            selectedCount: 3,
+            tasksRequired: 25,
+            isRecurring: false,
+            centerTaskMode: false,
+            centerSatisfied: false
+        )
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 130),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
+    func testPoolHeaderSatisfiedDark() {
+        let view = RisoTasksPoolHeaderView(
+            selectedCount: 27,
+            tasksRequired: 25,
+            isRecurring: true,
+            centerTaskMode: false,
+            centerSatisfied: false
+        )
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 130),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
+    // MARK: - Leaf: Pool list (selected tasks)
+
+    func testPoolListWithTasksLight() {
+        let view = makePoolListView()
+            .padding(20)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 300)),
+            record: recordMode
+        )
+    }
+
+    func testPoolListWithTasksDark() {
+        let view = makePoolListView()
+            .padding(20)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 300),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
+    func testPoolListEmptyLight() {
+        let view = RisoPoolListView(
+            selectedTaskIds: [],
+            effectiveTaskById: [:],
+            effectiveChildrenByCompound: [:],
+            isRecurring: false,
+            onRemove: { _ in }
+        )
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 120)),
+            record: recordMode
+        )
+    }
+
+    func testPoolListEmptyDark() {
+        let view = RisoPoolListView(
+            selectedTaskIds: [],
+            effectiveTaskById: [:],
+            effectiveChildrenByCompound: [:],
+            isRecurring: false,
+            onRemove: { _ in }
+        )
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 120),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
+    // MARK: - Builders
+
     private func makeView(
         libraryState: SnapshotFixtures.LibraryState,
         initialSelection: Set<String> = [],
@@ -98,14 +232,56 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         isRecurring: Bool = false
     ) -> some View {
         let library = SnapshotFixtures.makeTaskLibrary(state: libraryState)
-        let host = TasksStepHost(
+        return TasksStepHost(
             library: library,
             initialSelection: initialSelection,
             initialCenterTaskId: initialCenterTaskId,
             centerTaskMode: centerTaskMode,
             isRecurring: isRecurring
         )
-        return host
+    }
+
+    private func makePoolListView() -> some View {
+        // Build a stable set of tasks for the pool list
+        let normalTask = SnapshotFixtures.makeTask(id: "t-normal-1", title: "Meditate 10 min", type: .normal)
+        let countingTask = SnapshotFixtures.makeTask(
+            id: "t-counting-1",
+            title: "Run 5 km",
+            type: .counting,
+            action: "Run",
+            unit: "km",
+            maxCount: 5
+        )
+        let compoundTask = SnapshotFixtures.makeTask(
+            id: "t-compound-and",
+            title: "Morning routine",
+            type: .compound,
+            operatorType: .and
+        )
+        let child1 = SnapshotFixtures.makeCompoundChild(
+            id: "cc-1", compoundTaskId: "t-compound-and", childTaskId: "t-normal-1", childIndex: 0
+        )
+        let child2 = SnapshotFixtures.makeCompoundChild(
+            id: "cc-2", compoundTaskId: "t-compound-and", childTaskId: "t-counting-1", childIndex: 1
+        )
+
+        let taskById: [String: OYBC.Task] = [
+            normalTask.id: normalTask,
+            countingTask.id: countingTask,
+            compoundTask.id: compoundTask,
+        ]
+        let childrenByCompound: [String: [CompoundChild]] = [
+            compoundTask.id: [child1, child2],
+        ]
+        let selectedIds: Set<String> = [normalTask.id, countingTask.id, compoundTask.id]
+
+        return RisoPoolListView(
+            selectedTaskIds: selectedIds,
+            effectiveTaskById: taskById,
+            effectiveChildrenByCompound: childrenByCompound,
+            isRecurring: false,
+            onRemove: { _ in }
+        )
     }
 }
 
@@ -138,15 +314,12 @@ private struct TasksStepHost: View {
             library: library,
             selectedTaskIds: $selectedTaskIds,
             tasksRequired: 25,
-            // Recurring=true exercises the "X / N min" loose-fit copy
-            // (commit 1400721); =false keeps the bare count for the
-            // legacy one-off variants.
             isRecurring: isRecurring,
             centerTaskMode: centerTaskMode,
             centerTaskId: $centerTaskId,
             userId: SnapshotFixtures.userId,
-            // Snapshot fixture: .custom hides the new "From parent boards"
-            // filter chip (no parent timeframes), keeping baselines stable.
+            // .custom hides the "From parent boards" filter chip (no parent
+            // timeframes for custom), keeping baselines stable.
             currentTimeframe: .custom,
             onTaskCreated: { _, _, _ in },
             onCompositeCreated: { _ in },
