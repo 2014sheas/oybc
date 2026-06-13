@@ -12,7 +12,7 @@ import SwiftUI
 struct RisoBoardCard: View {
 
     let board: Board
-    /// Pre-computed timeframe label from `playgroundTimeframeLabel`.
+    /// Pre-computed timeframe label from `formatTimeframeLabel`.
     let timeframeLabel: String
     /// Whether this board is expiring soon (drives the badge color).
     let isExpiring: Bool

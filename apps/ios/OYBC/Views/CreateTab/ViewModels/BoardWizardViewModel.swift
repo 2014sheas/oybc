@@ -195,7 +195,7 @@ final class BoardWizardViewModel {
                     referenceDate: targetWindowDate ?? Date(),
                     weekStartDay: preferences.weekStartDay.rawValue
                 ) {
-                    self.name = playgroundTimeframeLabel(
+                    self.name = formatTimeframeLabel(
                         timeframe: timeframe,
                         startDate: window.start
                     )
@@ -377,7 +377,7 @@ final class BoardWizardViewModel {
     /// Inline summary label for the chosen non-custom timeframe.
     var timeframeDisplayLabel: String? {
         guard let b = computedBoundaries else { return nil }
-        return playgroundTimeframeLabel(timeframe: timeframe, startDate: b.start)
+        return formatTimeframeLabel(timeframe: timeframe, startDate: b.start)
     }
 
     var isStep1Valid: Bool {

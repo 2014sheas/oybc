@@ -48,9 +48,9 @@ struct BoardWizardPreviewStepView: View {
             return "Custom (no dates set)"
         }
         guard let b = controller.computedBoundaries else { return "—" }
-        let windowLabel = playgroundTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
+        let windowLabel = formatTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
         if controller.isRecurring {
-            return "\(recurringCadenceLabel(timeframe: controller.timeframe)) · starting \(windowLabel)"
+            return "\(formatRecurringCadence(timeframe: controller.timeframe)) · starting \(windowLabel)"
         }
         return windowLabel
     }

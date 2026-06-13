@@ -187,7 +187,7 @@ final class TasksTabViewModel {
     ///   - Full ISO8601 with `Z` / `±HH:MM` (Firestore sync round-trip).
     ///
     /// The non-date-only branch delegates to the shared `parseISO8601Date`
-    /// helper in `PlaygroundUtils.swift`, which already covers the two
+    /// helper in `TimeframeFormatting.swift`, which already covers the two
     /// timestamped shapes via cached formatters.
     static func isTaskExpired(_ task: Task, now: Date = Date()) -> Bool {
         guard let endIso = task.endDate else { return false }

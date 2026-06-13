@@ -102,7 +102,7 @@ struct InteractiveTaskSquareView: View {
         }
     }
 
-    /// Accent colour for the progress bar, matching TaskSquareActionsPlayground conventions.
+    /// Accent colour for the progress bar, keyed off the task type.
     private var barColor: Color {
         switch taskType {
         case .normal, .achievement: return .green

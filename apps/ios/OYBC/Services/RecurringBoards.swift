@@ -58,7 +58,7 @@ struct PendingRecurringBoard: Equatable {
     let startDate: String
     /// Local ISO8601 string.
     let endDate: String
-    /// Human-readable label from `playgroundTimeframeLabel` — e.g. "Today",
+    /// Human-readable label from `formatTimeframeLabel` — e.g. "Today",
     /// "Week of May 4 – 10, 2026", "May 2026", "2026".
     let suggestedName: String
 }
@@ -129,7 +129,7 @@ func findPendingRecurringBoards(
             timeframe: timeframe,
             startDate: startISO,
             endDate: endISO,
-            suggestedName: playgroundTimeframeLabel(
+            suggestedName: formatTimeframeLabel(
                 timeframe: timeframe,
                 startDate: window.start
             )
@@ -196,7 +196,7 @@ func getCoreBoardSlots(
             timeframe: timeframe,
             windowStart: startISO,
             windowEnd: endISO,
-            windowLabel: playgroundTimeframeLabel(
+            windowLabel: formatTimeframeLabel(
                 timeframe: timeframe,
                 startDate: window.start
             ),

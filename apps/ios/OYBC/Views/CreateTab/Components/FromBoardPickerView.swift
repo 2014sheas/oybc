@@ -105,7 +105,7 @@ struct FromBoardPickerView: View {
         if board.timeframe == .custom {
             window = "Custom"
         } else if let start = parseISO8601Date(board.startDate) {
-            window = playgroundTimeframeLabel(timeframe: board.timeframe, startDate: start)
+            window = formatTimeframeLabel(timeframe: board.timeframe, startDate: start)
         } else {
             window = ""
         }

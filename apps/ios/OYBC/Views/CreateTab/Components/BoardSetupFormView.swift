@@ -134,7 +134,7 @@ struct BoardSetupFormView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             let windowLabel = ctrl.timeframeDisplayLabel ?? ""
                             if ctrl.isRecurring {
-                                Text(recurringCadenceLabel(timeframe: ctrl.timeframe))
+                                Text(formatRecurringCadence(timeframe: ctrl.timeframe))
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
                                 Text("Starting: \(windowLabel)")
