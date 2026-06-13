@@ -41,6 +41,11 @@ struct RisoTaskDetailContentView: View {
                 if let sub = typeSubtitle {
                     detailRow(label: "Details", value: sub)
                 }
+                // Shared-counter link caption (Phase 2) — restored so linked
+                // counting tasks surface their source here, like the original detail.
+                if task.type == .counting, let sharedCounterId = task.sharedCounterId {
+                    LinkedCounterCaptionView(sharedCounterId: sharedCounterId)
+                }
                 usageRow
                 if task.type == .compound && !compoundChildren.isEmpty {
                     subtasksSection
@@ -350,21 +355,27 @@ struct RisoTaskDetailContentView: View {
             return "\(n) sub-task\(n == 1 ? "" : "s") · \(ruleLabel)"
         case .achievement:
             let trigger = task.achievementTrigger ?? .greenlog
+            let trig = trigger == .bingo ? "First Bingo" : "GREENLOG"
             if let boardId = task.referencedBoardId {
-                return "Watch \(boardId) · \(trigger == .bingo ? "First Bingo" : "GREENLOG")"
+                // Resolve the human-readable board name (UUID is not user-facing).
+                let name = affectedBoards.first { $0.id == boardId }?.name ?? "a board"
+                return "Watch \(name) · \(trig)"
             }
             if let tplId = task.referencedTemplateId {
+                let name = templates.first { $0.id == tplId }?.name ?? "a template"
                 let req = task.requiredCount.map { " · \($0)×" } ?? ""
-                return "Watch \(tplId)\(req) · \(trigger == .bingo ? "First Bingo" : "GREENLOG")"
+                return "Watch \(name)\(req) · \(trig)"
             }
-            return trigger == .bingo ? "First Bingo" : "GREENLOG"
+            return trig
         case .normal:
             return nil
         }
     }
 
+    /// Count of placements on *active* boards (not all placements). Mirrors
+    /// the list row's `activePlacementCounts`, so "N active" agrees across views.
     private var activePlacementCount: Int {
-        placements.count
+        affectedBoards.filter { $0.status == .active }.count
     }
 
     private func formatDate(_ iso: String) -> String {

@@ -110,7 +110,10 @@ struct TasksTabView: View {
                         let isExpanded = isExpandable && effectiveExpanded.contains(task.id)
 
                         if isExpandable {
-                            RisoCompoundGroupRowView(
+                            Button {
+                                path.append(task.id)
+                            } label: {
+                              RisoCompoundGroupRowView(
                                 task: task,
                                 placementCount: placementCounts[task.id] ?? 0,
                                 activePlacementCount: activeCounts[task.id] ?? 0,
@@ -131,12 +134,12 @@ struct TasksTabView: View {
                                 childActivePlacementCounts: activeCounts,
                                 onChildTap: { childId in path.append(childId) }
                             )
-                            .contentShape(Rectangle())
-                            .onTapGesture { path.append(task.id) }
+                            }
+                            .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 4, leading: Riso.gutter, bottom: 4, trailing: Riso.gutter))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 Button {
                                     editingTask = task
                                 } label: {
@@ -166,7 +169,7 @@ struct TasksTabView: View {
                             .listRowInsets(EdgeInsets(top: 4, leading: Riso.gutter, bottom: 4, trailing: Riso.gutter))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 Button {
                                     editingTask = task
                                 } label: {
