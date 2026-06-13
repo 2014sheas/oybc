@@ -97,7 +97,7 @@ struct RisoLibrarySheetView: View {
                     .foregroundStyle(Color.risoInk)
                 Spacer(minLength: 4)
                 // Library count badge
-                Text("\(effectiveAllTasks.filter { $0.type != .compound }.count + effectiveAllTasks.filter { $0.type == .compound }.count)")
+                Text("\(effectiveAllTasks.count)")
                     .font(.risoHead(10, .extraBold))
                     .foregroundStyle(Color.risoPaper)
                     .padding(.horizontal, 7)

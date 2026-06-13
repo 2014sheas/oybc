@@ -142,12 +142,12 @@ struct RisoPoolListView: View {
             default: return "All of \(n)"
             }
         case .achievement:
-            // e.g. "Watch 26 Books · GREENLOG"
-            let trigger = task.achievementTrigger == .bingo ? "Bingo" : "GREENLOG"
-            if let boardName = task.referencedBoardId {
-                return "Watch \(boardName) · \(trigger)"
-            }
-            return "Watch · \(trigger)"
+            // `referencedBoardId`/`referencedTemplateId` are UUIDs, not names,
+            // and the watched board/template isn't loaded here — so describe the
+            // target kind + trigger rather than leaking a raw id into the row.
+            let trigger = task.achievementTrigger == .bingo ? "First Bingo" : "GREENLOG"
+            let target = task.referencedBoardId != nil ? "a board" : "a template"
+            return "Watch \(target) · \(trigger)"
         default:
             return nil
         }
