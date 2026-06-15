@@ -6,12 +6,14 @@ enum RisoButtonKind {
     case neutral   // paper2 / ink
     case primary   // red / paper
     case blue      // blue / paper
+    case green     // green / paper — compound-type submit action
 
     var fill: Color {
         switch self {
         case .neutral: return .risoPaper2
         case .primary: return .risoRed
         case .blue: return .risoBlue
+        case .green: return .risoGreen
         }
     }
     var foreground: Color {

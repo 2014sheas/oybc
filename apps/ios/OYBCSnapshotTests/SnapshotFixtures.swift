@@ -436,6 +436,22 @@ enum SnapshotFixtures {
         return grouped
     }
 
+    // MARK: - Compound panel library
+
+    /// Returns a small flat task list for the inline compound builder's
+    /// smart autocomplete. Excludes compounds (per spec — no nested compounds
+    /// in the inline builder). Used by `RisoCompoundPanelSnapshotTests`.
+    static func makeCompoundSnapshotLibrary() -> [Task] {
+        [
+            makeTask(id: "cs-n1", title: "Meditate 10 min", type: .normal),
+            makeTask(id: "cs-n2", title: "Read a chapter", type: .normal),
+            makeTask(id: "cs-c1", title: "Run 5 km", type: .counting,
+                     action: "Run", unit: "km", maxCount: 5),
+            makeTask(id: "cs-c2", title: "Drink 8 glasses", type: .counting,
+                     action: "Drink", unit: "glasses", maxCount: 8),
+        ]
+    }
+
     /// Sample BoardTasks pinned to a single board so the row "N boards"
     /// usage hint shows non-zero values for the first few tasks.
     private static func sampleBoardTasks(taskIds: [String]) -> [BoardTask] {
