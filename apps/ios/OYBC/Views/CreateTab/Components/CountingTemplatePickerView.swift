@@ -38,9 +38,9 @@ struct LinkedCounterInput {
 
 // MARK: - Main view
 
-/// CountingTemplatePickerView — "Derive from existing" affordance for the
-/// counting-type variant of `CreateNewTaskFormView`. Mirrors the web
-/// `CountingTemplatePicker` component.
+/// CountingTemplatePickerView — "Derive from existing" affordance for
+/// counting-type task creation. Mirrors the web `CountingTemplatePicker`
+/// component. Used by `DerivedCounterRowView`.
 ///
 /// ## Modes (Phase 2 addition)
 ///

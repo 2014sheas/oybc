@@ -20,7 +20,10 @@ import SwiftUI
 struct RisoSpecialTaskPanel: View {
 
     let userId: String
-    let defaultTimeframe: Timeframe
+    /// Optional timeframe — nil produces an indefinite task (Tasks-tab usage).
+    /// Wizard callers pass a real `Timeframe` value; the optional param is
+    /// backward-compatible with existing call sites.
+    var defaultTimeframe: Timeframe? = nil
     let defaultStartDate: String?
     let defaultEndDate: String?
     /// Effective task library (live + pending) for compound sub autocomplete.

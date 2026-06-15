@@ -64,7 +64,10 @@ struct RisoCompoundFieldsView: View {
     let taskLibrary: [OYBC.Task]
 
     let userId: String
-    let defaultTimeframe: Timeframe
+    /// Optional timeframe — nil produces an indefinite task (Tasks-tab usage).
+    /// Wizard callers pass a real `Timeframe` value; the optional param is
+    /// backward-compatible with existing call sites.
+    let defaultTimeframe: Timeframe?
     let defaultStartDate: String?
     let defaultEndDate: String?
 
@@ -97,14 +100,18 @@ struct RisoCompoundFieldsView: View {
     // MARK: - Init (production)
 
     /// Production initialiser — all compound fields start at their defaults.
+    ///
+    /// - Parameters:
+    ///   - defaultTimeframe: Optional board-window timeframe. Pass a real
+    ///     `Timeframe` from the wizard; pass `nil` for indefinite Tasks-tab tasks.
     init(
         taskLibrary: [OYBC.Task],
         userId: String,
-        defaultTimeframe: Timeframe,
-        defaultStartDate: String?,
-        defaultEndDate: String?,
+        defaultTimeframe: Timeframe? = nil,
+        defaultStartDate: String? = nil,
+        defaultEndDate: String? = nil,
         onTaskCreated: @escaping (_ taskId: String, _ title: String, _ type: String) -> Void,
-        onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?,
+        onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil,
         onLibraryReloadRequested: @escaping () -> Void,
         onSubmitted: @escaping () -> Void
     ) {
@@ -135,7 +142,7 @@ struct RisoCompoundFieldsView: View {
         seed: Seed,
         taskLibrary: [OYBC.Task],
         userId: String = "preview-user",
-        defaultTimeframe: Timeframe = .monthly,
+        defaultTimeframe: Timeframe? = nil,
         defaultStartDate: String? = nil,
         defaultEndDate: String? = nil,
         onTaskCreated: @escaping (_ taskId: String, _ title: String, _ type: String) -> Void = { _, _, _ in },

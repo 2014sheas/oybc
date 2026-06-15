@@ -1,105 +1,144 @@
 import SwiftUI
 
-/// NewTaskSheetView — Modal wrapper around `CreateNewTaskFormView` for
-/// use inside the board-creation wizard's Tasks step. Mirrors the web
-/// `NewTaskSheet` component.
+/// NewTaskSheetView — Riso-styled "New task" bottom sheet for the Tasks tab.
 ///
-/// Owns its own `CreateFormViewModel` so form state resets cleanly each
-/// time the sheet opens (SwiftUI re-creates the view inside `.sheet { }`).
-/// On successful submission the sheet calls the parent's `onTaskCreated`
-/// (or `onCompositeCreated`) and dismisses; the parent is responsible
-/// for auto-selecting the new task in the wizard's selection set.
+/// Allows the user to create multiple tasks in one session (the sheet
+/// stays open after each addition). Dismiss via the Done button.
+///
+/// Layout top → bottom:
+///   - "NEW TASK" section label + Done button
+///   - Quick-add composer (`RisoQuickAddRowView`) — fast Normal tasks
+///   - Special-type panel (`RisoSpecialTaskPanel`) — Counting / Compound / Achievement
+///   - Muted caption: "Tasks land in your library — add them to a board in Create."
+///
+/// Creation mode: **immediate-persist, library-only** (non-deferred).
+/// Passes `onPendingCreated: nil` so writes go straight to GRDB.
+/// Tasks are **indefinite** (`defaultTimeframe: nil`).
+///
+/// After each successful creation the panel/quick-add collapses and clears;
+/// `onTaskCreated` and `onLibraryReloadRequested` fire so the Tasks-tab list
+/// refreshes behind the open sheet.
 struct NewTaskSheetView: View {
+
     let userId: String
 
-    /// Fired when a NORMAL/COUNTING/PROGRESS task is created. The wizard
-    /// should auto-add `(taskId, title, type)` to its `selectedTaskIds`.
+    /// Fired when a task is created. Caller reloads the library + vm.
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
 
-    /// Fired when a composite task is created. The wizard typically
-    /// reloads the library so the composite shows up under filters; it
-    /// is NOT auto-selected because composites can't be boarded directly.
-    let onCompositeCreated: (OYBC.Task) -> Void
-
-    /// Called after either creation callback so the parent's library
-    /// view-model can refresh in the same turn the sheet dismisses.
+    /// Called after any successful creation so the library can refresh.
     let onLibraryReloadRequested: () -> Void
 
-    /// Override for the form's submit button label. Wizard context wants
-    /// "Create & Select" (the new task is auto-added to the pool); the
-    /// Tasks-tab context wants "Add to library".
-    var submitLabel: String = "Create & Select"
-
-    /// Phase 6.Y — Timeboxed Tasks. When the sheet is mounted from the
-    /// board wizard the wizard passes its currentTimeframe + resolved
-    /// dates so every task created here inherits the board's window.
-    /// Standalone Tasks-tab usage omits these (resulting tasks are
-    /// indefinite).
-    var defaultTimeframe: Timeframe? = nil
-    var defaultStartDate: String? = nil
-    var defaultEndDate: String? = nil
-
-    /// Bug #85 — Deferred-persist mode. When `true`, the form builds
-    /// the task fully in memory and fires `onTaskCreated` + `onPendingCreated`
-    /// WITHOUT writing anything to GRDB or the sync queue. The wizard
-    /// is responsible for persisting inside `persistWizardBoard`.
-    /// When `false` (default), existing immediate-persist behaviour is
-    /// preserved so standalone Tasks-tab quick-add is unchanged.
-    var deferPersist: Bool = false
-
-    /// Bug #85 — Called alongside `onTaskCreated` when `deferPersist == true`.
-    /// Receives the full `PendingTaskPayload` so the wizard can store it for
-    /// the board-save transaction. Nil in immediate-persist mode.
-    var onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil
-
-    @State private var form = CreateFormViewModel()
     @Environment(\.dismiss) private var dismiss
+
+    // MARK: - Body
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                CreateNewTaskFormView(
-                    form: form,
+                NewTaskSheetContentView(
                     userId: userId,
-                    onSubmit: handleSubmit,
-                    onCompositeCreated: { ct in
-                        onCompositeCreated(ct)
-                        onLibraryReloadRequested()
-                        dismiss()
-                    },
-                    submitLabel: submitLabel
+                    onTaskCreated: onTaskCreated,
+                    onLibraryReloadRequested: onLibraryReloadRequested
                 )
                 .padding(16)
             }
-            .navigationTitle("New task")
+            .background(Color.risoPaper.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("New task")
+                        .font(.risoHead(17, .extraBold))
+                        .foregroundStyle(Color.risoInk)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Done")
+                            .font(.risoHead(13, .extraBold))
+                            .foregroundStyle(Color.risoInk)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.risoGold))
+                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+                    }
+                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .font(.risoBody(15, .semibold))
+                        .foregroundStyle(Color.risoMuted)
                 }
             }
         }
     }
+}
 
-    private func handleSubmit() {
-        form.handleCreateAndAddToPool(
-            userId: userId,
-            onTaskCreated: { taskId, title, type in
-                onTaskCreated(taskId, title, type)
-                // CreateFormViewModel.handleCreateAndAddToPool already
-                // calls onLibraryReloadRequested() inline after a
-                // successful immediate save. Calling it again here
-                // triggered a second reload + extra UI churn — drop it.
-                // Deferred mode skips the reload entirely (nothing
-                // landed in GRDB).
-                dismiss()
-            },
-            onLibraryReloadRequested: onLibraryReloadRequested,
-            defaultTimeframe: defaultTimeframe,
-            defaultStartDate: defaultStartDate,
-            defaultEndDate: defaultEndDate,
-            deferPersist: deferPersist,
-            onPendingCreated: onPendingCreated
-        )
+/// The scrollable content of `NewTaskSheetView` — quick-add composer,
+/// special-type panel, and the library note — without the NavigationStack
+/// toolbar chrome. Extracted as a real reusable view so the sheet and the
+/// snapshot tests render the SAME layout from one source of truth (not a
+/// hand-mirrored copy).
+struct NewTaskSheetContentView: View {
+
+    let userId: String
+    let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
+    let onLibraryReloadRequested: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+
+            // Quick-add composer
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Quick add")
+                    .risoSectionLabel()
+
+                VStack(spacing: 0) {
+                    RisoQuickAddRowView(
+                        userId: userId,
+                        // defaultTimeframe: nil — indefinite Tasks-tab tasks
+                        defaultStartDate: nil,
+                        defaultEndDate: nil,
+                        onTaskCreated: { taskId, title, type in
+                            onTaskCreated(taskId, title, type)
+                        },
+                        onPendingCreated: nil,
+                        onLibraryReloadRequested: onLibraryReloadRequested
+                    )
+                }
+                .padding(12)
+                .risoCard(fill: .risoPaper2)
+                .risoHardShadow(Riso.Shadow.small)
+            }
+
+            // Special-type panel
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Special type")
+                    .risoSectionLabel()
+
+                RisoSpecialTaskPanel(
+                    userId: userId,
+                    // defaultTimeframe: nil — indefinite Tasks-tab tasks
+                    defaultStartDate: nil,
+                    defaultEndDate: nil,
+                    taskLibrary: [],
+                    onTaskCreated: { taskId, title, type in
+                        onTaskCreated(taskId, title, type)
+                    },
+                    onCompositeCreated: { _ in
+                        onLibraryReloadRequested()
+                    },
+                    onPendingCreated: nil,
+                    onLibraryReloadRequested: onLibraryReloadRequested
+                )
+            }
+
+            // Contextual note
+            Text("Tasks land in your library — add them to a board in Create.")
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+        }
     }
 }

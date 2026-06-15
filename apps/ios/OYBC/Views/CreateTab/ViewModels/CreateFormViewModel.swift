@@ -37,7 +37,7 @@ enum CreateTaskType: String, CaseIterable {
     case achievement = "Achievement"
 
     /// Standard 4-letter abbreviation used by the segmented type
-    /// picker in `CreateNewTaskFormView`. The picker renders via
+    /// picker (UIKit UISegmentedControl). The picker renders via
     /// UIKit's `UISegmentedControl`, which allocates equal width per
     /// segment and ignores per-`Text` SwiftUI font modifiers — so
     /// the full `rawValue` "Achievement" (11 chars) truncates with
@@ -83,7 +83,7 @@ enum CreateFormLimits {
     static let stepTitle = 200
 }
 
-/// Owns the Create-New tab's form state — fields, validation errors,
+/// Owns the task-creation form state — fields, validation errors,
 /// submit pipeline, reset. Mirrors web's `useCreateFormState` hook.
 ///
 /// Submit sequence: trim fields → validate → build `Task` + step
@@ -91,8 +91,9 @@ enum CreateFormLimits {
 /// to the pool (via `onTaskCreated`) → reset the form → ask the
 /// library to reload so the new task appears under Existing Tasks.
 ///
-/// Compound tasks are handled by `CompositeTaskWizardView`; this view
-/// model only covers NORMAL / COUNTING / ACHIEVEMENT.
+/// Compound tasks are handled by the inline `RisoCompoundFieldsView`
+/// builder (via `handleCreateCompoundAndAddToPool`). Normal, Counting,
+/// and Achievement use `handleCreateAndAddToPool`.
 @Observable
 final class CreateFormViewModel {
 
@@ -121,8 +122,8 @@ final class CreateFormViewModel {
     // MARK: - Derived
 
     /// Maps the form-level `taskType` to the resulting `TaskType` written
-    /// to GRDB. Compound returns `nil` because it routes to its own wizard
-    /// (`CompositeTaskWizardView`) which owns the full creation transaction.
+    /// to GRDB. Compound returns `nil` because it routes to the inline
+    /// `RisoCompoundFieldsView` builder via `handleCreateCompoundAndAddToPool`.
     var selectedType: TaskType? {
         switch taskType {
         case .normal:      return .normal
@@ -219,8 +220,8 @@ final class CreateFormViewModel {
 
         case .compound:
             // .compound is never reached here — selectedType returns nil for
-            // the .compound CreateTaskType case, which routes to
-            // CompositeTaskWizardView. This branch satisfies exhaustive
+            // the .compound CreateTaskType case, which routes to the inline
+            // RisoCompoundFieldsView builder. This branch satisfies exhaustive
             // switching on TaskType but should never execute.
             break
 
@@ -528,7 +529,7 @@ final class CreateFormViewModel {
     /// defers the payload for the wizard to persist as part of the board-
     /// save transaction (Bug #85).
     ///
-    /// Rule → field mapping (verbatim from CompositeTaskWizardView):
+    /// Rule → field mapping (verbatim from the inline compound builder):
     ///   - All of  → operatorType .and,  isOrdered false, threshold nil
     ///   - Any of  → operatorType .or,   isOrdered false, threshold nil
     ///   - At least N → operatorType .mOfN, isOrdered false, threshold N
@@ -786,8 +787,8 @@ final class CreateFormViewModel {
             )
         case .compound:
             // Unreachable — compound CreateTaskType returns nil from
-            // selectedType, so this path never executes. Kept for
-            // exhaustive switching on TaskType.
+            // selectedType; compounds route through handleCreateCompoundAndAddToPool.
+            // Kept for exhaustive switching on TaskType.
             return Task(
                 id: id, userId: userId, title: title, description: desc,
                 type: .compound,

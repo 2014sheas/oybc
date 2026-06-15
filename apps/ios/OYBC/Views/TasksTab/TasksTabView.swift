@@ -206,15 +206,10 @@ struct TasksTabView: View {
                     library.loadLibrary(userId: userId)
                     vm.reloadAsync()
                 },
-                onCompositeCreated: { _ in
-                    library.loadLibrary(userId: userId)
-                    vm.reloadAsync()
-                },
                 onLibraryReloadRequested: {
                     library.loadLibrary(userId: userId)
                     vm.reloadAsync()
-                },
-                submitLabel: "Add to library"
+                }
             )
         }
         .sheet(item: $editingTask) { task in
