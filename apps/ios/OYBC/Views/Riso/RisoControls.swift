@@ -146,6 +146,74 @@ struct RisoProgressBar: View {
     }
 }
 
+// MARK: - Text input fields
+
+/// Riso-styled text field — Bricolage label, ink keyline, paper background.
+/// Reusable across create/edit flows.
+///
+/// Matches the `risoTextInput` private helper in `RisoSpecialTaskPanel`
+/// exactly — extracted here so `EditTaskSheet` and future surfaces can
+/// share the same look without copying helper code.
+///
+/// - Parameters:
+///   - axis: `.horizontal` (default, single-line) or `.vertical` (multiline).
+///   - reservedLines: When non-nil the field reserves vertical space for that
+///     many lines of text, preventing layout jitter as the user types. Only
+///     meaningful when `axis == .vertical`.
+struct RisoTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    var axis: Axis = .horizontal
+    var reservedLines: Int? = nil
+
+    var body: some View {
+        if let lines = reservedLines {
+            TextField(placeholder, text: $text, axis: axis)
+                .lineLimit(lines, reservesSpace: true)
+                .fieldStyle()
+        } else {
+            TextField(placeholder, text: $text, axis: axis)
+                .fieldStyle()
+        }
+    }
+}
+
+/// Riso-styled number-pad text field. Same visual as `RisoTextField`
+/// with `.numberPad` keyboard type.
+///
+/// Matches the `risoNumberInput` private helper in `RisoSpecialTaskPanel`.
+struct RisoNumberField: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .keyboardType(.numberPad)
+            .fieldStyle()
+    }
+}
+
+// MARK: - Field style helper (internal)
+
+private extension View {
+    /// Shared padding/font/background/keyline used by `RisoTextField`
+    /// and `RisoNumberField`.
+    func fieldStyle() -> some View {
+        self
+            .font(.risoHead(14, .bold))
+            .foregroundStyle(Color.risoInk)
+            .tint(Color.risoBlue)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .background(Color.risoPaper)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+            )
+    }
+}
+
 // MARK: - Type badge
 
 enum RisoTaskKind {
