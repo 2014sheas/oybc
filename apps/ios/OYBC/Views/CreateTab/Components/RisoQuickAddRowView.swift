@@ -15,7 +15,10 @@ import SwiftUI
 struct RisoQuickAddRowView: View {
 
     let userId: String
-    let defaultTimeframe: Timeframe
+    /// Optional timeframe — nil produces an indefinite task (Tasks-tab quick-add).
+    /// Wizard callers pass a real `Timeframe` value; the optional param is
+    /// backward-compatible with existing call sites.
+    var defaultTimeframe: Timeframe? = nil
     let defaultStartDate: String?
     let defaultEndDate: String?
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
