@@ -12,6 +12,13 @@ import SwiftUI
 ///     before the DB write.
 ///
 /// Compound subtasks are still edited from the board-creation wizard.
+///
+/// Visual design: Riso vocabulary — ScrollView over `Color.risoPaper`,
+/// NavigationStack toolbar with a gold pill Save button and a muted Cancel.
+/// Each section is a `.risoCard(fill: .risoPaper2)` block with a
+/// `.risoSectionLabel()` heading. Text fields use the kit's
+/// `RisoTextField` / `RisoNumberField`; pickers use `RisoSegmented`
+/// (2-option rows) or a Riso-styled `Menu` (6-option timeframe row).
 struct EditTaskSheet: View {
     let task: Task
     let onSubmit: (Patch) -> Void
@@ -111,109 +118,358 @@ struct EditTaskSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                // ── Common fields ──────────────────────────────────────────
-                Section("Title") {
-                    TextField("Title", text: $title)
-                }
-                Section("Description") {
-                    TextField("Description", text: $description, axis: .vertical)
-                        .lineLimit(3, reservesSpace: true)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    // ── Type badge + title context ──────────────────────────
+                    headerBadge
 
-                // ── Counting ───────────────────────────────────────────────
-                if task.type == .counting {
-                    Section("Counting") {
-                        TextField("Action (e.g. Run)", text: $action)
-                        TextField("Goal", text: $maxCountStr)
-                            .keyboardType(.numberPad)
-                        TextField("Unit (e.g. miles)", text: $unit)
+                    // ── Common fields ───────────────────────────────────────
+                    commonSection
+
+                    // ── Counting ────────────────────────────────────────────
+                    if task.type == .counting {
+                        countingSection
+                    }
+
+                    // ── Achievement ─────────────────────────────────────────
+                    if task.type == .achievement {
+                        achievementSection
+                    }
+
+                    // ── Compound hint ───────────────────────────────────────
+                    if task.type == .compound {
+                        compoundHintSection
+                    }
+
+                    // ── Time window ─────────────────────────────────────────
+                    timeWindowSection
+                }
+                .padding(16)
+            }
+            .background(Color.risoPaper.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Edit task")
+                        .font(.risoHead(17, .extraBold))
+                        .foregroundStyle(Color.risoInk)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        submit()
+                    } label: {
+                        Text("Save")
+                            .font(.risoHead(13, .extraBold))
+                            .foregroundStyle(Color.risoInk)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.risoGold))
+                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+                    }
+                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onCancel() }
+                        .font(.risoBody(15, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                }
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    /// A tasteful type badge + truncated task title at the top of the sheet,
+    /// giving the user instant context about what they are editing.
+    private var headerBadge: some View {
+        HStack(spacing: 8) {
+            RisoTypeBadge(kind: task.type.risoKind, style: .pill)
+            Text(task.title)
+                .font(.risoHead(14, .bold))
+                .foregroundStyle(Color.risoMuted)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Sections
+
+    /// Title + Description card.
+    private var commonSection: some View {
+        risoSection(label: "Details") {
+            VStack(alignment: .leading, spacing: 11) {
+                fieldRow(label: "Title") {
+                    RisoTextField(placeholder: "Task title", text: $title)
+                }
+                fieldRow(label: "Description") {
+                    RisoTextField(
+                        placeholder: "Optional description",
+                        text: $description,
+                        axis: .vertical,
+                        reservedLines: 3
+                    )
+                }
+            }
+        }
+    }
+
+    /// Counting-specific fields: Action / Goal / Unit.
+    private var countingSection: some View {
+        risoSection(label: "Counting") {
+            VStack(alignment: .leading, spacing: 11) {
+                fieldRow(label: "Action") {
+                    RisoTextField(placeholder: "e.g. Run", text: $action)
+                }
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("Goal")
+                        RisoNumberField(placeholder: "5", text: $maxCountStr)
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("Unit")
+                        RisoTextField(placeholder: "e.g. miles", text: $unit)
                     }
                 }
+            }
+        }
+    }
 
-                // ── Achievement ────────────────────────────────────────────
-                if task.type == .achievement {
-                    Section("Achievement") {
-                        Picker("Trigger", selection: $trigger) {
-                            Text("Greenlog").tag(AchievementTrigger.greenlog)
-                            Text("Bingo").tag(AchievementTrigger.bingo)
-                        }
-
-                        Picker("Watches", selection: $refMode) {
-                            Text("Specific board").tag(Patch.RefMode.board)
-                            Text("Recurring template").tag(Patch.RefMode.template)
-                        }
-
-                        if refMode == .board {
-                            Picker("Board", selection: $selectedBoardId) {
-                                Text("— select a board —").tag("")
-                                ForEach(availableBoards, id: \.id) { b in
-                                    Text(b.name).tag(b.id)
-                                }
-                            }
-                        } else {
-                            Picker("Template", selection: $selectedTemplateId) {
-                                Text("— select a template —").tag("")
-                                ForEach(availableTemplates, id: \.id) { t in
-                                    Text(t.name).tag(t.id)
-                                }
-                            }
-                            TextField("Required count", text: $requiredCountStr)
-                                .keyboardType(.numberPad)
-                        }
-                    }
+    /// Achievement-specific fields: Trigger + Watches mode + picker + required count.
+    private var achievementSection: some View {
+        risoSection(label: "Achievement") {
+            VStack(alignment: .leading, spacing: 11) {
+                // Trigger — Greenlog / Bingo
+                fieldRow(label: "Completes on") {
+                    RisoSegmented(
+                        options: [
+                            (value: AchievementTrigger.greenlog, label: "Greenlog"),
+                            (value: AchievementTrigger.bingo,    label: "Bingo"),
+                        ],
+                        selection: $trigger
+                    )
                 }
 
-                // ── Compound hint ──────────────────────────────────────────
-                if task.type == .compound {
-                    Section {
-                        Text("Compound subtasks are edited from the board-creation wizard. The title and description can still be changed here.")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                    }
+                // Watches mode — Specific board / Recurring template
+                fieldRow(label: "Watches") {
+                    RisoSegmented(
+                        options: [
+                            (value: Patch.RefMode.board,    label: "Specific board"),
+                            (value: Patch.RefMode.template, label: "Recurring template"),
+                        ],
+                        selection: $refMode
+                    )
                 }
 
-                // ── Timeboxed (all types) ──────────────────────────────────
-                Section("Time window (optional)") {
-                    Picker("Timeframe", selection: $timeframe) {
-                        Text("None").tag(Optional<Timeframe>.none)
-                        Text("Daily").tag(Optional(Timeframe.daily))
-                        Text("Weekly").tag(Optional(Timeframe.weekly))
-                        Text("Monthly").tag(Optional(Timeframe.monthly))
-                        Text("Yearly").tag(Optional(Timeframe.yearly))
-                        Text("Custom").tag(Optional(Timeframe.custom))
+                // Target picker
+                if refMode == .board {
+                    fieldRow(label: "Board") {
+                        risoMenuPicker(
+                            placeholder: "— select a board —",
+                            items: availableBoards.map { ($0.id, $0.name) },
+                            selectedId: $selectedBoardId
+                        )
                     }
-                    if timeframe != nil {
+                } else {
+                    fieldRow(label: "Template") {
+                        risoMenuPicker(
+                            placeholder: "— select a template —",
+                            items: availableTemplates.map { ($0.id, $0.name) },
+                            selectedId: $selectedTemplateId
+                        )
+                    }
+                    fieldRow(label: "Required count") {
+                        RisoNumberField(placeholder: "e.g. 3", text: $requiredCountStr)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Compound hint card — shown when the task type is compound.
+    private var compoundHintSection: some View {
+        risoSection(label: "Compound") {
+            Text("Compound subtasks are edited from the board-creation wizard. The title and description can still be changed here.")
+                .font(.risoBody(13, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Time window card — shown for all task types.
+    private var timeWindowSection: some View {
+        risoSection(label: "Time window (optional)") {
+            VStack(alignment: .leading, spacing: 11) {
+                // Timeframe — 6 options; use a Riso-styled Menu row so all
+                // options fit cleanly at 393pt without a cramped segmented bar.
+                fieldRow(label: "Timeframe") {
+                    risoTimeframeMenu
+                }
+
+                if timeframe != nil {
+                    // Start date
+                    HStack {
+                        Text("Start date")
+                            .font(.risoBody(14, .semibold))
+                            .foregroundStyle(Color.risoInk)
+                        Spacer()
                         DatePicker(
-                            "Start date",
+                            "",
                             selection: Binding(
                                 get: { startDate ?? Date() },
                                 set: { startDate = $0 }
                             ),
                             displayedComponents: .date
                         )
+                        .labelsHidden()
+                        .tint(Color.risoBlue)
+                    }
+                    // End date
+                    HStack {
+                        Text("End date")
+                            .font(.risoBody(14, .semibold))
+                            .foregroundStyle(Color.risoInk)
+                        Spacer()
                         DatePicker(
-                            "End date",
+                            "",
                             selection: Binding(
                                 get: { endDate ?? Date() },
                                 set: { endDate = $0 }
                             ),
                             displayedComponents: .date
                         )
+                        .labelsHidden()
+                        .tint(Color.risoBlue)
                     }
                 }
             }
-            .navigationTitle("Edit task")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onCancel() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { submit() }
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+        }
+    }
+
+    // MARK: - Timeframe Menu
+
+    /// Riso-styled Menu row for the 6-option timeframe picker. Ink keyline,
+    /// chevron trailing, selected label shown inline.
+    private var risoTimeframeMenu: some View {
+        Menu {
+            Button("None") { timeframe = nil }
+            Divider()
+            Button("Daily")   { timeframe = .daily }
+            Button("Weekly")  { timeframe = .weekly }
+            Button("Monthly") { timeframe = .monthly }
+            Button("Yearly")  { timeframe = .yearly }
+            Button("Custom")  { timeframe = .custom }
+        } label: {
+            HStack {
+                Text(timeframeLabel)
+                    .font(.risoHead(14, .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
             }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .background(Color.risoPaper)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+            )
+        }
+    }
+
+    /// Human-readable label for the currently selected timeframe.
+    private var timeframeLabel: String {
+        switch timeframe {
+        case .none:    return "None"
+        case .daily:   return "Daily"
+        case .weekly:  return "Weekly"
+        case .monthly: return "Monthly"
+        case .yearly:  return "Yearly"
+        case .custom:  return "Custom"
+        }
+    }
+
+    // MARK: - Shared Riso layout helpers
+
+    /// A card section: `.risoSectionLabel()` heading above a `.risoCard` body.
+    ///
+    /// - Parameters:
+    ///   - label: The uppercase section heading text.
+    ///   - content: The card interior content.
+    @ViewBuilder
+    private func risoSection<Content: View>(
+        label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .risoSectionLabel()
+            content()
+                .padding(12)
+                .risoCard(fill: .risoPaper2)
+                .risoHardShadow(Riso.Shadow.small)
+        }
+    }
+
+    /// Label + field stacked vertically.
+    @ViewBuilder
+    private func fieldRow<Content: View>(
+        label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            fieldLabel(label)
+            content()
+        }
+    }
+
+    /// Muted uppercase field label matching the Riso spec's `fieldLabel` helper.
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .risoSectionLabel()
+    }
+
+    /// Riso-styled Menu picker row for board / template selection.
+    ///
+    /// - Parameters:
+    ///   - placeholder: Text shown when nothing is selected (empty string id).
+    ///   - items: `(id, name)` pairs to populate the menu.
+    ///   - selectedId: Binding to the currently selected id string.
+    private func risoMenuPicker(
+        placeholder: String,
+        items: [(String, String)],
+        selectedId: Binding<String>
+    ) -> some View {
+        Menu {
+            Button(placeholder) { selectedId.wrappedValue = "" }
+            Divider()
+            ForEach(items, id: \.0) { id, name in
+                Button(name) { selectedId.wrappedValue = id }
+            }
+        } label: {
+            let currentName = items.first(where: { $0.0 == selectedId.wrappedValue })?.1
+            HStack {
+                Text(currentName ?? placeholder)
+                    .font(.risoHead(14, .bold))
+                    .foregroundStyle(currentName != nil ? Color.risoInk : Color.risoMuted)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .background(Color.risoPaper)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+            )
         }
     }
 
@@ -257,5 +513,19 @@ struct EditTaskSheet: View {
                 selectedTemplateId: selectedTemplateId,
             )
         )
+    }
+}
+
+// MARK: - TaskType + RisoTaskKind bridge
+
+private extension TaskType {
+    /// Maps a `TaskType` to the matching `RisoTaskKind` for badge rendering.
+    var risoKind: RisoTaskKind {
+        switch self {
+        case .normal:      return .normal
+        case .counting:    return .counting
+        case .compound:    return .compound
+        case .achievement: return .achievement
+        }
     }
 }
