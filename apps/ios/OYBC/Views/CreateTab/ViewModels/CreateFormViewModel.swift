@@ -450,6 +450,306 @@ final class CreateFormViewModel {
         clearFeedback()
     }
 
+    // MARK: - Compound creation
+
+    /// A sub-task entry for the inline compound builder. Each sub is
+    /// either a reference to an EXISTING library task or a NEW inline-
+    /// created primitive (Normal or Counting only — no nested compounds).
+    enum CompoundSubItem {
+        /// Reference to a task already persisted in the user's library.
+        case existing(taskId: String, title: String, type: TaskType)
+        /// Inline Normal task to be created on submit.
+        case newNormal(title: String)
+        /// Inline Counting task to be created on submit.
+        /// title is auto-generated as "\(action) \(goal) \(unit)" at save time.
+        case newCounting(action: String, goal: Int, unit: String)
+
+        /// Display title for the sub chip in the UI.
+        var displayTitle: String {
+            switch self {
+            case .existing(_, let t, _): return t
+            case .newNormal(let t): return t
+            case .newCounting(let a, let g, let u): return "\(a) \(g) \(u)"
+            }
+        }
+
+        /// The `TaskType` of this sub, for type-dot decoration.
+        var taskType: TaskType {
+            switch self {
+            case .existing(_, _, let t): return t
+            case .newNormal: return .normal
+            case .newCounting: return .counting
+            }
+        }
+    }
+
+    /// Compound completion rule choices for the inline panel.
+    /// Maps to operator/threshold/isOrdered on the Task row verbatim.
+    enum CompoundRule {
+        /// All sub-tasks must complete — operatorType .and, isOrdered false.
+        case allOf
+        /// Any single sub-task completes the parent — operatorType .or, isOrdered false.
+        case anyOf
+        /// At least N sub-tasks must complete — operatorType .mOfN, threshold N, isOrdered false.
+        case atLeastN(threshold: Int)
+        /// All sub-tasks in strict order — operatorType .and, isOrdered true.
+        case inOrder
+
+        var label: String {
+            switch self {
+            case .allOf:      return "All of"
+            case .anyOf:      return "Any of"
+            case .atLeastN:   return "At least N"
+            case .inOrder:    return "In order"
+            }
+        }
+
+        /// The OperatorType value to write to the Task row.
+        var operatorType: OperatorType {
+            switch self {
+            case .allOf, .inOrder: return .and
+            case .anyOf:            return .or
+            case .atLeastN:         return .mOfN
+            }
+        }
+
+        /// The threshold value — only non-nil when rule is .atLeastN.
+        var threshold: Int? {
+            if case .atLeastN(let n) = self { return n }
+            return nil
+        }
+
+        /// Whether to set Task.isOrdered = true.
+        var isOrdered: Bool { if case .inOrder = self { return true }; return false }
+    }
+
+    /// Validates the supplied inputs and either creates the compound task
+    /// immediately (writes parent + children atomically to GRDB) or
+    /// defers the payload for the wizard to persist as part of the board-
+    /// save transaction (Bug #85).
+    ///
+    /// Rule → field mapping (verbatim from CompositeTaskWizardView):
+    ///   - All of  → operatorType .and,  isOrdered false, threshold nil
+    ///   - Any of  → operatorType .or,   isOrdered false, threshold nil
+    ///   - At least N → operatorType .mOfN, isOrdered false, threshold N
+    ///   - In order   → operatorType .and, isOrdered true,  threshold nil
+    ///
+    /// - Parameters:
+    ///   - userId: Authenticated user id for Task.userId.
+    ///   - title: Trimmed compound task title. Must be non-empty.
+    ///   - rule: Completion rule — drives operator/threshold/isOrdered.
+    ///   - subs: Ordered list of sub-task entries (min 2).
+    ///   - onTaskCreated: Called on main queue with (parentId, title, "Compound").
+    ///   - onLibraryReloadRequested: Called on main queue after an immediate-persist
+    ///     write so the library refresh includes the new task.
+    ///   - defaultTimeframe: Inherited wizard timeframe (or nil for indefinite).
+    ///   - defaultStartDate / defaultEndDate: Inherited wizard date range.
+    ///   - deferPersist: Bug #85 — when true, skips DB writes and fires
+    ///     `onPendingCreated` with the fully-built `PendingTaskPayload`.
+    ///   - onPendingCreated: Bug #85 — receives the payload when `deferPersist == true`.
+    func handleCreateCompoundAndAddToPool(
+        userId: String,
+        title: String,
+        rule: CompoundRule,
+        subs: [CompoundSubItem],
+        onTaskCreated: @escaping (_ taskId: String, _ title: String, _ type: String) -> Void,
+        onLibraryReloadRequested: @escaping () -> Void,
+        defaultTimeframe: Timeframe? = nil,
+        defaultStartDate: String? = nil,
+        defaultEndDate: String? = nil,
+        deferPersist: Bool = false,
+        onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil
+    ) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        guard subs.count >= 2 else { return }
+
+        isSubmitting = true
+        errorMessage = nil
+
+        let now = AppDatabase.currentTimestamp()
+        let compoundId = AppDatabase.generateUUID()
+
+        let resolvedOperator = rule.operatorType
+        let resolvedThreshold: Int? = resolvedOperator == .mOfN ? rule.threshold : nil
+        let resolvedIsOrdered = rule.isOrdered
+
+        let parentTask = OYBC.Task(
+            id: compoundId,
+            userId: userId,
+            title: trimmedTitle,
+            description: nil,
+            type: .compound,
+            operatorType: resolvedOperator,
+            threshold: resolvedThreshold,
+            isOrdered: resolvedIsOrdered,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate
+        )
+
+        // Build child tasks + link rows. For EXISTING subs the child task is
+        // already in GRDB — only the CompoundChild link row is new. For NEW
+        // inline subs both the child Task row and the CompoundChild link are new.
+        var childTasks: [OYBC.Task] = []
+        var childLinks: [CompoundChild] = []
+
+        for (index, sub) in subs.enumerated() {
+            let childTaskId: String
+            switch sub {
+            case .existing(let id, _, _):
+                childTaskId = id
+                // No new Task row — already persisted in the library.
+
+            case .newNormal(let subTitle):
+                let newId = AppDatabase.generateUUID()
+                let newTask = OYBC.Task(
+                    id: newId,
+                    userId: userId,
+                    title: subTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+                    description: nil,
+                    type: .normal,
+                    totalCompletions: 0,
+                    totalInstances: 0,
+                    createdAt: now,
+                    updatedAt: now,
+                    version: 1,
+                    isDeleted: false
+                )
+                childTasks.append(newTask)
+                childTaskId = newId
+
+            case .newCounting(let action, let goal, let unit):
+                let newId = AppDatabase.generateUUID()
+                let autoTitle = "\(action.trimmingCharacters(in: .whitespacesAndNewlines)) \(goal) \(unit.trimmingCharacters(in: .whitespacesAndNewlines))"
+                let newTask = OYBC.Task(
+                    id: newId,
+                    userId: userId,
+                    title: autoTitle,
+                    description: nil,
+                    type: .counting,
+                    action: action.trimmingCharacters(in: .whitespacesAndNewlines),
+                    unit: unit.trimmingCharacters(in: .whitespacesAndNewlines),
+                    maxCount: goal,
+                    totalCompletions: 0,
+                    totalInstances: 0,
+                    createdAt: now,
+                    updatedAt: now,
+                    version: 1,
+                    isDeleted: false
+                )
+                childTasks.append(newTask)
+                childTaskId = newId
+            }
+
+            let link = CompoundChild(
+                id: AppDatabase.generateUUID(),
+                compoundTaskId: compoundId,
+                childTaskId: childTaskId,
+                childIndex: index,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+            childLinks.append(link)
+        }
+
+        // ── Bug #85: Deferred-persist path ──────────────────────────────────
+        if deferPersist {
+            let payload = PendingTaskPayload(
+                task: parentTask,
+                childTasks: childTasks,
+                childLinks: childLinks
+            )
+            isSubmitting = false
+            let successText = "Pending: \"\(trimmedTitle)\" — saved with the board"
+            successMessage = successText
+            onTaskCreated(compoundId, trimmedTitle, TaskType.compound.rawValue)
+            onPendingCreated?(payload)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self else { return }
+                if self.successMessage == successText { self.successMessage = nil }
+            }
+            return
+        }
+
+        // ── Immediate-persist path ───────────────────────────────────────────
+        // Build a set of new child task IDs for efficient membership check.
+        let newChildIds = Set(childTasks.map { $0.id })
+        let capturedChildTasks = childTasks
+        let capturedChildLinks = childLinks
+        let capturedParent = parentTask
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                try AppDatabase.shared.write { db in
+                    // 1. Parent compound task + sync entry.
+                    try capturedParent.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "tasks",
+                        entityId: capturedParent.id,
+                        operationType: .create,
+                        payload: capturedParent,
+                        now: now
+                    ).save(db)
+
+                    // 2. For each link: if the child is a NEW inline task,
+                    //    insert the child Task row + its sync entry first.
+                    //    Then insert the CompoundChild link + its sync entry.
+                    //    Existing-sub links skip the Task insert — the Task
+                    //    already lives in GRDB.
+                    for link in capturedChildLinks {
+                        if newChildIds.contains(link.childTaskId),
+                           let childTask = capturedChildTasks.first(where: { $0.id == link.childTaskId }) {
+                            try childTask.save(db)
+                            try SyncQueueBuilder.makeItem(
+                                entityType: "tasks",
+                                entityId: childTask.id,
+                                operationType: .create,
+                                payload: childTask,
+                                now: now
+                            ).save(db)
+                        }
+                        try link.save(db)
+                        try SyncQueueBuilder.makeItem(
+                            entityType: "compoundChildren",
+                            entityId: link.id,
+                            operationType: .create,
+                            payload: link,
+                            now: now
+                        ).save(db)
+                    }
+                }
+
+                DispatchQueue.main.async {
+                    self.isSubmitting = false
+                    onTaskCreated(compoundId, trimmedTitle, TaskType.compound.rawValue)
+                    let successText = "Created & added to pool: \"\(trimmedTitle)\""
+                    self.successMessage = successText
+                    onLibraryReloadRequested()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        if self.successMessage == successText { self.successMessage = nil }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isSubmitting = false
+                    self.errorMessage = "Failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     // MARK: - Build helpers
 
     /// Builds a `Task` record for the resolved task type. Pulls the

@@ -6,20 +6,25 @@ import SwiftUI
 /// Expanded state: type chips (Counting / Compound / Achievement) + type-specific fields.
 ///
 /// Counting: Action / Goal / Unit + live "reads as **Run 5 km**" preview.
-/// Compound: launches `CompositeTaskWizardView` as a sheet (existing wizard).
+/// Compound: INLINE builder — Title · rule chips · sub-task add row with smart
+///   autocomplete from `taskLibrary` · sub chips · "New sub: Normal/Counting" type
+///   selector · Add-to-board button. No sheet — all inline, matching the prototype.
 /// Achievement: Watch (Board / Template) + target picker + trigger chips + count.
 ///
-/// All creation fires through the existing `CreateFormViewModel.handleCreateAndAddToPool`
-/// pipeline (deferred-persist when `onPendingCreated` is non-nil) so Bug #85 is
-/// preserved identically.
+/// All creation fires through `CreateFormViewModel` pipelines (deferred-persist
+/// when `onPendingCreated` is non-nil) so Bug #85 is preserved identically.
 ///
-/// DEFERRED (TODO riso 3b-follow-up): smart autocomplete in compound sub-task builder.
+/// `taskLibrary` is the effective merged task list from `BoardWizardTasksStepView`
+/// (live + pending), needed for compound smart autocomplete. Exclude compounds
+/// from autocomplete results per proto spec.
 struct RisoSpecialTaskPanel: View {
 
     let userId: String
     let defaultTimeframe: Timeframe
     let defaultStartDate: String?
     let defaultEndDate: String?
+    /// Effective task library (live + pending) for compound sub autocomplete.
+    var taskLibrary: [OYBC.Task] = []
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
     let onCompositeCreated: (OYBC.Task) -> Void
     let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
@@ -28,9 +33,6 @@ struct RisoSpecialTaskPanel: View {
     @State private var isExpanded: Bool = false
     @State private var selectedType: SpecialType = .counting
     @State private var form = CreateFormViewModel()
-
-    // Compound sheet
-    @State private var showCompoundSheet: Bool = false
 
     // Achievement board/template pickers
     @State private var boards: [Board] = []
@@ -121,7 +123,7 @@ struct RisoSpecialTaskPanel: View {
             case .counting:
                 countingFields
             case .compound:
-                compoundLaunchRow
+                compoundFields
             case .achievement:
                 achievementFields
             }
@@ -129,20 +131,6 @@ struct RisoSpecialTaskPanel: View {
         .padding(12)
         .risoCard(fill: .risoPaper2)
         .risoHardShadow(Riso.Shadow.small)
-        // Compound wizard sheet
-        .sheet(isPresented: $showCompoundSheet) {
-            NavigationStack {
-                CompositeTaskWizardView(
-                    userId: userId,
-                    onCreated: { ct in
-                        onCompositeCreated(ct)
-                        onLibraryReloadRequested()
-                        showCompoundSheet = false
-                        collapse()
-                    }
-                )
-            }
-        }
     }
 
     // MARK: - Type chip
@@ -274,18 +262,22 @@ struct RisoSpecialTaskPanel: View {
         collapse()
     }
 
-    // MARK: - Compound launch row
+    // MARK: - Compound fields
 
-    private var compoundLaunchRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Build a compound task with sub-tasks and a completion rule.")
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .fixedSize(horizontal: false, vertical: true)
-            RisoButton(title: "Open compound builder ›", kind: .blue, fullWidth: true) {
-                showCompoundSheet = true
-            }
-        }
+    /// The compound builder is fully owned by `RisoCompoundFieldsView` —
+    /// the panel just forwards its dependencies and a collapse callback.
+    private var compoundFields: some View {
+        RisoCompoundFieldsView(
+            taskLibrary: taskLibrary,
+            userId: userId,
+            defaultTimeframe: defaultTimeframe,
+            defaultStartDate: defaultStartDate,
+            defaultEndDate: defaultEndDate,
+            onTaskCreated: onTaskCreated,
+            onPendingCreated: onPendingCreated,
+            onLibraryReloadRequested: onLibraryReloadRequested,
+            onSubmitted: { collapse() }
+        )
     }
 
     // MARK: - Achievement fields
@@ -484,11 +476,18 @@ struct RisoSpecialTaskPanel: View {
 
     // MARK: - Helpers
 
+    /// Collapses the panel and resets all field state so the next
+    /// expansion starts fresh. Mirrors `ComposerA`'s reset pattern.
+    ///
+    /// Compound fields are owned by `RisoCompoundFieldsView` — its state
+    /// is scoped to its view lifetime, so no explicit reset is needed here.
     private func collapse() {
         isExpanded = false
+        // Counting
         countingActionText = ""
         countingGoalText = "5"
         countingUnitText = ""
+        // Achievement
         achievementTitle = ""
         achievementBoardId = nil
         achievementTemplateId = nil
@@ -539,6 +538,7 @@ struct RisoSpecialTaskPanel: View {
             )
     }
 
+    /// Pill rule chip for achievement fields (blue fill when on).
     private func ruleChip(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
@@ -557,7 +557,8 @@ struct RisoSpecialTaskPanel: View {
 
 // MARK: - Inline stepper
 
-/// Minimal inline stepper for the achievement required-count field.
+/// Minimal inline stepper for the achievement required-count field and
+/// the compound At-least-N threshold.
 struct RisoInlineStepperView: View {
     @Binding var value: Int
     let min: Int

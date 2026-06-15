@@ -193,12 +193,15 @@ struct BoardWizardTasksStepView: View {
                     .risoCard(fill: .risoPaper2)
                     .risoHardShadow(Riso.Shadow.small)
 
-                    // Special-type panel
+                    // Special-type panel — pass effectiveAllTasks so the
+                    // inline compound builder can autocomplete against live
+                    // + pending tasks without a separate GRDB fetch.
                     RisoSpecialTaskPanel(
                         userId: userId,
                         defaultTimeframe: currentTimeframe,
                         defaultStartDate: currentStartDate,
                         defaultEndDate: currentEndDate,
+                        taskLibrary: effectiveAllTasks,
                         onTaskCreated: { taskId, title, type in
                             onTaskCreated(taskId, title, type)
                         },
