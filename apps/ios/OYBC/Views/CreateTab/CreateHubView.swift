@@ -161,6 +161,13 @@ struct CreateHubView: View {
         pendingRecurringVM.reloadAsync(userId: userId)
     }
 
+    // MARK: - Hub content (Riso)
+
+    /// Riso-styled hub landing: `RisoPaperBackground` behind a scrolling
+    /// VStack with kicker + H1, core-boards section, CTA cards, and drafts.
+    ///
+    /// Layout mirrors the Boards home (`BoardListView`) pattern:
+    ///   kicker → H1 → content cards, all scrolling (no sticky header).
     @ViewBuilder
     private var hubContent: some View {
         // Demote the custom-board CTA only when at least one core-board
@@ -170,54 +177,70 @@ struct CreateHubView: View {
         // all), the CTA stays primary so the user has an obvious next
         // action.
         let hasUncreatedCoreBoards = pendingRecurringVM.slots.contains { $0.currentBoard == nil }
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Create")
-                .font(.largeTitle)
-                .fontWeight(.bold)
 
-            CoreBoardsSectionView(
-                slots: pendingRecurringVM.slots,
-                onSelect: { slot in
-                    // Already on the Create tab — whole-row tap flips
-                    // mode directly into the wizard for that
-                    // timeframe's current window, no cross-tab hop.
-                    // To browse past/future windows the user goes to
-                    // the Boards tab.
-                    vm.enterCoreBoardWizard(timeframe: slot.timeframe)
-                }
-            )
+        ZStack {
+            RisoPaperBackground()
 
-            CreateHubBoardCTAView(
-                kind: .oneOff,
-                onTap: { vm.enterFreshWizard() },
-                variant: hasUncreatedCoreBoards ? .secondary : .primary
-            )
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Kicker + H1 header
+                    hubHeader
 
-            // Issue #71 — recurring-board creation is its own deliberate
-            // entry point, always the lighter secondary card below the
-            // one-off CTA.
-            CreateHubBoardCTAView(
-                kind: .recurring,
-                onTap: { vm.enterRecurringTemplateWizard() },
-                variant: .secondary
-            )
+                    CoreBoardsSectionView(
+                        slots: pendingRecurringVM.slots,
+                        onSelect: { slot in
+                            // Already on the Create tab — whole-row tap flips
+                            // mode directly into the wizard for that
+                            // timeframe's current window, no cross-tab hop.
+                            // To browse past/future windows the user goes to
+                            // the Boards tab.
+                            vm.enterCoreBoardWizard(timeframe: slot.timeframe)
+                        }
+                    )
 
-            if !vm.drafts.isEmpty {
-                CreateHubDraftsListView(
-                    drafts: vm.drafts,
-                    onResume: { board in
-                        vm.loadDraftAndEnterWizard(board: board)
-                    },
-                    onDelete: { board in
-                        vm.deleteDraft(boardId: board.id, userId: userId)
+                    CreateHubBoardCTAView(
+                        kind: .oneOff,
+                        onTap: { vm.enterFreshWizard() },
+                        variant: hasUncreatedCoreBoards ? .secondary : .primary
+                    )
+
+                    // Issue #71 — recurring-board creation is its own deliberate
+                    // entry point, always the lighter secondary card below the
+                    // one-off CTA.
+                    CreateHubBoardCTAView(
+                        kind: .recurring,
+                        onTap: { vm.enterRecurringTemplateWizard() },
+                        variant: .secondary
+                    )
+
+                    if !vm.drafts.isEmpty {
+                        CreateHubDraftsListView(
+                            drafts: vm.drafts,
+                            onResume: { board in
+                                vm.loadDraftAndEnterWizard(board: board)
+                            },
+                            onDelete: { board in
+                                vm.deleteDraft(boardId: board.id, userId: userId)
+                            }
+                        )
                     }
-                )
+                }
+                // Hub mode pads itself; wizard mode pads inside each step view.
+                .padding(.horizontal, Riso.gutter)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
         }
-        // Hub mode pads itself; wizard mode pads inside each step view.
-        // Padding moved off the parent ScrollView so the wizard's tasks
-        // step doesn't get double-padded (16pt outer + 16pt step + 12pt
-        // row chrome shrunk row content to ~78% of screen width).
-        .padding(16)
+    }
+
+    /// Kicker + H1 matching the Boards home header convention.
+    private var hubHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Build something")
+                .risoKicker()
+            Text("Create")
+                .risoH1()
+                .padding(.top, 4)
+        }
     }
 }
