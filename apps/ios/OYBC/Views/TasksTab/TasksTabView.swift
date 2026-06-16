@@ -196,6 +196,15 @@ struct TasksTabView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            // Rebuild the List cleanly whenever the library data set changes
+            // (create/edit/delete/reload) instead of letting SwiftUI batch-
+            // diff it. Deleting a compound parent un-suppresses its children
+            // to the top level — a reshuffle the backing UICollectionView
+            // can't reconcile, which traps with "invalid number of items in
+            // section". A fresh identity forces reloadData (no batch update).
+            // `reloadGeneration` is stable across search/filter/sort, so
+            // normal browsing keeps its scroll position + row animations.
+            .id(library.reloadGeneration)
         }
         .navigationBarHidden(true)
         // ── Sheets ────────────────────────────────────────────────────

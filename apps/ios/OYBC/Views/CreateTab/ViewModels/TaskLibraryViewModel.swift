@@ -82,6 +82,17 @@ final class TaskLibraryViewModel {
     /// iOS twin of web's `TaskLibrary.childToParents`. (#73)
     var childToParents: [String: [String]] = [:]
 
+    /// Bumped once per completed `reload()`. A view can key its `List`
+    /// (`.id(library.reloadGeneration)`) to this so the list rebuilds cleanly
+    /// whenever the underlying data set changes — sidestepping SwiftUI's
+    /// `UICollectionView` batch-update diff, which traps ("invalid number of
+    /// items in section") on reshuffles it can't reconcile (e.g. deleting a
+    /// compound parent un-suppresses its children to the top level: row count
+    /// shifts +1 with no clean insert/delete). It does NOT change on
+    /// search/filter/sort (those don't reload), so browsing keeps its scroll
+    /// position and row animations.
+    var reloadGeneration: Int = 0
+
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
@@ -152,6 +163,7 @@ final class TaskLibraryViewModel {
                 self.childTaskIds = ids
                 self.childToParents = reverseMap
                 self.loadError = nil
+                self.reloadGeneration &+= 1
             }
         } catch {
             await MainActor.run {
