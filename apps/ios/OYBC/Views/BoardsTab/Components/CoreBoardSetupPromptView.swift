@@ -6,6 +6,9 @@ import SwiftUI
 /// this view only surfaces the CTA. Past windows show "Backfill";
 /// current/future windows show "Set up".
 ///
+/// Rendered in the Riso design language: paper background, Blip
+/// mascot placeholder, Bricolage heading, and a Riso primary button.
+///
 /// Mirrors the web `CoreBoardSetupPrompt` component.
 struct CoreBoardSetupPromptView: View {
     let label: String
@@ -13,22 +16,34 @@ struct CoreBoardSetupPromptView: View {
     let onSetUp: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "calendar")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
+        ZStack {
+            RisoPaperBackground()
+            VStack(spacing: 20) {
+                BlipPlaceholder(size: 64, mood: isPast ? .calm : .happy)
 
-            Text("No board for \(label) yet.")
-                .foregroundStyle(.secondary)
+                Text("No board for \(label) yet.")
+                    .risoH2()
+                    .multilineTextAlignment(.center)
 
-            Button(action: onSetUp) {
-                Text("\(isPast ? "Backfill" : "Set up") \(label)")
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
+                Text(
+                    isPast
+                        ? "Add a past board to fill in this window."
+                        : "Set up a board for this window to start tracking your goals."
+                )
+                .risoSub()
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+                RisoButton(
+                    title: "\(isPast ? "Backfill" : "Set up") \(label)",
+                    kind: .primary,
+                    systemImage: isPast ? "clock.arrow.circlepath" : "plus",
+                    action: onSetUp
+                )
+                .padding(.top, 4)
             }
-            .buttonStyle(.borderedProminent)
+            .padding(Riso.gutter)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 }

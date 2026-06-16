@@ -7,6 +7,10 @@ import SwiftUI
 /// page as far into the past or future as they like). The label
 /// reflects the current window (e.g. "Today", "Week of May 18 – 24").
 ///
+/// Rendered in the Riso design language: Bricolage/Archivo typography,
+/// paper background, ink keyline chevrons, `RisoIconButton` for
+/// navigation actions.
+///
 /// Mirrors the web `CoreBoardWindowBar` component.
 struct CoreBoardWindowBarView: View {
     let label: String
@@ -15,34 +19,64 @@ struct CoreBoardWindowBarView: View {
     let onOpenList: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            // Previous chevron
             Button(action: onPrev) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .frame(width: 36, height: 36)
+                    .risoCard(fill: .risoPaper2)
             }
+            .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: Riso.cardRadius))
             .accessibilityLabel("Previous window")
 
             Spacer()
 
+            // Window label
             Text(label)
-                .font(.headline)
+                .font(.risoHead(15, .bold))
+                .foregroundStyle(Color.risoInk)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Spacer()
 
+            // List (browser) button
+            Button(action: onOpenList) {
+                HStack(spacing: 5) {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("List")
+                        .font(.risoHead(13, .bold))
+                }
+                .foregroundStyle(Color.risoInk)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 11)
+                .risoCard(fill: .risoPaper2)
+            }
+            .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: Riso.cardRadius))
+            .accessibilityLabel("Show all windows")
+
+            // Next chevron
             Button(action: onNext) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .frame(width: 36, height: 36)
+                    .risoCard(fill: .risoPaper2)
             }
+            .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: Riso.cardRadius))
             .accessibilityLabel("Next window")
-
-            Button(action: onOpenList) {
-                Label("List", systemImage: "list.bullet")
-            }
-            .accessibilityLabel("Show all windows")
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Riso.gutter)
+        .padding(.vertical, 10)
+        .background(Color.risoPaper)
+        .overlay(
+            Rectangle()
+                .fill(Color.risoInk.opacity(0.15))
+                .frame(height: 1),
+            alignment: .bottom
+        )
     }
 }
