@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// Editable fields: name, timeframe, custom dates, center type,
 ///   custom center name.
-/// Immutable on active boards: board size (shown as a read-only chip),
+/// Immutable on active boards: board size (shown as a read-only Riso chip),
 ///   isCore, spawnedFromTemplateId, isRandomized.
 ///
 /// Center-switch semantics (spec §5 of M2):
@@ -24,6 +24,10 @@ import SwiftUI
 /// to end-of-day (23:59:59.999) via `wizardLocalISOString` — mirrors the
 /// web `snapStart`/`snapEnd` helpers so the calendar window covers the
 /// whole day in the user's timezone.
+///
+/// Visual design: Riso vocabulary — ScrollView over `Color.risoPaper`,
+/// NavigationStack toolbar with a gold-pill Save button and a muted Cancel.
+/// The immutable-size chip and form sections use `.risoCard` blocks.
 struct EditBoardSheet: View {
     let board: Board
     let weekStartDay: String
@@ -55,66 +59,97 @@ struct EditBoardSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                // ── Read-only board-size chip ──────────────────────────────
-                Section {
-                    HStack {
-                        Text("Board size")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(board.boardSize)×\(board.boardSize)")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color(.systemGray5))
-                            .cornerRadius(6)
-                        Text("(immutable)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                } header: {
-                    Text("Immutable")
-                } footer: {
-                    Text("Board size cannot be changed on an active board.")
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // ── Immutable board-size chip ──────────────────────────
+                    sizeChip
 
-                // ── Validation error ───────────────────────────────────────
-                if let err = validationError {
-                    Section {
+                    // ── Validation error ───────────────────────────────────
+                    if let err = validationError {
                         Text(err)
-                            .foregroundColor(.red)
-                            .font(.subheadline)
+                            .font(.risoBody(13, .semibold))
+                            .foregroundStyle(Color.risoRed)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .risoCard(fill: .risoPaper2)
                     }
-                }
 
-                // ── Editable setup form ────────────────────────────────────
-                BoardSetupFormView(
-                    mode: .editActive,
-                    name: $name,
-                    timeframe: $timeframe,
-                    customStartDate: $customStartDate,
-                    customEndDate: $customEndDate,
-                    centerType: $centerType,
-                    centerCustomName: $centerCustomName,
-                    weekStartDay: weekStartDay,
-                    chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks
-                )
+                    // ── Editable setup form ────────────────────────────────
+                    BoardSetupFormView(
+                        mode: .editActive,
+                        name: $name,
+                        timeframe: $timeframe,
+                        customStartDate: $customStartDate,
+                        customEndDate: $customEndDate,
+                        centerType: $centerType,
+                        centerCustomName: $centerCustomName,
+                        weekStartDay: weekStartDay,
+                        chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks
+                    )
+                }
+                .padding(16)
             }
-            .navigationTitle("Edit board")
+            .background(Color.risoPaper.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Edit board")
+                        .font(.risoHead(17, .extraBold))
+                        .foregroundStyle(Color.risoInk)
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .font(.risoBody(15, .semibold))
+                        .foregroundStyle(Color.risoMuted)
                         .disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { handleSave() }
-                        .disabled(saving || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button {
+                        handleSave()
+                    } label: {
+                        Text(saving ? "Saving…" : "Save")
+                            .font(.risoHead(13, .extraBold))
+                            .foregroundStyle(Color.risoInk)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.risoGold))
+                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+                    }
+                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+                    .disabled(saving || name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .onAppear { seedState() }
+        }
+    }
+
+    // MARK: - Immutable size chip
+
+    /// Riso-styled read-only board-size chip displayed above the editable
+    /// form fields to remind the user that size is locked on active boards.
+    private var sizeChip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Board size")
+                .risoSectionLabel()
+            HStack(spacing: 10) {
+                Text("\(board.boardSize)×\(board.boardSize)")
+                    .font(.risoHead(16, .extraBold))
+                    .foregroundStyle(Color.risoInk)
+                Spacer()
+                Text("Immutable")
+                    .font(.risoBody(11, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.risoPaper))
+                    .overlay(Capsule().strokeBorder(Color.risoMuted, lineWidth: Riso.Keyline.dense))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .risoCard(fill: .risoPaper2)
+            Text("Board size cannot be changed on an active board.")
+                .font(.risoBody(11, .semibold))
+                .foregroundStyle(Color.risoMuted)
         }
     }
 
