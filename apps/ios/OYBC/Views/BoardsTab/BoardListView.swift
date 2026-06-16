@@ -150,11 +150,18 @@ struct BoardListView: View {
                     .listRowBackground(Color.clear)
                     .buttonStyle(.plain)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
+                        // NOT `role: .destructive`: a destructive swipe button makes
+                        // SwiftUI auto-animate the row's removal on tap, but this only
+                        // opens the confirm alert (the board isn't deleted yet). The
+                        // phantom removal vs. the unchanged data source crashes the
+                        // List ("invalid number of items in section"). Plain red button
+                        // runs the action; real removal happens after confirm.
+                        Button {
                             boardPendingDelete = board
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                        .tint(.red)
                     }
                 }
             }
