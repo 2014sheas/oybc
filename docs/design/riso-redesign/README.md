@@ -4,7 +4,7 @@
 
 A complete visual redesign of OYBC (bingo-board habit/goal tracker for iOS) in the **"Riso" direction**: a bold risograph-print poster aesthetic — cream paper, hard black keylines, hard offset shadows, halftone overprint texture, and a confident three-ink palette. The core design principle is **escalation**: the resting UI is quiet paper, and ink "detonates" as the user completes squares, hits bingos, and finally GREENLOGs a board. Loudness is earned, never ambient.
 
-This package covers all four tabs (Boards, Tasks, Create, Profile), the 5×5 play board with win states, the reworked board-creation wizard (including the redesigned Tasks step), and a full dark mode ("night press").
+This package covers all four tabs (Boards, Tasks, Create, Profile), the 5×5 play board with win states, the reworked board-creation wizard (including the redesigned Tasks step), the first-run onboarding + sign-in, the GREENLOG share flow, edit-profile, and a full dark mode ("night press").
 
 ## About the Design Files
 
@@ -12,7 +12,7 @@ The files in this bundle are **design references created in HTML** (React + JSX 
 
 ## Fidelity
 
-**High-fidelity.** Colors, typography, spacing, radii, shadows, copy, and interactions are final design intent. Recreate pixel-perfectly in SwiftUI. Two exceptions, noted inline below: the Blip mascot is a placeholder built from shapes (final illustrated asset TBD), and iOS-native conventions (swipe actions, sheets, haptics) should be used where the web prototype substituted tap-based equivalents.
+**High-fidelity.** Colors, typography, spacing, radii, shadows, copy, and interactions are final design intent. Recreate pixel-perfectly in SwiftUI. Two exceptions, noted inline below: the Blip mascot is a placeholder built from shapes (final illustrated asset TBD — but its **motion spec is final**, see Assets), and iOS-native conventions (swipe actions, sheets, haptics) should be used where the web prototype substituted tap-based equivalents.
 
 ## Design Tokens
 
@@ -68,6 +68,15 @@ Screen gutter 20px · card padding 13–16px · grid gap 7px (board cells) · li
 
 ## Screens / Views
 
+### 0. Onboarding & sign-in (`OnboardingView.swift` — new)
+
+First-run only (gated on a persisted flag; cleared, it replays). Full-bleed paper, no tab bar.
+
+- **Three intro slides** (horizontal, swipe or Next): each is centered art + left-aligned copy. (1) red-filled poster grid + kicker "Welcome to" / wordmark **OYBC** (64px) / "Own Your Bingo Card…"; (2) a board with one row + a diagonal lit, gold rings on the bingo line + kicker "The idea" / "Fill squares, score bingos."; (3) full red board + "The payoff" / "Clear it for a GREENLOG." Progress is a row of dots (active dot is a stretched red pill). **Skip** top-right on every slide; **Back** appears from slide 2.
+- **Sign-in panel** (after slide 3 → "Get started"): centered Blip (happy), kicker "One last thing", "Save your streak.", body, then **Continue with Apple** (ink-fill pill, Apple glyph), **Continue with email** (keyline pill), and a muted **Maybe later**. All three dismiss onboarding into Boards home. Wire Apple to real Sign in with Apple; "Maybe later" = anonymous/local.
+- Entrance: each slide slides in (transform only — never gate content on opacity, so first paint and reduced-motion always show it).
+- Prototype: clears on the "Replay onboarding" tweak; hash `#onboard`.
+
 ### 1. Boards home (`BoardListView.swift`)
 
 - **Header**: kicker "YOUR BOARDS" (12px, red, +.22em caps) over the display headline `BINGO, but make it your goals.` (3 lines, 34px). Gold 46px square icon-button (+) top-right, 2px keyline + hard shadow. Header scrolls away with content (not sticky).
@@ -88,7 +97,18 @@ Screen gutter 20px · card padding 13–16px · grid gap 7px (board cells) · li
   - **FREE (center)**: ink-black cell, gold star + "FREE" in gold caps. Night press: full black.
   - **Bingo-line cells**: 3px gold outer ring (`box-shadow: 0 0 0 3px gold` on top of the hard shadow), z-raised.
 - **Bingo toast**: drops from top (translateY −90→+6→0 with slight rotate, ~500ms), blue card, 2px keyline, 4px hard shadow: Blip art (42px) + "BINGO!" 19px + subtitle + gold `×2` count 26px. Auto-dismiss ~2.8s.
-- **GREENLOG overlay**: full-bleed blue takeover. Falling confetti (ink-keylined squares/circles in red/gold/green/paper, ~1.6–3.2s linear loops; count scales 16–88 with the celebration-intensity setting, default 7 → ~64). Blip (cheer mood, 108px), kicker "BOARD COMPLETE" (gold), "GREENLOG!" 52px/0.88, subtitle, three stat blocks (paper cards, keyline+shadow: 25/25 Squares · 5 Bingos · 7d Streak), red primary "Share my board" + outlined-cream ghost "Start a new board".
+- **GREENLOG overlay**: full-bleed blue takeover. Falling confetti (ink-keylined squares/circles in red/gold/green/paper, ~1.6–3.2s linear loops; count scales 16–88 with the celebration-intensity setting, default 7 → ~64). Blip (cheer mood, 108px), kicker "BOARD COMPLETE" (gold), "GREENLOG!" 52px/0.88, subtitle, three stat blocks (paper cards, keyline+shadow: 25/25 Squares · 5 Bingos · 7d Streak), red primary "Share my board" → **opens the Share sheet** + outlined-cream ghost "Start a new board".
+
+### 2a. Share board sheet (`ShareBoardSheet.swift` — new)
+
+Bottom sheet opened from GREENLOG's "Share my board" (prototype hash `#share`; tweak button). The GREENLOG stays underneath.
+
+- **Shareable poster card**: blue card with halftone overprint, 2px keyline + 4px hard shadow. Top row: green **GREENLOG** badge + **OYBC** wordmark. Board name (22px). Full 5×5 mini grid (red done cells with halftone, gold FREE center). Optional stat trio (Squares / Bingos / Streak as paper cards). Footer caps "OWN YOUR BINGO CARD". This card is what gets rendered to an image for sharing.
+- **Include stats toggle** (ink pill switch) shows/hides the stat trio on the card.
+- **Copy link** row (keyline card + hard shadow): link icon + `oybc.app/b/…`; tap → turns green, icon → check, label → "Link copied".
+- **Targets**: 4 keyline icon-squares (hard shadow, press-collapse) — Messages (green), Stories (red), Save image (ink), More (paper). Wire to the iOS share sheet / `UIActivityViewController`; "Save image" renders the poster card to Photos.
+
+### 1 (cont.) Boards home
 
 ### 3. Create wizard (`BoardWizardView.swift` + steps)
 
@@ -112,16 +132,40 @@ Tab bar **stays visible** (Create is a tab, not a modal). Footer Cancel/Back + N
 - Header "Tasks" + gold +. Controls: search field, type chips (All/Normal/Counting/Compound/Achievement), sort chips **Recent / Most used / A–Z** + live count.
 - **Rows**: type letter badge (N/C/K/A — A in achievement purple), title, subtitle (counting = "Action · goal N unit"; compound = "3 sub-tasks · all of 3"; achievement = "Watch <target> · GREENLOG"), right column **"N bds"** + green "N active".
 - **Compound grouping**: chevron expands indented dashed child rows. **Search auto-expands** compounds whose children match, and keeps the parent in results (mirrors `effectiveExpanded` / `autoExpandCompoundIds`).
-- **Detail bottom sheet** (tap row; in SwiftUI also keep swipe actions): big badge + title + type tag, Details line, Usage line ("On 4 boards · 3 active · used 23× all-time"), sub-task chips, Edit (stub) + **Delete with impact confirm** ("It's on 4 boards — squares using it will be cleared") per `TaskDeletionImpact`.
+- **Detail bottom sheet** (tap row; in SwiftUI also keep swipe actions): big badge + title + type tag, Details line, Usage line ("On 4 boards · 3 active · used 23× all-time"), sub-task chips, **Edit** + **Delete with impact confirm** ("It's on 4 boards — squares using it will be cleared") per `TaskDeletionImpact`.
+- **Edit mode** (in the same sheet, replaces its content): Title field, then type-specific fields — Counting: Action/Goal/Unit + live "reads as" preview · Compound: rule chips (tapping "At least N" again cycles N) + removable sub-task chips (min 2 to save) · Achievement: Completes-on chips (GREENLOG / First Bingo; target is fixed — recreate the task to change it). When placed, a dashed impact note: "Changes apply everywhere it's placed — updates N boards." Cancel / red Save (disabled until valid). Saving updates the library row and the open sheet in place.
 - **+ → New task sheet**: quick-add composer + the same special-type panel. Note copy: tasks land in the library; placement happens in Create.
 
 ### 5. Profile tab (`ProfileView.swift`)
 
-- Account card: circular keyline avatar (Blip placeholder), name + ✎, email.
+- Account card: circular keyline avatar (Blip placeholder), name + ✎ (**tap name/✎ → Edit profile sheet**), email.
 - **App**: Theme row with **System / Light / Dark** segmented pill (drives night press app-wide) · Sync row with green status dot ("Synced · just now").
-- **Preferences**: Board preferences · Recurring templates `[3]` · Default pools `[2]` — keyline icon squares, count pills, chevrons. (Sub-pages not designed yet.)
+- **Preferences**: Board preferences · Recurring templates `[3]` · Default pools `[2]` — keyline icon squares, count pills, chevrons. Each pushes a sub-page (below).
 - **Sign Out**: red row → inline dashed-red confirm (Cancel / solid-red Sign Out). **No Developer/Playground section** (removed by decision).
 - Version footer line.
+
+### 5a. Profile sub-pages (pushed screens, back square + "PROFILE" kicker + page title)
+
+- **Board preferences** (`BoardPreferencesView` — new): three keyline cards.
+  - *New boards*: Default size (3×3/4×4/5×5 segmented) · Center square (Free / Choose / None) · Week starts (Mon/Sun, hint "Sets when weekly boards reset and renew.").
+  - *Playing*: **Celebration intensity** — a 10-tick tap strip (gold fill up to value; ticks 8–10 fill red), value caption "7 · Full press" (words: Whisper/Quiet/Steady/Full press/Loud/Detonate). This is the same app-global setting that scales confetti. · Haptics toggle.
+  - *Housekeeping*: Expiring reminders toggle · Auto-archive completed toggle (hints under labels).
+  - Toggles are keyline pill switches, knob slides, track turns green when on. Footer note: "Defaults apply to new boards — existing boards keep their settings."
+- **Recurring templates**: caption "Templates press a fresh core board each cycle — same pool, reshuffled squares." Cards: name + timeframe tag (Daily=gold, Weekly=blue, Monthly=green, Yearly=red) + switch; meta line "3×3 board · 9-task pool · renews every morning". Off = paused: paper bg, name/meta dimmed, meta says "paused". **Tap a card to edit; dashed "＋ New template" to create — both open the template editor sheet (below).** Footer "Pausing a template keeps its pool — it just stops printing new boards."
+  - **Template editor sheet** (`TemplateEditSheet` — new): Name field · Timeframe segmented (Daily/Weekly/Monthly/Yearly, selected tints to the timeframe color) · Board size (3×3/4×4/5×5) · context-dependent **Renews on** control — Weekly shows a 7-day picker (M–S), Monthly shows 1st/15th/last-day, Daily/Yearly are implicit (every morning / Jan 1) · **Deals from pool** selector (lists the default pools; pool's task count flows into the template) · Start-active toggle · a dashed live preview line ("5×5 board · 14-task pool · renews Mondays") · Cancel / red Save (disabled until named) · Delete (red, edit mode only).
+- **Default pools**: caption "When a core board renews, its squares are dealt from these pools…". Cards: name + "feeds Weekly/Daily" tag, task chips + blue "+N more", meta "14 tasks · tap to edit". **Tap a card to edit; dashed "＋ New pool" to create — both open the pool editor sheet (below).** Templates and pools share one source of truth: a pool's task count drives the "N-task pool" shown on every template that deals from it.
+  - **Pool editor sheet** (`PoolEditSheet` — new): Name field · **Feeds** timeframe segmented (sets the tag color) · **Tasks** list as removable chips (✕) with an "Add a task…" input (Enter or red Add) · dashed live preview ("Feeds Weekly boards · 14 tasks in the deck") · Cancel / red Save (disabled until named + ≥1 task) · Delete (edit mode only). (Pulling existing library tasks into a pool happens in Create → library; this sheet is for quick authoring.)
+- Prototype URL hashes: `#prefs`, `#templates`, `#pools`.
+
+### 5b. Edit profile sheet (`EditProfileSheet.swift` — new)
+
+Bottom sheet from the account card's name/✎.
+
+- Large circular Blip avatar preview (keyline + hard shadow) reflecting the chosen mood.
+- **Blip mood** picker: three keyline cards (Happy / Cheer / Calm), each a small live Blip; selected = gold fill + hard shadow. (Blip is the avatar until the illustrated asset ships; mood is the user's avatar style.)
+- **Display name** text field (live-updates the avatar preview's label on save).
+- **Email** field shown disabled with hint "Change your email from Account security."
+- Red **Save profile** (disabled until name non-empty) → writes back to the account card (name + avatar mood). Done dismisses.
 
 ## Interactions & Behavior (summary of timings)
 
@@ -138,10 +182,15 @@ Maps onto existing view models — no new architecture needed. Key points: board
 
 ## Assets
 
-- **Screenshots** (`screenshots/`): visual reference for every screen, light + dark — `01` Boards home · `02` Play board · `03` Wizard Setup · `04` Wizard Tasks step · `05` Tasks tab · `06` Profile · `07` GREENLOG celebration. (Light series captured in order home→board→wizard→tasks→profile; dark series begins on Profile where the theme is switched.) Note: these are DOM re-renders — a few counting-cell labels render slightly clipped in the captures; the live prototype is the source of truth for those.
+- **Screenshots** (`screenshots/`): visual reference for every screen, light + dark — `01` Boards home · `02` Play board · `03` Wizard Setup · `04` Wizard Tasks step · `05` Tasks tab · `06` Profile · `07` GREENLOG celebration · `08` Board preferences · `09` Recurring templates · `10` Default pools · `11` Task edit sheet · `12` Onboarding intro · `13` Onboarding sign-in · `14` Share board sheet · `15` Edit profile sheet · `16` Template editor · `17` Pool editor (08–17 light only). Note: these are DOM re-renders — entrance animations are frozen at frame 0 by the capture tool, so a couple were shot with motion suppressed; the live prototype is the source of truth.
 
 - **Fonts**: Bricolage Grotesque, Archivo (Google Fonts)
 - **Blip mascot** (placeholder): overprint sticker character — red circle (multiply) behind blue halftone circle body, cream/ink eyes, gold grin, gold star spark; moods: happy/cheer/calm. Built entirely from shapes in `components.jsx` — **final illustrated asset to be commissioned**; keep the overprint/halftone language.
+- **Blip motion** (final spec; user toggle "Animated Blip", default on, and respect Reduce Motion):
+  - *Idle*: whole character bobs ±3px, 3.4s ease-in-out loop (5s for calm mood); eyes blink (scaleY → .12 for ~90ms every ~4.6s); star spark pulses scale 1→1.22 with 16° rotate, same 3.4s period.
+  - *Cheer* (GREENLOG): squash-and-stretch hop on top of the bob — 0.9s loop, sink to scale(1.07,.9), hop −7px at scale(.95,1.08), settle; spark spins continuously (1.8s/turn).
+  - *Bingo toast*: one ±7° wiggle (~0.65s) as the toast lands, then back to idle.
+  - Mouth morphs between moods with a .25s ease (animate the shape, don't crossfade).
 - **Icons**: simple 2px-stroke line icons (boards grid, tasks list, create ⊕, profile) — use SF Symbols equivalents at matching weights.
 - No raster images anywhere.
 
@@ -153,12 +202,14 @@ Maps onto existing view models — no new architecture needed. Key points: board
 | `proto/riso.css` | **The design system** — all tokens, every component style, night-press overrides |
 | `proto/app.jsx` | App state, navigation, bingo/GREENLOG triggers, theme switching, Tweaks |
 | `proto/screens.jsx` | Boards home, play board, GREENLOG overlay, board cards |
+| `proto/extras.jsx` | Onboarding (intro + sign-in), Share board sheet, Edit profile sheet |
 | `proto/wizard.jsx` | 3-step wizard shell |
 | `proto/taskstep.jsx` | Tasks step: pool, quick-add, special-type panel (counting/compound/achievement) |
 | `proto/library.jsx` | Library browser + bottom sheet, derive, From-a-board |
-| `proto/tabs.jsx` | Tasks tab + Profile tab |
-| `proto/components.jsx` | Blip mascot, icons, confetti |
+| `proto/tabs.jsx` | Tasks tab (incl. task edit sheet) + Profile tab |
+| `proto/profilepages.jsx` | Profile sub-pages: Board preferences, Recurring templates (+ editor), Default pools (+ editor) |
+| `proto/components.jsx` | Blip mascot (incl. motion structure), icons, confetti |
 | `proto/data.js` | Sample data shapes (boards, library, watch targets) |
 | `proto/ios-frame.jsx`, `proto/tweaks-panel.jsx` | Prototype scaffolding only — ignore for implementation |
 
-Open the HTML in a browser to interact with everything; URL hashes `#board`, `#wiz`, `#tasks`, `#profile`, `#gl` (GREENLOG) jump to specific states.
+Open the HTML in a browser to interact with everything; URL hashes `#board`, `#wiz`, `#tasks`, `#profile`, `#prefs`, `#templates`, `#pools`, `#gl` (GREENLOG), `#share`, `#onboard` jump to specific states.
