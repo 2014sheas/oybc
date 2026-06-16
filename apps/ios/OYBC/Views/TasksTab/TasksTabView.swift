@@ -148,11 +148,21 @@ struct TasksTabView: View {
                                 .tint(.blue)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
+                                // NOTE: deliberately NOT `role: .destructive`.
+                                // A destructive swipe button makes SwiftUI's List
+                                // auto-animate the row's removal on tap (it assumes
+                                // the model row is going away), but we only open a
+                                // confirm sheet here — the task isn't removed yet.
+                                // The collection view then animates a delete the
+                                // data source doesn't reflect → "invalid number of
+                                // items in section" crash. A plain red-tinted button
+                                // runs the action without the phantom removal.
+                                Button {
                                     prepareDelete(for: task)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                .tint(.red)
                             }
                         } else {
                             Button {
@@ -178,11 +188,21 @@ struct TasksTabView: View {
                                 .tint(.blue)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
+                                // NOTE: deliberately NOT `role: .destructive`.
+                                // A destructive swipe button makes SwiftUI's List
+                                // auto-animate the row's removal on tap (it assumes
+                                // the model row is going away), but we only open a
+                                // confirm sheet here — the task isn't removed yet.
+                                // The collection view then animates a delete the
+                                // data source doesn't reflect → "invalid number of
+                                // items in section" crash. A plain red-tinted button
+                                // runs the action without the phantom removal.
+                                Button {
                                     prepareDelete(for: task)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                .tint(.red)
                             }
                         }
                     }
@@ -196,15 +216,6 @@ struct TasksTabView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            // Rebuild the List cleanly whenever the library data set changes
-            // (create/edit/delete/reload) instead of letting SwiftUI batch-
-            // diff it. Deleting a compound parent un-suppresses its children
-            // to the top level — a reshuffle the backing UICollectionView
-            // can't reconcile, which traps with "invalid number of items in
-            // section". A fresh identity forces reloadData (no batch update).
-            // `reloadGeneration` is stable across search/filter/sort, so
-            // normal browsing keeps its scroll position + row animations.
-            .id(library.reloadGeneration)
         }
         .navigationBarHidden(true)
         // ── Sheets ────────────────────────────────────────────────────
@@ -260,16 +271,7 @@ struct TasksTabView: View {
         .sheet(item: $pendingDelete, onDismiss: {
             guard reloadAfterDeleteDismiss else { return }
             reloadAfterDeleteDismiss = false
-            // Defer to the next runloop turn. Reloading synchronously inside
-            // `onDismiss` mutates the List's data source while the sheet is
-            // still mid-dismiss-transition, so SwiftUI's backing
-            // UICollectionView applies a re-entrant batch update with an
-            // inconsistent item count and traps ("invalid number of items in
-            // section …"). This bites hardest when deleting a compound parent
-            // (its children un-suppress, so the row count shifts by +1 with
-            // no inserts/deletes reported). Deferring lets the dismiss settle
-            // so the reload lands as one clean update.
-            DispatchQueue.main.async { reloadLibraryAndStatuses() }
+            reloadLibraryAndStatuses()
         }) { pending in
             TaskDeleteConfirmView(
                 task: pending.task,
