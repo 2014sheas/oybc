@@ -202,84 +202,182 @@ struct BoardSetupFormView: View {
     // MARK: - Edit-active layout (explicit bindings)
     //
     // Board size is suppressed — the enclosing `EditBoardSheet` renders it
-    // as a read-only Form row. Recurring / core affordances are always hidden.
-    // This section emits SwiftUI `Section` views for use inside a `Form`.
+    // as a Riso chip above this view. Recurring / core affordances are always
+    // hidden. Sections use Riso card vocabulary matching `RisoBoardSetupForm`.
 
     @ViewBuilder
     private var editActiveBody: some View {
         // ── Board name ──
-        Section("Board name") {
-            TextField("e.g., \"Spring Goals\"", text: nameBinding)
-        }
+        editNameSection
 
         // ── Timeframe ──
-        Section("Timeframe") {
-            Picker("Timeframe", selection: timeframeBinding) {
-                Text("Daily").tag(Timeframe.daily)
-                Text("Weekly").tag(Timeframe.weekly)
-                Text("Monthly").tag(Timeframe.monthly)
-                Text("Yearly").tag(Timeframe.yearly)
-                Text("Custom").tag(Timeframe.custom)
-            }
-
-            if timeframeBinding.wrappedValue != .custom,
-               let boundaries = computeTimeframeBoundaries(
-                   timeframe: timeframeBinding.wrappedValue,
-                   referenceDate: Date(),
-                   weekStartDay: weekStartDay
-               ) {
-                let start = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
-                let end = DateFormatter.localizedString(from: boundaries.end, dateStyle: .medium, timeStyle: .none)
-                Text("\(start) – \(end)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            if timeframeBinding.wrappedValue == .custom {
-                DatePicker("Start date", selection: customStartDateBinding, displayedComponents: .date)
-                DatePicker(
-                    "End date",
-                    selection: customEndDateBinding,
-                    in: customStartDateBinding.wrappedValue...,
-                    displayedComponents: .date
-                )
-            }
-        }
+        editTimeframeSection
 
         // ── Center square ──
-        Section("Center square") {
-            Picker("Center square", selection: centerTypeBinding) {
-                Text("Free Space").tag(CenterSquareType.free)
-                Text("Custom Name").tag(CenterSquareType.customFree)
-                Text("Pick one of my board tasks").tag(CenterSquareType.chosen)
-                Text("None").tag(CenterSquareType.none)
-            }
-            .pickerStyle(.menu)
-            .onChange(of: centerTypeBinding.wrappedValue) { _, newVal in
-                // Revert to .free if the user somehow selects CHOSEN
-                // when no candidate tasks exist.
-                if newVal == .chosen && chosenCenterDisabled {
-                    centerTypeBinding.wrappedValue = .free
-                }
-            }
+        editCenterSection
+    }
 
+    // MARK: - Edit-active: Board name section
+
+    @ViewBuilder
+    private var editNameSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 3) {
+                Text("BOARD NAME")
+                    .risoSectionLabel()
+                Text("*")
+                    .font(.risoBody(11, .bold))
+                    .foregroundStyle(Color.risoRed)
+            }
+            EditBoardNameInput(text: nameBinding)
+        }
+    }
+
+    // MARK: - Edit-active: Timeframe section
+
+    @ViewBuilder
+    private var editTimeframeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("TIMEFRAME")
+                .risoSectionLabel()
+
+            // All five options are available in edit-active mode (no recurring
+            // board mode here — edit only applies to already-created boards).
+            RisoSegmented(
+                options: [
+                    (.daily,   "Daily"),
+                    (.weekly,  "Weekly"),
+                    (.monthly, "Monthly"),
+                    (.yearly,  "Yearly"),
+                    (.custom,  "Custom"),
+                ],
+                selection: timeframeBinding
+            )
+
+            // Date note (non-custom) or custom date pickers.
+            if timeframeBinding.wrappedValue != .custom {
+                editTimeframeDateNote
+            } else {
+                editCustomDateSection
+            }
+        }
+    }
+
+    /// Dashed-keyline note card showing the resolved window for the current
+    /// timeframe — mirrors `RisoBoardSetupForm.timeframeDateNote`.
+    @ViewBuilder
+    private var editTimeframeDateNote: some View {
+        if let boundaries = computeTimeframeBoundaries(
+            timeframe: timeframeBinding.wrappedValue,
+            referenceDate: Date(),
+            weekStartDay: weekStartDay
+        ) {
+            let start = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
+            let end = DateFormatter.localizedString(from: boundaries.end, dateStyle: .medium, timeStyle: .none)
+            HStack(spacing: 8) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.risoMuted)
+                Text("\(start) – \(end)")
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
+                    .foregroundStyle(Color.risoInk)
+            )
+        }
+    }
+
+    /// Custom date pickers in Riso card style — mirrors
+    /// `RisoBoardSetupForm.customDateSection`.
+    @ViewBuilder
+    private var editCustomDateSection: some View {
+        VStack(spacing: 10) {
+            DatePicker(
+                "Start date",
+                selection: customStartDateBinding,
+                displayedComponents: .date
+            )
+            .font(.risoBody(14, .bold))
+            .foregroundStyle(Color.risoInk)
+            .tint(Color.risoBlue)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .risoCard()
+
+            DatePicker(
+                "End date",
+                selection: customEndDateBinding,
+                in: customStartDateBinding.wrappedValue...,
+                displayedComponents: .date
+            )
+            .font(.risoBody(14, .bold))
+            .foregroundStyle(Color.risoInk)
+            .tint(Color.risoBlue)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .risoCard()
+        }
+    }
+
+    // MARK: - Edit-active: Center square section
+
+    @ViewBuilder
+    private var editCenterSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("CENTER SQUARE")
+                .risoSectionLabel()
+
+            RisoSegmented(
+                options: editCenterOptions,
+                selection: Binding(
+                    get: { centerTypeBinding.wrappedValue },
+                    set: { newVal in
+                        // Revert to .free if the user selects CHOSEN when no
+                        // candidate tasks exist (same guard as the old Form path).
+                        if newVal == .chosen && chosenCenterDisabled {
+                            centerTypeBinding.wrappedValue = .free
+                        } else {
+                            centerTypeBinding.wrappedValue = newVal
+                        }
+                    }
+                )
+            )
+
+            // Contextual notes.
             if centerTypeBinding.wrappedValue == .chosen && chosenCenterDisabled {
                 Text("No tasks are placed on this board — CHOSEN is unavailable.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoMuted)
             } else if centerTypeBinding.wrappedValue == .chosen {
                 Text("The existing center task is kept. Switch away to change the center type.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoMuted)
             }
 
+            // Custom center name input.
             if centerTypeBinding.wrappedValue == .customFree {
-                TextField(
-                    "Custom center name (e.g., \"Wild Card\")",
-                    text: centerCustomNameBinding
+                EditBoardNameInput(
+                    text: centerCustomNameBinding,
+                    placeholder: "Custom center name (e.g. Wild Card)"
                 )
             }
         }
+    }
+
+    private var editCenterOptions: [(value: CenterSquareType, label: String)] {
+        [
+            (.free,       "Free Space"),
+            (.customFree, "Custom Name"),
+            (.chosen,     "I'll choose"),
+            (.none,       "None"),
+        ]
     }
 
     // MARK: - Shared sub-views (create mode)
@@ -338,6 +436,46 @@ struct BoardSetupFormView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - EditBoardNameInput
+
+/// Keyline text field matching `RisoNameInput` in `RisoBoardSetupForm` —
+/// 2px ink border, Bricolage 700 text, paper2 background. Focus state adds
+/// a 3px hard shadow (no glow) per Riso spec.
+///
+/// Defined here as a `private` helper used only by `BoardSetupFormView`'s
+/// edit-active sections. It is visually identical to `RisoNameInput` but
+/// kept separate so neither file reaches into the other's private scope.
+private struct EditBoardNameInput: View {
+    @Binding var text: String
+    var placeholder: String = "e.g., \"Spring Goals\""
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .font(.risoHead(16, .bold))
+            .foregroundStyle(Color.risoInk)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .background(Color.risoPaper2)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: isFocused ? 3 : Riso.Keyline.container)
+            )
+            .background(
+                // Hard shadow (3px offset) — visible only when focused.
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .fill(Color.risoInk)
+                    .offset(x: isFocused ? Riso.Shadow.button : 0,
+                            y: isFocused ? Riso.Shadow.button : 0)
+                    .animation(.easeOut(duration: Riso.pressDuration), value: isFocused)
+            )
+            .focused($isFocused)
+            .autocorrectionDisabled()
     }
 }
 
