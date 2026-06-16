@@ -11,14 +11,19 @@ struct CoreBrowserRoute: Hashable {
 }
 
 /// Per-timeframe core-board browser. Vertical list of calendar
-/// windows; filled cells render the matching `BoardListItemView` and
-/// tap into `BoardPlayView`, empty cells render a Create CTA that
-/// launches the wizard for that window.
+/// windows; filled cells render `RisoBoardCard` inside a
+/// `CoreBoardWindowCellView` and tap into `BoardPlayView`, empty cells
+/// render a Riso-styled Create CTA that launches the wizard for that
+/// window.
 ///
 /// Bidirectional pagination via sentinel `.onAppear` at the top and
 /// bottom of the list — first appearance triggers `loadEarlier()` /
 /// `loadLater()` on the view-model, prepending or appending another
 /// page (10 windows by default).
+///
+/// Rendered in the Riso design language: `RisoPaperBackground`, Riso
+/// kicker + H2 header, paper-gutter spacing. All pagination logic is
+/// unchanged from the pre-Riso implementation.
 ///
 /// Mirrors web's `CoreBoardBrowserPage`.
 struct CoreBoardBrowserView: View {
@@ -30,8 +35,7 @@ struct CoreBoardBrowserView: View {
     let onCreate: (Timeframe, Date) -> Void
     /// Callback to navigate to an existing board (filled cell tap).
     /// Forwarded from `BoardListView` so the user lands on
-    /// `BoardPlayView` via the same boardsPath push the main list
-    /// uses.
+    /// `BoardPlayView` via the same boardsPath push the main list uses.
     let onOpenBoard: (String) -> Void
 
     @EnvironmentObject var authService: AuthService
@@ -42,16 +46,35 @@ struct CoreBoardBrowserView: View {
     }
 
     var body: some View {
+        ZStack {
+            RisoPaperBackground()
+            content
+        }
+        .navigationBarHidden(true)
+        .overlay(alignment: .top) {
+            if let err = vm.loadError {
+                errorBanner(err)
+            }
+        }
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var content: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 0) {
+                    // Scrolling page header (not sticky)
+                    headerSection
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.top, 16)
+                        .padding(.bottom, 14)
+
                     // Top sentinel — first time it appears, load 10
-                    // older windows. SwiftUI fires `.onAppear` each
-                    // time the view enters the visible region, so a
-                    // user that scrolls back-and-forth across the
-                    // sentinel keeps growing the past range. That
-                    // matches the user's intent: "I want to see
-                    // further back".
+                    // older windows. SwiftUI fires `.onAppear` each time
+                    // the view enters the visible region, so a user that
+                    // scrolls back-and-forth keeps growing the past range.
                     Color.clear
                         .frame(height: 1)
                         .onAppear { vm.loadEarlier() }
@@ -68,14 +91,17 @@ struct CoreBoardBrowserView: View {
                             onCreate: { date, tf in onCreate(tf, date) }
                         )
                         .id(cell.windowStart)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 14)
                     }
 
                     Color.clear
                         .frame(height: 1)
                         .onAppear { vm.loadLater() }
+
+                    // Bottom breathing room
+                    Color.clear.frame(height: 20)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
             }
             .onAppear {
                 if let userId = authService.currentUser?.id {
@@ -99,21 +125,42 @@ struct CoreBoardBrowserView: View {
                     }
                 }
             }
-            .navigationTitle("\(timeframeTitle) browser")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .overlay(alignment: .top) {
-            if let err = vm.loadError {
-                Text(err)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(8)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(6)
-                    .padding(.top, 8)
-            }
         }
     }
+
+    // MARK: - Header
+
+    private var headerSection: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(timeframeTitle) boards")
+                    .risoKicker()
+                Text(timeframeTitle)
+                    .risoH2()
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Error banner
+
+    private func errorBanner(_ message: String) -> some View {
+        Text(message)
+            .font(.risoBody(12, .semibold))
+            .foregroundStyle(Color.risoPaper)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.risoRed)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+            )
+            .padding(.top, 12)
+            .padding(.horizontal, Riso.gutter)
+    }
+
+    // MARK: - Helpers
 
     private var timeframeTitle: String {
         switch timeframe {

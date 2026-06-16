@@ -5,7 +5,7 @@ import SwiftUI
 /// Renders a `CoreBoardWindowBarView` (prev / label / next / list) above
 /// one of three body states:
 ///
-///   - **Loading** (`!viewModel.isLoaded`): `ProgressView`.
+///   - **Loading** (`!viewModel.isLoaded`): Riso-styled `ProgressView` on paper.
 ///   - **Filled** (`viewModel.board != nil`): embedded `BoardPlayView`
 ///     (with `embedded: true` so it yields the navigation title to us).
 ///   - **Empty**: `CoreBoardSetupPromptView` with a lazy Create CTA.
@@ -14,6 +14,10 @@ import SwiftUI
 /// navigation pushes, so the back button always returns to the list.
 /// The list button fires `onBrowseTimeframe` to open the full browser.
 /// The setup button fires `onCreateForWindow` with the window start Date.
+///
+/// The surrounding chrome (bar + loading / empty states) is rendered in
+/// the Riso design language; the embedded `BoardPlayView` is already Riso
+/// (#112) and is left unmodified.
 ///
 /// Mirrors the web `CoreBoardWindowPage` / `CoreBoardWindowView` concept.
 struct CoreBoardWindowView: View {
@@ -77,12 +81,11 @@ struct CoreBoardWindowView: View {
                 onNext: { viewModel.step(1) },
                 onOpenList: { onBrowseTimeframe(timeframe) }
             )
-            Divider()
 
             bodyContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle(viewModel.windowLabel)
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
         .onAppear { viewModel.reload() }
     }
 
@@ -91,8 +94,7 @@ struct CoreBoardWindowView: View {
     @ViewBuilder
     private var bodyContent: some View {
         if !viewModel.isLoaded {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            loadingView
         } else if let board = viewModel.board {
             BoardPlayView(
                 boardId: board.id,
@@ -112,6 +114,16 @@ struct CoreBoardWindowView: View {
                     }
                 }
             )
+        }
+    }
+
+    // MARK: - Loading
+
+    private var loadingView: some View {
+        ZStack {
+            RisoPaperBackground()
+            ProgressView()
+                .tint(Color.risoInk)
         }
     }
 }

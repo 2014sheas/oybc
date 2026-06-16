@@ -20,9 +20,12 @@ enum CellSwapMode {
 /// mode the Task currently occupying the square is excluded; in add mode all
 /// eligible tasks are shown.
 ///
+/// Rendered in the Riso design language: `RisoPaperBackground`, `RisoTextField`
+/// search bar, `RisoTypeBadge` per-row type indicators, `RisoButton` CTA.
+///
 /// UX mirrors the web `CellSwapModal`:
 ///   - Search field filters by title (case-insensitive substring).
-///   - Single-select list row; selected row gets a checkmark.
+///   - Single-select list row; selected row gets a gold checkmark.
 ///   - CTA button ("Swap" or "Add") is disabled until a task is chosen.
 ///   - Tapping the same row again deselects (no forced selection).
 ///
@@ -75,69 +78,87 @@ struct CellSwapSheet: View {
         mode == .add ? "Add" : "Swap"
     }
 
-    /// Navigation title — differs by mode.
+    /// Navigation / sheet kicker label — differs by mode.
+    private var sheetKicker: String {
+        mode == .add ? "Add to cell" : "Swap task"
+    }
+
+    /// Sheet heading — differs by mode.
     private var sheetTitle: String {
-        mode == .add ? "Add a task to this cell…" : "Swap with another task…"
+        mode == .add ? "Add a task to this cell" : "Swap with another task"
     }
 
     // MARK: - Body
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // ── Search ──
-                searchBar
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
+            ZStack {
+                RisoPaperBackground()
+                VStack(spacing: 0) {
+                    // ── Header ──
+                    sheetHeader
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.top, 20)
+                        .padding(.bottom, 14)
 
-                Divider()
+                    // ── Search ──
+                    searchBar
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 10)
 
-                // ── Task list ──
-                if filtered.isEmpty {
-                    Spacer()
-                    Text(query.trimmingCharacters(in: .whitespaces).isEmpty
-                         ? "No eligible tasks found."
-                         : "No tasks match your search.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding()
-                    Spacer()
-                } else {
-                    List(filtered, id: \.id) { task in
-                        taskRow(task)
+                    // ── Divider ──
+                    Rectangle()
+                        .fill(Color.risoInk.opacity(0.12))
+                        .frame(height: 1)
+
+                    // ── Task list or empty state ──
+                    if filtered.isEmpty {
+                        emptyState
+                    } else {
+                        taskList
                     }
-                    .listStyle(.plain)
+
+                    // ── CTA ──
+                    ctaBar
                 }
             }
-            .navigationTitle(sheetTitle)
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(ctaLabel) {
-                        if let id = selectedTaskId {
-                            onConfirm(id)
-                        }
-                    }
-                    .disabled(selectedTaskId == nil)
-                    .fontWeight(.semibold)
+                        .font(.risoBody(14, .semibold))
+                        .foregroundStyle(Color.risoInk)
                 }
             }
         }
         .presentationDetents([.medium, .large])
+        .presentationBackground(Color.risoPaper)
     }
 
-    // MARK: - Subviews
+    // MARK: - Sheet header
+
+    private var sheetHeader: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sheetKicker.uppercased())
+                    .risoKicker()
+                Text(sheetTitle)
+                    .risoH2()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: - Search bar
 
     private var searchBar: some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.risoMuted)
             TextField("Search tasks…", text: $query)
+                .font(.risoHead(14, .bold))
+                .foregroundStyle(Color.risoInk)
+                .tint(Color.risoBlue)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !query.isEmpty {
@@ -145,14 +166,38 @@ struct CellSwapSheet: View {
                     query = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(Color.risoMuted)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(8)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.risoPaper2)
+        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+        )
+    }
+
+    // MARK: - Task list
+
+    private var taskList: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(filtered, id: \.id) { task in
+                    taskRow(task)
+                    if task.id != filtered.last?.id {
+                        Rectangle()
+                            .fill(Color.risoInk.opacity(0.08))
+                            .frame(height: 1)
+                            .padding(.horizontal, Riso.gutter)
+                    }
+                }
+            }
+            .padding(.bottom, 8)
+        }
     }
 
     @ViewBuilder
@@ -161,28 +206,102 @@ struct CellSwapSheet: View {
         Button {
             selectedTaskId = isSelected ? nil : task.id
         } label: {
-            HStack {
+            HStack(spacing: 12) {
+                // Type letter badge
+                RisoTypeBadge(kind: risoKind(for: task.type), style: .letterSquare)
+
+                // Title + subtitle
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.title)
-                        .foregroundColor(.primary)
-                        .font(.body)
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoInk)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Text(taskTypeLabel(task.type))
-                        .foregroundColor(.secondary)
-                        .font(.caption)
+                        .font(.risoBody(11.5, .semibold))
+                        .foregroundStyle(Color.risoMuted)
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Gold checkmark when selected
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .foregroundColor(.accentColor)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color.risoGold)
+                        .overlay(
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color.risoInk)
+                                .blendMode(.multiply)
+                                .opacity(0.2)
+                        )
                 }
             }
             .contentShape(Rectangle())
+            .padding(.horizontal, Riso.gutter)
+            .padding(.vertical, 13)
         }
         .buttonStyle(.plain)
+        .background(isSelected ? Color.risoPaper2 : Color.clear)
+    }
+
+    // MARK: - Empty state
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Text(query.trimmingCharacters(in: .whitespaces).isEmpty
+                 ? "No eligible tasks found."
+                 : "No tasks match your search.")
+                .risoH2()
+                .multilineTextAlignment(.center)
+            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("Try a different search term.")
+                    .risoSub()
+                    .multilineTextAlignment(.center)
+            }
+            Spacer()
+        }
+        .padding(Riso.gutter)
+    }
+
+    // MARK: - CTA bar
+
+    private var ctaBar: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.risoInk.opacity(0.12))
+                .frame(height: 1)
+
+            HStack {
+                RisoButton(
+                    title: ctaLabel,
+                    kind: selectedTaskId != nil ? .primary : .neutral,
+                    fullWidth: true,
+                    action: {
+                        if let id = selectedTaskId {
+                            onConfirm(id)
+                        }
+                    }
+                )
+                .disabled(selectedTaskId == nil)
+                .opacity(selectedTaskId == nil ? 0.5 : 1.0)
+            }
+            .padding(Riso.gutter)
+        }
     }
 
     // MARK: - Helpers
+
+    /// Maps the data model `TaskType` onto `RisoTaskKind` for badge rendering.
+    private func risoKind(for type: TaskType) -> RisoTaskKind {
+        switch type {
+        case .normal:      return .normal
+        case .counting:    return .counting
+        case .compound:    return .compound
+        case .achievement: return .achievement
+        }
+    }
 
     private func taskTypeLabel(_ type: TaskType) -> String {
         switch type {
