@@ -251,7 +251,16 @@ struct TasksTabView: View {
         .sheet(item: $pendingDelete, onDismiss: {
             guard reloadAfterDeleteDismiss else { return }
             reloadAfterDeleteDismiss = false
-            reloadLibraryAndStatuses()
+            // Defer to the next runloop turn. Reloading synchronously inside
+            // `onDismiss` mutates the List's data source while the sheet is
+            // still mid-dismiss-transition, so SwiftUI's backing
+            // UICollectionView applies a re-entrant batch update with an
+            // inconsistent item count and traps ("invalid number of items in
+            // section …"). This bites hardest when deleting a compound parent
+            // (its children un-suppress, so the row count shifts by +1 with
+            // no inserts/deletes reported). Deferring lets the dismiss settle
+            // so the reload lands as one clean update.
+            DispatchQueue.main.async { reloadLibraryAndStatuses() }
         }) { pending in
             TaskDeleteConfirmView(
                 task: pending.task,
