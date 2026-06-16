@@ -129,7 +129,7 @@ Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build
 - Playground before integration — no production code without explicit user approval.
 - **Build real components, not demos** — Playground features must use production-ready reusable components from `components/` / `Views/Components/`. The Playground is a testing harness, not a place for throwaway inline UI. If a component doesn't exist yet, create it as a reusable component first, then use it in the Playground.
 - Mirror file structure — every playground feature is a separate file on both platforms. Container views stay thin.
-- Reuse existing infrastructure — shared constants in `playgroundUtils.ts` / `PlaygroundUtils.swift`, reusable components in `components/playground/` / `Views/Components/`.
+- Reuse existing infrastructure — shared constants in `playgroundUtils.ts` (web) / `Utils/TimeframeFormatting.swift` (iOS; the old `PlaygroundUtils.swift` was removed with the iOS Playground in #119), reusable components in `components/playground/` / `Views/Components/`.
 
 **Standard Development Process**: Ask clarifying questions first. Create a branch per feature/bugfix. TDD approach. Plan before implementing.
 
@@ -171,20 +171,23 @@ Web and iOS must mirror each other's directory and file structure.
 Web                                                  iOS
 apps/web/src/                                        apps/ios/OYBC/
 ├── pages/
-│   └── Playground.tsx          ←→                  Views/PlaygroundView.swift
-│       (container only — no feature logic)              (container only)
+│   └── Playground.tsx          (web dev-only)      (NO iOS counterpart — the iOS
+│       (container only)                             Playground was removed in #119)
 ├── components/
-│   └── playground/
-│       ├── playgroundUtils.ts  ←→                  Views/Playground/PlaygroundUtils.swift
-│       ├── BoardTaskSelectionPlayground.tsx ←→      Views/Playground/BoardTaskSelectionPlayground.swift
-│       ├── BoardGeneratorPlayground.tsx ←→          Views/Playground/BoardGeneratorPlayground.swift
-│       ├── UnifiedTaskCreatorPlayground.tsx ←→      Views/Playground/UnifiedTaskCreatorPlayground.swift
-│       ├── TaskSquareActionsPlayground.tsx ←→       Views/Playground/TaskSquareActionsPlayground.swift
-│       ├── CrossBoardRollupPlayground.tsx ←→        Views/Playground/CrossBoardRollupPlayground.swift
-│       └── SubtaskDerivationPlayground.tsx ←→       Views/Playground/SubtaskDerivationPlayground.swift
-│       (composite-task creation: web components/compositeWizard/; iOS is now INLINE in
-│        RisoCompoundFieldsView within the special-type panel — Views/Components/CompositeWizard/
-│        was removed in the Riso redesign. Note: the iOS Playground tree above was also removed in #119.)
+│   └── playground/             (web dev-only — the entire iOS Views/Playground/
+│       │                        tree + PlaygroundView.swift were removed in #119)
+│       ├── playgroundUtils.ts                      (iOS: the production-used date/timeframe
+│       │                                            helpers moved to Utils/TimeframeFormatting.swift)
+│       ├── BoardTaskSelectionPlayground.tsx        (no iOS counterpart)
+│       ├── BoardGeneratorPlayground.tsx            (no iOS counterpart)
+│       ├── UnifiedTaskCreatorPlayground.tsx        (no iOS counterpart)
+│       ├── TaskSquareActionsPlayground.tsx         (no iOS counterpart)
+│       ├── CrossBoardRollupPlayground.tsx          (no iOS counterpart)
+│       └── SubtaskDerivationPlayground.tsx         (no iOS counterpart)
+│       (Playground parity is an intentional, temporary divergence: the Riso redesign is
+│        iOS-only so far. composite-task creation: web components/compositeWizard/; iOS is
+│        now INLINE in RisoCompoundFieldsView within the special-type panel —
+│        Views/Components/CompositeWizard/ was removed in the Riso redesign.)
 │
 └── components/                                     Views/Components/
     ├── Navbar.tsx                 (dev-only)       (no iOS counterpart — iOS launches straight into tabs)
@@ -221,7 +224,8 @@ apps/web/src/                                        apps/ios/OYBC/
 │                                                   Services/NetworkMonitor.swift (iOS only, NWPathMonitor)
 │
 └── components/playground/
-    └── SyncSimulationPlayground.tsx ←→             Views/Playground/SyncDashboardPlayground.swift
+    └── SyncSimulationPlayground.tsx                (web dev-only — iOS SyncDashboardPlayground
+                                                     removed in #119; sync is exercised in-app)
 ```
 
 ### Pages ↔ Root Views
@@ -239,7 +243,7 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 ├── TaskDetailPage.tsx         ←→                Views/TasksTab/TaskDetailView.swift
 ├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
 ├── BoardPreferencesPage.tsx   ←→                Views/ProfileTab/BoardPreferencesView.swift
-└── Playground.tsx             ←→                Views/PlaygroundView.swift
+└── Playground.tsx             (web dev-only)    (no iOS counterpart — Views/PlaygroundView.swift removed in #119)
 ```
 
 ### Intentional platform divergences (don't treat as parity bugs)
