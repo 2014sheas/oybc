@@ -20,23 +20,23 @@ enum CreateHubBoardCTAKind {
     case recurring
 }
 
-/// CreateHubBoardCTAView — Card that invites the user to start a new
-/// board. Renders an action on the Create Hub; tapping it launches the
-/// 3-step board-creation wizard. iOS twin of web's `CreateHubBoardCTA`.
+/// CreateHubBoardCTAView — Riso-styled card that invites the user to start
+/// a new board. iOS twin of web's `CreateHubBoardCTA`.
 ///
 /// Two axes:
 ///   - `kind` (#71): `.oneOff` (a single board) vs `.recurring` (a
 ///     template that auto-spawns each window). The recurring entry
 ///     replaced the in-wizard "Make recurring" toggle.
-///   - `variant`: `.primary` (large gradient headline card) vs
-///     `.secondary` (smaller flat card) — same destination, different
-///     visual weight.
+///   - `variant`: `.primary` (risoCard + hard shadow, red system-image
+///     badge, Bricolage headline) vs `.secondary` (lighter flat card,
+///     muted icon square).
 struct CreateHubBoardCTAView: View {
     var kind: CreateHubBoardCTAKind = .oneOff
     let onTap: () -> Void
     var variant: CreateHubBoardCTAVariant = .primary
 
-    /// Copy + glyphs per `kind`.
+    // MARK: - Copy
+
     private var title: String {
         kind == .recurring ? "Create a recurring board" : "Start a new board"
     }
@@ -45,8 +45,11 @@ struct CreateHubBoardCTAView: View {
             ? "Auto-spawns a fresh board each window from a pool."
             : "Set it up, pick your tasks, and activate."
     }
-    private var emoji: String { kind == .recurring ? "🔁" : "✨" }
-    private var secondarySymbol: String { kind == .recurring ? "repeat" : "plus" }
+    private var systemImageName: String {
+        kind == .recurring ? "repeat" : "plus"
+    }
+
+    // MARK: - Body
 
     var body: some View {
         switch variant {
@@ -57,88 +60,82 @@ struct CreateHubBoardCTAView: View {
         }
     }
 
-    // MARK: - Primary
+    // MARK: - Primary variant
 
+    /// Riso primary card — red fill, Bricolage headline, hard shadow press.
+    /// Matches the `rd-cta` prototype treatment (`.rd-cta--primary`).
     private var primaryButton: some View {
         Button(action: onTap) {
-            HStack(spacing: 16) {
-                Text(emoji)
-                    .font(.system(size: 32))
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 14) {
+                // Icon square — gold fill with ink symbol
+                Image(systemName: systemImageName)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .frame(width: 44, height: 44)
+                    .risoCard(fill: Color.risoGold)
+
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .font(.risoHead(16, .extraBold))
+                        .foregroundStyle(Color.risoPaper)
+                        .lineLimit(1)
                     Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.85))
+                        .font(.risoBody(12, .medium))
+                        .foregroundStyle(Color.risoPaper.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 Image(systemName: "chevron.right")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white.opacity(0.9))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.risoPaper.opacity(0.7))
             }
-            .padding(20)
-            .background(
-                LinearGradient(
-                    colors: [Color.blue, Color.indigo],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .cornerRadius(14)
-            .shadow(color: Color.blue.opacity(0.25), radius: 10, x: 0, y: 4)
+            .padding(Riso.cardPadding)
+            .risoCard(fill: Color.risoRed)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RisoButtonStyle())
         .accessibilityLabel(title)
     }
 
-    // MARK: - Secondary
+    // MARK: - Secondary variant
 
+    /// Riso secondary card — paper2 fill, muted icon, Archivo label.
+    /// Matches the `rd-cta--secondary` prototype treatment.
     private var secondaryButton: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                Image(systemName: secondarySymbol)
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
+                // Muted icon square
+                Image(systemName: systemImageName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.risoPaper)
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                            .strokeBorder(Color.risoInk.opacity(0.35), lineWidth: Riso.Keyline.dense)
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .font(.risoBody(14, .semibold))
+                        .foregroundStyle(Color.risoInk)
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.risoBody(11, .regular))
+                        .foregroundStyle(Color.risoMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.risoMuted)
             }
-            .padding(14)
-            // `.contentShape(Rectangle())` makes the entire padded card
-            // area tappable, not just the visible icon + text. The
-            // `.background(...).stroke(...)` below paints only the border;
-            // without `.contentShape` the empty interior of the card
-            // (between the icon and the chevron) is not opaque content
-            // and SwiftUI's hit-testing skips it, leaving most of the
-            // CTA non-tappable.
+            .padding(12)
             .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
-            )
+            .risoCard(fill: .risoPaper2)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)

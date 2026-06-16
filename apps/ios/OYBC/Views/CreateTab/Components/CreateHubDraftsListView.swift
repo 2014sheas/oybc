@@ -10,14 +10,15 @@ struct DraftRowData: Identifiable {
     var id: String { board.id }
 }
 
-/// CreateHubDraftsListView — Lists the user's DRAFT boards so they
-/// can be resumed. iOS twin of web's `CreateHubDraftsList`. Only
+/// CreateHubDraftsListView — Riso-styled list of the user's DRAFT boards
+/// so they can be resumed. iOS twin of web's `CreateHubDraftsList`. Only
 /// rendered when `drafts.count > 0`.
 ///
-/// Each row pairs the tappable resume area with a trailing `xmark`
-/// button. The destructive button opens a confirmation `Alert` before
-/// invoking the caller-supplied `onDelete` callback; parent runs
-/// `AppDatabase.deleteDraftWithCascade(id:)` and triggers a reload.
+/// Each row is a Riso keyline card with a tappable resume area and a
+/// trailing per-row delete affordance (ink × button). The destructive
+/// button opens a confirmation `Alert` before invoking the caller-supplied
+/// `onDelete` callback; parent runs `AppDatabase.deleteDraftWithCascade(id:)`
+/// and triggers a reload. Logic is unchanged from the pre-Riso version.
 struct CreateHubDraftsListView: View {
     let drafts: [DraftRowData]
     let onResume: (Board) -> Void
@@ -26,25 +27,23 @@ struct CreateHubDraftsListView: View {
     @State private var deleteTarget: DraftRowData?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            // Section label + count pill — Riso section label style
             HStack(spacing: 8) {
-                Text("DRAFTS")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.secondary)
+                Text("Drafts")
+                    .risoSectionLabel()
                 Text("\(drafts.count)")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 6)
+                    .font(.risoHead(10, .bold))
+                    .foregroundStyle(Color.risoPaper)
+                    .padding(.horizontal, 7)
                     .padding(.vertical, 2)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .clipShape(Capsule())
+                    .background(Capsule().fill(Color.risoInk))
+                    .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
             }
 
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 ForEach(drafts) { row in
-                    DraftRow(row: row, onResume: onResume) {
+                    RisoDraftRow(row: row, onResume: onResume) {
                         deleteTarget = row
                     }
                 }
@@ -69,7 +68,11 @@ struct CreateHubDraftsListView: View {
     }
 }
 
-private struct DraftRow: View {
+// MARK: - RisoDraftRow
+
+/// Individual draft row — Riso keyline card. Tapping the main area
+/// resumes the draft; the trailing × dismisses with a confirm alert.
+private struct RisoDraftRow: View {
     let row: DraftRowData
     let onResume: (Board) -> Void
     let onDeleteTap: () -> Void
@@ -78,47 +81,50 @@ private struct DraftRow: View {
         let displayName = row.board.name.isEmpty ? "(untitled draft)" : row.board.name
         let plural = row.taskCount == 1 ? "" : "s"
 
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
+            // Resume area
             Button {
                 onResume(row.board)
             } label: {
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(displayName)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .font(.risoBody(14, .semibold))
+                            .foregroundStyle(Color.risoInk)
                             .lineLimit(1)
                         Text("\(row.board.boardSize)×\(row.board.boardSize) · \(row.taskCount) task\(plural)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(.risoBody(11, .regular))
+                            .foregroundStyle(Color.risoMuted)
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.risoMuted)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Riso.cardPadding)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Resume \"\(displayName)\", \(row.board.boardSize) by \(row.board.boardSize) board with \(row.taskCount) task\(plural)")
 
+            // Vertical ink divider
+            Rectangle()
+                .fill(Color.risoInk)
+                .frame(width: Riso.Keyline.dense)
+                .padding(.vertical, 0)
+
+            // Delete button
             Button(role: .destructive, action: onDeleteTap) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 40, height: 40)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Delete draft \"\(displayName)\"")
         }
-        .background(Color(.systemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color(.systemGray4), lineWidth: 1)
-        )
-        .cornerRadius(10)
+        .risoCard(fill: .risoPaper2)
     }
 }

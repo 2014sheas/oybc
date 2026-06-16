@@ -145,23 +145,121 @@ struct BoardWizardPreviewStepView: View {
 
     @ViewBuilder
     private var previewGrid: some View {
-        // Reuse the existing BingoBoard widget in readOnly mode — it already
-        // renders correctly and is the established verification surface.
+        // Riso read-only preview grid — replaces legacy BingoBoard.
         // `.id(...)` forces re-mount on layout-affecting changes (same as
         // the original implementation).
-        BingoBoard(
+        RisoPreviewGrid(
             taskNames: taskNames,
             gridSize: controller.size,
-            squareSize: 60,
-            centerSquareType: controller.centerType,
-            centerSquareCustomName: controller.centerCustomName.isEmpty ? nil : controller.centerCustomName,
-            readOnly: true
+            centerType: controller.centerType,
+            centerCustomName: controller.centerCustomName.isEmpty ? nil : controller.centerCustomName
         )
         .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")")
         .padding(8)
         .risoCard(fill: .risoPaper2)
         .risoHardShadow(Riso.Shadow.card)
     }
+}
+
+// MARK: - RisoPreviewGrid
+
+/// Read-only Riso bingo grid for the wizard preview step.
+///
+/// Renders cells in the Riso resting-cell style (paper2 fill, 1.5 px ink
+/// keyline, clamped task-title label). The FREE/customFree center cell uses
+/// the same ink-black + gold-star treatment as `RisoBoardPlayCell`. No
+/// interactivity — tap gestures are suppressed. Used exclusively by
+/// `BoardWizardPreviewStepView` so BingoBoard/BingoSquare have zero
+/// remaining callers in the production app.
+private struct RisoPreviewGrid: View {
+
+    let taskNames: [String]
+    let gridSize: Int
+    let centerType: CenterSquareType
+    var centerCustomName: String? = nil
+
+    private var cellSize: CGFloat { 60 }
+    private var gap: CGFloat { Riso.cellGap }
+
+    private var totalCells: Int { gridSize * gridSize }
+
+    private var centerIndex: Int {
+        CenterSquare.getCenterSquareIndex(gridSize: gridSize)
+    }
+
+    private var centerDisplayText: String {
+        CenterSquare.getCenterDisplayText(type: centerType, customName: centerCustomName)
+    }
+
+    private var isCenterSpecial: Bool {
+        centerIndex >= 0 && centerType != .none
+    }
+
+    var body: some View {
+        let cols = Array(repeating: GridItem(.fixed(cellSize), spacing: gap), count: gridSize)
+        LazyVGrid(columns: cols, spacing: gap) {
+            ForEach(0..<totalCells, id: \.self) { idx in
+                let isCenter = idx == centerIndex && isCenterSpecial
+                let isFreeCenter = isCenter && (centerType == .free || centerType == .customFree)
+                let rawTitle = idx < taskNames.count ? taskNames[idx] : ""
+                let displayTitle = isCenter ? centerDisplayText : rawTitle
+
+                Group {
+                    if isFreeCenter {
+                        risoFreeCell
+                    } else {
+                        risoTaskCell(title: displayTitle)
+                    }
+                }
+                .frame(width: cellSize, height: cellSize)
+                .allowsHitTesting(false)
+            }
+        }
+        .accessibilityLabel("\(gridSize) by \(gridSize) board preview")
+    }
+
+    /// Ink-black FREE cell with gold star + "FREE" label, matching
+    /// `RisoBoardPlayCell.centerCellContent`.
+    private var risoFreeCell: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .fill(Color.risoInk)
+            VStack(spacing: 3) {
+                StarShape()
+                    .fill(Color.risoGold)
+                    .frame(width: 17, height: 17)
+                Text("FREE")
+                    .font(.risoHead(9, .extraBold))
+                    .tracking(1.0)
+                    .foregroundStyle(Color.risoGold)
+            }
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+        }
+    }
+
+    /// Paper2 resting cell with clamped title label, matching the resting
+    /// state of `RisoBoardPlayCell.taskCellContent`.
+    private func risoTaskCell(title: String) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .fill(Color.risoPaper2)
+            Text(title)
+                .font(.risoBody(9, .bold))
+                .tracking(-0.09)
+                .lineLimit(3)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color.risoInk)
+                .padding(4)
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+        }
+    }
+}
+
+// Closing brace for BoardWizardPreviewStepView was moved above RisoPreviewGrid.
+// The private extension below keeps the file self-contained.
+private extension BoardWizardPreviewStepView {
 
     // MARK: - Note
 
