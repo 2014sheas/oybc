@@ -32,10 +32,7 @@ struct CoreBoardsSectionView: View {
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Core boards")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .padding(.horizontal, 4)
+                    .risoSectionLabel()
 
                 VStack(spacing: 10) {
                     ForEach(slots) { slot in
@@ -53,43 +50,44 @@ struct CoreBoardsSectionView: View {
         Button {
             onSelect(slot)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
+                // Ink-keyline icon square
                 Image(systemName: icon(for: slot.timeframe))
-                    .font(.system(size: 18))
-                    .foregroundStyle(.tint)
-                    .frame(width: 28)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: Riso.cellRadius)
+                            .fill(Color.risoGold)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                            )
+                    )
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(label(for: slot.timeframe))
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .font(.risoHead(15, .bold))
+                        .foregroundStyle(Color.risoInk)
                     Text(slot.windowLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoMuted)
                 }
 
                 Spacer(minLength: 4)
 
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.accentColor.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
-                    )
-            )
+            .risoCard(fill: .risoPaper2)
+            .risoHardShadow(Riso.Shadow.small)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: Riso.cardRadius))
         .accessibilityLabel("\(label(for: slot.timeframe)) core boards — \(slot.windowLabel)")
     }
 
