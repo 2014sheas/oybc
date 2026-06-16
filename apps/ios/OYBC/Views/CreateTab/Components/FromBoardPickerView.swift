@@ -2,10 +2,13 @@ import SwiftUI
 
 /// Source-board picker for the wizard's `From a board…` filter chip.
 /// Renders a vertical list of eligible boards (active + completed
-/// within 30 days) as cards with a tiny `BoardThumbnailView` + metadata.
+/// within 30 days) as Riso-styled card rows with a `RisoMiniGrid`
+/// thumbnail + metadata.
 ///
-/// iOS twin of web's `FromBoardPicker`. The VM precomputes thumbnail
-/// states and completion ratios so per-card rendering stays synchronous.
+/// Presentation-only reskin of the pre-Riso implementation. All
+/// logic, callbacks, and data flow are preserved unchanged.
+///
+/// iOS twin of web's `FromBoard` (proto/library.jsx).
 struct FromBoardPickerView: View {
     @Bindable var vm: SourceBoardsViewModel
     let userId: String
@@ -17,37 +20,9 @@ struct FromBoardPickerView: View {
     var body: some View {
         Group {
             if vm.eligibleBoards.isEmpty {
-                Text(
-                    "No boards to browse. Create another board first, or build this one from scratch."
-                )
-                .font(.footnote)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.vertical, 24)
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity)
+                emptyState
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Pick a board to browse")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.top, 8)
-                        .padding(.horizontal, 4)
-                        .padding(.bottom, 8)
-
-                    LazyVStack(spacing: 0) {
-                        ForEach(vm.eligibleBoards, id: \.id) { board in
-                            Button {
-                                onPickBoard(board.id)
-                            } label: {
-                                cardRow(board)
-                            }
-                            .buttonStyle(.plain)
-                            Divider().opacity(0.4)
-                        }
-                    }
-                }
+                boardList
             }
         }
         .onAppear {
@@ -55,48 +30,95 @@ struct FromBoardPickerView: View {
         }
     }
 
+    // MARK: - Empty state
+
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Text("No boards to browse.")
+                .font(.risoHead(13, .bold))
+                .foregroundStyle(Color.risoInk)
+            Text("Create another board first, or build this one from scratch.")
+                .font(.risoBody(11, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Board list
+
+    private var boardList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Section kicker — matches Riso section label pattern
+            Text("PICK A BOARD TO BROWSE")
+                .font(.risoBody(11, .bold))
+                .tracking(0.22 * 11)
+                .foregroundStyle(Color.risoMuted)
+
+            LazyVStack(spacing: 7) {
+                ForEach(vm.eligibleBoards, id: \.id) { board in
+                    boardRow(board)
+                }
+            }
+        }
+    }
+
+    // MARK: - Board row card
+
     @ViewBuilder
-    private func cardRow(_ board: Board) -> some View {
-        let states = vm.thumbnailStatesByBoardId[board.id] ?? Array(
-            repeating: .empty,
-            count: board.boardSize * board.boardSize
-        )
+    private func boardRow(_ board: Board) -> some View {
         let completion = vm.completionByBoardId[board.id]
             ?? (0, board.boardSize * board.boardSize)
 
-        HStack(spacing: 12) {
-            BoardThumbnailView(
-                gridSize: board.boardSize,
-                cellStates: states,
-                pixelSize: 56
-            )
+        Button {
+            onPickBoard(board.id)
+        } label: {
+            HStack(spacing: 12) {
+                // Mini-grid thumbnail (Riso component, count-based scatter)
+                RisoMiniGrid(
+                    boardId: board.id,
+                    completedCount: completion.completed,
+                    totalCount: completion.total,
+                    size: 46
+                )
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(board.name.isEmpty ? "Untitled board" : board.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                // Board meta
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(board.name.isEmpty ? "Untitled board" : board.name)
+                        .font(.risoHead(13.5, .bold))
+                        .foregroundStyle(Color.risoInk)
+                        .lineLimit(1)
 
-                Text(metaLine(board))
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                    Text(metaLine(board))
+                        .font(.risoBody(10.5, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .lineLimit(1)
 
-                Text("\(completion.completed) / \(completion.total) complete")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary.opacity(0.8))
+                    Text("\(completion.completed) / \(completion.total) complete")
+                        .font(.risoBody(10, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Disclosure chevron
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
             }
-
-            Spacer()
-            Text("›")
-                .font(.title3)
-                .foregroundColor(.secondary)
-                .padding(.trailing, 4)
+            .padding(12)
+            .background(Color.risoPaper2)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+            )
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
+        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
     }
+
+    // MARK: - Helpers
 
     private func metaLine(_ board: Board) -> String {
         let timeframeName = board.timeframe.rawValue.capitalized

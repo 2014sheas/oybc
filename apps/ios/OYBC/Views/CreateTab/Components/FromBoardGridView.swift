@@ -6,9 +6,17 @@ import SwiftUI
 /// board's selection. Long-press = `.contextMenu` reusing existing
 /// `BoardWizardTasksStepView` vocabulary.
 ///
-/// iOS twin of web's `FromBoardGrid`. Visual states are color/border
-/// only (blue tint = linked, amber tint = copied, 35% opacity =
-/// expired, orange border = source's center square).
+/// Presentation-only reskin of the pre-Riso implementation. All
+/// logic, callbacks, and data flow are preserved unchanged.
+///
+/// Visual states (color/border only):
+/// - linked → gold fill + thick ink keyline
+/// - copied  → green fill + ink keyline
+/// - center (source)  → ink fill + gold border
+/// - expired → 35% opacity
+/// - resting → paper2 fill + dense keyline
+///
+/// iOS twin of web's `FromBoardGrid`.
 struct FromBoardGridView: View {
     @Bindable var vm: SourceBoardsViewModel
 
@@ -20,7 +28,7 @@ struct FromBoardGridView: View {
 
     /// Tasks already linked into the new board's selection (any source).
     let selectedTaskIds: Set<String>
-    /// Tasks copied this session — amber tint indicator.
+    /// Tasks copied this session — green tint indicator.
     let copiedTaskIds: Set<String>
 
     /// Toggle Link/Unlink for the underlying Task.
@@ -52,8 +60,8 @@ struct FromBoardGridView: View {
 
             if vm.placements.isEmpty {
                 Text("Nothing to add from this board.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .font(.risoBody(11, .semibold))
+                    .foregroundStyle(Color.risoMuted)
                     .padding(.vertical, 24)
                     .frame(maxWidth: .infinity)
             } else {
@@ -67,10 +75,11 @@ struct FromBoardGridView: View {
             vm.loadPlacementsAsync(forBoardId: newId)
         }
         .sheet(item: $derivingFromTask) { source in
-            DeriveCounterSheet(
+            RisoDeriveCounterSheet(
                 source: source,
                 input: $deriveMaxCountInput,
                 error: $deriveError,
+                userId: userId,
                 onCancel: { derivingFromTask = nil },
                 onSave: { handleDeriveSave(source: source) }
             )
@@ -79,24 +88,32 @@ struct FromBoardGridView: View {
 
     // MARK: - Header
 
+    /// Tappable breadcrumb: "Source: <Board Name> ▾" — returns to picker.
     private var header: some View {
         Button {
             onChangeSource()
         } label: {
             HStack(spacing: 6) {
-                Text("Source:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
+                Text("SOURCE:")
+                    .font(.risoBody(11, .bold))
+                    .tracking(0.22 * 11)
+                    .foregroundStyle(Color.risoMuted)
                 Text(sourceBoard.name.isEmpty ? "Untitled board" : sourceBoard.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.primary)
-                Text("▾")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(.risoHead(13.5, .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.risoPaper2)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -106,7 +123,7 @@ struct FromBoardGridView: View {
     private var gridBody: some View {
         let size = sourceBoard.boardSize
         let columns: [GridItem] = Array(
-            repeating: GridItem(.flexible(), spacing: 6),
+            repeating: GridItem(.flexible(), spacing: Riso.cellGap),
             count: size
         )
         // Map (row, col) → SourceBoardPlacement so empty cells render
@@ -136,7 +153,7 @@ struct FromBoardGridView: View {
             )
             : ""
 
-        return LazyVGrid(columns: columns, spacing: 6) {
+        return LazyVGrid(columns: columns, spacing: Riso.cellGap) {
             ForEach(0..<cells.count, id: \.self) { i in
                 cellView(
                     entry: cells[i],
@@ -158,82 +175,142 @@ struct FromBoardGridView: View {
             sourceCell(task: task, placement: entry.placement)
         } else if isVirtualFreeCenter {
             // Virtual FREE / CUSTOM_FREE center — non-interactive, no
-            // BoardTask to link or copy.
-            Text(freeCenterText)
-                .font(.system(size: 11, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 4)
-                .frame(maxWidth: .infinity)
-                .aspectRatio(1, contentMode: .fit)
-                .background(Color.orange.opacity(0.12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(Color.orange, lineWidth: 2)
-                )
-                .accessibilityLabel(freeCenterText)
+            // BoardTask to link or copy. Riso: ink fill with gold star/text.
+            freeCenterCell(label: freeCenterText)
         } else {
-            Rectangle()
-                .fill(Color.clear)
-                .aspectRatio(1, contentMode: .fit)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(
-                            Color.white.opacity(0.06),
-                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-                        )
-                )
+            // Empty grid slot — dashed ink placeholder.
+            emptyCell
         }
     }
 
+    // MARK: - Cell variants
+
+    /// Ink-black FREE center cell — mirrors `RisoBoardPlayCell.centerCellContent`.
+    @ViewBuilder
+    private func freeCenterCell(label: String) -> some View {
+        VStack(spacing: 2) {
+            StarShape()
+                .fill(Color.risoGold)
+                .frame(width: 11, height: 11)
+            Text(label)
+                .font(.risoHead(8, .extraBold))
+                .tracking(0.5)
+                .foregroundStyle(Color.risoGold)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(1, contentMode: .fit)
+        .background(Color.risoInk)
+        .clipShape(RoundedRectangle(cornerRadius: Riso.cellRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+        )
+        .accessibilityLabel(label)
+    }
+
+    /// Dashed empty-slot placeholder.
+    private var emptyCell: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                    .strokeBorder(
+                        Color.risoInk.opacity(0.18),
+                        style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                    )
+            )
+    }
+
+    /// Source board task cell — handles linked / copied / expired / center states.
     @ViewBuilder
     private func sourceCell(task: OYBC.Task, placement: BoardTask) -> some View {
         let isSelected = selectedTaskIds.contains(task.id)
         let isCopied = copiedTaskIds.contains(task.id)
         let expired = TasksTabViewModel.isTaskExpired(task)
         let isCenter = placement.isCenter
+
+        // Background fill — priority: linked (gold) > copied (green) > center (ink) > resting
         let bg: Color = {
-            if isSelected { return .blue.opacity(0.22) }
-            if isCopied { return .orange.opacity(0.18) }
-            return Color.white.opacity(0.04)
+            if isCenter { return Color.risoInk }
+            if isSelected { return Color.risoGold.opacity(0.25) }
+            if isCopied { return Color.risoGreen.opacity(0.18) }
+            return Color.risoPaper2
         }()
+
+        // Keyline color and width
         let borderColor: Color = {
-            if isCenter { return .orange }
-            if isSelected { return .blue.opacity(0.5) }
-            if isCopied { return .orange.opacity(0.45) }
-            return Color.white.opacity(0.08)
+            if isCenter { return Color.risoGold }
+            if isSelected { return Color.risoInk }
+            if isCopied { return Color.risoGreen }
+            return Color.risoInk
         }()
-        let borderWidth: CGFloat = isCenter ? 2 : 1
+        let borderWidth: CGFloat = (isCenter || isSelected) ? Riso.Keyline.container : Riso.Keyline.dense
+
+        // Text color — cream on dark fills, ink on light fills
+        let textColor: Color = isCenter ? Color.risoGold : Color.risoInk
 
         Button {
             if expired { return }
             onToggleSelection(task.id)
         } label: {
             ZStack(alignment: .bottom) {
-                VStack(spacing: 2) {
+                ZStack(alignment: .topTrailing) {
+                    // Title label
                     Text(task.title)
-                        .font(.system(size: 11))
-                        .multilineTextAlignment(.center)
+                        .font(.risoBody(9, .bold))
+                        .tracking(-0.09)
                         .lineLimit(3)
-                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(textColor)
                         .padding(.horizontal, 4)
+                        .padding(.top, 6)
+                        .padding(.bottom, 6)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // Gold check top-right when linked
+                    if isSelected && !isCenter {
+                        ZStack {
+                            Circle()
+                                .fill(Color.risoGold)
+                                .frame(width: 13, height: 13)
+                            Circle()
+                                .strokeBorder(Color.risoInk, lineWidth: 1.5)
+                                .frame(width: 13, height: 13)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 6, weight: .black))
+                                .foregroundStyle(Color.risoInk)
+                        }
+                        .padding(.top, 3)
+                        .padding(.trailing, 3)
+                    }
                 }
+
+                // "Expired" tag at bottom
                 if expired {
-                    Text("expired")
-                        .font(.system(size: 9))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
+                    Text("EXPIRED")
+                        .font(.risoHead(7, .bold))
+                        .foregroundStyle(Color.risoMuted)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.risoPaper)
+                        )
                         .overlay(
                             RoundedRectangle(cornerRadius: 3)
-                                .strokeBorder(Color.secondary, lineWidth: 1)
+                                .strokeBorder(Color.risoMuted, lineWidth: 1)
                         )
-                        .padding(.bottom, 4)
+                        .padding(.bottom, 3)
                 }
             }
             .aspectRatio(1, contentMode: .fit)
             .background(bg)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cellRadius))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
                     .strokeBorder(borderColor, lineWidth: borderWidth)
             )
             .opacity(expired ? 0.35 : 1.0)
@@ -246,6 +323,8 @@ struct FromBoardGridView: View {
             menuItems(for: task)
         }
     }
+
+    // MARK: - Context menu (logic unchanged)
 
     @ViewBuilder
     private func menuItems(for task: OYBC.Task) -> some View {
@@ -293,7 +372,7 @@ struct FromBoardGridView: View {
         }
     }
 
-    // MARK: - Derive save
+    // MARK: - Derive save (logic unchanged)
 
     private func handleDeriveSave(source: OYBC.Task) {
         guard let action = source.action,
@@ -329,9 +408,7 @@ struct FromBoardGridView: View {
         )
 
         // Keep the sheet open until the write either succeeds or fails
-        // visibly. Mirrors the web grid's `onSave`: dismissing
-        // pre-emptively swallows errors and loses the new task from
-        // selection silently.
+        // visibly. Mirrors the web grid's `onSave`.
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try AppDatabase.shared.write { db in
@@ -358,16 +435,16 @@ struct FromBoardGridView: View {
     }
 }
 
-// MARK: - Derive sheet
+// MARK: - Riso derive counter sheet
 
-/// Minimal `Derive smaller version…` sheet for the source-board grid.
-/// Mirrors the same flow as the wizard list view's inline derive
-/// experience (`BoardWizardTasksStepView.deriveCounterSheet`) but
-/// scoped to this grid so the two surfaces don't have to share state.
-private struct DeriveCounterSheet: View {
+/// Riso-styled `Derive smaller version…` sheet for the source-board grid.
+/// Replaces the legacy `DeriveCounterSheet` (Form-based) with the
+/// Riso design language. Logic is identical to the original.
+private struct RisoDeriveCounterSheet: View {
     let source: OYBC.Task
     @Binding var input: String
     @Binding var error: String?
+    let userId: String
     let onCancel: () -> Void
     let onSave: () -> Void
 
@@ -378,31 +455,65 @@ private struct DeriveCounterSheet: View {
         let preview = parsed > 0 ? "\(action) \(parsed) \(unit)" : nil
 
         NavigationStack {
-            Form {
-                Section("From") {
-                    if let max = source.maxCount {
-                        Text("\(source.title) — \(action) \(max) \(unit)")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text(source.title)
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
+            ZStack {
+                RisoPaperBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // From section
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("DERIVED FROM")
+                                .font(.risoBody(11, .bold))
+                                .tracking(0.22 * 11)
+                                .foregroundStyle(Color.risoMuted)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(source.title)
+                                    .font(.risoHead(14, .bold))
+                                    .foregroundStyle(Color.risoInk)
+                                if let max = source.maxCount, !action.isEmpty, !unit.isEmpty {
+                                    Text("\(action) \(max) \(unit)")
+                                        .font(.risoBody(11, .semibold))
+                                        .foregroundStyle(Color.risoMuted)
+                                }
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.risoPaper2)
+                            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                            )
+                        }
+
+                        // New goal section
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("NEW GOAL")
+                                .font(.risoBody(11, .bold))
+                                .tracking(0.22 * 11)
+                                .foregroundStyle(Color.risoMuted)
+                            RisoNumberField(placeholder: "e.g. 20", text: $input)
+                        }
+
+                        // Preview row
+                        if let preview {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("New title:")
+                                    .font(.risoBody(10.5, .semibold))
+                                    .foregroundStyle(Color.risoMuted)
+                                Text(preview)
+                                    .font(.risoHead(13, .bold))
+                                    .foregroundStyle(Color.risoInk)
+                            }
+                        }
+
+                        // Error
+                        if let error {
+                            Text(error)
+                                .font(.risoBody(11, .semibold))
+                                .foregroundStyle(Color.risoRed)
+                        }
                     }
-                }
-                Section("New max count") {
-                    TextField("e.g. 20", text: $input)
-                        .keyboardType(.numberPad)
-                    if let preview {
-                        Text("New title: \(preview)")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                    }
-                    if let error {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundColor(.red)
-                    }
+                    .padding(Riso.gutter)
                 }
             }
             .navigationTitle("Derive smaller version")
@@ -410,9 +521,13 @@ private struct DeriveCounterSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onCancel() }
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoInk)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { onSave() }
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoBlue)
                 }
             }
         }

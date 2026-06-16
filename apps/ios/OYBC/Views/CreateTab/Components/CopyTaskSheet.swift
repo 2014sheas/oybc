@@ -12,9 +12,10 @@ import SwiftUI
 ///                is a follow-up — user can edit the new task from the
 ///                Tasks tab.
 ///
-/// iOS twin of web's `CopyTaskModal`. Routes through
-/// `AppDatabase.shared.copyTask` / `copyCompound` so validation +
-/// sync writes match a brand-new task path.
+/// Presentation-only Riso reskin of the pre-Riso implementation.
+/// All save logic, callbacks, and data flow are preserved unchanged.
+///
+/// iOS twin of web's `CopyTaskModal`.
 struct CopyTaskSheet: View {
     let source: OYBC.Task
     let userId: String
@@ -63,62 +64,58 @@ struct CopyTaskSheet: View {
         let isTemplateMode = isAchievement && source.referencedTemplateId != nil
 
         NavigationStack {
-            Form {
-                Section("Source") {
-                    Text(source.title)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
+            ZStack {
+                RisoPaperBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Source reference card
+                        sourceCard
 
-                Section("Title") {
-                    TextField("Title", text: $title)
-                }
-
-                if isCounting {
-                    Section("Counting") {
-                        TextField("Action", text: $action)
-                        TextField("Goal", text: $maxCountInput)
-                            .keyboardType(.numberPad)
-                        TextField("Unit", text: $unit)
-                    }
-                }
-
-                if isAchievement {
-                    Section("Achievement") {
-                        Picker("Trigger", selection: $trigger) {
-                            Text("Greenlog").tag(AchievementTrigger.greenlog)
-                            Text("Bingo").tag(AchievementTrigger.bingo)
+                        // Title field (all types)
+                        fieldSection(label: "TITLE") {
+                            RisoTextField(placeholder: "Title", text: $title)
                         }
-                        if isTemplateMode {
-                            TextField("Required count", text: $requiredCountInput)
-                                .keyboardType(.numberPad)
+
+                        // Counting fields
+                        if isCounting {
+                            fieldSection(label: "COUNTING") {
+                                VStack(spacing: 8) {
+                                    RisoTextField(placeholder: "Action", text: $action)
+                                    RisoNumberField(placeholder: "Goal", text: $maxCountInput)
+                                    RisoTextField(placeholder: "Unit", text: $unit)
+                                }
+                            }
+                        }
+
+                        // Achievement fields
+                        if isAchievement {
+                            fieldSection(label: "ACHIEVEMENT") {
+                                VStack(spacing: 8) {
+                                    triggerSegmented
+                                    if isTemplateMode {
+                                        RisoNumberField(
+                                            placeholder: "Required count",
+                                            text: $requiredCountInput
+                                        )
+                                    }
+                                }
+                            }
+                            retargetNote
+                        }
+
+                        // Compound note
+                        if isCompound {
+                            sharedChildrenNote
+                        }
+
+                        // Error banner
+                        if let error {
+                            Text(error)
+                                .font(.risoBody(11, .semibold))
+                                .foregroundStyle(Color.risoRed)
                         }
                     }
-                    Section {
-                        Text(
-                            "The copy watches the same target as the source. To re-target, edit the new task from the Tasks tab after Save."
-                        )
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    }
-                }
-
-                if isCompound {
-                    Section {
-                        Text(
-                            "The copy reuses the source's subtasks. Completing the original subtasks still completes them on the copy and vice versa (shared children)."
-                        )
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    }
-                }
-
-                if let error {
-                    Section {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundColor(.red)
-                    }
+                    .padding(Riso.gutter)
                 }
             }
             .navigationTitle("Add a copy of this task")
@@ -126,25 +123,119 @@ struct CopyTaskSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onCancel() }
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoInk)
                         .disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save copy") {
-                        handleSave(
-                            isCounting: isCounting,
-                            isCompound: isCompound,
-                            isAchievement: isAchievement,
-                            isTemplateMode: isTemplateMode
-                        )
+                    if saving {
+                        ProgressView()
+                            .tint(Color.risoBlue)
+                    } else {
+                        Button("Save copy") {
+                            handleSave(
+                                isCounting: isCounting,
+                                isCompound: isCompound,
+                                isAchievement: isAchievement,
+                                isTemplateMode: isTemplateMode
+                            )
+                        }
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoBlue)
                     }
-                    .disabled(saving)
                 }
             }
         }
         .presentationDetents([.medium, .large])
     }
 
-    // MARK: - Save
+    // MARK: - Subviews
+
+    /// Source reference — ink-keyline card showing original task title + type badge.
+    private var sourceCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("COPYING FROM")
+                .font(.risoBody(11, .bold))
+                .tracking(0.22 * 11)
+                .foregroundStyle(Color.risoMuted)
+
+            HStack(spacing: 10) {
+                RisoTypeBadge(kind: risoKind(for: source.type), style: .letterSquare)
+                Text(source.title)
+                    .font(.risoHead(13.5, .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(2)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.risoPaper2)
+            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+            )
+        }
+    }
+
+    /// Achievement trigger segmented control — Greenlog / Bingo.
+    private var triggerSegmented: some View {
+        RisoSegmented(
+            options: [
+                (value: AchievementTrigger.greenlog, label: "Greenlog"),
+                (value: AchievementTrigger.bingo,    label: "Bingo"),
+            ],
+            selection: $trigger
+        )
+    }
+
+    /// Informational note for achievement copies.
+    private var retargetNote: some View {
+        Text(
+            "The copy watches the same target as the source. To re-target, edit the new task from the Tasks tab after Save."
+        )
+        .font(.risoBody(10.5, .semibold))
+        .foregroundStyle(Color.risoMuted)
+        .padding(10)
+        .background(Color.risoPaper2)
+        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+        )
+    }
+
+    /// Informational note for compound copies (shared children).
+    private var sharedChildrenNote: some View {
+        Text(
+            "The copy reuses the source's subtasks. Completing the original subtasks still completes them on the copy and vice versa (shared children)."
+        )
+        .font(.risoBody(10.5, .semibold))
+        .foregroundStyle(Color.risoMuted)
+        .padding(10)
+        .background(Color.risoPaper2)
+        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+        )
+    }
+
+    /// Generic labeled field section — kicker label above content.
+    @ViewBuilder
+    private func fieldSection<Content: View>(
+        label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.risoBody(11, .bold))
+                .tracking(0.22 * 11)
+                .foregroundStyle(Color.risoMuted)
+            content()
+        }
+    }
+
+    // MARK: - Save (logic unchanged from pre-Riso version)
 
     private func handleSave(
         isCounting: Bool,
@@ -219,6 +310,17 @@ struct CopyTaskSheet: View {
                     self.error = (error as NSError).localizedDescription
                 }
             }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func risoKind(for type: TaskType) -> RisoTaskKind {
+        switch type {
+        case .normal:      return .normal
+        case .counting:    return .counting
+        case .compound:    return .compound
+        case .achievement: return .achievement
         }
     }
 }
