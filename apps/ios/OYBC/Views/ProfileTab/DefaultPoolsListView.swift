@@ -66,9 +66,9 @@ struct DefaultPoolsListView: View {
                 pool: { if case .existing(let p) = target { return p }; return nil }(),
                 allTasks: allTasks,
                 onSave: { pool in savePool(pool) },
-                onDelete: { id in deletePool(id: id) }
+                onDelete: { id in deletePool(id: id) },
+                userId: authService.currentUser?.id ?? ""
             )
-            .environmentObject(authService)
         }
         .onAppear { load() }
     }
@@ -193,8 +193,10 @@ struct PoolEditSheet: View {
     let allTasks: [Task]
     let onSave: (DefaultPool) -> Void
     let onDelete: (String) -> Void
+    /// Owner id for newly-created pools. Passed in (rather than read from
+    /// `@EnvironmentObject AuthService`) so the sheet stays snapshot-testable.
+    let userId: String
 
-    @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
 
     @State private var timeframe: Timeframe = .weekly
@@ -422,7 +424,7 @@ struct PoolEditSheet: View {
     }
 
     private func submitForm() {
-        guard canSave, let userId = authService.currentUser?.id else { return }
+        guard canSave else { return }
         let now = AppDatabase.currentTimestamp()
         if let existing = pool {
             var updated = existing

@@ -72,9 +72,9 @@ struct RecurringTemplatesView: View {
                 template: { if case .existing(let t) = target { return t }; return nil }(),
                 pools: pools,
                 onSave: { tpl in saveTemplate(tpl) },
-                onDelete: { id in deleteTemplate(id: id) }
+                onDelete: { id in deleteTemplate(id: id) },
+                userId: authService.currentUser?.id ?? ""
             )
-            .environmentObject(authService)
         }
         .onAppear { reload() }
     }
@@ -225,8 +225,10 @@ struct TemplateEditSheet: View {
     let pools: [DefaultPool]
     let onSave: (RecurringBoardTemplate) -> Void
     let onDelete: (String) -> Void
+    /// Owner id for newly-created templates. Passed in (rather than read from
+    /// `@EnvironmentObject AuthService`) so the sheet stays snapshot-testable.
+    let userId: String
 
-    @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
@@ -446,7 +448,7 @@ struct TemplateEditSheet: View {
     }
 
     private func submitForm() {
-        guard canSave, let userId = authService.currentUser?.id else { return }
+        guard canSave else { return }
         let now = AppDatabase.currentTimestamp()
         let seedIds = selectedPool?.taskIds ?? template?.seedTaskIds ?? []
         if let existing = template {

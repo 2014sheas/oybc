@@ -39,6 +39,19 @@ export interface UserPreferences {
   recurringWeeklyEnabled: boolean;
   recurringMonthlyEnabled: boolean;
   recurringYearlyEnabled: boolean;
+
+  // Riso Phase 5a — Board Preferences sub-page (iOS-first; web UI pending the
+  // web Riso pass). Mirrored here so a web prefs round-trip preserves them
+  // (forward-compat decode in mergeUserPreferences) instead of dropping the
+  // iOS-set values. Keep in lock-step with the iOS `UserPreferences` fields.
+  /** Celebration intensity 1–10; scales GREENLOG/bingo confetti. Default 7. */
+  celebrationIntensity: number;
+  /** Device haptics on cell completion + bingo detection. */
+  haptics: boolean;
+  /** Nudge the day before a board expires. */
+  expiringReminders: boolean;
+  /** Move completed (GREENLOGed) boards out of the list after a week. */
+  autoArchiveCompleted: boolean;
 }
 
 /**
@@ -61,6 +74,10 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   recurringWeeklyEnabled: true,
   recurringMonthlyEnabled: true,
   recurringYearlyEnabled: true,
+  celebrationIntensity: 7,
+  haptics: true,
+  expiringReminders: true,
+  autoArchiveCompleted: false,
 };
 
 /**
@@ -148,6 +165,27 @@ export function mergeUserPreferences(
       ? partial.recurringYearlyEnabled
       : DEFAULT_USER_PREFERENCES.recurringYearlyEnabled;
 
+  // Riso Phase 5a — Board Preferences fields (forward-compat decode).
+  const celebrationIntensity: number =
+    typeof partial.celebrationIntensity === 'number'
+      ? partial.celebrationIntensity
+      : DEFAULT_USER_PREFERENCES.celebrationIntensity;
+
+  const haptics: boolean =
+    typeof partial.haptics === 'boolean'
+      ? partial.haptics
+      : DEFAULT_USER_PREFERENCES.haptics;
+
+  const expiringReminders: boolean =
+    typeof partial.expiringReminders === 'boolean'
+      ? partial.expiringReminders
+      : DEFAULT_USER_PREFERENCES.expiringReminders;
+
+  const autoArchiveCompleted: boolean =
+    typeof partial.autoArchiveCompleted === 'boolean'
+      ? partial.autoArchiveCompleted
+      : DEFAULT_USER_PREFERENCES.autoArchiveCompleted;
+
   return {
     weekStartDay,
     defaultBoardSize,
@@ -160,6 +198,10 @@ export function mergeUserPreferences(
     recurringWeeklyEnabled,
     recurringMonthlyEnabled,
     recurringYearlyEnabled,
+    celebrationIntensity,
+    haptics,
+    expiringReminders,
+    autoArchiveCompleted,
   };
 }
 
