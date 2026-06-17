@@ -290,7 +290,9 @@ struct EditProfileSheet: View {
 // MARK: - BlipPlaceholder.Mood helpers
 
 extension BlipPlaceholder.Mood: CaseIterable {
-    public static var allCases: [BlipPlaceholder.Mood] { [.happy, .cheer, .calm] }
+    // `internal` to match `BlipPlaceholder` (a `public` witness on an internal
+    // type is misleading — it can't actually widen access).
+    static var allCases: [BlipPlaceholder.Mood] { [.happy, .cheer, .calm] }
 
     /// Display label for the mood picker card.
     var label: String {

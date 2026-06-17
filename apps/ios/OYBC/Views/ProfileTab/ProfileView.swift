@@ -99,6 +99,10 @@ struct ProfileView: View {
         // (title + gold-pill Done button). Dismissed by the sheet itself
         // via `onSave` / `onCancel`.
         .sheet(isPresented: $showEditProfile) {
+            // `initialMood` is omitted (defaults to `.happy`): the mood picker
+            // is presentational only for now — there's no UserPreferences field
+            // to read from or write to yet. TODO: wire `initialMood` + persist
+            // the chosen mood once `UserPreferences.blipMood` ships.
             EditProfileSheet(
                 displayName: displayName,
                 email: email,
