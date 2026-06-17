@@ -69,6 +69,20 @@ struct UserPreferences: Codable, Equatable {
     var recurringMonthlyEnabled: Bool
     var recurringYearlyEnabled: Bool
 
+    // Riso Phase 5a — Board Preferences sub-page additions.
+    // All new fields decode forward-compatibly via the custom `init(from:)`.
+
+    /// Celebration intensity 1–10. Scales confetti count on GREENLOG and
+    /// bingo-toast animations. Default 7 ("Full press") per the design spec.
+    var celebrationIntensity: Int
+    /// Whether device haptics fire on cell completion and bingo detection.
+    var haptics: Bool
+    /// Whether the user wants a nudge the day before a board expires.
+    var expiringReminders: Bool
+    /// Whether completed (GREENLOGed) boards are moved out of the list after
+    /// one week.
+    var autoArchiveCompleted: Bool
+
     static let defaults = UserPreferences(
         weekStartDay: .monday,
         defaultBoardSize: .five,
@@ -85,7 +99,11 @@ struct UserPreferences: Codable, Equatable {
         recurringDailyEnabled: true,
         recurringWeeklyEnabled: true,
         recurringMonthlyEnabled: true,
-        recurringYearlyEnabled: true
+        recurringYearlyEnabled: true,
+        celebrationIntensity: 7,
+        haptics: true,
+        expiringReminders: true,
+        autoArchiveCompleted: false
     )
 
     /// Returns a complete preferences object by filling missing fields from
@@ -125,6 +143,14 @@ struct UserPreferences: Codable, Equatable {
             ?? Self.defaults.recurringMonthlyEnabled
         self.recurringYearlyEnabled = (try? c.decode(Bool.self, forKey: .recurringYearlyEnabled))
             ?? Self.defaults.recurringYearlyEnabled
+        self.celebrationIntensity = (try? c.decode(Int.self, forKey: .celebrationIntensity))
+            ?? Self.defaults.celebrationIntensity
+        self.haptics = (try? c.decode(Bool.self, forKey: .haptics))
+            ?? Self.defaults.haptics
+        self.expiringReminders = (try? c.decode(Bool.self, forKey: .expiringReminders))
+            ?? Self.defaults.expiringReminders
+        self.autoArchiveCompleted = (try? c.decode(Bool.self, forKey: .autoArchiveCompleted))
+            ?? Self.defaults.autoArchiveCompleted
     }
 
     /// Memberwise initialiser preserved explicitly because adding a custom
@@ -140,7 +166,11 @@ struct UserPreferences: Codable, Equatable {
         recurringDailyEnabled: Bool,
         recurringWeeklyEnabled: Bool,
         recurringMonthlyEnabled: Bool,
-        recurringYearlyEnabled: Bool
+        recurringYearlyEnabled: Bool,
+        celebrationIntensity: Int = 7,
+        haptics: Bool = true,
+        expiringReminders: Bool = true,
+        autoArchiveCompleted: Bool = false
     ) {
         self.weekStartDay = weekStartDay
         self.defaultBoardSize = defaultBoardSize
@@ -153,6 +183,10 @@ struct UserPreferences: Codable, Equatable {
         self.recurringWeeklyEnabled = recurringWeeklyEnabled
         self.recurringMonthlyEnabled = recurringMonthlyEnabled
         self.recurringYearlyEnabled = recurringYearlyEnabled
+        self.celebrationIntensity = celebrationIntensity
+        self.haptics = haptics
+        self.expiringReminders = expiringReminders
+        self.autoArchiveCompleted = autoArchiveCompleted
     }
 }
 
