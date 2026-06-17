@@ -247,7 +247,11 @@ struct RisoLibrarySheetView: View {
         case .fromBoard:
             return []
         }
-        return source.filter { matches($0.title) }
+        // Exclude expired tasks — one whose timebox window has already passed
+        // can't meaningfully be added to a new board's pool (mirrors the
+        // Tasks-tab default of hiding expired). Non-timeboxed tasks are never
+        // expired (isTaskExpired returns false when endDate is nil).
+        return source.filter { matches($0.title) && !TasksTabViewModel.isTaskExpired($0) }
     }
 
     // MARK: - Library row
