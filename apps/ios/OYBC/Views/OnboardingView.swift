@@ -38,16 +38,6 @@ struct OnboardingView: View {
     /// `OnboardingView` out of the view hierarchy.
     let onDone: () -> Void
 
-    // MARK: - Slide state
-
-    /// Index of the currently-visible intro slide (0-based). Clamped to
-    /// `0..<OnboardingSlide.all.count`.
-    var currentSlideIndex: Int = 0
-
-    /// Whether the sign-in panel is shown (replaces the slide carousel after
-    /// tapping "Get started" on the last slide).
-    var showSignIn: Bool = false
-
     // MARK: - Error state (sign-in panel)
 
     @State private var isSubmitting: Bool = false
@@ -76,8 +66,6 @@ struct OnboardingView: View {
         onDone: @escaping () -> Void
     ) {
         self.onDone = onDone
-        self.currentSlideIndex = initialSlide
-        self.showSignIn = initialShowSignIn
         _slideIndex = State(initialValue: initialSlide)
         _isSignIn = State(initialValue: initialShowSignIn)
     }

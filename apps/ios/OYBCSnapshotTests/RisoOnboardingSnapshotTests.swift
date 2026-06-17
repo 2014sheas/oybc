@@ -38,6 +38,29 @@ final class RisoOnboardingSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Slide 2 (lines art with gold ring overlay, "The idea")
+
+    func testSlide2Light() {
+        let view = onboardingView(initialSlide: 1)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 852)),
+            record: recordMode
+        )
+    }
+
+    func testSlide2Dark() {
+        let view = onboardingView(initialSlide: 1)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 852),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - Slide 3 (full-board art, "The payoff / GREENLOG")
 
     func testSlide3Light() {

@@ -94,6 +94,18 @@ struct ProfileView: View {
                     versionFooter
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 24)
+
+                    #if DEBUG
+                    // Developer affordance: clears the onboarding-seen flag so
+                    // the first-run flow shows again on next launch.
+                    SwiftUI.Button("Replay onboarding") {
+                        UserDefaults.hasSeenOnboarding = false
+                    }
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 24)
+                    #endif
                 }
             }
         }
