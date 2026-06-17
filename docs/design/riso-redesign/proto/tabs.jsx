@@ -52,9 +52,11 @@ function TTRow({ l, child, expanded, onToggleExpand, onOpen }) {
   );
 }
 
-/* ---- detail bottom sheet ---- */
-function TTDetail({ task, onClose, onDelete }) {
+/* ---- detail bottom sheet (view + edit modes) ---- */
+function TTDetail({ task, onClose, onDelete, onUpdate }) {
   const [confirming, setConfirming] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  React.useEffect(() => { setConfirming(false); setEditing(false); }, [task && task.id]);
   if (!task) return null;
   const tm = TT_TYPE[task.type] || TT_TYPE.normal;
   const sub = ttSubtitle(task);
@@ -68,6 +70,11 @@ function TTDetail({ task, onClose, onDelete }) {
           <button className="lb-sheet-done" onClick={onClose}>Done</button>
         </div>
         <div className="lb-sheet-body">
+          {editing ? (
+            <TTEdit task={task} onCancel={() => setEditing(false)}
+              onSave={(patch) => { onUpdate(task.id, patch); setEditing(false); }} />
+          ) : (
+          <React.Fragment>
           <div className="tt-d-top">
             <span className={"lb-badge lg " + tm.cls}>{tm.letter}</span>
             <div>
@@ -92,7 +99,7 @@ function TTDetail({ task, onClose, onDelete }) {
           )}
           {!confirming ? (
             <div className="tt-d-btns">
-              <button className="r-btn" style={{ flex: 1 }}>Edit</button>
+              <button className="r-btn" style={{ flex: 1 }} onClick={() => setEditing(true)}>Edit</button>
               <button className="r-btn tt-danger" style={{ flex: 1 }} onClick={() => setConfirming(true)}>Delete</button>
             </div>
           ) : (
@@ -109,7 +116,104 @@ function TTDetail({ task, onClose, onDelete }) {
               </div>
             </div>
           )}
+          </React.Fragment>
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- edit form inside the detail sheet ---- */
+function TTEdit({ task, onSave, onCancel }) {
+  const [title, setTitle] = React.useState(task.t);
+  const [action, setAction] = React.useState(task.action || "");
+  const [goal, setGoal] = React.useState(task.max || 1);
+  const [unit, setUnit] = React.useState(task.unit || "");
+  const [rule, setRule] = React.useState(task.rule || "all");
+  const [threshold, setThreshold] = React.useState(task.threshold || 2);
+  const [subs, setSubs] = React.useState(task.subs || []);
+  const [trigger, setTrigger] = React.useState(task.trigger || "greenlog");
+  const tm = TT_TYPE[task.type] || TT_TYPE.normal;
+  const canSave = title.trim().length > 0 && (task.type !== "compound" || subs.length >= 2);
+  const save = () => {
+    const patch = { t: title.trim() };
+    if (task.type === "count") { patch.action = action.trim(); patch.max = Math.max(1, Number(goal) || 1); patch.unit = unit.trim(); }
+    if (task.type === "compound") { patch.rule = rule; patch.subs = subs; if (rule === "mOfN") patch.threshold = Math.min(threshold, subs.length); }
+    if (task.type === "achievement") { patch.trigger = trigger; }
+    onSave(patch);
+  };
+  return (
+    <div className="tt-edit">
+      <div className="tt-d-top" style={{ marginBottom: 0 }}>
+        <span className={"lb-badge lg " + tm.cls}>{tm.letter}</span>
+        <div>
+          <div className="tt-d-title">Edit task</div>
+          <span className={"ts-li-tag " + tm.cls}>{tm.label}</span>
+        </div>
+      </div>
+      <div className="ts-frow">
+        <label className="ts-flabel">Title</label>
+        <input className="ts-tinput" value={title} onChange={e => setTitle(e.target.value)} />
+      </div>
+      {task.type === "count" && (
+        <React.Fragment>
+          <div className="ts-frow">
+            <label className="ts-flabel">Action</label>
+            <input className="ts-tinput" placeholder="Run" value={action} onChange={e => setAction(e.target.value)} />
+          </div>
+          <div className="ts-frow ts-frow-split">
+            <div>
+              <label className="ts-flabel">Goal</label>
+              <input className="ts-tinput" type="number" min="1" value={goal} onChange={e => setGoal(e.target.value)} />
+            </div>
+            <div>
+              <label className="ts-flabel">Unit</label>
+              <input className="ts-tinput" placeholder="km" value={unit} onChange={e => setUnit(e.target.value)} />
+            </div>
+          </div>
+          <div className="ts-preview">reads as <b>{`${action.trim() || title.trim() || "Run"} ${Number(goal) || 1} ${unit.trim()}`.trim()}</b></div>
+        </React.Fragment>
+      )}
+      {task.type === "compound" && (
+        <React.Fragment>
+          <label className="ts-flabel">Counts as done when…</label>
+          <div className="lb-chips">
+            {[["all", "All of"], ["any", "Any of"], ["mOfN", `At least ${threshold}`], ["ordered", "In order"]].map(([k, lab]) => (
+              <button key={k} className={"lb-chip" + (rule === k ? " on" : "")}
+                onClick={() => { if (k === "mOfN" && rule === "mOfN") setThreshold(t => (t % subs.length) + 1); setRule(k); }}>{lab}</button>
+            ))}
+          </div>
+          <label className="ts-flabel">Sub-tasks ({subs.length})</label>
+          <div className="ts-subs">
+            {subs.map((s, i) => (
+              <span className="ts-sub" key={i}>
+                {rule === "ordered" && <b>{i + 1}.</b>}{s.t}
+                <button className="lb-clear" style={{ marginLeft: 4 }} aria-label={"Remove " + s.t}
+                  onClick={() => setSubs(ss => ss.filter((_, j) => j !== i))}>✕</button>
+              </span>
+            ))}
+          </div>
+          {subs.length < 2 && <div className="pp-hint">A compound needs at least 2 sub-tasks.</div>}
+        </React.Fragment>
+      )}
+      {task.type === "achievement" && (
+        <React.Fragment>
+          <label className="ts-flabel">Completes on</label>
+          <div className="lb-chips">
+            {[["greenlog", "GREENLOG"], ["bingo", "First Bingo"]].map(([k, lab]) => (
+              <button key={k} className={"lb-chip" + (trigger === k ? " on" : "")} onClick={() => setTrigger(k)}>{lab}</button>
+            ))}
+          </div>
+          <div className="pp-hint">Watching <b>{task.target}</b> — change the target by recreating the task.</div>
+        </React.Fragment>
+      )}
+      {task.boards > 0 && (
+        <div className="tt-edit-note">Changes apply everywhere it's placed — updates {task.boards} board{task.boards !== 1 ? "s" : ""}.</div>
+      )}
+      <div className="tt-d-btns" style={{ marginTop: 4 }}>
+        <button className="r-btn" style={{ flex: 1 }} onClick={onCancel}>Cancel</button>
+        <button className="r-btn primary" style={{ flex: 1, opacity: canSave ? 1 : .45 }} disabled={!canSave} onClick={save}>Save</button>
       </div>
     </div>
   );
@@ -154,6 +258,10 @@ function TasksTab() {
   const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
   const addTask = (task) => setLib(prev => [{ id: "new" + Date.now(), boards: 0, uses: 0, ...task }, ...prev]);
   const deleteTask = (id) => setLib(prev => prev.filter(l => l.id !== id));
+  const updateTask = (id, patch) => {
+    setLib(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+    setDetail(d => (d && d.id === id ? { ...d, ...patch } : d));
+  };
 
   let rows = lib;
   if (type !== "all") rows = rows.filter(l => l.type === type);
@@ -229,7 +337,7 @@ function TasksTab() {
         <div className="r-fade-bottom" />
       </div>
 
-      <TTDetail task={detail} onClose={() => setDetail(null)} onDelete={deleteTask} />
+      <TTDetail task={detail} onClose={() => setDetail(null)} onDelete={deleteTask} onUpdate={updateTask} />
       <TTCreateSheet open={createOpen} onClose={() => setCreateOpen(false)} onAdd={addTask} />
     </React.Fragment>
   );
@@ -250,8 +358,15 @@ function PFRow({ icon, label, value, chevron, danger, onClick, badge }) {
   );
 }
 
-function ProfileTab({ theme = "system", onTheme }) {
+function ProfileTab({ theme = "system", onTheme, celebration = 7, onCelebration, initialPage = null, profile, onSaveProfile }) {
   const [confirmOut, setConfirmOut] = React.useState(false);
+  const [page, setPage] = React.useState(initialPage); // null | prefs | templates | pools
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [pools, setPools] = React.useState(() => window.PP_POOLS_SEED.map(p => ({ ...p, tasks: [...p.tasks] })));
+  const p = profile || { name: "OYBC User", email: "you@example.com", mood: "happy" };
+  if (page === "prefs") return <BoardPrefsPage onBack={() => setPage(null)} celebration={celebration} onCelebration={onCelebration} />;
+  if (page === "templates") return <TemplatesPage onBack={() => setPage(null)} pools={pools} />;
+  if (page === "pools") return <PoolsPage onBack={() => setPage(null)} pools={pools} setPools={setPools} />;
   return (
     <React.Fragment>
       <div className="r-top">
@@ -261,10 +376,10 @@ function ProfileTab({ theme = "system", onTheme }) {
       <div className="r-scroll">
         {/* account card */}
         <div className="pf-card pf-account">
-          <div className="pf-avatar"><Blip size={54} mood="happy" /></div>
+          <div className="pf-avatar"><Blip size={54} mood={p.mood} /></div>
           <div className="pf-acc-mid">
-            <div className="pf-name">OYBC User <span className="pf-pencil">✎</span></div>
-            <div className="pf-email">you@example.com</div>
+            <button className="pf-name pf-name-btn" onClick={() => setEditOpen(true)}>{p.name} <span className="pf-pencil">✎</span></button>
+            <div className="pf-email">{p.email}</div>
           </div>
         </div>
 
@@ -290,9 +405,9 @@ function ProfileTab({ theme = "system", onTheme }) {
         {/* preferences */}
         <div className="ts-section-k pf-sec">Preferences</div>
         <div className="pf-card">
-          <PFRow icon="▦" label="Board preferences" chevron />
-          <PFRow icon="↻" label="Recurring templates" badge={3} chevron />
-          <PFRow icon="▤" label="Default pools" badge={2} chevron />
+          <PFRow icon="▦" label="Board preferences" chevron onClick={() => setPage("prefs")} />
+          <PFRow icon="↻" label="Recurring templates" badge={3} chevron onClick={() => setPage("templates")} />
+          <PFRow icon="▤" label="Default pools" badge={2} chevron onClick={() => setPage("pools")} />
         </div>
 
         {/* sign out */}
@@ -313,6 +428,9 @@ function ProfileTab({ theme = "system", onTheme }) {
         <div style={{ height: 10 }} />
         <div className="r-fade-bottom" />
       </div>
+      <EditProfileSheet open={editOpen} name={p.name} email={p.email} mood={p.mood}
+        onClose={() => setEditOpen(false)}
+        onSave={(patch) => { onSaveProfile && onSaveProfile({ ...p, ...patch }); setEditOpen(false); }} />
     </React.Fragment>
   );
 }

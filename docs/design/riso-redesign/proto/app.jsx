@@ -18,7 +18,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "compactHeader": false,
   "composerStyle": "button",
   "libAccess": "sheet",
-  "themePref": "system"
+  "themePref": "system",
+  "blipMotion": true
 }/*EDITMODE-END*/;
 
 function App() {
@@ -32,10 +33,20 @@ function App() {
   const [greenlog, setGreenlog] = React.useState(false);
   const prevBingos = React.useRef(computeLines(data.boards[0].cells).count);
   const toastTimer = React.useRef(null);
+  const [shareOpen, setShareOpen] = React.useState(false);
+  const [profile, setProfile] = React.useState({ name: "OYBC User", email: "you@example.com", mood: "happy" });
+  const [onboarded, setOnboarded] = React.useState(() => {
+    try { return localStorage.getItem("oybc_onboarded") === "1"; } catch (e) { return false; }
+  });
+  const finishOnboarding = () => {
+    try { localStorage.setItem("oybc_onboarded", "1"); } catch (e) {}
+    setOnboarded(true);
+  };
   const [layoutOverride, setLayoutOverride] = React.useState(null); // dev capture only
   const [taskFlowOverride, setTaskFlowOverride] = React.useState(null); // dev capture only
   const [composerOverride, setComposerOverride] = React.useState(null); // dev capture only
   const [libAccessOverride, setLibAccessOverride] = React.useState(null); // dev capture only
+  const [profileJump, setProfileJump] = React.useState(null); // dev capture only
 
   // dev-only: load a specific state for screenshots via URL hash
   React.useEffect(() => {
@@ -51,8 +62,11 @@ function App() {
       else if (h === "#wiz-a2") setComposerOverride("return");
     }
     else if (h === "#board") { setActiveBoard(data.boards[0]); setScreen("board"); }
+    else if (h === "#share") { setActiveBoard(data.boards[0]); setScreen("board"); setCells(cs => cs.map(c => ({ ...c, done: true, cur: c.max != null ? c.max : c.cur }))); setShareOpen(true); }
+    else if (h === "#onboard") { try { localStorage.removeItem("oybc_onboarded"); } catch (e) {} setOnboarded(false); }
     else if (h === "#tasks") { setScreen("tasks"); }
     else if (h === "#profile") { setScreen("profile"); }
+    else if (["#prefs", "#templates", "#pools"].includes(h)) { setScreen("profile"); setProfileJump(h.slice(1)); }
     else if (["#rail", "#four", "#grid", "#filter"].includes(h)) { setLayoutOverride(h.slice(1)); }
   }, []); // eslint-disable-line
 
@@ -153,7 +167,7 @@ function App() {
 
   return (
     <IOSDevice dark={night}>
-      <div className={"riso" + (night ? " night" : "")} style={risoVars}>
+      <div className={"riso" + (night ? " night" : "") + (t.blipMotion ? " blip-live" : "")} style={risoVars}>
         {screen === "home" && (
           <BoardsHome boards={data.boards} onOpen={openBoard} onCreate={() => setScreen("wizard")} topLayout={layoutOverride || "grid"} compactHeader={t.compactHeader} />
         )}
@@ -167,7 +181,7 @@ function App() {
           <Wizard onClose={backHome} onFinish={finishWizard} composerStyle={composerOverride || t.composerStyle} libAccess={libAccessOverride || t.libAccess} />
         )}
         {screen === "tasks" && <TasksTab />}
-        {screen === "profile" && <ProfileTab theme={t.themePref} onTheme={(v) => setTweak("themePref", v)} />}
+        {screen === "profile" && <ProfileTab key={profileJump || "pf"} theme={t.themePref} onTheme={(v) => setTweak("themePref", v)} celebration={t.celebration} onCelebration={(v) => setTweak("celebration", v)} initialPage={profileJump} profile={profile} onSaveProfile={setProfile} />}
 
         {/* tab bar */}
         {(
@@ -206,10 +220,16 @@ function App() {
           <Greenlog
             stats={{ done: doneCount, total, bingos }}
             intensity={t.celebration}
-            onShare={() => setGreenlog(false)}
+            onShare={() => setShareOpen(true)}
             onNew={() => { setGreenlog(false); setScreen("wizard"); }}
           />
         )}
+
+        {/* Share board */}
+        <ShareSheet open={shareOpen} board={activeBoard} stats={{ done: doneCount, total, bingos }} onClose={() => setShareOpen(false)} />
+
+        {/* Onboarding (first run) */}
+        {!onboarded && <Onboarding onDone={finishOnboarding} />}
 
         {/* Tweaks */}
         <TweaksPanel>
@@ -231,8 +251,11 @@ function App() {
           <TweakSection label="Celebration" />
           <TweakSlider label="Intensity" value={t.celebration} min={1} max={10} step={1}
             onChange={(v) => setTweak("celebration", v)} />
+          <TweakToggle label="Animated Blip" value={t.blipMotion} onChange={(v) => setTweak("blipMotion", v)} />
 
           <TweakSection label="Demo" />
+          <TweakButton label="▶ Replay onboarding" onClick={() => { try { localStorage.removeItem("oybc_onboarded"); } catch (e) {} setOnboarded(false); }} />
+          <TweakButton label="↗ Share board sheet" onClick={() => { setActiveBoard(data.boards[0]); setScreen("board"); setCells(cs => cs.map(c => ({ ...c, done: true, cur: c.max != null ? c.max : c.cur }))); setShareOpen(true); }} />
           <TweakButton label="▶ Replay demo board" onClick={resetDemo} />
           <TweakButton label="✦ Trigger GREENLOG" onClick={() => {
             setActiveBoard(data.boards[0]); setScreen("board");
