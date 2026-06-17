@@ -110,9 +110,9 @@ final class RisoEditProfileSheetSnapshotTests: XCTestCase {
             displayName: displayName,
             email: email,
             initialMood: mood,
+            updateName: { _ in },
             onSave: {},
             onCancel: {}
         )
-        .environmentObject(AuthService())
     }
 }
