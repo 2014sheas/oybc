@@ -42,6 +42,8 @@ struct ShareBoardSheet: View {
     @State private var includeStats: Bool = true
     @State private var linkCopied: Bool = false
     @State private var shareItem: ShareActivityItem? = nil
+    /// Transient feedback for the "Save image" action (success or failure).
+    @State private var saveToast: String? = nil
 
     // MARK: - Body
 
@@ -114,6 +116,18 @@ struct ShareBoardSheet: View {
             }
         }
         .background(Color.risoPaper)
+        .overlay(alignment: .top) {
+            if let saveToast {
+                Text(saveToast)
+                    .font(.risoHead(12, .extraBold))
+                    .foregroundStyle(Color.risoPaper)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                    .background(Capsule().fill(Color.risoInk))
+                    .padding(.top, 56)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .onAppear {
             includeStats = initialIncludeStats
         }
@@ -459,10 +473,34 @@ struct ShareBoardSheet: View {
     }
 
     /// Renders the poster card and saves it to the Photos library.
+    ///
+    /// Uses `PHPhotoLibrary.performChanges` (not the fire-and-forget
+    /// `UIImageWriteToSavedPhotosAlbum`) so a denied permission or write
+    /// failure surfaces to the user via `saveToast` instead of silently
+    /// doing nothing.
     private func saveImageToPhotos() {
         _Concurrency.Task { @MainActor in
-            guard let image = renderPosterImage() else { return }
-            UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+            guard let image = renderPosterImage() else {
+                showSaveToast("Couldn't render the image.")
+                return
+            }
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
+                showSaveToast("Saved to Photos")
+            } catch {
+                showSaveToast("Couldn't save — check Photos access in Settings.")
+            }
+        }
+    }
+
+    /// Shows a transient toast for ~2.5s (mirrors the copy-link reset cadence).
+    @MainActor
+    private func showSaveToast(_ message: String) {
+        withAnimation(.easeOut(duration: 0.16)) { saveToast = message }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation(.easeOut(duration: 0.16)) { saveToast = nil }
         }
     }
 }

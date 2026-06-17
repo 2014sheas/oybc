@@ -77,6 +77,9 @@ targets:
       path: OYBC/Info.plist
       properties:
         GIDClientID: "401044947930-j31aflmqoltb2gm4luj6gt2l5opn0beb.apps.googleusercontent.com"
+        # Required to save a shared board poster to Photos (add-only — the app
+        # never reads the library). Without it, the first save call crashes.
+        NSPhotoLibraryAddUsageDescription: "OYBC saves your board poster image to Photos."
         UIAppFonts:
           - BricolageGrotesque-Bold.ttf
           - BricolageGrotesque-ExtraBold.ttf
