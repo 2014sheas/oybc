@@ -27,8 +27,7 @@ struct ProfileView: View {
 
     // MARK: - Private state
 
-    @State private var showNameEdit = false
-    @State private var editNameValue = ""
+    @State private var showEditProfile = false
     @State private var showSignOutConfirm = false
     @State private var signOutError: String?
 
@@ -65,10 +64,7 @@ struct ProfileView: View {
                     RisoProfileAccountCard(
                         displayName: displayName,
                         email: email,
-                        onEditName: {
-                            editNameValue = displayName
-                            showNameEdit = true
-                        }
+                        onEditName: { showEditProfile = true }
                     )
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
@@ -98,15 +94,20 @@ struct ProfileView: View {
             }
         }
         .navigationBarHidden(true)
-        // Name edit alert
-        .alert("Edit Display Name", isPresented: $showNameEdit) {
-            TextField("Display name", text: $editNameValue)
-            Button("Cancel", role: .cancel) { }
-            Button("Save") {
-                _Concurrency.Task {
-                    try? await authService.updateDisplayName(editNameValue)
-                }
-            }
+        // Edit profile sheet — replaces the old inline alert.
+        // Presented modally so the NavigationStack chrome appears correctly
+        // (title + gold-pill Done button). Dismissed by the sheet itself
+        // via `onSave` / `onCancel`.
+        .sheet(isPresented: $showEditProfile) {
+            EditProfileSheet(
+                displayName: displayName,
+                email: email,
+                updateName: { name in
+                    try await authService.updateDisplayName(name)
+                },
+                onSave: { showEditProfile = false },
+                onCancel: { showEditProfile = false }
+            )
         }
         .onAppear { loadCounts() }
     }
