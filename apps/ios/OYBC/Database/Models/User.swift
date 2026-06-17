@@ -143,8 +143,11 @@ struct UserPreferences: Codable, Equatable {
             ?? Self.defaults.recurringMonthlyEnabled
         self.recurringYearlyEnabled = (try? c.decode(Bool.self, forKey: .recurringYearlyEnabled))
             ?? Self.defaults.recurringYearlyEnabled
-        self.celebrationIntensity = (try? c.decode(Int.self, forKey: .celebrationIntensity))
-            ?? Self.defaults.celebrationIntensity
+        // Clamp to the valid 1–10 range — a misbehaving peer could push an
+        // out-of-range value that would otherwise reach the celebration UI.
+        self.celebrationIntensity = max(1, min(10,
+            (try? c.decode(Int.self, forKey: .celebrationIntensity))
+                ?? Self.defaults.celebrationIntensity))
         self.haptics = (try? c.decode(Bool.self, forKey: .haptics))
             ?? Self.defaults.haptics
         self.expiringReminders = (try? c.decode(Bool.self, forKey: .expiringReminders))

@@ -135,23 +135,35 @@ struct DefaultPoolsListView: View {
 
     private func savePool(_ pool: DefaultPool) {
         guard let userId = authService.currentUser?.id else { return }
+        // The original row (edit mode only) — used to detect a timeframe
+        // change so the stale-timeframe row doesn't linger as a duplicate.
+        let original = pools.first { $0.id == pool.id }
         editTarget = nil
         _Concurrency.Task.detached {
             do {
                 let now = AppDatabase.currentTimestamp()
-                var p = pool; p.updatedAt = now; p.version += 1
-                try AppDatabase.shared.saveDefaultPool(p)
+                // Editing and the timeframe changed: drop the old row first,
+                // then upsert under the new timeframe. (upsert keys by
+                // (userId, timeframe), so this also dedups the create path.)
+                if let original, original.timeframe != pool.timeframe {
+                    try AppDatabase.shared.softDeleteDefaultPoolAndEnqueue(id: original.id, now: now)
+                }
+                try AppDatabase.shared.upsertDefaultPoolAndEnqueue(
+                    userId: userId, timeframe: pool.timeframe, taskIds: pool.taskIds, now: now
+                )
                 await MainActor.run { load() }
             } catch { print("[DefaultPoolsListView] savePool failed: \(error)") }
         }
     }
 
     private func deletePool(id: String) {
-        guard let userId = authService.currentUser?.id else { return }
+        guard authService.currentUser?.id != nil else { return }
         editTarget = nil
         _Concurrency.Task.detached {
             do {
-                try AppDatabase.shared.softDeleteDefaultPool(id: id)
+                try AppDatabase.shared.softDeleteDefaultPoolAndEnqueue(
+                    id: id, now: AppDatabase.currentTimestamp()
+                )
                 await MainActor.run { load() }
             } catch { print("[DefaultPoolsListView] deletePool failed: \(error)") }
         }
@@ -425,13 +437,15 @@ struct PoolEditSheet: View {
 
     private func submitForm() {
         guard canSave else { return }
+        // `savePool` routes through `upsertDefaultPoolAndEnqueue`, which owns
+        // `version`/`updatedAt` and keys by (userId, timeframe). We only carry
+        // the chosen timeframe + taskIds; the `id` lets `savePool` find the
+        // original row to detect a timeframe change (edit mode).
         let now = AppDatabase.currentTimestamp()
         if let existing = pool {
             var updated = existing
             updated.timeframe = timeframe
             updated.taskIds = selectedIds
-            updated.updatedAt = now
-            updated.version += 1
             onSave(updated)
         } else {
             onSave(DefaultPool(

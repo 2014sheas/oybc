@@ -138,14 +138,9 @@ struct RecurringTemplatesView: View {
                 updated.updatedAt = now; updated.version += 1
                 _Concurrency.Task.detached {
                     do {
-                        try AppDatabase.shared.saveRecurringBoardTemplate(updated)
-                        try AppDatabase.shared.write { db in
-                            try SyncQueueBuilder.makeItem(
-                                entityType: "recurringBoardTemplates",
-                                entityId: updated.id, operationType: .update,
-                                payload: updated, now: now
-                            ).insert(db)
-                        }
+                        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                            updated, operation: .update, now: now
+                        )
                         await MainActor.run { templatesVM.reloadAsync(userId: userId) }
                     } catch { print("[RecurringTemplatesView] toggle failed: \(error)") }
                 }
@@ -160,15 +155,9 @@ struct RecurringTemplatesView: View {
             do {
                 let now = AppDatabase.currentTimestamp()
                 var t = tpl; t.updatedAt = now; t.version += 1
-                try AppDatabase.shared.saveRecurringBoardTemplate(t)
-                try AppDatabase.shared.write { db in
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "recurringBoardTemplates",
-                        entityId: t.id,
-                        operationType: t.version <= 2 ? .create : .update,
-                        payload: t, now: now
-                    ).insert(db)
-                }
+                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                    t, operation: t.version <= 2 ? .create : .update, now: now
+                )
                 await MainActor.run { templatesVM.reloadAsync(userId: userId) }
             } catch { print("[RecurringTemplatesView] saveTemplate failed: \(error)") }
         }
@@ -179,17 +168,9 @@ struct RecurringTemplatesView: View {
         editTarget = nil
         _Concurrency.Task.detached {
             do {
-                try AppDatabase.shared.softDeleteRecurringBoardTemplate(id: id)
-                if let tombstone = try AppDatabase.shared.fetchRecurringBoardTemplate(id: id) {
-                    let now = AppDatabase.currentTimestamp()
-                    try AppDatabase.shared.write { db in
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "recurringBoardTemplates",
-                            entityId: tombstone.id, operationType: .delete,
-                            payload: tombstone, now: now
-                        ).insert(db)
-                    }
-                }
+                try AppDatabase.shared.softDeleteRecurringBoardTemplateAndEnqueue(
+                    id: id, now: AppDatabase.currentTimestamp()
+                )
                 await MainActor.run { templatesVM.reloadAsync(userId: userId) }
             } catch { print("[RecurringTemplatesView] deleteTemplate failed: \(error)") }
         }
@@ -456,7 +437,8 @@ struct TemplateEditSheet: View {
             updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             updated.timeframe = timeframe; updated.boardSize = boardSize
             updated.seedTaskIds = seedIds; updated.isActive = isActive
-            updated.updatedAt = now; updated.version += 1
+            // `version`/`updatedAt` are bumped by `saveTemplate` (the
+            // persisting function) — bumping here too double-incremented.
             onSave(updated)
         } else {
             onSave(RecurringBoardTemplate(

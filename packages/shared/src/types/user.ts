@@ -166,9 +166,11 @@ export function mergeUserPreferences(
       : DEFAULT_USER_PREFERENCES.recurringYearlyEnabled;
 
   // Riso Phase 5a — Board Preferences fields (forward-compat decode).
+  // Clamp to the valid 1–10 range — a misbehaving peer could push an
+  // out-of-range value that would otherwise reach the celebration UI.
   const celebrationIntensity: number =
     typeof partial.celebrationIntensity === 'number'
-      ? partial.celebrationIntensity
+      ? Math.max(1, Math.min(10, partial.celebrationIntensity))
       : DEFAULT_USER_PREFERENCES.celebrationIntensity;
 
   const haptics: boolean =
