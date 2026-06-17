@@ -249,6 +249,8 @@ struct BoardPlayView: View {
     // MARK: Riso visual layer state
     /// Whether to show the GREENLOG full-bleed celebration overlay.
     @State private var showGreenlogOverlay: Bool = false
+    /// Whether to show the Share Board sheet (opened from the GREENLOG overlay).
+    @State private var showShareBoardSheet: Bool = false
     /// Whether to show the bingo toast (drops from top).
     @State private var showBingoToast: Bool = false
     /// Subtitle for the current bingo toast (e.g. "Row 2 complete!").
@@ -419,7 +421,7 @@ struct BoardPlayView: View {
                     linesCompleted: b.linesCompleted,
                     boardName: b.name,
                     onShare: {
-                        // Share sheet stub — wire to ShareSheet when available
+                        showShareBoardSheet = true
                     },
                     onDismiss: {
                         withAnimation(.easeOut(duration: 0.25)) {
@@ -630,6 +632,21 @@ struct BoardPlayView: View {
                     taskDetailSheetTaskId = nil
                 }
             )
+        }
+        // Share board sheet — presented from the GREENLOG overlay's "Share my board"
+        // button. The GREENLOG overlay stays visible beneath the sheet.
+        .sheet(isPresented: $showShareBoardSheet) {
+            if let b = board {
+                ShareBoardSheet(
+                    boardName: b.name,
+                    boardId: b.id,
+                    completedTasks: b.completedTasks,
+                    totalTasks: b.totalTasks,
+                    linesCompleted: b.linesCompleted,
+                    onDismiss: { showShareBoardSheet = false }
+                )
+                .presentationDetents([.medium, .large])
+            }
         }
     }
 
