@@ -25,13 +25,22 @@ enum RisoButtonKind {
 }
 
 /// Primary Riso button — Bricolage label, keyline, hard-shadow press.
+///
+/// Three sizes via mutually-exclusive flags: default (15pt), `large` (17pt,
+/// for hero CTAs), `small` (13pt, for inline/dense rows — replaces the
+/// hand-rolled mini-buttons that used to drift). `large` wins if both set.
 struct RisoButton: View {
     let title: String
     var kind: RisoButtonKind = .neutral
     var systemImage: String? = nil
     var fullWidth: Bool = false
     var large: Bool = false
+    var small: Bool = false
     let action: () -> Void
+
+    private var fontSize: CGFloat { large ? 17 : (small ? 13 : 15) }
+    private var vPad: CGFloat { large ? 16 : (small ? 8 : 13) }
+    private var hPad: CGFloat { large ? 20 : (small ? 12 : 18) }
 
     var body: some View {
         Button(action: action) {
@@ -39,14 +48,43 @@ struct RisoButton: View {
                 if let systemImage { Image(systemName: systemImage) }
                 Text(title)
             }
-            .font(.risoHead(large ? 17 : 15, .bold))
+            .font(.risoHead(fontSize, .bold))
             .foregroundStyle(kind.foreground)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .padding(.vertical, large ? 16 : 13)
-            .padding(.horizontal, large ? 20 : 18)
+            .padding(.vertical, vPad)
+            .padding(.horizontal, hPad)
             .risoCard(fill: kind.fill)
         }
         .buttonStyle(RisoButtonStyle())
+    }
+}
+
+/// Compact pill button for toolbar actions (Done / Save / Delete). Toolbars
+/// clip `RisoButton`'s hard shadow, so this uses a capsule with the
+/// `RisoButtonStyle` press-translate at a pill radius. This is the canonical
+/// home for the gold/red toolbar pill that was previously hand-rolled
+/// (with drifting fonts) in NewTaskSheetView, RisoLibrarySheetView,
+/// EditTaskSheet, EditBoardSheet, TaskDeleteConfirmView, EditProfileSheet.
+///
+/// Default is the gold "Done"/"Save" affordance; pass `fill: .risoRed,
+/// foreground: .risoPaper` for a destructive "Delete".
+struct RisoToolbarPill: View {
+    let title: String
+    var fill: Color = .risoGold
+    var foreground: Color = .risoInk
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.risoHead(13, .extraBold))
+                .foregroundStyle(foreground)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+                .background(Capsule().fill(fill))
+                .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+        }
+        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
     }
 }
 
@@ -72,14 +110,21 @@ struct RisoIconButton: View {
 // MARK: - Filter chip
 
 /// Pill chip — selected = ink fill / paper text. No hard shadow (flat).
+/// Optional `systemImage` renders before the label (e.g. a "Filters"
+/// disclosure chip) — mirrors `RisoButton`'s `systemImage` slot so chips
+/// with icons don't have to be hand-rolled.
 struct RisoChip: View {
     let title: String
     var isOn: Bool = false
+    var systemImage: String? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            HStack(spacing: 5) {
+                if let systemImage { Image(systemName: systemImage) }
+                Text(title)
+            }
                 .font(.risoHead(12, .bold))
                 .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
                 .padding(.vertical, 7)
@@ -93,10 +138,22 @@ struct RisoChip: View {
 
 // MARK: - Segmented control
 
-/// Generic segmented control — selected segment = blue fill / paper text.
+/// Generic segmented control — selected segment = filled / paper text.
+///
+/// - `equalWidth` (default true): segments each take an equal share of the
+///   width. Set false to size each segment to its label — use this when
+///   labels vary in length and equal-width would clip the long ones.
+/// - `selectedFill`: per-value fill for the selected segment (default blue
+///   for all). Pass e.g. `{ $0.risoColor }` to color-code by value.
+///
+/// The default `equalWidth: true` path is intentionally visually identical to
+/// the original control — the full snapshot suite confirms no diff for existing
+/// callers. Use `equalWidth: false` for uneven labels that would otherwise clip.
 struct RisoSegmented<T: Hashable>: View {
     let options: [(value: T, label: String)]
     @Binding var selection: T
+    var equalWidth: Bool = true
+    var selectedFill: (T) -> Color = { _ in .risoBlue }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -104,12 +161,16 @@ struct RisoSegmented<T: Hashable>: View {
                 Button { selection = opt.value } label: {
                     Text(opt.label)
                         .font(.risoHead(13, .bold))
+                        // Only constrain in sizes-to-content mode; `nil` (the
+                        // default) leaves the equal-width path unchanged.
+                        .lineLimit(equalWidth ? nil : 1)
                         .foregroundStyle(selection == opt.value ? Color.risoPaper : Color.risoInk)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: equalWidth ? .infinity : nil)
                         .padding(.vertical, 10)
+                        .padding(.horizontal, equalWidth ? 0 : 14)
                         .background(
                             RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                .fill(selection == opt.value ? Color.risoBlue : Color.risoPaper2)
+                                .fill(selection == opt.value ? selectedFill(opt.value) : Color.risoPaper2)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: Riso.cardRadius)
