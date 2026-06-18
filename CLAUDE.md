@@ -497,3 +497,15 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 - Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
 - When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
 
+### Push & merge safety (don't silently lose a commit)
+
+A real incident: self-review fix commits were committed locally but never reached the remote, and a PR merged to `dev` **without its Critical fix**. Root cause: a feature branch's upstream was `origin/dev` (name mismatch), so with git's default `push.default=simple` a bare `git push` **fatally refuses** (exit 128) — and the failure was masked by piping the output (`git push | tail`, which reports the pipe's exit code, not git's) plus an unconditional "pushed" echo.
+
+Guardrails:
+
+- **Push with an explicit destination**: `git push origin HEAD:<branch>` — bypasses the `simple`-mode name-match refusal. (Or set `git config push.autoSetupRemote true` so new branches auto-create a same-named upstream.)
+- **Never pipe a command whose exit code matters** (`git push … | tail; echo done`). The pipe makes `$?` the tail's exit, and `;` prints "done" regardless. Gate any success message on the actual command (`&&`).
+- **Verify the push landed**: after pushing, `git fetch` then confirm `git rev-parse HEAD` == `git rev-parse origin/<branch>`. For a merge-resolution push, also `git merge-base --is-ancestor origin/dev origin/<branch>`.
+- **Confirm a fix is on the *remote* before calling a PR ready/merged** — `git show origin/<branch>:<file> | grep <fix>`, not just the local tree. GitHub's mergeability is computed async; a fresh "MERGEABLE" right after a push can be stale.
+- **pbxproj merge conflicts**: don't hand-resolve. Take either side (`git checkout --theirs apps/ios/OYBC.xcodeproj/project.pbxproj`), run `xcodegen generate` to rebuild it from `project.yml` + the file tree, then `git add` and build to confirm.
+
