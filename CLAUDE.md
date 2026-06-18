@@ -193,7 +193,7 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── Navbar.tsx                 (dev-only)       (no iOS counterpart — iOS launches straight into tabs)
     ├── BingoBoard.tsx          ←→                  BingoBoard.swift
     ├── BingoSquare.tsx         ←→                  BingoSquare.swift
-    ├── InteractiveTaskSquare.tsx ←→                 InteractiveTaskSquareView.swift
+    ├── InteractiveTaskSquare.tsx ←→                 (iOS: removed — Riso uses RisoBoardPlayCell)
     ├── TypeBadge.tsx           ←→                  (iOS: removed — Riso uses RisoTypeBadge)
     ├── FilterTabs.tsx          ←→                  (iOS: removed — Riso uses RisoChip)
     ├── TaskTypeSelector.tsx    ←→                  (iOS: removed — Riso uses RisoSegmented)

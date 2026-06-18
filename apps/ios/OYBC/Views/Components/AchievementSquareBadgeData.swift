@@ -3,8 +3,8 @@ import Foundation
 /// Phase 6.3 — iOS mirror of TypeScript `AchievementSquareBadgeData`
 /// (see `apps/web/src/components/InteractiveTaskSquare.tsx`).
 ///
-/// Optional payload attached to an `InteractiveTaskSquareView` to label
-/// a cell as an achievement square. The cell's actual completion state
+/// Optional payload attached to a board-play cell (`RisoBoardPlayCell`) to
+/// label a cell as an achievement square. The cell's actual completion state
 /// still comes from `DerivationPass.computeBoardStatsUpdate`; this badge
 /// just labels what the cell is watching so the user can see at a glance
 /// that the cell is cross-board-bound rather than task-bound.

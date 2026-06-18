@@ -9,9 +9,8 @@ import SwiftUI
 /// Tap routing is the caller's responsibility; this component is
 /// presentation-only so it can be snapshot-tested without a DB.
 ///
-/// - Note: Do NOT reuse `InteractiveTaskSquareView` here — that component
-///   is shared across other surfaces (wizard preview, Tasks tab). This cell
-///   is play-board–specific and implements the full Riso treatment.
+/// - Note: This cell is play-board–specific and implements the full Riso
+///   treatment; it is the canonical board-cell renderer.
 struct RisoBoardPlayCell: View {
 
     // MARK: - Input
@@ -111,8 +110,8 @@ struct RisoBoardPlayCell: View {
         }
         // Accessibility: collapse the cell's text/badges into one element with
         // a descriptive label + button trait, so VoiceOver announces and
-        // activates it like InteractiveTaskSquareView did (the `.onTapGesture`
-        // alone exposes no actionable element).
+        // activates it as a button (the `.onTapGesture` alone exposes no
+        // actionable element).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits((isCenter || isLocked) ? [] : .isButton)
