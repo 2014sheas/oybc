@@ -182,14 +182,15 @@ struct BoardWizardView: View {
 
                         Spacer()
 
-                        // X-cancel: 40pt keyline square (matches `.r-back` in riso.css).
+                        // X-cancel: 46pt keyline square (matches RisoIconButton's
+                        // canonical size + the 44pt minimum tap target).
                         Button {
                             handleCancelRequested()
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(Color.risoInk)
-                                .frame(width: 40, height: 40)
+                                .frame(width: 46, height: 46)
                                 .risoCard(fill: .risoPaper2)
                         }
                         .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
