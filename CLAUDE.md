@@ -194,9 +194,9 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── BingoBoard.tsx          ←→                  BingoBoard.swift
     ├── BingoSquare.tsx         ←→                  BingoSquare.swift
     ├── InteractiveTaskSquare.tsx ←→                 InteractiveTaskSquareView.swift
-    ├── TypeBadge.tsx           ←→                  TypeBadgeView.swift
-    ├── FilterTabs.tsx          ←→                  FilterTabsView.swift
-    ├── TaskTypeSelector.tsx    ←→                  TaskTypeSelectorView.swift
+    ├── TypeBadge.tsx           ←→                  (iOS: removed — Riso uses RisoTypeBadge)
+    ├── FilterTabs.tsx          ←→                  (iOS: removed — Riso uses RisoChip)
+    ├── TaskTypeSelector.tsx    ←→                  (iOS: removed — Riso uses RisoSegmented)
     ├── SelectableTaskItem.tsx  ←→                  SelectableTaskItemView.swift
     ├── PoolItem.tsx            ←→                  PoolItemView.swift
     ├── SubtaskChip.tsx         ←→                  SubtaskChipView.swift

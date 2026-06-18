@@ -25,7 +25,7 @@ struct CoreBoardWindowBarView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Color.risoInk)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .risoCard(fill: .risoPaper2)
             }
             .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: Riso.cardRadius))
@@ -51,8 +51,8 @@ struct CoreBoardWindowBarView: View {
                         .font(.risoHead(13, .bold))
                 }
                 .foregroundStyle(Color.risoInk)
-                .padding(.vertical, 7)
-                .padding(.horizontal, 11)
+                .padding(.vertical, 11)
+                .padding(.horizontal, 13)
                 .risoCard(fill: .risoPaper2)
             }
             .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: Riso.cardRadius))
@@ -63,7 +63,7 @@ struct CoreBoardWindowBarView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Color.risoInk)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .risoCard(fill: .risoPaper2)
             }
             .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: Riso.cardRadius))

@@ -188,18 +188,18 @@ struct RisoSpecialTaskPanel: View {
         VStack(alignment: .leading, spacing: 9) {
             // Action
             fieldRow(label: "Action") {
-                risoTextInput(placeholder: "Run", text: $countingActionText)
+                RisoTextField(placeholder: "Run", text: $countingActionText)
             }
 
             // Goal + Unit (side by side)
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Goal")
-                    risoNumberInput(placeholder: "5", text: $countingGoalText)
+                    RisoNumberField(placeholder: "5", text: $countingGoalText)
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Unit")
-                    risoTextInput(placeholder: "km", text: $countingUnitText)
+                    RisoTextField(placeholder: "km", text: $countingUnitText)
                 }
             }
 
@@ -306,7 +306,7 @@ struct RisoSpecialTaskPanel: View {
         VStack(alignment: .leading, spacing: 9) {
             // Title
             fieldRow(label: "Title") {
-                risoTextInput(placeholder: "Finish the reading challenge", text: $achievementTitle)
+                RisoTextField(placeholder: "Finish the reading challenge", text: $achievementTitle)
             }
 
             // Watch a…
@@ -510,36 +510,8 @@ struct RisoSpecialTaskPanel: View {
             .risoSectionLabel()
     }
 
-    private func risoTextInput(placeholder: String, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
-            .font(.risoHead(14, .bold))
-            .foregroundStyle(Color.risoInk)
-            .tint(Color.risoBlue)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 10)
-            .background(Color.risoPaper)
-            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-            )
-    }
-
-    private func risoNumberInput(placeholder: String, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
-            .font(.risoHead(14, .bold))
-            .foregroundStyle(Color.risoInk)
-            .tint(Color.risoBlue)
-            .keyboardType(.numberPad)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 10)
-            .background(Color.risoPaper)
-            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-            )
-    }
+    // (risoTextInput / risoNumberInput removed — use the kit's
+    // RisoTextField / RisoNumberField, which they duplicated verbatim.)
 
     /// Pill rule chip for achievement fields (blue fill when on).
     private func ruleChip(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -573,7 +545,7 @@ struct RisoInlineStepperView: View {
                 Text("−")
                     .font(.risoHead(18, .extraBold))
                     .foregroundStyle(Color.risoInk)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
 
@@ -599,7 +571,7 @@ struct RisoInlineStepperView: View {
                 Text("＋")
                     .font(.risoHead(18, .extraBold))
                     .foregroundStyle(Color.risoInk)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
         }
