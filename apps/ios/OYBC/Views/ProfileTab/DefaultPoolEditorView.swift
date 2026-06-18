@@ -1,17 +1,15 @@
 import SwiftUI
 
-/// DefaultPoolEditorView — per-timeframe task picker for a single
-/// `(userId, timeframe)` DefaultPool. Loads the user's library +
-/// current pool on appear; the user toggles tasks in/out and Save
-/// upserts via `AppDatabase.shared.upsertDefaultPool`.
+/// DefaultPoolEditorView — legacy per-timeframe pool editor, preserved for any
+/// existing navigation paths. The Riso redesign replaced this with PoolEditSheet
+/// (defined in DefaultPoolsListView.swift) presented as a bottom sheet from the
+/// DefaultPoolsListView card tap. This file is kept so existing NavigationLink
+/// destinations and any test references continue to compile.
 ///
-/// iOS twin of web `DefaultPoolEditorPage`. Achievement tasks
-/// (Phase 6.3) are excluded — they reference boards/templates and
-/// don't make sense in a default pool.
+/// If all call-sites have migrated to PoolEditSheet, this file can be deleted.
 struct DefaultPoolEditorView: View {
+
     let timeframe: Timeframe
-    /// Called after a successful save or clear so the parent list view
-    /// can reload its summary.
     let onSaved: () -> Void
 
     @EnvironmentObject var authService: AuthService
@@ -27,17 +25,14 @@ struct DefaultPoolEditorView: View {
     @State private var showClearConfirm: Bool = false
 
     private var pickableTasks: [Task] {
-        // Exclude achievements (Phase 6.3) — they reference boards/templates
-        // and don't fit into a "default pool to place on a board" semantic.
         allTasks.filter { $0.type != .achievement }
     }
 
     private var visibleTasks: [Task] {
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return pickableTasks }
-        return pickableTasks.filter { task in
-            task.title.lowercased().contains(q)
-                || (task.description?.lowercased().contains(q) ?? false)
+        return pickableTasks.filter {
+            $0.title.lowercased().contains(q) || ($0.description?.lowercased().contains(q) ?? false)
         }
     }
 
@@ -47,25 +42,20 @@ struct DefaultPoolEditorView: View {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundColor(.secondary)
                     TextField("Search tasks…", text: $search)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
+                        .textInputAutocapitalization(.never).disableAutocorrection(true)
                 }
             }
-
             if visibleTasks.isEmpty {
                 Section {
                     Text(pickableTasks.isEmpty
                          ? "No tasks in your library yet. Create some from the Tasks tab."
                          : "No tasks match \"\(search)\".")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 14))
+                        .foregroundColor(.secondary).font(.system(size: 14))
                 }
             } else {
                 Section {
                     ForEach(visibleTasks, id: \.id) { task in
-                        Button {
-                            toggle(task.id)
-                        } label: {
+                        Button { toggle(task.id) } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: selectedIds.contains(task.id) ? "checkmark.circle.fill" : "circle")
                                     .foregroundColor(selectedIds.contains(task.id) ? .blue : .secondary)
@@ -80,46 +70,31 @@ struct DefaultPoolEditorView: View {
                     }
                 }
             }
-
-            if let loadError {
-                Section { Text(loadError).foregroundColor(.red).font(.system(size: 13)) }
-            }
-            if let saveError {
-                Section { Text(saveError).foregroundColor(.red).font(.system(size: 13)) }
-            }
+            if let loadError { Section { Text(loadError).foregroundColor(.red).font(.system(size: 13)) } }
+            if let saveError { Section { Text(saveError).foregroundColor(.red).font(.system(size: 13)) } }
         }
         .navigationTitle("\(timeframeLabel) pool")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("\(selectedIds.count) selected")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12)).foregroundColor(.secondary)
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { performSave() }
-                    .disabled(saving)
+                Button("Save") { performSave() }.disabled(saving)
             }
             if existingPool != nil {
                 ToolbarItem(placement: .bottomBar) {
-                    Button(role: .destructive) {
-                        showClearConfirm = true
-                    } label: {
+                    Button(role: .destructive) { showClearConfirm = true } label: {
                         Label("Clear pool", systemImage: "trash")
-                    }
-                    .disabled(saving)
+                    }.disabled(saving)
                 }
             }
         }
-        .alert(
-            "Clear \(timeframeLabel) pool?",
-            isPresented: $showClearConfirm
-        ) {
+        .alert("Clear \(timeframeLabel) pool?", isPresented: $showClearConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Clear", role: .destructive) { performClear() }
-        } message: {
-            Text("Removes this pool entirely. You can set it up again later.")
-        }
+        } message: { Text("Removes this pool entirely. You can set it up again later.") }
         .onAppear(perform: load)
     }
 
@@ -134,11 +109,7 @@ struct DefaultPoolEditorView: View {
     }
 
     private func toggle(_ id: String) {
-        if selectedIds.contains(id) {
-            selectedIds.remove(id)
-        } else {
-            selectedIds.insert(id)
-        }
+        if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
     }
 
     private func load() {
@@ -151,62 +122,40 @@ struct DefaultPoolEditorView: View {
                     return (tasks, pool)
                 }.value
                 await MainActor.run {
-                    allTasks = snapshot.0
-                    existingPool = snapshot.1
-                    selectedIds = Set(snapshot.1?.taskIds ?? [])
-                    loadError = nil
+                    allTasks = snapshot.0; existingPool = snapshot.1
+                    selectedIds = Set(snapshot.1?.taskIds ?? []); loadError = nil
                 }
-            } catch {
-                await MainActor.run { loadError = error.localizedDescription }
-            }
+            } catch { await MainActor.run { loadError = error.localizedDescription } }
         }
     }
 
     private func performSave() {
         guard let userId = authService.currentUser?.id else { return }
-        let ids = Array(selectedIds)
-        let tf = timeframe
-        saving = true
-        saveError = nil
+        let ids = Array(selectedIds); let tf = timeframe
+        saving = true; saveError = nil
         _Concurrency.Task {
             do {
                 _ = try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try AppDatabase.shared.upsertDefaultPool(userId: userId, timeframe: tf, taskIds: ids)
                 }.value
-                await MainActor.run {
-                    saving = false
-                    onSaved()
-                    dismiss()
-                }
+                await MainActor.run { saving = false; onSaved(); dismiss() }
             } catch {
-                await MainActor.run {
-                    saving = false
-                    saveError = "Failed to save: \(error.localizedDescription)"
-                }
+                await MainActor.run { saving = false; saveError = "Failed to save: \(error.localizedDescription)" }
             }
         }
     }
 
     private func performClear() {
         guard let pool = existingPool else { return }
-        let poolId = pool.id
-        saving = true
-        saveError = nil
+        let poolId = pool.id; saving = true; saveError = nil
         _Concurrency.Task {
             do {
                 try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try AppDatabase.shared.softDeleteDefaultPool(id: poolId)
                 }.value
-                await MainActor.run {
-                    saving = false
-                    onSaved()
-                    dismiss()
-                }
+                await MainActor.run { saving = false; onSaved(); dismiss() }
             } catch {
-                await MainActor.run {
-                    saving = false
-                    saveError = "Failed to clear: \(error.localizedDescription)"
-                }
+                await MainActor.run { saving = false; saveError = "Failed to clear: \(error.localizedDescription)" }
             }
         }
     }

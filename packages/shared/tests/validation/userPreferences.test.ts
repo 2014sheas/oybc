@@ -38,6 +38,11 @@ describe('UserPreferencesSchema', () => {
       'recurringWeeklyEnabled',
       'recurringMonthlyEnabled',
       'recurringYearlyEnabled',
+      // Board Preferences (Riso 5a) — optional for forward-compat too.
+      'celebrationIntensity',
+      'haptics',
+      'expiringReminders',
+      'autoArchiveCompleted',
     ]);
     const keys = (Object.keys(DEFAULT_USER_PREFERENCES) as (keyof typeof DEFAULT_USER_PREFERENCES)[])
       .filter((k) => !optionalKeys.has(k));
@@ -58,6 +63,10 @@ describe('UserPreferencesSchema', () => {
     'recurringWeeklyEnabled',
     'recurringMonthlyEnabled',
     'recurringYearlyEnabled',
+    'celebrationIntensity',
+    'haptics',
+    'expiringReminders',
+    'autoArchiveCompleted',
   ] as const)('treats %s as optional (forward-compat for older peers)', (key) => {
     const partial = { ...DEFAULT_USER_PREFERENCES };
     delete (partial as Record<string, unknown>)[key];
@@ -69,6 +78,11 @@ describe('UserPreferencesSchema', () => {
     ['recurringWeeklyEnabled (number)', { recurringWeeklyEnabled: 1 }],
     ['recurringMonthlyEnabled (null)', { recurringMonthlyEnabled: null }],
     ['recurringYearlyEnabled (object)', { recurringYearlyEnabled: {} }],
+    ['celebrationIntensity (out of range)', { celebrationIntensity: 99 }],
+    ['celebrationIntensity (non-integer)', { celebrationIntensity: 5.5 }],
+    ['haptics (string)', { haptics: 'on' }],
+    ['expiringReminders (number)', { expiringReminders: 0 }],
+    ['autoArchiveCompleted (null)', { autoArchiveCompleted: null }],
   ])('still rejects invalid type for %s when present', (_label, override) => {
     expect(() =>
       UserPreferencesSchema.parse({ ...DEFAULT_USER_PREFERENCES, ...override })
@@ -116,6 +130,12 @@ describe('mergeUserPreferences', () => {
     });
   });
 
+  it('clamps celebrationIntensity into the 1–10 range', () => {
+    expect(mergeUserPreferences({ celebrationIntensity: 99 }).celebrationIntensity).toBe(10);
+    expect(mergeUserPreferences({ celebrationIntensity: -5 }).celebrationIntensity).toBe(1);
+    expect(mergeUserPreferences({ celebrationIntensity: 4 }).celebrationIntensity).toBe(4);
+  });
+
   it('preserves every field when provided', () => {
     const full = {
       weekStartDay: 'sunday' as const,
@@ -129,6 +149,10 @@ describe('mergeUserPreferences', () => {
       recurringWeeklyEnabled: true,
       recurringMonthlyEnabled: true,
       recurringYearlyEnabled: true,
+      celebrationIntensity: 7,
+      haptics: true,
+      expiringReminders: true,
+      autoArchiveCompleted: false,
     };
     expect(mergeUserPreferences(full)).toEqual(full);
   });

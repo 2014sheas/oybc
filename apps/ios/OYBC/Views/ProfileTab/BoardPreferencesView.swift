@@ -1,196 +1,229 @@
 import SwiftUI
 
-/// BoardPreferencesView — Dedicated sub-page for board-creation defaults.
+/// BoardPreferencesView — Riso-styled Profile sub-page for board-creation
+/// defaults and play-feel settings. Design: §5a README + screenshot 08.
 ///
-/// Split out from the top-level Profile surface so the primary settings
-/// screen stays focused on account + app-level controls. Every control
-/// here governs the new-board form and belongs together. Mirrors the web
-/// `/profile/board-preferences` page.
+/// Three keyline cards:
+///   New boards — Default size · Center square · Week starts
+///   Playing    — Celebration intensity (10-tick strip) · Haptics toggle
+///   Housekeeping — Expiring reminders · Auto-archive completed
+///
+/// All controls write through `AppDatabase.updateUserPreferences` via the
+/// `bind(_:)` helper. New fields (`celebrationIntensity`, `haptics`,
+/// `expiringReminders`, `autoArchiveCompleted`) were added to `UserPreferences`
+/// as part of this reskin; they decode forward-compatibly via try? fallback.
 struct BoardPreferencesView: View {
-    @EnvironmentObject var authService: AuthService
 
-    /// Local draft for free-form text fields so every keystroke doesn't
-    /// bump `version` and enqueue a sync item. Commits on submit/blur via
-    /// `@FocusState`.
-    @State private var centerCustomNameDraft: String = ""
-    @FocusState private var centerCustomNameFocused: Bool
+    @EnvironmentObject var authService: AuthService
 
     private var preferences: UserPreferences { authService.userPreferences }
 
     var body: some View {
-        List {
-            Section {
-                Text("These defaults apply to new boards you create. You can override any of them on a per-board basis.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .listRowBackground(Color.clear)
+        ZStack {
+            RisoPaperBackground()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    RisoSubPageHeader(title: "Board preferences")
+                        .padding(.top, 16).padding(.bottom, 20)
 
-            Section {
-                weekStartRow
-                boardSizeRow
-                timeframeRow
-                centerTypeRow
-                customCenterNameRow
-            }
+                    sectionLabel("New boards")
+                    newBoardsCard.padding(.horizontal, Riso.gutter).padding(.bottom, 18)
 
-            // Phase 6.1 — Recurring boards. Independent section because
-            // these toggles drive the Boards-tab banner, not new-board
-            // defaults.
-            Section {
-                Text("When enabled, the Boards tab will prompt you to create a board for each new window. Detection runs only when you open the app — no background notifications.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Recurring Boards")
-            }
-            .listRowBackground(Color.clear)
+                    sectionLabel("Playing")
+                    playingCard.padding(.horizontal, Riso.gutter).padding(.bottom, 18)
 
-            Section {
-                Toggle(isOn: bind(\.recurringDailyEnabled)) {
-                    Text("Prompt for daily board")
-                }
-                if authService.userPreferences.recurringDailyEnabled {
-                    browseRow(timeframe: .daily, label: "Daily")
-                }
-                Toggle(isOn: bind(\.recurringWeeklyEnabled)) {
-                    Text("Prompt for weekly board")
-                }
-                if authService.userPreferences.recurringWeeklyEnabled {
-                    browseRow(timeframe: .weekly, label: "Weekly")
-                }
-                Toggle(isOn: bind(\.recurringMonthlyEnabled)) {
-                    Text("Prompt for monthly board")
-                }
-                if authService.userPreferences.recurringMonthlyEnabled {
-                    browseRow(timeframe: .monthly, label: "Monthly")
-                }
-                Toggle(isOn: bind(\.recurringYearlyEnabled)) {
-                    Text("Prompt for yearly board")
-                }
-                if authService.userPreferences.recurringYearlyEnabled {
-                    browseRow(timeframe: .yearly, label: "Yearly")
+                    sectionLabel("Housekeeping")
+                    housekeepingCard.padding(.horizontal, Riso.gutter).padding(.bottom, 16)
+
+                    Text("Defaults apply to new boards — existing boards keep their settings.")
+                        .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
+                        .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                        .padding(.horizontal, Riso.gutter).padding(.bottom, 24)
                 }
             }
         }
-        .navigationTitle("Board Preferences")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
     }
 
-    /// Phase B — open the per-timeframe core-board browser. Pushed
-    /// directly onto the ProfileTab's NavigationStack via
-    /// `NavigationLink(value:)`; the destination is registered on
-    /// ProfileView so back returns to this preferences screen.
-    @ViewBuilder
-    private func browseRow(timeframe: Timeframe, label: String) -> some View {
-        NavigationLink(value: CoreBrowserRoute(timeframe: timeframe)) {
-            HStack(spacing: 8) {
-                Image(systemName: "calendar.badge.clock")
-                    .foregroundStyle(.tint)
-                Text("Browse \(label) boards")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.tint)
+    // MARK: - Section label
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title).risoSectionLabel()
+            .padding(.horizontal, Riso.gutter).padding(.bottom, 8)
+    }
+
+    // MARK: - New Boards card
+
+    private var newBoardsCard: some View {
+        VStack(spacing: 0) {
+            segRow(label: "Default size",
+                   options: [(DefaultBoardSize.three, "3×3"),
+                             (DefaultBoardSize.four, "4×4"),
+                             (DefaultBoardSize.five, "5×5")],
+                   selection: bind(\.defaultBoardSize))
+            rowDivider
+            segRow(label: "Center square",
+                   options: [(DefaultCenterSquareType.free, "Free"),
+                             (DefaultCenterSquareType.none, "None")],
+                   selection: bind(\.defaultCenterType))
+            rowDivider
+            VStack(alignment: .leading, spacing: 4) {
+                segRow(label: "Week starts",
+                       options: [(WeekStartDay.monday, "Mon"),
+                                 (WeekStartDay.sunday, "Sun")],
+                       selection: bind(\.weekStartDay))
+                Text("Sets when weekly boards reset and renew.")
+                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
+                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 10)
             }
         }
-        .accessibilityLabel("Browse \(label) core boards")
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
-    // MARK: - Rows
+    // MARK: - Playing card
 
-    private var weekStartRow: some View {
-        Picker(selection: bind(\.weekStartDay)) {
-            Text("Monday").tag(WeekStartDay.monday)
-            Text("Sunday").tag(WeekStartDay.sunday)
-        } label: {
-            Text("Week starts on")
+    private var playingCard: some View {
+        VStack(spacing: 0) {
+            intensityRow
+            rowDivider
+            toggleRow(icon: "hand.tap", label: "Haptics", binding: bind(\.haptics))
         }
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
-    private var boardSizeRow: some View {
-        Picker(selection: bind(\.defaultBoardSize)) {
-            Text("3 × 3").tag(DefaultBoardSize.three)
-            Text("4 × 4").tag(DefaultBoardSize.four)
-            Text("5 × 5").tag(DefaultBoardSize.five)
-        } label: {
-            Text("Default board size")
-        }
-    }
-
-    private var timeframeRow: some View {
-        Picker(selection: bind(\.defaultTimeframe)) {
-            Text("Custom").tag(DefaultTimeframe.custom)
-            Text("Daily").tag(DefaultTimeframe.daily)
-            Text("Weekly").tag(DefaultTimeframe.weekly)
-            Text("Monthly").tag(DefaultTimeframe.monthly)
-            Text("Yearly").tag(DefaultTimeframe.yearly)
-        } label: {
-            Text("Default timeframe")
-        }
-    }
-
-    private var centerTypeRow: some View {
-        Picker(selection: bind(\.defaultCenterType)) {
-            Text("Free").tag(DefaultCenterSquareType.free)
-            Text("None").tag(DefaultCenterSquareType.none)
-        } label: {
-            Text("Default center square")
-        }
-    }
-
-    private var customCenterNameRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Default custom center name")
-            TextField("e.g., Wild Card", text: $centerCustomNameDraft)
-                .textFieldStyle(.roundedBorder)
-                .autocorrectionDisabled(true)
-                .focused($centerCustomNameFocused)
-                .submitLabel(.done)
-                .onSubmit { commitCenterCustomNameDraft() }
-                .onAppear { centerCustomNameDraft = preferences.defaultCenterCustomName }
-                .onChange(of: preferences.defaultCenterCustomName) { _, newValue in
-                    // Keep the local draft in sync when the underlying
-                    // preference changes externally (e.g. pulled from
-                    // another device) but the field isn't currently being
-                    // edited.
-                    if !centerCustomNameFocused {
-                        centerCustomNameDraft = newValue
-                    }
-                }
-                .onChange(of: centerCustomNameFocused) { wasFocused, isFocused in
-                    if wasFocused && !isFocused {
-                        commitCenterCustomNameDraft()
-                    }
-                }
-        }
-        .padding(.vertical, 4)
-    }
-
-    /// Writes the draft through to synced preferences only if it actually
-    /// differs from the current stored value — prevents a no-op write
-    /// (and its attendant version bump + sync item) when the user tabs
-    /// through the field without changing anything.
-    private func commitCenterCustomNameDraft() {
-        let trimmed = centerCustomNameDraft
-        guard trimmed != preferences.defaultCenterCustomName,
-              let userId = authService.currentUser?.id else { return }
-        do {
-            _ = try AppDatabase.shared.updateUserPreferences(userId: userId) { current in
-                var next = current
-                next.defaultCenterCustomName = trimmed
-                return next
+    private var intensityRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                iconSquare(systemName: "sparkles")
+                Text("Celebration intensity")
+                    .font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+                Spacer()
+                Text("\(preferences.celebrationIntensity) · \(intensityWord(preferences.celebrationIntensity))")
+                    .font(.risoBody(12, .semibold)).foregroundStyle(Color.risoMuted)
             }
-        } catch {
-            print("⚠️ updateUserPreferences(defaultCenterCustomName) failed: \(error)")
+            intensityStrip
+            Text("How loud bingos and GREENLOGs get — confetti scales with it.")
+                .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
         }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
+    }
+
+    private var intensityStrip: some View {
+        let current = preferences.celebrationIntensity
+        let intensityBind = bind(\.celebrationIntensity)
+        return HStack(spacing: 5) {
+            ForEach(1...10, id: \.self) { tick in
+                Button { intensityBind.wrappedValue = tick } label: {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(tickFill(tick: tick, current: current))
+                        .overlay(RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                        .frame(height: 28)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// Fill color for a single intensity strip tick.
+    ///
+    /// - Ticks 1–7 up to `current` fill gold.
+    /// - Ticks 8–10 up to `current` fill red ("hot").
+    /// - Ticks beyond `current` remain paper.
+    private func tickFill(tick: Int, current: Int) -> Color {
+        guard tick <= current else { return .risoPaper }
+        return tick >= 8 ? .risoRed : .risoGold
+    }
+
+    /// Human-readable intensity word for caption label (matches prototype).
+    private func intensityWord(_ v: Int) -> String {
+        switch v {
+        case 1, 2: return "Whisper"
+        case 3, 4: return "Quiet"
+        case 5, 6: return "Steady"
+        case 7, 8: return "Full press"
+        case 9: return "Loud"
+        default: return "Detonate"
+        }
+    }
+
+    // MARK: - Housekeeping card
+
+    private var housekeepingCard: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                toggleRow(icon: "exclamationmark.circle", label: "Expiring reminders",
+                          binding: bind(\.expiringReminders))
+                Text("Nudge me the day before a board runs out.")
+                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
+                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 8)
+            }
+            rowDivider
+            VStack(alignment: .leading, spacing: 4) {
+                toggleRow(icon: "archivebox", label: "Auto-archive completed",
+                          binding: bind(\.autoArchiveCompleted))
+                Text("Move GREENLOGed boards out of the list after a week.")
+                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
+                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 8)
+            }
+        }
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+    }
+
+    // MARK: - Row helpers
+
+    private func segRow<V: Hashable>(
+        label: String,
+        options: [(V, String)],
+        selection: Binding<V>
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+                .frame(minWidth: 80, alignment: .leading)
+            Spacer()
+            RisoSegmented(options: options.map { (value: $0.0, label: $0.1) },
+                          selection: selection)
+            .fixedSize()
+        }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
+    }
+
+    private func toggleRow(icon: String, label: String, binding: Binding<Bool>) -> some View {
+        HStack(spacing: 12) {
+            iconSquare(systemName: icon)
+            Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+            Spacer()
+            RisoPillSwitch(isOn: binding)
+        }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
+    }
+
+    private var rowDivider: some View {
+        Divider().background(Color.risoInk.opacity(0.12))
+            .padding(.horizontal, Riso.cardPadding)
+    }
+
+    private func iconSquare(systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color.risoInk)
+            .frame(width: 26, height: 26)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.risoPaper))
+            .overlay(RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 
     // MARK: - Binding helper
 
-    /// Builds a two-way `Binding` for a single `UserPreferences` field that
-    /// writes through `AppDatabase.updateUserPreferences` — which bumps
-    /// version/updatedAt and enqueues a sync-queue UPDATE atomically. The
-    /// published `currentUser` picks up the change via the
-    /// `AuthService` row observation, so no manual refresh is needed.
+    /// Two-way Binding for a UserPreferences field that writes through
+    /// AppDatabase.updateUserPreferences (bumps version/updatedAt + enqueues sync).
     private func bind<Value>(
         _ keyPath: WritableKeyPath<UserPreferences, Value>
     ) -> Binding<Value> {
@@ -205,9 +238,7 @@ struct BoardPreferencesView: View {
                         return next
                     }
                 } catch {
-                    // Surface via log — inline alerting would be noisy for
-                    // per-keystroke writes. Phase 5 polish can add toast UX.
-                    print("⚠️ updateUserPreferences failed: \(error)")
+                    print("⚠️ BoardPreferencesView updateUserPreferences failed: \(error)")
                 }
             }
         )

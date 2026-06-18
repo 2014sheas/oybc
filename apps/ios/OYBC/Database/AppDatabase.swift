@@ -2252,6 +2252,125 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - Atomic save + sync-enqueue (templates & pools)
+    //
+    // Mirror of `saveTaskAndEnqueueUpdate`: the model write and its
+    // sync-queue item live in ONE transaction so a crash between them
+    // can't leave the local row ahead of Firestore with no recovery.
+
+    /// Save a template and enqueue its sync op atomically. The caller
+    /// bumps `version`/`updatedAt` before calling; `operation` is
+    /// `.create` for the first save, `.update` thereafter.
+    func saveRecurringBoardTemplateAndEnqueue(
+        _ template: RecurringBoardTemplate,
+        operation: SyncOperationType,
+        now: String
+    ) throws {
+        try write { db in
+            try template.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "recurringBoardTemplates",
+                entityId: template.id,
+                operationType: operation,
+                payload: template,
+                now: now
+            ).save(db)
+        }
+    }
+
+    /// Soft-delete a template and enqueue the delete op atomically.
+    func softDeleteRecurringBoardTemplateAndEnqueue(id: String, now: String) throws {
+        try write { db in
+            guard var t = try RecurringBoardTemplate.fetchOne(db, key: id) else { return }
+            t.isDeleted = true
+            t.deletedAt = now
+            t.updatedAt = now
+            t.version += 1
+            try t.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "recurringBoardTemplates",
+                entityId: t.id,
+                operationType: .delete,
+                payload: t,
+                now: now
+            ).save(db)
+        }
+    }
+
+    /// Atomic upsert by `(userId, timeframe)` + sync-enqueue. Preferred
+    /// UI entry point — guarantees per-timeframe uniqueness AND that the
+    /// change is queued for sync (`saveDefaultPool` does neither).
+    @discardableResult
+    func upsertDefaultPoolAndEnqueue(
+        userId: String,
+        timeframe: Timeframe,
+        taskIds: [String],
+        now: String
+    ) throws -> DefaultPool {
+        return try write { db in
+            let pool: DefaultPool
+            let op: SyncOperationType
+            if var existing = try DefaultPool
+                .filter(
+                    Column("userId") == userId
+                        && Column("timeframe") == timeframe.rawValue
+                        && Column("isDeleted") == false
+                )
+                .fetchOne(db)
+            {
+                existing.taskIds = taskIds
+                existing.updatedAt = now
+                existing.version += 1
+                try existing.update(db)
+                pool = existing
+                op = .update
+            } else {
+                let fresh = DefaultPool(
+                    id: Self.generateUUID(),
+                    userId: userId,
+                    timeframe: timeframe,
+                    taskIds: taskIds,
+                    createdAt: now,
+                    updatedAt: now,
+                    lastSyncedAt: nil,
+                    version: 1,
+                    isDeleted: false,
+                    deletedAt: nil
+                )
+                try fresh.insert(db)
+                pool = fresh
+                op = .create
+            }
+            try SyncQueueBuilder.makeItem(
+                entityType: "defaultPools",
+                entityId: pool.id,
+                operationType: op,
+                payload: pool,
+                now: now
+            ).save(db)
+            return pool
+        }
+    }
+
+    /// Soft-delete a pool and enqueue the delete op atomically.
+    func softDeleteDefaultPoolAndEnqueue(id: String, now: String) throws {
+        try write { db in
+            guard var pool = try DefaultPool.fetchOne(db, key: id) else { return }
+            pool.isDeleted = true
+            pool.deletedAt = now
+            pool.updatedAt = now
+            pool.version += 1
+            try pool.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "defaultPools",
+                entityId: pool.id,
+                operationType: .delete,
+                payload: pool,
+                now: now
+            ).save(db)
+        }
+    }
+
     // MARK: - ProgressCounters
 
     func fetchProgressCounters(userId: String) throws -> [ProgressCounter] {
