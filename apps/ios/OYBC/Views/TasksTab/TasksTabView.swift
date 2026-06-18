@@ -148,11 +148,21 @@ struct TasksTabView: View {
                                 .tint(.blue)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
+                                // NOTE: deliberately NOT `role: .destructive`.
+                                // A destructive swipe button makes SwiftUI's List
+                                // auto-animate the row's removal on tap (it assumes
+                                // the model row is going away), but we only open a
+                                // confirm sheet here — the task isn't removed yet.
+                                // The collection view then animates a delete the
+                                // data source doesn't reflect → "invalid number of
+                                // items in section" crash. A plain red-tinted button
+                                // runs the action without the phantom removal.
+                                Button {
                                     prepareDelete(for: task)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                .tint(.red)
                             }
                         } else {
                             Button {
@@ -178,11 +188,21 @@ struct TasksTabView: View {
                                 .tint(.blue)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
+                                // NOTE: deliberately NOT `role: .destructive`.
+                                // A destructive swipe button makes SwiftUI's List
+                                // auto-animate the row's removal on tap (it assumes
+                                // the model row is going away), but we only open a
+                                // confirm sheet here — the task isn't removed yet.
+                                // The collection view then animates a delete the
+                                // data source doesn't reflect → "invalid number of
+                                // items in section" crash. A plain red-tinted button
+                                // runs the action without the phantom removal.
+                                Button {
                                     prepareDelete(for: task)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                .tint(.red)
                             }
                         }
                     }
