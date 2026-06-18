@@ -104,18 +104,7 @@ struct EditBoardSheet: View {
                         .disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        handleSave()
-                    } label: {
-                        Text(saving ? "Saving…" : "Save")
-                            .font(.risoHead(13, .extraBold))
-                            .foregroundStyle(Color.risoInk)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(Color.risoGold))
-                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                    }
-                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+                    RisoToolbarPill(title: saving ? "Saving…" : "Save") { handleSave() }
                     .disabled(saving || name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }

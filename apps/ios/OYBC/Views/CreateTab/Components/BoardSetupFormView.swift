@@ -372,10 +372,11 @@ struct BoardSetupFormView: View {
     }
 
     private var editCenterOptions: [(value: CenterSquareType, label: String)] {
+        // Short labels so the 4 equal-width segments don't clip.
         [
-            (.free,       "Free Space"),
-            (.customFree, "Custom Name"),
-            (.chosen,     "I'll choose"),
+            (.free,       "Free"),
+            (.customFree, "Custom"),
+            (.chosen,     "Choose"),
             (.none,       "None"),
         ]
     }

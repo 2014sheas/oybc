@@ -167,10 +167,12 @@ struct ProfileView: View {
                         (ThemePreference.light, "Light"),
                         (ThemePreference.dark, "Dark"),
                     ],
-                    selection: themeBinding
+                    selection: themeBinding,
+                    // Sizes each segment to its label (System is wider than
+                    // Light/Dark) instead of `.fixedSize()` collapsing the
+                    // equal-width layout into mismatched, clipping pills.
+                    equalWidth: false
                 )
-                // Compact: shrink the segmented to fit
-                .fixedSize()
             }
             .padding(.vertical, 12)
             .padding(.horizontal, Riso.cardPadding)

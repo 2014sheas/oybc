@@ -268,13 +268,14 @@ struct RisoBoardSetupForm: View {
     }
 
     private var centerOptions: [(value: CenterSquareType, label: String)] {
+        // Short labels so the (up to 4) equal-width segments don't clip.
         var opts: [(value: CenterSquareType, label: String)] = [
-            (.free,       "Free Space"),
-            (.customFree, "Custom Name"),
+            (.free,       "Free"),
+            (.customFree, "Custom"),
         ]
         // CHOSEN is suppressed for recurring boards (same rule as BoardSetupFormView).
         if !controller.isRecurring {
-            opts.append((.chosen, "I'll choose"))
+            opts.append((.chosen, "Choose"))
         }
         opts.append((.none, "None"))
         return opts

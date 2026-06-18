@@ -309,37 +309,20 @@ struct TemplateEditSheet: View {
     }
 
     private var timeframeSegmented: some View {
-        HStack(spacing: 6) {
-            ForEach([Timeframe.daily, .weekly, .monthly, .yearly], id: \.self) { tf in
-                Button { timeframe = tf } label: {
-                    Text(tf.risoDisplayName)
-                        .font(.risoHead(13, .bold))
-                        .foregroundStyle(timeframe == tf ? Color.risoPaper : Color.risoInk)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        .background(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .fill(timeframe == tf ? tf.risoColor : Color.risoPaper2))
-                        .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                }.buttonStyle(.plain)
-            }
-        }
+        RisoSegmented(
+            options: [(Timeframe.daily, "Daily"), (.weekly, "Weekly"),
+                      (.monthly, "Monthly"), (.yearly, "Yearly")],
+            selection: $timeframe,
+            selectedFill: { $0.risoColor }
+        )
     }
 
     private var boardSizeSegmented: some View {
-        HStack(spacing: 6) {
-            ForEach([3, 4, 5], id: \.self) { sz in
-                Button { boardSize = sz } label: {
-                    Text("\(sz)×\(sz)")
-                        .font(.risoHead(13, .bold))
-                        .foregroundStyle(boardSize == sz ? Color.risoPaper : Color.risoInk)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        .background(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .fill(boardSize == sz ? Color.risoInk : Color.risoPaper2))
-                        .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                }.buttonStyle(.plain)
-            }
-        }
+        RisoSegmented(
+            options: [(3, "3×3"), (4, "4×4"), (5, "5×5")],
+            selection: $boardSize,
+            selectedFill: { _ in .risoInk }
+        )
     }
 
     private var weekdayPicker: some View {
@@ -358,20 +341,11 @@ struct TemplateEditSheet: View {
     }
 
     private var domPicker: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<3, id: \.self) { i in
-                Button { monthDom = i } label: {
-                    Text(domLabels[i])
-                        .font(.risoHead(13, .bold))
-                        .foregroundStyle(monthDom == i ? Color.risoPaper : Color.risoInk)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        .background(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .fill(monthDom == i ? Color.risoInk : Color.risoPaper2))
-                        .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                }.buttonStyle(.plain)
-            }
-        }
+        RisoSegmented(
+            options: [(0, domLabels[0]), (1, domLabels[1]), (2, domLabels[2])],
+            selection: $monthDom,
+            selectedFill: { _ in .risoInk }
+        )
     }
 
     private var poolSelector: some View {

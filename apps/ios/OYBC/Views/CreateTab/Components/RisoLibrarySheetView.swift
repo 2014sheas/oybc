@@ -203,18 +203,9 @@ struct RisoLibrarySheetView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     // Gold "Done · N" pill
                     let addedCount = selectedTaskIds.count
-                    Button {
+                    RisoToolbarPill(title: addedCount > 0 ? "Done · \(addedCount)" : "Done") {
                         isSheetOpen = false
-                    } label: {
-                        Text(addedCount > 0 ? "Done · \(addedCount)" : "Done")
-                            .font(.risoHead(12, .extraBold))
-                            .foregroundStyle(Color.risoInk)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(Color.risoGold))
-                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
                     }
-                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
                 }
             }
         }

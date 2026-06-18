@@ -90,19 +90,14 @@ struct TaskDeleteConfirmView: View {
                         .disabled(isDeleting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
+                    RisoToolbarPill(
+                        title: isDeleting ? "Deleting…" : "Delete",
+                        fill: .risoRed,
+                        foreground: .risoPaper
+                    ) {
                         isDeleting = true
                         onConfirm()
-                    } label: {
-                        Text(isDeleting ? "Deleting…" : "Delete")
-                            .font(.risoHead(13, .extraBold))
-                            .foregroundStyle(Color.risoPaper)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(Color.risoRed))
-                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
                     }
-                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
                     .disabled(isDeleting)
                 }
             }
