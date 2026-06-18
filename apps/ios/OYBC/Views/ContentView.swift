@@ -2,9 +2,16 @@ import SwiftUI
 
 /// ContentView - Application root.
 ///
-/// Wraps all content behind `AuthGateView`, which resolves the Firebase auth
-/// state before rendering. Authenticated users land on `MainTabView`; unauthenticated
-/// users see the login form.
+/// On first launch, shows `OnboardingView` (three intro slides + sign-in panel).
+/// Once the user has completed or skipped onboarding — or on every subsequent
+/// launch — falls through to `AuthGateView`, which resolves the Firebase auth
+/// state before rendering. Authenticated users land on `MainTabView`;
+/// unauthenticated users see the login form.
+///
+/// First-run gate: `UserDefaults.hasSeenOnboarding` (key `oybc-onboarding-seen`).
+/// Onboarding sets this to `true` on any dismiss path (sign-in, skip,
+/// Maybe later). Developers can reset it via a "Replay onboarding" tweak
+/// in ProfileView.
 ///
 /// The pre-unification debug screenshot harnesses (`CompositeBuildPreview`,
 /// `BoardWizardTasksPreview`) were dropped in Phase 8 — their fixtures
@@ -12,10 +19,31 @@ import SwiftUI
 /// snapshot test target (`OYBCSnapshotTests`) is the new visual-verification
 /// surface.
 struct ContentView: View {
+
+    /// Whether the onboarding overlay is still visible. Initialised from
+    /// `UserDefaults.hasSeenOnboarding` so it's false for returning users
+    /// and true for first-run users.
+    @State private var showOnboarding: Bool = !UserDefaults.hasSeenOnboarding
+
     var body: some View {
-        AuthGateView {
-            MainTabView()
+        ZStack {
+            AuthGateView {
+                MainTabView()
+            }
+
+            if showOnboarding {
+                OnboardingView {
+                    // Mark onboarding complete and remove the overlay.
+                    UserDefaults.hasSeenOnboarding = true
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        showOnboarding = false
+                    }
+                }
+                .zIndex(1)
+                .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.35), value: showOnboarding)
     }
 }
 
