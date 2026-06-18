@@ -11,6 +11,8 @@
 		00C4B40519D5D37CB099504F /* testPickerEmpty_light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6A0F642B9B8854DF1C98B219 /* testPickerEmpty_light.1.png */; };
 		010F47A9B9F278E848C4C517 /* testCountingDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4C5DB9D40E4FDA289A18EED1 /* testCountingDark.1.png */; };
 		01286C8FEEE06838B4023C96 /* RisoProfileAccountCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34761B2DB4EA51F81F221BC9 /* RisoProfileAccountCard.swift */; };
+		013F836E042FFEF4F3153FF7 /* testSlide2Dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C92FF47F9B2A34F2FCE233AF /* testSlide2Dark.1.png */; };
+		0391C41C2633D813B7694A71 /* testPosterCardWithStatsLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C937A0A804DFCC3E165D25F3 /* testPosterCardWithStatsLight.1.png */; };
 		03B8B91B1D8AF8EF6F22A607 /* AchievementSquareBadgeData.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */; };
 		03DF70174285CDA62B66861A /* RisoTasksTabSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB413B80CC1E7378AC5DC120 /* RisoTasksTabSnapshotTests.swift */; };
 		04985E88DBC16299FC8BEA0E /* testBoardCardActiveLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 9E927081D11722323A96FAB0 /* testBoardCardActiveLight.1.png */; };
@@ -19,6 +21,7 @@
 		06AD3AE6DA8B4390CF324696 /* testCancelDialogEnabledDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 320FE62D949714254FC7CB7E /* testCancelDialogEnabledDark.1.png */; };
 		06C17F715FBA9B70E329FB24 /* testDenseLibraryRecurringSomeSelected.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 256164FBAC0E30E6D1B24761 /* testDenseLibraryRecurringSomeSelected.1.png */; };
 		07E445B75DD622B8A86A6105 /* testMiniGridPartial.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4AECE2CB829054AA2787AF8B /* testMiniGridPartial.1.png */; };
+		0868D664B992765712218C19 /* RisoOnboardingSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDCC4E46445C7DC265F9BFC9 /* RisoOnboardingSnapshotTests.swift */; };
 		09E1CD8BDF758D70FDB6544B /* testPreferencesRowWithBadgeDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = E4BF0C5E416524567EB31DB6 /* testPreferencesRowWithBadgeDark.1.png */; };
 		0AD00F177166675ACEFA4FC2 /* TimeframeFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2241CE9069C5B296837472 /* TimeframeFormatting.swift */; };
 		0BF5FB181157FCDC92BBD5A2 /* OperatorType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DD08A5EA4BACEBCD439A100 /* OperatorType.swift */; };
@@ -29,31 +32,38 @@
 		0FE7D0249FF83803C08432ED /* testCompoundAtLeastNDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = B85522D51DD7CCA9F96120C1 /* testCompoundAtLeastNDark.1.png */; };
 		11402B5D3174483ED2E44111 /* testControlsCountingFilterLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 07A809C782546CAF978C01AF /* testControlsCountingFilterLight.1.png */; };
 		1164F8933026E32048D862BB /* RisoBoardsHomeSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6D35D62C9AA4E9927899346 /* RisoBoardsHomeSnapshotTests.swift */; };
+		1280EFCF1B726830188859AD /* testPoolEditExistingLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8CB285BCAC067389A507247F /* testPoolEditExistingLight.1.png */; };
 		1413358F9FA53691BB3F3960 /* TaskIdItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB54CA8DAE5996104CB72DA8 /* TaskIdItem.swift */; };
 		158B18FE5A0AC81192D87629 /* testCopyNormal_dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8002539A1E984DC27140FA95 /* testCopyNormal_dark.1.png */; };
 		159D16051FA8E2923FE9CC84 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343B20563EE55E5FA28C5DC2 /* MainTabView.swift */; };
+		172DED23C0E25C1E9EFECA52 /* testSlide2Light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = D79C3403B66840E92AFE87EA /* testSlide2Light.1.png */; };
 		175A71D2DBE0320B840CB5B7 /* testGridEmpty_dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 83A29B4E35E95AAD8F6B044E /* testGridEmpty_dark.1.png */; };
 		180B4EE7A55EBBC6633EF7D3 /* testGreenlogOverlayDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 19D2B197D9D51D1EB634888D /* testGreenlogOverlayDark.1.png */; };
 		186A1D072B737FE801C37C7D /* PendingRecurringBoardsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D405995419454FD4EC82924D /* PendingRecurringBoardsViewModel.swift */; };
 		1881054E172F5BD0B8A4C0EA /* BoardWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECCBF1C8380F30B8C320AABD /* BoardWizardView.swift */; };
 		19A377E75A5CDE227284ECDC /* Bricolage-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 3D64905ECED6E41D6E7BAE1F /* Bricolage-OFL.txt */; };
 		19A7C66DBE4EE00F5A0BDC87 /* testPoolListWithTasksLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 1795DA658544F67462B5E7E8 /* testPoolListWithTasksLight.1.png */; };
+		19ACA1F0D449123AA402E3B0 /* testSlide1Light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C7B15B1122068E6E41E3A061 /* testSlide1Light.1.png */; };
 		1A3428FD7FB1D261F79B20CE /* testStatBarDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = B69F93065E499B79B405F003 /* testStatBarDark.1.png */; };
+		1A7DEA0A05F7B357CF12A7A3 /* testSignInPanelDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 350088629CE76A58A0C640C5 /* testSignInPanelDark.1.png */; };
 		1ACE4018BEAFDD1F5CF0481E /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149C3CA55D0467096B13D935 /* Task.swift */; };
 		1ACF209187E4D5C9EE9D458B /* DefaultPoolEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 147E6AF60315212B0BE38D9B /* DefaultPoolEditorView.swift */; };
 		1BB88B6B56A395A94BD5CF43 /* TaskDetailSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95765CD1D332F33B198789F4 /* TaskDetailSheetView.swift */; };
 		1CB298C157E24698713D9FD1 /* testPreviewStepReady.1.png in Resources */ = {isa = PBXBuildFile; fileRef = CC33804E538EF0DF328111DE /* testPreviewStepReady.1.png */; };
 		1EA1CD83C003BB340B4B69EE /* CoreBoardBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F64CB8E17DA10D57D43FFB1 /* CoreBoardBrowserView.swift */; };
+		1EC4820D2F2E481B74052E32 /* testSlide3Dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 281041BD30214BB3D7C0663F /* testSlide3Dark.1.png */; };
 		1EF91DFF8A424B958D4D014C /* testAccountCardDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 22B6B9E7F5FBE0D44D4BC5A6 /* testAccountCardDark.1.png */; };
 		2015EA2FCCA896B9F131C1E7 /* SyncQueueBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8909013EF9D9767B1F494EAF /* SyncQueueBuilder.swift */; };
 		20303A5F782938E9478A07B5 /* TaskLibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */; };
 		224A96AEF2E287B3B629AF69 /* testSetupStepRecurring.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 005C3754D93B99F1E0326F7C /* testSetupStepRecurring.1.png */; };
 		22C66C8F7674074404E7F8C0 /* testBingoToastDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = E4B476EC0394B21732B07C35 /* testBingoToastDark.1.png */; };
+		237C311D548B856068F8E45C /* testSignInPanelLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 1ACA1D37FB732AA4C20AA04A /* testSignInPanelLight.1.png */; };
 		24EF7222901F5194B1F79C0D /* testCopyCounting_light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4BE1C1965E7C52954EEEAB18 /* testCopyCounting_light.1.png */; };
 		2519D5CD9F47C1C491469FB3 /* testPoolListWithTasksDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 905666DE315DECBE53882BD4 /* testPoolListWithTasksDark.1.png */; };
 		27AB929BF4B52E411F6EFA6C /* BoardListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A9B48D659A3517CCA341637 /* BoardListView.swift */; };
 		27EE4E80E3D08C1B96ED240C /* RisoCoreChromeSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F691584B652D508557FDC99 /* RisoCoreChromeSnapshotTests.swift */; };
 		286F54832A480B034FA216D6 /* CoreBoardWindowViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47517530008B9B3DD408CB3B /* CoreBoardWindowViewModel.swift */; };
+		28D475FABF5D74F211DB66D6 /* testShareSheetWithStatsLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C11202EDF8F58B31B7EB75E7 /* testShareSheetWithStatsLight.1.png */; };
 		28EF3149C8BBD20B14612E88 /* testCancelDialogSaveDisabled.1.png in Resources */ = {isa = PBXBuildFile; fileRef = F1B9AF7629B98C7D25253FD3 /* testCancelDialogSaveDisabled.1.png */; };
 		292599669F0CF940E91BC406 /* RisoMiniGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB419351BD67F332E3F55FDB /* RisoMiniGrid.swift */; };
 		2A0EC058BA51721612372635 /* testCTAOneOffPrimaryDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C141E2DE2BA6E837E74B9B82 /* testCTAOneOffPrimaryDark.1.png */; };
@@ -63,12 +73,14 @@
 		2B72E3B6BD5BBFE30D47FAD6 /* BoardWizardTasksStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593980F6290AA1EFAC50F51F /* BoardWizardTasksStepView.swift */; };
 		2D5ABB1B77E59C017F64BE0A /* testGrid3x3_light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 358602A02AE99A2AF1AC3016 /* testGrid3x3_light.1.png */; };
 		2D6AD9DB98FB7711DE531E58 /* testRichDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = E3DBED40AB438B7EDE0BB84B /* testRichDark.1.png */; };
+		2DB8B0A89EBB16F24B2D5879 /* testShareSheetWithStatsDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 9748FBE42A88154BBAD5A7F3 /* testShareSheetWithStatsDark.1.png */; };
 		2E24B1443F8644B12B9AEC43 /* testCompoundInOrderWithSubsLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = F4E54792B09AA63B2DAC7063 /* testCompoundInOrderWithSubsLight.1.png */; };
 		2EF19E402C1B931693900274 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = FB60A2471061045431151B6B /* GRDB */; };
 		30EA7A3C21C7B0F1A8FF79EF /* RecurringBoards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E920683B34BCA199B8339C /* RecurringBoards.swift */; };
 		31076B3E117392EE19C21B47 /* testPopulatedActiveAndPaused.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 40D73D9EB1110AD80615DB6D /* testPopulatedActiveAndPaused.1.png */; };
 		312E4DCB92389C67C473CB1F /* testRowAchievementLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8960B0A7CC4BADAAC121A122 /* testRowAchievementLight.1.png */; };
 		317AD0B71D2E030E8B0ED036 /* TimeframeBoundaries.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2CF3253817A74C5644618E0 /* TimeframeBoundaries.swift */; };
+		31BC0E16ACA4427180DBC5E1 /* testPosterCardWithoutStatsDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = B42FD2AA7DE3E845945FB917 /* testPosterCardWithoutStatsDark.1.png */; };
 		3203978B132B16868CDF7DAC /* EditTaskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 050067C0AEDF6C6893CBF0C1 /* EditTaskSheet.swift */; };
 		3288F958F6EB9B8892D71212 /* RecurringTemplateRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F30735B168D81776D6F1071 /* RecurringTemplateRowView.swift */; };
 		341830015B8D77084D30A879 /* RecurringBoardTemplatesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A0BE07D305533699B717F8 /* RecurringBoardTemplatesViewModel.swift */; };
@@ -85,14 +97,17 @@
 		3A567A23BA7F02A074F94926 /* BoardWizardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930B21C71FAB0140E9BE5960 /* BoardWizardViewModel.swift */; };
 		3A8D6B7CCECFDB7AD1F03FE5 /* testCellBingoLineGoldRingDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 893BFE03CF167E050E7568C5 /* testCellBingoLineGoldRingDark.1.png */; };
 		3AF36C036008E20B505E82D8 /* testBingoToastLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = ACBED0630DC2ED4646AD6985 /* testBingoToastLight.1.png */; };
+		3B2075E0235BF0A78619514A /* testPoolEditExistingDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = B25A2F61F3599C1BB3F45947 /* testPoolEditExistingDark.1.png */; };
 		3B948BD8C841788777A7506A /* testCoreBoardsSectionAllFour.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 355C447FAA1045361756DA4A /* testCoreBoardsSectionAllFour.1.png */; };
 		3C523FE7122A485435C16813 /* RecurringBoardsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B31EFBC131E94BA5D5BB91DB /* RecurringBoardsTests.swift */; };
+		3CB0462FF9F1D05B25BB025E /* testSlide1Dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = D2C23AD03FFBB7768E69D9B3 /* testSlide1Dark.1.png */; };
 		3D1E96D35DF0BF6B1DE02EB4 /* Schema.sql in Resources */ = {isa = PBXBuildFile; fileRef = B70713D5FB25DE3392CD3CEE /* Schema.sql */; };
 		3D364546BB9827D704322AA2 /* testComposedGridLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 66B203157979CC07721EA353 /* testComposedGridLight.1.png */; };
 		3E07E6A93547911F61B7D35D /* testPoolHeaderShortLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = AE9AC47F7825F2B023590BA9 /* testPoolHeaderShortLight.1.png */; };
 		3EC35293B2C1A69FB060892D /* BoardPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DEA8E9D24B3205D81595221 /* BoardPlayView.swift */; };
 		3EC40A38B3851DC62395B605 /* testGreenlogOverlayLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 21A174D1644F646B392EE160 /* testGreenlogOverlayLight.1.png */; };
 		3F0133D50CA012B18E39F315 /* ParentBoardTasksViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04738FB0C98055765804ADFB /* ParentBoardTasksViewModel.swift */; };
+		3F3414BE0B1FCE487629AF22 /* testEditProfileSheetCalmMoodLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = F1D223250B575F37E9F832C1 /* testEditProfileSheetCalmMoodLight.1.png */; };
 		3FA40CEF41E920E9B5877D87 /* TasksTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB1B3618551FB9321876B28E /* TasksTabView.swift */; };
 		3FA6D15078E5A3210B10832C /* CoreBoardWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAAC308E56EBE40B8BA639F8 /* CoreBoardWindowView.swift */; };
 		40892F014248FEB42D61A04F /* NewTaskSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF19FE3B77ABFB68CA53CE2C /* NewTaskSheetView.swift */; };
@@ -106,10 +121,12 @@
 		441C5B2BAC4E663AED8969B2 /* BoardWizardPersist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59C7E61CA9243686BBA1D7FB /* BoardWizardPersist.swift */; };
 		4519FB79057B11C946BA846F /* testGrid3x3_dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = A399C1658B98E2755D649659 /* testGrid3x3_dark.1.png */; };
 		4553BD18958B34CE1D8C6084 /* testWindowCellFilledCurrent.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 5651AE5BBF1867C73BDF637F /* testWindowCellFilledCurrent.1.png */; };
+		465CF60A0A5D49E632B1DF40 /* ShareBoardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8AFDB07CF042D1FBEC96C7 /* ShareBoardSheet.swift */; };
 		468312CD1357CB2A4153910A /* testSetupStepValid.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 3A464FA3707CF5CBE13D153D /* testSetupStepValid.1.png */; };
 		46B7D1A0330F151622B3D549 /* RisoCoreTimeframeGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */; };
 		46F0A1928DCA14C0C40C1AE5 /* RecurringBoardTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 891B25AE4C8C98DE438088C7 /* RecurringBoardTemplate.swift */; };
 		4782BBD08E0D773380A57647 /* testCellDoneNormalLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = CFBE999F62BE8D8AAEFC65A1 /* testCellDoneNormalLight.1.png */; };
+		484818D4F62A0FB56CC047C4 /* testPosterCardWithStatsDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 72DE180A9FAF8CB0427AD10B /* testPosterCardWithStatsDark.1.png */; };
 		499AC75DE1C0EA26F00550C6 /* InteractiveTaskSquareBadgeSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C6A8B82994B5105FD7B745 /* InteractiveTaskSquareBadgeSnapshotTests.swift */; };
 		4A52B5B647C97FD6EC6AC509 /* testCompoundDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = E37402D7B1FC68CE19D7547A /* testCompoundDark.1.png */; };
 		4A6E865D74F77E9B8184D5EB /* TasksTabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6AE98568D186C17761E346 /* TasksTabViewModel.swift */; };
@@ -129,6 +146,7 @@
 		56E8D57D5F1AC5D63523A6A8 /* BricolageGrotesque-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 044FDF36A80ACC33BAC0686C /* BricolageGrotesque-Bold.ttf */; };
 		57BBF7D495654BA29AEFFBDE /* testDetailCompoundLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = CE853805B7C7D11B36373FFC /* testDetailCompoundLight.1.png */; };
 		583A562745089FE09A5CEE2B /* CreateHubViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 542F39EF93A3299BD85C4A24 /* CreateHubViewModel.swift */; };
+		59EA11D6C75A1EC9DF0DA9CE /* testShareSheetWithoutStatsDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = F1BBFC78A2E0060C48ADAFDB /* testShareSheetWithoutStatsDark.1.png */; };
 		5BBF160330B3C5EBABCE096B /* CenterSquare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F879A103A0FE383E497F464 /* CenterSquare.swift */; };
 		5BD1FB03AD762EB7B9EDF2DF /* DefaultPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C3B3ADF9D1C1AF84611D55 /* DefaultPool.swift */; };
 		5C2B3AE6545CF484404E0427 /* RisoTaskDetailContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F195718ED7274B0E34F1BD /* RisoTaskDetailContentView.swift */; };
@@ -143,8 +161,10 @@
 		5F33DA346C8E917527339609 /* testBoardsHomeComposedDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = F36E5452D766F95B6B77DD94 /* testBoardsHomeComposedDark.1.png */; };
 		5F521AFA9355A8F2DFADCDC0 /* testCTAOneOffSecondary.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4122BD42E3B48610FEB2DD0D /* testCTAOneOffSecondary.1.png */; };
 		605EE795A48A1A9E762147F6 /* testSetupStepCoreBoard.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6409CA3CC321B490B56B7287 /* testSetupStepCoreBoard.1.png */; };
+		6197806419A16FEF16664308 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6517BE2E396F092A2E65383D /* OnboardingView.swift */; };
 		619A5E4D57F256C847CC9A50 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0436CC51A477FF70932A9546 /* SyncQueue.swift */; };
 		620EE6BA89017CB1986A2E6A /* testCoreBoardsSectionDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = A703FE3746AE2D972A75BC0C /* testCoreBoardsSectionDark.1.png */; };
+		6211306233D73AC42CB3E435 /* testEditProfileSheetCheerMoodLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = D9F2AE1F2828AD4ED5F5ACC2 /* testEditProfileSheetCheerMoodLight.1.png */; };
 		626FC825E323B97BFF9C224F /* testDetailCompoundDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = FCFCE6725CBC7414D104E31B /* testDetailCompoundDark.1.png */; };
 		62CCBE5BCF0CEF587899E4E1 /* RisoCompoundGroupRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70B9DF6F6772F12314676627 /* RisoCompoundGroupRowView.swift */; };
 		633817A855621F37DFFC4D12 /* EditBoardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6375E908A930789F573DFB1B /* EditBoardSheet.swift */; };
@@ -162,6 +182,7 @@
 		698755BF2387049186394162 /* testWindowBarLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 95B39255CB5669FBD4C95887 /* testWindowBarLight.1.png */; };
 		699EE394CB666D94F93115F8 /* testCellCompoundDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = FABCD8A5A41E3782E93F1F01 /* testCellCompoundDark.1.png */; };
 		69C3E71845B442D523FE6E31 /* testStatBarLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8055213B4022D446BE4EA141 /* testStatBarLight.1.png */; };
+		6BC238B31602E1F7B8D3236A /* testTemplateEditCreateDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = EC1D58DCECF4A9E25B279D8D /* testTemplateEditCreateDark.1.png */; };
 		6BD7C4B5E08392D41BA17B85 /* testEmptyDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 07CFC8E985485B475BD68CF1 /* testEmptyDark.1.png */; };
 		6BF9AEAC77D9F447A5B9A82A /* RecurringBoardTemplatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83425D282C8DE9AD622750C6 /* RecurringBoardTemplatesTests.swift */; };
 		6C2E9BF2485F8D4F73D077E0 /* RecurringBoardTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34C1E82551617CF266DF7085 /* RecurringBoardTemplates.swift */; };
@@ -179,6 +200,7 @@
 		73FEA31DFBD72C8B2E3173C5 /* testPreviewStepRecurring.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C492F972D8DDACDCB86592D5 /* testPreviewStepRecurring.1.png */; };
 		74F65B4EDBC2C46960798812 /* RisoLibrarySheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD0FA8AF9A534BEF98B1789 /* RisoLibrarySheetView.swift */; };
 		7613517111B35FA6866547FC /* testBoardsHomeComposedLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6E2675810D7F504404133320 /* testBoardsHomeComposedLight.1.png */; };
+		768CEB1AB153AB161F7E49CB /* testEditProfileSheetEmptyNameLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 43D2C2CAD49AAE34992E5DC2 /* testEditProfileSheetEmptyNameLight.1.png */; };
 		76AE91CBFBF9D66B2BD59568 /* RisoTasksPoolHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571C2202A6D9F03A23BDDC96 /* RisoTasksPoolHeaderView.swift */; };
 		76C4A25338203206CF566998 /* testCellRestingLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8B4CD184750A9D35078724F1 /* testCellRestingLight.1.png */; };
 		770124F40853BA990BECAC9C /* testCoreBoardsSectionLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = D1F17C63B56369B1888AA810 /* testCoreBoardsSectionLight.1.png */; };
@@ -193,6 +215,7 @@
 		7E274A3B1FC3F9C338C61200 /* BricolageGrotesque-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8DC96B6AC339B5282AEC02CB /* BricolageGrotesque-ExtraBold.ttf */; };
 		7EBED53666C32A371D133AE7 /* testBadge_SpecificBoardCompleted.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 724B1E916C049BE96B6D781B /* testBadge_SpecificBoardCompleted.1.png */; };
 		7ECEB8784BD2938C7954F5B2 /* testPickerEmpty_dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 3917B2401F1ABF096E054E39 /* testPickerEmpty_dark.1.png */; };
+		7F70151C510025F76D551019 /* testTemplateEditCreateLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = FB7004C3689D830D4C0F64E4 /* testTemplateEditCreateLight.1.png */; };
 		7FD009D6D1ECFBCEEB4B2A3A /* RisoKitGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13D4A0DE05DC8355C8A2551 /* RisoKitGallery.swift */; };
 		8074BC785EEC198B7508A647 /* testPickerBoards_dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 443A8CE471C42864EFB8617D /* testPickerBoards_dark.1.png */; };
 		80F7C6ADD7A0F5976422120C /* testNormalDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 1E4852EC43AD9C47B3A2E822 /* testNormalDark.1.png */; };
@@ -205,15 +228,18 @@
 		8300E733287D1D13B850BBDB /* DefaultPoolsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E8AFF5667BFE81E8C3D164 /* DefaultPoolsListView.swift */; };
 		86203C408CFB1A485EA653E9 /* testControlsDefaultDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4BCCB85C59734B6402A27CF4 /* testControlsDefaultDark.1.png */; };
 		86CB78ABC94004EF08B59D45 /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2DE69CF0825C0657176C53E9 /* Archivo-SemiBold.ttf */; };
+		87B1461E8832E1D3625BAA1E /* testEditProfileSheetHappyDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6110A25D02B7E25E01A2967C /* testEditProfileSheetHappyDark.1.png */; };
 		88A7249F3947D8433F8B12BC /* testAccountCardLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 22FC8F7DC88F4F5411ED915F /* testAccountCardLight.1.png */; };
 		88AC024943E462F0AF5F00B8 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 63CE473C73B22D4EFDC81AED /* GoogleSignIn */; };
 		8967E907F1CD34716A106E0D /* LinkedCounterCaptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4264671AC3CD79751FF48640 /* LinkedCounterCaptionView.swift */; };
 		8A71A65F7FD101728EDFEA0F /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C17DCB793B0A1C7A6A2519C /* AuthService.swift */; };
 		8B6A9DA5F42D67E7227653D4 /* RisoBoardStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */; };
 		8BB90201401872F6A36ECF60 /* RisoGreenlogOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A46A8E81E9F2CB41638B33A1 /* RisoGreenlogOverlay.swift */; };
+		8F561408FA0E962E9B2C82D7 /* RisoEditProfileSheetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5ECF6D5AA63DA4306784FE /* RisoEditProfileSheetSnapshotTests.swift */; };
 		8FEB337FDB005AB9136E1FA4 /* testDraftsListSingleRow.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 7714989EDC6C05C1002E24E4 /* testDraftsListSingleRow.1.png */; };
 		90EC5EB2C0E0DAE38738758E /* testMiniGridFull.1.png in Resources */ = {isa = PBXBuildFile; fileRef = F1B2ACE126705714BD4250D8 /* testMiniGridFull.1.png */; };
 		915B6BB05340AE0BD4163BD5 /* testPreviewStepWithRisoGrid.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 5204618A511E32261FBD7612 /* testPreviewStepWithRisoGrid.1.png */; };
+		9180DFE28EC6F229F7B5F043 /* testShareSheetWithoutStatsLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 437BA8DC3ACBCC24CE66D138 /* testShareSheetWithoutStatsLight.1.png */; };
 		91DC0DD49EF51BDCC8DE2082 /* RecurringTemplatesProfileSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 576781BAC8BE6492841883BB /* RecurringTemplatesProfileSnapshotTests.swift */; };
 		92A44EBF5A723C1332C82B7C /* RisoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CCED65D82B6CB5518D835CE /* RisoTheme.swift */; };
 		9394B8F23694B9BEDFD0D820 /* testCompoundGroupExpandedDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = BAC1005916689B8CC49B8F57 /* testCompoundGroupExpandedDark.1.png */; };
@@ -222,6 +248,7 @@
 		955A555550D76FE34F510E45 /* SyncQueueMaintenanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD904B6FD6BEEB84E59BB51 /* SyncQueueMaintenanceTests.swift */; };
 		958830F2111C29D2727A2AF9 /* testCellBingoLineGoldRingLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 0D9361D0B3EAA588EC761C3C /* testCellBingoLineGoldRingLight.1.png */; };
 		9678F6AAFCCF9ACE50B2EBD4 /* testCellFreeDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = AD767B1D3B5C77F419581629 /* testCellFreeDark.1.png */; };
+		976B10AC0D6724D4B724D847 /* testTemplateEditExistingLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 53748299448A3F04463FBFE0 /* testTemplateEditExistingLight.1.png */; };
 		97C82BCE1416403142D0F6B1 /* testDefaultLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 439AE5BCB563E6EFA2EFFC45 /* testDefaultLight.1.png */; };
 		97F2BFB33EAF310F1B46DF1A /* testBoardCardCompletedLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 5B16D598F6ECDDED77B30C53 /* testBoardCardCompletedLight.1.png */; };
 		98FC1FC89C04B110DE933FFF /* DateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0CB0EA87156513D6744FDB3 /* DateFormatting.swift */; };
@@ -257,6 +284,7 @@
 		AE02ED0853CE2CEDD27974B4 /* CoreBoardWindowSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 413A0CF38587FDB043DF6D7C /* CoreBoardWindowSnapshotTests.swift */; };
 		AEFBE60CB86185DD4DC54F4B /* testCountingLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 2119A275D4C8C58E5452C7AF /* testCountingLight.1.png */; };
 		B0A090A23437AFB103276BD1 /* BoardWizardCancelDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5CE3737436A2FDB380CACA /* BoardWizardCancelDialogView.swift */; };
+		B2247F8BA1A051D5985FF0C4 /* ShareBoardSheetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7F3B9707F156A472299226B /* ShareBoardSheetSnapshotTests.swift */; };
 		B273609B2CD1FF50C3643562 /* testPoolHeaderSatisfiedDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = D0F357544F33A09DAA32E129 /* testPoolHeaderSatisfiedDark.1.png */; };
 		B5CFE92406295B8455D8E804 /* RisoEditBoardSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D16DCDA3A1D3F5B68FAA0FE /* RisoEditBoardSnapshotTests.swift */; };
 		B602C002BA5E808B589A6CAD /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BFCB077AA954687C6EFED5 /* AuthGateView.swift */; };
@@ -282,6 +310,7 @@
 		C4101253DD4BF650D7C03B3E /* testCancelDialogWithDeleteDraft.1.png in Resources */ = {isa = PBXBuildFile; fileRef = D9938237D470D1460D756CD7 /* testCancelDialogWithDeleteDraft.1.png */; };
 		C43614B7056B0C33446B94FC /* testPreferencesRowWithBadgeLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C3D2C831933C3BA3FA5D7BE9 /* testPreferencesRowWithBadgeLight.1.png */; };
 		C4439C0280F92427A129140C /* testCellCountingWithProgressDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = FA65834B523EE382707DC753 /* testCellCountingWithProgressDark.1.png */; };
+		C5367FAA4FA79488AAE21AB9 /* testEditProfileSheetHappyLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 65669634FC32AE00AA5E6C99 /* testEditProfileSheetHappyLight.1.png */; };
 		C5384CBDCCD8F3D06E1C7ECC /* RisoKitSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8E921B9360700165D3B8FC4 /* RisoKitSnapshotTests.swift */; };
 		C53E0016C991F98CD27D21D7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1023B7E21C1D3290694A3567 /* Assets.xcassets */; };
 		C58D4A85D5AD6797811563E2 /* testRowCountingDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 02E75C5CA39146AD87A6991D /* testRowCountingDark.1.png */; };
@@ -305,6 +334,7 @@
 		D66AE0CD44B1C51C2FA56AB5 /* testCompoundGroupCollapsedDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 70F1C56D52359602FBDE34B5 /* testCompoundGroupCollapsedDark.1.png */; };
 		D79D41BCDD220CB411324118 /* testCompoundNewSubCountingLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = B04F90047CB5DE122DB08806 /* testCompoundNewSubCountingLight.1.png */; };
 		D81C51150657F5F43CEE4436 /* RisoBoardWizardStepperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A485098013BB2A456DE1A55D /* RisoBoardWizardStepperView.swift */; };
+		DB32D137A02B2B9670C8BFE6 /* EditProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6646F7D2F0406435F190BB6F /* EditProfileSheet.swift */; };
 		DB8AB1E2DCBC9EF2FCBDB7FA /* testPoolListEmptyDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 35E7805EFF898B10655E09AA /* testPoolListEmptyDark.1.png */; };
 		DCB757B30888C5C584B7F1A7 /* testThemeSegmentedDarkModeDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 88F4F42A34C69D134BCB2539 /* testThemeSegmentedDarkModeDark.1.png */; };
 		DD5B4B864B67F657060F5232 /* RisoWizardLibrarySnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73AF69A0FC2A6EF5B48C9A7B /* RisoWizardLibrarySnapshotTests.swift */; };
@@ -315,6 +345,7 @@
 		E37AD99F262D1546BA394E4F /* testFormWeeklyNoneLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8C7A18505021BA5AD16BE183 /* testFormWeeklyNoneLight.1.png */; };
 		E38CBB90376A70A6449AC357 /* testEmptyLibrary.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4B67B15D6F63F340F5E5B72C /* testEmptyLibrary.1.png */; };
 		E4F73A94EF5AC3E11B712754 /* RisoStatBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 349BE1AC43F21090DE5AEFD9 /* RisoStatBar.swift */; };
+		E6ECB4527F037DC0776D4E3E /* testSlide3Light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = DF4A2B3A9F04E274D7E25E6D /* testSlide3Light.1.png */; };
 		E71A1FC0C925E716AB8EE7C0 /* testWindowCellFilledPast.1.png in Resources */ = {isa = PBXBuildFile; fileRef = E211748220FC87458FD66189 /* testWindowCellFilledPast.1.png */; };
 		E7CBCC86ED6FE4F15EDE9917 /* ProgressCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */; };
 		E94A6BC8EFBFD879A3E43466 /* testCompoundEmptyLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = B9D2486334E855778884CAD3 /* testCompoundEmptyLight.1.png */; };
@@ -331,6 +362,7 @@
 		EC4D7D74EF488E9483EC2FFC /* CycleDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB4FF22AFFCA34D5F53426C /* CycleDetectionTests.swift */; };
 		ECCF71E74AE6DEE26BE4F319 /* testSetupStepRecurringDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 5001E1E7D6891FDFC39D9BA1 /* testSetupStepRecurringDark.1.png */; };
 		ED0D63F3910DCA3DFB8B6AB8 /* testAchievementTemplateDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = CDB5591C6F62AE86EC5ADA3C /* testAchievementTemplateDark.1.png */; };
+		ED3410EFC6F833D827B311EB /* testPosterCardWithoutStatsLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 770ABF3A9AD61CF9C31C8E32 /* testPosterCardWithoutStatsLight.1.png */; };
 		ED3723227AA0CF14EEFAC342 /* RisoTasksControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8165F439A839E3CD01FA3E42 /* RisoTasksControlsView.swift */; };
 		EDBA3733479AE8EDD6B27DB2 /* RisoText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5245B5C7E07935259DEE614D /* RisoText.swift */; };
 		EE1C29E93640D0D3B715CBAC /* testWindowBarLongLabelTruncation.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8368EA035855A291D564E69A /* testWindowBarLongLabelTruncation.1.png */; };
@@ -353,6 +385,7 @@
 		F9026886CA8E22FACF2A2045 /* testWindowCellFilledCurrentDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 986CB343DD2879539CA0AA65 /* testWindowCellFilledCurrentDark.1.png */; };
 		F98EB90185F0E4C7C64D6651 /* SnapshotTesting in Frameworks */ = {isa = PBXBuildFile; productRef = C3BA9BA6F9A98F86FE90C42D /* SnapshotTesting */; };
 		F9B37A23B997249076B031A1 /* RisoModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E72525B35BD4BACE55A6A57 /* RisoModifiers.swift */; };
+		F9FB7176671700EFA81BA5F7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 09679BD66A6C0F577D3B4EDD /* GoogleService-Info.plist */; };
 		FA03A07749CA6A1C1E160435 /* testEmptyLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 85FE95670429E95B7860D48A /* testEmptyLight.1.png */; };
 		FA3834B42E87C76E647113FF /* RecurringBoardsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED723FA5355D6C5E4952B79D /* RecurringBoardsSnapshotTests.swift */; };
 		FAE5B0C3C176408D8752FB5F /* testBoardCardExpiringLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 317B3E5BBBD2A1CC00924B5F /* testBoardCardExpiringLight.1.png */; };
@@ -400,6 +433,7 @@
 		085F1D48B28D5DF264475FBF /* DerivationPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivationPass.swift; sourceTree = "<group>"; };
 		08F0A3E6144798AD80EB9DAF /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
 		08FC3FFE13228CD857591068 /* RisoBoardCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardCard.swift; sourceTree = "<group>"; };
+		09679BD66A6C0F577D3B4EDD /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		09B8730D4C0C7548BA5E1E7B /* SharedCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedCounter.swift; sourceTree = "<group>"; };
 		09ECA22A892C3BE7AE008A66 /* testBadge_CompoundTask_SuppressesCBadge.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBadge_CompoundTask_SuppressesCBadge.1.png; sourceTree = "<group>"; };
 		0B0B38321FC596D67DEBCAAB /* UserPreferencesCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPreferencesCodableTests.swift; sourceTree = "<group>"; };
@@ -420,6 +454,7 @@
 		192CEC91EF52115CF4281690 /* Archivo-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Archivo-OFL.txt"; sourceTree = "<group>"; };
 		19D2B197D9D51D1EB634888D /* testGreenlogOverlayDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testGreenlogOverlayDark.1.png; sourceTree = "<group>"; };
 		19F077A5F56B8F18EEB31AFB /* testCompoundGroupCollapsedLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundGroupCollapsedLight.1.png; sourceTree = "<group>"; };
+		1ACA1D37FB732AA4C20AA04A /* testSignInPanelLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSignInPanelLight.1.png; sourceTree = "<group>"; };
 		1B37DB9688050E788877CC59 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		1BB6F0143586A54794A2D260 /* testMiniGridEmpty.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testMiniGridEmpty.1.png; sourceTree = "<group>"; };
 		1BE4A2078E0FB711D2CC4E47 /* CompoundEvaluationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompoundEvaluationTests.swift; sourceTree = "<group>"; };
@@ -439,6 +474,7 @@
 		26C7726862448D3F752D6856 /* testRowAchievementDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testRowAchievementDark.1.png; sourceTree = "<group>"; };
 		26EE4B8EDF11E06925B9A37B /* RisoControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoControls.swift; sourceTree = "<group>"; };
 		27680C319099CDAB161A6E95 /* testHubLanding.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testHubLanding.1.png; sourceTree = "<group>"; };
+		281041BD30214BB3D7C0663F /* testSlide3Dark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSlide3Dark.1.png; sourceTree = "<group>"; };
 		2822E1DBF15699974C2F70C5 /* OYBCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCTests.swift; sourceTree = "<group>"; };
 		28C6A8B82994B5105FD7B745 /* InteractiveTaskSquareBadgeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTaskSquareBadgeSnapshotTests.swift; sourceTree = "<group>"; };
 		2A20F7576E6311C71B7255FA /* Archivo-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Bold.ttf"; sourceTree = "<group>"; };
@@ -457,6 +493,7 @@
 		34761B2DB4EA51F81F221BC9 /* RisoProfileAccountCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoProfileAccountCard.swift; sourceTree = "<group>"; };
 		349BE1AC43F21090DE5AEFD9 /* RisoStatBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoStatBar.swift; sourceTree = "<group>"; };
 		34C1E82551617CF266DF7085 /* RecurringBoardTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoardTemplates.swift; sourceTree = "<group>"; };
+		350088629CE76A58A0C640C5 /* testSignInPanelDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSignInPanelDark.1.png; sourceTree = "<group>"; };
 		355C447FAA1045361756DA4A /* testCoreBoardsSectionAllFour.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreBoardsSectionAllFour.1.png; sourceTree = "<group>"; };
 		358602A02AE99A2AF1AC3016 /* testGrid3x3_light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testGrid3x3_light.1.png; sourceTree = "<group>"; };
 		35D4A5E4728E5E649EDDFFC9 /* RelativeTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeTime.swift; sourceTree = "<group>"; };
@@ -476,7 +513,9 @@
 		4183132E4EDD7BEB93234D3E /* testKitDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testKitDark.1.png; sourceTree = "<group>"; };
 		42075478C9B9C32C53E24927 /* testBoardCardCompletedDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBoardCardCompletedDark.1.png; sourceTree = "<group>"; };
 		4264671AC3CD79751FF48640 /* LinkedCounterCaptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedCounterCaptionView.swift; sourceTree = "<group>"; };
+		437BA8DC3ACBCC24CE66D138 /* testShareSheetWithoutStatsLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testShareSheetWithoutStatsLight.1.png; sourceTree = "<group>"; };
 		439AE5BCB563E6EFA2EFFC45 /* testDefaultLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDefaultLight.1.png; sourceTree = "<group>"; };
+		43D2C2CAD49AAE34992E5DC2 /* testEditProfileSheetEmptyNameLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testEditProfileSheetEmptyNameLight.1.png; sourceTree = "<group>"; };
 		441C991C95FE9AD4EFFA2636 /* MigrationV7Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationV7Helpers.swift; sourceTree = "<group>"; };
 		443A8CE471C42864EFB8617D /* testPickerBoards_dark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPickerBoards_dark.1.png; sourceTree = "<group>"; };
 		4713454176D43EE1130CF563 /* testFormCustomDatesCustomFreeDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testFormCustomDatesCustomFreeDark.1.png; sourceTree = "<group>"; };
@@ -498,6 +537,7 @@
 		4BE1C1965E7C52954EEEAB18 /* testCopyCounting_light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCopyCounting_light.1.png; sourceTree = "<group>"; };
 		4C5DB9D40E4FDA289A18EED1 /* testCountingDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCountingDark.1.png; sourceTree = "<group>"; };
 		4C85054E57A078D4AAEC7EB6 /* OYBC.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OYBC.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D5ECF6D5AA63DA4306784FE /* RisoEditProfileSheetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoEditProfileSheetSnapshotTests.swift; sourceTree = "<group>"; };
 		4DCE2DA86DA59108D23E3229 /* testCompoundEmptyDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundEmptyDark.1.png; sourceTree = "<group>"; };
 		4DD08A5EA4BACEBCD439A100 /* OperatorType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperatorType.swift; sourceTree = "<group>"; };
 		4E5286277270766E6AD2D9CC /* testCoreGridAllDoneLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreGridAllDoneLight.1.png; sourceTree = "<group>"; };
@@ -508,6 +548,7 @@
 		5204618A511E32261FBD7612 /* testPreviewStepWithRisoGrid.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPreviewStepWithRisoGrid.1.png; sourceTree = "<group>"; };
 		5245B5C7E07935259DEE614D /* RisoText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoText.swift; sourceTree = "<group>"; };
 		52F5A159FFEA6226076D8FB8 /* testRichLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testRichLight.1.png; sourceTree = "<group>"; };
+		53748299448A3F04463FBFE0 /* testTemplateEditExistingLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testTemplateEditExistingLight.1.png; sourceTree = "<group>"; };
 		5427EA7B9EA7770F57D4CE2B /* testRowCompoundLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testRowCompoundLight.1.png; sourceTree = "<group>"; };
 		542F39EF93A3299BD85C4A24 /* CreateHubViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateHubViewModel.swift; sourceTree = "<group>"; };
 		55F195718ED7274B0E34F1BD /* RisoTaskDetailContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTaskDetailContentView.swift; sourceTree = "<group>"; };
@@ -526,13 +567,17 @@
 		5D6F0E5CF170B026EF76D520 /* FilterTabsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterTabsView.swift; sourceTree = "<group>"; };
 		5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleTests.swift; sourceTree = "<group>"; };
 		601553E9D9B026F9DB67756F /* testCompoundLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundLight.1.png; sourceTree = "<group>"; };
+		6110A25D02B7E25E01A2967C /* testEditProfileSheetHappyDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testEditProfileSheetHappyDark.1.png; sourceTree = "<group>"; };
 		616264F26C09F071893F1C55 /* OYBCSnapshotTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OYBCSnapshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		61B5F8BF7B75EFE4DB3D939B /* testCoreBoardsSectionSingleDaily.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreBoardsSectionSingleDaily.1.png; sourceTree = "<group>"; };
 		6375E908A930789F573DFB1B /* EditBoardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditBoardSheet.swift; sourceTree = "<group>"; };
 		63C2B8C341E8FF2FAEA30028 /* testSignOutConfirmDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSignOutConfirmDark.1.png; sourceTree = "<group>"; };
 		63C3B3ADF9D1C1AF84611D55 /* DefaultPool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultPool.swift; sourceTree = "<group>"; };
 		6409CA3CC321B490B56B7287 /* testSetupStepCoreBoard.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepCoreBoard.1.png; sourceTree = "<group>"; };
+		6517BE2E396F092A2E65383D /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		65669634FC32AE00AA5E6C99 /* testEditProfileSheetHappyLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testEditProfileSheetHappyLight.1.png; sourceTree = "<group>"; };
 		6603E6FD9314A565C3D4C35B /* testBlipPlaceholderDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBlipPlaceholderDark.1.png; sourceTree = "<group>"; };
+		6646F7D2F0406435F190BB6F /* EditProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditProfileSheet.swift; sourceTree = "<group>"; };
 		66B203157979CC07721EA353 /* testComposedGridLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testComposedGridLight.1.png; sourceTree = "<group>"; };
 		66E920683B34BCA199B8339C /* RecurringBoards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoards.swift; sourceTree = "<group>"; };
 		672279842817679C05C429E7 /* CreateHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateHubView.swift; sourceTree = "<group>"; };
@@ -553,10 +598,12 @@
 		70B9DF6F6772F12314676627 /* RisoCompoundGroupRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCompoundGroupRowView.swift; sourceTree = "<group>"; };
 		70F1C56D52359602FBDE34B5 /* testCompoundGroupCollapsedDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundGroupCollapsedDark.1.png; sourceTree = "<group>"; };
 		724B1E916C049BE96B6D781B /* testBadge_SpecificBoardCompleted.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBadge_SpecificBoardCompleted.1.png; sourceTree = "<group>"; };
+		72DE180A9FAF8CB0427AD10B /* testPosterCardWithStatsDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPosterCardWithStatsDark.1.png; sourceTree = "<group>"; };
 		73AF69A0FC2A6EF5B48C9A7B /* RisoWizardLibrarySnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoWizardLibrarySnapshotTests.swift; sourceTree = "<group>"; };
 		73F91261A5D2B914C87A9E59 /* Board.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Board.swift; sourceTree = "<group>"; };
 		746B0B5258FBB691DF70D6F9 /* testProfileComposedDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProfileComposedDark.1.png; sourceTree = "<group>"; };
 		7622ACC5ABC293169A87A118 /* SyncRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncRetryTests.swift; sourceTree = "<group>"; };
+		770ABF3A9AD61CF9C31C8E32 /* testPosterCardWithoutStatsLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPosterCardWithoutStatsLight.1.png; sourceTree = "<group>"; };
 		7714989EDC6C05C1002E24E4 /* testDraftsListSingleRow.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDraftsListSingleRow.1.png; sourceTree = "<group>"; };
 		77A7739B54001A20470124B3 /* testCellCountingWithProgressLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCellCountingWithProgressLight.1.png; sourceTree = "<group>"; };
 		7849353774195FD6C74A3379 /* testWindowCellEmptyCurrent.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testWindowCellEmptyCurrent.1.png; sourceTree = "<group>"; };
@@ -594,6 +641,8 @@
 		8B4CD184750A9D35078724F1 /* testCellRestingLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCellRestingLight.1.png; sourceTree = "<group>"; };
 		8C222D8B217C5084B3E3601C /* testNormalLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testNormalLight.1.png; sourceTree = "<group>"; };
 		8C7A18505021BA5AD16BE183 /* testFormWeeklyNoneLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testFormWeeklyNoneLight.1.png; sourceTree = "<group>"; };
+		8C8AFDB07CF042D1FBEC96C7 /* ShareBoardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareBoardSheet.swift; sourceTree = "<group>"; };
+		8CB285BCAC067389A507247F /* testPoolEditExistingLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPoolEditExistingLight.1.png; sourceTree = "<group>"; };
 		8D16DCDA3A1D3F5B68FAA0FE /* RisoEditBoardSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoEditBoardSnapshotTests.swift; sourceTree = "<group>"; };
 		8DC96B6AC339B5282AEC02CB /* BricolageGrotesque-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BricolageGrotesque-ExtraBold.ttf"; sourceTree = "<group>"; };
 		8DFE4436DC859C5CFDD98F27 /* testCompoundNewSubCountingDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundNewSubCountingDark.1.png; sourceTree = "<group>"; };
@@ -608,6 +657,7 @@
 		960DDDCDDC6676B323DA630C /* testCoreGridAllReadyDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreGridAllReadyDark.1.png; sourceTree = "<group>"; };
 		96BEE1059D202FBFAFF12CF9 /* testPickerBoards_light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPickerBoards_light.1.png; sourceTree = "<group>"; };
 		972F38AAD4D65766C7F3E735 /* BoardThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardThumbnailView.swift; sourceTree = "<group>"; };
+		9748FBE42A88154BBAD5A7F3 /* testShareSheetWithStatsDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testShareSheetWithStatsDark.1.png; sourceTree = "<group>"; };
 		986CB343DD2879539CA0AA65 /* testWindowCellFilledCurrentDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testWindowCellFilledCurrentDark.1.png; sourceTree = "<group>"; };
 		993A359DF98606F1871B351E /* testProfileComposedLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProfileComposedLight.1.png; sourceTree = "<group>"; };
 		9B3105D4EA5550DB813921E7 /* RisoCompoundPanelSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCompoundPanelSnapshotTests.swift; sourceTree = "<group>"; };
@@ -641,8 +691,10 @@
 		B04F90047CB5DE122DB08806 /* testCompoundNewSubCountingLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundNewSubCountingLight.1.png; sourceTree = "<group>"; };
 		B16160656C7F522E5CA80BCA /* SharedCounterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedCounterTests.swift; sourceTree = "<group>"; };
 		B20CB6D1BC73C5C57EBC5D5A /* testReleasedDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testReleasedDark.1.png; sourceTree = "<group>"; };
+		B25A2F61F3599C1BB3F45947 /* testPoolEditExistingDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPoolEditExistingDark.1.png; sourceTree = "<group>"; };
 		B28405EE386B4A89AEA8EC0B /* RisoBoardSetupForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardSetupForm.swift; sourceTree = "<group>"; };
 		B31EFBC131E94BA5D5BB91DB /* RecurringBoardsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoardsTests.swift; sourceTree = "<group>"; };
+		B42FD2AA7DE3E845945FB917 /* testPosterCardWithoutStatsDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPosterCardWithoutStatsDark.1.png; sourceTree = "<group>"; };
 		B69F93065E499B79B405F003 /* testStatBarDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testStatBarDark.1.png; sourceTree = "<group>"; };
 		B70713D5FB25DE3392CD3CEE /* Schema.sql */ = {isa = PBXFileReference; path = Schema.sql; sourceTree = "<group>"; };
 		B7AB069D505BDE23355D39A0 /* testSetupStepValidDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepValidDark.1.png; sourceTree = "<group>"; };
@@ -658,6 +710,7 @@
 		BE09B28F47EC160E9E07165F /* testDetailNormalLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDetailNormalLight.1.png; sourceTree = "<group>"; };
 		BE3682CB9E9806CAE9F74FDC /* testAchievementTemplateLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testAchievementTemplateLight.1.png; sourceTree = "<group>"; };
 		BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementSquareBadgeData.swift; sourceTree = "<group>"; };
+		C11202EDF8F58B31B7EB75E7 /* testShareSheetWithStatsLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testShareSheetWithStatsLight.1.png; sourceTree = "<group>"; };
 		C141E2DE2BA6E837E74B9B82 /* testCTAOneOffPrimaryDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCTAOneOffPrimaryDark.1.png; sourceTree = "<group>"; };
 		C1B2C5598136DD61C84DE532 /* CompoundEvaluation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompoundEvaluation.swift; sourceTree = "<group>"; };
 		C271A5A53EB2612D1AD7923C /* BoardWizardTasksStepSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardTasksStepSnapshotTests.swift; sourceTree = "<group>"; };
@@ -666,6 +719,10 @@
 		C3B975385D2F59995B35A11E /* testCellDoneNormalDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCellDoneNormalDark.1.png; sourceTree = "<group>"; };
 		C3D2C831933C3BA3FA5D7BE9 /* testPreferencesRowWithBadgeLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPreferencesRowWithBadgeLight.1.png; sourceTree = "<group>"; };
 		C492F972D8DDACDCB86592D5 /* testPreviewStepRecurring.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPreviewStepRecurring.1.png; sourceTree = "<group>"; };
+		C7B15B1122068E6E41E3A061 /* testSlide1Light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSlide1Light.1.png; sourceTree = "<group>"; };
+		C7F3B9707F156A472299226B /* ShareBoardSheetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareBoardSheetSnapshotTests.swift; sourceTree = "<group>"; };
+		C92FF47F9B2A34F2FCE233AF /* testSlide2Dark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSlide2Dark.1.png; sourceTree = "<group>"; };
+		C937A0A804DFCC3E165D25F3 /* testPosterCardWithStatsLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPosterCardWithStatsLight.1.png; sourceTree = "<group>"; };
 		C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCApp.swift; sourceTree = "<group>"; };
 		CA398D5DF0F3188C0FF04A39 /* testPreviewStepReadyDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPreviewStepReadyDark.1.png; sourceTree = "<group>"; };
 		CAAC308E56EBE40B8BA639F8 /* CoreBoardWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowView.swift; sourceTree = "<group>"; };
@@ -682,16 +739,20 @@
 		D1F17C63B56369B1888AA810 /* testCoreBoardsSectionLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreBoardsSectionLight.1.png; sourceTree = "<group>"; };
 		D2013719E28C783B5FF189CF /* testSetupPromptCurrentWindow.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupPromptCurrentWindow.1.png; sourceTree = "<group>"; };
 		D22F0A71615850D215E427E5 /* testAccountCardNoEmailLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testAccountCardNoEmailLight.1.png; sourceTree = "<group>"; };
+		D2C23AD03FFBB7768E69D9B3 /* testSlide1Dark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSlide1Dark.1.png; sourceTree = "<group>"; };
 		D3CC8AF3A0BB5E9CAB8BBA73 /* RisoEditTaskSheetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoEditTaskSheetSnapshotTests.swift; sourceTree = "<group>"; };
 		D405995419454FD4EC82924D /* PendingRecurringBoardsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRecurringBoardsViewModel.swift; sourceTree = "<group>"; };
+		D79C3403B66840E92AFE87EA /* testSlide2Light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSlide2Light.1.png; sourceTree = "<group>"; };
 		D8B701E5B9A8A7D33937C9AF /* RisoSyncRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoSyncRow.swift; sourceTree = "<group>"; };
 		D9938237D470D1460D756CD7 /* testCancelDialogWithDeleteDraft.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCancelDialogWithDeleteDraft.1.png; sourceTree = "<group>"; };
+		D9F2AE1F2828AD4ED5F5ACC2 /* testEditProfileSheetCheerMoodLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testEditProfileSheetCheerMoodLight.1.png; sourceTree = "<group>"; };
 		DA199CD1742BEAA6879FF59F /* testSetupStepBlankDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepBlankDark.1.png; sourceTree = "<group>"; };
 		DA1FF167BFEA0F9AC605AD76 /* Archivo-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Regular.ttf"; sourceTree = "<group>"; };
 		DB1B3618551FB9321876B28E /* TasksTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTabView.swift; sourceTree = "<group>"; };
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
 		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
 		DCE6F8AAD4860D11D04DF12E /* TaskTypeSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTypeSelectorView.swift; sourceTree = "<group>"; };
+		DF4A2B3A9F04E274D7E25E6D /* testSlide3Light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSlide3Light.1.png; sourceTree = "<group>"; };
 		DF7B94F09C3473C58879F79F /* RisoBingoToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBingoToast.swift; sourceTree = "<group>"; };
 		E0805FB6A426E25DAF0CEB91 /* RisoCompoundFieldsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCompoundFieldsView.swift; sourceTree = "<group>"; };
 		E14E8C008C98B9440B1D9406 /* testCopyCompound_light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCopyCompound_light.1.png; sourceTree = "<group>"; };
@@ -710,9 +771,11 @@
 		EB413B80CC1E7378AC5DC120 /* RisoTasksTabSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTasksTabSnapshotTests.swift; sourceTree = "<group>"; };
 		EB419351BD67F332E3F55FDB /* RisoMiniGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoMiniGrid.swift; sourceTree = "<group>"; };
 		EBCE1CC0703B0CD66CE04FEB /* CoreBoardWindowBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowBarView.swift; sourceTree = "<group>"; };
+		EC1D58DCECF4A9E25B279D8D /* testTemplateEditCreateDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testTemplateEditCreateDark.1.png; sourceTree = "<group>"; };
 		EC252680FC8E3A404C611176 /* testRowCountingLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testRowCountingLight.1.png; sourceTree = "<group>"; };
 		ECCBF1C8380F30B8C320AABD /* BoardWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardView.swift; sourceTree = "<group>"; };
 		ED723FA5355D6C5E4952B79D /* RecurringBoardsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoardsSnapshotTests.swift; sourceTree = "<group>"; };
+		EDCC4E46445C7DC265F9BFC9 /* RisoOnboardingSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoOnboardingSnapshotTests.swift; sourceTree = "<group>"; };
 		EEA091BEC9F9DE7F7EDCC979 /* DerivationPassTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivationPassTests.swift; sourceTree = "<group>"; };
 		EEB80DC119D8B35159EBEE29 /* BoardSetupFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSetupFormView.swift; sourceTree = "<group>"; };
 		EEF620C6C895156A60966FDB /* testRowNormalLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testRowNormalLight.1.png; sourceTree = "<group>"; };
@@ -720,6 +783,8 @@
 		EF92F524486D1ADD456956E9 /* testControlsCountingFilterDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testControlsCountingFilterDark.1.png; sourceTree = "<group>"; };
 		F1B2ACE126705714BD4250D8 /* testMiniGridFull.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testMiniGridFull.1.png; sourceTree = "<group>"; };
 		F1B9AF7629B98C7D25253FD3 /* testCancelDialogSaveDisabled.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCancelDialogSaveDisabled.1.png; sourceTree = "<group>"; };
+		F1BBFC78A2E0060C48ADAFDB /* testShareSheetWithoutStatsDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testShareSheetWithoutStatsDark.1.png; sourceTree = "<group>"; };
+		F1D223250B575F37E9F832C1 /* testEditProfileSheetCalmMoodLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testEditProfileSheetCalmMoodLight.1.png; sourceTree = "<group>"; };
 		F259E46B3E422BB45513AC76 /* testCopyNormal_light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCopyNormal_light.1.png; sourceTree = "<group>"; };
 		F36E5452D766F95B6B77DD94 /* testBoardsHomeComposedDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBoardsHomeComposedDark.1.png; sourceTree = "<group>"; };
 		F466D95B8863BB7F8688582C /* testCoreGridAllReadyLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreGridAllReadyLight.1.png; sourceTree = "<group>"; };
@@ -730,13 +795,14 @@
 		F8E921B9360700165D3B8FC4 /* RisoKitSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoKitSnapshotTests.swift; sourceTree = "<group>"; };
 		FA65834B523EE382707DC753 /* testCellCountingWithProgressDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCellCountingWithProgressDark.1.png; sourceTree = "<group>"; };
 		FABCD8A5A41E3782E93F1F01 /* testCellCompoundDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCellCompoundDark.1.png; sourceTree = "<group>"; };
+		FB7004C3689D830D4C0F64E4 /* testTemplateEditCreateLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testTemplateEditCreateLight.1.png; sourceTree = "<group>"; };
 		FCFCE6725CBC7414D104E31B /* testDetailCompoundDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDetailCompoundDark.1.png; sourceTree = "<group>"; };
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FDCE2F6B688D2ED85C33BA33 /* testCompoundGroupExpandedLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundGroupExpandedLight.1.png; sourceTree = "<group>"; };
 		FE8ADF02283FC8706A9B3326 /* testFormCustomDatesCustomFreeLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testFormCustomDatesCustomFreeLight.1.png; sourceTree = "<group>"; };
 		FF05FDF400BEB2A8666662F9 /* testSetupStepBlank.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepBlank.1.png; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_B8D9A1D5-901B-4A91-B91F-63A69B5E6103" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_B5A81FF5-A602-4BE0-ACEB-DCDB41D24C04" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -763,6 +829,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		03F30C09FE51A0BAEF5E98BD /* ShareBoardSheetSnapshotTests */ = {
+			isa = PBXGroup;
+			children = (
+				B42FD2AA7DE3E845945FB917 /* testPosterCardWithoutStatsDark.1.png */,
+				770ABF3A9AD61CF9C31C8E32 /* testPosterCardWithoutStatsLight.1.png */,
+				72DE180A9FAF8CB0427AD10B /* testPosterCardWithStatsDark.1.png */,
+				C937A0A804DFCC3E165D25F3 /* testPosterCardWithStatsLight.1.png */,
+				F1BBFC78A2E0060C48ADAFDB /* testShareSheetWithoutStatsDark.1.png */,
+				437BA8DC3ACBCC24CE66D138 /* testShareSheetWithoutStatsLight.1.png */,
+				9748FBE42A88154BBAD5A7F3 /* testShareSheetWithStatsDark.1.png */,
+				C11202EDF8F58B31B7EB75E7 /* testShareSheetWithStatsLight.1.png */,
+			);
+			path = ShareBoardSheetSnapshotTests;
+			sourceTree = "<group>";
+		};
 		113551AEDFF5C986880739B3 /* Riso */ = {
 			isa = PBXGroup;
 			children = (
@@ -861,6 +942,7 @@
 				A46A8E81E9F2CB41638B33A1 /* RisoGreenlogOverlay.swift */,
 				EB419351BD67F332E3F55FDB /* RisoMiniGrid.swift */,
 				349BE1AC43F21090DE5AEFD9 /* RisoStatBar.swift */,
+				8C8AFDB07CF042D1FBEC96C7 /* ShareBoardSheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -878,6 +960,7 @@
 		3D7E5C61CCC0B0A344A57CAA /* OYBC */ = {
 			isa = PBXGroup;
 			children = (
+				09679BD66A6C0F577D3B4EDD /* GoogleService-Info.plist */,
 				122F83127D65EB023917FFAB /* Info.plist */,
 				596BB9E3FF9B2BD21EECCD16 /* OYBC.entitlements */,
 				C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */,
@@ -1009,6 +1092,18 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
+		5ECFAD516154F4601D7AE6A3 /* RisoProfileSubpagesSnapshotTests */ = {
+			isa = PBXGroup;
+			children = (
+				B25A2F61F3599C1BB3F45947 /* testPoolEditExistingDark.1.png */,
+				8CB285BCAC067389A507247F /* testPoolEditExistingLight.1.png */,
+				EC1D58DCECF4A9E25B279D8D /* testTemplateEditCreateDark.1.png */,
+				FB7004C3689D830D4C0F64E4 /* testTemplateEditCreateLight.1.png */,
+				53748299448A3F04463FBFE0 /* testTemplateEditExistingLight.1.png */,
+			);
+			path = RisoProfileSubpagesSnapshotTests;
+			sourceTree = "<group>";
+		};
 		63E9478AF60883003764FF65 /* Components */ = {
 			isa = PBXGroup;
 			children = (
@@ -1067,6 +1162,18 @@
 				27680C319099CDAB161A6E95 /* testHubLanding.1.png */,
 			);
 			path = CreateHubSnapshotTests;
+			sourceTree = "<group>";
+		};
+		7E899D910EA225A579DEA607 /* RisoEditProfileSheetSnapshotTests */ = {
+			isa = PBXGroup;
+			children = (
+				F1D223250B575F37E9F832C1 /* testEditProfileSheetCalmMoodLight.1.png */,
+				D9F2AE1F2828AD4ED5F5ACC2 /* testEditProfileSheetCheerMoodLight.1.png */,
+				43D2C2CAD49AAE34992E5DC2 /* testEditProfileSheetEmptyNameLight.1.png */,
+				6110A25D02B7E25E01A2967C /* testEditProfileSheetHappyDark.1.png */,
+				65669634FC32AE00AA5E6C99 /* testEditProfileSheetHappyLight.1.png */,
+			);
+			path = RisoEditProfileSheetSnapshotTests;
 			sourceTree = "<group>";
 		};
 		807C6FD1E450DC7D63299E78 /* CoreBoardWindowSnapshotTests */ = {
@@ -1138,13 +1245,17 @@
 				D1F8E7A409F5CCEE90ACB6CD /* RisoCreateHubSnapshotTests */,
 				442F30272DB1C53166266E86 /* RisoDeleteConfirmSnapshotTests */,
 				9DC2711BBED1D29835C5B2A7 /* RisoEditBoardSnapshotTests */,
+				7E899D910EA225A579DEA607 /* RisoEditProfileSheetSnapshotTests */,
 				54DA8F3A6BB6025BBEF7AD1B /* RisoEditTaskSheetSnapshotTests */,
 				DBB04A8CDCBC4CDCE2BB42AA /* RisoKitSnapshotTests */,
 				AAAC5761AD15B3641293B7AE /* RisoNewTaskSheetSnapshotTests */,
+				A95891675E6FB8911552915F /* RisoOnboardingSnapshotTests */,
 				F9F10D017C68329E30048AC2 /* RisoPlayBoardSnapshotTests */,
 				5B71C364502859AB77653060 /* RisoProfileSnapshotTests */,
+				5ECFAD516154F4601D7AE6A3 /* RisoProfileSubpagesSnapshotTests */,
 				3F76373D5BF4564A85641DFE /* RisoTasksTabSnapshotTests */,
 				AACE8519821B4CB2CCFBF5B1 /* RisoWizardLibrarySnapshotTests */,
+				03F30C09FE51A0BAEF5E98BD /* ShareBoardSheetSnapshotTests */,
 			);
 			path = __Snapshots__;
 			sourceTree = "<group>";
@@ -1166,6 +1277,21 @@
 				0B0B38321FC596D67DEBCAAB /* UserPreferencesCodableTests.swift */,
 			);
 			path = OYBCTests;
+			sourceTree = "<group>";
+		};
+		A95891675E6FB8911552915F /* RisoOnboardingSnapshotTests */ = {
+			isa = PBXGroup;
+			children = (
+				350088629CE76A58A0C640C5 /* testSignInPanelDark.1.png */,
+				1ACA1D37FB732AA4C20AA04A /* testSignInPanelLight.1.png */,
+				D2C23AD03FFBB7768E69D9B3 /* testSlide1Dark.1.png */,
+				C7B15B1122068E6E41E3A061 /* testSlide1Light.1.png */,
+				C92FF47F9B2A34F2FCE233AF /* testSlide2Dark.1.png */,
+				D79C3403B66840E92AFE87EA /* testSlide2Light.1.png */,
+				281041BD30214BB3D7C0663F /* testSlide3Dark.1.png */,
+				DF4A2B3A9F04E274D7E25E6D /* testSlide3Light.1.png */,
+			);
+			path = RisoOnboardingSnapshotTests;
 			sourceTree = "<group>";
 		};
 		AAAC5761AD15B3641293B7AE /* RisoNewTaskSheetSnapshotTests */ = {
@@ -1231,6 +1357,7 @@
 				A0CF50310EFCCFABC8B74CF4 /* BoardPreferencesView.swift */,
 				147E6AF60315212B0BE38D9B /* DefaultPoolEditorView.swift */,
 				83E8AFF5667BFE81E8C3D164 /* DefaultPoolsListView.swift */,
+				6646F7D2F0406435F190BB6F /* EditProfileSheet.swift */,
 				A3BC179DE0E837C8B5BCD843 /* ProfileView.swift */,
 				3F30735B168D81776D6F1071 /* RecurringTemplateRowView.swift */,
 				310D59B3C2E057704E9B0BE5 /* RecurringTemplatesView.swift */,
@@ -1284,14 +1411,17 @@
 				78B0F87453558614267A6C84 /* RisoCreateHubSnapshotTests.swift */,
 				7FB541D58B80F15DA344FAF1 /* RisoDeleteConfirmSnapshotTests.swift */,
 				8D16DCDA3A1D3F5B68FAA0FE /* RisoEditBoardSnapshotTests.swift */,
+				4D5ECF6D5AA63DA4306784FE /* RisoEditProfileSheetSnapshotTests.swift */,
 				D3CC8AF3A0BB5E9CAB8BBA73 /* RisoEditTaskSheetSnapshotTests.swift */,
 				F8E921B9360700165D3B8FC4 /* RisoKitSnapshotTests.swift */,
 				AF8A26767AF89235FEE7E723 /* RisoNewTaskSheetSnapshotTests.swift */,
+				EDCC4E46445C7DC265F9BFC9 /* RisoOnboardingSnapshotTests.swift */,
 				7DD7042B9974AB5AA3D5F733 /* RisoPlayBoardSnapshotTests.swift */,
 				A21392B9218C35E587B83EC5 /* RisoProfileSnapshotTests.swift */,
 				A5E9F4D9D7692799E1E9F7E7 /* RisoProfileSubpagesSnapshotTests.swift */,
 				EB413B80CC1E7378AC5DC120 /* RisoTasksTabSnapshotTests.swift */,
 				73AF69A0FC2A6EF5B48C9A7B /* RisoWizardLibrarySnapshotTests.swift */,
+				C7F3B9707F156A472299226B /* ShareBoardSheetSnapshotTests.swift */,
 				201D8F0D441E72C6B7514848 /* SnapshotFixtures.swift */,
 				9DFBF8E3D24A9BE43FB928D7 /* __Snapshots__ */,
 			);
@@ -1395,6 +1525,7 @@
 				36BFCB077AA954687C6EFED5 /* AuthGateView.swift */,
 				4ADD7157FF545AFEC6EF9588 /* ContentView.swift */,
 				343B20563EE55E5FA28C5DC2 /* MainTabView.swift */,
+				6517BE2E396F092A2E65383D /* OnboardingView.swift */,
 				E7AA0FEE3F82A53DCA116770 /* BoardsTab */,
 				34A9C4EF5E8E5F349CF44BB3 /* Components */,
 				E03FBA3FFEAF88A7D8609EBA /* CreateTab */,
@@ -1499,10 +1630,10 @@
 			path = RisoPlayBoardSnapshotTests;
 			sourceTree = "<group>";
 		};
-		"TEMP_EDCAC2C0-7C74-4EF4-8510-91D38720C2FA" /* ios */ = {
+		"TEMP_A5A8B6C7-66C3-48E6-9E3D-55A1FC0B3B0D" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_B8D9A1D5-901B-4A91-B91F-63A69B5E6103" /* Signing.xcconfig */,
+				"TEMP_B5A81FF5-A602-4BE0-ACEB-DCDB41D24C04" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1718,6 +1849,11 @@
 				A484E0644AA2F70F359D1F72 /* testDraftsListMultipleRows.1.png in Resources */,
 				8FEB337FDB005AB9136E1FA4 /* testDraftsListSingleRow.1.png in Resources */,
 				35D81A70D395B25FE8774164 /* testDraftsListSingleRowDark.1.png in Resources */,
+				3F3414BE0B1FCE487629AF22 /* testEditProfileSheetCalmMoodLight.1.png in Resources */,
+				6211306233D73AC42CB3E435 /* testEditProfileSheetCheerMoodLight.1.png in Resources */,
+				768CEB1AB153AB161F7E49CB /* testEditProfileSheetEmptyNameLight.1.png in Resources */,
+				87B1461E8832E1D3625BAA1E /* testEditProfileSheetHappyDark.1.png in Resources */,
+				C5367FAA4FA79488AAE21AB9 /* testEditProfileSheetHappyLight.1.png in Resources */,
 				6BD7C4B5E08392D41BA17B85 /* testEmptyDark.1.png in Resources */,
 				E38CBB90376A70A6449AC357 /* testEmptyLibrary.1.png in Resources */,
 				FA03A07749CA6A1C1E160435 /* testEmptyLight.1.png in Resources */,
@@ -1745,6 +1881,8 @@
 				5D359B0D0D5DB4BE2D69464F /* testPickerBoards_light.1.png in Resources */,
 				7ECEB8784BD2938C7954F5B2 /* testPickerEmpty_dark.1.png in Resources */,
 				00C4B40519D5D37CB099504F /* testPickerEmpty_light.1.png in Resources */,
+				3B2075E0235BF0A78619514A /* testPoolEditExistingDark.1.png in Resources */,
+				1280EFCF1B726830188859AD /* testPoolEditExistingLight.1.png in Resources */,
 				B273609B2CD1FF50C3643562 /* testPoolHeaderSatisfiedDark.1.png in Resources */,
 				FD1A97C2087591AC6B1BC775 /* testPoolHeaderSatisfiedLight.1.png in Resources */,
 				0068762EBEB3D433C1520B40 /* testPoolHeaderShortDark.1.png in Resources */,
@@ -1754,6 +1892,10 @@
 				2519D5CD9F47C1C491469FB3 /* testPoolListWithTasksDark.1.png in Resources */,
 				19A7C66DBE4EE00F5A0BDC87 /* testPoolListWithTasksLight.1.png in Resources */,
 				31076B3E117392EE19C21B47 /* testPopulatedActiveAndPaused.1.png in Resources */,
+				484818D4F62A0FB56CC047C4 /* testPosterCardWithStatsDark.1.png in Resources */,
+				0391C41C2633D813B7694A71 /* testPosterCardWithStatsLight.1.png in Resources */,
+				31BC0E16ACA4427180DBC5E1 /* testPosterCardWithoutStatsDark.1.png in Resources */,
+				ED3410EFC6F833D827B311EB /* testPosterCardWithoutStatsLight.1.png in Resources */,
 				C5A687F40D8D67E7B1F4B112 /* testPreferencesRowNoBadgeLight.1.png in Resources */,
 				09E1CD8BDF758D70FDB6544B /* testPreferencesRowWithBadgeDark.1.png in Resources */,
 				C43614B7056B0C33446B94FC /* testPreferencesRowWithBadgeLight.1.png in Resources */,
@@ -1790,14 +1932,29 @@
 				ECCF71E74AE6DEE26BE4F319 /* testSetupStepRecurringDark.1.png in Resources */,
 				468312CD1357CB2A4153910A /* testSetupStepValid.1.png in Resources */,
 				A1870A9704F9D0AE8D3348DE /* testSetupStepValidDark.1.png in Resources */,
+				2DB8B0A89EBB16F24B2D5879 /* testShareSheetWithStatsDark.1.png in Resources */,
+				28D475FABF5D74F211DB66D6 /* testShareSheetWithStatsLight.1.png in Resources */,
+				59EA11D6C75A1EC9DF0DA9CE /* testShareSheetWithoutStatsDark.1.png in Resources */,
+				9180DFE28EC6F229F7B5F043 /* testShareSheetWithoutStatsLight.1.png in Resources */,
+				1A7DEA0A05F7B357CF12A7A3 /* testSignInPanelDark.1.png in Resources */,
+				237C311D548B856068F8E45C /* testSignInPanelLight.1.png in Resources */,
 				5219E3DB13AD4D3EBC97AEB7 /* testSignOutConfirmDark.1.png in Resources */,
 				51FBB49B27EB8F41FA5074C5 /* testSignOutConfirmLight.1.png in Resources */,
 				9E4BECC0679204016612662A /* testSignOutRowRestingDark.1.png in Resources */,
 				A8BA4F386A2D3870313D2367 /* testSignOutRowRestingLight.1.png in Resources */,
+				3CB0462FF9F1D05B25BB025E /* testSlide1Dark.1.png in Resources */,
+				19ACA1F0D449123AA402E3B0 /* testSlide1Light.1.png in Resources */,
+				013F836E042FFEF4F3153FF7 /* testSlide2Dark.1.png in Resources */,
+				172DED23C0E25C1E9EFECA52 /* testSlide2Light.1.png in Resources */,
+				1EC4820D2F2E481B74052E32 /* testSlide3Dark.1.png in Resources */,
+				E6ECB4527F037DC0776D4E3E /* testSlide3Light.1.png in Resources */,
 				41DCAD0DA27D2A3A10E22506 /* testStatBarAllCompleteDark.1.png in Resources */,
 				FF295CAE56A4D934961F364E /* testStatBarAllCompleteLight.1.png in Resources */,
 				1A3428FD7FB1D261F79B20CE /* testStatBarDark.1.png in Resources */,
 				69C3E71845B442D523FE6E31 /* testStatBarLight.1.png in Resources */,
+				6BC238B31602E1F7B8D3236A /* testTemplateEditCreateDark.1.png in Resources */,
+				7F70151C510025F76D551019 /* testTemplateEditCreateLight.1.png in Resources */,
+				976B10AC0D6724D4B724D847 /* testTemplateEditExistingLight.1.png in Resources */,
 				DCB757B30888C5C584B7F1A7 /* testThemeSegmentedDarkModeDark.1.png in Resources */,
 				6E0A38B55242250DE8FE6662 /* testThemeSegmentedLightModeLight.1.png in Resources */,
 				EA600A309262F42556CB6ABA /* testThemeSegmentedSystemLight.1.png in Resources */,
@@ -1827,6 +1984,7 @@
 				19A377E75A5CDE227284ECDC /* Bricolage-OFL.txt in Resources */,
 				56E8D57D5F1AC5D63523A6A8 /* BricolageGrotesque-Bold.ttf in Resources */,
 				7E274A3B1FC3F9C338C61200 /* BricolageGrotesque-ExtraBold.ttf in Resources */,
+				F9FB7176671700EFA81BA5F7 /* GoogleService-Info.plist in Resources */,
 				3D1E96D35DF0BF6B1DE02EB4 /* Schema.sql in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1905,6 +2063,7 @@
 				8300E733287D1D13B850BBDB /* DefaultPoolsListView.swift in Sources */,
 				64146A06D2B82514FF381B8D /* DerivationPass.swift in Sources */,
 				633817A855621F37DFFC4D12 /* EditBoardSheet.swift in Sources */,
+				DB32D137A02B2B9670C8BFE6 /* EditProfileSheet.swift in Sources */,
 				3203978B132B16868CDF7DAC /* EditTaskSheet.swift in Sources */,
 				4CE4469DBCB98384521C8165 /* FilterTabsView.swift in Sources */,
 				C58FAD0DE79D41DE3BF5BBE7 /* FromBoardGridView.swift in Sources */,
@@ -1916,6 +2075,7 @@
 				F5E2465F70AE719F0B3757D6 /* NetworkMonitor.swift in Sources */,
 				40892F014248FEB42D61A04F /* NewTaskSheetView.swift in Sources */,
 				37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */,
+				6197806419A16FEF16664308 /* OnboardingView.swift in Sources */,
 				0BF5FB181157FCDC92BBD5A2 /* OperatorType.swift in Sources */,
 				3F0133D50CA012B18E39F315 /* ParentBoardTasksViewModel.swift in Sources */,
 				40F604ECC0A608EED7738FF3 /* PendingCoreBoardsSectionView.swift in Sources */,
@@ -1960,6 +2120,7 @@
 				76AE91CBFBF9D66B2BD59568 /* RisoTasksPoolHeaderView.swift in Sources */,
 				EDBA3733479AE8EDD6B27DB2 /* RisoText.swift in Sources */,
 				92A44EBF5A723C1332C82B7C /* RisoTheme.swift in Sources */,
+				465CF60A0A5D49E632B1DF40 /* ShareBoardSheet.swift in Sources */,
 				F4A3AEFE3A410C4AA8908058 /* SharedCounter.swift in Sources */,
 				F18381C6557044124C196873 /* SharedCounterMerge.swift in Sources */,
 				EB546963E080BD0C7D5EDDBD /* Shuffle.swift in Sources */,
@@ -2020,14 +2181,17 @@
 				9BCEA4D84FF2DE1E2C2F0167 /* RisoCreateHubSnapshotTests.swift in Sources */,
 				68FFEF909E60EBDE6F6E9968 /* RisoDeleteConfirmSnapshotTests.swift in Sources */,
 				B5CFE92406295B8455D8E804 /* RisoEditBoardSnapshotTests.swift in Sources */,
+				8F561408FA0E962E9B2C82D7 /* RisoEditProfileSheetSnapshotTests.swift in Sources */,
 				CF24435FF0BB3B8ECB002C5D /* RisoEditTaskSheetSnapshotTests.swift in Sources */,
 				C5384CBDCCD8F3D06E1C7ECC /* RisoKitSnapshotTests.swift in Sources */,
 				B75A1EB2C42F67EC4A9DA376 /* RisoNewTaskSheetSnapshotTests.swift in Sources */,
+				0868D664B992765712218C19 /* RisoOnboardingSnapshotTests.swift in Sources */,
 				E996224421AD4932895E2461 /* RisoPlayBoardSnapshotTests.swift in Sources */,
 				C900380AF95B6AA58D4250B8 /* RisoProfileSnapshotTests.swift in Sources */,
 				FB0DAE9607CBA7B640EC2A3A /* RisoProfileSubpagesSnapshotTests.swift in Sources */,
 				03DF70174285CDA62B66861A /* RisoTasksTabSnapshotTests.swift in Sources */,
 				DD5B4B864B67F657060F5232 /* RisoWizardLibrarySnapshotTests.swift in Sources */,
+				B2247F8BA1A051D5985FF0C4 /* ShareBoardSheetSnapshotTests.swift in Sources */,
 				7B6F43DDCF8D46933298EDA3 /* SnapshotFixtures.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2050,7 +2214,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B8D9A1D5-901B-4A91-B91F-63A69B5E6103" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_B5A81FF5-A602-4BE0-ACEB-DCDB41D24C04" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2147,7 +2311,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B8D9A1D5-901B-4A91-B91F-63A69B5E6103" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_B5A81FF5-A602-4BE0-ACEB-DCDB41D24C04" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
