@@ -32,19 +32,46 @@ struct RisoKitGallery: View {
                         RisoButton(title: "Create board", kind: .primary, systemImage: "sparkles", fullWidth: true, large: true) {}
                         RisoIconButton(systemImage: "plus") {}
                     }
+                    HStack(spacing: 10) {
+                        RisoButton(title: "Small", small: true) {}
+                        RisoButton(title: "Add", kind: .green, small: true) {}
+                        RisoButton(title: "Add", kind: .green, systemImage: "plus", small: true) {}
+                    }
+
+                    sectionLabel("Toolbar pills")
+                    HStack(spacing: 10) {
+                        RisoToolbarPill(title: "Done") {}
+                        RisoToolbarPill(title: "Save") {}
+                        RisoToolbarPill(title: "Delete", fill: .risoRed, foreground: .risoPaper) {}
+                    }
 
                     sectionLabel("Chips")
                     HStack(spacing: 7) {
                         RisoChip(title: "All", isOn: false) {}
                         RisoChip(title: "Active", isOn: true) {}
                         RisoChip(title: "Completed", isOn: false) {}
-                        RisoChip(title: "Draft", isOn: false) {}
+                        RisoChip(title: "Filters", systemImage: "line.3.horizontal.decrease") {}
                     }
 
-                    sectionLabel("Segmented")
+                    sectionLabel("Segmented — equal width")
                     RisoSegmented(
                         options: [("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly"), ("yearly", "Yearly")],
                         selection: $seg
+                    )
+
+                    sectionLabel("Segmented — sizes to content + per-value color")
+                    RisoSegmented(
+                        options: [("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly"), ("yearly", "Yearly")],
+                        selection: $seg,
+                        equalWidth: false,
+                        selectedFill: { tf in
+                            switch tf {
+                            case "daily": return .risoGold
+                            case "weekly": return .risoBlue
+                            case "monthly": return .risoGreen
+                            default: return .risoRed
+                            }
+                        }
                     )
 
                     sectionLabel("Progress")
