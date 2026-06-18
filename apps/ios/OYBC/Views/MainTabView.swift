@@ -171,16 +171,16 @@ struct MainTabView: View {
             .tag(1)
 
             NavigationStack {
-                ScrollView {
-                    if let userId = authService.currentUser?.id {
-                        // No outer padding here — `CreateHubView` pads its
-                        // hub content internally, and the wizard's step
-                        // views each apply their own `.padding(16)`.
-                        // Wrapping at this level would double-pad the
-                        // wizard and visibly shrink its task rows
-                        // (~22% of screen width lost on iPhone-class
-                        // widths before this was removed).
-                        CreateHubView(
+                if let userId = authService.currentUser?.id {
+                    // Mount CreateHubView directly (no outer ScrollView, no
+                    // outer padding) — exactly like the other tabs' roots.
+                    // The hub content and each wizard step provide their own
+                    // scrolling + `.padding(16)`. An outer ScrollView here
+                    // gave the hub's `RisoPaperBackground` unbounded height,
+                    // so it collapsed to content height and the system white
+                    // showed through below it; it also double-scrolled and
+                    // shrank the wizard's task rows (~22% width on iPhone).
+                    CreateHubView(
                             userId: userId,
                             preferences: authService.userPreferences,
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
@@ -205,7 +205,6 @@ struct MainTabView: View {
                             }
                         )
                     }
-                }
             }
             .tabItem {
                 Label("Create", systemImage: "plus.circle")
