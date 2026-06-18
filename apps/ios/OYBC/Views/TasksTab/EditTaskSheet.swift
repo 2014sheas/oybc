@@ -155,18 +155,7 @@ struct EditTaskSheet: View {
                         .foregroundStyle(Color.risoInk)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        submit()
-                    } label: {
-                        Text("Save")
-                            .font(.risoHead(13, .extraBold))
-                            .foregroundStyle(Color.risoInk)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(Color.risoGold))
-                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                    }
-                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+                    RisoToolbarPill(title: "Save") { submit() }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 ToolbarItem(placement: .cancellationAction) {

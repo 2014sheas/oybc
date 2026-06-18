@@ -132,16 +132,7 @@ struct EditProfileSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     // Gold-pill Done button — dismisses without saving
-                    Button(action: onCancel) {
-                        Text("Done")
-                            .font(.risoHead(13, .extraBold))
-                            .foregroundStyle(Color.risoInk)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(Color.risoGold))
-                            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                    }
-                    .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+                    RisoToolbarPill(title: "Done", action: onCancel)
                 }
             }
         }

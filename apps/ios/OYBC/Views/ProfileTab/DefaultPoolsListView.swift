@@ -255,20 +255,12 @@ struct PoolEditSheet: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("FEEDS").font(.risoBody(11, .bold)).tracking(1.1)
                                 .foregroundStyle(Color.risoMuted)
-                            HStack(spacing: 6) {
-                                ForEach([Timeframe.daily, .weekly, .monthly, .yearly], id: \.self) { tf in
-                                    Button { timeframe = tf } label: {
-                                        Text(tf.risoDisplayName)
-                                            .font(.risoHead(13, .bold))
-                                            .foregroundStyle(timeframe == tf ? Color.risoPaper : Color.risoInk)
-                                            .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                            .background(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                                .fill(timeframe == tf ? tf.risoColor : Color.risoPaper2))
-                                            .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                                    }.buttonStyle(.plain)
-                                }
-                            }
+                            RisoSegmented(
+                                options: [(Timeframe.daily, "Daily"), (.weekly, "Weekly"),
+                                          (.monthly, "Monthly"), (.yearly, "Yearly")],
+                                selection: $timeframe,
+                                selectedFill: { $0.risoColor }
+                            )
                         }
 
                         // Tasks section

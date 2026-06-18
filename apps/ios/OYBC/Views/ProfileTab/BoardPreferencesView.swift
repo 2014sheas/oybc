@@ -186,9 +186,11 @@ struct BoardPreferencesView: View {
             Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
                 .frame(minWidth: 80, alignment: .leading)
             Spacer()
+            // Sizes-to-content (not `.fixedSize()`, which collapsed the
+            // equal-width layout into mismatched, clipping pills).
             RisoSegmented(options: options.map { (value: $0.0, label: $0.1) },
-                          selection: selection)
-            .fixedSize()
+                          selection: selection,
+                          equalWidth: false)
         }
         .padding(.horizontal, Riso.cardPadding)
         .padding(.vertical, 12)
