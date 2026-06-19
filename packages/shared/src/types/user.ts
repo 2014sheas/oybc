@@ -52,6 +52,23 @@ export interface UserPreferences {
   expiringReminders: boolean;
   /** Move completed (GREENLOGed) boards out of the list after a week. */
   autoArchiveCompleted: boolean;
+
+  // Notifications (Phase 7 — iOS local reminders). iOS-only at the feature
+  // level: iOS schedules local OS-delivered notifications from these prefs;
+  // web round-trips them via sync (forward-compat decode) but does not yet
+  // act on them. Keep in lock-step with the iOS `UserPreferences` fields.
+  /**
+   * Master notifications opt-in. Default `false` — flipping it on is what
+   * drives the in-context permission priming on iOS. The OS permission is the
+   * real capability gate; this is the user's stated intent.
+   */
+  notificationsEnabled: boolean;
+  /** Notify when a new recurring window opens and no core board exists yet. Default true. */
+  recurringWindowReminders: boolean;
+  /** Whether the daily play reminder fires. Default `false` (opt-in). */
+  dailyPlayReminderEnabled: boolean;
+  /** Daily play reminder time of day, 24h "HH:mm" (local). Default "20:00". */
+  dailyPlayReminderTime: string;
 }
 
 /**
@@ -78,7 +95,14 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   haptics: true,
   expiringReminders: true,
   autoArchiveCompleted: false,
+  notificationsEnabled: false,
+  recurringWindowReminders: true,
+  dailyPlayReminderEnabled: false,
+  dailyPlayReminderTime: '20:00',
 };
+
+/** 24-hour "HH:mm" time-of-day, 00:00–23:59. */
+const HH_MM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
  * Merge a partial (possibly untrusted) preferences object with defaults,
@@ -188,6 +212,30 @@ export function mergeUserPreferences(
       ? partial.autoArchiveCompleted
       : DEFAULT_USER_PREFERENCES.autoArchiveCompleted;
 
+  // Notifications (Phase 7) — forward-compat decode.
+  const notificationsEnabled: boolean =
+    typeof partial.notificationsEnabled === 'boolean'
+      ? partial.notificationsEnabled
+      : DEFAULT_USER_PREFERENCES.notificationsEnabled;
+
+  const recurringWindowReminders: boolean =
+    typeof partial.recurringWindowReminders === 'boolean'
+      ? partial.recurringWindowReminders
+      : DEFAULT_USER_PREFERENCES.recurringWindowReminders;
+
+  const dailyPlayReminderEnabled: boolean =
+    typeof partial.dailyPlayReminderEnabled === 'boolean'
+      ? partial.dailyPlayReminderEnabled
+      : DEFAULT_USER_PREFERENCES.dailyPlayReminderEnabled;
+
+  // Reject malformed times — a bad value would otherwise produce an invalid
+  // schedule on iOS. Falls back to the default rather than a partial parse.
+  const dailyPlayReminderTime: string =
+    typeof partial.dailyPlayReminderTime === 'string' &&
+    HH_MM_RE.test(partial.dailyPlayReminderTime)
+      ? partial.dailyPlayReminderTime
+      : DEFAULT_USER_PREFERENCES.dailyPlayReminderTime;
+
   return {
     weekStartDay,
     defaultBoardSize,
@@ -204,6 +252,10 @@ export function mergeUserPreferences(
     haptics,
     expiringReminders,
     autoArchiveCompleted,
+    notificationsEnabled,
+    recurringWindowReminders,
+    dailyPlayReminderEnabled,
+    dailyPlayReminderTime,
   };
 }
 

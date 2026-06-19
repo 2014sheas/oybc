@@ -6,11 +6,14 @@ import SwiftUI
 /// Three keyline cards:
 ///   New boards — Default size · Center square · Week starts
 ///   Playing    — Celebration intensity (10-tick strip) · Haptics toggle
-///   Housekeeping — Expiring reminders · Auto-archive completed
+///   Housekeeping — Auto-archive completed
+///
+/// `expiringReminders` moved to `NotificationPreferencesView` in Phase 7 (it's
+/// now a live notification toggle, not a dead housekeeping flag).
 ///
 /// All controls write through `AppDatabase.updateUserPreferences` via the
 /// `bind(_:)` helper. New fields (`celebrationIntensity`, `haptics`,
-/// `expiringReminders`, `autoArchiveCompleted`) were added to `UserPreferences`
+/// `autoArchiveCompleted`) were added to `UserPreferences`
 /// as part of this reskin; they decode forward-compatibly via try? fallback.
 struct BoardPreferencesView: View {
 
@@ -155,14 +158,6 @@ struct BoardPreferencesView: View {
 
     private var housekeepingCard: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                toggleRow(icon: "exclamationmark.circle", label: "Expiring reminders",
-                          binding: bind(\.expiringReminders))
-                Text("Nudge me the day before a board runs out.")
-                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 8)
-            }
-            rowDivider
             VStack(alignment: .leading, spacing: 4) {
                 toggleRow(icon: "archivebox", label: "Auto-archive completed",
                           binding: bind(\.autoArchiveCompleted))

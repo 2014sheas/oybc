@@ -35,8 +35,27 @@ Key invariants (so future contributors don't accidentally violate them):
 
 - **Shared task semantics**: a task placed on a daily and on a parent monthly is the *same Task*; completing it on the daily globally completes the monthly. This is intentional — derivation is a UI filter on the wizard's task picker, never a clone path. If a user wants an independent counter, the answer is a separately-named Task.
 - **6.1 schema footprint is minimal**: only 4 boolean fields on `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`). Detection is computed at read time from existing `Board.timeframe + startDate + endDate`. `mergeUserPreferences()` in `packages/shared/src/types/user.ts` and the iOS `UserPreferences.init(from:)` mirror both decode the fields forward-compatibly.
-- **Lazy detection only**: no background scheduling, no notifications. Recurrence is observed when the user opens the Boards tab, never pushed. `BGTaskScheduler` (iOS) and service-worker scheduling (web) are explicit non-goals.
+- **Lazy detection only**: no background scheduling, no automatic board creation. Recurrence is *observed* when the user opens the Boards tab, never pushed — no board row is ever created or written to the DB without a user action. `BGTaskScheduler` (iOS) and service-worker scheduling (web) remain explicit non-goals. (Phase 7 added *local OS-scheduled notifications* on iOS — they reschedule on app-open and are delivered by the OS without any background execution or DB write, so they preserve this invariant. See [§Notifications](#notifications-phase-7--ios-local-reminders). This does **not** relax the no-background-creation / no-server-push rules.)
 - **No custom-timeframe recurrence**: `Timeframe.CUSTOM` is excluded from the `PARENT_TIMEFRAMES` map and from the recurrence toggles. Re-evaluate if a real use case surfaces.
+
+## Notifications (Phase 7 — iOS local reminders)
+
+Local OS-scheduled notifications on **iOS only** (web deferred). This deliberately revises the earlier "no notifications" non-goal — but only that one line. Canonical doc: [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
+
+| Trigger | When it fires | Backing pref |
+| --- | --- | --- |
+| Board expiring soon | 9am the day before a non-daily board's `endDate` | `expiringReminders` (default on) |
+| New recurring window | 9am on the first day of the next weekly/monthly/yearly window with no core board yet | `recurringWindowReminders` (default on) + per-timeframe `recurring*Enabled` |
+| Daily play reminder | user-chosen time, repeating | `dailyPlayReminderEnabled` + `dailyPlayReminderTime` (default off / "20:00") |
+
+Key invariants (don't regress these):
+
+- **No background execution, no server push.** Notifications are *scheduled while foregrounded* via `UNUserNotificationCenter`; the OS delivers them when the app is closed. Nothing here runs in the background, and nothing writes to the DB — so the recurring-boards lazy-detection invariant is intact. No `BGTaskScheduler`, no APNs, no `aps-environment` entitlement. Push (which would need all of those) stays a non-goal.
+- **Declarative reconcile.** `NotificationService.reconcile(userId:)` recomputes the full desired set from local data via the pure `NotificationPlanner.desiredNotifications(boards:prefs:now:)`, then diffs it against the OS pending set by deterministic identifier (`expiry-<boardId>`, `recurring-window-<tf>-<startISO>`, `daily-play-reminder`). Re-running is idempotent. It fires on app-active, tab switches, and pref changes.
+- **The 64-pending OS cap is handled in the planner, never by iOS truncation.** Expiry notifications get a 30-day horizon + a 50-item budget (soonest-first, tie-break by board id); recurring-window ≤3; daily =1. Total ≤54.
+- **Opt-in + functional copy (App Store 4.5.4).** Master `notificationsEnabled` defaults false; turning it on runs in-context priming before the system prompt. Per-category toggles + master toggle let the user disable anything; `.denied` shows an Open-Settings affordance. Notification copy stays strictly functional — never marketing/re-engagement.
+- **iOS-only parity exception.** This is a documented, intentional divergence from the cross-platform-parity rule (rule 6): iOS has local scheduled notifications, web does not without a PWA + service worker + FCM/VAPID + a backend scheduler. The shared prefs fields exist on both platforms (web round-trips them via sync) but only iOS acts on them. Web notifications are a separately-scoped follow-up.
+- **Cold-launch deep-link.** `NotificationDelegate.shared` is registered in `OYBCApp.init()` (not lazily after auth) so a tap that cold-launches the app is captured; it buffers `pendingDeepLink`, which `MainTabView` drains once signed-in.
 
 ## Code Quality Standards
 
@@ -222,6 +241,9 @@ apps/web/src/                                        apps/ios/OYBC/
 │   ├── syncStatus.ts             ←→                (inline @Published on SyncService.swift)
 │   └── conflictResolver.ts       ←→                (inline in SyncService.swift)
 │                                                   Services/NetworkMonitor.swift (iOS only, NWPathMonitor)
+│   (no web counterpart yet —     ←→               Services/NotificationService.swift (Phase 7, iOS only)
+│    deferred, see §Notifications)                 Services/NotificationPlanner.swift (pure; Phase 7, iOS only)
+│                                                   Services/NotificationDelegate.swift (Phase 7, iOS only)
 │
 └── components/playground/
     └── SyncSimulationPlayground.tsx                (web dev-only — iOS SyncDashboardPlayground
@@ -248,6 +270,7 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 
 ### Intentional platform divergences (don't treat as parity bugs)
 
+- **Notifications are iOS-only (Phase 7)**: `Services/Notification{Service,Planner,Delegate}.swift` + `Views/ProfileTab/NotificationPreferencesView.swift` have no web counterpart yet. iOS has local OS-scheduled notifications; web would need a PWA + service worker + FCM/VAPID + a backend scheduler (which also reintroduces server push, against the offline-first invariant). The four notification prefs are in shared types and round-trip via sync on both platforms, but only iOS acts on them. This is a deliberate, documented rule-6 exception — see [§Notifications](#notifications-phase-7--ios-local-reminders) + `docs/NOTIFICATIONS.md`. Web is a separately-scoped follow-up.
 - `Navbar.tsx` / `Home.tsx` are web-only: React Router boots to `/home`, while iOS launches `AuthGateView` → `MainTabView` directly.
 - `TabBar.tsx` is an HTML `<nav>` + NavLinks; `MainTabView.swift` uses SwiftUI `TabView`. Same UX, platform-native implementation.
 - `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
@@ -431,7 +454,7 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 - **Counting task title**: Optional and auto-generated from `action + maxCount + unit` if blank. Use `generateCounterTaskTitle()` from `@oybc/shared`. Not required like normal task titles.
 - **Compound child auto-creation**: creating a compound task with inline subtasks creates a standalone `Task` per subtask, linked via `compound_children.childTaskId`, so subtasks are immediately pool-addable and enable cross-board rollup. Applies to `createTask()` (web) and the inline compound builders (web `CompositeTaskWizard`; iOS `RisoCompoundFieldsView` via `CreateFormViewModel.handleCreateCompoundAndAddToPool`).
 - **iOS `Task` name clash**: OYBC has a `Task` data model (`Database/Models/Task.swift`) that shadows Swift Concurrency's `Task`. When launching an async closure, ALWAYS write `_Concurrency.Task { ... }` explicitly. Plain `Task { ... }` will fail to compile with `trailing closure passed to parameter of type 'any Decoder' that does not accept a closure` because Swift picks the OYBC type's `init(from decoder:)` instead. This bit PR #32; grep `^\s*Task\s*{` before committing new Swift files that launch tasks.
-- **Recurring-board invariants**: shared-task semantics (completing a derived daily task globally completes its parent monthly — no clones) and lazy detection-only (no `BGTaskScheduler` / service-worker scheduling; the banner appears on Boards-tab open). Both are spelled out in [§Recurring Boards](#recurring-boards-phase-6--shipped) — re-read before touching recurrence.
+- **Recurring-board invariants**: shared-task semantics (completing a derived daily task globally completes its parent monthly — no clones) and lazy detection-only (no `BGTaskScheduler` / service-worker scheduling for board *creation*; the banner appears on Boards-tab open). Both are spelled out in [§Recurring Boards](#recurring-boards-phase-6--shipped) — re-read before touching recurrence. Phase 7 notifications schedule OS-delivered *reminders* (no background exec, no DB write) and do not relax these; see [§Notifications](#notifications-phase-7--ios-local-reminders).
 
 ## Performance Targets
 
@@ -446,6 +469,7 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 - `docs/OFFLINE_FIRST.md` — Offline-first design and data flow
 - `docs/SYNC_STRATEGY.md` — Conflict resolution patterns
 - `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (Normal / Counting / Compound; cross-board square mechanisms live on `BoardTask`, see ARCHITECTURE.md §Phase 6)
+- `docs/NOTIFICATIONS.md` — Phase 7 iOS local-notification design (reconcile model, triggers, 64-cap budgeting, prefs, App Store compliance, iOS-only parity exception). See also CLAUDE.md [§Notifications](#notifications-phase-7--ios-local-reminders).
 - `docs/RISO_UI_CHECKLIST.md` — iOS "Riso" design-system consistency checklist (use the kit / tokens not magic numbers / layout pitfalls). Run it when building or reviewing any Riso surface; the canonical components are in `Views/Riso/RisoControls.swift` and visually baselined by `RisoKitSnapshotTests`.
 
 The `docs/superpowers/specs/` folder is **not in active use** — design docs for in-flight work live in CLAUDE.md and ARCHITECTURE.md instead. The legacy `2026-04-23-compound-tasks-unification-design.md` was the precursor for the unification work shipped in PR #43; the current canonical doc is `docs/TASK_SYSTEM.md`.
@@ -478,6 +502,8 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 
 **Phases 1–6 are complete/shipped:** local DB (1), app infrastructure (1.5), core game loop (2), auth + Firestore sync (3), tab-based production app (4), polish (5), recurring boards (6 — see [§Recurring Boards](#recurring-boards-phase-6--shipped) for the sub-phase table + PRs).
 
+**Phase 7 (in progress): Notifications** — iOS local reminders (board-expiring / new-recurring-window / daily-play), gated behind in-context permission priming; web deferred. See [§Notifications](#notifications-phase-7--ios-local-reminders) + `docs/NOTIFICATIONS.md`.
+
 **Navigation**: bottom tab bar — Boards (default), Tasks, Create, Profile.
 
 **Routes (web)**: `/boards`, `/boards/:id`, `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/profile/recurring-templates`, `/playground` (dev tool).
@@ -485,10 +511,12 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 ### Known follow-ups
 
 - Web has no Jest/Vitest harness yet; `packages/shared` covers cross-platform logic. Adding web-layer tests is tracked for the next tooling pass.
+- **Web notifications** (the Phase 7 web counterpart) — needs a PWA conversion (manifest + service worker) plus FCM/VAPID + a backend scheduler for background delivery. Separately scoped; the shared prefs already round-trip via sync (`notificationsEnabled` / `recurringWindowReminders` / `dailyPlayReminderEnabled` / `dailyPlayReminderTime`), web just doesn't act on them yet.
+- `autoArchiveCompleted` remains the one still-unwired housekeeping pref (no archive logic consumes it on either platform).
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
 - **iOS snapshot tests are advisory in CI** (`continue-on-error: true` on the snapshot step in `ios.yml`). The macos-15 runner ships Xcode 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3), while local dev uses iOS 26.3.x — pixel kerning differs across the iOS minor, so baselines recorded locally don't match CI byte-for-byte. The xcresult artifact still uploads on every snapshot diff, so a developer can pull it and re-record when convenient. To re-enable strict mode: either (a) wait for a macos-15 runner image refresh that ships iOS 26.3, then drop `continue-on-error`; or (b) install iOS 26.2 simulator runtime locally (~5 GB, requires freeing space on `/Library/Developer/CoreSimulator/Volumes/`), re-record on `OS=26.2`, commit baselines, drop `continue-on-error`.
 
-**Next phase**: TBD — no Phase 7 scoped. Pick the next item from Known follow-ups (web Vitest harness, CI snapshot strict-mode, CreatePage/CreateView refactors, pre-launch hardening) by directive, not inferred roadmap.
+**Next phase**: Phase 7 (Notifications) is in progress on iOS (see above). After it lands, pick the next item from Known follow-ups (web notifications, web Vitest harness, CI snapshot strict-mode, CreatePage/CreateView refactors, pre-launch hardening) by directive, not inferred roadmap.
 
 ## Branching Strategy
 

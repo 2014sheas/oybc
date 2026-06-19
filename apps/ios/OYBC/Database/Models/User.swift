@@ -83,6 +83,21 @@ struct UserPreferences: Codable, Equatable {
     /// one week.
     var autoArchiveCompleted: Bool
 
+    // Notifications (Phase 7 — iOS local reminders). All decode
+    // forward-compatibly via the custom `init(from:)`.
+
+    /// Master notifications opt-in. Default `false` — flipping it on drives the
+    /// in-context permission priming. The OS permission is the real capability
+    /// gate; this is the user's stated intent.
+    var notificationsEnabled: Bool
+    /// Notify when a new recurring window opens and no core board exists yet.
+    /// Default true.
+    var recurringWindowReminders: Bool
+    /// Whether the daily play reminder fires. Default `false` (opt-in).
+    var dailyPlayReminderEnabled: Bool
+    /// Daily play reminder time of day, 24h "HH:mm" (local). Default "20:00".
+    var dailyPlayReminderTime: String
+
     static let defaults = UserPreferences(
         weekStartDay: .monday,
         defaultBoardSize: .five,
@@ -103,7 +118,11 @@ struct UserPreferences: Codable, Equatable {
         celebrationIntensity: 7,
         haptics: true,
         expiringReminders: true,
-        autoArchiveCompleted: false
+        autoArchiveCompleted: false,
+        notificationsEnabled: false,
+        recurringWindowReminders: true,
+        dailyPlayReminderEnabled: false,
+        dailyPlayReminderTime: "20:00"
     )
 
     /// Returns a complete preferences object by filling missing fields from
@@ -154,6 +173,31 @@ struct UserPreferences: Codable, Equatable {
             ?? Self.defaults.expiringReminders
         self.autoArchiveCompleted = (try? c.decode(Bool.self, forKey: .autoArchiveCompleted))
             ?? Self.defaults.autoArchiveCompleted
+        self.notificationsEnabled = (try? c.decode(Bool.self, forKey: .notificationsEnabled))
+            ?? Self.defaults.notificationsEnabled
+        self.recurringWindowReminders = (try? c.decode(Bool.self, forKey: .recurringWindowReminders))
+            ?? Self.defaults.recurringWindowReminders
+        self.dailyPlayReminderEnabled = (try? c.decode(Bool.self, forKey: .dailyPlayReminderEnabled))
+            ?? Self.defaults.dailyPlayReminderEnabled
+        // Reject a malformed time — a bad value would otherwise produce an
+        // invalid schedule. Falls back to the default rather than a partial parse.
+        let decodedTime = (try? c.decode(String.self, forKey: .dailyPlayReminderTime))
+            ?? Self.defaults.dailyPlayReminderTime
+        self.dailyPlayReminderTime = UserPreferences.isValidReminderTime(decodedTime)
+            ? decodedTime
+            : Self.defaults.dailyPlayReminderTime
+    }
+
+    /// Validates a 24-hour "HH:mm" time-of-day string (00:00–23:59). Mirrors
+    /// the `HH_MM_RE` guard in the shared `mergeUserPreferences`.
+    static func isValidReminderTime(_ value: String) -> Bool {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0].count == 2, parts[1].count == 2,
+              let hour = Int(parts[0]), let minute = Int(parts[1]),
+              (0...23).contains(hour), (0...59).contains(minute)
+        else { return false }
+        return true
     }
 
     /// Memberwise initialiser preserved explicitly because adding a custom
@@ -173,7 +217,11 @@ struct UserPreferences: Codable, Equatable {
         celebrationIntensity: Int = 7,
         haptics: Bool = true,
         expiringReminders: Bool = true,
-        autoArchiveCompleted: Bool = false
+        autoArchiveCompleted: Bool = false,
+        notificationsEnabled: Bool = false,
+        recurringWindowReminders: Bool = true,
+        dailyPlayReminderEnabled: Bool = false,
+        dailyPlayReminderTime: String = "20:00"
     ) {
         self.weekStartDay = weekStartDay
         self.defaultBoardSize = defaultBoardSize
@@ -190,6 +238,10 @@ struct UserPreferences: Codable, Equatable {
         self.haptics = haptics
         self.expiringReminders = expiringReminders
         self.autoArchiveCompleted = autoArchiveCompleted
+        self.notificationsEnabled = notificationsEnabled
+        self.recurringWindowReminders = recurringWindowReminders
+        self.dailyPlayReminderEnabled = dailyPlayReminderEnabled
+        self.dailyPlayReminderTime = dailyPlayReminderTime
     }
 }
 

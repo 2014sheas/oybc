@@ -39,6 +39,11 @@ final class AuthService: ObservableObject {
     /// in roughly a second instead of waiting up to 30s for a tick.
     let syncService = SyncService()
 
+    /// Local-notification scheduler (Phase 7). Auth-owned like `syncService`;
+    /// injected into the view tree by `AuthGateView`. Cleared on sign-out so
+    /// one account's reminders never linger into another's session.
+    let notificationService = NotificationService()
+
     // MARK: - Initialization
 
     init() {
@@ -78,6 +83,7 @@ final class AuthService: ObservableObject {
                         self.currentUser = nil
                         self.stopUserRowObservation()
                         self.syncService.stop()
+                        self.notificationService.clearAll()
                     }
                 }
                 await MainActor.run { self.isLoading = false }
@@ -336,6 +342,9 @@ final class AuthService: ObservableObject {
         }
         try Auth.auth().signOut()
         currentUser = nil
+        // Cancel scheduled reminders so they don't fire for a signed-out /
+        // subsequently different account.
+        notificationService.clearAll()
     }
 
     // MARK: - Legacy @AppStorage migration

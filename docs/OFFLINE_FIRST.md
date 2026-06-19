@@ -719,6 +719,8 @@ The complexity is **worth it** for the dramatically better user experience. Fire
 
 Recurring Boards intentionally avoids any background scheduling. Detection runs only when the user opens the Boards tab — no `BGTaskScheduler` on iOS, no service-worker scheduling on web. This keeps the offline-first invariant intact: the local DB remains the source of truth, and no ambient processes write to it without user action. A user who hasn't opened the app in three weeks comes back to a banner listing all the windows they missed; a user who hasn't opened the app at all gets no rows of unwanted state created on their behalf.
 
+> **Phase 7 note — notifications don't break this invariant.** iOS now schedules *local* OS-delivered notifications (expiry / new-window / daily-play reminders). The distinction that matters here: scheduling a `UNUserNotificationCenter` request is **not** background execution and **never writes to the DB**. The requests are computed while the app is foregrounded (the same lazy, on-app-open posture as detection) and the OS delivers them later. So "the local DB remains the source of truth, and no ambient processes write to it without user action" still holds verbatim — a fired notification creates no board and changes no state until the user opens the app and acts. There is still no `BGTaskScheduler` and no server push. See `docs/NOTIFICATIONS.md`.
+
 The detection algorithm itself is a pure function over the local boards table + user preferences:
 
 ```ts

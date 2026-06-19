@@ -27,6 +27,8 @@ struct AuthGateView<Content: View>: View {
                 content()
                     .environmentObject(authService)
                     .environmentObject(authService.syncService)
+                    .environmentObject(authService.notificationService)
+                    .environmentObject(NotificationDelegate.shared)
                     .environmentObject(networkMonitor)
             } else {
                 LoginView(authService: authService)

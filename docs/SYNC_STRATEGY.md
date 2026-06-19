@@ -1214,7 +1214,9 @@ async function checkNodeForCircularReferences(
 
 ### Overview
 
-Synced user preferences live on the `User` record itself as a nested `preferences` object, so they replicate under the same last-write-wins resolver as every other synced entity — the last device to update a preference wins. The object currently carries seven fields:
+Synced user preferences live on the `User` record itself as a nested `preferences` object, so they replicate under the same last-write-wins resolver as every other synced entity — the last device to update a preference wins. The fields:
+
+Core / board-creation defaults:
 
 - `weekStartDay` — `'monday' | 'sunday'`
 - `defaultBoardSize` — `3 | 4 | 5`
@@ -1223,6 +1225,16 @@ Synced user preferences live on the `User` record itself as a nested `preference
 - `defaultRandomize` — `boolean`
 - `defaultCenterCustomName` — `string` (≤ 100 chars)
 - `theme` — `'light' | 'dark' | 'system'`
+
+Recurring boards (Phase 6.1): `recurringDailyEnabled` / `recurringWeeklyEnabled` / `recurringMonthlyEnabled` / `recurringYearlyEnabled` — `boolean` (default true).
+
+Board Preferences (Riso 5a): `celebrationIntensity` — `number` 1–10 (default 7); `haptics` — `boolean`; `expiringReminders` — `boolean` (default true); `autoArchiveCompleted` — `boolean`. (`expiringReminders` originated here in 5a as a dead toggle and became live in Phase 7 as the expiry-notification gate — it's a 5a field, not a Phase 7 one.)
+
+Notifications (Phase 7): `notificationsEnabled` — `boolean` (default false); `recurringWindowReminders` — `boolean` (default true); `dailyPlayReminderEnabled` — `boolean` (default false); `dailyPlayReminderTime` — `string` `"HH:mm"` (default `"20:00"`).
+
+These all ride the existing user-prefs LWW path — **no new collection**. Notifications are scheduled per-device from the synced prefs; there is no cross-device de-duplication problem because delivery is **local** to each device and the scheduled identifiers are deterministic (`expiry-<boardId>` etc.), so each device independently converges on the same desired set. A prefs change on one device replicates and the other device's next reconcile (on app-open) picks it up. (Phase 7 is iOS-only at the feature level; web round-trips the fields but does not act on them yet — see CLAUDE.md §Notifications.)
+
+All newer fields are `.optional()` in `UserPreferencesSchema` and filled by `mergeUserPreferences()` on the pull path, so an older peer's prefs doc never fails validation.
 
 ### Firestore Layout
 
