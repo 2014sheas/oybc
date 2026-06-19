@@ -254,6 +254,23 @@ struct RisoNumberField: View {
     }
 }
 
+/// Riso-styled secure (password) field. Same visual as `RisoTextField`
+/// with `SecureField`'s obscured input. Used by the auth screen.
+struct RisoSecureField: View {
+    let placeholder: String
+    @Binding var text: String
+    var textContentType: UITextContentType? = nil
+
+    var body: some View {
+        SecureField(placeholder, text: $text)
+            .textContentType(textContentType)
+            // Passwords are case-sensitive — never auto-capitalize or correct.
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .fieldStyle()
+    }
+}
+
 // MARK: - Field style helper (internal)
 
 private extension View {

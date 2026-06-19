@@ -56,7 +56,8 @@ struct TaskDetailSheetView: View {
             Group {
                 if let loadError {
                     Text(loadError)
-                        .foregroundColor(.red)
+                        .font(.risoBody(14, .semibold))
+                        .foregroundStyle(Color.risoRed)
                         .padding()
                 } else if let task {
                     RisoTaskDetailContentView(
@@ -83,15 +84,17 @@ struct TaskDetailSheetView: View {
                         onOpenBoard: onOpenBoard
                     )
                 } else {
-                    Text("Loading…").foregroundColor(.secondary).padding()
+                    Text("Loading…")
+                        .font(.risoBody(14, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .padding()
                 }
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { onClose() }
-                        .fontWeight(.semibold)
+                    RisoToolbarPill(title: "Done") { onClose() }
                 }
             }
         }

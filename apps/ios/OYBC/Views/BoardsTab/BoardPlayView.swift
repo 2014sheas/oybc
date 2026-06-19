@@ -1030,7 +1030,9 @@ struct BoardPlayView: View {
                     guard !isBoardLocked else { return }
                     handleCountingTap(boardTask: boardTask, task: t)
                 }
-                .disabled(current >= maxVal || isProcessing || isBoardLocked)
+                // No maxVal gate — overshoot is a feature (never clamp);
+                // matches the cell-tap stepper + detail-sheet stepper.
+                .disabled(isProcessing || isBoardLocked)
                 Button("− Remove \(actionLabel)", systemImage: "minus") {
                     guard !isBoardLocked else { return }
                     handleCountingDecrement(boardTask: boardTask, task: t)
@@ -1139,41 +1141,79 @@ struct BoardPlayView: View {
         if let btId = detailBoardTaskId,
            let bt = boardTasks.first(where: { $0.id == btId }),
            let task = taskMap[bt.taskId] {
-            VStack(spacing: 0) {
-                // ── Header ──
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(task.title)
-                            .font(.headline)
-                        Text(detailTypeLabel(for: task.type))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+            ZStack {
+                RisoPaperBackground().ignoresSafeArea()
+                VStack(spacing: 0) {
+                    // ── Header ──
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(task.title)
+                                .font(.risoHead(18, .extraBold))
+                                .foregroundStyle(Color.risoInk)
+                            Text(detailTypeLabel(for: task.type))
+                                .font(.risoBody(13, .semibold))
+                                .foregroundStyle(Color.risoMuted)
+                        }
+                        Spacer(minLength: 8)
+                        RisoToolbarPill(title: "Done") { detailBoardTaskId = nil }
                     }
-                    Spacer()
-                    Button("Done") { detailBoardTaskId = nil }
-                        .fontWeight(.semibold)
-                }
-                .padding()
-                .background(Color(.systemGroupedBackground))
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.vertical, 16)
 
-                Divider()
-
-                List {
-                    switch task.type {
-                    case .normal:
-                        normalDetailContent(boardTask: bt)
-                    case .counting:
-                        countingDetailContent(boardTask: bt, task: task)
-                    case .compound:
-                        compoundDetailContent(boardTask: bt, task: task)
-                    case .achievement:
-                        achievementDetailContent(task: task)
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            switch task.type {
+                            case .normal:
+                                normalDetailContent(boardTask: bt)
+                            case .counting:
+                                countingDetailContent(boardTask: bt, task: task)
+                            case .compound:
+                                compoundDetailContent(boardTask: bt, task: task)
+                            case .achievement:
+                                achievementDetailContent(task: task)
+                            }
+                        }
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 24)
                     }
                 }
-                .listStyle(.insetGrouped)
             }
             .presentationDetents([.medium, .large])
         }
+    }
+
+    /// Card section helper for the Riso detail sheet — `.risoSectionLabel()`
+    /// heading above a paper2 card. Mirrors `EditTaskSheet.risoSection`.
+    @ViewBuilder
+    private func detailSection<Content: View>(
+        _ label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label).risoSectionLabel()
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .risoCard(fill: .risoPaper2)
+                .risoHardShadow(Riso.Shadow.small)
+        }
+    }
+
+    /// Square Riso stepper button used by the counting detail card.
+    @ViewBuilder
+    private func detailStepperButton(
+        system: String, enabled: Bool, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(enabled ? Color.risoInk : Color.risoMuted)
+                .frame(width: 44, height: 44)
+                .risoCard(fill: enabled ? .risoGold : .risoPaper)
+        }
+        .buttonStyle(RisoButtonStyle())
+        .disabled(!enabled)
+        .accessibilityLabel(system == "plus" ? "Increment count" : "Decrement count")
     }
 
     /// Human-readable label for a task type shown in the detail sheet header.
@@ -1192,17 +1232,22 @@ struct BoardPlayView: View {
     @ViewBuilder
     private func normalDetailContent(boardTask: BoardTask) -> some View {
         let isCompleted = taskMap[boardTask.taskId]?.isCompleted ?? false
-        Section("Completion") {
+        detailSection("Completion") {
             Button {
                 handleNormalTap(boardTask: boardTask)
                 detailBoardTaskId = nil
             } label: {
-                Label(
-                    isCompleted ? "Mark Incomplete" : "Mark Complete",
-                    systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
-                )
-                .foregroundColor(isCompleted ? .red : .green)
+                HStack(spacing: 8) {
+                    Image(systemName: isCompleted ? "xmark.circle" : "checkmark.circle")
+                    Text(isCompleted ? "Mark incomplete" : "Mark complete")
+                }
+                .font(.risoHead(15, .bold))
+                .foregroundStyle(isCompleted ? Color.risoInk : Color.risoPaper)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .risoCard(fill: isCompleted ? .risoPaper2 : .risoGreen)
             }
+            .buttonStyle(RisoButtonStyle())
             .disabled(isProcessing || isBoardLocked)
         }
     }
@@ -1228,49 +1273,45 @@ struct BoardPlayView: View {
             return rawCount
         }()
 
-        Section("Progress") {
-            ProgressView(
-                value: Double(min(current, maxVal)),
-                total: Double(max(maxVal, 1))
-            )
-            .tint(.orange)
-            .padding(.vertical, 4)
+        detailSection("Progress") {
+            VStack(alignment: .leading, spacing: 12) {
+                RisoProgressBar(
+                    value: maxVal > 0 ? Double(min(current, maxVal)) / Double(maxVal) : 0,
+                    color: current >= maxVal ? .risoGreen : .risoBlue
+                )
 
-            Text("\(current) / \(maxVal)\(unitText.isEmpty ? "" : " \(unitText)")")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                Text("\(current) / \(maxVal)\(unitText.isEmpty ? "" : " \(unitText)")")
+                    .font(.risoBody(13, .semibold))
+                    .foregroundStyle(Color.risoMuted)
 
-            HStack(spacing: 24) {
-                Button {
-                    handleCountingDecrement(boardTask: boardTask, task: task)
-                } label: {
-                    Image(systemName: "minus.circle")
-                        .font(.title)
-                        .foregroundColor(current > 0 && !isLinkedCounter ? .orange : .secondary)
+                HStack(spacing: 16) {
+                    // Linked derived counters are read-only — decrement disabled.
+                    detailStepperButton(
+                        system: "minus",
+                        enabled: current > 0 && !isLinkedCounter && !isProcessing && !isBoardLocked
+                    ) {
+                        handleCountingDecrement(boardTask: boardTask, task: task)
+                    }
+
+                    Spacer()
+
+                    Text("\(current)")
+                        .font(.risoHead(26, .extraBold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.risoInk)
+
+                    Spacer()
+
+                    detailStepperButton(
+                        system: "plus",
+                        // No maxVal gate — overshoot (current > maxCount) is a
+                        // feature, never clamped; matches the cell-tap stepper.
+                        enabled: !isProcessing && !isBoardLocked
+                    ) {
+                        handleCountingTap(boardTask: boardTask, task: task)
+                    }
                 }
-                // Linked derived counters are read-only — decrement is disabled.
-                .disabled(current == 0 || isLinkedCounter || isProcessing || isBoardLocked)
-                .buttonStyle(.borderless)
-
-                Spacer()
-
-                Text("\(current)")
-                    .font(.title2.monospacedDigit())
-                    .fontWeight(.semibold)
-
-                Spacer()
-
-                Button {
-                    handleCountingTap(boardTask: boardTask, task: task)
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title)
-                        .foregroundColor(current < maxVal ? .orange : .secondary)
-                }
-                .disabled(current >= maxVal || isProcessing || isBoardLocked)
-                .buttonStyle(.borderless)
             }
-            .padding(.vertical, 4)
         }
     }
 
@@ -1284,61 +1325,65 @@ struct BoardPlayView: View {
     private func compoundDetailContent(boardTask: BoardTask, task: Task) -> some View {
         let links = (compoundChildrenByCompound[task.id] ?? [])
 
-        Section("Children") {
-            if links.isEmpty {
-                Text("No children found")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(links, id: \.id) { link in
-                    let childTask = taskMap[link.childTaskId]
-                    let isDone: Bool = {
-                        guard let ct = childTask, !ct.isDeleted else { return false }
-                        if ct.type == .compound {
-                            return CompoundEvaluation.evaluate(
-                                compound: ct,
-                                childrenByCompound: compoundChildrenByCompound,
-                                taskById: taskMap
-                            )
-                        }
-                        return ct.isCompleted
-                    }()
-
-                    HStack {
-                        Button {
-                            guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
-                            handleCompoundChildToggle(childTask: ct)
-                        } label: {
-                            HStack {
-                                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(isDone ? .green : .secondary)
-                                Text(childTask?.title ?? link.childTaskId)
-                                    .foregroundColor(.primary)
-                                Spacer()
+        detailSection("Children") {
+            VStack(alignment: .leading, spacing: 12) {
+                if links.isEmpty {
+                    Text("No children found")
+                        .font(.risoBody(13, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                } else {
+                    ForEach(links, id: \.id) { link in
+                        let childTask = taskMap[link.childTaskId]
+                        let isDone: Bool = {
+                            guard let ct = childTask, !ct.isDeleted else { return false }
+                            if ct.type == .compound {
+                                return CompoundEvaluation.evaluate(
+                                    compound: ct,
+                                    childrenByCompound: compoundChildrenByCompound,
+                                    taskById: taskMap
+                                )
                             }
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isProcessing || isBoardLocked || childTask == nil)
+                            return ct.isCompleted
+                        }()
 
-                        // Info button — opens the child task's detail in the library sheet.
-                        Button {
-                            taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
-                        } label: {
-                            Image(systemName: "info.circle")
-                                .font(.system(size: 16))
-                                .foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            Button {
+                                guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
+                                handleCompoundChildToggle(childTask: ct)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(isDone ? Color.risoGreen : Color.risoMuted)
+                                    Text(childTask?.title ?? link.childTaskId)
+                                        .font(.risoBody(14, .semibold))
+                                        .foregroundStyle(Color.risoInk)
+                                    Spacer(minLength: 0)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isProcessing || isBoardLocked || childTask == nil)
+
+                            // Info button — opens the child task's detail in the library sheet.
+                            Button {
+                                taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
+                            } label: {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(Color.risoMuted)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                     }
                 }
             }
         }
 
-        Section {
-            Text("Completion applies to all boards where this task appears.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
+        Text("Completion applies to all boards where this task appears.")
+            .font(.risoBody(12, .regular))
+            .foregroundStyle(Color.risoMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
     }
 
     /// Phase 6.3 — detail content for an ACHIEVEMENT-typed Task.
@@ -1360,23 +1405,28 @@ struct BoardPlayView: View {
         }
 
         if let refBoardId = task.referencedBoardId {
-            let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId })
-            Section("Watching board") {
+            // Match the !isDeleted filter used by achievementBadge(for:) and
+            // achievementCellIsCompleted(for:) so a soft-deleted watched board
+            // doesn't show here while the cell reads as not-complete.
+            let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted })
+            detailSection("Watching board") {
                 if let ref {
-                    HStack {
-                        let isMet = meets(ref)
+                    let isMet = meets(ref)
+                    HStack(spacing: 8) {
                         Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(isMet ? .green : .secondary)
+                            .foregroundStyle(isMet ? Color.risoGreen : Color.risoMuted)
                         Text(ref.name)
-                            .foregroundColor(.primary)
-                        Spacer()
+                            .font(.risoBody(14, .semibold))
+                            .foregroundStyle(Color.risoInk)
+                        Spacer(minLength: 0)
                         Text(trigger == .bingo ? "Bingo" : "Greenlog")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(.risoBody(12, .bold))
+                            .foregroundStyle(Color.risoMuted)
                     }
                 } else {
                     Text("(referenced board unavailable)")
-                        .foregroundColor(.secondary)
+                        .font(.risoBody(13, .semibold))
+                        .foregroundStyle(Color.risoMuted)
                 }
             }
         } else if let refTemplateId = task.referencedTemplateId {
@@ -1396,40 +1446,44 @@ struct BoardPlayView: View {
             }()
             let metCount = spawns.filter(meets).count
             let required = task.requiredCount ?? 0
-            Section("Watching template") {
-                HStack {
-                    Image(systemName: "rectangle.stack")
-                        .foregroundColor(.secondary)
-                    Text(template?.name ?? "(referenced template unavailable)")
-                        .foregroundColor(.primary)
-                    Spacer()
-                    // Format `met / required` — derivation requires
-                    // metCount >= requiredCount on a non-empty in-window
-                    // set, so this is the actual completion fraction.
-                    // `(N in window)` aside tells the user how many
-                    // spawns currently exist vs. how many they need.
-                    Text("\(metCount) / \(required)")
-                        .foregroundColor(.secondary)
-                        .font(.subheadline.monospacedDigit())
-                    Text(trigger == .bingo ? "Bingo" : "Greenlog")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            detailSection("Watching template") {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "rectangle.stack")
+                            .foregroundStyle(Color.risoMuted)
+                        Text(template?.name ?? "(referenced template unavailable)")
+                            .font(.risoBody(14, .semibold))
+                            .foregroundStyle(Color.risoInk)
+                        Spacer(minLength: 0)
+                        // `met / required` — derivation requires metCount >=
+                        // requiredCount on a non-empty in-window set, so this is
+                        // the actual completion fraction.
+                        Text("\(metCount) / \(required)")
+                            .font(.risoHead(14, .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.risoInk)
+                        Text(trigger == .bingo ? "Bingo" : "Greenlog")
+                            .font(.risoBody(12, .bold))
+                            .foregroundStyle(Color.risoMuted)
+                    }
+                    Text("\(spawns.count) in-window spawn\(spawns.count == 1 ? "" : "s")")
+                        .font(.risoBody(12, .regular))
+                        .foregroundStyle(Color.risoMuted)
                 }
-                Text("\(spawns.count) in-window spawn\(spawns.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
         } else {
-            Section {
+            detailSection("Achievement") {
                 Text("This achievement task has no reference set.")
-                    .foregroundColor(.secondary)
+                    .font(.risoBody(13, .semibold))
+                    .foregroundStyle(Color.risoMuted)
             }
         }
-        Section {
-            Text("Derived from the watched target; the cell cannot be toggled directly.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
+
+        Text("Derived from the watched target; the cell cannot be toggled directly.")
+            .font(.risoBody(12, .regular))
+            .foregroundStyle(Color.risoMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
     }
 
     // MARK: - Tap Handlers

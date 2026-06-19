@@ -5,15 +5,13 @@ import SnapshotTesting
 
 /// Snapshot coverage for the Riso-reskinned Edit Board flow.
 ///
-/// Strategy: render the REAL `BoardSetupFormView` in `.editActive` mode
-/// directly — not a hand-mirrored copy — so the tests fail if the
-/// production views regress.
+/// Strategy: render the REAL (edit-only) `BoardSetupFormView` directly — not a
+/// hand-mirrored copy — so the tests fail if the production views regress.
 ///
 /// `EditBoardSheet` depends on `@EnvironmentObject AuthService` and fires
 /// async DB reads in `.onAppear`. Both make snapshot wiring non-trivial, so
 /// we snapshot `BoardSetupFormView` directly (in a paper ScrollView) to get
-/// deterministic control over each field state, following the same strategy
-/// as the pre-existing `EditBoardSheetSnapshotTests`.
+/// deterministic control over each field state.
 ///
 /// Determinism rules:
 ///   - Fixed dates (`Date(timeIntervalSince1970: …)`) — never `Date()`.
@@ -116,7 +114,7 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
 
     // MARK: - View builders
 
-    /// Builds a `BoardSetupFormView` in `.editActive` mode wrapped in a
+    /// Builds the edit-only `BoardSetupFormView` wrapped in a
     /// paper-background `ScrollView` so sections render outside a `Form`.
     private func makeForm(
         name: String = "Spring Goals",
@@ -128,7 +126,6 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 BoardSetupFormView(
-                    mode: .editActive,
                     name: .constant(name),
                     timeframe: .constant(timeframe),
                     customStartDate: .constant(Self.fixedStart),

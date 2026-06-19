@@ -7,6 +7,9 @@ import SwiftUI
 /// wired into production navigation.
 struct RisoKitGallery: View {
     @State private var seg: String = "weekly"
+    @State private var sampleText: String = "Run"
+    @State private var sampleNum: String = "5"
+    @State private var samplePass: String = "secret"
 
     var body: some View {
         ZStack {
@@ -73,6 +76,13 @@ struct RisoKitGallery: View {
                             }
                         }
                     )
+
+                    sectionLabel("Text fields")
+                    VStack(spacing: 8) {
+                        RisoTextField(placeholder: "Task title", text: $sampleText)
+                        RisoNumberField(placeholder: "Goal", text: $sampleNum)
+                        RisoSecureField(placeholder: "Password", text: $samplePass)
+                    }
 
                     sectionLabel("Progress")
                     RisoProgressBar(value: 0.56)
