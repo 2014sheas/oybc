@@ -936,6 +936,17 @@ export const UserPreferencesSchema = z.object({
   haptics: z.boolean().optional(),
   expiringReminders: z.boolean().optional(),
   autoArchiveCompleted: z.boolean().optional(),
+  // Notifications (Phase 7 — iOS local reminders): optional for forward-compat
+  // with peers that wrote their user doc before these fields existed.
+  // mergeUserPreferences fills defaults on the pull path and rejects a
+  // malformed dailyPlayReminderTime.
+  notificationsEnabled: z.boolean().optional(),
+  recurringWindowReminders: z.boolean().optional(),
+  dailyPlayReminderEnabled: z.boolean().optional(),
+  dailyPlayReminderTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
 });
 
 export const UserSchema = z.object({

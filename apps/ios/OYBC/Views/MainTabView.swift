@@ -18,6 +18,9 @@ import SwiftUI
 /// `CreateHubView.onBoardCompleted` pushes the new board id into.
 struct MainTabView: View {
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var notificationService: NotificationService
+    @EnvironmentObject var notificationDelegate: NotificationDelegate
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var selectedTab: Int = 0
     @State private var boardsPath: NavigationPath = NavigationPath()
@@ -251,10 +254,48 @@ struct MainTabView: View {
             .tag(3)
         }
         .preferredColorScheme(forcedColorScheme)
+        // Phase 7 — reconcile the OS notification set whenever we have fresh
+        // data: at launch, on every foreground, and on tab switches (which
+        // catches a board just created on the Create tab). No background work.
+        .task {
+            await reconcileNotifications()
+            routePendingDeepLink()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            _Concurrency.Task { await reconcileNotifications() }
+        }
+        .onChange(of: selectedTab) { _, _ in
+            _Concurrency.Task { await reconcileNotifications() }
+        }
+        .onChange(of: notificationDelegate.pendingDeepLink) { _, _ in
+            routePendingDeepLink()
+        }
+    }
+
+    /// Re-syncs scheduled local notifications with current local state.
+    private func reconcileNotifications() async {
+        guard let userId = authService.currentUser?.id else { return }
+        await notificationService.reconcile(userId: userId)
+    }
+
+    /// Routes a buffered notification-tap target into the tab tree, then
+    /// clears it. A board target deep-links to that board; anything else just
+    /// surfaces the Boards tab.
+    private func routePendingDeepLink() {
+        guard let link = notificationDelegate.pendingDeepLink else { return }
+        if let boardId = link.boardId {
+            openBoard(boardId)
+        } else {
+            selectedTab = 0
+        }
+        notificationDelegate.pendingDeepLink = nil
     }
 }
 
 #Preview {
     MainTabView()
         .environmentObject(AuthService())
+        .environmentObject(NotificationService())
+        .environmentObject(NotificationDelegate.shared)
 }

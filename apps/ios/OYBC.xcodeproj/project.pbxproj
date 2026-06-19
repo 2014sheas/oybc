@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		003D2EBEB2FB29243F9D85DE /* NotificationPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DC94ED8745459B1A6BA69A /* NotificationPlannerTests.swift */; };
 		0068762EBEB3D433C1520B40 /* testPoolHeaderShortDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 9477E446F6B07DAF0B31FA3B /* testPoolHeaderShortDark.1.png */; };
 		00C4B40519D5D37CB099504F /* testPickerEmpty_light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 6A0F642B9B8854DF1C98B219 /* testPickerEmpty_light.1.png */; };
 		010F47A9B9F278E848C4C517 /* testCountingDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4C5DB9D40E4FDA289A18EED1 /* testCountingDark.1.png */; };
 		01286C8FEEE06838B4023C96 /* RisoProfileAccountCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34761B2DB4EA51F81F221BC9 /* RisoProfileAccountCard.swift */; };
 		013F836E042FFEF4F3153FF7 /* testSlide2Dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C92FF47F9B2A34F2FCE233AF /* testSlide2Dark.1.png */; };
+		031ED4BC75160A11C0B5B9B1 /* NotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE98FE8DA5998F25F01F6C0 /* NotificationDelegate.swift */; };
 		0391C41C2633D813B7694A71 /* testPosterCardWithStatsLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = C937A0A804DFCC3E165D25F3 /* testPosterCardWithStatsLight.1.png */; };
 		03B8B91B1D8AF8EF6F22A607 /* AchievementSquareBadgeData.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */; };
 		03DF70174285CDA62B66861A /* RisoTasksTabSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB413B80CC1E7378AC5DC120 /* RisoTasksTabSnapshotTests.swift */; };
@@ -39,6 +41,7 @@
 		172DED23C0E25C1E9EFECA52 /* testSlide2Light.1.png in Resources */ = {isa = PBXBuildFile; fileRef = D79C3403B66840E92AFE87EA /* testSlide2Light.1.png */; };
 		175A71D2DBE0320B840CB5B7 /* testGridEmpty_dark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 83A29B4E35E95AAD8F6B044E /* testGridEmpty_dark.1.png */; };
 		180B4EE7A55EBBC6633EF7D3 /* testGreenlogOverlayDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 19D2B197D9D51D1EB634888D /* testGreenlogOverlayDark.1.png */; };
+		1811A8B14550E14628FBA320 /* NotificationPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7723BB9B0E61F9DE428098C9 /* NotificationPlanner.swift */; };
 		186A1D072B737FE801C37C7D /* PendingRecurringBoardsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D405995419454FD4EC82924D /* PendingRecurringBoardsViewModel.swift */; };
 		1881054E172F5BD0B8A4C0EA /* BoardWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECCBF1C8380F30B8C320AABD /* BoardWizardView.swift */; };
 		19A377E75A5CDE227284ECDC /* Bricolage-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 3D64905ECED6E41D6E7BAE1F /* Bricolage-OFL.txt */; };
@@ -214,6 +217,7 @@
 		80F7C6ADD7A0F5976422120C /* testNormalDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 1E4852EC43AD9C47B3A2E822 /* testNormalDark.1.png */; };
 		813875852351F232A8522CDA /* RisoCoreBoardsSectionSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EDAA6C4C2CCF6C15150F5D /* RisoCoreBoardsSectionSnapshotTests.swift */; };
 		81A7E4DCA9CA0233BCD06969 /* SyncRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7622ACC5ABC293169A87A118 /* SyncRetryTests.swift */; };
+		81B792C4C55EB6684324D983 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A174AB6F126BF9B7DA19B02 /* NotificationService.swift */; };
 		81B9DF8ABAAA2A25B37DE881 /* Archivo-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 192CEC91EF52115CF4281690 /* Archivo-OFL.txt */; };
 		82055B0D423CE929D398F393 /* testWindowBar.1.png in Resources */ = {isa = PBXBuildFile; fileRef = BDB48994F0019F6FC55D51A8 /* testWindowBar.1.png */; };
 		82482EA7C8020E1CFF28D5EC /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3BC179DE0E837C8B5BCD843 /* ProfileView.swift */; };
@@ -290,6 +294,7 @@
 		BCF35E5F81FB0CBF7E44960F /* UserPreferencesCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0B38321FC596D67DEBCAAB /* UserPreferencesCodableTests.swift */; };
 		BCF848EE1EE641CA7207529A /* testControlsCountingFilterDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = EF92F524486D1ADD456956E9 /* testControlsCountingFilterDark.1.png */; };
 		BD7E816390E48BAA75582B89 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3A20C9A74AF6B70C127B13 /* ShuffleTests.swift */; };
+		BD9584938AF23B46A075C37D /* NotificationPreferencesSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18BF4EAEA2FF266D273ECEC7 /* NotificationPreferencesSnapshotTests.swift */; };
 		BDFDF5C227CE4689E9D5DB98 /* testWindowCellEmptyPast.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 7AF9D0C220617CA87534E0A1 /* testWindowCellEmptyPast.1.png */; };
 		BE3F516696E7268BAC49D3E5 /* RisoBoardCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08FC3FFE13228CD857591068 /* RisoBoardCard.swift */; };
 		BF25DF0D1007E0448FC56801 /* CreateFormViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DCC1B869DCD626A926C690 /* CreateFormViewModel.swift */; };
@@ -330,6 +335,7 @@
 		DDD9AF5D9C15FFEEECCCCCDD /* testCompoundNewSubCountingDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8DFE4436DC859C5CFDD98F27 /* testCompoundNewSubCountingDark.1.png */; };
 		DECB34B89F586CE58D0ACF6D /* testPreviewStepReadyDark.1.png in Resources */ = {isa = PBXBuildFile; fileRef = CA398D5DF0F3188C0FF04A39 /* testPreviewStepReadyDark.1.png */; };
 		E0894E4DE72A0307D028E9C8 /* CreateHubDraftsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3F18DF150886C6CA0F36DD /* CreateHubDraftsListView.swift */; };
+		E0DA461A0FC7A7AEE130AFB8 /* NotificationPreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 838CDB33DF9CBB9C230865E5 /* NotificationPreferencesView.swift */; };
 		E2A7ADB19AEDC4E9C9A17A78 /* testCellCountingWithProgressLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 77A7739B54001A20470124B3 /* testCellCountingWithProgressLight.1.png */; };
 		E37AD99F262D1546BA394E4F /* testFormWeeklyNoneLight.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 8C7A18505021BA5AD16BE183 /* testFormWeeklyNoneLight.1.png */; };
 		E38CBB90376A70A6449AC357 /* testEmptyLibrary.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4B67B15D6F63F340F5E5B72C /* testEmptyLibrary.1.png */; };
@@ -436,6 +442,7 @@
 		16B24FB7FF9CEDD9A319B968 /* OYBCTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OYBCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1717D3C4101C1F97F5D7A1B5 /* testCompoundInOrderWithSubsDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundInOrderWithSubsDark.1.png; sourceTree = "<group>"; };
 		1795DA658544F67462B5E7E8 /* testPoolListWithTasksLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPoolListWithTasksLight.1.png; sourceTree = "<group>"; };
+		18BF4EAEA2FF266D273ECEC7 /* NotificationPreferencesSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesSnapshotTests.swift; sourceTree = "<group>"; };
 		192CEC91EF52115CF4281690 /* Archivo-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Archivo-OFL.txt"; sourceTree = "<group>"; };
 		19D2B197D9D51D1EB634888D /* testGreenlogOverlayDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testGreenlogOverlayDark.1.png; sourceTree = "<group>"; };
 		19F077A5F56B8F18EEB31AFB /* testCompoundGroupCollapsedLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCompoundGroupCollapsedLight.1.png; sourceTree = "<group>"; };
@@ -464,6 +471,7 @@
 		2A20F7576E6311C71B7255FA /* Archivo-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Bold.ttf"; sourceTree = "<group>"; };
 		2C355701E707A80923466C01 /* testComposedGridDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testComposedGridDark.1.png; sourceTree = "<group>"; };
 		2C781A106EEE50F8886C0DBE /* TaskLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskLibraryViewModel.swift; sourceTree = "<group>"; };
+		2CE98FE8DA5998F25F01F6C0 /* NotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelegate.swift; sourceTree = "<group>"; };
 		2DE69CF0825C0657176C53E9 /* Archivo-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-SemiBold.ttf"; sourceTree = "<group>"; };
 		2EDE0F9BA72EC7E52EDBD5ED /* testBoardCardActiveDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBoardCardActiveDark.1.png; sourceTree = "<group>"; };
 		2F691584B652D508557FDC99 /* RisoCoreChromeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreChromeSnapshotTests.swift; sourceTree = "<group>"; };
@@ -583,6 +591,7 @@
 		7622ACC5ABC293169A87A118 /* SyncRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncRetryTests.swift; sourceTree = "<group>"; };
 		770ABF3A9AD61CF9C31C8E32 /* testPosterCardWithoutStatsLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPosterCardWithoutStatsLight.1.png; sourceTree = "<group>"; };
 		7714989EDC6C05C1002E24E4 /* testDraftsListSingleRow.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDraftsListSingleRow.1.png; sourceTree = "<group>"; };
+		7723BB9B0E61F9DE428098C9 /* NotificationPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPlanner.swift; sourceTree = "<group>"; };
 		77A7739B54001A20470124B3 /* testCellCountingWithProgressLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCellCountingWithProgressLight.1.png; sourceTree = "<group>"; };
 		7849353774195FD6C74A3379 /* testWindowCellEmptyCurrent.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testWindowCellEmptyCurrent.1.png; sourceTree = "<group>"; };
 		78B0F87453558614267A6C84 /* RisoCreateHubSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCreateHubSnapshotTests.swift; sourceTree = "<group>"; };
@@ -602,6 +611,7 @@
 		829314244179FA32A9DBF4FA /* testDraftsListMultipleRows.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDraftsListMultipleRows.1.png; sourceTree = "<group>"; };
 		83425D282C8DE9AD622750C6 /* RecurringBoardTemplatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoardTemplatesTests.swift; sourceTree = "<group>"; };
 		8368EA035855A291D564E69A /* testWindowBarLongLabelTruncation.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testWindowBarLongLabelTruncation.1.png; sourceTree = "<group>"; };
+		838CDB33DF9CBB9C230865E5 /* NotificationPreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesView.swift; sourceTree = "<group>"; };
 		83A29B4E35E95AAD8F6B044E /* testGridEmpty_dark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testGridEmpty_dark.1.png; sourceTree = "<group>"; };
 		83E8AFF5667BFE81E8C3D164 /* DefaultPoolsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultPoolsListView.swift; sourceTree = "<group>"; };
 		852273F3D4D65D463CE6D707 /* testSignOutConfirmLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSignOutConfirmLight.1.png; sourceTree = "<group>"; };
@@ -631,11 +641,13 @@
 		9477E446F6B07DAF0B31FA3B /* testPoolHeaderShortDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPoolHeaderShortDark.1.png; sourceTree = "<group>"; };
 		95765CD1D332F33B198789F4 /* TaskDetailSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailSheetView.swift; sourceTree = "<group>"; };
 		95B39255CB5669FBD4C95887 /* testWindowBarLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testWindowBarLight.1.png; sourceTree = "<group>"; };
+		95DC94ED8745459B1A6BA69A /* NotificationPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPlannerTests.swift; sourceTree = "<group>"; };
 		960DDDCDDC6676B323DA630C /* testCoreGridAllReadyDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testCoreGridAllReadyDark.1.png; sourceTree = "<group>"; };
 		96BEE1059D202FBFAFF12CF9 /* testPickerBoards_light.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testPickerBoards_light.1.png; sourceTree = "<group>"; };
 		9748FBE42A88154BBAD5A7F3 /* testShareSheetWithStatsDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testShareSheetWithStatsDark.1.png; sourceTree = "<group>"; };
 		986CB343DD2879539CA0AA65 /* testWindowCellFilledCurrentDark.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testWindowCellFilledCurrentDark.1.png; sourceTree = "<group>"; };
 		993A359DF98606F1871B351E /* testProfileComposedLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProfileComposedLight.1.png; sourceTree = "<group>"; };
+		9A174AB6F126BF9B7DA19B02 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		9B3105D4EA5550DB813921E7 /* RisoCompoundPanelSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCompoundPanelSnapshotTests.swift; sourceTree = "<group>"; };
 		9CC5D387F2397A3984CF5FF2 /* testDenseLibraryUnselected.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testDenseLibraryUnselected.1.png; sourceTree = "<group>"; };
 		9E927081D11722323A96FAB0 /* testBoardCardActiveLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testBoardCardActiveLight.1.png; sourceTree = "<group>"; };
@@ -776,7 +788,7 @@
 		FE8ADF02283FC8706A9B3326 /* testFormCustomDatesCustomFreeLight.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testFormCustomDatesCustomFreeLight.1.png; sourceTree = "<group>"; };
 		FF05FDF400BEB2A8666662F9 /* testSetupStepBlank.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSetupStepBlank.1.png; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_C1FFBBD8-88F3-4701-8E0C-633B0EB5990F" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_4F3DFBB9-11CA-4261-A0E6-4208926403C5" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1053,6 +1065,9 @@
 				9F714DD146988F2C085D5EA4 /* CycleDetection.swift */,
 				085F1D48B28D5DF264475FBF /* DerivationPass.swift */,
 				57E4812F35B465F49A15FFAB /* NetworkMonitor.swift */,
+				2CE98FE8DA5998F25F01F6C0 /* NotificationDelegate.swift */,
+				7723BB9B0E61F9DE428098C9 /* NotificationPlanner.swift */,
+				9A174AB6F126BF9B7DA19B02 /* NotificationService.swift */,
 				66E920683B34BCA199B8339C /* RecurringBoards.swift */,
 				14228E76A2DE23D976EB65E8 /* RecurringBoardSpawn.swift */,
 				34C1E82551617CF266DF7085 /* RecurringBoardTemplates.swift */,
@@ -1235,6 +1250,7 @@
 				1BE4A2078E0FB711D2CC4E47 /* CompoundEvaluationTests.swift */,
 				0EB4FF22AFFCA34D5F53426C /* CycleDetectionTests.swift */,
 				EEA091BEC9F9DE7F7EDCC979 /* DerivationPassTests.swift */,
+				95DC94ED8745459B1A6BA69A /* NotificationPlannerTests.swift */,
 				2822E1DBF15699974C2F70C5 /* OYBCTests.swift */,
 				B31EFBC131E94BA5D5BB91DB /* RecurringBoardsTests.swift */,
 				83425D282C8DE9AD622750C6 /* RecurringBoardTemplatesTests.swift */,
@@ -1324,6 +1340,7 @@
 				A0CF50310EFCCFABC8B74CF4 /* BoardPreferencesView.swift */,
 				83E8AFF5667BFE81E8C3D164 /* DefaultPoolsListView.swift */,
 				6646F7D2F0406435F190BB6F /* EditProfileSheet.swift */,
+				838CDB33DF9CBB9C230865E5 /* NotificationPreferencesView.swift */,
 				A3BC179DE0E837C8B5BCD843 /* ProfileView.swift */,
 				310D59B3C2E057704E9B0BE5 /* RecurringTemplatesView.swift */,
 				49AC4F2FC83EB01120466D27 /* Components */,
@@ -1358,6 +1375,7 @@
 				C271A5A53EB2612D1AD7923C /* BoardWizardTasksStepSnapshotTests.swift */,
 				413A0CF38587FDB043DF6D7C /* CoreBoardWindowSnapshotTests.swift */,
 				CEBFFC64669C54DF01A411E8 /* CreateHubSnapshotTests.swift */,
+				18BF4EAEA2FF266D273ECEC7 /* NotificationPreferencesSnapshotTests.swift */,
 				ED723FA5355D6C5E4952B79D /* RecurringBoardsSnapshotTests.swift */,
 				F6D35D62C9AA4E9927899346 /* RisoBoardsHomeSnapshotTests.swift */,
 				9B3105D4EA5550DB813921E7 /* RisoCompoundPanelSnapshotTests.swift */,
@@ -1575,10 +1593,10 @@
 			path = RisoPlayBoardSnapshotTests;
 			sourceTree = "<group>";
 		};
-		"TEMP_0308B114-FF87-41C7-92EF-F8291E2DB2C5" /* ios */ = {
+		"TEMP_59E9248E-23FC-4484-99C0-5D3666E347E4" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_C1FFBBD8-88F3-4701-8E0C-633B0EB5990F" /* Signing.xcconfig */,
+				"TEMP_4F3DFBB9-11CA-4261-A0E6-4208926403C5" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -2011,6 +2029,10 @@
 				F3B644B5DC92BE978EDF7587 /* MigrationV7Helpers.swift in Sources */,
 				F5E2465F70AE719F0B3757D6 /* NetworkMonitor.swift in Sources */,
 				40892F014248FEB42D61A04F /* NewTaskSheetView.swift in Sources */,
+				031ED4BC75160A11C0B5B9B1 /* NotificationDelegate.swift in Sources */,
+				1811A8B14550E14628FBA320 /* NotificationPlanner.swift in Sources */,
+				E0DA461A0FC7A7AEE130AFB8 /* NotificationPreferencesView.swift in Sources */,
+				81B792C4C55EB6684324D983 /* NotificationService.swift in Sources */,
 				37624F99D990B4337BC5C84F /* OYBCApp.swift in Sources */,
 				6197806419A16FEF16664308 /* OnboardingView.swift in Sources */,
 				0BF5FB181157FCDC92BBD5A2 /* OperatorType.swift in Sources */,
@@ -2086,6 +2108,7 @@
 				438A0AA94D62EDB29E734FA0 /* CompoundEvaluationTests.swift in Sources */,
 				EC4D7D74EF488E9483EC2FFC /* CycleDetectionTests.swift in Sources */,
 				C21D1CB5B562EFAD0E9AECB9 /* DerivationPassTests.swift in Sources */,
+				003D2EBEB2FB29243F9D85DE /* NotificationPlannerTests.swift in Sources */,
 				5C2D41E4AAD6F8F30FAF9B67 /* OYBCTests.swift in Sources */,
 				6BF9AEAC77D9F447A5B9A82A /* RecurringBoardTemplatesTests.swift in Sources */,
 				3C523FE7122A485435C16813 /* RecurringBoardsTests.swift in Sources */,
@@ -2105,6 +2128,7 @@
 				2ADC58A35212918001314A49 /* BoardWizardTasksStepSnapshotTests.swift in Sources */,
 				AE02ED0853CE2CEDD27974B4 /* CoreBoardWindowSnapshotTests.swift in Sources */,
 				696C0270DF259F921664659B /* CreateHubSnapshotTests.swift in Sources */,
+				BD9584938AF23B46A075C37D /* NotificationPreferencesSnapshotTests.swift in Sources */,
 				FA3834B42E87C76E647113FF /* RecurringBoardsSnapshotTests.swift in Sources */,
 				1164F8933026E32048D862BB /* RisoBoardsHomeSnapshotTests.swift in Sources */,
 				568C2AC5CE7F2B9D13B9340B /* RisoCompoundPanelSnapshotTests.swift in Sources */,
@@ -2146,7 +2170,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_C1FFBBD8-88F3-4701-8E0C-633B0EB5990F" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_4F3DFBB9-11CA-4261-A0E6-4208926403C5" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2243,7 +2267,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_C1FFBBD8-88F3-4701-8E0C-633B0EB5990F" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_4F3DFBB9-11CA-4261-A0E6-4208926403C5" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

@@ -204,6 +204,20 @@ struct ProfileView: View {
 
             rowDivider
 
+            // Notifications (Phase 7 — local reminders)
+            NavigationLink {
+                NotificationPreferencesView()
+            } label: {
+                RisoProfileRow(
+                    icon: "bell",
+                    label: "Notifications",
+                    chevron: true
+                )
+            }
+            .buttonStyle(.plain)
+
+            rowDivider
+
             // Recurring templates (with async count)
             NavigationLink {
                 RecurringTemplatesView(onEditTemplate: onEditRecurringTemplate)

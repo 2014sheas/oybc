@@ -43,6 +43,11 @@ describe('UserPreferencesSchema', () => {
       'haptics',
       'expiringReminders',
       'autoArchiveCompleted',
+      // Notifications (Phase 7) — optional for forward-compat too.
+      'notificationsEnabled',
+      'recurringWindowReminders',
+      'dailyPlayReminderEnabled',
+      'dailyPlayReminderTime',
     ]);
     const keys = (Object.keys(DEFAULT_USER_PREFERENCES) as (keyof typeof DEFAULT_USER_PREFERENCES)[])
       .filter((k) => !optionalKeys.has(k));
@@ -67,6 +72,10 @@ describe('UserPreferencesSchema', () => {
     'haptics',
     'expiringReminders',
     'autoArchiveCompleted',
+    'notificationsEnabled',
+    'recurringWindowReminders',
+    'dailyPlayReminderEnabled',
+    'dailyPlayReminderTime',
   ] as const)('treats %s as optional (forward-compat for older peers)', (key) => {
     const partial = { ...DEFAULT_USER_PREFERENCES };
     delete (partial as Record<string, unknown>)[key];
@@ -83,6 +92,12 @@ describe('UserPreferencesSchema', () => {
     ['haptics (string)', { haptics: 'on' }],
     ['expiringReminders (number)', { expiringReminders: 0 }],
     ['autoArchiveCompleted (null)', { autoArchiveCompleted: null }],
+    ['notificationsEnabled (string)', { notificationsEnabled: 'yes' }],
+    ['recurringWindowReminders (number)', { recurringWindowReminders: 1 }],
+    ['dailyPlayReminderEnabled (null)', { dailyPlayReminderEnabled: null }],
+    ['dailyPlayReminderTime (non-HH:mm)', { dailyPlayReminderTime: '8pm' }],
+    ['dailyPlayReminderTime (out of range)', { dailyPlayReminderTime: '24:00' }],
+    ['dailyPlayReminderTime (number)', { dailyPlayReminderTime: 2000 }],
   ])('still rejects invalid type for %s when present', (_label, override) => {
     expect(() =>
       UserPreferencesSchema.parse({ ...DEFAULT_USER_PREFERENCES, ...override })
@@ -153,6 +168,10 @@ describe('mergeUserPreferences', () => {
       haptics: true,
       expiringReminders: true,
       autoArchiveCompleted: false,
+      notificationsEnabled: true,
+      recurringWindowReminders: false,
+      dailyPlayReminderEnabled: true,
+      dailyPlayReminderTime: '07:30',
     };
     expect(mergeUserPreferences(full)).toEqual(full);
   });
@@ -197,6 +216,40 @@ describe('mergeUserPreferences', () => {
     });
     expect(merged.recurringDailyEnabled).toBe(true);
     expect(merged.recurringWeeklyEnabled).toBe(true);
+  });
+
+  // Notifications (Phase 7) — same forward-compat + quarantine guarantees.
+  it('fills missing notification fields with their defaults', () => {
+    const merged = mergeUserPreferences({ weekStartDay: 'sunday' });
+    expect(merged.notificationsEnabled).toBe(false);
+    expect(merged.recurringWindowReminders).toBe(true);
+    expect(merged.dailyPlayReminderEnabled).toBe(false);
+    expect(merged.dailyPlayReminderTime).toBe('20:00');
+  });
+
+  it('preserves valid notification values when provided', () => {
+    const merged = mergeUserPreferences({
+      notificationsEnabled: true,
+      recurringWindowReminders: false,
+      dailyPlayReminderEnabled: true,
+      dailyPlayReminderTime: '06:05',
+    });
+    expect(merged.notificationsEnabled).toBe(true);
+    expect(merged.recurringWindowReminders).toBe(false);
+    expect(merged.dailyPlayReminderEnabled).toBe(true);
+    expect(merged.dailyPlayReminderTime).toBe('06:05');
+  });
+
+  it.each([
+    ['8pm', '20:00'],          // not HH:mm
+    ['24:00', '20:00'],        // hour out of range
+    ['12:60', '20:00'],        // minute out of range
+    ['7:30', '20:00'],         // missing leading zero
+    [2000 as unknown as string, '20:00'], // wrong type
+  ])('rejects malformed dailyPlayReminderTime %p and falls back to default', (bad, expected) => {
+    expect(
+      mergeUserPreferences({ dailyPlayReminderTime: bad }).dailyPlayReminderTime
+    ).toBe(expected);
   });
 
   it('preserves falsy-but-valid values (empty string, false) instead of falling back to defaults', () => {

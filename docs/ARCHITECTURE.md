@@ -627,7 +627,9 @@ Today every board is a one-shot creation. The user must remember to spin up a fr
 
 The architecture investigation that preceded this design (April 2026) established that most of the infrastructure already exists post-Compound Tasks Unification: per-board `startDate`/`endDate`, the `getTimeframeBoundaries()` helper family, and the global per-Task completion model. The missing piece is _orchestration_ — detecting elapsed windows and surfacing prompts. Phase 1 of the rollout adds only that orchestration. Phases 2 and 3 layer richer features (preset task pools, board-completion-as-a-task) on top, sharing the Phase 1 detection hook.
 
-**Non-goals (Phase 1)**: no automatic background creation, no notifications, no reminders, no shared boards across users, no recurring custom-timeframe boards. Each is in scope for a later phase if real usage demands it; speculating now buys nothing.
+**Non-goals (Phase 1)**: no automatic background creation, no shared boards across users, no recurring custom-timeframe boards. Each is in scope for a later phase if real usage demands it; speculating now buys nothing.
+
+> **Superseded (Phase 7):** "no notifications, no reminders" was a Phase-1 non-goal but is no longer in force. Phase 7 added **local OS-scheduled notifications on iOS** (board-expiring / new-recurring-window / daily-play reminders). These reschedule on app-open and are delivered by the OS with **no background execution and no DB write**, so the still-binding invariants — no automatic background board creation, no server push — are intact. Web notifications remain deferred. See `docs/NOTIFICATIONS.md` and CLAUDE.md §Notifications.
 
 #### Three-phase vision
 
