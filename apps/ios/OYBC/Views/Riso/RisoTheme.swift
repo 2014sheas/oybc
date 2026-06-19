@@ -59,6 +59,11 @@ extension Color {
     static let risoPaper = Color("RisoPaper", bundle: .riso)
     static let risoPaper2 = Color("RisoPaper2", bundle: .riso)
     static let risoInk = Color("RisoInk", bundle: .riso)
+    /// Non-inverting dark ink (`#18120B` in both light and dark). `risoInk`
+    /// flips to cream in dark mode, which is unreadable on the always-bright
+    /// `risoGold` accent and makes `.multiply` overprint dots vanish. Use this
+    /// for content placed on gold and for halftone/overprint dots.
+    static let risoInkStatic = Color("RisoInkStatic", bundle: .riso)
     static let risoMuted = Color("RisoMuted", bundle: .riso)
     static let risoBlue = Color("RisoBlue", bundle: .riso)
     static let risoRed = Color("RisoRed", bundle: .riso)

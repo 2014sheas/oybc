@@ -338,7 +338,8 @@ private struct SizeCard: View {
                 dotMatrix
                 Text("\(n)×\(n)")
                     .font(.risoHead(14, .extraBold))
-                    .foregroundStyle(Color.risoInk)
+                    // Selected card is gold — non-inverting ink for dark mode.
+                    .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoInk)
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 8)

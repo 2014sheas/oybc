@@ -188,7 +188,8 @@ struct EditProfileSheet: View {
                 BlipPlaceholder(size: 40, mood: mood)
                 Text(mood.label)
                     .font(.risoHead(12, .bold))
-                    .foregroundStyle(isSelected ? Color.risoInk : Color.risoMuted)
+                    // Selected card is gold — non-inverting ink for dark mode.
+                    .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoMuted)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)

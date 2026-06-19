@@ -158,7 +158,13 @@ struct RisoBoardPlayCell: View {
                 .tracking(-0.09)
                 .lineLimit(isCompleted ? 2 : 3)
                 .multilineTextAlignment(.center)
-                .foregroundStyle(isCompleted ? Color.risoPaper : Color.risoInk)
+                // Incomplete bingo-line cells fill gold — use non-inverting ink
+                // so the title stays readable in dark mode.
+                .foregroundStyle(
+                    isCompleted
+                        ? Color.risoPaper
+                        : (isBingoLine ? Color.risoInkStatic : Color.risoInk)
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 4)
                 .padding(.top, hasTopTag ? 20 : 6)
