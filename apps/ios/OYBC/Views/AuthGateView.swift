@@ -58,6 +58,7 @@ struct AuthGateView<Content: View>: View {
 /// Supports email/password, Google Sign-In, and Sign in with Apple.
 private struct LoginView: View {
     @ObservedObject var authService: AuthService
+    @Environment(\.colorScheme) private var colorScheme
 
     // MARK: Form state
 
@@ -199,7 +200,9 @@ private struct LoginView: View {
                 _Concurrency.Task { await handleAppleSignIn(result) }
             }
         )
-        .signInWithAppleButtonStyle(.black)
+        // Dark mode flips the Riso paper near-black; a `.black` Apple button
+        // would vanish, so use the light glyph there.
+        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
         .frame(height: 50)
         .disabled(isSubmitting)
     }

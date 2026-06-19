@@ -4,14 +4,13 @@ import SwiftUI
 
 /// Wizard-only Riso-styled setup form for Step 1 of the board-creation wizard.
 ///
-/// This is a NET-NEW component — it does NOT replace or modify
-/// `BoardSetupFormView`, which remains shared with `EditBoardSheet` and is
-/// intentionally left unstyled here. Any changes to the shared form must go
-/// through `BoardSetupFormView`.
+/// This is the wizard's create form. `BoardSetupFormView` is the separate
+/// edit-only form used by `EditBoardSheet` (its old pre-Riso `.create` path
+/// was removed once this component took over board creation).
 ///
-/// Binds to the same `BoardWizardViewModel` fields and calls the same mutators
-/// (`updateSize`, `updateTimeframe`, `updateCenterType`) as `BoardSetupFormView`'s
-/// create-mode path, so all validation / VM state stays identical.
+/// Binds to the `BoardWizardViewModel` fields and calls its mutators
+/// (`updateSize`, `updateTimeframe`, `updateCenterType`), keeping all
+/// validation / VM state consistent.
 ///
 /// Sections (per README §3 Step 1 + prototype `wizard.jsx`):
 ///   1. Board name — keyline input, red `*` required marker.
@@ -21,11 +20,11 @@ import SwiftUI
 ///      fill + hard shadow, dots turn red.
 ///   4. Center square — `RisoSegmented` (Free Space / I'll choose / None); visible
 ///      only on odd boards; Custom Name field when `.customFree`.
-///      CHOSEN is suppressed in recurring mode (same rule as `BoardSetupFormView`).
+///      CHOSEN is suppressed in recurring mode.
 ///   5. Custom date pickers (when timeframe == .custom), in Riso cards.
 ///
 /// Core boards skip sections 1–2 (name/timeframe) and show a locked-name chip
-/// instead — same as `BoardSetupFormView`'s `isCore` branch.
+/// instead.
 struct RisoBoardSetupForm: View {
 
     @Bindable var controller: BoardWizardViewModel

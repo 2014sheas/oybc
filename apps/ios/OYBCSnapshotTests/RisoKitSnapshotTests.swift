@@ -15,7 +15,7 @@ final class RisoKitSnapshotTests: XCTestCase {
     func testKitLight() {
         assertSnapshot(
             of: RisoKitGallery(),
-            as: .image(layout: .fixed(width: 393, height: 1180)),
+            as: .image(layout: .fixed(width: 393, height: 1340)),
             record: recordMode
         )
     }
@@ -24,7 +24,7 @@ final class RisoKitSnapshotTests: XCTestCase {
         assertSnapshot(
             of: RisoKitGallery(),
             as: .image(
-                layout: .fixed(width: 393, height: 1180),
+                layout: .fixed(width: 393, height: 1340),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode

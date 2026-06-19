@@ -1030,7 +1030,9 @@ struct BoardPlayView: View {
                     guard !isBoardLocked else { return }
                     handleCountingTap(boardTask: boardTask, task: t)
                 }
-                .disabled(current >= maxVal || isProcessing || isBoardLocked)
+                // No maxVal gate — overshoot is a feature (never clamp);
+                // matches the cell-tap stepper + detail-sheet stepper.
+                .disabled(isProcessing || isBoardLocked)
                 Button("− Remove \(actionLabel)", systemImage: "minus") {
                     guard !isBoardLocked else { return }
                     handleCountingDecrement(boardTask: boardTask, task: t)
@@ -1211,6 +1213,7 @@ struct BoardPlayView: View {
         }
         .buttonStyle(RisoButtonStyle())
         .disabled(!enabled)
+        .accessibilityLabel(system == "plus" ? "Increment count" : "Decrement count")
     }
 
     /// Human-readable label for a task type shown in the detail sheet header.
@@ -1301,7 +1304,9 @@ struct BoardPlayView: View {
 
                     detailStepperButton(
                         system: "plus",
-                        enabled: current < maxVal && !isProcessing && !isBoardLocked
+                        // No maxVal gate — overshoot (current > maxCount) is a
+                        // feature, never clamped; matches the cell-tap stepper.
+                        enabled: !isProcessing && !isBoardLocked
                     ) {
                         handleCountingTap(boardTask: boardTask, task: task)
                     }

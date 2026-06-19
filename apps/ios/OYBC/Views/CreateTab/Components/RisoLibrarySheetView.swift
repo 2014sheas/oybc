@@ -508,6 +508,9 @@ struct RisoLibrarySheetView: View {
                     }
                     .padding(16)
                 }
+                // numberPad has no return key — let a swipe dismiss it so the
+                // user can reach the title preview / Save without leaving.
+                .scrollDismissesKeyboard(.interactively)
                 .background(Color.risoPaper.ignoresSafeArea())
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
