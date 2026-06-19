@@ -985,7 +985,7 @@ New filter chip `From a board…` in the wizard's Tasks step (`BoardWizardTasksS
 
 #### Source-board picker
 
-When the chip is active and no source is selected, the list region renders a vertical list of **mini-grid cards**, one per eligible source board. Each card shows a tiny rendering of that board (filled cell = completed, empty cell = not, distinct marker for the center square) + the board name + timeframe + window label + completion ratio. Reusable as its own component (`BoardThumbnail` / `BoardThumbnailView`) — a candidate for later extraction into the Boards-tab board cells, recognized as out-of-scope here.
+When the chip is active and no source is selected, the list region renders a vertical list of **mini-grid cards**, one per eligible source board. Each card shows a count-based mini-grid thumbnail (`RisoMiniGrid` — scatters filled cells by the board's completed-count) + the board name + timeframe + window label + completion ratio. (An earlier per-cell-exact renderer, `BoardThumbnailView`, was superseded by `RisoMiniGrid` and removed.)
 
 **Eligibility**: `Board.status === ACTIVE` ∪ `(status === COMPLETED && completedAt within last 30 days)`. Drafts and archived boards are excluded — drafts have no real task set; archived are intentionally out-of-view. Sorted recently-active first (`updatedAt desc`). Empty state: "No boards to browse. Create another board first, or build this one from scratch."
 
