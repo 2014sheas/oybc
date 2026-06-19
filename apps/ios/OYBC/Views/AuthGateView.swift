@@ -37,12 +37,16 @@ struct AuthGateView<Content: View>: View {
     }
 
     private var loadingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.4)
-            Text("Loading…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        ZStack {
+            RisoPaperBackground().ignoresSafeArea()
+            VStack(spacing: 16) {
+                ProgressView()
+                    .scaleEffect(1.4)
+                    .tint(Color.risoInk)
+                Text("Loading…")
+                    .font(.risoBody(14, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+            }
         }
     }
 }
@@ -68,16 +72,19 @@ private struct LoginView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 28) {
-                    headerSection
-                    emailPasswordSection
-                    dividerSection
-                    socialSignInSection
+            ZStack {
+                RisoPaperBackground().ignoresSafeArea()
+                ScrollView {
+                    VStack(spacing: 28) {
+                        headerSection
+                        emailPasswordSection
+                        dividerSection
+                        socialSignInSection
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 48)
+                    .padding(.bottom, 32)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 48)
-                .padding(.bottom, 32)
             }
             .navigationTitle("")
             .toolbar(.hidden, for: .navigationBar)
@@ -89,46 +96,44 @@ private struct LoginView: View {
     private var headerSection: some View {
         VStack(spacing: 8) {
             Text("OYBC")
-                .font(.largeTitle.bold())
+                .font(.risoHead(40, .extraBold))
+                .foregroundStyle(Color.risoInk)
             Text(isCreatingAccount ? "Create an account" : "Welcome back")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                .font(.risoBody(16, .semibold))
+                .foregroundStyle(Color.risoMuted)
         }
     }
 
     private var emailPasswordSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             if let errorMessage {
                 errorBanner(errorMessage)
             }
 
-            TextField("Email", text: $email)
+            RisoTextField(placeholder: "Email", text: $email)
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
-                .autocapitalization(.none)
-                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
 
-            SecureField("Password", text: $password)
-                .textContentType(isCreatingAccount ? .newPassword : .password)
-                .textFieldStyle(.roundedBorder)
+            RisoSecureField(
+                placeholder: "Password",
+                text: $password,
+                textContentType: isCreatingAccount ? .newPassword : .password
+            )
 
-            SwiftUI.Button(action: {
+            RisoButton(
+                title: isSubmitting
+                    ? "Please wait…"
+                    : (isCreatingAccount ? "Create account" : "Sign in"),
+                kind: .primary,
+                fullWidth: true,
+                large: true
+            ) {
                 _Concurrency.Task { await submitEmailPassword() }
-            }, label: {
-                Group {
-                    if isSubmitting {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Text(isCreatingAccount ? "Create Account" : "Sign In")
-                            .fontWeight(.semibold)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-            })
-            .buttonStyle(.borderedProminent)
+            }
             .disabled(isSubmitting || email.isEmpty || password.isEmpty)
+            .opacity(isSubmitting || email.isEmpty || password.isEmpty ? 0.55 : 1)
 
             SwiftUI.Button(action: {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -141,24 +146,23 @@ private struct LoginView: View {
                         ? "Already have an account? Sign in"
                         : "Don't have an account? Create one"
                 )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(.risoBody(13, .semibold))
+                .foregroundStyle(Color.risoMuted)
             })
         }
     }
 
     private var dividerSection: some View {
-        HStack {
+        HStack(spacing: 8) {
             Rectangle()
+                .fill(Color.risoInk.opacity(0.2))
                 .frame(height: 1)
-                .foregroundStyle(.quaternary)
             Text("or")
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 8)
+                .font(.risoBody(12, .bold))
+                .foregroundStyle(Color.risoMuted)
             Rectangle()
+                .fill(Color.risoInk.opacity(0.2))
                 .frame(height: 1)
-                .foregroundStyle(.quaternary)
         }
     }
 
@@ -170,19 +174,15 @@ private struct LoginView: View {
     }
 
     private var googleSignInButton: some View {
-        SwiftUI.Button(action: {
+        RisoButton(
+            title: "Continue with Google",
+            kind: .neutral,
+            systemImage: "globe",
+            fullWidth: true,
+            large: true
+        ) {
             _Concurrency.Task { await signInWithGoogle() }
-        }, label: {
-            HStack(spacing: 8) {
-                Image(systemName: "globe")
-                    .imageScale(.medium)
-                Text("Continue with Google")
-                    .fontWeight(.medium)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-        })
-        .buttonStyle(.bordered)
+        }
         .disabled(isSubmitting)
     }
 
@@ -207,15 +207,16 @@ private struct LoginView: View {
     @ViewBuilder
     private func errorBanner(_ message: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(.red)
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.risoRed)
             Text(message)
-                .font(.footnote)
-                .foregroundStyle(.red)
-            Spacer()
+                .font(.risoBody(13, .semibold))
+                .foregroundStyle(Color.risoInk)
+            Spacer(minLength: 0)
         }
         .padding(12)
-        .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .risoCard(fill: .risoPaper)
     }
 
     // MARK: - Actions

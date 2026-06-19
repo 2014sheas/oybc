@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Sheet for editing metadata on an ACTIVE board (M2, #89).
 ///
-/// Wraps `BoardSetupFormView` in `.editActive` mode, pre-filling all
-/// controls from the loaded board. On "Save" the changes are written via
+/// Wraps `BoardSetupFormView` (edit-only), pre-filling all controls from the
+/// loaded board. On "Save" the changes are written via
 /// `AppDatabase.shared.updateBoardAndCascade`.
 ///
 /// Editable fields: name, timeframe, custom dates, center type,
@@ -76,7 +76,6 @@ struct EditBoardSheet: View {
 
                     // ── Editable setup form ────────────────────────────────
                     BoardSetupFormView(
-                        mode: .editActive,
                         name: $name,
                         timeframe: $timeframe,
                         customStartDate: $customStartDate,

@@ -478,42 +478,71 @@ struct RisoLibrarySheetView: View {
     private var deriveCounterSheet: some View {
         if let source = derivingFromTask {
             NavigationStack {
-                Form {
-                    Section("Derived from") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(source.title)
-                                .font(.headline)
-                            if let action = source.action, let unit = source.unit, let max = source.maxCount {
-                                Text("\(action) \(max) \(unit)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        deriveSection(label: "Derived from") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(source.title)
+                                    .font(.risoHead(15, .bold))
+                                    .foregroundStyle(Color.risoInk)
+                                if let action = source.action, let unit = source.unit, let max = source.maxCount {
+                                    Text("\(action) \(max) \(unit)")
+                                        .font(.risoBody(13, .semibold))
+                                        .foregroundStyle(Color.risoMuted)
+                                }
+                            }
+                        }
+
+                        deriveSection(label: "New target") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                RisoNumberField(placeholder: "Goal", text: $deriveMaxCountInput)
+                                if let action = source.action, let unit = source.unit,
+                                   let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
+                                   parsed > 0 {
+                                    Text("Title: \(action) \(parsed) \(unit)")
+                                        .font(.risoBody(12, .regular))
+                                        .foregroundStyle(Color.risoMuted)
+                                }
                             }
                         }
                     }
-                    Section("New target") {
-                        TextField("Goal", text: $deriveMaxCountInput)
-                            .keyboardType(.numberPad)
-                        if let action = source.action, let unit = source.unit,
-                           let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-                           parsed > 0 {
-                            Text("Title: \(action) \(parsed) \(unit)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    .padding(16)
                 }
-                .navigationTitle("Derive smaller version")
+                .background(Color.risoPaper.ignoresSafeArea())
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { derivingFromTask = nil }
+                    ToolbarItem(placement: .principal) {
+                        Text("Derive smaller version")
+                            .font(.risoHead(17, .extraBold))
+                            .foregroundStyle(Color.risoInk)
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") { saveDerivedCounter(source: source) }
-                            .disabled(!isDeriveInputValid(source: source))
+                        RisoToolbarPill(title: "Save") { saveDerivedCounter(source: source) }
+                        .disabled(!isDeriveInputValid(source: source))
+                    }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { derivingFromTask = nil }
+                            .font(.risoBody(15, .semibold))
+                            .foregroundStyle(Color.risoMuted)
                     }
                 }
             }
+        }
+    }
+
+    /// Riso card section for the derive sheet — label + paper2 card.
+    @ViewBuilder
+    private func deriveSection<Content: View>(
+        label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label).risoSectionLabel()
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .risoCard(fill: .risoPaper2)
+                .risoHardShadow(Riso.Shadow.small)
         }
     }
 

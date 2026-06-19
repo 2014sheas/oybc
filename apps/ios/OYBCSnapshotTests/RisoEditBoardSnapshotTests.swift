@@ -128,7 +128,6 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 BoardSetupFormView(
-                    mode: .editActive,
                     name: .constant(name),
                     timeframe: .constant(timeframe),
                     customStartDate: .constant(Self.fixedStart),
