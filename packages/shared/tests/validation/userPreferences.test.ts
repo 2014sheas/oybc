@@ -227,6 +227,28 @@ describe('mergeUserPreferences', () => {
     expect(merged.dailyPlayReminderTime).toBe('20:00');
   });
 
+  // Compound forward-compat: a complete old-client blob missing ALL four
+  // Phase-7 fields must pass safeParse AND merge to the correct defaults — this
+  // guards the schema-optional + merge-return-literal interaction together
+  // (a per-field test wouldn't catch a field dropped from merge's return).
+  it('old-client prefs missing all notification fields pass safeParse and merge cleanly', () => {
+    const oldPrefs = { ...DEFAULT_USER_PREFERENCES } as Record<string, unknown>;
+    for (const k of [
+      'notificationsEnabled',
+      'recurringWindowReminders',
+      'dailyPlayReminderEnabled',
+      'dailyPlayReminderTime',
+    ]) {
+      delete oldPrefs[k];
+    }
+    expect(() => UserPreferencesSchema.parse(oldPrefs)).not.toThrow();
+    const merged = mergeUserPreferences(oldPrefs as Partial<typeof DEFAULT_USER_PREFERENCES>);
+    expect(merged.notificationsEnabled).toBe(false);
+    expect(merged.recurringWindowReminders).toBe(true);
+    expect(merged.dailyPlayReminderEnabled).toBe(false);
+    expect(merged.dailyPlayReminderTime).toBe('20:00');
+  });
+
   it('preserves valid notification values when provided', () => {
     const merged = mergeUserPreferences({
       notificationsEnabled: true,
@@ -245,6 +267,7 @@ describe('mergeUserPreferences', () => {
     ['24:00', '20:00'],        // hour out of range
     ['12:60', '20:00'],        // minute out of range
     ['7:30', '20:00'],         // missing leading zero
+    [' 9:00', '20:00'],        // leading space (regex is anchored)
     [2000 as unknown as string, '20:00'], // wrong type
   ])('rejects malformed dailyPlayReminderTime %p and falls back to default', (bad, expected) => {
     expect(

@@ -239,8 +239,10 @@ enum NotificationPlanner {
         return PlannedNotification(
             identifier: "daily-play-reminder",
             category: .dailyReminder,
-            title: "Time to play",
-            body: "Open your boards and make progress today.",
+            // Strictly functional copy (App Store 4.5.4 + the priming sheet's
+            // "no marketing" claim) — no motivational/re-engagement framing.
+            title: "Daily board reminder",
+            body: "You have boards to play today.",
             trigger: .dailyTime(hour: hour, minute: minute),
             userInfo: [:]
         )

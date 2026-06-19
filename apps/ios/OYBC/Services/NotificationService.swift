@@ -41,7 +41,10 @@ final class NotificationService: ObservableObject {
     /// responsibility — this only invokes the system prompt.
     @discardableResult
     func requestAuthorization() async -> Bool {
-        let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        // Request only what we use: banners + sound. We never set a
+        // `content.badge`, so requesting `.badge` would prompt for a permission
+        // that never produces a badge — add it back only if badging ships.
+        let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
         await refreshAuthorizationStatus()
         return granted
     }
@@ -110,9 +113,16 @@ final class NotificationService: ObservableObject {
         }
 
         // Re-adding by identifier replaces in place, so adding the full desired
-        // set is idempotent (≤54 items — well under the OS cap).
+        // set is idempotent (≤54 items — well under the OS cap). Re-adding keeps
+        // content fresh when a board is renamed or the reminder time changes;
+        // for the repeating daily trigger the next-fire is the next matching
+        // wall-clock time, so re-adding doesn't shift it.
         for planned in desired {
-            try? await center.add(makeRequest(planned))
+            do {
+                try await center.add(makeRequest(planned))
+            } catch {
+                print("⚠️ NotificationService: failed to schedule \(planned.identifier): \(error)")
+            }
         }
     }
 

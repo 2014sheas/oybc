@@ -91,6 +91,7 @@ struct UserPreferences: Codable, Equatable {
     /// gate; this is the user's stated intent.
     var notificationsEnabled: Bool
     /// Notify when a new recurring window opens and no core board exists yet.
+    /// Default true.
     var recurringWindowReminders: Bool
     /// Whether the daily play reminder fires. Default `false` (opt-in).
     var dailyPlayReminderEnabled: Bool

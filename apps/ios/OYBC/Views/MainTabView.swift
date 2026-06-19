@@ -258,8 +258,11 @@ struct MainTabView: View {
         // data: at launch, on every foreground, and on tab switches (which
         // catches a board just created on the Create tab). No background work.
         .task {
-            await reconcileNotifications()
+            // Drain any cold-launch-from-tap deep-link BEFORE the first
+            // suspension point, so a buffered target is routed immediately
+            // rather than after the reconcile's awaits.
             routePendingDeepLink()
+            await reconcileNotifications()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }

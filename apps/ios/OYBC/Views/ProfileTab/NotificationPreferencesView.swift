@@ -42,7 +42,7 @@ struct NotificationPreferencesView: View {
         // Refresh the OS status on appear so a change made in iOS Settings
         // (e.g. the user revoked permission) is reflected immediately.
         .task { await notificationService.refreshAuthorizationStatus() }
-        .sheet(isPresented: $showPriming) { primingSheet }
+        .sheet(isPresented: $showPriming, onDismiss: handlePrimingDismiss) { primingSheet }
     }
 
     // MARK: - Master toggle handling
@@ -50,16 +50,28 @@ struct NotificationPreferencesView: View {
     /// Master toggle: persist intent, then drive the permission flow. Only the
     /// first opt-in with an undetermined status shows the priming sheet; a
     /// denied status surfaces the inline "Open Settings" affordance instead.
+    /// When priming is shown, the schedule reconcile + any roll-back is handled
+    /// by `handlePrimingDismiss` (so dismissing the sheet without granting
+    /// doesn't leave the toggle on with nothing scheduled).
     private func handleSetMaster(_ newValue: Bool) {
         setPref(\.notificationsEnabled, newValue, reconcileAfter: false)
-        if newValue {
-            switch notificationService.authorizationStatus {
-            case .notDetermined: showPriming = true
-            case .denied: reconcile() // no-op schedule; the banner explains why
-            default: reconcile()
-            }
+        if newValue && notificationService.authorizationStatus == .notDetermined {
+            showPriming = true
         } else {
-            reconcile() // clears the scheduled set
+            reconcile() // schedules if authorized, clears if off/denied
+        }
+    }
+
+    /// Runs when the priming sheet closes by ANY path (Allow, Not now, or
+    /// swipe-down). If the user never granted permission (still
+    /// `.notDetermined`), roll the master toggle back to off so the UI never
+    /// shows an "on" state with nothing actually scheduled. A `.denied` outcome
+    /// keeps the toggle on so the inline "Open Settings" affordance shows.
+    private func handlePrimingDismiss() {
+        if notificationService.authorizationStatus == .notDetermined {
+            setPref(\.notificationsEnabled, false) // reconciles (clears)
+        } else {
+            reconcile()
         }
     }
 
@@ -74,16 +86,17 @@ struct NotificationPreferencesView: View {
                 Text("OYBC sends a few local reminders — the morning before a board expires, when a new recurring window opens, and an optional daily nudge. No account or marketing messages.")
                     .font(.risoBody(14, .regular)).foregroundStyle(Color.risoMuted)
                     .fixedSize(horizontal: false, vertical: true)
+                // Both buttons just close the sheet; `handlePrimingDismiss`
+                // (the sheet's onDismiss) does the reconcile / roll-back based
+                // on the resulting authorization status.
                 RisoButton(title: "Allow notifications", kind: .primary, fullWidth: true) {
                     _Concurrency.Task {
                         await notificationService.requestAuthorization()
                         showPriming = false
-                        reconcile()
                     }
                 }
                 RisoButton(title: "Not now", kind: .neutral, fullWidth: true) {
                     showPriming = false
-                    reconcile()
                 }
             }
             .padding(24)
@@ -240,15 +253,20 @@ struct NotificationPreferencesContent: View {
         .padding(.horizontal, Riso.cardPadding).padding(.vertical, 12)
     }
 
-    /// Bridges the stored "HH:mm" string to the `DatePicker`'s `Date`.
+    /// Bridges the stored "HH:mm" string to the `DatePicker`'s `Date`. Anchors
+    /// the time to today's start-of-day (a time-only `DateComponents` is
+    /// underspecified and can yield a stray date) and reuses the canonical
+    /// `NotificationPlanner.parseReminderTime` so the parse rules don't drift.
     private var reminderTimeBinding: Binding<Date> {
         Binding(
             get: {
-                let parts = preferences.dailyPlayReminderTime.split(separator: ":")
-                var dc = DateComponents()
-                dc.hour = parts.first.flatMap { Int($0) } ?? 20
-                dc.minute = parts.count > 1 ? (Int(parts[1]) ?? 0) : 0
-                return Calendar.current.date(from: dc) ?? Date()
+                guard let (hour, minute) =
+                    NotificationPlanner.parseReminderTime(preferences.dailyPlayReminderTime)
+                else { return Date() }
+                let base = Calendar.current.startOfDay(for: Date())
+                return Calendar.current.date(
+                    bySettingHour: hour, minute: minute, second: 0, of: base
+                ) ?? Date()
             },
             set: { onSetDailyTime($0) }
         )

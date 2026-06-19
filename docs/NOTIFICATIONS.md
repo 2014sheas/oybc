@@ -25,6 +25,8 @@ NotificationService.reconcile(userId)                          →  diff vs OS p
 
 `reconcile` is invoked from `MainTabView` on: app becomes `.active` (scenePhase), tab switches (catches a board just created on the Create tab), app launch (`.task`), and after any notification pref changes (from the settings view). A single `now` is captured per reconcile so the plan is internally consistent.
 
+Known bounded-staleness: editing/deleting a board *while staying foregrounded on the Boards tab* (no tab switch, no background) doesn't reconcile until the next of those triggers. The window is small and the failure mode is benign — a stale reminder for a board whose deadline moved, cleared on the next reconcile; a tap on a since-deleted board's notification loads a mostly-empty view, no crash. A board-table `ValueObservation`-driven reconcile is a deferred refinement if this proves noticeable.
+
 ### Deterministic identifiers
 
 - `expiry-<boardId>` — one per eligible board

@@ -63,7 +63,7 @@ export interface UserPreferences {
    * real capability gate; this is the user's stated intent.
    */
   notificationsEnabled: boolean;
-  /** Notify when a new recurring window opens and no core board exists yet. */
+  /** Notify when a new recurring window opens and no core board exists yet. Default true. */
   recurringWindowReminders: boolean;
   /** Whether the daily play reminder fires. Default `false` (opt-in). */
   dailyPlayReminderEnabled: boolean;
