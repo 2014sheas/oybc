@@ -420,6 +420,7 @@ struct BoardPlayView: View {
                     totalTasks: b.totalTasks,
                     linesCompleted: b.linesCompleted,
                     boardName: b.name,
+                    celebrationIntensity: authService.userPreferences.celebrationIntensity,
                     onShare: {
                         showShareBoardSheet = true
                     },
@@ -959,9 +960,12 @@ struct BoardPlayView: View {
             compoundChildCount: compoundLinks.count,
             onTap: {
                 guard !isBoardLocked, !isProcessing else { return }
-                // Haptic feedback — fire immediately on tap (before async write lands)
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
+                // Haptic feedback — fire immediately on tap (before async write
+                // lands). Respects the Board Preferences "Haptics" toggle.
+                if authService.userPreferences.haptics {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                }
                 switch taskType {
                 case .normal:
                     handleNormalTap(boardTask: boardTask)
