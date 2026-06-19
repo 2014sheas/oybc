@@ -20,6 +20,10 @@ struct RisoGreenlogOverlay: View {
     let linesCompleted: Int
     let boardName: String
 
+    /// Board Preferences "Celebration intensity" (1–10). Defaults to 7 so
+    /// existing call sites/previews render the original 64-piece burst.
+    var celebrationIntensity: Int = 7
+
     // MARK: - Actions
 
     var onShare: (() -> Void)? = nil
@@ -27,21 +31,23 @@ struct RisoGreenlogOverlay: View {
 
     // MARK: - Confetti animation
 
-    private let confettiPieces: [ConfettiPiece] = {
-        // ~64 pieces (intensity 7 → count = 8 + 7*8 = 64 per spec)
-        (0..<64).map { i in
+    private var confettiPieces: [ConfettiPiece] {
+        // Scales with celebrationIntensity: count = 8 + intensity*8 →
+        // 16…88 pieces (default 7 → 64, the original burst).
+        let count = 8 + Swift.max(1, Swift.min(10, celebrationIntensity)) * 8
+        return (0..<count).map { i in
             let rng = Double(i)
             return ConfettiPiece(
                 id: i,
-                x: Double(i) / 64.0,
+                x: Double(i) / Double(count),
                 size: 6 + (Double(i % 7) * 2),
                 color: [Color.risoRed, Color.risoGold, Color.risoGreen, Color.risoPaper][i % 4],
                 isCircle: i % 3 == 0,
-                delay: rng / 64.0 * 1.8,
+                delay: rng / Double(count) * 1.8,
                 duration: 1.6 + (Double(i % 5) * 0.32)
             )
         }
-    }()
+    }
 
     // MARK: - Body
 
