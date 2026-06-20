@@ -35,6 +35,10 @@ struct ProfileView: View {
     @State private var recurringTemplateCount: Int? = nil
     @State private var defaultPoolCount: Int? = nil
 
+    /// Async-loaded per-timeframe bingo + greenlog streaks for the "Your
+    /// streaks" card. Empty until `loadCounts()` computes it.
+    @State private var streaks: [Timeframe: StreakPair] = [:]
+
     // MARK: - Derived
 
     private var preferences: UserPreferences { authService.userPreferences }
@@ -68,6 +72,12 @@ struct ProfileView: View {
                     )
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
+
+                    // Your streaks section
+                    sectionLabel("Your streaks")
+                    RisoYourStreaksCard(streaks: streaks)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
 
                     // App section
                     sectionLabel("App")
@@ -397,6 +407,19 @@ struct ProfileView: View {
         _Concurrency.Task.detached(priority: .userInitiated) {
             let pools = try? AppDatabase.shared.fetchDefaultPools(userId: userId)
             await MainActor.run { defaultPoolCount = pools?.count }
+        }
+        // Per-timeframe streaks for the "Your streaks" card. `computeAllStreaks`
+        // is pure (safe off-main); `fetchBoards` returns all boards and the
+        // algorithm re-filters to core/non-deleted internally.
+        let weekStartDay = preferences.weekStartDay.rawValue
+        // Capture `now` on main before the detached task (parity with the slot /
+        // window VMs) so a midnight rollover between dispatch and execution can't
+        // mismatch the boards snapshot against a next-day `now`.
+        let now = Date()
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
+            let result = computeAllStreaks(boards: boards, weekStartDay: weekStartDay, now: now)
+            await MainActor.run { streaks = result }
         }
     }
 }

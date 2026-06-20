@@ -244,6 +244,48 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
         )
     }
 
+    private func coreGridWithStreaksView() -> some View {
+        let daily = SnapshotFixtures.makeBoard(id: "b-d", name: "Today", timeframe: .daily, status: .completed)
+        let weekly = SnapshotFixtures.makeBoard(id: "b-w", name: "This week", timeframe: .weekly, status: .completed)
+        let slots: [CoreBoardSlot] = [
+            CoreBoardSlot(timeframe: .daily, windowStart: "2026-06-12T00:00:00.000", windowEnd: "2026-06-12T23:59:59.999", windowLabel: "Today", currentBoard: daily),
+            CoreBoardSlot(timeframe: .weekly, windowStart: "2026-06-09T00:00:00.000", windowEnd: "2026-06-15T23:59:59.999", windowLabel: "This week", currentBoard: weekly),
+            CoreBoardSlot(timeframe: .monthly, windowStart: "2026-06-01T00:00:00.000", windowEnd: "2026-06-30T23:59:59.999", windowLabel: "June 2026", currentBoard: nil),
+            CoreBoardSlot(timeframe: .yearly, windowStart: "2026-01-01T00:00:00.000", windowEnd: "2026-12-31T23:59:59.999", windowLabel: "2026", currentBoard: nil),
+        ]
+        return ZStack {
+            Color.risoPaper
+            RisoCoreTimeframeGrid(
+                slots: slots,
+                now: fixedNow,
+                streaks: [
+                    .daily: StreakPair(bingo: 9, greenlog: 4),
+                    .weekly: StreakPair(bingo: 2, greenlog: 2),
+                ]
+            )
+            .padding(20)
+        }
+    }
+
+    func testCoreGridWithStreaksLight() {
+        assertSnapshot(
+            of: coreGridWithStreaksView(),
+            as: .image(layout: .fixed(width: 353, height: 180)),
+            record: recordMode
+        )
+    }
+
+    func testCoreGridWithStreaksDark() {
+        assertSnapshot(
+            of: coreGridWithStreaksView(),
+            as: .image(
+                layout: .fixed(width: 353, height: 180),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - RisoCoreTimeframeGrid — dark
 
     func testCoreGridAllReadyDark() {

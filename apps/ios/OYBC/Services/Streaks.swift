@@ -34,6 +34,22 @@ struct StreakPair: Equatable {
     let greenlog: Int
 }
 
+/// Compact, timeframe-aware streak label: "3d" / "2w" / "5mo" / "1y".
+/// Shared by every streak surface (celebration overlay, share poster, the
+/// core-timeframe grid, the pager bar, and the Profile card) so the unit
+/// formatting never drifts. `.custom` has no cadence → bare count.
+func compactStreakLabel(_ count: Int, timeframe: Timeframe) -> String {
+    let unit: String
+    switch timeframe {
+    case .daily:   unit = "d"
+    case .weekly:  unit = "w"
+    case .monthly: unit = "mo"
+    case .yearly:  unit = "y"
+    case .custom:  unit = ""
+    }
+    return "\(count)\(unit)"
+}
+
 /// Whether a core board satisfies the streak criterion. Mirrors the Achievement
 /// trigger semantics (bingo = `linesCompleted >= 1`, greenlog = full board).
 private func boardMeets(_ board: Board, _ criterion: AchievementTrigger) -> Bool {

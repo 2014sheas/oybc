@@ -57,6 +57,40 @@ final class RisoProfileSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Your streaks card
+
+    private func yourStreaksView() -> some View {
+        ZStack {
+            Color.risoPaper
+            RisoYourStreaksCard(streaks: [
+                .daily: StreakPair(bingo: 12, greenlog: 5),
+                .weekly: StreakPair(bingo: 3, greenlog: 0),
+                .monthly: StreakPair(bingo: 0, greenlog: 0),
+                .yearly: StreakPair(bingo: 1, greenlog: 1),
+            ])
+            .padding(20)
+        }
+    }
+
+    func testYourStreaksCardLight() {
+        assertSnapshot(
+            of: yourStreaksView(),
+            as: .image(layout: .fixed(width: 393, height: 260)),
+            record: recordMode
+        )
+    }
+
+    func testYourStreaksCardDark() {
+        assertSnapshot(
+            of: yourStreaksView(),
+            as: .image(
+                layout: .fixed(width: 393, height: 260),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - Theme Segmented (App card)
 
     func testThemeSegmentedSystemLight() {
@@ -185,7 +219,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
         let view = composedProfileView()
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 760)),
+            as: .image(layout: .fixed(width: 393, height: 980)),
             record: recordMode
         )
     }
@@ -195,7 +229,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
         assertSnapshot(
             of: view,
             as: .image(
-                layout: .fixed(width: 393, height: 760),
+                layout: .fixed(width: 393, height: 980),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
@@ -378,6 +412,20 @@ final class RisoProfileSnapshotTests: XCTestCase {
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
 
+                    // Your streaks section
+                    Text("Your streaks")
+                        .risoSectionLabel()
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 8)
+                    RisoYourStreaksCard(streaks: [
+                        .daily: StreakPair(bingo: 12, greenlog: 5),
+                        .weekly: StreakPair(bingo: 3, greenlog: 0),
+                        .monthly: StreakPair(bingo: 0, greenlog: 0),
+                        .yearly: StreakPair(bingo: 1, greenlog: 1),
+                    ])
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 18)
+
                     // App section label
                     Text("App")
                         .risoSectionLabel()
@@ -408,6 +456,14 @@ final class RisoProfileSnapshotTests: XCTestCase {
                         RisoProfileRow(
                             icon: "square.grid.3x3",
                             label: "Board preferences",
+                            chevron: true
+                        )
+                        Divider()
+                            .background(Color.risoInk.opacity(0.12))
+                            .padding(.horizontal, 14)
+                        RisoProfileRow(
+                            icon: "bell",
+                            label: "Notifications",
                             chevron: true
                         )
                         Divider()

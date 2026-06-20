@@ -31,6 +31,12 @@ final class CoreBoardSlotsViewModel {
     /// timeframes enabled at all ⇒ section hides itself.
     var slots: [CoreBoardSlot] = []
 
+    /// Per-timeframe bingo + greenlog streaks, computed alongside the slots
+    /// from the same boards/prefs snapshot. The grid reads `streaks[tf]?.greenlog`
+    /// for each card's badge. Parallel to `slots` (keeps `CoreBoardSlot` a pure
+    /// mirror of the shared `getCoreBoardSlots` shape).
+    var streaks: [Timeframe: StreakPair] = [:]
+
     /// Last load error, surfaced as a silent fallback. We deliberately
     /// do NOT show a user-facing error — a failed slot computation
     /// should never block the Boards tab from rendering board rows.
@@ -45,7 +51,7 @@ final class CoreBoardSlotsViewModel {
     func reload(userId: String) async {
         let now = Date()
         do {
-            let result = try await AppDatabase.shared.read { db -> [CoreBoardSlot] in
+            let result = try await AppDatabase.shared.read { db -> (slots: [CoreBoardSlot], streaks: [Timeframe: StreakPair]) in
                 let user = try User
                     .filter(Column("id") == userId)
                     .fetchOne(db)
@@ -53,11 +59,14 @@ final class CoreBoardSlotsViewModel {
                     .filter(Column("userId") == userId && Column("isDeleted") == false)
                     .fetchAll(db)
                 let prefs = user?.decodedPreferences ?? .defaults
-                return getCoreBoardSlots(boards: boards, prefs: prefs, now: now)
+                let slots = getCoreBoardSlots(boards: boards, prefs: prefs, now: now)
+                let streaks = computeAllStreaks(boards: boards, weekStartDay: prefs.weekStartDay.rawValue, now: now)
+                return (slots, streaks)
             }
 
             await MainActor.run {
-                self.slots = result
+                self.slots = result.slots
+                self.streaks = result.streaks
                 self.loadError = nil
             }
         } catch {
