@@ -24,9 +24,9 @@ final class CoreBoardWindowViewModel: ObservableObject {
     /// `init`/`step`, so `body` reads don't re-parse + allocate a
     /// `DateFormatter` (via `formatTimeframeLabel`) on every render.
     @Published private(set) var windowLabel: String = ""
-    /// Compact greenlog-streak label for this timeframe ("3d" etc.), or nil when
-    /// the streak is 0. Per-timeframe (constant across windows); shown in the bar.
-    @Published private(set) var streakLabel: String?
+    /// Current greenlog streak for this timeframe (0 = none). Per-timeframe
+    /// (constant across windows); the bar derives both its display + a11y label.
+    @Published private(set) var streakCount: Int = 0
 
     // MARK: - Config (immutable after init)
 
@@ -150,14 +150,14 @@ final class CoreBoardWindowViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
                     self.board = result
-                    self.streakLabel = streak >= 1 ? compactStreakLabel(streak, timeframe: timeframe) : nil
+                    self.streakCount = streak
                     self.isLoaded = true
                 }
             } catch {
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
                     self.board = nil
-                    self.streakLabel = nil
+                    self.streakCount = 0
                     self.isLoaded = true
                 }
             }

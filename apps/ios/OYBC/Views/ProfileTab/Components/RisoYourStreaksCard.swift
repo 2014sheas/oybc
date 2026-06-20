@@ -50,8 +50,8 @@ struct RisoYourStreaksCard: View {
                         .font(.risoBody(14, .bold))
                         .foregroundStyle(Color.risoInk)
                     Spacer(minLength: 0)
-                    streakCell(count: pair.bingo, timeframe: tf, fill: .risoGold, onFill: .risoInkStatic)
-                    streakCell(count: pair.greenlog, timeframe: tf, fill: .risoGreen, onFill: .risoPaper)
+                    streakCell(count: pair.bingo, timeframe: tf, kind: "bingo", fill: .risoGold, onFill: .risoInkStatic)
+                    streakCell(count: pair.greenlog, timeframe: tf, kind: "greenlog", fill: .risoGreen, onFill: .risoPaper)
                 }
                 .padding(.vertical, 9)
             }
@@ -72,8 +72,10 @@ struct RisoYourStreaksCard: View {
     }
 
     /// One streak cell: a colored flame chip for ≥ 1, a muted "–" otherwise.
+    /// `kind` ("bingo"/"greenlog") qualifies the VoiceOver label so the two
+    /// columns are distinguishable without re-reading the header.
     @ViewBuilder
-    private func streakCell(count: Int, timeframe: Timeframe, fill: Color, onFill: Color) -> some View {
+    private func streakCell(count: Int, timeframe: Timeframe, kind: String, fill: Color, onFill: Color) -> some View {
         if count >= 1 {
             HStack(spacing: 2) {
                 Image(systemName: "flame.fill")
@@ -85,7 +87,8 @@ struct RisoYourStreaksCard: View {
             .frame(width: cellWidth, height: 26)
             .background(Capsule().fill(fill))
             .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-            .accessibilityLabel("\(count) \(label(timeframe).lowercased()) streak")
+            .accessibilityElement()
+            .accessibilityLabel("\(count) \(label(timeframe).lowercased()) \(kind) streak")
         } else {
             Text("–")
                 .font(.risoHead(12, .bold))
@@ -93,6 +96,8 @@ struct RisoYourStreaksCard: View {
                 .frame(width: cellWidth, height: 26)
                 .background(Capsule().fill(Color.risoPaper2))
                 .overlay(Capsule().strokeBorder(Color.risoInk.opacity(0.25), lineWidth: Riso.Keyline.dense))
+                .accessibilityElement()
+                .accessibilityLabel("No \(label(timeframe).lowercased()) \(kind) streak")
         }
     }
 

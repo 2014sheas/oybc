@@ -65,7 +65,8 @@ final class RisoCoreChromeSnapshotTests: XCTestCase {
     func testWindowBarWithStreakLight() {
         let view = CoreBoardWindowBarView(
             label: "Week of May 18 – 24, 2026",
-            streakLabel: "3w",
+            streakCount: 3,
+            streakTimeframe: .weekly,
             onPrev: {},
             onNext: {},
             onOpenList: {}
@@ -80,7 +81,8 @@ final class RisoCoreChromeSnapshotTests: XCTestCase {
     func testWindowBarWithStreakDark() {
         let view = CoreBoardWindowBarView(
             label: "Week of May 18 – 24, 2026",
-            streakLabel: "3w",
+            streakCount: 3,
+            streakTimeframe: .weekly,
             onPrev: {},
             onNext: {},
             onOpenList: {}

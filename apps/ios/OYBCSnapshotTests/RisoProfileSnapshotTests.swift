@@ -462,6 +462,14 @@ final class RisoProfileSnapshotTests: XCTestCase {
                             .background(Color.risoInk.opacity(0.12))
                             .padding(.horizontal, 14)
                         RisoProfileRow(
+                            icon: "bell",
+                            label: "Notifications",
+                            chevron: true
+                        )
+                        Divider()
+                            .background(Color.risoInk.opacity(0.12))
+                            .padding(.horizontal, 14)
+                        RisoProfileRow(
                             icon: "calendar.badge.clock",
                             label: "Recurring templates",
                             countBadge: 3,

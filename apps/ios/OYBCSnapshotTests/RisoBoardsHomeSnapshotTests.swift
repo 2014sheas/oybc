@@ -244,7 +244,7 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
         )
     }
 
-    func testCoreGridWithStreaksLight() {
+    private func coreGridWithStreaksView() -> some View {
         let daily = SnapshotFixtures.makeBoard(id: "b-d", name: "Today", timeframe: .daily, status: .completed)
         let weekly = SnapshotFixtures.makeBoard(id: "b-w", name: "This week", timeframe: .weekly, status: .completed)
         let slots: [CoreBoardSlot] = [
@@ -253,7 +253,7 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
             CoreBoardSlot(timeframe: .monthly, windowStart: "2026-06-01T00:00:00.000", windowEnd: "2026-06-30T23:59:59.999", windowLabel: "June 2026", currentBoard: nil),
             CoreBoardSlot(timeframe: .yearly, windowStart: "2026-01-01T00:00:00.000", windowEnd: "2026-12-31T23:59:59.999", windowLabel: "2026", currentBoard: nil),
         ]
-        let view = ZStack {
+        return ZStack {
             Color.risoPaper
             RisoCoreTimeframeGrid(
                 slots: slots,
@@ -265,9 +265,23 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
             )
             .padding(20)
         }
+    }
+
+    func testCoreGridWithStreaksLight() {
         assertSnapshot(
-            of: view,
+            of: coreGridWithStreaksView(),
             as: .image(layout: .fixed(width: 353, height: 180)),
+            record: recordMode
+        )
+    }
+
+    func testCoreGridWithStreaksDark() {
+        assertSnapshot(
+            of: coreGridWithStreaksView(),
+            as: .image(
+                layout: .fixed(width: 353, height: 180),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
             record: recordMode
         )
     }

@@ -156,7 +156,8 @@ private struct CoreTimeframeCard: View {
         .padding(.vertical, 2)
         .padding(.horizontal, 6)
         .background(Capsule().fill(Color.risoGold))
-        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: 1.5))
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+        .accessibilityElement()
         .accessibilityLabel("\(greenlogStreak) \(timeframeLabel.lowercased()) greenlog streak")
     }
 

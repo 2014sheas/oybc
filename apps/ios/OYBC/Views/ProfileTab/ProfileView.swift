@@ -412,9 +412,13 @@ struct ProfileView: View {
         // is pure (safe off-main); `fetchBoards` returns all boards and the
         // algorithm re-filters to core/non-deleted internally.
         let weekStartDay = preferences.weekStartDay.rawValue
+        // Capture `now` on main before the detached task (parity with the slot /
+        // window VMs) so a midnight rollover between dispatch and execution can't
+        // mismatch the boards snapshot against a next-day `now`.
+        let now = Date()
         _Concurrency.Task.detached(priority: .userInitiated) {
             let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
-            let result = computeAllStreaks(boards: boards, weekStartDay: weekStartDay, now: Date())
+            let result = computeAllStreaks(boards: boards, weekStartDay: weekStartDay, now: now)
             await MainActor.run { streaks = result }
         }
     }

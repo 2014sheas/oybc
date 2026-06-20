@@ -14,9 +14,12 @@ import SwiftUI
 /// Mirrors the web `CoreBoardWindowBar` component.
 struct CoreBoardWindowBarView: View {
     let label: String
-    /// Compact greenlog-streak label (e.g. "3d") for this timeframe; nil hides
-    /// the flame chip (no streak, or a non-recurring timeframe).
-    var streakLabel: String? = nil
+    /// Current greenlog streak for this timeframe. 0 (or a non-recurring
+    /// timeframe) hides the flame chip. The chip's display ("3w") and its
+    /// VoiceOver label ("3 weekly greenlog streak") are both derived from
+    /// `streakCount` + `streakTimeframe`.
+    var streakCount: Int = 0
+    var streakTimeframe: Timeframe = .weekly
     let onPrev: () -> Void
     let onNext: () -> Void
     let onOpenList: () -> Void
@@ -43,8 +46,8 @@ struct CoreBoardWindowBarView: View {
                     .foregroundStyle(Color.risoInk)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if let streakLabel {
-                    streakChip(streakLabel)
+                if streakCount >= 1 {
+                    streakChip
                 }
             }
 
@@ -90,18 +93,31 @@ struct CoreBoardWindowBarView: View {
 
     /// Gold flame capsule (🔥 3d) showing the current greenlog streak for this
     /// timeframe. `risoInkStatic` keeps it readable on gold in dark mode.
-    private func streakChip(_ text: String) -> some View {
+    private var streakChip: some View {
         HStack(spacing: 2) {
             Image(systemName: "flame.fill")
                 .font(.system(size: 8, weight: .bold))
-            Text(text)
+            Text(compactStreakLabel(streakCount, timeframe: streakTimeframe))
                 .font(.risoHead(10, .bold))
         }
         .foregroundStyle(Color.risoInkStatic)
         .padding(.vertical, 2)
         .padding(.horizontal, 6)
         .background(Capsule().fill(Color.risoGold))
-        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: 1.5))
-        .accessibilityLabel("\(text) greenlog streak")
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+        .accessibilityElement()
+        .accessibilityLabel("\(streakCount) \(streakA11yWord) greenlog streak")
+    }
+
+    /// Human timeframe word for VoiceOver (e.g. "weekly"), so the chip reads
+    /// "3 weekly greenlog streak" rather than the letter-by-letter "3w".
+    private var streakA11yWord: String {
+        switch streakTimeframe {
+        case .daily:   return "daily"
+        case .weekly:  return "weekly"
+        case .monthly: return "monthly"
+        case .yearly:  return "yearly"
+        case .custom:  return "custom"
+        }
     }
 }
