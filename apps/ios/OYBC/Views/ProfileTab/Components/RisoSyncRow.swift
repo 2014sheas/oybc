@@ -2,13 +2,16 @@ import SwiftUI
 
 /// Riso-styled Sync row for the Profile App card.
 ///
-/// Shows the sync icon square + "Sync" label + a green status dot
-/// + a compact status string derived from `SyncService.lastEventAt`
-/// and `SyncService.lastError`.
+/// Shows the sync icon square + "Sync" label + a status dot and one of three
+/// plain, non-technical states: "Up to date" / "Syncing…" / "Offline".
 ///
-/// This row is presentational regarding the icon/label/chevron layout
-/// but reads from the SyncService environment directly so its status
-/// stays live without the parent having to pass through every field.
+/// Sync is automatic; this row is reassurance only. It deliberately never
+/// surfaces raw error detail, timestamps, or internal ids. Only a real network
+/// outage reads as "Offline"; an online sync error (which the background loop
+/// retries) reads as "Syncing…" — never "Offline" while the device is connected.
+///
+/// Reads from the SyncService / NetworkMonitor environment directly so its
+/// status stays live without the parent passing through every field.
 struct RisoSyncRow: View {
     @EnvironmentObject private var syncService: SyncService
     @EnvironmentObject private var networkMonitor: NetworkMonitor
@@ -51,33 +54,18 @@ struct RisoSyncRow: View {
     // MARK: - Derived
 
     private var statusDotColor: Color {
-        if let _ = syncService.lastError { return .risoRed }
-        if !networkMonitor.isConnected { return Color.orange }
+        // Orange only when attention may be warranted (offline or a sync error);
+        // routine in-flight syncing stays green/calm.
+        if !networkMonitor.isConnected || syncService.lastError != nil { return Color.orange }
         return .risoGreen
     }
 
     private var statusText: String {
-        if let err = syncService.lastError {
-            return err.message
-        }
-        if !networkMonitor.isConnected {
-            return "Offline"
-        }
-        guard let last = syncService.lastEventAt else {
-            return syncService.isSyncing ? "Syncing…" : "Not yet synced"
-        }
-        return "Synced · \(relativeTimeString(from: last))"
-    }
-
-    /// Compact relative-time string matching the prototype ("just now",
-    /// "2m ago", "3h ago", "yesterday"). Keeps the status line to one line.
-    private func relativeTimeString(from date: Date) -> String {
-        let seconds = Date().timeIntervalSince(date)
-        if seconds < 60 { return "just now" }
-        let minutes = Int(seconds / 60)
-        if minutes < 60 { return "\(minutes)m ago" }
-        let hours = Int(seconds / 3600)
-        if hours < 24 { return "\(hours)h ago" }
-        return "yesterday"
+        // Only a real network outage is "Offline". An online sync error is being
+        // retried by the background loop, so it reads as "Syncing…" — never
+        // "Offline" while connected, and never the raw error.
+        if !networkMonitor.isConnected { return "Offline" }
+        if syncService.lastError != nil || syncService.isSyncing { return "Syncing…" }
+        return "Up to date"
     }
 }
