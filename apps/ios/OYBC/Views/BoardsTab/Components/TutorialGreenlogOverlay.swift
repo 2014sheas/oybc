@@ -125,7 +125,11 @@ struct TutorialGreenlogOverlay: View {
         VStack(alignment: .center, spacing: 4) {
             Text(value)
                 .font(.risoHead(22, .extraBold))
-                .foregroundStyle(Color.risoInkStatic)
+                // Card fill is `risoPaper` (adaptive → dark in dark mode), so the
+                // value needs adaptive `risoInk` (cream in dark) — NOT
+                // risoInkStatic, which would be dark-on-dark. (risoInkStatic is
+                // only for content on the always-bright gold.)
+                .foregroundStyle(Color.risoInk)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

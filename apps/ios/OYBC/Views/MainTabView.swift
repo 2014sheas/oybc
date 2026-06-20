@@ -100,13 +100,20 @@ struct MainTabView: View {
             }
         case .recurringTemplates:
             selectedTab = 3
-            // Defer the push one runloop so the Profile NavigationStack is
-            // mounted before its bound path is mutated (first cross-tab switch
-            // may not have rendered the stack yet).
-            DispatchQueue.main.async { profilePath.append(ProfileRoute.recurringTemplates) }
+            // Reset + push together, deferred one runloop so the Profile
+            // NavigationStack is mounted before its bound path is mutated (first
+            // cross-tab switch may not have rendered it). Resetting first avoids
+            // stacking duplicate routes on repeated deep-links.
+            DispatchQueue.main.async {
+                profilePath = NavigationPath()
+                profilePath.append(ProfileRoute.recurringTemplates)
+            }
         case .defaultPools:
             selectedTab = 3
-            DispatchQueue.main.async { profilePath.append(ProfileRoute.defaultPools) }
+            DispatchQueue.main.async {
+                profilePath = NavigationPath()
+                profilePath.append(ProfileRoute.defaultPools)
+            }
         case .settings:
             selectedTab = 3
         case .shareGreenlog:

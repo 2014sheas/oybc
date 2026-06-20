@@ -170,6 +170,7 @@ struct TutorialBoardView: View {
         .frame(maxWidth: .infinity)
         .frame(height: 104)
         .background(RoundedRectangle(cornerRadius: Riso.cellRadius).fill(Color.risoInk))
+        .accessibilityHidden(true) // decorative, non-interactive
     }
 
     private func lessonCell(_ lesson: TutorialLesson) -> some View {
@@ -203,6 +204,7 @@ struct TutorialBoardView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(lesson.title)\(isDone ? ", done" : "")")
+        .accessibilityHint(isDone ? "Tap to review this move" : "Tap to learn this move")
     }
 
     /// Top-right corner chip: blue → (undone) or gold ✓ (done).
