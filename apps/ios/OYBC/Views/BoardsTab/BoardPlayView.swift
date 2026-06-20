@@ -1207,7 +1207,8 @@ struct BoardPlayView: View {
         Button(action: action) {
             Image(systemName: system)
                 .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(enabled ? Color.risoInk : Color.risoMuted)
+                // Enabled glyph sits on gold — non-inverting ink for dark mode.
+                .foregroundStyle(enabled ? Color.risoInkStatic : Color.risoMuted)
                 .frame(width: 44, height: 44)
                 .risoCard(fill: enabled ? .risoGold : .risoPaper)
         }

@@ -73,7 +73,8 @@ struct CoreBoardWindowCellView: View {
         Text("CURRENT")
             .font(.risoHead(10, .bold))
             .tracking(0.5)
-            .foregroundStyle(Color.risoInk)
+            // On the gold capsule — non-inverting ink for dark mode.
+            .foregroundStyle(Color.risoInkStatic)
             .padding(.vertical, 3)
             .padding(.horizontal, 9)
             .background(Capsule().fill(Color.risoGold))

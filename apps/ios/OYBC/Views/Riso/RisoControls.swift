@@ -71,7 +71,10 @@ struct RisoButton: View {
 struct RisoToolbarPill: View {
     let title: String
     var fill: Color = .risoGold
-    var foreground: Color = .risoInk
+    // Default sits on the gold fill — use the non-inverting ink so it stays
+    // readable in dark mode (plain `risoInk` flips to cream). The red Delete
+    // variant overrides this with `.risoPaper`.
+    var foreground: Color = .risoInkStatic
     let action: () -> Void
 
     var body: some View {
@@ -92,6 +95,9 @@ struct RisoToolbarPill: View {
 struct RisoIconButton: View {
     let systemImage: String
     var fill: Color = .risoGold
+    // Default sits on the gold fill — non-inverting ink keeps the glyph readable
+    // in dark mode. Callers using a non-gold (adaptive) fill can override.
+    var foreground: Color = .risoInkStatic
     var size: CGFloat = 46
     let action: () -> Void
 
@@ -99,7 +105,7 @@ struct RisoIconButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: size * 0.42, weight: .bold))
-                .foregroundStyle(Color.risoInk)
+                .foregroundStyle(foreground)
                 .frame(width: size, height: size)
                 .risoCard(fill: fill)
         }

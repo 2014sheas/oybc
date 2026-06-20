@@ -90,19 +90,20 @@ struct RisoStatBar: View {
 
     private var bingosCard: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // Content sits on the gold card — non-inverting ink for dark mode.
             Text("BINGOS")
                 .font(.risoBody(9, .bold))
                 .tracking(1.0)
                 .textCase(.uppercase)
-                .foregroundStyle(Color.risoInk)
+                .foregroundStyle(Color.risoInkStatic)
 
             HStack(alignment: .center, spacing: 5) {
                 StarShape()
-                    .fill(Color.risoInk)
+                    .fill(Color.risoInkStatic)
                     .frame(width: 15, height: 15)
                 Text("\(linesCompleted)")
                     .font(.risoHead(19, .extraBold))
-                    .foregroundStyle(Color.risoInk)
+                    .foregroundStyle(Color.risoInkStatic)
                     .monospacedDigit()
             }
         }

@@ -66,7 +66,8 @@ struct ShareBoardSheet: View {
                 } label: {
                     Text("Done")
                         .font(.risoHead(12, .extraBold))
-                        .foregroundStyle(Color.risoInk)
+                        // On the gold pill — non-inverting ink for dark mode.
+                        .foregroundStyle(Color.risoInkStatic)
                         .padding(.vertical, 6)
                         .padding(.horizontal, 13)
                         .background(Capsule().fill(Color.risoGold))

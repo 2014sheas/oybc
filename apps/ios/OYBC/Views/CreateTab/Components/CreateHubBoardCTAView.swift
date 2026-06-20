@@ -67,10 +67,11 @@ struct CreateHubBoardCTAView: View {
     private var primaryButton: some View {
         Button(action: onTap) {
             HStack(spacing: 14) {
-                // Icon square — gold fill with ink symbol
+                // Icon square — gold fill with ink symbol (non-inverting ink so
+                // the glyph stays readable on gold in dark mode).
                 Image(systemName: systemImageName)
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Color.risoInk)
+                    .foregroundStyle(Color.risoInkStatic)
                     .frame(width: 44, height: 44)
                     .risoCard(fill: Color.risoGold)
 

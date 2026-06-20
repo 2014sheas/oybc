@@ -72,9 +72,16 @@ struct RisoButtonStyle: ButtonStyle {
 
 // MARK: - Paper grain background
 
-/// 3px-tile dot grid at ~5% ink, multiply blend — the resting "paper" texture
-/// behind every screen. Static; drawn once.
+/// 3px-tile dot grid at ~5% ink — the resting "paper" texture behind every
+/// screen. Static; drawn once.
+///
+/// The blend mode is scheme-aware: in light mode the (dark) ink dots `multiply`
+/// to darken the cream paper; in dark mode `risoInk` is cream and the paper is
+/// near-black, so `multiply` would no-op (a light dot times a dark base ≈ the
+/// base) and the grain would vanish — `plusLighter` instead lifts subtle light
+/// dots onto the dark paper. Light-mode rendering is unchanged.
 struct RisoGrain: View {
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         Canvas { ctx, size in
             let step: CGFloat = 3
@@ -90,7 +97,7 @@ struct RisoGrain: View {
                 y += step
             }
         }
-        .blendMode(.multiply)
+        .blendMode(colorScheme == .dark ? .plusLighter : .multiply)
         .allowsHitTesting(false)
     }
 }
@@ -118,7 +125,10 @@ private struct RisoHalftone: ViewModifier {
         content.overlay(
             Canvas { ctx, size in
                 let r: CGFloat = tile * 0.27   // dot ≈ 26–28% of the tile
-                let paint = GraphicsContext.Shading.color(Color.risoInk.opacity(0.5))
+                // Non-inverting ink: the overprint must DARKEN the (colored)
+                // completed cell in both modes. Plain `risoInk` is cream in
+                // dark mode, which under `.multiply` would erase the dots.
+                let paint = GraphicsContext.Shading.color(Color.risoInkStatic.opacity(0.5))
                 var y: CGFloat = 0
                 while y < size.height {
                     var x: CGFloat = 0
