@@ -47,9 +47,14 @@ struct BoardListView: View {
     /// Wired by MainTabView to `selectedTab = 2`. Nil in playground / preview.
     var onCreateBoard: (() -> Void)? = nil
 
+    /// Open the Getting Started tutorial board (from the pinned home card).
+    /// Wired by MainTabView to push `TutorialRoute`. Nil in preview.
+    var onOpenTutorial: (() -> Void)? = nil
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var tutorialStore: TutorialProgressStore
 
     // MARK: - State
 
@@ -128,6 +133,13 @@ struct BoardListView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
+
+                if !tutorialStore.isCardDismissed {
+                    tutorialCardRow
+                        .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
             }
 
             // ---- Board cards ----
@@ -265,6 +277,17 @@ struct BoardListView: View {
         .padding(.bottom, 14)
     }
 
+    // MARK: - Getting Started tutorial card
+
+    private var tutorialCardRow: some View {
+        TutorialCard(
+            done: tutorialStore.completedCount,
+            total: TutorialProgressStore.totalLessons,
+            onOpen: { onOpenTutorial?() },
+            onDismiss: { tutorialStore.dismissCard() }
+        )
+    }
+
     // MARK: - Empty filter state (boards exist but none match filter)
 
     private var emptyFilterRow: some View {
@@ -304,6 +327,13 @@ struct BoardListView: View {
                 .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+
+            if !tutorialStore.isCardDismissed {
+                tutorialCardRow
+                    .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
             emptyStateCenteredRow
                 .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
