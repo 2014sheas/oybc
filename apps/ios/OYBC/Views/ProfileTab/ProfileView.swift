@@ -18,12 +18,17 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var syncService: SyncService
+    @EnvironmentObject var tutorialStore: TutorialProgressStore
 
     // MARK: - Inputs
 
     /// Phase 6.2: cross-tab edit handler. Optional so #Preview / tests
     /// that mount ProfileView in isolation don't need cross-tab plumbing.
     var onEditRecurringTemplate: ((String) -> Void)? = nil
+
+    /// Opens the Getting Started tutorial board (cross-tab to Boards).
+    /// Optional so #Preview / tests can mount ProfileView standalone.
+    var onOpenTutorial: (() -> Void)? = nil
 
     // MARK: - Private state
 
@@ -102,10 +107,15 @@ struct ProfileView: View {
                         .padding(.bottom, 24)
 
                     #if DEBUG
-                    // Developer affordance: clears the onboarding-seen flag so
-                    // the first-run flow shows again on next launch.
-                    SwiftUI.Button("Replay onboarding") {
-                        UserDefaults.hasSeenOnboarding = false
+                    // Developer affordances: replay first-run onboarding /
+                    // reset the Getting Started tutorial progress.
+                    VStack(spacing: 8) {
+                        SwiftUI.Button("Replay onboarding") {
+                            UserDefaults.hasSeenOnboarding = false
+                        }
+                        SwiftUI.Button("Reset tutorial progress") {
+                            tutorialStore.reset()
+                        }
                     }
                     .font(.risoBody(12, .semibold))
                     .foregroundStyle(Color.risoMuted)
@@ -200,6 +210,21 @@ struct ProfileView: View {
 
     private var preferencesCard: some View {
         VStack(spacing: 0) {
+            // Getting started — re-entry to the tutorial board (cross-tab).
+            Button { onOpenTutorial?() } label: {
+                RisoProfileRow(
+                    icon: "graduationcap",
+                    label: "Getting started",
+                    value: tutorialStore.isComplete
+                        ? "Done"
+                        : "\(tutorialStore.completedCount)/\(TutorialProgressStore.totalLessons)",
+                    chevron: true
+                )
+            }
+            .buttonStyle(.plain)
+
+            rowDivider
+
             // Board preferences (no count)
             NavigationLink {
                 BoardPreferencesView()

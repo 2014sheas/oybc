@@ -22,9 +22,17 @@ struct MainTabView: View {
     @EnvironmentObject var notificationDelegate: NotificationDelegate
     @Environment(\.scenePhase) private var scenePhase
 
+    @EnvironmentObject var tutorialStore: TutorialProgressStore
+
     @State private var selectedTab: Int = 0
     @State private var boardsPath: NavigationPath = NavigationPath()
     @State private var tasksPath: NavigationPath = NavigationPath()
+    /// Profile-tab stack, bound so tutorial deep-links can push sub-pages
+    /// (Recurring templates / Default pools) directly.
+    @State private var profilePath: NavigationPath = NavigationPath()
+    /// Tutorial completion celebration + the "Preview a GREENLOG" sample.
+    @State private var showTutorialGreenlog = false
+    @State private var showGreenlogPreview = false
     /// Phase 6.1: when the user taps Create on the Boards-tab Recurring
     /// Boards banner, BoardListView calls back here to (a) switch to the
     /// Create tab and (b) stash the timeframe. CreateHubView reads this
@@ -64,6 +72,48 @@ struct MainTabView: View {
     /// task-detail sheet over BoardPlayView (board-to-board jump).
     /// Resets boardsPath to a single entry so the user lands on a clean
     /// stack — same intent as `onBoardCompleted` from the wizard.
+    /// Opens the Getting Started tutorial board (from the home card or the
+    /// Profile "Getting started" row). Lands on the Boards tab.
+    private func openTutorial() {
+        selectedTab = 0
+        boardsPath.append(TutorialRoute())
+    }
+
+    /// Routes a tutorial lesson's "Try it" deep-link. The lesson is already
+    /// marked learned by the sheet; this just navigates to the real flow.
+    private func handleTutorialTry(_ link: TutorialDeepLink) {
+        switch link {
+        case .createBoard:
+            selectedTab = 2
+        case .addTasks:
+            selectedTab = 1
+        case .openABoard:
+            // Newest board (fetchBoards is updatedAt-desc) if any, else Create.
+            // Read off-main per the codebase's "never block UI" convention.
+            let userId = authService.currentUser?.id
+            _Concurrency.Task.detached {
+                let boards = userId.flatMap { try? AppDatabase.shared.fetchBoards(userId: $0) } ?? []
+                let newestId = boards.first?.id
+                await MainActor.run {
+                    if let id = newestId { openBoard(id) } else { selectedTab = 2 }
+                }
+            }
+        case .recurringTemplates:
+            selectedTab = 3
+            // Defer the push one runloop so the Profile NavigationStack is
+            // mounted before its bound path is mutated (first cross-tab switch
+            // may not have rendered the stack yet).
+            DispatchQueue.main.async { profilePath.append(ProfileRoute.recurringTemplates) }
+        case .defaultPools:
+            selectedTab = 3
+            DispatchQueue.main.async { profilePath.append(ProfileRoute.defaultPools) }
+        case .settings:
+            selectedTab = 3
+        case .shareGreenlog:
+            showGreenlogPreview = true
+        }
+    }
+
     private func openBoard(_ boardId: String) {
         boardsPath = NavigationPath()
         boardsPath.append(boardId)
@@ -71,6 +121,49 @@ struct MainTabView: View {
     }
 
     var body: some View {
+        ZStack {
+            tabs
+
+            // ── Tutorial completion celebration ──
+            if showTutorialGreenlog {
+                TutorialGreenlogOverlay(
+                    onCreateBoard: {
+                        showTutorialGreenlog = false
+                        boardsPath = NavigationPath()
+                        selectedTab = 2
+                    },
+                    onDismiss: {
+                        showTutorialGreenlog = false
+                        boardsPath = NavigationPath() // pop tutorial → boards list
+                    }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(30)
+            }
+
+            // ── "Preview a GREENLOG" sample (tutorial Share lesson) ──
+            if showGreenlogPreview {
+                RisoGreenlogOverlay(
+                    completedTasks: 25,
+                    totalTasks: 25,
+                    linesCompleted: 12,
+                    boardName: "Sample board",
+                    celebrationIntensity: authService.userPreferences.celebrationIntensity,
+                    // Preview only — both buttons just close it (no real share).
+                    onShare: { showGreenlogPreview = false },
+                    onDismiss: { showGreenlogPreview = false }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(30)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showTutorialGreenlog)
+        .animation(.easeInOut(duration: 0.25), value: showGreenlogPreview)
+    }
+
+    private var tabs: some View {
         TabView(selection: $selectedTab) {
             NavigationStack(path: $boardsPath) {
                 BoardListView(
@@ -99,8 +192,16 @@ struct MainTabView: View {
                         // Riso header + button tapped: switch to Create
                         // tab with no pre-fill (fresh board flow).
                         selectedTab = 2
-                    }
+                    },
+                    onOpenTutorial: { boardsPath.append(TutorialRoute()) }
                 )
+                .navigationDestination(for: TutorialRoute.self) { _ in
+                    TutorialBoardView(
+                        onTry: { lesson in handleTutorialTry(lesson.target) },
+                        onBack: { if !boardsPath.isEmpty { boardsPath.removeLast() } },
+                        onComplete: { showTutorialGreenlog = true }
+                    )
+                }
                 .navigationDestination(for: CoreBrowserRoute.self) { route in
                     CoreBoardBrowserView(
                         timeframe: route.timeframe,
@@ -214,7 +315,7 @@ struct MainTabView: View {
             }
             .tag(2)
 
-            NavigationStack {
+            NavigationStack(path: $profilePath) {
                 ProfileView(
                     onEditRecurringTemplate: { templateId in
                         // Phase 6.2 UX rework: cross-tab edit. The
@@ -224,8 +325,22 @@ struct MainTabView: View {
                         // the binding and opens the wizard hydrated.
                         pendingEditTemplateId = templateId
                         selectedTab = 2
-                    }
+                    },
+                    onOpenTutorial: { openTutorial() }
                 )
+                // Tutorial deep-links (and any future direct nav) push these
+                // Profile sub-pages onto the bound stack.
+                .navigationDestination(for: ProfileRoute.self) { route in
+                    switch route {
+                    case .recurringTemplates:
+                        RecurringTemplatesView(onEditTemplate: { templateId in
+                            pendingEditTemplateId = templateId
+                            selectedTab = 2
+                        })
+                    case .defaultPools:
+                        DefaultPoolsListView()
+                    }
+                }
                 // Phase B — Browse links inside BoardPreferencesView
                 // push CoreBrowserRoute onto this stack. Same view
                 // tree as the Boards-tab browser; only the cross-tab
@@ -301,4 +416,5 @@ struct MainTabView: View {
         .environmentObject(AuthService())
         .environmentObject(NotificationService())
         .environmentObject(NotificationDelegate.shared)
+        .environmentObject(TutorialProgressStore())
 }

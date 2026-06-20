@@ -79,3 +79,6 @@ oybc_v1.archive/
 docs/superpowers/
 .serena/
 OYBC_design_handoff_updates.zip
+# Design handoffs (reference only — never committed)
+OYBC design handoff*.zip
+design_handoff_riso_redesign/
