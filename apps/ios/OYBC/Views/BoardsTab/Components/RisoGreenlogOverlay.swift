@@ -20,6 +20,10 @@ struct RisoGreenlogOverlay: View {
     let linesCompleted: Int
     let boardName: String
 
+    /// Compact greenlog-streak label (e.g. "3d"/"2w"), or nil to hide the STREAK
+    /// stat card. Non-nil only for core boards with a streak ≥ 1.
+    var streak: String? = nil
+
     /// Board Preferences "Celebration intensity" (1–10). Defaults to 7 so
     /// existing call sites/previews render the original 64-piece burst.
     var celebrationIntensity: Int = 7
@@ -111,7 +115,10 @@ struct RisoGreenlogOverlay: View {
                 HStack(spacing: 10) {
                     greenlogStatCard(value: "\(completedTasks)/\(totalTasks)", label: "SQUARES")
                     greenlogStatCard(value: "\(linesCompleted)", label: "BINGOS")
-                    greenlogStatCard(value: "7d", label: "STREAK")
+                    // STREAK only for core boards with a streak (nil → 2 cards).
+                    if let streak {
+                        greenlogStatCard(value: streak, label: "STREAK")
+                    }
                 }
                 .padding(.vertical, 20)
 

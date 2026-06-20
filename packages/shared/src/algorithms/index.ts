@@ -96,6 +96,14 @@ export {
 export type { CoreBoardSlot, PendingRecurringBoard } from './recurringBoards';
 
 export {
+  STREAK_TIMEFRAMES,
+  computeStreak,
+  computeAllStreaks,
+} from './streaks';
+
+export type { StreakPair, StreaksByTimeframe } from './streaks';
+
+export {
   findTemplatesPendingSpawn,
   validateSpawnPool,
   buildSpawnPlacement,

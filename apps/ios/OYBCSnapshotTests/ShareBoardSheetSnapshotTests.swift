@@ -91,7 +91,7 @@ final class ShareBoardSheetSnapshotTests: XCTestCase {
                     completedTasks: 25,
                     totalTasks: 25,
                     linesCompleted: 5,
-                    streakDays: 7,
+                    streak: "7d",
                     initialIncludeStats: includeStats
                 )
                 .frame(maxWidth: .infinity)
@@ -111,7 +111,7 @@ final class ShareBoardSheetSnapshotTests: XCTestCase {
             completedTasks: 25,
             totalTasks: 25,
             linesCompleted: 5,
-            streakDays: 7
+            streak: "7d"
         )
         ZStack {
             Color.risoPaper.ignoresSafeArea()

@@ -278,7 +278,8 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
             completedTasks: 25,
             totalTasks: 25,
             linesCompleted: 12,
-            boardName: "Weekly Wellness"
+            boardName: "Weekly Wellness",
+            streak: "7d"
         )
     }
 
