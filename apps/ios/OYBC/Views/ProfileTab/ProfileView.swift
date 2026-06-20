@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// Phase 5 Riso reskin: preserves all behavior (theme write path via
 /// `themeBinding`, name edit via `updateDisplayName`, sign out via
-/// `authService.signOut()`, the 3 preferences NavigationLinks + the
+/// `authService.signOut()`, the 4 preferences NavigationLinks + the
 /// `onEditRecurringTemplate` callback, and the `RisoSyncRow` status).
 /// The Developer/Playground section is intentionally removed.
 ///

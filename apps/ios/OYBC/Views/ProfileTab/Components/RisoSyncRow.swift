@@ -6,8 +6,9 @@ import SwiftUI
 /// plain, non-technical states: "Up to date" / "Syncing…" / "Offline".
 ///
 /// Sync is automatic; this row is reassurance only. It deliberately never
-/// surfaces raw error detail, timestamps, or internal ids — a sync error (which
-/// the background loop retries) and being offline both read simply as "Offline".
+/// surfaces raw error detail, timestamps, or internal ids. Only a real network
+/// outage reads as "Offline"; an online sync error (which the background loop
+/// retries) reads as "Syncing…" — never "Offline" while the device is connected.
 ///
 /// Reads from the SyncService / NetworkMonitor environment directly so its
 /// status stays live without the parent passing through every field.
@@ -52,20 +53,19 @@ struct RisoSyncRow: View {
 
     // MARK: - Derived
 
-    /// True when changes aren't currently reaching the cloud — offline, or a
-    /// sync error the background loop will retry. Both read as "Offline" so we
-    /// never surface technical detail or alarm the user over a transient hiccup.
-    private var isNotSyncing: Bool {
-        !networkMonitor.isConnected || syncService.lastError != nil
-    }
-
     private var statusDotColor: Color {
-        isNotSyncing ? Color.orange : .risoGreen
+        // Orange only when attention may be warranted (offline or a sync error);
+        // routine in-flight syncing stays green/calm.
+        if !networkMonitor.isConnected || syncService.lastError != nil { return Color.orange }
+        return .risoGreen
     }
 
     private var statusText: String {
-        if isNotSyncing { return "Offline" }
-        if syncService.isSyncing { return "Syncing…" }
+        // Only a real network outage is "Offline". An online sync error is being
+        // retried by the background loop, so it reads as "Syncing…" — never
+        // "Offline" while connected, and never the raw error.
+        if !networkMonitor.isConnected { return "Offline" }
+        if syncService.lastError != nil || syncService.isSyncing { return "Syncing…" }
         return "Up to date"
     }
 }
