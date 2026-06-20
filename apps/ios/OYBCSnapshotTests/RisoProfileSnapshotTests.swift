@@ -516,7 +516,9 @@ final class RisoProfileSnapshotTests: XCTestCase {
                 Circle()
                     .fill(Color.risoGreen)
                     .frame(width: 7, height: 7)
-                Text("Synced · just now")
+                // Mirrors RisoSyncRow's minimal states: "Up to date" /
+                // "Syncing…" / "Offline" (no raw errors or timestamps).
+                Text("Up to date")
                     .risoSub()
             }
         }
