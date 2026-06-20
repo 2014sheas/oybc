@@ -249,6 +249,10 @@ struct BoardPlayView: View {
     // MARK: Riso visual layer state
     /// Whether to show the GREENLOG full-bleed celebration overlay.
     @State private var showGreenlogOverlay: Bool = false
+    /// Compact greenlog-streak value (e.g. "3d"/"2w") for the celebration overlay
+    /// + share poster. Non-nil only for core boards with a streak ≥ 1; nil hides
+    /// the STREAK card. Computed when the GREENLOG overlay is triggered.
+    @State private var greenlogStreakValue: String? = nil
     /// Whether to show the Share Board sheet (opened from the GREENLOG overlay).
     @State private var showShareBoardSheet: Bool = false
     /// Whether to show the bingo toast (drops from top).
@@ -420,6 +424,7 @@ struct BoardPlayView: View {
                     totalTasks: b.totalTasks,
                     linesCompleted: b.linesCompleted,
                     boardName: b.name,
+                    streak: greenlogStreakValue,
                     celebrationIntensity: authService.userPreferences.celebrationIntensity,
                     onShare: {
                         showShareBoardSheet = true
@@ -644,6 +649,7 @@ struct BoardPlayView: View {
                     completedTasks: b.completedTasks,
                     totalTasks: b.totalTasks,
                     linesCompleted: b.linesCompleted,
+                    streak: greenlogStreakValue,
                     onDismiss: { showShareBoardSheet = false }
                 )
                 .presentationDetents([.medium, .large])
@@ -793,6 +799,9 @@ struct BoardPlayView: View {
     /// cut short by an earlier one's timer.
     private func triggerRisoNotification(from message: String) {
         if message == "GREENLOG!" {
+            // Compute the greenlog streak for the overlay/poster (core boards
+            // only). Runs while the 0.52s reveal delay elapses.
+            refreshGreenlogStreak()
             // Delay to let the 25th cell pop animation finish (~340ms + margin)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
                 withAnimation(.easeIn(duration: 0.3)) {
@@ -800,7 +809,7 @@ struct BoardPlayView: View {
                 }
             }
         } else if message.lowercased().contains("bingo") && !message.lowercased().contains("lost") {
-            // Extract a short subtitle from the message
+            // Extract a short subtitle from the message.
             // Original format: "Bingo! (row_1, col_2)" → "Line complete!"
             bingoToastSubtitle = "Line complete!"
             bingoToastGeneration &+= 1
@@ -818,6 +827,41 @@ struct BoardPlayView: View {
                 }
             }
         }
+    }
+
+    /// Computes the greenlog streak for the current board (core boards only) and
+    /// stores a compact label in `greenlogStreakValue` for the overlay + poster.
+    /// Non-core boards → nil (the STREAK card hides). Reads boards off-main.
+    private func refreshGreenlogStreak() {
+        guard let b = board, b.isCore else {
+            greenlogStreakValue = nil
+            return
+        }
+        let userId = b.userId
+        let timeframe = b.timeframe
+        let weekStartDay = authService.userPreferences.weekStartDay.rawValue
+        _Concurrency.Task.detached {
+            let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
+            let count = computeStreak(
+                timeframe: timeframe, criterion: .greenlog,
+                boards: boards, weekStartDay: weekStartDay, now: Date()
+            )
+            let value = count >= 1 ? BoardPlayView.compactStreakValue(count, timeframe: timeframe) : nil
+            await MainActor.run { greenlogStreakValue = value }
+        }
+    }
+
+    /// Compact, timeframe-aware streak label: "3d" / "2w" / "5mo" / "1y".
+    static func compactStreakValue(_ count: Int, timeframe: Timeframe) -> String {
+        let unit: String
+        switch timeframe {
+        case .daily:   unit = "d"
+        case .weekly:  unit = "w"
+        case .monthly: unit = "mo"
+        case .yearly:  unit = "y"
+        case .custom:  unit = ""
+        }
+        return "\(count)\(unit)"
     }
 
     // MARK: - Riso Grid Section

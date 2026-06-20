@@ -19,7 +19,8 @@ import Photos
 ///   - completedTasks: Number of squares completed.
 ///   - totalTasks: Total squares on the board.
 ///   - linesCompleted: Number of bingo lines scored.
-///   - streakDays: Streak value shown on the stat card (pass `nil` to hide streak).
+///   - streak: Compact greenlog-streak label (e.g. "3d"/"2w"); nil hides the
+///     STREAK stat card (non-core boards have no streak).
 ///   - onDismiss: Called when the user taps Done or dismisses the sheet.
 struct ShareBoardSheet: View {
 
@@ -30,7 +31,7 @@ struct ShareBoardSheet: View {
     let completedTasks: Int
     let totalTasks: Int
     let linesCompleted: Int
-    var streakDays: Int = 7
+    var streak: String? = nil
     var onDismiss: (() -> Void)? = nil
     /// Initial value of the "Include stats on the card" toggle.
     /// Exposed so snapshot tests can snapshot both toggle states without
@@ -183,12 +184,14 @@ struct ShareBoardSheet: View {
             posterMiniGrid
                 .frame(width: 200, height: 200)
 
-            // Optional stat trio
+            // Optional stat trio (STREAK card only for core boards with a streak)
             if showStats {
                 HStack(spacing: 8) {
                     posterStatCard(value: "\(completedTasks)/\(totalTasks)", label: "SQUARES")
                     posterStatCard(value: "\(linesCompleted)", label: "BINGOS")
-                    posterStatCard(value: "\(streakDays)d", label: "STREAK")
+                    if let streak {
+                        posterStatCard(value: streak, label: "STREAK")
+                    }
                 }
             }
 
@@ -620,7 +623,7 @@ private struct ShareActivityItem: Identifiable {
                 completedTasks: 25,
                 totalTasks: 25,
                 linesCompleted: 5,
-                streakDays: 7
+                streak: "7d"
             )
             .presentationDetents([.medium, .large])
         }
@@ -635,7 +638,7 @@ private struct ShareActivityItem: Identifiable {
                 completedTasks: 25,
                 totalTasks: 25,
                 linesCompleted: 5,
-                streakDays: 7
+                streak: "7d"
             )
             .presentationDetents([.medium, .large])
         }
