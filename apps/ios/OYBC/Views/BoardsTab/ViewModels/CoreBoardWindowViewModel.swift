@@ -24,6 +24,9 @@ final class CoreBoardWindowViewModel: ObservableObject {
     /// `init`/`step`, so `body` reads don't re-parse + allocate a
     /// `DateFormatter` (via `formatTimeframeLabel`) on every render.
     @Published private(set) var windowLabel: String = ""
+    /// Compact greenlog-streak label for this timeframe ("3d" etc.), or nil when
+    /// the streak is 0. Per-timeframe (constant across windows); shown in the bar.
+    @Published private(set) var streakLabel: String?
 
     // MARK: - Config (immutable after init)
 
@@ -108,8 +111,13 @@ final class CoreBoardWindowViewModel: ObservableObject {
     /// consistent between the browser and the pager.
     func reload() {
         let userId = self.userId
+        let timeframe = self.timeframe
         let timeframeRaw = timeframe.rawValue
         let start = windowStart
+        let weekStartDay = self.weekStartDay
+        // Capture `now` once before the read so the streak computation uses a
+        // stable instant (parity with CoreBoardSlotsViewModel.reload).
+        let now = Date()
 
         reloadToken += 1
         let token = reloadToken
@@ -117,8 +125,11 @@ final class CoreBoardWindowViewModel: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                let result = try AppDatabase.shared.read { db in
-                    try Board
+                // One read for both the window's board and all boards (for the
+                // per-timeframe greenlog streak). `computeStreak` re-filters to
+                // isCore/!isDeleted/timeframe internally.
+                let (result, streak) = try AppDatabase.shared.read { db -> (Board?, Int) in
+                    let match = try Board
                         .filter(
                             Column("userId") == userId
                             && Column("isDeleted") == false
@@ -127,16 +138,26 @@ final class CoreBoardWindowViewModel: ObservableObject {
                             && Column("startDate") == start
                         )
                         .fetchOne(db)
+                    let allBoards = try Board
+                        .filter(Column("userId") == userId && Column("isDeleted") == false)
+                        .fetchAll(db)
+                    let streak = computeStreak(
+                        timeframe: timeframe, criterion: .greenlog,
+                        boards: allBoards, weekStartDay: weekStartDay, now: now
+                    )
+                    return (match, streak)
                 }
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
                     self.board = result
+                    self.streakLabel = streak >= 1 ? compactStreakLabel(streak, timeframe: timeframe) : nil
                     self.isLoaded = true
                 }
             } catch {
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
                     self.board = nil
+                    self.streakLabel = nil
                     self.isLoaded = true
                 }
             }

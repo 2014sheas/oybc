@@ -14,6 +14,9 @@ import SwiftUI
 /// Mirrors the web `CoreBoardWindowBar` component.
 struct CoreBoardWindowBarView: View {
     let label: String
+    /// Compact greenlog-streak label (e.g. "3d") for this timeframe; nil hides
+    /// the flame chip (no streak, or a non-recurring timeframe).
+    var streakLabel: String? = nil
     let onPrev: () -> Void
     let onNext: () -> Void
     let onOpenList: () -> Void
@@ -33,12 +36,17 @@ struct CoreBoardWindowBarView: View {
 
             Spacer()
 
-            // Window label
-            Text(label)
-                .font(.risoHead(15, .bold))
-                .foregroundStyle(Color.risoInk)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            // Window label + optional greenlog-streak flame chip
+            VStack(spacing: 3) {
+                Text(label)
+                    .font(.risoHead(15, .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let streakLabel {
+                    streakChip(streakLabel)
+                }
+            }
 
             Spacer()
 
@@ -78,5 +86,22 @@ struct CoreBoardWindowBarView: View {
                 .frame(height: 1),
             alignment: .bottom
         )
+    }
+
+    /// Gold flame capsule (🔥 3d) showing the current greenlog streak for this
+    /// timeframe. `risoInkStatic` keeps it readable on gold in dark mode.
+    private func streakChip(_ text: String) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 8, weight: .bold))
+            Text(text)
+                .font(.risoHead(10, .bold))
+        }
+        .foregroundStyle(Color.risoInkStatic)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(Capsule().fill(Color.risoGold))
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: 1.5))
+        .accessibilityLabel("\(text) greenlog streak")
     }
 }

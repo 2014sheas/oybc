@@ -232,6 +232,7 @@ struct BoardListView: View {
             slots: pendingRecurringVM.slots,
             now: Date(),
             weekStartDay: weekStartDayPref,
+            streaks: pendingRecurringVM.streaks,
             onSelect: { timeframe, windowStart in
                 // If there's a current board for this slot, open the pager.
                 // Otherwise open the browser so the user can create or browse.

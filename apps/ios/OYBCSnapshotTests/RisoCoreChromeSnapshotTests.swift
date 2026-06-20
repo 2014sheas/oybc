@@ -61,6 +61,40 @@ final class RisoCoreChromeSnapshotTests: XCTestCase {
         )
     }
 
+    /// Bar with a greenlog-streak flame chip under the window label.
+    func testWindowBarWithStreakLight() {
+        let view = CoreBoardWindowBarView(
+            label: "Week of May 18 – 24, 2026",
+            streakLabel: "3w",
+            onPrev: {},
+            onNext: {},
+            onOpenList: {}
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 70)),
+            record: recordMode
+        )
+    }
+
+    func testWindowBarWithStreakDark() {
+        let view = CoreBoardWindowBarView(
+            label: "Week of May 18 – 24, 2026",
+            streakLabel: "3w",
+            onPrev: {},
+            onNext: {},
+            onOpenList: {}
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 70),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     /// Long label that forces truncation — verifies `.middle` truncation mode
     /// keeps leading and trailing context readable.
     func testWindowBarLongLabelTruncation() {

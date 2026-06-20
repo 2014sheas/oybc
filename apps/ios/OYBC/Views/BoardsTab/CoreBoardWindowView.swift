@@ -77,6 +77,7 @@ struct CoreBoardWindowView: View {
         VStack(spacing: 0) {
             CoreBoardWindowBarView(
                 label: viewModel.windowLabel,
+                streakLabel: viewModel.streakLabel,
                 onPrev: { viewModel.step(-1) },
                 onNext: { viewModel.step(1) },
                 onOpenList: { onBrowseTimeframe(timeframe) }

@@ -30,6 +30,11 @@ struct RisoCoreTimeframeGrid: View {
     /// the Weekly card's window in sync with the rest of the app.
     var weekStartDay: String = "monday"
 
+    /// Per-timeframe streaks. Each card shows a small flame badge for its
+    /// greenlog streak when ≥ 1. Defaults empty (no badges) so existing
+    /// call sites / previews render unchanged.
+    var streaks: [Timeframe: StreakPair] = [:]
+
     /// Fired when the user taps a card. Receives the timeframe and the
     /// ISO8601 local window-start string for that card.
     var onSelect: ((Timeframe, String) -> Void)?
@@ -53,6 +58,7 @@ struct RisoCoreTimeframeGrid: View {
                     slot: slot,
                     now: now,
                     weekStartDay: weekStartDay,
+                    greenlogStreak: streaks[timeframe]?.greenlog ?? 0,
                     onTap: { windowStart in
                         onSelect?(timeframe, windowStart)
                     }
@@ -71,6 +77,8 @@ private struct CoreTimeframeCard: View {
     let slot: CoreBoardSlot?
     let now: Date
     let weekStartDay: String
+    /// Current greenlog streak for this timeframe; a flame badge shows when ≥ 1.
+    var greenlogStreak: Int = 0
     let onTap: (String) -> Void
 
     private var windowStart: String {
@@ -135,14 +143,37 @@ private struct CoreTimeframeCard: View {
         }
     }
 
+    /// Gold flame capsule, e.g. 🔥 3d — the current greenlog streak. Uses
+    /// `risoInkStatic` (non-inverting) so it stays readable on gold in dark mode.
+    private var streakBadge: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 8, weight: .bold))
+            Text(compactStreakLabel(greenlogStreak, timeframe: timeframe))
+                .font(.risoHead(10, .bold))
+        }
+        .foregroundStyle(Color.risoInkStatic)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(Capsule().fill(Color.risoGold))
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: 1.5))
+        .accessibilityLabel("\(greenlogStreak) \(timeframeLabel.lowercased()) greenlog streak")
+    }
+
     var body: some View {
         Button {
             onTap(windowStart)
         } label: {
             VStack(alignment: .leading, spacing: 3) {
-                Text(timeframeLabel)
-                    .risoSectionLabel()
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(timeframeLabel)
+                        .risoSectionLabel()
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if greenlogStreak >= 1 {
+                        streakBadge
+                    }
+                }
 
                 HStack(spacing: 5) {
                     // 8px status dot with 1.5px keyline

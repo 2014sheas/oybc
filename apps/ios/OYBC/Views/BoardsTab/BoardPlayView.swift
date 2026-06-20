@@ -846,22 +846,9 @@ struct BoardPlayView: View {
                 timeframe: timeframe, criterion: .greenlog,
                 boards: boards, weekStartDay: weekStartDay, now: Date()
             )
-            let value = count >= 1 ? BoardPlayView.compactStreakValue(count, timeframe: timeframe) : nil
+            let value = count >= 1 ? compactStreakLabel(count, timeframe: timeframe) : nil
             await MainActor.run { greenlogStreakValue = value }
         }
-    }
-
-    /// Compact, timeframe-aware streak label: "3d" / "2w" / "5mo" / "1y".
-    static func compactStreakValue(_ count: Int, timeframe: Timeframe) -> String {
-        let unit: String
-        switch timeframe {
-        case .daily:   unit = "d"
-        case .weekly:  unit = "w"
-        case .monthly: unit = "mo"
-        case .yearly:  unit = "y"
-        case .custom:  unit = ""
-        }
-        return "\(count)\(unit)"
     }
 
     // MARK: - Riso Grid Section
