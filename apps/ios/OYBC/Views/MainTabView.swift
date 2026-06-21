@@ -346,6 +346,8 @@ struct MainTabView: View {
                         })
                     case .defaultPools:
                         DefaultPoolsListView()
+                    case .streaks:
+                        StreaksView()
                     }
                 }
                 // Phase B — Browse links inside BoardPreferencesView

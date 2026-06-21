@@ -35,6 +35,8 @@ struct ProfileView: View {
     @State private var showEditProfile = false
     @State private var showSignOutConfirm = false
     @State private var signOutError: String?
+    /// Whether the Sync detail sheet is presented.
+    @State private var showSyncSheet = false
 
     /// Async-loaded counts for the Preferences rows.
     @State private var recurringTemplateCount: Int? = nil
@@ -78,11 +80,14 @@ struct ProfileView: View {
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
 
-                    // Your streaks section
+                    // Your streaks section — tapping the card pushes StreaksView
                     sectionLabel("Your streaks")
-                    RisoYourStreaksCard(streaks: streaks)
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 18)
+                    NavigationLink { StreaksView() } label: {
+                        RisoYourStreaksCard(streaks: streaks)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 18)
 
                     // App section
                     sectionLabel("App")
@@ -146,6 +151,13 @@ struct ProfileView: View {
             )
         }
         .onAppear { loadCounts() }
+        // Sync detail sheet (handoff §5d) — medium detent, drag indicator.
+        // `SyncSheetContainer` reads env directly so no props need threading here.
+        .sheet(isPresented: $showSyncSheet) {
+            SyncSheetContainer(onClose: { showSyncSheet = false })
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - Header
@@ -199,8 +211,11 @@ struct ProfileView: View {
 
             rowDivider
 
-            // Sync row
-            RisoSyncRow()
+            // Sync row — tapping opens the Sync detail sheet
+            Button { showSyncSheet = true } label: {
+                RisoSyncRow()
+            }
+            .buttonStyle(.plain)
         }
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
@@ -246,6 +261,21 @@ struct ProfileView: View {
                 RisoProfileRow(
                     icon: "bell",
                     label: "Notifications",
+                    chevron: true
+                )
+            }
+            .buttonStyle(.plain)
+
+            rowDivider
+
+            // Account & security — change email/password, linked providers,
+            // delete account (handoff §5c).
+            NavigationLink {
+                AccountSecurityView()
+            } label: {
+                RisoProfileRow(
+                    icon: "lock.shield",
+                    label: "Account & security",
                     chevron: true
                 )
             }

@@ -24,6 +24,11 @@ final class AuthService: ObservableObject {
     /// True while waiting for the initial Firebase auth state to resolve.
     @Published var isLoading: Bool = true
 
+    /// Which sign-in providers are linked to the current account. Recomputed on
+    /// sign-in and after every link/unlink; drives the Account & security UI
+    /// (change email/password gated on `hasPassword`, unlink gated on count).
+    @Published var providerState: ProviderState = .none
+
     // MARK: - Private
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
@@ -78,12 +83,14 @@ final class AuthService: ObservableObject {
                         self.startUserRowObservation(userId: user.id)
                         self.syncService.start(userId: user.id)
                     }
+                    await self.refreshProviderState()
                 } else {
                     await MainActor.run {
                         self.currentUser = nil
                         self.stopUserRowObservation()
                         self.syncService.stop()
                         self.notificationService.clearAll()
+                        self.providerState = .none
                     }
                 }
                 await MainActor.run { self.isLoading = false }
@@ -224,22 +231,24 @@ final class AuthService: ObservableObject {
     /// - Throws: A `GoogleSignInError` or Firebase `AuthError` on failure.
     @discardableResult
     func signInWithGoogle(presenting: UIViewController) async throws -> User {
-        let signInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting)
-        let googleUser = signInResult.user
-
-        guard let idToken = googleUser.idToken?.tokenString else {
-            throw AuthServiceError.missingGoogleIdToken
-        }
-
-        let credential = GoogleAuthProvider.credential(
-            withIDToken: idToken,
-            accessToken: googleUser.accessToken.tokenString
-        )
-
+        let credential = try await googleCredential(presenting: presenting)
         let result = try await Auth.auth().signIn(with: credential)
         let user = await upsertLocalUser(result.user)
         currentUser = user
         return user
+    }
+
+    /// Runs the Google sign-in handshake and returns a Firebase credential.
+    /// Shared by sign-in, reauthentication, and account linking.
+    private func googleCredential(presenting: UIViewController) async throws -> AuthCredential {
+        let signInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting)
+        guard let idToken = signInResult.user.idToken?.tokenString else {
+            throw AuthServiceError.missingGoogleIdToken
+        }
+        return GoogleAuthProvider.credential(
+            withIDToken: idToken,
+            accessToken: signInResult.user.accessToken.tokenString
+        )
     }
 
     // MARK: - Apple Sign-In
@@ -257,24 +266,28 @@ final class AuthService: ObservableObject {
     /// - Throws: `AuthServiceError.invalidAppleCredential` or a Firebase `AuthError`.
     @discardableResult
     func signInWithApple(authorization: ASAuthorization, rawNonce: String) async throws -> User {
-        guard
-            let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
-            let appleIDTokenData = appleIDCredential.identityToken,
-            let idTokenString = String(data: appleIDTokenData, encoding: .utf8)
-        else {
-            throw AuthServiceError.invalidAppleCredential
-        }
-
-        let credential = OAuthProvider.appleCredential(
-            withIDToken: idTokenString,
-            rawNonce: rawNonce,
-            fullName: appleIDCredential.fullName
-        )
-
+        let credential = try appleCredential(from: authorization, rawNonce: rawNonce)
         let result = try await Auth.auth().signIn(with: credential)
         let user = await upsertLocalUser(result.user)
         currentUser = user
         return user
+    }
+
+    /// Builds a Firebase credential from an Apple `ASAuthorization` + raw nonce.
+    /// Shared by sign-in, reauthentication, and account linking.
+    private func appleCredential(from authorization: ASAuthorization, rawNonce: String) throws -> AuthCredential {
+        guard
+            let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
+            let tokenData = appleIDCredential.identityToken,
+            let idTokenString = String(data: tokenData, encoding: .utf8)
+        else {
+            throw AuthServiceError.invalidAppleCredential
+        }
+        return OAuthProvider.appleCredential(
+            withIDToken: idTokenString,
+            rawNonce: rawNonce,
+            fullName: appleIDCredential.fullName
+        )
     }
 
     // MARK: - Display Name
@@ -296,10 +309,17 @@ final class AuthService: ObservableObject {
         try await changeRequest?.commitChanges()
 
         // 2. Local GRDB row + sync queue
+        try persistUserMutation { $0.displayName = displayName }
+    }
+
+    /// Applies a mutation to the local user row (bumping `version` + `updatedAt`)
+    /// and enqueues a `users` sync-queue update — all in one transaction — so the
+    /// change replicates to Firestore. Shared by display-name + email edits.
+    private func persistUserMutation(_ apply: (inout User) -> Void) throws {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         try AppDatabase.shared.write { db in
             guard var user = try User.fetchOne(db, key: userId) else { return }
-            user.displayName = displayName
+            apply(&user)
             user.updatedAt = AppDatabase.currentTimestamp()
             user.version += 1
             try user.save(db)
@@ -327,6 +347,228 @@ final class AuthService: ObservableObject {
                 priority: 1
             )
             try syncItem.save(db)
+        }
+    }
+
+    // MARK: - Account & Security: provider state
+
+    /// Reloads the Firebase user and recomputes `providerState` from its
+    /// `providerData`. Call after sign-in and after any link/unlink.
+    func refreshProviderState() async {
+        try? await Auth.auth().currentUser?.reload()
+        providerState = Self.computeProviderState(Auth.auth().currentUser)
+    }
+
+    /// Derives a `ProviderState` from a Firebase user's linked providers.
+    static func computeProviderState(_ user: FirebaseAuth.User?) -> ProviderState {
+        let ids = Set((user?.providerData ?? []).map { $0.providerID })
+        return ProviderState(
+            hasPassword: ids.contains(ProviderState.passwordProviderID),
+            hasGoogle: ids.contains(ProviderState.googleProviderID),
+            hasApple: ids.contains(ProviderState.appleProviderID),
+            providerCount: ids.count
+        )
+    }
+
+    /// True when an error is Firebase's `requiresRecentLogin` — the cue to run a
+    /// reauth flow and retry the security-sensitive operation.
+    static func isRecentLoginRequired(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == AuthErrorDomain
+            && nsError.code == AuthErrorCode.requiresRecentLogin.rawValue
+    }
+
+    // MARK: - Account & Security: reauthentication
+
+    /// Reauthenticates a password-provider user (refreshes login recency so a
+    /// security-sensitive op can proceed).
+    func reauthenticateWithPassword(_ password: String) async throws {
+        guard let user = Auth.auth().currentUser, let email = user.email else {
+            throw AuthServiceError.noCurrentUser
+        }
+        let credential = EmailAuthProvider.credential(withEmail: email, password: password)
+        try await user.reauthenticate(with: credential)
+    }
+
+    /// Reauthenticates via the Google handshake.
+    func reauthenticateWithGoogle(presenting: UIViewController) async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+        let credential = try await googleCredential(presenting: presenting)
+        try await user.reauthenticate(with: credential)
+    }
+
+    /// Reauthenticates via the Apple handshake.
+    func reauthenticateWithApple(authorization: ASAuthorization, rawNonce: String) async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+        let credential = try appleCredential(from: authorization, rawNonce: rawNonce)
+        try await user.reauthenticate(with: credential)
+    }
+
+    // MARK: - Account & Security: change email / password
+
+    /// Updates the account password. Password-provider only; requires recent
+    /// login (throws `requiresRecentLogin` otherwise — reauth then retry).
+    func updatePassword(to newPassword: String) async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+        try await user.updatePassword(to: newPassword)
+    }
+
+    /// Begins an email change. Uses `verifyBeforeUpdateEmail` (the supported,
+    /// non-deprecated path; direct `updateEmail` is rejected under email-
+    /// enumeration protection): Firebase emails a verification link to the NEW
+    /// address and only swaps `currentUser.email` once the user clicks it. The
+    /// local mirror is healed later by `reconcileEmailIfChanged()`.
+    /// Requires recent login.
+    func updateEmail(to newEmail: String) async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+        let trimmed = newEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await user.sendEmailVerification(beforeUpdatingEmail: trimmed)
+    }
+
+    /// If the verified Firebase email now differs from the locally-stored one
+    /// (the user completed a `verifyBeforeUpdateEmail` flow out-of-band), update
+    /// the local row + enqueue a sync so the new address reaches Firestore.
+    /// Safe to call on foreground / launch; a no-op when nothing changed.
+    func reconcileEmailIfChanged() async {
+        guard let user = Auth.auth().currentUser else { return }
+        try? await user.reload()
+        guard let firebaseEmail = user.email, !firebaseEmail.isEmpty else { return }
+        let localEmail = (try? AppDatabase.shared.read { db in
+            try User.fetchOne(db, key: user.uid)?.email
+        }) ?? nil
+        guard localEmail != firebaseEmail else { return }
+        try? persistUserMutation { $0.email = firebaseEmail }
+    }
+
+    /// Sends a password-reset email to the signed-in user's address — an escape
+    /// hatch for changing the password without knowing the current one. No
+    /// reauth required.
+    func sendPasswordReset() async throws {
+        guard let email = Auth.auth().currentUser?.email else { throw AuthServiceError.noCurrentUser }
+        try await Auth.auth().sendPasswordReset(withEmail: email)
+    }
+
+    // MARK: - Account & Security: link / unlink providers
+
+    /// Links a Google identity to the current account.
+    func linkGoogle(presenting: UIViewController) async throws {
+        let credential = try await googleCredential(presenting: presenting)
+        try await linkCredential(credential)
+    }
+
+    /// Links an Apple identity to the current account.
+    func linkApple(authorization: ASAuthorization, rawNonce: String) async throws {
+        let credential = try appleCredential(from: authorization, rawNonce: rawNonce)
+        try await linkCredential(credential)
+    }
+
+    /// Adds an email/password sign-in method to an OAuth-only account, unlocking
+    /// change-email / change-password.
+    func linkPassword(email: String, password: String) async throws {
+        let credential = EmailAuthProvider.credential(withEmail: email, password: password)
+        try await linkCredential(credential)
+    }
+
+    /// Shared link path: links the credential, treating "already linked" as an
+    /// idempotent success; any other failure propagates. Refreshes provider
+    /// state on success.
+    private func linkCredential(_ credential: AuthCredential) async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+        do {
+            try await user.link(with: credential)
+        } catch {
+            if (error as NSError).code == AuthErrorCode.providerAlreadyLinked.rawValue {
+                await refreshProviderState()
+                return
+            }
+            throw error
+        }
+        await refreshProviderState()
+    }
+
+    /// Unlinks a provider. Blocks removing the user's only sign-in method.
+    func unlinkProvider(_ providerID: String) async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+        guard providerState.providerCount > 1 else { throw AuthServiceError.cannotUnlinkLastProvider }
+        _ = try await user.unlink(fromProvider: providerID)
+        await refreshProviderState()
+    }
+
+    // MARK: - Account & Security: delete account
+
+    /// Permanently deletes the account and all of its data.
+    ///
+    /// Ordering is load-bearing: the Firebase Auth user is deleted FIRST. That's
+    /// the only step that can fail for auth reasons (`requiresRecentLogin` → the
+    /// caller reauthenticates and retries), and if it fails nothing has been
+    /// purged, so the user is left cleanly intact. Deleting the Auth user fires
+    /// the `onUserDeleted` Cloud Function, which recursively purges this user's
+    /// Firestore data server-side (the only way to remove the parent
+    /// `users/{uid}` doc — client rules forbid it). We then tear down local
+    /// sync/observers BEFORE wiping the device DB so nothing re-pushes (which
+    /// would resurrect the just-purged Firestore data) or observes mid-delete.
+    func deleteAccount() async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+
+        // 1. Delete the Auth user (→ server-side `onUserDeleted` purges Firestore).
+        try await user.delete()
+
+        // 2. Stop sync/observers before the local wipe so nothing re-pulls or
+        //    re-pushes during teardown (the auth-state listener also does this,
+        //    but asynchronously — do it synchronously here to avoid the race).
+        stopUserRowObservation()
+        syncService.stop()
+        notificationService.clearAll()
+
+        // 3. Wipe device-local state.
+        wipeLocalDatabase()
+        clearLocalUserDefaults()
+
+        currentUser = nil
+        providerState = .none
+    }
+
+    /// Deletes every row across the local tables (preserving `schema_version` so
+    /// the migrator stays intact). Row-deletes, not file deletion: the
+    /// `AppDatabase` singleton has no reopen path and `fatalError`s on init.
+    private func wipeLocalDatabase() {
+        let tables = [
+            "users", "boards", "tasks", "task_steps", "board_tasks",
+            "progress_counters", "sync_queue", "composite_tasks",
+            "composite_nodes", "compound_children",
+            "recurring_board_templates", "default_pools"
+        ]
+        do {
+            try AppDatabase.shared.write { db in
+                // `foreign_keys = ON` would reject deleting a parent (e.g.
+                // `users`) before its children, and the legacy
+                // `tasks` ↔ `task_steps` FK pair is even circular — so no static
+                // delete order is safe. `defer_foreign_keys` (settable inside a
+                // transaction, unlike `foreign_keys`) defers all FK checks to
+                // COMMIT, by which point every row is gone. Order-independent.
+                try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
+                for table in tables {
+                    try db.execute(sql: "DELETE FROM \(table)")
+                }
+            }
+        } catch {
+            // Non-fatal: the account is already deleted server-side. Log loudly
+            // rather than swallow so a regression here is never invisible.
+            print("⚠️ AuthService.wipeLocalDatabase failed: \(error)")
+        }
+    }
+
+    /// Clears device-local UserDefaults so a fresh sign-up on this device starts
+    /// clean (onboarding + tutorial + legacy week-start key).
+    private func clearLocalUserDefaults() {
+        let defaults = UserDefaults.standard
+        for key in [
+            "oybc-onboarding-seen",
+            "oybc-tutorial-completed-lessons",
+            "oybc-tutorial-card-dismissed",
+            Self.legacyWeekStartDayKey
+        ] {
+            defaults.removeObject(forKey: key)
         }
     }
 
@@ -391,6 +633,9 @@ final class AuthService: ObservableObject {
                 // Update mutable fields that may have changed.
                 existing.displayName = firebaseUser.displayName
                 existing.photoURL = firebaseUser.photoURL?.absoluteString
+                // Heal the email if it changed out-of-band (e.g. the user
+                // completed a verifyBeforeUpdateEmail flow on another device).
+                existing.email = firebaseUser.email ?? existing.email
                 existing.updatedAt = now
                 existing.version += 1
 
@@ -452,6 +697,8 @@ final class AuthService: ObservableObject {
 enum AuthServiceError: LocalizedError {
     case missingGoogleIdToken
     case invalidAppleCredential
+    case noCurrentUser
+    case cannotUnlinkLastProvider
 
     var errorDescription: String? {
         switch self {
@@ -459,6 +706,10 @@ enum AuthServiceError: LocalizedError {
             return "Google sign-in did not return an ID token."
         case .invalidAppleCredential:
             return "Apple sign-in returned an invalid credential."
+        case .noCurrentUser:
+            return "You're not signed in."
+        case .cannotUnlinkLastProvider:
+            return "You can't remove your only sign-in method. Add another first."
         }
     }
 }
