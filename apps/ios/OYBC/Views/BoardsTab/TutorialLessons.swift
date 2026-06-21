@@ -7,6 +7,8 @@ struct TutorialRoute: Hashable {}
 enum ProfileRoute: Hashable {
     case recurringTemplates
     case defaultPools
+    /// Streaks & history page (handoff §5e).
+    case streaks
 }
 
 /// Where a tutorial lesson's "Try it" button deep-links. Routed by
