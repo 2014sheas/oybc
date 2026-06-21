@@ -115,6 +115,66 @@ func computeStreak(
     return streak
 }
 
+/// Longest historical greenlog streak for a single timeframe.
+///
+/// Walks backward from the most-recent completed core-board window, counting
+/// consecutive windows whose core board was GREENLOGed (`.completed`). Stops
+/// at the first gap. Returns the length of the longest unbroken run found.
+///
+/// This is a **historical max**, not the current live streak: the current window
+/// gets **no** grace — if it has no completed board it breaks the run, unlike
+/// `computeStreak` which gives the current window a bye. That convention matches
+/// the handoff design intent (longest = actual past achievement, not projected).
+///
+/// - Parameters:
+///   - timeframe: daily/weekly/monthly/yearly (`.custom` → 0).
+///   - boards: all boards for the active user.
+///   - weekStartDay: `"monday"` / `"sunday"` — only affects weekly windows.
+///   - now: reference instant (injected for determinism / testing).
+/// - Returns: Length of the longest consecutive greenlog run, or 0.
+func computeLongestStreak(
+    timeframe: Timeframe,
+    boards: [Board],
+    weekStartDay: String,
+    now: Date
+) -> Int {
+    guard timeframe != .custom else { return 0 }
+
+    var byStart: [String: Board] = [:]
+    for board in boards where board.isCore && !board.isDeleted && board.timeframe == timeframe {
+        byStart[board.startDate] = board
+    }
+    if byStart.isEmpty { return 0 }
+
+    guard let current = computeTimeframeBoundaries(
+        timeframe: timeframe, referenceDate: now, weekStartDay: weekStartDay
+    ) else { return 0 }
+
+    var longest = 0
+    var current_run = 0
+    var startISO = wizardLocalISOString(current.start)
+
+    for _ in 0..<maxStreakWindows {
+        let achieved = byStart[startISO].map { $0.status == .completed } ?? false
+        if achieved {
+            current_run += 1
+            if current_run > longest { longest = current_run }
+        } else {
+            // A gap: if we have already found at least one achieved window, stop.
+            // If we haven't started yet (still scanning empty past), keep going
+            // until we hit one. But if we already had a run, break.
+            if current_run > 0 { break }
+        }
+
+        guard let prev = stepCoreBoardWindow(
+            timeframe: timeframe, fromStartIso: startISO, step: -1, weekStartDay: weekStartDay
+        ) else { break }
+        startISO = wizardLocalISOString(prev.start)
+    }
+
+    return longest
+}
+
 /// Both streak kinds for all four recurring timeframes in one pass.
 func computeAllStreaks(
     boards: [Board],
