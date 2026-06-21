@@ -268,6 +268,21 @@ struct ProfileView: View {
 
             rowDivider
 
+            // Account & security — change email/password, linked providers,
+            // delete account (handoff §5c).
+            NavigationLink {
+                AccountSecurityView()
+            } label: {
+                RisoProfileRow(
+                    icon: "lock.shield",
+                    label: "Account & security",
+                    chevron: true
+                )
+            }
+            .buttonStyle(.plain)
+
+            rowDivider
+
             // Recurring templates (with async count)
             NavigationLink {
                 RecurringTemplatesView(onEditTemplate: onEditRecurringTemplate)
