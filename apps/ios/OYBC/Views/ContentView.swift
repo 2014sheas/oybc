@@ -20,6 +20,14 @@ import SwiftUI
 /// surface.
 struct ContentView: View {
 
+    /// Shared auth service — owned here so both `AuthGateView` and
+    /// `OnboardingView` hold a reference to the same instance. The notif-
+    /// priming step in `OnboardingView` (Phase 7) needs to write to
+    /// `UserPreferences` and call `notificationService.reconcile` on behalf
+    /// of the freshly-signed-in user; that requires the same `AuthService`
+    /// instance that Firebase's auth-state listener has bootstrapped.
+    @StateObject private var authService = AuthService()
+
     /// Whether the onboarding overlay is still visible. Initialised from
     /// `UserDefaults.hasSeenOnboarding` so it's false for returning users
     /// and true for first-run users.
@@ -27,12 +35,12 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            AuthGateView {
+            AuthGateView(authService: authService) {
                 MainTabView()
             }
 
             if showOnboarding {
-                OnboardingView {
+                OnboardingView(authService: authService) {
                     // Mark onboarding complete and remove the overlay.
                     UserDefaults.hasSeenOnboarding = true
                     withAnimation(.easeInOut(duration: 0.35)) {

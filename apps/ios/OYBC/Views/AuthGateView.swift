@@ -14,7 +14,7 @@ import AuthenticationServices
 /// }
 /// ```
 struct AuthGateView<Content: View>: View {
-    @StateObject private var authService = AuthService()
+    @ObservedObject var authService: AuthService
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var tutorialStore = TutorialProgressStore()
     let content: () -> Content
@@ -287,7 +287,7 @@ private struct LoginView: View {
 // MARK: - Preview
 
 #Preview("Signed Out") {
-    AuthGateView {
+    AuthGateView(authService: AuthService()) {
         Text("Signed in!")
     }
 }
