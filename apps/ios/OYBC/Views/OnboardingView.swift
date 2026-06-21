@@ -11,8 +11,9 @@ import FirebaseAuth
 ///   1. `.slides` — three horizontally-scrollable intro slides.
 ///   2. `.signIn` — sign-in panel ("One last thing / Save your streak.") with:
 ///        - Continue with Apple  → Apple Sign-In, then advances to `.notif`.
-///        - Continue with email  → advances to `.notif` (email form is
-///          handled by `AuthGateView` / `LoginView` after `onDone` fires).
+///        - Continue with email  → `onDone()` straight to the `AuthGateView` /
+///          `LoginView` email form. No notif priming (user isn't authenticated
+///          yet; they get it via Profile → Notifications after signing in).
 ///        - Maybe later          → anonymous sign-in, then advances to `.notif`.
 ///   3. `.notif` — notification priming (App Store 4.5.4 in-context prompt).
 ///        - "Turn on reminders" → enable master pref + request OS auth +
@@ -354,8 +355,12 @@ struct OnboardingView: View {
             appleSignInButton
 
             // Continue with email — keyline pill (neutral kind).
-            // Advances to the notif step; the email form is handled by
-            // AuthGateView / LoginView once onDone() fires from the notif step.
+            // Goes straight to onDone() → AuthGateView's LoginView email form.
+            // We deliberately do NOT show notif priming here: the user hasn't
+            // authenticated yet (email sign-in happens in LoginView, after
+            // onboarding), so priming would fire iOS's one-shot permission
+            // prompt pre-auth and the master pref couldn't be persisted (no user
+            // row). Email users get priming via Profile → Notifications instead.
             RisoButton(
                 title: "Continue with email",
                 kind: .neutral,
@@ -363,7 +368,7 @@ struct OnboardingView: View {
                 fullWidth: true,
                 large: true
             ) {
-                advanceToNotif()
+                onDone()
             }
             .disabled(isSubmitting)
 
