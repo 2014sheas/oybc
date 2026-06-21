@@ -1,6 +1,5 @@
 import SwiftUI
 import AuthenticationServices
-import CryptoKit
 
 /// AuthGateView - Wraps any content behind authentication
 ///
@@ -193,10 +192,10 @@ private struct LoginView: View {
         SignInWithAppleButton(
             isCreatingAccount ? .signUp : .signIn,
             onRequest: { request in
-                let nonce = randomNonceString()
+                let nonce = AppleAuthNonce.randomNonceString()
                 currentNonce = nonce
                 request.requestedScopes = [.fullName, .email]
-                request.nonce = sha256(nonce)
+                request.nonce = AppleAuthNonce.sha256(nonce)
             },
             onCompletion: { (result: Result<ASAuthorization, Error>) in
                 _Concurrency.Task { await handleAppleSignIn(result) }
@@ -247,10 +246,7 @@ private struct LoginView: View {
         errorMessage = nil
         defer { isSubmitting = false }
 
-        guard
-            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-            let rootVC = windowScene.windows.first?.rootViewController
-        else {
+        guard let rootVC = UIApplication.currentRootViewController else {
             errorMessage = "Unable to present Google sign-in."
             return
         }
@@ -285,36 +281,6 @@ private struct LoginView: View {
                 errorMessage = error.localizedDescription
             }
         }
-    }
-
-    // MARK: - Nonce Helpers (Apple Sign-In)
-
-    /// Generates a cryptographically random nonce string of the given byte length.
-    ///
-    /// - Parameter length: Number of random bytes (default 32).
-    /// - Returns: A URL-safe Base64-encoded nonce string.
-    private func randomNonceString(length: Int = 32) -> String {
-        var randomBytes = [UInt8](repeating: 0, count: length)
-        let errorCode = SecRandomCopyBytes(kSecRandomDefault, length, &randomBytes)
-        guard errorCode == errSecSuccess else {
-            // Fallback to UUID-based nonce if secure random fails
-            return UUID().uuidString + UUID().uuidString
-        }
-        return Data(randomBytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-            .trimmingCharacters(in: .whitespaces)
-    }
-
-    /// Returns the SHA-256 hash of the given string as a lowercase hex string.
-    ///
-    /// - Parameter input: The raw nonce string.
-    /// - Returns: The SHA-256 hex digest.
-    private func sha256(_ input: String) -> String {
-        let inputData = Data(input.utf8)
-        let hashedData = SHA256.hash(data: inputData)
-        return hashedData.compactMap { String(format: "%02x", $0) }.joined()
     }
 }
 
