@@ -538,10 +538,23 @@ final class AuthService: ObservableObject {
             "composite_nodes", "compound_children",
             "recurring_board_templates", "default_pools"
         ]
-        try? AppDatabase.shared.write { db in
-            for table in tables {
-                try db.execute(sql: "DELETE FROM \(table)")
+        do {
+            try AppDatabase.shared.write { db in
+                // `foreign_keys = ON` would reject deleting a parent (e.g.
+                // `users`) before its children, and the legacy
+                // `tasks` ↔ `task_steps` FK pair is even circular — so no static
+                // delete order is safe. `defer_foreign_keys` (settable inside a
+                // transaction, unlike `foreign_keys`) defers all FK checks to
+                // COMMIT, by which point every row is gone. Order-independent.
+                try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
+                for table in tables {
+                    try db.execute(sql: "DELETE FROM \(table)")
+                }
             }
+        } catch {
+            // Non-fatal: the account is already deleted server-side. Log loudly
+            // rather than swallow so a regression here is never invisible.
+            print("⚠️ AuthService.wipeLocalDatabase failed: \(error)")
         }
     }
 
