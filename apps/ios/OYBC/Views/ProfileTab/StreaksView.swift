@@ -96,9 +96,11 @@ struct StreaksView: View {
         // Collect the set of days (as day-start Date) where a daily core board
         // was GREENLOGed. We match completedAt's calendar day to each strip day.
         var greenloggedDays: Set<Date> = []
-        let iso = ISO8601DateFormatter()
         for board in boards where board.isCore && board.timeframe == .daily && board.status == .completed && !board.isDeleted {
-            if let raw = board.completedAt, let date = iso.date(from: raw) {
+            // Use the shared parser, not a bare ISO8601DateFormatter — it tolerates
+            // both UTC-`Z` and local-ISO `completedAt` strings (synced rows can be
+            // either); a bare formatter would silently drop the non-`Z` ones.
+            if let raw = board.completedAt, let date = DateFormatting.parseISO(raw) {
                 let dayStart = calendar.startOfDay(for: date)
                 greenloggedDays.insert(dayStart)
             }
@@ -114,11 +116,11 @@ struct StreaksView: View {
     // MARK: - History-row derivation
 
     private static func buildHistoryRows(boards: [Board], now: Date) -> [StreakHistoryRow] {
-        let iso = ISO8601DateFormatter()
         let calendar = Calendar.current
         return boards
             .compactMap { board -> (Board, Date)? in
-                guard let raw = board.completedAt, let date = iso.date(from: raw) else { return nil }
+                // Shared parser tolerates both UTC-`Z` and local-ISO completedAt.
+                guard let raw = board.completedAt, let date = DateFormatting.parseISO(raw) else { return nil }
                 return (board, date)
             }
             .sorted { $0.1 > $1.1 }

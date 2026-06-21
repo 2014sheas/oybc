@@ -153,6 +153,10 @@ func computeLongestStreak(
     var longest = 0
     var current_run = 0
     var startISO = wizardLocalISOString(current.start)
+    // Oldest window that could possibly be achieved — nothing predates the
+    // user's first core board of this timeframe. Keys are zero-padded local ISO
+    // (`wizardLocalISOString`), so lexical order == chronological order.
+    let oldestStart = byStart.keys.min() ?? startISO
 
     for _ in 0..<maxStreakWindows {
         let achieved = byStart[startISO].map { $0.status == .completed } ?? false
@@ -160,11 +164,14 @@ func computeLongestStreak(
             current_run += 1
             if current_run > longest { longest = current_run }
         } else {
-            // A gap: if we have already found at least one achieved window, stop.
-            // If we haven't started yet (still scanning empty past), keep going
-            // until we hit one. But if we already had a run, break.
-            if current_run > 0 { break }
+            // A gap resets the current run — but we KEEP walking back to find an
+            // earlier (possibly longer) run. `longest` retains the max seen.
+            current_run = 0
         }
+
+        // Stop once we've processed the oldest board's window; older windows are
+        // all empty and can only be gaps. Bounds the walk to real history.
+        if startISO <= oldestStart { break }
 
         guard let prev = stepCoreBoardWindow(
             timeframe: timeframe, fromStartIso: startISO, step: -1, weekStartDay: weekStartDay
