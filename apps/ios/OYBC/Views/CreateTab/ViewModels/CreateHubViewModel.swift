@@ -137,6 +137,26 @@ final class CreateHubViewModel {
         }
     }
 
+    /// Cross-tab draft-resume by id: fetch the draft board (then defer to
+    /// `loadDraftAndEnterWizard(board:)` for placement hydration). Used by the
+    /// Boards-tab draft tap, which only has the board id. Falls back to
+    /// fresh-create if the board can't be loaded (e.g. deleted meanwhile).
+    func loadDraftAndEnterWizard(boardId: String, userId: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let board = try? AppDatabase.shared.fetchBoard(id: boardId)
+            DispatchQueue.main.async {
+                if let board {
+                    self.loadDraftAndEnterWizard(board: board)
+                } else {
+                    self.resumeDraft = nil
+                    self.mode = .wizardFresh
+                    print("⚠️ Failed to load draft board \(boardId) for resume")
+                }
+            }
+        }
+    }
+
     /// Delete a draft + its attached BoardTask placements atomically.
     /// Caller (the drafts list × button OR the wizard's cancel-dialog
     /// "Delete draft" button) has already shown a confirm before

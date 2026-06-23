@@ -37,6 +37,10 @@ struct CoreBoardBrowserView: View {
     /// Forwarded from `BoardListView` so the user lands on
     /// `BoardPlayView` via the same boardsPath push the main list uses.
     let onOpenBoard: (String) -> Void
+    /// Resume a DRAFT board in the wizard (cross-tab). A draft cell routes
+    /// here instead of `onOpenBoard` — drafts are never opened as a playable
+    /// board. Defaults to a no-op so existing call sites compile.
+    var onResumeDraft: (String) -> Void = { _ in }
 
     @EnvironmentObject var authService: AuthService
     @State private var vm = CoreBoardBrowserViewModel()
@@ -88,7 +92,8 @@ struct CoreBoardBrowserView: View {
                             // parent's `onCreate` takes `(Timeframe, Date)`.
                             // Adapt at the call site so both signatures
                             // read naturally in their own contexts.
-                            onCreate: { date, tf in onCreate(tf, date) }
+                            onCreate: { date, tf in onCreate(tf, date) },
+                            onResumeDraft: onResumeDraft
                         )
                         .id(cell.windowStart)
                         .padding(.horizontal, Riso.gutter)

@@ -113,6 +113,25 @@ export interface Task {
   isDeleted: boolean;            // Soft delete
   deletedAt?: string;            // ISO8601
 
+  /**
+   * Draft-board provenance. `true` when this Task was created inside the
+   * board wizard via the deferred-persist path (Bug #85) — i.e. it is
+   * "born from a board" rather than created standalone in the Tasks tab.
+   *
+   * It exists so library-browse surfaces can hide a wizard-born task
+   * until its board is "officially created" (active): the visibility
+   * rule is *hide iff `createdInWizard` AND the task is placed only on
+   * draft boards*. A standalone task (`createdInWizard` false/absent) is
+   * never hidden, even if it's added to a draft board; and a wizard-born
+   * task becomes visible automatically once any board referencing it goes
+   * active (no clearing logic — the rule is fully derived at read time).
+   *
+   * Absent/false on every task created before this field shipped and on
+   * all standalone + copied tasks. Only iOS acts on it today; web
+   * round-trips it via sync (a web library filter is a follow-up).
+   */
+  createdInWizard?: boolean;
+
   // Phase 6.Y — Timeboxed Tasks. All three fields are optional; when
   // ALL are absent the task is "indefinite" (never expires, always
   // shows in the Tasks tab). When `endDate` is set, the Tasks tab

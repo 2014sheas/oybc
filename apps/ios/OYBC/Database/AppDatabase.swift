@@ -514,6 +514,17 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN lastSyncedCount INTEGER")
         }
 
+        // v17: Draft-board provenance. Adds `createdInWizard` (INTEGER 0/1) to
+        // `tasks`. `true` marks a task created inside the board wizard's
+        // deferred-persist path (Bug #85) — used by library-browse surfaces to
+        // hide it until its board is active (visibility rule: hide iff
+        // createdInWizard AND placed only on draft boards). Existing rows
+        // default to 0 (visible) — the fix is forward-looking; tasks that
+        // already leaked into the library before this migration stay visible.
+        migrator.registerMigration("v17") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN createdInWizard INTEGER NOT NULL DEFAULT 0")
+        }
+
         return migrator
     }
 

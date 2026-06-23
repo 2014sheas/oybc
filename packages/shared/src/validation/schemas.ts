@@ -453,6 +453,13 @@ export const TaskSchema = z.object({
   // Phase 4 — Shared Counter Sync. Common-ancestor value for additive-merge
   // conflict resolution. Null/absent means no confirmed Firestore round-trip yet.
   lastSyncedCount: z.number().int().nonnegative().nullable().optional(),
+  // Draft-board provenance. `true` for wizard-born (deferred-persist)
+  // tasks; absent/false for standalone + copied + pre-feature tasks.
+  // Library-browse surfaces hide a task iff `createdInWizard` AND it is
+  // placed only on draft boards. Optional at the schema layer so legacy
+  // and other-platform payloads omit it; must round-trip through sync
+  // (z.object strips unknown keys, so it has to be declared here).
+  createdInWizard: z.boolean().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.

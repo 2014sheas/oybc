@@ -121,6 +121,15 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     // falls back to plain LWW. Stored as INTEGER in SQLite (GRDB v16 migration).
     var lastSyncedCount: Int?
 
+    /// Draft-board provenance. `true` when the task was created inside the
+    /// board wizard via the deferred-persist path (Bug #85) — "born from a
+    /// board" rather than standalone in the Tasks tab. Library-browse
+    /// surfaces hide a task iff `createdInWizard` AND it is placed only on
+    /// draft boards, so wizard-born tasks stay out of the library until
+    /// their board goes active. Defaults to `false`; standalone + copied +
+    /// pre-migration rows are all `false`. Stored as INTEGER (GRDB v17).
+    var createdInWizard: Bool
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -165,7 +174,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         endDate: String? = nil,
         sharedCounterId: String? = nil,
         baseline: Int? = nil,
-        lastSyncedCount: Int? = nil
+        lastSyncedCount: Int? = nil,
+        createdInWizard: Bool = false
     ) {
         self.id = id
         self.userId = userId
@@ -202,6 +212,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.sharedCounterId = sharedCounterId
         self.baseline = baseline
         self.lastSyncedCount = lastSyncedCount
+        self.createdInWizard = createdInWizard
     }
 
     // MARK: - Codable
@@ -224,6 +235,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case sharedCounterId, baseline
         // Phase 4 — Shared Counter Sync
         case lastSyncedCount
+        // Draft-board provenance (GRDB v17)
+        case createdInWizard
     }
 
     // Custom decoding for progressCounters (stored as JSON string)
@@ -277,6 +290,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         baseline = try container.decodeIfPresent(Int.self, forKey: .baseline)
         // Phase 4 — Shared Counter Sync. Forward-compat: pre-v16 rows decode as nil.
         lastSyncedCount = try container.decodeIfPresent(Int.self, forKey: .lastSyncedCount)
+        // Draft-board provenance. Forward-compat: pre-v17 local rows + pre-feature
+        // sync payloads (and all standalone/copied tasks) decode as false.
+        createdInWizard = try container.decodeIfPresent(Bool.self, forKey: .createdInWizard) ?? false
     }
 
     // Custom encoding for progressCounters (store as JSON string)
@@ -327,6 +343,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encodeIfPresent(baseline, forKey: .baseline)
         // Phase 4 — Shared Counter Sync
         try container.encodeIfPresent(lastSyncedCount, forKey: .lastSyncedCount)
+        // Draft-board provenance — always encoded (like isCompleted) so the
+        // field is present in every Firestore doc + GRDB row.
+        try container.encode(createdInWizard, forKey: .createdInWizard)
     }
 }
 

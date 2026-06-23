@@ -17,7 +17,13 @@ final class CoreBoardWindowViewModel: ObservableObject {
 
     @Published private(set) var windowStart: String = ""
     @Published private(set) var windowEnd: String = ""
+    /// The window's PLAYABLE core board (status active/completed) or nil.
+    /// A draft core board for the window is surfaced via `draftBoard`
+    /// instead — drafts are never opened as a playable board.
     @Published private(set) var board: Board?
+    /// A DRAFT core board for the window, if one exists. The pager shows a
+    /// "Resume draft" prompt for it rather than the playable grid.
+    @Published private(set) var draftBoard: Board?
     @Published private(set) var isLoaded: Bool = false
     /// Human-readable window label ("Today", "Week of …", "May 2026", "2026").
     /// Stored, not computed: derived once when the window changes in
@@ -149,7 +155,16 @@ final class CoreBoardWindowViewModel: ObservableObject {
                 }
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
-                    self.board = result
+                    // Split playable vs draft: a draft core board is surfaced
+                    // through `draftBoard` (Resume prompt), never as a playable
+                    // board. Active/completed land in `board`.
+                    if let b = result, b.status == .draft {
+                        self.board = nil
+                        self.draftBoard = b
+                    } else {
+                        self.board = result
+                        self.draftBoard = nil
+                    }
                     self.streakCount = streak
                     self.isLoaded = true
                 }
@@ -157,6 +172,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
                     self.board = nil
+                    self.draftBoard = nil
                     self.streakCount = 0
                     self.isLoaded = true
                 }
@@ -179,6 +195,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
 
         isLoaded = false
         board = nil
+        draftBoard = nil
         windowStart = wizardLocalISOString(window.start)
         windowEnd = wizardLocalISOString(window.end)
         windowLabel = Self.makeLabel(timeframe: timeframe, windowStartISO: windowStart)
