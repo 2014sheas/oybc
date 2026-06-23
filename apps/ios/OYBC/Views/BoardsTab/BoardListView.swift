@@ -51,6 +51,12 @@ struct BoardListView: View {
     /// Wired by MainTabView to push `TutorialRoute`. Nil in preview.
     var onOpenTutorial: (() -> Void)? = nil
 
+    /// Resume a DRAFT board in the wizard (cross-tab). Receives the draft
+    /// board id. Drafts are never opened as a playable board — both the
+    /// "Draft" filter cards and a draft core-grid slot route here instead
+    /// of pushing `BoardPlayView`. Wired by MainTabView. Nil in preview.
+    var onResumeDraft: ((String) -> Void)? = nil
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
@@ -150,12 +156,28 @@ struct BoardListView: View {
                     .listRowBackground(Color.clear)
             } else {
                 ForEach(filteredBoards, id: \.id) { board in
-                    NavigationLink(value: board.id) {
-                        RisoBoardCard(
-                            board: board,
-                            timeframeLabel: boardTimeframeLabel(board),
-                            isExpiring: isBoardExpiringSoon(board)
-                        )
+                    Group {
+                        if board.status == .draft {
+                            // Drafts never open as a playable board — tapping
+                            // resumes the wizard (cross-tab via onResumeDraft).
+                            Button {
+                                onResumeDraft?(board.id)
+                            } label: {
+                                RisoBoardCard(
+                                    board: board,
+                                    timeframeLabel: boardTimeframeLabel(board),
+                                    isExpiring: isBoardExpiringSoon(board)
+                                )
+                            }
+                        } else {
+                            NavigationLink(value: board.id) {
+                                RisoBoardCard(
+                                    board: board,
+                                    timeframeLabel: boardTimeframeLabel(board),
+                                    isExpiring: isBoardExpiringSoon(board)
+                                )
+                            }
+                        }
                     }
                     .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 14, trailing: Riso.gutter))
                     .listRowSeparator(.hidden)
@@ -246,11 +268,16 @@ struct BoardListView: View {
             weekStartDay: weekStartDayPref,
             streaks: pendingRecurringVM.streaks,
             onSelect: { timeframe, windowStart in
-                // If there's a current board for this slot, open the pager.
-                // Otherwise open the browser so the user can create or browse.
+                // A DRAFT core board for this window resumes the wizard (never
+                // opens as a playable board). A non-draft current board opens
+                // the pager. No board → browser to create or browse.
                 let slot = pendingRecurringVM.slots.first(where: { $0.timeframe == timeframe })
-                if slot?.currentBoard != nil {
-                    onOpenCoreWindow?(timeframe, windowStart)
+                if let current = slot?.currentBoard {
+                    if current.status == .draft {
+                        onResumeDraft?(current.id)
+                    } else {
+                        onOpenCoreWindow?(timeframe, windowStart)
+                    }
                 } else {
                     onBrowseTimeframe?(timeframe)
                 }

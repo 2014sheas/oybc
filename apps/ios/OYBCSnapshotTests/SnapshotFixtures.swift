@@ -46,6 +46,10 @@ enum SnapshotFixtures {
         case .dense:
             let (tasks, children) = denseTaskSet()
             library.libraryTasks = tasks
+            // Mirror reload(): browse surfaces read `browsableTasks`. The dense
+            // fixtures are all standalone (createdInWizard == false), so the
+            // browsable set equals the full set.
+            library.browsableTasks = tasks
             library.allCompoundChildren = children
             library.compoundChildrenByCompound = groupChildren(children)
             library.allLibraryBoardTasks = sampleBoardTasks(taskIds: tasks.prefix(5).map { $0.id })

@@ -95,13 +95,17 @@ private struct CoreTimeframeCard: View {
     }
 
     private enum Status {
-        case ready, active, expiring, done
+        case ready, active, expiring, done, draft
         var label: String {
             switch self {
             case .ready:    return "Ready"
             case .active:   return "Active"
             case .expiring: return "Expiring"
             case .done:     return "Done"
+            // Draft core board for this window — tapping resumes the wizard
+            // (it is never opened as a playable board). "Resume" reads as the
+            // action, not a state.
+            case .draft:    return "Resume draft"
             }
         }
         var dotColor: Color {
@@ -110,6 +114,7 @@ private struct CoreTimeframeCard: View {
             case .active:   return .risoGreen
             case .expiring: return .risoGold
             case .done:     return .risoGreen
+            case .draft:    return .risoGold
             }
         }
     }
@@ -118,6 +123,7 @@ private struct CoreTimeframeCard: View {
         guard let board = slot?.currentBoard else { return .ready }
         switch board.status {
         case .completed: return .done
+        case .draft: return .draft
         case .active:
             // "Expiring" = the board's end date is within the next 24 hours.
             // Already-past end dates (negative hoursLeft) are NOT expiring —

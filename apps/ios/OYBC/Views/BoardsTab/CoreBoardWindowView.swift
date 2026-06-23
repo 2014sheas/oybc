@@ -39,6 +39,10 @@ struct CoreBoardWindowView: View {
     /// Navigate to an existing board. Forwarded through `BoardPlayView`'s
     /// `onOpenBoard` and also from the task-detail Usage section.
     let onOpenBoard: (String) -> Void
+    /// Resume a DRAFT core board in the wizard (cross-tab). Receives the
+    /// draft board id. Drafts are never opened as a playable board, so a
+    /// draft window shows a "Resume draft" prompt that fires this.
+    let onResumeDraft: (String) -> Void
 
     // MARK: - ViewModel
 
@@ -53,7 +57,8 @@ struct CoreBoardWindowView: View {
         weekStartDay: String,
         onCreateForWindow: @escaping (Timeframe, Date) -> Void,
         onBrowseTimeframe: @escaping (Timeframe) -> Void,
-        onOpenBoard: @escaping (String) -> Void
+        onOpenBoard: @escaping (String) -> Void,
+        onResumeDraft: @escaping (String) -> Void
     ) {
         self.timeframe = timeframe
         self.seedWindowStart = seedWindowStart
@@ -62,6 +67,7 @@ struct CoreBoardWindowView: View {
         self.onCreateForWindow = onCreateForWindow
         self.onBrowseTimeframe = onBrowseTimeframe
         self.onOpenBoard = onOpenBoard
+        self.onResumeDraft = onResumeDraft
 
         _viewModel = StateObject(wrappedValue: CoreBoardWindowViewModel(
             timeframe: timeframe,
@@ -102,6 +108,15 @@ struct CoreBoardWindowView: View {
                 boardId: board.id,
                 onOpenBoard: onOpenBoard,
                 embedded: true
+            )
+        } else if let draft = viewModel.draftBoard {
+            // Draft core board for this window — never playable. Offer to
+            // resume it in the wizard instead.
+            CoreBoardSetupPromptView(
+                label: viewModel.windowLabel,
+                isPast: viewModel.isPast,
+                resumeDraft: true,
+                onSetUp: { onResumeDraft(draft.id) }
             )
         } else {
             CoreBoardSetupPromptView(

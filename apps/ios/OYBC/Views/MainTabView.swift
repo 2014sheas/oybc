@@ -56,6 +56,14 @@ struct MainTabView: View {
     /// the binding. Same pattern as `pendingRecurringTimeframe`.
     @State private var pendingEditTemplateId: String? = nil
 
+    /// Draft-resume cross-tab deep-link. Set when the user taps a DRAFT
+    /// board on the Boards tab (list card or core-grid slot); we stash the
+    /// board id and switch to the Create tab. `CreateHubView` consumes it on
+    /// appear, hydrates the wizard from that draft, and clears the binding.
+    /// Same pattern as `pendingEditTemplateId`. Drafts are never opened as a
+    /// playable board — this is the only Boards-tab → draft entry point.
+    @State private var pendingDraftId: String? = nil
+
     /// Resolves `preferences.theme` into the SwiftUI `preferredColorScheme`
     /// value. `system` returns `nil`, which yields OS appearance; any other
     /// value forces a specific scheme across the whole tab tree.
@@ -125,6 +133,14 @@ struct MainTabView: View {
         boardsPath = NavigationPath()
         boardsPath.append(boardId)
         selectedTab = 0
+    }
+
+    /// Cross-tab: resume a draft board in the Create-tab wizard. Stashes the
+    /// draft id + flips to the Create tab; `CreateHubView` hydrates the
+    /// wizard on appear. Drafts are never opened as a playable board.
+    private func openDraftInWizard(_ boardId: String) {
+        pendingDraftId = boardId
+        selectedTab = 2
     }
 
     var body: some View {
@@ -200,7 +216,8 @@ struct MainTabView: View {
                         // tab with no pre-fill (fresh board flow).
                         selectedTab = 2
                     },
-                    onOpenTutorial: { boardsPath.append(TutorialRoute()) }
+                    onOpenTutorial: { boardsPath.append(TutorialRoute()) },
+                    onResumeDraft: { boardId in openDraftInWizard(boardId) }
                 )
                 .navigationDestination(for: TutorialRoute.self) { _ in
                     TutorialBoardView(
@@ -244,13 +261,15 @@ struct MainTabView: View {
                         },
                         onOpenBoard: { boardId in
                             boardsPath.append(boardId)
-                        }
+                        },
+                        onResumeDraft: { boardId in openDraftInWizard(boardId) }
                     )
                 }
                 .navigationDestination(for: String.self) { boardId in
                     BoardPlayView(
                         boardId: boardId,
-                        onOpenBoard: { newId in openBoard(newId) }
+                        onOpenBoard: { newId in openBoard(newId) },
+                        onResumeDraft: { draftId in openDraftInWizard(draftId) }
                     )
                     // Force a fresh view identity per boardId. Without
                     // this, NavigationStack reuses the same BoardPlayView
@@ -297,6 +316,7 @@ struct MainTabView: View {
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
                             pendingTargetWindowDate: $pendingTargetWindowDate,
                             pendingEditTemplateId: $pendingEditTemplateId,
+                            pendingDraftId: $pendingDraftId,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
                                 // the user lands on the board they just

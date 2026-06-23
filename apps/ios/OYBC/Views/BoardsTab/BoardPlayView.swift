@@ -228,6 +228,14 @@ struct BoardPlayView: View {
     /// (the core-board window pager) can own the title/bar. Default false
     /// preserves the standalone /boards/:id-equivalent behavior.
     var embedded: Bool = false
+    /// Catch-all draft guard: a DRAFT board is never rendered as a playable
+    /// grid. When a draft is loaded (non-embedded) this fires with the board
+    /// id so the host can resume it in the wizard. Covers every navigation
+    /// path that lands on a board id (core-board browser, task-detail Usage
+    /// jump, stray deep-links) — the list/core-grid/pager route to resume
+    /// directly before reaching here, so this is the safety net. Nil ⇒ the
+    /// guard still suppresses the grid but offers no resume action.
+    var onResumeDraft: ((String) -> Void)? = nil
     @EnvironmentObject var authService: AuthService
 
     // MARK: - State
@@ -368,32 +376,44 @@ struct BoardPlayView: View {
                         .padding(.horizontal, Riso.gutter)
                         .padding(.top, 12)
 
-                    // ── Stat bar ──
-                    if let b = board {
-                        RisoStatBar(
-                            completedTasks: b.completedTasks,
-                            totalTasks: b.totalTasks,
-                            linesCompleted: b.linesCompleted,
-                            expiryText: risoExpiryText(board: b)
-                        )
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.top, 14)
-                        .padding(.bottom, 13)
-                    }
-
-                    // ── Grid ──
-                    if board != nil {
-                        risoGridSection
+                    if let b = board, b.status == .draft, !embedded {
+                        // ── Draft guard ──
+                        // A draft is never playable. Show a resume prompt
+                        // instead of the stat bar + grid (the header already
+                        // carries the name + DRAFT badge). Reached only via
+                        // secondary nav (browser / Usage jump) — the primary
+                        // surfaces route to resume before getting here.
+                        draftResumeSection(board: b)
                             .padding(.horizontal, Riso.gutter)
-                    }
-
-                    // ── Expired banner (below grid) ──
-                    if isBoardLocked {
-                        Text("Board expired — interactions disabled")
-                            .font(.risoBody(12, .semibold))
-                            .foregroundStyle(Color.risoRed)
+                            .padding(.top, 24)
+                    } else {
+                        // ── Stat bar ──
+                        if let b = board {
+                            RisoStatBar(
+                                completedTasks: b.completedTasks,
+                                totalTasks: b.totalTasks,
+                                linesCompleted: b.linesCompleted,
+                                expiryText: risoExpiryText(board: b)
+                            )
                             .padding(.horizontal, Riso.gutter)
-                            .padding(.top, 8)
+                            .padding(.top, 14)
+                            .padding(.bottom, 13)
+                        }
+
+                        // ── Grid ──
+                        if board != nil {
+                            risoGridSection
+                                .padding(.horizontal, Riso.gutter)
+                        }
+
+                        // ── Expired banner (below grid) ──
+                        if isBoardLocked {
+                            Text("Board expired — interactions disabled")
+                                .font(.risoBody(12, .semibold))
+                                .foregroundStyle(Color.risoRed)
+                                .padding(.horizontal, Riso.gutter)
+                                .padding(.top, 8)
+                        }
                     }
 
                     Spacer(minLength: 20)
@@ -742,6 +762,36 @@ struct BoardPlayView: View {
                     .padding(.top, 4)
             }
         }
+    }
+
+    /// Draft-guard body: shown in place of the stat bar + grid when a draft
+    /// board is loaded outside the wizard. Drafts are never playable; this
+    /// offers to resume the draft in the wizard instead.
+    @ViewBuilder
+    private func draftResumeSection(board: Board) -> some View {
+        VStack(spacing: 16) {
+            BlipPlaceholder(size: 56, mood: .calm)
+
+            Text("This board is still a draft.")
+                .risoH2()
+                .multilineTextAlignment(.center)
+
+            Text("Finish setting it up in the wizard — drafts aren't playable until you complete them.")
+                .risoSub()
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+
+            if let onResumeDraft {
+                RisoButton(
+                    title: "Resume draft",
+                    kind: .primary,
+                    systemImage: "pencil.and.outline",
+                    action: { onResumeDraft(board.id) }
+                )
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder

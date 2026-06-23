@@ -52,7 +52,20 @@ final class TaskLibraryViewModel {
     /// All non-deleted tasks for the authenticated user, ordered by title.
     /// Includes every TaskType (.normal / .counting / .compound / .progress
     /// alias for legacy rows).
+    ///
+    /// This is the FULL set, used for id-resolution everywhere (placement
+    /// lookup, the resumed-draft grid/pool, task-by-id). Browse surfaces
+    /// must use `browsableTasks` instead — see below.
     var libraryTasks: [Task] = []
+
+    /// `libraryTasks` minus wizard-born tasks that are still placed only on
+    /// draft boards. This is the set the LIBRARY-BROWSE surfaces show — the
+    /// Tasks tab and the wizard's "add from library" picker — so a task
+    /// created inside the board wizard stays hidden until its board goes
+    /// active (visibility rule: hide iff `createdInWizard` AND every
+    /// non-deleted placement is a draft board; orphan + standalone tasks are
+    /// always visible). Keep `libraryTasks` for resolution; never browse it.
+    var browsableTasks: [Task] = []
 
     /// All non-deleted compound_children rows in the workspace.
     /// Small-N (one row per parent-child link, typically under a few hundred
@@ -128,8 +141,15 @@ final class TaskLibraryViewModel {
             let tasks = try await Self.loadTasks(userId: userId)
             let children = try await Self.loadCompoundChildren()
             let boardTasks = try await Self.loadAllBoardTasks()
+            let boardStatusById = try await Self.loadBoardStatuses(userId: userId)
+            let browsable = Self.computeBrowsableTasks(
+                tasks: tasks,
+                boardTasks: boardTasks,
+                boardStatusById: boardStatusById
+            )
             await MainActor.run {
                 self.libraryTasks = tasks
+                self.browsableTasks = browsable
                 self.allCompoundChildren = children
                 self.allLibraryBoardTasks = boardTasks
                 var grouped: [String: [CompoundChild]] = [:]
@@ -188,6 +208,51 @@ final class TaskLibraryViewModel {
     private static func loadAllBoardTasks() async throws -> [BoardTask] {
         try await AppDatabase.shared.read { db in
             try BoardTask.fetchAll(db)
+        }
+    }
+
+    /// Map of non-deleted boardId → status for the user. Drives the
+    /// draft-only-visibility filter (a placement on a deleted board is
+    /// absent from this map and therefore ignored).
+    private static func loadBoardStatuses(userId: String) async throws -> [String: BoardStatus] {
+        try await AppDatabase.shared.read { db in
+            let boards = try Board
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .fetchAll(db)
+            return Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
+        }
+    }
+
+    /// Pure visibility filter for library-browse surfaces. Hides a task iff
+    /// it is wizard-born (`createdInWizard`) AND it has at least one placement
+    /// on a non-deleted board but NONE of those placements are on a non-draft
+    /// board — i.e. it lives only on drafts. Standalone/copied tasks
+    /// (`createdInWizard == false`) and orphan wizard tasks (no live
+    /// placement, e.g. their draft was deleted) are always visible.
+    ///
+    /// Visible iff: `!createdInWizard` OR no live placement OR ≥1 non-draft placement.
+    ///
+    /// - Parameters:
+    ///   - tasks: The full library task set.
+    ///   - boardTasks: Every BoardTask row (any board).
+    ///   - boardStatusById: Non-deleted boardId → status (placements on
+    ///     missing/deleted boards are ignored).
+    static func computeBrowsableTasks(
+        tasks: [Task],
+        boardTasks: [BoardTask],
+        boardStatusById: [String: BoardStatus]
+    ) -> [Task] {
+        // taskId → set of non-deleted board ids it's placed on.
+        var placementsByTask: [String: Set<String>] = [:]
+        for bt in boardTasks {
+            guard boardStatusById[bt.boardId] != nil else { continue }
+            placementsByTask[bt.taskId, default: []].insert(bt.boardId)
+        }
+        return tasks.filter { task in
+            guard task.createdInWizard else { return true }
+            let boardIds = placementsByTask[task.id] ?? []
+            if boardIds.isEmpty { return true }
+            return boardIds.contains { boardStatusById[$0] != .draft }
         }
     }
 }

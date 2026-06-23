@@ -144,7 +144,10 @@ final class TasksTabViewModel {
             placementCounts: placementCounts
         )
 
-        let typed = library.libraryTasks
+        // Browse the draft-filtered set (`browsableTasks`), not the full
+        // `libraryTasks`: wizard-born tasks placed only on draft boards stay
+        // hidden from the Tasks tab until their board goes active.
+        let typed = library.browsableTasks
             .filter { Self.matchesType($0, typeFilter) }
             .filter { task in
                 // Issue #73 — suppress non-independent children from top level when on.

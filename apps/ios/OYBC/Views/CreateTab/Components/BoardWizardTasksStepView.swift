@@ -90,13 +90,21 @@ struct BoardWizardTasksStepView: View {
 
     // MARK: - Derived
 
-    /// Bug #85 — Effective task pool: live library tasks merged with any in-memory pending tasks.
+    /// Bug #85 — Effective task pool for BROWSE surfaces (the "add from
+    /// library" sheet + compound autocomplete): the draft-filtered
+    /// `browsableTasks` merged with this session's in-memory pending tasks.
+    /// Uses `browsableTasks` (not `libraryTasks`) so wizard-born tasks saved
+    /// onto OTHER drafts don't reappear in the picker; the current session's
+    /// pending tasks are still merged in so a task you just added is findable.
+    /// Placement RESOLUTION (`effectiveTaskById`, `buildWizardPlacement`)
+    /// keeps using the full `libraryTasks` so a resumed draft still renders
+    /// its own (draft-hidden) tasks.
     private var effectiveAllTasks: [Task] {
         guard let pending = pendingTasks, !pending.isEmpty else {
-            return library.libraryTasks
+            return library.browsableTasks
         }
-        var seen = Set(library.libraryTasks.map { $0.id })
-        var combined = library.libraryTasks
+        var seen = Set(library.browsableTasks.map { $0.id })
+        var combined = library.browsableTasks
         for payload in pending.values {
             if !seen.contains(payload.task.id) {
                 combined.append(payload.task)

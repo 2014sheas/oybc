@@ -41,6 +41,12 @@ struct CreateHubView: View {
     /// Set by `MainTabView` from `RecurringTemplatesView`'s row Edit
     /// callback.
     var pendingEditTemplateId: Binding<String?> = .constant(nil)
+    /// Draft-resume cross-tab deep-link. When non-nil on appear, the hub
+    /// hydrates the wizard from that draft board id (via the same resume
+    /// path as the drafts list) and clears the binding. Set by
+    /// `MainTabView` when a DRAFT board is tapped on the Boards tab — drafts
+    /// are never opened as a playable board, so this is the resume entry.
+    var pendingDraftId: Binding<String?> = .constant(nil)
     /// Called after a board is successfully activated or saved as a
     /// draft. Parent typically navigates to the created board; the
     /// hub itself always returns to its landing view.
@@ -88,6 +94,14 @@ struct CreateHubView: View {
                     if let templateId = pendingEditTemplateId.wrappedValue {
                         pendingEditTemplateId.wrappedValue = nil
                         vm.loadTemplateAndEnterWizard(templateId: templateId)
+                        return
+                    }
+                    // Consume the draft-resume deep link, if any. Fetch the
+                    // draft board + its placements, then enter wizardResume —
+                    // same hydration path as tapping a row in the drafts list.
+                    if let draftId = pendingDraftId.wrappedValue {
+                        pendingDraftId.wrappedValue = nil
+                        vm.loadDraftAndEnterWizard(boardId: draftId, userId: userId)
                     }
                 }
         case .wizardFresh:

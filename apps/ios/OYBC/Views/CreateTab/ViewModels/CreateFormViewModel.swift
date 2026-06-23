@@ -316,9 +316,18 @@ final class CreateFormViewModel {
         // board-save transaction. `onTaskCreated` still fires so the wizard
         // adds the id to `selectedTaskIds` and the Tasks step shows the row.
         if deferPersist {
+            // Mark the deferred task (and any inline children) as wizard-born
+            // so library-browse surfaces hide it until its board goes active.
+            var deferredTask = newTask
+            deferredTask.createdInWizard = true
+            let deferredChildTasks = progressChildTasks.map { child -> Task in
+                var c = child
+                c.createdInWizard = true
+                return c
+            }
             let payload = PendingTaskPayload(
-                task: newTask,
-                childTasks: progressChildTasks,
+                task: deferredTask,
+                childTasks: deferredChildTasks,
                 childLinks: progressChildLinks
             )
             isSubmitting = false
@@ -666,9 +675,19 @@ final class CreateFormViewModel {
 
         // ── Bug #85: Deferred-persist path ──────────────────────────────────
         if deferPersist {
+            // Mark the deferred compound parent + its NEW inline children as
+            // wizard-born. Existing-library children are referenced by id only
+            // (not in `childTasks`), so their provenance is untouched.
+            var deferredParent = parentTask
+            deferredParent.createdInWizard = true
+            let deferredChildTasks = childTasks.map { child -> Task in
+                var c = child
+                c.createdInWizard = true
+                return c
+            }
             let payload = PendingTaskPayload(
-                task: parentTask,
-                childTasks: childTasks,
+                task: deferredParent,
+                childTasks: deferredChildTasks,
                 childLinks: childLinks
             )
             isSubmitting = false
