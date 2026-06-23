@@ -1475,4 +1475,4 @@ A peer running an older client decodes the user doc successfully (the new fields
 
 **Phase 3 (board-completion-as-a-square)** extends achievement squares with one new optional field — `referencedBoardId` — on the existing `boardTasks` Firestore subcollection (local SQLite table: `board_tasks`). No new collection, no schema migration to a different table. Cross-board cascade fires inside the existing `runBoardCascadeForTask()` pipeline by adding a parallel fan-out for board_tasks rows with `referencedBoardId = this.id`; no new sync paths are added.
 
-For the canonical design, see [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design).
+For the canonical design, see [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards--shipped).

@@ -34,8 +34,8 @@ OYBC/
 │   ├── Schema.sql          # base schema (bundled resource)
 │   └── Models/             # Swift record types (mirror @oybc/shared)
 ├── Services/           # AuthService, SyncService, NotificationService, etc.
-├── Views/              # SwiftUI views (tabs, wizard, Riso kit)
-├── ViewModels/         # (per-feature, alongside their views)
+├── Views/              # SwiftUI views (tabs, wizard, Riso kit); per-feature
+│                       #   ViewModels/ live alongside their views
 ├── Helpers/            # small shared helpers
 ├── Utils/              # formatting / timeframe utilities
 ├── Resources/          # assets, Info.plist, entitlements
@@ -48,7 +48,7 @@ OYBC/
 
 - Xcode 26.3 (CI pins this; the simulator that ships with it is what `OS=latest` resolves to)
 - iOS 17+ deployment target
-- [XcodeGen](https://github.com/yonsei/XcodeGen) (`brew install xcodegen`)
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
 ### Setup
 
