@@ -8,63 +8,69 @@ OYBC (On Your Bingo Card) is a gamified task management app that turns your goal
 
 ## Key Features
 
-- **Offline-first**: Full functionality without internet connection
-- **Multi-device sync**: Seamless synchronization across devices
-- **Instant UX**: All operations < 10ms (local database reads)
-- **Three task types**:
-  - Normal: Simple completion tasks
-  - Counting: Track progress (e.g., "Read 100 pages")
-  - Progress: Multi-step tasks with sub-tasks
-- **Flexible boards**: 3x3, 4x4, or 5x5 grids
-- **Timeframes**: Daily, weekly, monthly, yearly, or custom date ranges
+- **Offline-first**: full functionality without an internet connection
+- **Multi-device sync**: background Firestore sync across devices
+- **Instant UX**: local-database reads/writes (< 10ms target), no loading spinners
+- **Four task types**:
+  - **Normal**: simple completion tasks
+  - **Counting**: track progress toward a goal (e.g., "Read 100 pages")
+  - **Compound**: combine sub-tasks with AND / OR / M-of-N logic, optionally ordered (subsumes the former Progress + Composite types)
+  - **Achievement**: cross-board watcher that completes when a referenced board (or recurring template) hits a bingo or greenlog
+- **Flexible boards**: 3×3, 4×4, or 5×5 grids
+- **Timeframes**: daily, weekly, monthly, yearly, or custom date ranges
+- **Recurring boards**: per-timeframe core boards + preset-pool templates, lazily detected on app open
+- **iOS local reminders**: board-expiring / new-recurring-window / daily-play notifications (opt-in, scheduled on-device)
 
 ## Architecture
 
 **Offline-first, local-first design**:
-- **Local databases**: Source of truth (GRDB on iOS, Dexie on web)
-- **Background sync**: Firestore syncs when online for multi-device support
-- **Instant operations**: All reads from local DB (< 10ms target)
-- **Optimistic writes**: Update local DB immediately, sync in background
+- **Local databases are the source of truth** (GRDB/SQLite on iOS, Dexie/IndexedDB on web)
+- **Background sync**: Firestore syncs when online for multi-device support only
+- **Optimistic writes**: update the local DB immediately, queue sync in the background
+- **Conflict resolution**: last-write-wins via version fields; cross-board features recomputed from source data
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed technical documentation.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed technical plan and [docs/OFFLINE_FIRST.md](docs/OFFLINE_FIRST.md) for the data-flow model.
 
 ## Project Structure
 
-This is a monorepo containing:
+This is a pnpm + Turborepo monorepo:
 
-- **apps/ios**: SwiftUI iOS app with GRDB (SQLite)
-- **apps/web**: Next.js web app with Dexie (IndexedDB)
-- **packages/shared**: Shared TypeScript types, algorithms, validation
-- **packages/design-tokens**: Shared design system (colors, spacing)
+- **apps/ios**: SwiftUI iOS app with GRDB (SQLite); project generated via XcodeGen
+- **apps/web**: React + Vite web app with Dexie (IndexedDB) and React Router
+- **packages/shared**: shared TypeScript types, algorithms, and Zod validation (single source of truth)
+- **functions**: Firebase Cloud Functions (TypeScript) — the only server-side code (account-deletion data purge)
 
 ## Tech Stack
 
 ### iOS
-- SwiftUI (UI framework)
+- SwiftUI (UI)
 - GRDB.swift (SQLite wrapper)
-- Firebase iOS SDK (Auth, Firestore sync)
-- Combine (reactive state)
+- Firebase iOS SDK (Auth, Firestore sync) + Google Sign-In
+- XcodeGen (project generation), swift-snapshot-testing (snapshot tests)
 
 ### Web
-- Next.js 14 (App Router)
+- React 19 + Vite
+- React Router
 - Dexie.js (IndexedDB wrapper)
-- Firebase JS SDK v10 (Auth, Firestore sync)
-- Zustand (state management)
-- Tailwind CSS + shadcn/ui (styling)
+- Firebase JS SDK (Auth, Firestore sync)
+- CSS Modules (styling)
 
 ### Shared
 - TypeScript (types, algorithms, validation)
 - Zod (schema validation)
 - Jest (testing)
 
+### Cloud Functions
+- TypeScript on Node 22 (requires the Firebase Blaze plan to deploy)
+
 ## Development
 
 ### Prerequisites
 
-- Node.js 18+
-- pnpm 8+
-- Xcode 15+ (for iOS development)
-- Firebase project
+- Node.js 18+ (Cloud Functions run on Node 22)
+- pnpm 9.15.4 (pinned via `package.json#packageManager`)
+- Xcode (CI pins 26.3) + XcodeGen for iOS development
+- A Firebase project (config obtained per developer — see below)
 
 ### Setup
 
@@ -72,86 +78,40 @@ This is a monorepo containing:
 # Install dependencies
 pnpm install
 
-# Build shared package
-cd packages/shared
-pnpm build
+# Build the shared package (web + functions consume it)
+cd packages/shared && pnpm build
 
-# Run web app in dev mode
-cd apps/web
-pnpm dev
+# Run the web app in dev mode (http://localhost:5173)
+cd apps/web && pnpm dev
 
-# Open iOS app in Xcode
-open apps/ios/OYBC.xcodeproj
+# iOS: generate + open the Xcode project
+cd apps/ios && xcodegen generate && open OYBC.xcodeproj
 ```
 
-### Available Scripts
+**Firebase config** is gitignored and obtained per developer: `.env.local` (web) and `GoogleService-Info.plist` (iOS).
+
+### Available Scripts (root)
 
 ```bash
-# Build all packages
-pnpm build
-
-# Run all tests
-pnpm test
-
-# Lint all packages
-pnpm lint
-
-# Clean all build artifacts
-pnpm clean
+pnpm build    # Build all packages
+pnpm test     # Run all tests
+pnpm lint     # Lint all packages
+pnpm clean    # Clean all build artifacts
 ```
 
-## Development Phases
+## Status
 
-### Phase 1: Local Database Setup ✅
-- [x] Archive MVP codebase
-- [x] Create monorepo structure
-- [x] Design data models from scratch
-- [ ] Set up GRDB on iOS
-- [ ] Set up Dexie on web
-
-### Phase 2: Core Game Loop (Offline-Only)
-- [ ] Board creation UI (iOS & web)
-- [ ] Board grid display & interaction
-- [ ] Bingo detection & celebrations
-- [ ] Full offline functionality
-
-### Phase 3: Authentication & Sync Layer
-- [ ] Firebase authentication
-- [ ] Background sync service
-- [ ] Conflict resolution
-- [ ] Multi-device testing
-
-### Phase 4: Polish & Testing
-- [ ] Animations & haptics
-- [ ] Accessibility
-- [ ] E2E testing
-- [ ] TestFlight beta
-
-### Phase 5: Launch
-- [ ] App Store submission
-- [ ] Web deployment (Vercel)
-- [ ] Marketing website
-
-## Design Principles
-
-1. **Offline-first**: App works perfectly without internet
-2. **Instant UX**: No loading spinners, no waiting for network
-3. **Local database is source of truth**: Firestore is sync layer only
-4. **Fresh start**: No code copied from MVP, simplified architecture
-5. **Future-proof**: Schema designed for recurring boards, templates
+**Phases 1–7 shipped** — local DB, app infrastructure, core game loop, auth + Firestore sync, the tab-based production app, polish, recurring boards, and iOS local notifications. The "Riso" UI overhaul (Design Handoff #3), per-timeframe streaks, and the in-app Account & security screen (with account deletion) have all shipped on iOS. Web has parity gaps that are tracked as follow-ups (see CLAUDE.md). Active work is directed feature-by-feature, not by a fixed roadmap.
 
 ## Documentation
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Comprehensive technical plan
-- [CLAUDE_GUIDE.md](docs/CLAUDE_GUIDE.md) - Guide for working with Claude Code
-- [OFFLINE_FIRST.md](docs/OFFLINE_FIRST.md) - Offline architecture explanation
+- [CLAUDE.md](CLAUDE.md) — canonical contributor guide (conventions, workflows, current status, follow-ups)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — technical plan + development phases
+- [docs/OFFLINE_FIRST.md](docs/OFFLINE_FIRST.md) — offline-first design and data flow
+- [docs/SYNC_STRATEGY.md](docs/SYNC_STRATEGY.md) — conflict resolution patterns
+- [docs/TASK_SYSTEM.md](docs/TASK_SYSTEM.md) — the unified task system
+- [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Phase 7 iOS local-notification design
 
 ## License
 
 MIT
-
-## Status
-
-**In Development** - Phase 1 (Local Database Setup)
-
-This is a complete rebuild of the OYBC MVP with offline-first architecture.

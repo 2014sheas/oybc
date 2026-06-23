@@ -12,10 +12,15 @@ Single source of truth for types, algorithms, validation, and constants shared a
 
 ```
 src/
-├── types/        # Board, Task, TaskStep, BoardTask, ProgressCounter, User, SyncQueueItem
-├── algorithms/   # Bingo detection, shuffle, center square logic
+├── types/        # Board, Task, CompoundChild, BoardTask, ProgressCounter, User,
+│                 #   SyncQueueItem, RecurringBoardTemplate, DefaultPool
+│                 #   (TaskStep / CompositeTask persist as legacy migration-read types only)
+├── algorithms/   # bingo detection, shuffle, calendar boundaries, compound evaluation,
+│                 #   derivation pass, recurring boards, streaks, shared-counter merge,
+│                 #   cross-board rollup, task expiry, cycle detection, migration helpers
 ├── validation/   # Zod schemas for all types
-├── constants/    # Enums (BoardStatus, TaskType, Timeframe, CenterSquareType), shared constants
+├── constants/    # Enums (BoardStatus, TaskType = NORMAL/COUNTING/COMPOUND/ACHIEVEMENT,
+│                 #   Timeframe, CenterSquareType, AchievementTrigger, OperatorType) + sync-retry constants
 └── index.ts      # Public API — all exports go through here
 ```
 

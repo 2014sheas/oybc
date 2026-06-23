@@ -679,15 +679,15 @@ The architecture investigation that preceded this design (April 2026) establishe
 
 ##### Data model
 
-**No `Board`, `Task`, or `BoardTask` schema changes.** The iOS `User` GRDB model needs a small migration to add 4 boolean columns (default `0` / `false`); the four `boards` / `tasks` / `board_tasks` tables are untouched. Four new fields appended to `UserPreferences` (in `packages/shared/src/types/user.ts`):
+**No `Board`, `Task`, or `BoardTask` schema changes.** The iOS `User` GRDB model needs a small migration to add 4 boolean columns; the four `boards` / `tasks` / `board_tasks` tables are untouched. (Shipped with an effective default of `true` for all four — `DEFAULT_USER_PREFERENCES` in `packages/shared/src/types/user.ts` — i.e. recurrence is on by default.) Four new fields appended to `UserPreferences` (in `packages/shared/src/types/user.ts`):
 
 ```ts
 export interface UserPreferences {
   // ...existing 7 fields...
-  recurringDailyEnabled: boolean; // default false
-  recurringWeeklyEnabled: boolean; // default false
-  recurringMonthlyEnabled: boolean; // default false
-  recurringYearlyEnabled: boolean; // default false
+  recurringDailyEnabled: boolean; // default true (shipped all-true post-6.1d)
+  recurringWeeklyEnabled: boolean; // default true
+  recurringMonthlyEnabled: boolean; // default true
+  recurringYearlyEnabled: boolean; // default true
 }
 ```
 
@@ -969,7 +969,7 @@ The Boards-tab **Core boards** rows previously opened the per-timeframe browser 
 
 ## Wizard "From a board" picker
 
-> Design captured 2026-06-01; not yet shipped. Section is the canonical record — kept in sync as decisions evolve. PR link added under **Status** when opened.
+> Design captured 2026-06-01; **shipped** via PR #82 and Riso-reskinned in PR #128. Section is the canonical record of the design.
 
 The wizard's Step 2 (Tasks) currently lets the user pick from their library list, filter by type, and surface tasks from currently-active **parent** boards via the `From parent boards` chip ([Phase 6.1](#three-phase-vision)). There is no way to visually browse another board's grid and pull its tasks across — every cross-board task add happens as a flat-list selection. "From a board" adds a sibling chip `From a board…` that swaps the list region for a source-board picker, then for the chosen board's actual grid, so users can compose a new board against the spatial layout of an existing one.
 
