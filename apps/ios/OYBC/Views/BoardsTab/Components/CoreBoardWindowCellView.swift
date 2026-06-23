@@ -23,6 +23,11 @@ struct CoreBoardWindowCellView: View {
     /// (already a local-time date the wizard can use as-is) and the
     /// timeframe.
     let onCreate: (Date, Timeframe) -> Void
+    /// Tap target for a DRAFT cell. Receives the draft board id. Drafts are
+    /// never opened as a playable board, so a draft cell resumes the wizard
+    /// directly (matching the Boards-home draft cards) rather than routing
+    /// through BoardPlayView's catch-all guard.
+    var onResumeDraft: (String) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -101,7 +106,13 @@ struct CoreBoardWindowCellView: View {
     @ViewBuilder
     private func filledContent(board: Board) -> some View {
         Button {
-            onOpenBoard(board.id)
+            // A draft cell resumes the wizard (never opens as a playable
+            // board); any other status opens BoardPlayView as before.
+            if board.status == .draft {
+                onResumeDraft(board.id)
+            } else {
+                onOpenBoard(board.id)
+            }
         } label: {
             RisoBoardCard(
                 board: board,

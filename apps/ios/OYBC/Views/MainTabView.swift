@@ -239,7 +239,8 @@ struct MainTabView: View {
                             // stack so back returns to the browser,
                             // not the list.
                             boardsPath.append(boardId)
-                        }
+                        },
+                        onResumeDraft: { boardId in openDraftInWizard(boardId) }
                     )
                 }
                 .navigationDestination(for: CoreWindowRoute.self) { route in
@@ -387,7 +388,8 @@ struct MainTabView: View {
                             // Jump cross-tab to the Boards stack so
                             // the user lands on the play view.
                             openBoard(boardId)
-                        }
+                        },
+                        onResumeDraft: { boardId in openDraftInWizard(boardId) }
                     )
                 }
 

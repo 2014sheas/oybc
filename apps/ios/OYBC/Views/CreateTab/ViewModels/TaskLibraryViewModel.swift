@@ -101,17 +101,22 @@ final class TaskLibraryViewModel {
 
     // MARK: - Filtered queries (computed)
 
-    /// Filtered task list for the active library tab.
+    /// Filtered task list for the active library tab. Browses
+    /// `browsableTasks` (the draft-filtered set) — this is a browse helper,
+    /// never a resolution path, so it must hide draft-only wizard tasks like
+    /// every other browse surface. (Currently has no live caller; the Tasks
+    /// tab uses `TasksTabViewModel.filteredTasks(library:)`. Kept consistent
+    /// so wiring it up later can't reintroduce the leak.)
     func filteredTasks(_ filter: LibraryFilter) -> [Task] {
         switch filter {
         case .all:
-            return libraryTasks
+            return browsableTasks
         case .normal:
-            return libraryTasks.filter { $0.type == .normal }
+            return browsableTasks.filter { $0.type == .normal }
         case .counting:
-            return libraryTasks.filter { $0.type == .counting }
+            return browsableTasks.filter { $0.type == .counting }
         case .compound:
-            return libraryTasks.filter { $0.type == .compound }
+            return browsableTasks.filter { $0.type == .compound }
         case .fromParents:
             // Source is a separate ParentBoardTasksViewModel — see
             // BoardWizardTasksStepView. Returning [] here is correct;
