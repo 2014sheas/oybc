@@ -109,6 +109,8 @@ func formatTimeframeLabel(timeframe: Timeframe, startDate: Date) -> String {
         return f.string(from: startDate)
     case .custom:
         return "Custom"
+    case .indefinite:
+        return "Ongoing"
     }
 }
 
@@ -128,24 +130,28 @@ func formatRecurringCadence(timeframe: Timeframe) -> String {
     case .monthly: return "Every month"
     case .yearly:  return "Every year"
     case .custom:  return "Custom"
+    case .indefinite: return "Ongoing"
     }
 }
 
 // MARK: - Board Expiry Helpers
 
-/// Returns whether a board is expired (past its end date and not Custom timeframe).
+/// Returns whether a board is expired (past its end date).
+///
+/// Custom and indefinite boards never expire (no deadline) — mirror of the
+/// shared `isBoardIndefinite()` exclusion.
 ///
 /// - Parameter board: The board to check.
-/// - Returns: `true` if the board's timeframe is not `.custom` and its `endDate` is in the past.
+/// - Returns: `true` if the board has a deadline that is now in the past.
 func isBoardExpired(_ board: Board) -> Bool {
-    guard board.timeframe != .custom else { return false }
-    guard let end = parseISO8601Date(board.endDate) else { return false }
+    guard board.timeframe != .custom, !board.isIndefinite else { return false }
+    guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return false }
     return Date() > end
 }
 
 /// Returns a human-readable expiry indicator for a board.
 ///
-/// - "No deadline" — Custom timeframe
+/// - "No deadline" — Custom or Indefinite board (no end date)
 /// - "Expired" — past its end date
 /// - "Expires today" — less than 24 hours remaining
 /// - "1 day left" / "N days left"
@@ -153,8 +159,8 @@ func isBoardExpired(_ board: Board) -> Bool {
 /// - Parameter board: The board to evaluate.
 /// - Returns: A short expiry label string.
 func getExpiryLabel(_ board: Board) -> String {
-    guard board.timeframe != .custom else { return "No deadline" }
-    guard let end = parseISO8601Date(board.endDate) else { return "No deadline" }
+    guard board.timeframe != .custom, !board.isIndefinite else { return "No deadline" }
+    guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "No deadline" }
     let now = Date()
     guard now <= end else { return "Expired" }
     let secondsLeft = end.timeIntervalSince(now)

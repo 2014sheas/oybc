@@ -17,8 +17,10 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     var status: BoardStatus
     var boardSize: Int
     var timeframe: Timeframe
-    var startDate: String // ISO8601
-    var endDate: String // ISO8601
+    var startDate: String // ISO8601 (creation anchor for indefinite boards)
+    // Absent (nil) for INDEFINITE boards — they never expire. Treat a nil
+    // endDate as an unbounded window [startDate, ∞). See `isIndefinite`.
+    var endDate: String? // ISO8601
     var centerSquareType: CenterSquareType
     var centerSquareCustomName: String?
     var centerTaskId: String?
@@ -87,7 +89,9 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         boardSize = try container.decode(Int.self, forKey: .boardSize)
         timeframe = try container.decode(Timeframe.self, forKey: .timeframe)
         startDate = try container.decode(String.self, forKey: .startDate)
-        endDate = try container.decode(String.self, forKey: .endDate)
+        // nil endDate = indefinite board (or a pre-migration row / sync doc
+        // that omits the key). decodeIfPresent keeps both cases nil-safe.
+        endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
         centerSquareType = try container.decode(CenterSquareType.self, forKey: .centerSquareType)
         centerSquareCustomName = try container.decodeIfPresent(String.self, forKey: .centerSquareCustomName)
         centerTaskId = try container.decodeIfPresent(String.self, forKey: .centerTaskId)
@@ -129,7 +133,9 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         try container.encode(boardSize, forKey: .boardSize)
         try container.encode(timeframe, forKey: .timeframe)
         try container.encode(startDate, forKey: .startDate)
-        try container.encode(endDate, forKey: .endDate)
+        // Omit the key entirely for indefinite boards (nil endDate) so the
+        // row / Firestore doc carries no endDate at all.
+        try container.encodeIfPresent(endDate, forKey: .endDate)
         try container.encode(centerSquareType, forKey: .centerSquareType)
         try container.encodeIfPresent(centerSquareCustomName, forKey: .centerSquareCustomName)
         try container.encodeIfPresent(centerTaskId, forKey: .centerTaskId)
@@ -172,6 +178,7 @@ enum Timeframe: String, Codable, DatabaseValueConvertible {
     case monthly
     case yearly
     case custom
+    case indefinite   // No end date — ongoing board that never expires
 }
 
 enum CenterSquareType: String, Codable, DatabaseValueConvertible {
@@ -193,5 +200,18 @@ extension Board {
     /// Check if board has any completed lines
     var hasBingo: Bool {
         return linesCompleted > 0
+    }
+
+    /// Whether this is an "indefinite" board — an ongoing board with no end
+    /// date that never expires, is excluded from recurrence/streaks/the
+    /// core-board pager, but still plays normally and can host achievement
+    /// tasks (its window is treated as `[startDate, ∞)`).
+    ///
+    /// Mirror of the shared `isBoardIndefinite()` predicate. The OR keeps
+    /// consumers robust to a sync row whose `endDate` is absent even if its
+    /// `timeframe` is stale. Use this everywhere instead of ad-hoc
+    /// `timeframe == .indefinite` / `endDate == nil` checks.
+    var isIndefinite: Bool {
+        return timeframe == .indefinite || endDate == nil
     }
 }

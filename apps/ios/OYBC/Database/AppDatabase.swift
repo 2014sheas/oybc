@@ -525,6 +525,92 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN createdInWizard INTEGER NOT NULL DEFAULT 0")
         }
 
+        // v18: Indefinite boards. Relaxes `boards.endDate` from `NOT NULL` to
+        // nullable so an INDEFINITE board (ongoing, no deadline) can store a
+        // genuine SQL NULL — which serializes to Firestore as an absent field
+        // (no sentinel string leaking into the wire format).
+        //
+        // SQLite cannot drop a NOT NULL constraint via ALTER, so this performs
+        // the standard table rebuild: create a twin with the relaxed column,
+        // copy every row, drop the old table, rename, and recreate the indexes.
+        // The migrator's default `.deferred` foreign-key mode disables FK
+        // enforcement during the migration and re-checks at commit — required
+        // because `board_tasks.boardId REFERENCES boards(id) ON DELETE CASCADE`
+        // would otherwise cascade-delete placements when the old table is
+        // dropped. A row-count parity assertion guards against a silent copy
+        // failure. Columns mirror the post-v17 table exactly (Schema.sql base +
+        // the v4/v8/v12 ALTERs: centerSquareCustomName, centerTaskId,
+        // spawnedFromTemplateId, isCore).
+        migrator.registerMigration("v18") { db in
+            let before = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM boards") ?? 0
+
+            try db.execute(sql: """
+                CREATE TABLE boards_new (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT NOT NULL,
+                    boardSize INTEGER NOT NULL,
+                    timeframe TEXT NOT NULL, -- daily, weekly, monthly, yearly, custom, indefinite
+                    startDate TEXT NOT NULL,
+                    endDate TEXT, -- nullable: NULL = INDEFINITE board (no deadline)
+                    centerSquareType TEXT NOT NULL,
+                    isRandomized INTEGER NOT NULL DEFAULT 0,
+                    totalTasks INTEGER NOT NULL DEFAULT 0,
+                    completedTasks INTEGER NOT NULL DEFAULT 0,
+                    linesCompleted INTEGER NOT NULL DEFAULT 0,
+                    completedLineIds TEXT,
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    completedAt TEXT,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+                    centerSquareCustomName TEXT,
+                    centerTaskId TEXT REFERENCES tasks(id),
+                    spawnedFromTemplateId TEXT,
+                    isCore INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (userId) REFERENCES users(id)
+                )
+                """)
+
+            try db.execute(sql: """
+                INSERT INTO boards_new (
+                    id, userId, name, description, status, boardSize, timeframe,
+                    startDate, endDate, centerSquareType, isRandomized, totalTasks,
+                    completedTasks, linesCompleted, completedLineIds, createdAt,
+                    updatedAt, completedAt, lastSyncedAt, version, isDeleted,
+                    deletedAt, centerSquareCustomName, centerTaskId,
+                    spawnedFromTemplateId, isCore
+                )
+                SELECT
+                    id, userId, name, description, status, boardSize, timeframe,
+                    startDate, endDate, centerSquareType, isRandomized, totalTasks,
+                    completedTasks, linesCompleted, completedLineIds, createdAt,
+                    updatedAt, completedAt, lastSyncedAt, version, isDeleted,
+                    deletedAt, centerSquareCustomName, centerTaskId,
+                    spawnedFromTemplateId, isCore
+                FROM boards
+                """)
+
+            let copied = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM boards_new") ?? -1
+            guard copied == before else {
+                throw DatabaseError(message: "v18 migration row-count mismatch: \(before) boards but \(copied) copied")
+            }
+
+            try db.execute(sql: "DROP TABLE boards")
+            try db.execute(sql: "ALTER TABLE boards_new RENAME TO boards")
+
+            // Recreate the indexes (they were dropped with the old table).
+            try db.execute(sql: "CREATE INDEX idx_boards_user_deleted ON boards(userId, isDeleted)")
+            try db.execute(sql: "CREATE INDEX idx_boards_user_timeframe_status ON boards(userId, timeframe, status)")
+            try db.execute(sql: "CREATE INDEX idx_boards_user_timeframe_lines ON boards(userId, timeframe, linesCompleted)")
+            try db.execute(sql: "CREATE INDEX idx_boards_updated ON boards(updatedAt)")
+            try db.execute(sql: "CREATE INDEX idx_boards_status ON boards(status)")
+        }
+
         return migrator
     }
 
@@ -869,6 +955,12 @@ extension AppDatabase {
         var startDate: String?
         /// Local-ISO8601 snap to 23:59:59.999 end-of-day (via `wizardLocalISOString`).
         var endDate: String?
+        /// Explicitly clear the board's `endDate` (convert to an indefinite /
+        /// ongoing board). A plain `endDate == nil` means "leave unchanged" —
+        /// this flag is the distinct "remove the deadline" signal, since a nil
+        /// value alone can't express clearing. Setting `timeframe = .indefinite`
+        /// also forces the clear (see `updateBoardAndCascade`).
+        var clearEndDate: Bool
         var centerSquareType: CenterSquareType?
         /// Only meaningful when `centerSquareType == .customFree`.
         var centerSquareCustomName: String?
@@ -880,6 +972,7 @@ extension AppDatabase {
             timeframe: Timeframe? = nil,
             startDate: String? = nil,
             endDate: String? = nil,
+            clearEndDate: Bool = false,
             centerSquareType: CenterSquareType? = nil,
             centerSquareCustomName: String? = nil,
             centerTaskId: String? = nil
@@ -888,6 +981,7 @@ extension AppDatabase {
             self.timeframe = timeframe
             self.startDate = startDate
             self.endDate = endDate
+            self.clearEndDate = clearEndDate
             self.centerSquareType = centerSquareType
             self.centerSquareCustomName = centerSquareCustomName
             self.centerTaskId = centerTaskId
@@ -927,7 +1021,14 @@ extension AppDatabase {
             if let n = patch.name { board.name = n }
             if let tf = patch.timeframe { board.timeframe = tf }
             if let sd = patch.startDate { board.startDate = sd }
-            if let ed = patch.endDate { board.endDate = ed }
+            // Clear the deadline when explicitly requested or when converting to
+            // an indefinite board; otherwise apply a provided endDate. A bare
+            // nil endDate (no clear flag) leaves the existing value untouched.
+            if patch.clearEndDate || patch.timeframe == .indefinite {
+                board.endDate = nil
+            } else if let ed = patch.endDate {
+                board.endDate = ed
+            }
 
             // 2. Center-square fields with sanitization.
             if let ct = patch.centerSquareType {
