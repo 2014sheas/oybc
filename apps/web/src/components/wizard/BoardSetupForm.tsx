@@ -20,15 +20,14 @@ const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
   { value: Timeframe.MONTHLY, label: "Monthly" },
   { value: Timeframe.YEARLY, label: "Yearly" },
   { value: Timeframe.CUSTOM, label: "Custom" },
-  { value: Timeframe.INDEFINITE, label: "Ongoing" },
 ];
 
 /** Subset of `TIMEFRAME_OPTIONS` shown when `isRecurring=true`. The
- *  recurring template schema rejects `Timeframe.CUSTOM` and
- *  `Timeframe.INDEFINITE` (no computed window / cadence), so the form
- *  hides both. */
+ *  recurring template schema rejects `Timeframe.CUSTOM` (no computed
+ *  window), so the form hides it. (Ongoing/indefinite isn't a segment —
+ *  it lives behind the End-date "None" option inside the Custom section.) */
 const RECURRING_TIMEFRAME_OPTIONS = TIMEFRAME_OPTIONS.filter(
-  (o) => o.value !== Timeframe.CUSTOM && o.value !== Timeframe.INDEFINITE,
+  (o) => o.value !== Timeframe.CUSTOM,
 );
 
 const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
@@ -298,19 +297,36 @@ export function BoardSetupForm({
       <div className={styles.fieldGroup}>
         <span className={styles.label}>Timeframe</span>
         <div className={styles.segmented}>
-          {visibleTimeframeOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`${styles.segmentedButton} ${
-                timeframe === opt.value ? styles.segmentedButtonActive : ""
-              }`}
-              onClick={() => onTimeframeChange(opt.value)}
-              aria-pressed={timeframe === opt.value}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {visibleTimeframeOptions.map((opt) => {
+            // The "Custom" segment also represents an ongoing (INDEFINITE)
+            // board — the End-date "None" option below is where that's chosen.
+            const active =
+              timeframe === opt.value ||
+              (opt.value === Timeframe.CUSTOM &&
+                timeframe === Timeframe.INDEFINITE);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                className={`${styles.segmentedButton} ${
+                  active ? styles.segmentedButtonActive : ""
+                }`}
+                onClick={() => {
+                  // Re-tapping Custom while ongoing keeps it ongoing; otherwise
+                  // Custom defaults to a dated range.
+                  if (
+                    opt.value === Timeframe.CUSTOM &&
+                    timeframe === Timeframe.INDEFINITE
+                  )
+                    return;
+                  onTimeframeChange(opt.value);
+                }}
+                aria-pressed={active}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -332,7 +348,8 @@ export function BoardSetupForm({
         </div>
       )}
 
-      {timeframe === Timeframe.CUSTOM && (
+      {(timeframe === Timeframe.CUSTOM ||
+        timeframe === Timeframe.INDEFINITE) && (
         <div className={styles.dateRow}>
           <div className={styles.fieldGroup}>
             <label className={styles.label} htmlFor="bw-start-date">
@@ -347,27 +364,38 @@ export function BoardSetupForm({
             />
           </div>
           <div className={styles.fieldGroup}>
-            <label className={styles.label} htmlFor="bw-end-date">
+            <label className={styles.label} htmlFor="bw-end-date-mode">
               End date
             </label>
-            <input
-              id="bw-end-date"
-              type="date"
+            {/* "None" is a first-class option here (not a toggle): selecting it
+                makes the board ongoing/indefinite. An HTML date input can't show
+                a "None" state, so a small select drives the mode and the date
+                input appears only when a date is chosen. */}
+            <select
+              id="bw-end-date-mode"
               className={styles.input}
-              value={customEndDate}
-              onChange={(e) => onCustomEndDateChange(e.target.value)}
-            />
+              value={timeframe === Timeframe.INDEFINITE ? "none" : "date"}
+              onChange={(e) =>
+                onTimeframeChange(
+                  e.target.value === "none"
+                    ? Timeframe.INDEFINITE
+                    : Timeframe.CUSTOM,
+                )
+              }
+            >
+              <option value="date">On a date</option>
+              <option value="none">None — no end date</option>
+            </select>
+            {timeframe === Timeframe.CUSTOM && (
+              <input
+                id="bw-end-date"
+                type="date"
+                className={styles.input}
+                value={customEndDate}
+                onChange={(e) => onCustomEndDateChange(e.target.value)}
+              />
+            )}
           </div>
-        </div>
-      )}
-
-      {/* Indefinite (ongoing) board — no deadline, no date pickers. */}
-      {timeframe === Timeframe.INDEFINITE && (
-        <div className={styles.dateDisplay}>
-          <span className={styles.dateDisplayLabel}>Ongoing</span>
-          <span className={styles.dateDisplayRange}>
-            No end date · this board stays open until you finish or archive it
-          </span>
         </div>
       )}
 

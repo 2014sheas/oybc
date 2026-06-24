@@ -274,11 +274,13 @@ enum SnapshotFixtures {
             controller.timeframe = .weekly
             controller.isRecurring = true
         case .setupIndefinite:
-            // Ongoing board — no end date. Verifies the "Ongoing" timeframe
-            // segment + the dashed "No end date" note (no date pickers, no
-            // window caption). Fully deterministic (no calendar dependency).
+            // Ongoing board — the "Custom" segment is selected and the End-date
+            // control reads "None". Pin a fixed customStartDate so the Start
+            // date picker renders deterministically (it binds to a live Date()
+            // otherwise, which would flake the baseline on calendar rollover).
             controller.name = "Someday / Maybe"
             controller.timeframe = .indefinite
+            controller.customStartDate = "2026-04-01"
         case .previewReady:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly

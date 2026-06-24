@@ -106,22 +106,30 @@ struct RisoBoardSetupForm: View {
             Text("TIMEFRAME")
                 .risoSectionLabel()
 
-            // Segmented options — omit Custom in recurring mode.
+            // Segmented options — omit Custom in recurring mode. The "Custom"
+            // segment covers both a dated range AND an ongoing (indefinite)
+            // board; the End-date control inside the custom section is where
+            // the user chooses "None" (ongoing) vs a date — so indefinite is
+            // never a separate segment cluttering the row.
             RisoSegmented(
                 options: timeframeOptions,
                 selection: Binding(
-                    get: { controller.timeframe },
-                    set: { controller.updateTimeframe($0) }
+                    get: { controller.timeframe == .indefinite ? .custom : controller.timeframe },
+                    set: { newValue in
+                        // Tapping "Custom" defaults to a dated range; if we're
+                        // already showing Custom as ongoing, keep ongoing rather
+                        // than silently downgrading to a dated board.
+                        if newValue == .custom && controller.timeframe == .indefinite { return }
+                        controller.updateTimeframe(newValue)
+                    }
                 )
             )
 
-            // Date region: computed-window note, custom pickers, or the
-            // "no end date" note for indefinite (ongoing) boards.
+            // Date region: custom pickers (covers dated + ongoing via the
+            // End-date "None" option), or the computed-window note.
             switch controller.timeframe {
-            case .custom:
+            case .custom, .indefinite:
                 customDateSection
-            case .indefinite:
-                indefiniteDateNote
             default:
                 timeframeDateNote
             }
@@ -135,34 +143,12 @@ struct RisoBoardSetupForm: View {
             (.monthly, "Monthly"),
             (.yearly,  "Yearly"),
         ]
-        // Custom and Ongoing (indefinite) are excluded from recurring boards —
-        // recurrence needs a computed window cadence.
+        // Custom (which also hosts the ongoing/no-end-date option) is excluded
+        // from recurring boards — recurrence needs a computed window cadence.
         if !controller.isRecurring {
             opts.append((.custom, "Custom"))
-            opts.append((.indefinite, "Ongoing"))
         }
         return opts
-    }
-
-    /// Dashed-keyline note for an indefinite (ongoing) board: no deadline.
-    private var indefiniteDateNote: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "infinity")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.risoMuted)
-            Text("No end date · this board stays open until you finish or archive it")
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .lineLimit(2)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
-                .foregroundStyle(Color.risoInk)
-        )
     }
 
     /// Dashed-keyline note card: "This week · Jun 8 – 14" (mirrors `.r-note`).
@@ -211,20 +197,56 @@ struct RisoBoardSetupForm: View {
                 controller.customStartDate = wizardCalendarISOString(newValue)
             }
 
-            // End date card (min = start date)
-            DatePicker(
-                "End date",
-                selection: $customEndAsDate,
-                in: customStartAsDate...,
-                displayedComponents: .date
-            )
-            .font(.risoBody(14, .bold))
+            // End date card — a date OR "None" (ongoing). The trailing menu
+            // offers "None" as a first-class option; picking None makes the
+            // board indefinite (no deadline).
+            HStack {
+                Text("End date")
+                    .font(.risoBody(14, .bold))
+                    .foregroundStyle(Color.risoInk)
+                Spacer()
+                if controller.timeframe == .indefinite {
+                    Text("None")
+                        .font(.risoBody(14, .bold))
+                        .foregroundStyle(Color.risoInk)
+                } else {
+                    DatePicker(
+                        "",
+                        selection: $customEndAsDate,
+                        in: customStartAsDate...,
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                    .onChange(of: customEndAsDate) { _, newValue in
+                        controller.customEndDate = wizardCalendarISOString(newValue)
+                    }
+                }
+                Menu {
+                    Button {
+                        controller.updateTimeframe(.custom)
+                        // Switching back from None — make sure a concrete end
+                        // date exists so step-1 validation passes.
+                        if controller.customEndDate.isEmpty {
+                            controller.customEndDate = wizardCalendarISOString(customEndAsDate)
+                        }
+                    } label: {
+                        endMenuLabel("Pick a date", selected: controller.timeframe == .custom)
+                    }
+                    Button {
+                        controller.updateTimeframe(.indefinite)
+                    } label: {
+                        endMenuLabel("None — no end date", selected: controller.timeframe == .indefinite)
+                    }
+                } label: {
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.risoMuted)
+                        .padding(.leading, 6)
+                }
+            }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .risoCard()
-            .onChange(of: customEndAsDate) { _, newValue in
-                controller.customEndDate = wizardCalendarISOString(newValue)
-            }
         }
         .onAppear {
             // Sync state mirrors from the controller's stored ISO strings.
@@ -238,6 +260,16 @@ struct RisoBoardSetupForm: View {
             } else if let d = parseWizardCalendarDate(controller.customEndDate) {
                 customEndAsDate = d
             }
+        }
+    }
+
+    /// Menu row label — shows a checkmark on the active End-date option.
+    @ViewBuilder
+    private func endMenuLabel(_ title: String, selected: Bool) -> some View {
+        if selected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
         }
     }
 

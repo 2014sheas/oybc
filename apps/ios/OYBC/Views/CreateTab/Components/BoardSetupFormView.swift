@@ -73,8 +73,10 @@ struct BoardSetupFormView: View {
             Text("TIMEFRAME")
                 .risoSectionLabel()
 
-            // All five options are available in edit-active mode (no recurring
-            // board mode here — edit only applies to already-created boards).
+            // Daily/Weekly/Monthly/Yearly/Custom. The "Custom" segment hosts
+            // both a dated range and the ongoing (indefinite) board — the user
+            // picks "None" in the End-date control to make it ongoing, so there
+            // is no separate "Ongoing" segment crowding the row.
             RisoSegmented(
                 options: [
                     (.daily,   "Daily"),
@@ -82,43 +84,28 @@ struct BoardSetupFormView: View {
                     (.monthly, "Monthly"),
                     (.yearly,  "Yearly"),
                     (.custom,  "Custom"),
-                    (.indefinite, "Ongoing"),
                 ],
-                selection: timeframeBinding
+                selection: Binding(
+                    get: { timeframeBinding.wrappedValue == .indefinite ? .custom : timeframeBinding.wrappedValue },
+                    set: { newValue in
+                        // Keep ongoing when re-tapping the Custom segment;
+                        // otherwise apply the tapped timeframe (Custom defaults
+                        // to a dated range).
+                        if newValue == .custom && timeframeBinding.wrappedValue == .indefinite { return }
+                        timeframeBinding.wrappedValue = newValue
+                    }
+                )
             )
 
-            // Date region: computed-window note, custom pickers, or the
-            // "no end date" note for an indefinite (ongoing) board.
+            // Date region: custom pickers (dated + ongoing via the End-date
+            // "None" option), or the computed-window note.
             switch timeframeBinding.wrappedValue {
-            case .custom:
+            case .custom, .indefinite:
                 editCustomDateSection
-            case .indefinite:
-                editIndefiniteDateNote
             default:
                 editTimeframeDateNote
             }
         }
-    }
-
-    /// Dashed-keyline note for converting/keeping an ongoing board (no end date).
-    private var editIndefiniteDateNote: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "infinity")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.risoMuted)
-            Text("No end date · this board stays open until you finish or archive it")
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .lineLimit(2)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
-                .foregroundStyle(Color.risoInk)
-        )
     }
 
     /// Dashed-keyline note card showing the resolved window for the current
@@ -169,18 +156,58 @@ struct BoardSetupFormView: View {
             .padding(.vertical, 10)
             .risoCard()
 
-            DatePicker(
-                "End date",
-                selection: customEndDateBinding,
-                in: customStartDateBinding.wrappedValue...,
-                displayedComponents: .date
-            )
-            .font(.risoBody(14, .bold))
-            .foregroundStyle(Color.risoInk)
-            .tint(Color.risoBlue)
+            // End date — a date OR "None" (ongoing), chosen via the trailing
+            // menu. Picking None converts the board to indefinite.
+            HStack {
+                Text("End date")
+                    .font(.risoBody(14, .bold))
+                    .foregroundStyle(Color.risoInk)
+                Spacer()
+                if timeframeBinding.wrappedValue == .indefinite {
+                    Text("None")
+                        .font(.risoBody(14, .bold))
+                        .foregroundStyle(Color.risoInk)
+                } else {
+                    DatePicker(
+                        "",
+                        selection: customEndDateBinding,
+                        in: customStartDateBinding.wrappedValue...,
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                    .tint(Color.risoBlue)
+                }
+                Menu {
+                    Button {
+                        timeframeBinding.wrappedValue = .custom
+                    } label: {
+                        editEndMenuLabel("Pick a date", selected: timeframeBinding.wrappedValue == .custom)
+                    }
+                    Button {
+                        timeframeBinding.wrappedValue = .indefinite
+                    } label: {
+                        editEndMenuLabel("None — no end date", selected: timeframeBinding.wrappedValue == .indefinite)
+                    }
+                } label: {
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.risoMuted)
+                        .padding(.leading, 6)
+                }
+            }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .risoCard()
+        }
+    }
+
+    /// Menu row label — shows a checkmark on the active End-date option.
+    @ViewBuilder
+    private func editEndMenuLabel(_ title: String, selected: Bool) -> some View {
+        if selected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
         }
     }
 
