@@ -6,13 +6,10 @@ Shared types, algorithms, and validation for OYBC (On Your Bingo Card).
 
 This package contains **pure TypeScript code only**:
 
-- **Types**: TypeScript interfaces for all entities (Board, Task, BoardTask, etc.)
-- **Constants**: Enums, configuration values
-- **Validation**: Zod schemas for input validation
-- **Algorithms**: (To be implemented)
-  - Bingo detection
-  - Board randomization (Fisher-Yates)
-  - Calendar boundary calculations
+- **Types**: TypeScript interfaces for all entities (Board, Task, CompoundChild, BoardTask, RecurringBoardTemplate, User, etc.)
+- **Constants**: enums (BoardStatus, TaskType, Timeframe, CenterSquareType, AchievementTrigger, OperatorType) + sync-retry config
+- **Validation**: Zod schemas for every entity + create/update inputs
+- **Algorithms**: bingo detection, board randomization (Fisher-Yates), calendar boundaries, compound evaluation, derivation pass, recurring-board detection/spawn, streaks, shared-counter additive merge, cross-board rollup, task expiry, cycle detection, and legacy→unified migration helpers
 
 ## What's NOT Inside
 
@@ -24,7 +21,7 @@ This package contains **pure TypeScript code only**:
 
 ## Usage
 
-### In Web App (Next.js)
+### In Web App (React + Vite)
 
 ```typescript
 import { Board, CreateBoardInput, CreateBoardInputSchema } from '@oybc/shared';

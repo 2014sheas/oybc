@@ -94,4 +94,4 @@ Per the project's no-sim-driving convention, these need manual on-device checks:
 
 ## Deferred
 
-Web notifications (PWA + service worker + FCM/VAPID + backend scheduler); bingo/greenlog-moment notifications; streaks (no domain model exists); `autoArchiveCompleted` wiring; server push of any kind.
+Web notifications (PWA + service worker + FCM/VAPID + backend scheduler); bingo/greenlog-moment notifications; streak-milestone notifications (the streak domain model itself shipped — PRs #152/#154 — but no notification is wired to it); `autoArchiveCompleted` wiring; server push of any kind.

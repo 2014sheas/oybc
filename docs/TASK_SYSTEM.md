@@ -1,14 +1,15 @@
 # OYBC Task System
 
-> **Canonical reference for the unified 3-type model** shipped by the Compound Tasks Unification (PR #43, PR #42, and the Phase 8 cleanup). The implementations in `apps/web` and `apps/ios` match this shape today. Cross-board square mechanisms (achievement squares + the planned specific-board extension for Phase 6.3) live on `BoardTask`, not on `Task` — see [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design) for the cross-board design.
+> **Canonical reference for the unified task model.** The Compound Tasks Unification (PR #43, PR #42, Phase 8 cleanup) collapsed Progress + Composite into **Compound**; Phase 6.3 (PR #54) then added **Achievement** as a fourth first-class type. The implementations in `apps/web` and `apps/ios` match this shape today. Achievement is a cross-board watcher that lives on `Task` (via `referencedBoardId` XOR `referencedTemplateId`); `BoardTask` is a pure placement record. See [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards--shipped) for the cross-board design.
 
 ## Overview
 
-OYBC supports **three** task types:
+OYBC supports **four** task types:
 
 1. **Normal** — binary completion. *"Call Mom"*, *"Meditate"*.
 2. **Counting** — quantifiable progress toward a target. *"Run 5 miles"*, *"Read 100 pages"*.
 3. **Compound** — composed of other tasks evaluated by an operator. *"Morning routine"* (all of: shower, brush teeth, journal). *"Cardio choice"* (any of: run, bike, swim).
+4. **Achievement** (Phase 6.3) — a cross-board watcher that completes when a referenced board (`referencedBoardId`) **or** every in-window spawn of a recurring template (`referencedTemplateId`, with `requiredCount`) hits its `achievementTrigger` (bingo or greenlog). The reference fields live on `Task`; cycle detection prevents an achievement from watching a board it sits on.
 
 Compound subsumes what used to be modeled as two separate concepts (`Progress` and `Composite`). Conceptually they're the same parent-children-with-completion-rule pattern; the unified `Compound` carries an operator (`AND`/`OR`/`M_OF_N`) and an `isOrdered` display hint that distinguishes the "step list" UX (former Progress) from the "subtask group" UX (former Composite).
 
@@ -116,7 +117,7 @@ Children live in `compound_children`:
 
 A child can be **any Task** — Normal, Counting, or another Compound. Nesting is natural; depth is bounded by user behavior (typically ≤ 2 in practice).
 
-> **Cross-board square mechanisms are not task types.** Achievement squares (today: aggregate-counter form via `isAchievementSquare + achievementType + achievementCount + achievementTimeframe + achievementProgress` on `BoardTask`; Phase 6.3 will add a specific-board reference mode via `referencedBoardId`) live on the placement record, not on `Task`. They can co-exist with any task type at any cell. See [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards-in-design) for the planned extension.
+> **Achievement is a first-class `TaskType` (since Phase 6.3 / PR #54), not a `BoardTask` flag.** The cross-board reference fields (`referencedBoardId` XOR `referencedTemplateId`), `achievementTrigger`, and `requiredCount` live on `Task`; `BoardTask` is placement-only. (The earlier design that put `isAchievementSquare`/`achievementType`/… on `BoardTask` was abandoned during implementation — those legacy columns physically remain in the base schema for migration backfill but are inert.) See [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards--shipped).
 
 ---
 
@@ -351,13 +352,7 @@ CREATE TABLE board_tasks (
 
 ### Library / wizard tabs
 
-Five user-facing filter tabs on the wizard's Tasks step: **All / Normal / Counting / Progress / Composite**.
-
-The internal mapping:
-- **Progress** = `type='compound' && isOrdered=true`
-- **Composite** = `type='compound' && !isOrdered`
-
-`TypeBadge` shows "P" for Progress, "C" for Composite — selected on the same `isOrdered` lookup.
+Filter chips on the wizard's Tasks step: **All / Normal / Counting / Compound**, plus the contextual **From parent boards** and **From a board…** source pickers. Progress and Composite were collapsed into a single **Compound** chip (the `isOrdered` flag still distinguishes the step-list vs subtask-group UX inside a compound, but it's no longer a top-level filter). The Tasks tab additionally surfaces an **Achievement** chip; Achievement is hidden from the wizard's boardable picker.
 
 ### Creating a task
 
