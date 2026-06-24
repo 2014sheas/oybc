@@ -356,6 +356,7 @@ struct BoardPlayView: View {
         case .monthly: return "MONTHLY BOARD"
         case .yearly:  return "YEARLY BOARD"
         case .custom:  return "CUSTOM BOARD"
+        case .indefinite: return "ONGOING BOARD"
         }
     }
 
@@ -824,8 +825,8 @@ struct BoardPlayView: View {
 
     /// Compact expiry string for the stat bar — "4d", "Expired", "Today", etc.
     private func risoExpiryText(board: Board) -> String {
-        guard board.timeframe != .custom else { return "No end" }
-        guard let end = parseISO8601Date(board.endDate) else { return "—" }
+        guard board.timeframe != .custom, !board.isIndefinite else { return "No end" }
+        guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "—" }
         let now = Date()
         guard now <= end else { return "Expired" }
         let secs = end.timeIntervalSince(now)

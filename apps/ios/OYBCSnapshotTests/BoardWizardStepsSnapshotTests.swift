@@ -69,6 +69,23 @@ final class BoardWizardStepsSnapshotTests: XCTestCase {
         )
     }
 
+    /// Setup step with the Ongoing (indefinite) timeframe selected. Verifies
+    /// the "Ongoing" segment renders and the dashed "No end date" note replaces
+    /// the window caption / custom date pickers.
+    func testSetupStepIndefinite() {
+        let controller = SnapshotFixtures.makeWizardController(stage: .setupIndefinite)
+        let view = BoardWizardSetupStepView(
+            controller: controller,
+            onCancel: { },
+            onNext: { }
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 700), traits: lightTraits),
+            record: recordMode
+        )
+    }
+
     // MARK: - Setup step — dark
 
     func testSetupStepBlankDark() {
@@ -87,6 +104,20 @@ final class BoardWizardStepsSnapshotTests: XCTestCase {
 
     func testSetupStepValidDark() {
         let controller = SnapshotFixtures.makeWizardController(stage: .setupValid)
+        let view = BoardWizardSetupStepView(
+            controller: controller,
+            onCancel: { },
+            onNext: { }
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 700), traits: darkTraits),
+            record: recordMode
+        )
+    }
+
+    func testSetupStepIndefiniteDark() {
+        let controller = SnapshotFixtures.makeWizardController(stage: .setupIndefinite)
         let view = BoardWizardSetupStepView(
             controller: controller,
             onCancel: { },

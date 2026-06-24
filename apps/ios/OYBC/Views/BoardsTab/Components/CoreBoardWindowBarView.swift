@@ -118,6 +118,7 @@ struct CoreBoardWindowBarView: View {
         case .monthly: return "monthly"
         case .yearly:  return "yearly"
         case .custom:  return "custom"
+        case .indefinite: return "ongoing"
         }
     }
 }

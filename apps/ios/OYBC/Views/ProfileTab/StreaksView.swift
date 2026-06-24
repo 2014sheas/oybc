@@ -460,6 +460,7 @@ struct StreaksContent: View {
         case .monthly: label = "Monthly"
         case .yearly:  label = "Yearly"
         case .custom:  label = "Custom"
+        case .indefinite: label = "Ongoing"
         }
         return Text(label.uppercased())
             .font(.risoHead(9, .bold))

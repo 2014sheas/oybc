@@ -10,7 +10,8 @@ typealias WizardPlacement = [Task?]
 /// Resolution result for the wizard's start/end dates. Mirrors web's
 /// `ResolvedDates` discriminated union.
 enum ResolvedWizardDates {
-    case ok(start: String, end: String)
+    /// `end` is nil for INDEFINITE boards (no deadline).
+    case ok(start: String, end: String?)
     case error(String)
 }
 
@@ -94,6 +95,13 @@ func buildWizardPlacement(
 /// `customEndDate` and validate the range. Mirrors web's
 /// `resolveWizardDates`.
 func resolveWizardDates(controller: BoardWizardViewModel) -> ResolvedWizardDates {
+    // Indefinite boards have no deadline. Anchor startDate to start-of-day
+    // today (the creation anchor + lower bound for achievement windows) and
+    // leave end nil so the persisted board carries no endDate.
+    if controller.timeframe == .indefinite {
+        let dayStart = Calendar.current.startOfDay(for: Date())
+        return .ok(start: wizardLocalISOString(dayStart), end: nil)
+    }
     if controller.timeframe != .custom {
         guard let b = controller.computedBoundaries else {
             return .error("Could not resolve timeframe boundaries.")
@@ -134,7 +142,7 @@ func persistWizardBoard(
     controller: BoardWizardViewModel,
     userId: String,
     placement: WizardPlacement,
-    dates: (start: String, end: String),
+    dates: (start: String, end: String?),
     status: WizardStatus,
     onSuccess: @escaping (_ boardId: String) -> Void,
     onError: @escaping (_ message: String) -> Void
@@ -178,7 +186,6 @@ func persistWizardBoard(
                 "boardSize": size,
                 "timeframe": capturedTimeframe.rawValue,
                 "startDate": dates.start,
-                "endDate": dates.end,
                 "centerSquareType": centerType.rawValue,
                 "isRandomized": capturedIsRandomized,
                 "totalTasks": size * size,
@@ -195,6 +202,11 @@ func persistWizardBoard(
                 // Create-tab opens.
                 "isCore": existing?.isCore ?? controller.isCore,
             ]
+            // Omit endDate entirely for indefinite boards (nil) so the row and
+            // its Firestore doc carry no deadline at all — no sentinel.
+            if let end = dates.end {
+                boardDict["endDate"] = end
+            }
             if let name = customCenterName, !name.isEmpty {
                 boardDict["centerSquareCustomName"] = name
             }

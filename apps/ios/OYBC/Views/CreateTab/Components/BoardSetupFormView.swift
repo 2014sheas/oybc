@@ -82,17 +82,43 @@ struct BoardSetupFormView: View {
                     (.monthly, "Monthly"),
                     (.yearly,  "Yearly"),
                     (.custom,  "Custom"),
+                    (.indefinite, "Ongoing"),
                 ],
                 selection: timeframeBinding
             )
 
-            // Date note (non-custom) or custom date pickers.
-            if timeframeBinding.wrappedValue != .custom {
-                editTimeframeDateNote
-            } else {
+            // Date region: computed-window note, custom pickers, or the
+            // "no end date" note for an indefinite (ongoing) board.
+            switch timeframeBinding.wrappedValue {
+            case .custom:
                 editCustomDateSection
+            case .indefinite:
+                editIndefiniteDateNote
+            default:
+                editTimeframeDateNote
             }
         }
+    }
+
+    /// Dashed-keyline note for converting/keeping an ongoing board (no end date).
+    private var editIndefiniteDateNote: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "infinity")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.risoMuted)
+            Text("No end date · this board stays open until you finish or archive it")
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
+                .foregroundStyle(Color.risoInk)
+        )
     }
 
     /// Dashed-keyline note card showing the resolved window for the current

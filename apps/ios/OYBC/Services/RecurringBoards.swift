@@ -74,7 +74,7 @@ private func isRecurringTimeframeEnabled(
     case .weekly:  return prefs.recurringWeeklyEnabled
     case .monthly: return prefs.recurringMonthlyEnabled
     case .yearly:  return prefs.recurringYearlyEnabled
-    case .custom:  return false
+    case .custom, .indefinite:  return false
     }
 }
 
@@ -256,6 +256,9 @@ func getParentBoards(
         guard parentSet.contains(board.timeframe) else { return false }
         guard !board.isDeleted else { return false }
         guard board.status == .active else { return false }
-        return board.startDate <= nowISO && nowISO <= board.endDate
+        // Parent timeframes are always bounded (indefinite is never in
+        // parentSet), but unwrap defensively so the type-checker is happy.
+        guard let endISO = board.endDate else { return false }
+        return board.startDate <= nowISO && nowISO <= endISO
     }
 }

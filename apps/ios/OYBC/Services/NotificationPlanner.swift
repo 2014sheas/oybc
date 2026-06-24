@@ -133,7 +133,9 @@ enum NotificationPlanner {
             guard !board.isDeleted, board.status == .active else { continue }
             // Skip daily — "the day before" ≈ creation time, which is noise.
             guard board.timeframe != .daily else { continue }
-            guard let end = parseISO8601Date(board.endDate) else { continue }
+            // Indefinite boards have no deadline → no expiry reminder.
+            guard !board.isIndefinite, let endStr = board.endDate,
+                  let end = parseISO8601Date(endStr) else { continue }
             guard let fireDate = expiryEveFireDate(endDate: end, calendar: cal) else { continue }
             guard fireDate > now, fireDate <= horizonEnd else { continue }
             candidates.append((fireDate, board))
@@ -276,7 +278,7 @@ enum NotificationPlanner {
         case .weekly:  return prefs.recurringWeeklyEnabled
         case .monthly: return prefs.recurringMonthlyEnabled
         case .yearly:  return prefs.recurringYearlyEnabled
-        case .custom:  return false
+        case .custom, .indefinite:  return false
         }
     }
 }

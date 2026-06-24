@@ -379,6 +379,7 @@ struct EditTaskSheet: View {
         case .monthly: return "Monthly"
         case .yearly:  return "Yearly"
         case .custom:  return "Custom"
+        case .indefinite: return "Ongoing"
         }
     }
 

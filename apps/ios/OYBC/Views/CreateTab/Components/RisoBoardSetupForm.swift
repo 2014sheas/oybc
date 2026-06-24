@@ -115,11 +115,15 @@ struct RisoBoardSetupForm: View {
                 )
             )
 
-            // Date note (non-custom) or custom date pickers.
-            if controller.timeframe != .custom {
-                timeframeDateNote
-            } else {
+            // Date region: computed-window note, custom pickers, or the
+            // "no end date" note for indefinite (ongoing) boards.
+            switch controller.timeframe {
+            case .custom:
                 customDateSection
+            case .indefinite:
+                indefiniteDateNote
+            default:
+                timeframeDateNote
             }
         }
     }
@@ -131,10 +135,34 @@ struct RisoBoardSetupForm: View {
             (.monthly, "Monthly"),
             (.yearly,  "Yearly"),
         ]
+        // Custom and Ongoing (indefinite) are excluded from recurring boards —
+        // recurrence needs a computed window cadence.
         if !controller.isRecurring {
             opts.append((.custom, "Custom"))
+            opts.append((.indefinite, "Ongoing"))
         }
         return opts
+    }
+
+    /// Dashed-keyline note for an indefinite (ongoing) board: no deadline.
+    private var indefiniteDateNote: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "infinity")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.risoMuted)
+            Text("No end date · this board stays open until you finish or archive it")
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
+                .foregroundStyle(Color.risoInk)
+        )
     }
 
     /// Dashed-keyline note card: "This week · Jun 8 – 14" (mirrors `.r-note`).

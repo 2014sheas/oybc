@@ -227,6 +227,7 @@ enum SnapshotFixtures {
         case setupBlank
         case setupValid
         case setupRecurring
+        case setupIndefinite
         case previewReady
         case previewRecurring
     }
@@ -272,6 +273,12 @@ enum SnapshotFixtures {
             controller.name = "Weekly Workout"
             controller.timeframe = .weekly
             controller.isRecurring = true
+        case .setupIndefinite:
+            // Ongoing board — no end date. Verifies the "Ongoing" timeframe
+            // segment + the dashed "No end date" note (no date pickers, no
+            // window caption). Fully deterministic (no calendar dependency).
+            controller.name = "Someday / Maybe"
+            controller.timeframe = .indefinite
         case .previewReady:
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly

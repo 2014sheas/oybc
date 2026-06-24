@@ -172,7 +172,8 @@ final class BoardWizardViewModel {
             self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
             if d.board.timeframe == .custom {
                 self.customStartDate = String(d.board.startDate.prefix(10))
-                self.customEndDate = String(d.board.endDate.prefix(10))
+                // A custom board always has an endDate; default defensively.
+                self.customEndDate = String((d.board.endDate ?? "").prefix(10))
             }
         } else if let t = effectiveTemplate {
             self.name = t.name
@@ -281,10 +282,10 @@ final class BoardWizardViewModel {
         }
     }
 
-    /// Recurring templates exclude `.custom` (no computed window).
-    /// Mirrors the web `setTimeframe` defensive guard.
+    /// Recurring templates exclude `.custom` and `.indefinite` (no computed
+    /// window / no cadence). Mirrors the web `setTimeframe` defensive guard.
     func updateTimeframe(_ t: Timeframe) {
-        if isRecurring && t == .custom { return }
+        if isRecurring && (t == .custom || t == .indefinite) { return }
         timeframe = t
     }
 
