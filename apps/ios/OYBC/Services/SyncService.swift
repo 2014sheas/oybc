@@ -865,6 +865,17 @@ final class SyncService: ObservableObject {
         }
         cleaned["_syncedAt"] = FieldValue.serverTimestamp()
 
+        // Indefinite boards carry no `endDate`. Because we write with
+        // `merge: true`, simply omitting the field would PRESERVE a stale
+        // deadline on Firestore from before a convert-to-indefinite edit —
+        // which a second device would then pull, silently un-converting the
+        // board. Explicitly delete the field so the remote doc matches the
+        // local source of truth. (Harmless no-op on a fresh doc / a board
+        // that never had an endDate.)
+        if docRef.parent.collectionID == "boards", cleaned["endDate"] == nil {
+            cleaned["endDate"] = FieldValue.delete()
+        }
+
         try await docRef.setData(cleaned, merge: true)
     }
 
