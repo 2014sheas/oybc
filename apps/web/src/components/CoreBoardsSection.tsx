@@ -7,6 +7,7 @@ const TIMEFRAME_DISPLAY: Record<Timeframe, { icon: string; label: string }> = {
   [Timeframe.WEEKLY]: { icon: '🗓', label: 'Weekly' },
   [Timeframe.DAILY]: { icon: '📅', label: 'Daily' },
   [Timeframe.CUSTOM]: { icon: '📌', label: 'Custom' }, // unreachable — section only renders recurring TFs
+  [Timeframe.INDEFINITE]: { icon: '♾️', label: 'Ongoing' }, // unreachable — section only renders recurring TFs
 };
 
 export interface CoreBoardsSectionProps {

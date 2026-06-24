@@ -461,7 +461,10 @@ export function useBoardWizard({
   // refactor can't reintroduce an invalid combination.
   const setTimeframe = useCallback(
     (t: Timeframe) => {
-      if (isRecurring && t === Timeframe.CUSTOM) return;
+      // Recurring boards exclude CUSTOM and INDEFINITE (no computed window /
+      // cadence).
+      if (isRecurring && (t === Timeframe.CUSTOM || t === Timeframe.INDEFINITE))
+        return;
       setTimeframeRaw(t);
     },
     [isRecurring],

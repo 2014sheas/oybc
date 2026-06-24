@@ -123,9 +123,10 @@ export function buildWizardPlacement(
   return grid;
 }
 
-/** Resolved `startDate` / `endDate` ISO strings, or an error to surface. */
+/** Resolved `startDate` / `endDate` ISO strings, or an error to surface.
+ *  `endDate` is undefined for INDEFINITE (ongoing) boards. */
 export type ResolvedDates =
-  | { startDate: string; endDate: string }
+  | { startDate: string; endDate?: string }
   | { error: string };
 
 /**
@@ -143,6 +144,14 @@ export function resolveWizardDates(
   controller: BoardWizardController,
   now: Date = new Date(),
 ): ResolvedDates {
+  // Indefinite (ongoing) boards have no deadline. Anchor startDate to
+  // start-of-day today (creation anchor + achievement-window lower bound) and
+  // leave endDate undefined so the persisted board carries no deadline.
+  if (controller.timeframe === Timeframe.INDEFINITE) {
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    return { startDate: toLocalISO(dayStart), endDate: undefined };
+  }
   if (controller.timeframe !== Timeframe.CUSTOM) {
     const b = getTimeframeBoundaries(
       controller.timeframe,
@@ -176,8 +185,10 @@ export interface PersistWizardBoardArgs {
    *  rendering and persistence so they never drift. */
   placement: WizardPlacement;
   /** Pre-resolved start/end ISO strings. Callers should surface any
-   *  `resolveWizardDates` error BEFORE calling this. */
-  dates: { startDate: string; endDate: string };
+   *  `resolveWizardDates` error BEFORE calling this. `endDate` is
+   *  undefined for INDEFINITE (ongoing) boards — createBoard/updateBoard
+   *  then store/clear it as nullish. */
+  dates: { startDate: string; endDate?: string };
   status: WizardStatus;
   /**
    * Bug #85 — In-memory pending tasks to write atomically BEFORE the

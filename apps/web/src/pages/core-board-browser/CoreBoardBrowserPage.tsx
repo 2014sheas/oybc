@@ -14,6 +14,7 @@ const TIMEFRAME_TITLE: Record<Timeframe, string> = {
   [Timeframe.MONTHLY]: 'Monthly',
   [Timeframe.YEARLY]: 'Yearly',
   [Timeframe.CUSTOM]: 'Custom', // route-validated out; never reached
+  [Timeframe.INDEFINITE]: 'Ongoing', // route-validated out; never reached
 };
 
 const VALID_BROWSER_TIMEFRAMES: ReadonlySet<string> = new Set([

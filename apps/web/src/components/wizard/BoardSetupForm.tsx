@@ -20,13 +20,15 @@ const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
   { value: Timeframe.MONTHLY, label: "Monthly" },
   { value: Timeframe.YEARLY, label: "Yearly" },
   { value: Timeframe.CUSTOM, label: "Custom" },
+  { value: Timeframe.INDEFINITE, label: "Ongoing" },
 ];
 
 /** Subset of `TIMEFRAME_OPTIONS` shown when `isRecurring=true`. The
- *  recurring template schema rejects `Timeframe.CUSTOM` (no computed
- *  window), so the form hides it. */
+ *  recurring template schema rejects `Timeframe.CUSTOM` and
+ *  `Timeframe.INDEFINITE` (no computed window / cadence), so the form
+ *  hides both. */
 const RECURRING_TIMEFRAME_OPTIONS = TIMEFRAME_OPTIONS.filter(
-  (o) => o.value !== Timeframe.CUSTOM,
+  (o) => o.value !== Timeframe.CUSTOM && o.value !== Timeframe.INDEFINITE,
 );
 
 const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
@@ -152,8 +154,10 @@ export function BoardSetupForm({
     ? RECURRING_CENTER_TYPE_OPTIONS
     : CENTER_TYPE_OPTIONS;
 
+  // Custom (user-picked dates) and Indefinite (no end date) have no computed
+  // window — getTimeframeBoundaries throws for both.
   const computedBoundaries =
-    timeframe !== Timeframe.CUSTOM
+    timeframe !== Timeframe.CUSTOM && timeframe !== Timeframe.INDEFINITE
       ? getTimeframeBoundaries(timeframe, new Date(), weekStartDay)
       : null;
 
@@ -354,6 +358,16 @@ export function BoardSetupForm({
               onChange={(e) => onCustomEndDateChange(e.target.value)}
             />
           </div>
+        </div>
+      )}
+
+      {/* Indefinite (ongoing) board — no deadline, no date pickers. */}
+      {timeframe === Timeframe.INDEFINITE && (
+        <div className={styles.dateDisplay}>
+          <span className={styles.dateDisplayLabel}>Ongoing</span>
+          <span className={styles.dateDisplayRange}>
+            No end date · this board stays open until you finish or archive it
+          </span>
         </div>
       )}
 
