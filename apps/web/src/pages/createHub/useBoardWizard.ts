@@ -318,16 +318,23 @@ export function useBoardWizard({
       preferences.defaultBoardSize,
   );
   const [timeframe, setTimeframeRaw] = useState<Timeframe>(() => {
-    const seed =
+    const explicitSource =
       draftBoard?.timeframe ??
       effectiveTemplate?.timeframe ??
       effectivePrefill ??
-      preferences.defaultTimeframe;
+      null;
+    const seed = explicitSource ?? preferences.defaultTimeframe;
     // Recurring templates can't use CUSTOM (no computed window). If the
     // user's default timeframe is CUSTOM and they entered via the
     // recurring CTA, fall back to DAILY (mirrors the `setIsRecurring`
     // coercion that the removed toggle used to apply).
     if (initialIsRecurring && seed === Timeframe.CUSTOM) return Timeframe.DAILY;
+    // A fresh board whose timeframe comes only from the CUSTOM default opens
+    // as ongoing (End date = None); a dated range is opt-in via the End-date
+    // control. An explicitly-CUSTOM draft/template/prefill keeps its dates.
+    if (!initialIsRecurring && seed === Timeframe.CUSTOM && explicitSource === null) {
+      return Timeframe.INDEFINITE;
+    }
     return seed;
   });
   const [customStartDate, setCustomStartDate] = useState(() =>

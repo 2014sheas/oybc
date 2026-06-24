@@ -88,11 +88,17 @@ struct BoardSetupFormView: View {
                 selection: Binding(
                     get: { timeframeBinding.wrappedValue == .indefinite ? .custom : timeframeBinding.wrappedValue },
                     set: { newValue in
-                        // Keep ongoing when re-tapping the Custom segment;
-                        // otherwise apply the tapped timeframe (Custom defaults
-                        // to a dated range).
-                        if newValue == .custom && timeframeBinding.wrappedValue == .indefinite { return }
-                        timeframeBinding.wrappedValue = newValue
+                        // "Custom" defaults to ongoing (End date = None); a date
+                        // is opt-in. Re-tapping Custom keeps the current
+                        // End-date choice; arriving from a calendar timeframe
+                        // lands on None.
+                        if newValue == .custom {
+                            if timeframeBinding.wrappedValue != .custom && timeframeBinding.wrappedValue != .indefinite {
+                                timeframeBinding.wrappedValue = .indefinite
+                            }
+                        } else {
+                            timeframeBinding.wrappedValue = newValue
+                        }
                     }
                 )
             )

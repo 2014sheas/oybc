@@ -213,10 +213,16 @@ final class BoardWizardViewModel {
                 }
             } else {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
-                // Recurring templates can't use CUSTOM (no computed
-                // window). If the user's default is CUSTOM and they
-                // entered via the recurring CTA, fall back to daily.
-                self.timeframe = (isRecurringAtEntry && resolved == .custom) ? .daily : resolved
+                // The "Custom" segment defaults to an ongoing board (End date =
+                // None); a dated range is opt-in via the End-date control. So a
+                // CUSTOM default resolves to .indefinite for a fresh board.
+                // Recurring templates can't use CUSTOM/INDEFINITE (no computed
+                // window) → fall back to daily in the recurring CTA.
+                if resolved == .custom {
+                    self.timeframe = isRecurringAtEntry ? .daily : .indefinite
+                } else {
+                    self.timeframe = resolved
+                }
             }
             self.centerType = Self.coerceCenterType(
                 size: initialSize,

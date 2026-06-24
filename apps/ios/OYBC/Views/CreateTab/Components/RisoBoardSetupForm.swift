@@ -116,11 +116,17 @@ struct RisoBoardSetupForm: View {
                 selection: Binding(
                     get: { controller.timeframe == .indefinite ? .custom : controller.timeframe },
                     set: { newValue in
-                        // Tapping "Custom" defaults to a dated range; if we're
-                        // already showing Custom as ongoing, keep ongoing rather
-                        // than silently downgrading to a dated board.
-                        if newValue == .custom && controller.timeframe == .indefinite { return }
-                        controller.updateTimeframe(newValue)
+                        // "Custom" defaults to an ongoing board (End date =
+                        // None); a date is opt-in. Only set it when arriving
+                        // from a calendar timeframe — re-tapping Custom keeps the
+                        // user's current End-date choice (date or None) intact.
+                        if newValue == .custom {
+                            if controller.timeframe != .custom && controller.timeframe != .indefinite {
+                                controller.updateTimeframe(.indefinite)
+                            }
+                        } else {
+                            controller.updateTimeframe(newValue)
+                        }
                     }
                 )
             )

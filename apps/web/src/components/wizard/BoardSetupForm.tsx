@@ -312,13 +312,18 @@ export function BoardSetupForm({
                   active ? styles.segmentedButtonActive : ""
                 }`}
                 onClick={() => {
-                  // Re-tapping Custom while ongoing keeps it ongoing; otherwise
-                  // Custom defaults to a dated range.
-                  if (
-                    opt.value === Timeframe.CUSTOM &&
-                    timeframe === Timeframe.INDEFINITE
-                  )
+                  // "Custom" defaults to an ongoing board (End date = None); a
+                  // date is opt-in. Arriving from a calendar timeframe lands on
+                  // None; re-tapping Custom keeps the current End-date choice.
+                  if (opt.value === Timeframe.CUSTOM) {
+                    if (
+                      timeframe !== Timeframe.CUSTOM &&
+                      timeframe !== Timeframe.INDEFINITE
+                    ) {
+                      onTimeframeChange(Timeframe.INDEFINITE);
+                    }
                     return;
+                  }
                   onTimeframeChange(opt.value);
                 }}
                 aria-pressed={active}
