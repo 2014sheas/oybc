@@ -29,13 +29,15 @@ export const CreateBoardInputSchema = z.object({
   boardSize: BoardSizeSchema,
   timeframe: z.nativeEnum(Timeframe),
   startDate: FlexibleDateTime,
-  endDate: FlexibleDateTime,
+  // Absent for INDEFINITE boards (no end date). When present it must be
+  // after startDate (see refine below).
+  endDate: FlexibleDateTime.optional(),
   centerSquareType: z.nativeEnum(CenterSquareType),
   centerSquareCustomName: z.string().max(100).optional(),
   centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
 }).refine(
-  (data) => new Date(data.endDate) > new Date(data.startDate),
+  (data) => data.endDate == null || new Date(data.endDate) > new Date(data.startDate),
   { message: 'End date must be after start date' }
 ).refine(
   (data) => {
@@ -70,7 +72,7 @@ export const BoardSchema = z.object({
   boardSize: BoardSizeSchema,
   timeframe: z.nativeEnum(Timeframe),
   startDate: FlexibleDateTime,
-  endDate: FlexibleDateTime,
+  endDate: FlexibleDateTime.optional(),   // Absent for INDEFINITE boards
   centerSquareType: z.nativeEnum(CenterSquareType),
   centerSquareCustomName: z.string().max(100).optional(),
   centerTaskId: z.string().uuid().optional(),

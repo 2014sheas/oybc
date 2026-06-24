@@ -88,6 +88,12 @@ describe('RecurringBoardTemplateSchema', () => {
     ).toThrow();
   });
 
+  it('rejects Timeframe.INDEFINITE (no window cadence to recur on)', () => {
+    expect(() =>
+      RecurringBoardTemplateSchema.parse(validTemplate({ timeframe: Timeframe.INDEFINITE })),
+    ).toThrow();
+  });
+
   it('rejects CenterSquareType.CHOSEN (MVP excludes it)', () => {
     expect(() =>
       RecurringBoardTemplateSchema.parse(

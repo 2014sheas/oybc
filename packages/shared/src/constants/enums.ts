@@ -41,7 +41,8 @@ export enum Timeframe {
   WEEKLY = 'weekly',
   MONTHLY = 'monthly',
   YEARLY = 'yearly',
-  CUSTOM = 'custom'          // Custom date range
+  CUSTOM = 'custom',         // Custom date range
+  INDEFINITE = 'indefinite'  // No end date — ongoing board that never expires
 }
 
 /**

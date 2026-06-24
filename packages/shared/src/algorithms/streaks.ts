@@ -81,7 +81,8 @@ export function computeStreak(
   weekStartDay: WeekStartDay,
   now: Date,
 ): number {
-  if (timeframe === Timeframe.CUSTOM) return 0;
+  // CUSTOM and INDEFINITE have no window cadence to walk → no streak.
+  if (timeframe === Timeframe.CUSTOM || timeframe === Timeframe.INDEFINITE) return 0;
 
   // startDate → the core board for that window. Core boards write `startDate`
   // via `toLocalISO(window.start)`, the exact string `getTimeframeBoundaries`

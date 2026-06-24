@@ -41,6 +41,7 @@ export const PARENT_TIMEFRAMES: Record<Timeframe, Timeframe[]> = {
   [Timeframe.MONTHLY]: [Timeframe.YEARLY],
   [Timeframe.YEARLY]: [],
   [Timeframe.CUSTOM]: [],
+  [Timeframe.INDEFINITE]: [],
 };
 
 /**
@@ -103,6 +104,7 @@ function isRecurringTimeframeEnabled(
     case Timeframe.YEARLY:
       return prefs.recurringYearlyEnabled;
     case Timeframe.CUSTOM:
+    case Timeframe.INDEFINITE:
       return false;
   }
 }

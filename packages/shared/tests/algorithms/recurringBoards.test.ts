@@ -99,6 +99,10 @@ describe('PARENT_TIMEFRAMES', () => {
   it('encodes custom → [] (excluded from Phase 1)', () => {
     expect(PARENT_TIMEFRAMES[Timeframe.CUSTOM]).toEqual([]);
   });
+
+  it('encodes indefinite → [] (no recurrence hierarchy)', () => {
+    expect(PARENT_TIMEFRAMES[Timeframe.INDEFINITE]).toEqual([]);
+  });
 });
 
 // ─── findPendingRecurringBoards ───────────────────────────────────────────────
@@ -375,6 +379,22 @@ describe('getParentBoards', () => {
 
   it('returns empty for custom (excluded from Phase 1)', () => {
     expect(getParentBoards(Timeframe.CUSTOM, [], may1)).toEqual([]);
+  });
+
+  it('returns empty for an indefinite child (no recurrence parents)', () => {
+    const monthly = boardForWindow(Timeframe.MONTHLY, may1);
+    expect(getParentBoards(Timeframe.INDEFINITE, [monthly], may1)).toEqual([]);
+  });
+
+  it('never surfaces an indefinite board as a recurrence parent', () => {
+    // An indefinite board (timeframe INDEFINITE, no endDate) is not part of
+    // any parent-timeframe set, so it must not appear for a daily child.
+    const indefinite = boardForWindow(Timeframe.MONTHLY, may1, {
+      id: 'indef',
+      timeframe: Timeframe.INDEFINITE,
+      endDate: undefined,
+    });
+    expect(getParentBoards(Timeframe.DAILY, [indefinite], may1)).toEqual([]);
   });
 
   it('returns currently-active weekly + monthly + yearly for daily', () => {

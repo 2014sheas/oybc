@@ -79,6 +79,13 @@ describe('computeStreak', () => {
     expect(streak(Timeframe.CUSTOM, AchievementTrigger.GREENLOG, boards)).toBe(0);
   });
 
+  it('returns 0 for INDEFINITE (no recurrence cadence)', () => {
+    const w = getTimeframeBoundaries(Timeframe.DAILY, NOW, 'monday');
+    const boards = [coreBoard(Timeframe.DAILY, w, greenlog)];
+    expect(streak(Timeframe.INDEFINITE, AchievementTrigger.GREENLOG, boards)).toBe(0);
+    expect(streak(Timeframe.INDEFINITE, AchievementTrigger.BINGO, boards)).toBe(0);
+  });
+
   it('counts consecutive achieved windows up to the first miss', () => {
     const w = windowsBack(Timeframe.DAILY, NOW, 5);
     // w0,w1,w2 greenlogged; w3 has no board → breaks.

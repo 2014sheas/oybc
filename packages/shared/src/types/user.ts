@@ -144,6 +144,7 @@ export function mergeUserPreferences(
     Timeframe.MONTHLY,
     Timeframe.YEARLY,
     Timeframe.CUSTOM,
+    Timeframe.INDEFINITE,
   ];
   const defaultTimeframe: Timeframe =
     partial.defaultTimeframe !== undefined &&

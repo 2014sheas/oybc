@@ -22,9 +22,11 @@ export interface Board {
   // Configuration
   status: BoardStatus;           // draft, active, completed, archived
   boardSize: BoardSize;          // 3, 4, or 5
-  timeframe: Timeframe;          // daily, weekly, monthly, yearly, custom
-  startDate: string;             // ISO8601 (start of timeframe)
-  endDate: string;               // ISO8601 (end of timeframe)
+  timeframe: Timeframe;          // daily, weekly, monthly, yearly, custom, indefinite
+  startDate: string;             // ISO8601 (start of timeframe; creation anchor for indefinite boards)
+  endDate?: string;              // ISO8601 (end of timeframe). Absent for INDEFINITE boards — they
+                                 // never expire. Treat a missing endDate as an unbounded window
+                                 // [startDate, ∞). See isBoardIndefinite().
   centerSquareType: CenterSquareType; // free, custom_free, chosen, none
   centerSquareCustomName?: string;   // Custom display name for CUSTOM_FREE type
   centerTaskId?: string;             // Task ID for CHOSEN type (future use)
@@ -75,7 +77,7 @@ export interface CreateBoardInput {
   boardSize: BoardSize;
   timeframe: Timeframe;
   startDate: string;
-  endDate: string;
+  endDate?: string;              // Absent for INDEFINITE boards
   centerSquareType: CenterSquareType;
   centerSquareCustomName?: string;   // Required when centerSquareType is CUSTOM_FREE
   centerTaskId?: string;             // Required when centerSquareType is CHOSEN
@@ -89,4 +91,23 @@ export interface UpdateBoardInput {
   name?: string;
   description?: string;
   status?: BoardStatus;
+}
+
+/**
+ * Whether a board is "indefinite" — an ongoing board with no end date that
+ * never expires, is excluded from recurrence/streaks/the core-board pager,
+ * but still plays normally and can host achievement tasks (its window is
+ * treated as `[startDate, ∞)`).
+ *
+ * The OR is deliberate: a board is indefinite if it carries the INDEFINITE
+ * timeframe OR simply has no `endDate`. This keeps every consumer robust to a
+ * sync row whose `endDate` is absent even if its `timeframe` is stale, and
+ * mirrors the task-level precedent (`isTaskExpired` treats `!endDate` as
+ * never-expiring). Use this everywhere instead of ad-hoc
+ * `timeframe === Timeframe.INDEFINITE` / `endDate == null` checks.
+ */
+export function isBoardIndefinite(
+  board: Pick<Board, 'timeframe' | 'endDate'>,
+): boolean {
+  return board.timeframe === Timeframe.INDEFINITE || board.endDate == null;
 }
