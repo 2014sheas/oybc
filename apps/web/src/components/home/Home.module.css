@@ -138,16 +138,6 @@
   gap: 12px;
   flex-wrap: wrap;
 }
-.resumeHint {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--riso-blue);
-  margin-top: 16px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
 /* shared progress bar */
 .progress {
   position: relative;

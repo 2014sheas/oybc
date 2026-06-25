@@ -28,7 +28,9 @@ export interface ResumePanelProps {
 export function ResumePanel({ board, onOpen }: ResumePanelProps): React.ReactElement {
   const pct = board.totalTasks > 0 ? Math.round((board.completedTasks / board.totalTasks) * 100) : 0;
   const bingos = board.linesCompleted;
-  const expiry = getExpiryLabel(board);
+  // INDEFINITE boards never expire — "Ongoing" already says it, so skip the
+  // "No deadline" expiry label getExpiryLabel would otherwise return.
+  const expiry = board.timeframe === Timeframe.INDEFINITE ? '' : getExpiryLabel(board);
   const tag = [formatTimeframeLabel(board.timeframe, board.startDate), expiry].filter(Boolean).join(' · ');
 
   return (
