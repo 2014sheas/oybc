@@ -95,12 +95,19 @@ func buildWizardPlacement(
 /// `customEndDate` and validate the range. Mirrors web's
 /// `resolveWizardDates`.
 func resolveWizardDates(controller: BoardWizardViewModel) -> ResolvedWizardDates {
-    // Indefinite boards have no deadline. Anchor startDate to start-of-day
-    // today (the creation anchor + lower bound for achievement windows) and
-    // leave end nil so the persisted board carries no endDate.
+    // Indefinite boards have no deadline. Honor the chosen Start date (the
+    // Custom section's Start picker is shown for ongoing boards too) — it's
+    // the creation anchor + lower bound for achievement windows; fall back to
+    // today when unset. End stays nil so the board carries no endDate.
     if controller.timeframe == .indefinite {
-        let dayStart = Calendar.current.startOfDay(for: Date())
-        return .ok(start: wizardLocalISOString(dayStart), end: nil)
+        let startDate: Date
+        if !controller.customStartDate.isEmpty,
+           let s = parseWizardCalendarDate(controller.customStartDate) {
+            startDate = Calendar.current.startOfDay(for: s)
+        } else {
+            startDate = Calendar.current.startOfDay(for: Date())
+        }
+        return .ok(start: wizardLocalISOString(startDate), end: nil)
     }
     if controller.timeframe != .custom {
         guard let b = controller.computedBoundaries else {

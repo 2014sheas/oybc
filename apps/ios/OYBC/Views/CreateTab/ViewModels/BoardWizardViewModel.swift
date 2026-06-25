@@ -342,7 +342,10 @@ final class BoardWizardViewModel {
         name = ""
         let nextSize = initialPreferences.defaultBoardSize.rawValue
         size = nextSize
-        timeframe = Self.resolveTimeframe(initialPreferences.defaultTimeframe)
+        // Mirror init's CUSTOM→INDEFINITE default so a reset wizard opens
+        // ongoing (End date = None), not on .custom with empty dates.
+        let resolvedReset = Self.resolveTimeframe(initialPreferences.defaultTimeframe)
+        timeframe = resolvedReset == .custom ? .indefinite : resolvedReset
         customStartDate = ""
         customEndDate = ""
         // Same coercion the initial factory uses, so reset can never

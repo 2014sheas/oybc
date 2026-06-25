@@ -551,7 +551,13 @@ export function useBoardWizard({
     const nextSize = preferences.defaultBoardSize;
     setSizeRaw(nextSize);
     setCenterTypeRaw(coerceCenterType(nextSize, preferences.defaultCenterType));
-    setTimeframeRaw(preferences.defaultTimeframe);
+    // Mirror the init seed's CUSTOM→INDEFINITE default so a reset wizard
+    // opens ongoing (End date = None), not on CUSTOM with empty dates.
+    setTimeframeRaw(
+      preferences.defaultTimeframe === Timeframe.CUSTOM
+        ? Timeframe.INDEFINITE
+        : preferences.defaultTimeframe,
+    );
     setCustomStartDate('');
     setCustomEndDate('');
     setCenterCustomName(preferences.defaultCenterCustomName);

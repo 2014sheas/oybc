@@ -144,13 +144,20 @@ export function resolveWizardDates(
   controller: BoardWizardController,
   now: Date = new Date(),
 ): ResolvedDates {
-  // Indefinite (ongoing) boards have no deadline. Anchor startDate to
-  // start-of-day today (creation anchor + achievement-window lower bound) and
-  // leave endDate undefined so the persisted board carries no deadline.
+  // Indefinite (ongoing) boards have no deadline. Honor the chosen Start date
+  // (the Custom section's Start picker is shown for ongoing boards too) — it's
+  // the creation anchor + achievement-window lower bound; fall back to today
+  // when unset. endDate stays undefined so the board carries no deadline.
   if (controller.timeframe === Timeframe.INDEFINITE) {
-    const dayStart = new Date(now);
-    dayStart.setHours(0, 0, 0, 0);
-    return { startDate: toLocalISO(dayStart), endDate: undefined };
+    let start: Date;
+    if (controller.customStartDate) {
+      const [sy, sm, sd] = controller.customStartDate.split('-').map(Number);
+      start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+    } else {
+      start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+    }
+    return { startDate: toLocalISO(start), endDate: undefined };
   }
   if (controller.timeframe !== Timeframe.CUSTOM) {
     const b = getTimeframeBoundaries(

@@ -261,7 +261,9 @@ struct RisoBoardSetupForm: View {
             } else if let d = parseWizardCalendarDate(controller.customStartDate) {
                 customStartAsDate = d
             }
-            if controller.customEndDate.isEmpty {
+            // Don't seed an end date for an ongoing board — it should stay
+            // empty until the user picks "Pick a date" (which seeds it then).
+            if controller.timeframe != .indefinite && controller.customEndDate.isEmpty {
                 controller.customEndDate = wizardCalendarISOString(customEndAsDate)
             } else if let d = parseWizardCalendarDate(controller.customEndDate) {
                 customEndAsDate = d
