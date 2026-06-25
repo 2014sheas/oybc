@@ -1,0 +1,89 @@
+/* Riso button — Bricolage label, 2px ink keyline, hard offset shadow.
+   Hover lifts -1px and grows the offset; press translates by the offset
+   and collapses the shadow to 0 ("press into paper"). */
+.btn {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 12px 18px;
+  cursor: pointer;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.btn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.btn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+}
+
+/* Kinds — colored fills carry static cream content (no dark-mode flip). */
+.primary {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+.blue {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.green {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+.gold {
+  background: var(--riso-gold);
+  color: var(--riso-ink);
+}
+.neutral {
+  /* base (.btn) values — paper-2 / ink */
+}
+.ghost {
+  background: transparent;
+  box-shadow: none;
+}
+.ghost:hover:not(:disabled) {
+  background: var(--riso-paper-2);
+  transform: none;
+  box-shadow: none;
+}
+.ghost:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Sizes */
+.large {
+  font-size: 17px;
+  padding: 15px 24px;
+}
+.small {
+  font-size: 13px;
+  padding: 8px 13px;
+}
+
+.fullWidth {
+  width: 100%;
+}

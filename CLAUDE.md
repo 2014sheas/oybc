@@ -203,12 +203,17 @@ apps/web/src/                                        apps/ios/OYBC/
 │       ├── TaskSquareActionsPlayground.tsx         (no iOS counterpart)
 │       ├── CrossBoardRollupPlayground.tsx          (no iOS counterpart)
 │       └── SubtaskDerivationPlayground.tsx         (no iOS counterpart)
-│       (Playground parity is an intentional, temporary divergence: the Riso redesign is
-│        iOS-only so far. composite-task creation: web components/compositeWizard/; iOS is
+│       (Playground parity is an intentional, temporary divergence. The Riso redesign
+│        shipped iOS-first; the WEB Riso pass is now in progress — Phase 0 foundation
+│        (token layer + primitive kit) shipped, screens re-skinned phase-by-phase. See
+│        docs/RISO_WEB.md. composite-task creation: web components/compositeWizard/; iOS is
 │        now INLINE in RisoCompoundFieldsView within the special-type panel —
 │        Views/Components/CompositeWizard/ was removed in the Riso redesign.)
 │
 └── components/                                     Views/Components/
+    ├── riso/ (RisoButton/Card/    ←→               Views/Riso/RisoControls.swift
+    │   Chip/Segmented/SectionLabel;                (web Riso primitive kit; tokens in
+    │   barrel index.ts)                             src/styles/riso.css — see docs/RISO_WEB.md)
     ├── Navbar.tsx                 (dev-only)       (no iOS counterpart — iOS launches straight into tabs)
     ├── BingoBoard.tsx          ←→                  BingoBoard.swift
     ├── BingoSquare.tsx         ←→                  BingoSquare.swift
@@ -475,6 +480,7 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 - `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (Normal / Counting / Compound; cross-board square mechanisms live on `BoardTask`, see ARCHITECTURE.md §Phase 6)
 - `docs/NOTIFICATIONS.md` — Phase 7 iOS local-notification design (reconcile model, triggers, 64-cap budgeting, prefs, App Store compliance, iOS-only parity exception). See also CLAUDE.md [§Notifications](#notifications-phase-7--ios-local-reminders).
 - `docs/RISO_UI_CHECKLIST.md` — iOS "Riso" design-system consistency checklist (use the kit / tokens not magic numbers / layout pitfalls). Run it when building or reviewing any Riso surface; the canonical components are in `Views/Riso/RisoControls.swift` and visually baselined by `RisoKitSnapshotTests`.
+- `docs/RISO_WEB.md` — **web** Riso pass: token layer (`src/styles/riso.css`), primitive kit (`components/riso/`), the dark contract, conventions for re-skinning a screen, and the phase roadmap. Companion to the iOS checklist; read it before touching any web Riso surface.
 
 The `docs/superpowers/specs/` folder is **not in active use** — design docs for in-flight work live in CLAUDE.md and ARCHITECTURE.md instead. The legacy `2026-04-23-compound-tasks-unification-design.md` was the precursor for the unification work shipped in PR #43; the current canonical doc is `docs/TASK_SYSTEM.md`.
 

@@ -1,0 +1,165 @@
+/* ============================================================
+   OYBC · RISO — WEB foundation (Phase 0)
+
+   The token layer + global utilities for the web Riso pass — the
+   desktop/responsive translation of the shipped iOS "Riso" design
+   language (a risograph-print poster aesthetic).
+
+   Token VALUES are lifted verbatim from the iOS design system
+   (proto/riso.css) so web and iOS stay in lockstep — see
+   docs/RISO_WEB.md. Token NAMES use the `--riso-*` prefix so they
+   coexist with the app's pre-Riso generic vars (`--bg-primary`,
+   `--text-primary`, …) during the screen-by-screen rollout; old
+   vars are removed once every screen has been re-skinned.
+
+   Themes ride the app's existing mechanism: `[data-theme='dark']`
+   on <html> (set by useAppliedTheme), NOT the prototype's `.night`
+   class. Imported after index.css in main.tsx.
+   ============================================================ */
+
+:root {
+  /* Color — light ("day press", default) */
+  --riso-paper: #f1e9d9; /* page background */
+  --riso-paper-2: #fbf6ea; /* cards, inputs, cells */
+  --riso-ink: #18120b; /* text, keylines, hard shadows */
+  --riso-muted: #7e7460; /* secondary text */
+  --riso-blue: #2c44c9; /* counting type, active states, progress */
+  --riso-red: #eb4d2e; /* primary buttons, done cells, danger */
+  --riso-green: #1f9b6b; /* success, completed, greenlog field */
+  --riso-gold: #ffc21f; /* bingo accents, FREE star, highlights */
+  --riso-achievement: #7a3fb0; /* achievement task type */
+
+  /* Hairline dividers + the ink used for hard offset shadows. */
+  --riso-hair: rgba(24, 18, 11, 0.14);
+  --riso-shadow-ink: rgba(24, 18, 11, 1);
+
+  /* Static cream — content sitting ON a colored fill (red/blue/green/
+     gold) must NOT flip in dark mode, so it reads against the fill,
+     never the page. Mirrors iOS Color.risoInkStatic. */
+  --riso-on-color: #fbf6ea;
+
+  /* Shape */
+  --riso-r-card: 8px; /* cards, inputs, buttons */
+  --riso-r-cell: 7px; /* board cells */
+
+  /* Type */
+  --riso-font-head: 'Bricolage Grotesque', sans-serif;
+  --riso-font-body: 'Archivo', sans-serif;
+}
+
+[data-theme='dark'] {
+  /* Color — dark ("night press") */
+  --riso-paper: #171310;
+  --riso-paper-2: #221c15;
+  --riso-ink: #f1e9d9; /* flips to cream */
+  --riso-muted: #a39781;
+  --riso-blue: #6678f2;
+  --riso-red: #ff6a4a;
+  --riso-green: #3bcb92;
+  --riso-gold: #ffc21f; /* unchanged */
+  --riso-achievement: #9d6ad8;
+
+  --riso-hair: rgba(241, 233, 217, 0.16);
+  /* Hard shadows stay ink-dark in both themes (the shadow is the page's
+     deepest value); on dark paper that's near-black, matching iOS. */
+  --riso-shadow-ink: rgba(0, 0, 0, 0.9);
+  /* on-color cream is unchanged — colored fills don't flip. */
+}
+
+/* ============================================================
+   PAPER GRAIN
+   A fixed full-page dot screen. Applied via `.riso-grain` on a
+   surface that owns a Riso paper background (added globally when
+   the app shell is re-skinned; scoped to Riso surfaces until then,
+   so un-reskinned screens stay clean).
+   ============================================================ */
+.riso-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  background-image: radial-gradient(circle at 50% 50%, rgba(24, 18, 11, 0.05) 0.5px, transparent 0.6px);
+  background-size: 3px 3px;
+}
+[data-theme='dark'] .riso-grain::before {
+  background-image: radial-gradient(circle at 50% 50%, rgba(241, 233, 217, 0.07) 0.5px, transparent 0.6px);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+/* Halftone overprint — applied to COMPLETED board cells only (Phase 3).
+   Declared here so the keyframe/util set lives in one place. */
+.riso-halftone::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.52;
+  mix-blend-mode: multiply;
+  background-image: radial-gradient(circle at 50% 50%, rgba(24, 18, 11, 0.27) 1.2px, transparent 1.4px);
+  background-size: 9px 9px;
+}
+
+/* ============================================================
+   ANIMATIONS
+   Entrance animations animate the VISIBLE end-state from a hidden
+   one only when active — never leave content at opacity:0 at rest
+   (it stays invisible in throttled tabs / print). All disabled
+   under prefers-reduced-motion.
+   ============================================================ */
+@keyframes risoCellPop {
+  0% {
+    transform: scale(0.9);
+  }
+  55% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: translate(-1px, -1px) scale(1);
+  }
+}
+@keyframes risoToastDrop {
+  0% {
+    transform: translateY(-110px) rotate(-3deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(7px) rotate(1deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+}
+@keyframes risoGreenlogIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes risoConfettiFall {
+  to {
+    transform: translateY(1100px) rotate(540deg);
+    opacity: 0.9;
+  }
+}
+
+/* Disabled under reduced-motion. Selectors use [class*='…'] substring matching
+   so they catch CSS-Modules-mangled class names — later phases must apply these
+   animations via a class whose name contains the keyframe name (e.g. a global
+   `risoCellPop` utility), not an arbitrary module class, for the guard to bite. */
+@media (prefers-reduced-motion: reduce) {
+  [class*='risoCellPop'],
+  [class*='risoToast'],
+  [class*='risoGreenlog'],
+  [class*='risoConfetti'] {
+    animation: none !important;
+  }
+}

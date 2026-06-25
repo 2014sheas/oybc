@@ -1,0 +1,41 @@
+/* Riso card / panel — 2px ink keyline, paper-2 fill, hard offset shadow. */
+.card {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+/* Shadow depth variants (small dense rows → hero board). */
+.small {
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.large {
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
+}
+
+/* Optional interactive lift+press for tappable cards. Hover GROWS the offset
+   by 1px (depth-aware so large/small don't shrink); press collapses to 0. */
+.interactive {
+  cursor: pointer;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.interactive:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink); /* default base 4px → 5px */
+}
+.small.interactive:hover {
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink); /* small base 2px → 3px */
+}
+.large.interactive:hover {
+  box-shadow: 9px 9px 0 var(--riso-shadow-ink); /* large base 8px → 9px */
+}
+.interactive:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+/* Convenience inner padding. */
+.pad {
+  padding: 16px;
+}
