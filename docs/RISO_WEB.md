@@ -156,6 +156,27 @@ Theme note: the nav toggle is Day/Night only — the full System/Light/Dark
 control stays on the Profile screen (Phase 5). Clicking it overwrites a `system`
 preference with an explicit choice (by design; restore System from Profile).
 
+## Phase 2b — Home/Resume content (in review)
+
+Fills the minimal 2a `HomePage` with real data, in `apps/web/src/components/home/`:
+
+- `StreakPill.tsx` — gold flame pill; count from `computeStreak(DAILY, GREENLOG,
+  boards, weekStartDay, now)` (shared engine); shown only when streak > 0.
+- `ResumePanel.tsx` — the featured (most-recently-active) board: timeframe +
+  expiry tag, name, squares/bingo meta, progress bar, a "Resume board" CTA, and
+  a clickable poster. (The prototype's duplicate "Board details" button is
+  omitted — web has no separate details surface; the play page is both.)
+- `BoardRail.tsx` — up to four "other active boards" cards (mini-grid + name +
+  timeframe + progress + bingos).
+- `BoardMiniGrid.tsx` — a progress-accurate, **count-based** board representation
+  (FREE center inked, `completedTasks` cells filled, green when cleared). It does
+  NOT load board tasks — the real type/done-aware poster (counting bars, true
+  cell positions) arrives with Phase 3's read-only board renderer; the resume
+  poster + rail upgrade to it then.
+
+All data comes from the boards' denormalized fields (`completedTasks`,
+`totalTasks`, `linesCompleted`, `timeframe`, `endDate`) — no per-board task query.
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
@@ -163,7 +184,7 @@ preference with an explicit choice (by design; restore System from Profile).
 | **0** | Token layer + fonts + grain/halftone/shadow utilities + primitive kit | **shipped** |
 | **1** | Auth shell + signed-out marketing home (net-new) + sign-in modal | **shipped** |
 | 2a | App shell + nav — top nav (→ mobile bottom tab bar) + minimal Home route | **in review** |
-| 2b | Home/Resume landing — streak pill, resume panel w/ live poster, active-boards rail | planned |
+| 2b | Home/Resume landing — streak pill, resume panel + poster, active-boards rail | **in review** |
 | 3 | Play board + Boards (cell escalation, halftone, gold bingo line, greenlog, toast) | planned |
 | 4 | Create wizard + Tasks library | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |

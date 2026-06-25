@@ -1,0 +1,301 @@
+/* ============================================================
+   OYBC · Riso Web — Home/Resume components (Phase 2b)
+   Streak pill, resume panel, active-boards rail, board mini-grid.
+   Translated from the prototype's home.css onto the --riso-* tokens.
+   ============================================================ */
+
+/* ---- streak pill ---- */
+.streakPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-gold);
+  padding: 9px 16px 9px 12px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  flex: 0 0 auto;
+  color: var(--riso-ink-static); /* on gold — static dark, no flip */
+}
+.spFlame {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--riso-ink-static);
+  background: var(--riso-red);
+  display: grid;
+  place-items: center;
+}
+.spFlame svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--riso-on-color);
+  stroke-width: 2;
+  fill: none;
+}
+.spNum {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1;
+}
+.spLbl {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+/* ---- section head ---- */
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 30px 0 14px;
+  gap: 16px;
+}
+.secLabel {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.sectionLink {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--riso-blue);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sectionLink svg {
+  width: 13px;
+  height: 13px;
+}
+.sectionLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* ---- resume panel ---- */
+.resume {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 30px;
+  align-items: center;
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper-2);
+  padding: 28px 30px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+}
+.resumeTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.resumeName {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 36px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 12px 0 0;
+}
+.resumeMeta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 18px 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+.resumeMeta .bingo {
+  color: var(--riso-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.star {
+  color: var(--riso-gold);
+  -webkit-text-stroke: 0.5px var(--riso-ink);
+}
+.resumeCta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.resumeHint {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-blue);
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* shared progress bar */
+.progress {
+  position: relative;
+  height: 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+  margin: 14px 0 22px;
+}
+.progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--riso-red);
+}
+
+/* ---- active-board rail ---- */
+.rail {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.railCard {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  padding: 14px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  text-align: left;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.railCard:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.railCard:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.railCard:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.railTop {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.railName {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+}
+.railTf {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  margin-top: 3px;
+}
+.railFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+.railProgress {
+  height: 10px;
+  margin: 0;
+}
+
+.boardDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink);
+  flex: 0 0 auto;
+}
+
+/* ---- board mini-grid + poster ---- */
+/* transparent button wrapper making the poster clickable */
+.posterButton {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  justify-self: center;
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+.posterButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 4px;
+  border-radius: 14px;
+}
+.poster {
+  display: grid;
+  place-items: center;
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 12px;
+  background: var(--riso-paper);
+  padding: 12px;
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink);
+  justify-self: center;
+}
+.mini {
+  display: grid;
+  flex: 0 0 auto;
+}
+.miniCell {
+  aspect-ratio: 1;
+  border: 1px solid var(--riso-ink);
+  border-radius: 1.5px;
+  background: var(--riso-paper);
+}
+.miniCell.on {
+  background: var(--riso-red);
+}
+.miniCell.free {
+  background: var(--riso-ink);
+}
+.miniGreen .miniCell.on {
+  background: var(--riso-green);
+}
+
+@media (max-width: 860px) {
+  .resume {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .poster {
+    justify-self: stretch;
+    width: 100%;
+  }
+  .rail {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .rail {
+    grid-template-columns: 1fr;
+  }
+}
