@@ -1,0 +1,689 @@
+/* ============================================================
+   OYBC · Riso Web — SIGNED-OUT HOME (poster landing) + sign-in modal
+   Translated from the handoff prototype's signedout.css onto the
+   --riso-* token layer. Content on colored fields (footer red, beat
+   green, type badges) uses static cream (--riso-on-color), never the
+   adaptive ink. Shared by SignedOutHome / SignInModal / SignedOutArt.
+   ============================================================ */
+
+.so {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
+}
+
+/* ---- top bar ---- */
+.soNav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--riso-paper-2);
+  border-bottom: 2px solid var(--riso-ink);
+}
+.soNavIn {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 40px;
+}
+.soWord {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin-right: 4px;
+}
+.soNavLinks {
+  display: flex;
+  gap: 4px;
+  margin-left: 10px;
+}
+.soNavLinks button {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--riso-muted);
+  background: none;
+  border: 0;
+  padding: 8px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.soNavLinks button:hover {
+  color: var(--riso-ink);
+  background: var(--riso-paper);
+}
+.soNavRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---- hero ---- */
+.soHero {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 70px 40px 56px;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 56px;
+  align-items: center;
+}
+.soKicker {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--riso-red);
+}
+.soLeadin {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: clamp(22px, 2.4vw, 30px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--riso-ink);
+  margin-bottom: 6px;
+  text-wrap: balance;
+}
+.soDisplay {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(60px, 7.2vw, 104px);
+  line-height: 0.86;
+  letter-spacing: -0.04em;
+  margin: 0;
+  text-wrap: balance;
+}
+.soSub {
+  font-size: 19px;
+  line-height: 1.55;
+  font-weight: 500;
+  color: var(--riso-muted);
+  margin: 22px 0 0;
+  max-width: 460px;
+  text-wrap: pretty;
+}
+.soCta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 32px;
+  flex-wrap: wrap;
+}
+.soCtaNote {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  margin-top: 16px;
+}
+
+/* ---- poster board art (hero + modal) ---- */
+.soPosterWrap {
+  display: flex;
+  justify-content: center;
+}
+.soBoard {
+  width: 100%;
+  max-width: 440px;
+  border: 3px solid var(--riso-ink);
+  border-radius: 20px;
+  background: var(--riso-paper);
+  padding: 18px;
+  box-shadow: 12px 12px 0 var(--riso-shadow-ink);
+  transform: rotate(-2deg);
+}
+.soGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.soCell {
+  aspect-ratio: 1;
+  border: 2px solid var(--riso-ink);
+  border-radius: 7px;
+  background: var(--riso-paper-2);
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.soCell.red {
+  background: var(--riso-red);
+}
+.soCell.blue {
+  background: var(--riso-blue);
+}
+/* Halftone overprint on completed cells — static dark ink + multiply in BOTH
+   themes (the cell fill is a bright color, not the page; see docs/RISO_WEB.md). */
+.soCell.red::after,
+.soCell.blue::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(24, 18, 11, 0.45) 26%, transparent 28%);
+  background-size: 9px 9px;
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+  border-radius: 5px;
+}
+.soCell.line {
+  box-shadow: 0 0 0 3px var(--riso-gold);
+  z-index: 1;
+}
+.soCell.free {
+  background: var(--riso-ink);
+}
+.soCell.free::after {
+  content: '★';
+  color: var(--riso-gold);
+  font-size: 20px;
+}
+
+/* ---- sections (escalation beats + square types) ---- */
+.soSection {
+  border-top: 2px solid var(--riso-ink);
+}
+.soSectionIn {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 64px 40px;
+}
+.soEyebrow {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.soH2 {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 0.94;
+  letter-spacing: -0.03em;
+  margin: 10px 0 0;
+  max-width: 720px;
+  text-wrap: balance;
+}
+.soLead {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  margin: 16px 0 0;
+  max-width: 560px;
+  line-height: 1.5;
+}
+
+.soBeats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+  margin-top: 44px;
+}
+.soBeat {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  padding: 22px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.soBeat.loud {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+.soBeatNum {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--riso-muted);
+}
+.soBeat.loud .soBeatNum {
+  color: rgba(251, 246, 234, 0.7);
+}
+.soBeatMini {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 9px;
+  background: var(--riso-paper);
+  padding: 8px;
+  margin: 14px 0 18px;
+}
+.soBeatMini i {
+  aspect-ratio: 1;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 3px;
+  background: var(--riso-paper-2);
+  position: relative;
+}
+.soBeatMini i.red {
+  background: var(--riso-red);
+  background-image: radial-gradient(circle, rgba(24, 18, 11, 0.4) 26%, transparent 28%);
+  background-size: 6px 6px;
+}
+.soBeatMini i.line {
+  box-shadow: 0 0 0 2px var(--riso-gold);
+  z-index: 1;
+}
+.soBeatMini i.free {
+  background: var(--riso-ink);
+}
+.soBeatMini i.free::after {
+  content: '★';
+  color: var(--riso-gold);
+  font-size: 8px;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.soBeat.loud .soBeatMini {
+  background: var(--riso-paper);
+}
+.soBeatH {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+.soBeatP {
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.soBeat:not(.loud) .soBeatP {
+  color: var(--riso-muted);
+}
+.soBeat.loud .soBeatP {
+  color: rgba(251, 246, 234, 0.92);
+}
+
+.soTypes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 40px;
+}
+.soType {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  padding: 20px 18px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.soTypeBadge {
+  width: 42px;
+  height: 42px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 17px;
+  margin-bottom: 14px;
+}
+.soTypeBadge.normal {
+  background: var(--riso-paper);
+  color: var(--riso-muted);
+}
+.soTypeBadge.count {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.soTypeBadge.cmnd {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+.soTypeBadge.achv {
+  background: var(--riso-achievement);
+  color: var(--riso-on-color);
+}
+.soTypeH {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.soTypeP {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  margin-top: 6px;
+}
+
+/* ---- footer CTA (red field) ---- */
+.soFoot {
+  border-top: 2px solid var(--riso-ink);
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+  position: relative;
+  overflow: hidden;
+}
+.soFoot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(24, 18, 11, 0.3) 26%, transparent 28%);
+  background-size: 12px 12px;
+  mix-blend-mode: multiply;
+  opacity: 0.25;
+  pointer-events: none;
+}
+.soFootIn {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 72px 40px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+.soFootH {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(40px, 5.5vw, 72px);
+  line-height: 0.9;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.soFootCta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+
+/* On-red footer buttons — one-off contextual variants (paper slab + cream
+   outline) placed on the red field; replicate the Riso press feel. */
+.btnOnred,
+.btnOnredGhost {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 17px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 15px 24px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.btnOnred {
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+.btnOnredGhost {
+  background: transparent;
+  color: var(--riso-on-color);
+  border-color: var(--riso-on-color);
+  box-shadow: 3px 3px 0 rgba(24, 18, 11, 0.4);
+}
+.btnOnred:hover,
+.btnOnredGhost:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.btnOnred:active,
+.btnOnredGhost:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.btnOnred:focus-visible,
+.btnOnredGhost:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+.btnOnred svg {
+  width: 16px;
+  height: 16px;
+}
+
+.soFootLegal {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 22px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  color: rgba(251, 246, 234, 0.75);
+  position: relative;
+  z-index: 1;
+  border-top: 2px solid rgba(251, 246, 234, 0.25);
+}
+.soFootLegalLinks {
+  display: flex;
+  gap: 18px;
+}
+.soFootLegalLinks button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.soFootLegalLinks button:focus-visible {
+  outline: 2px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+
+/* ---- sign-in modal ---- */
+.soAuthScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  background: rgba(24, 18, 11, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+[data-theme='dark'] .soAuthScrim {
+  background: rgba(0, 0, 0, 0.62);
+}
+@keyframes soAuthIn {
+  from {
+    transform: translateY(12px) scale(0.99);
+  }
+}
+.soAuthCard {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: var(--riso-paper);
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 18px;
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
+  padding: 30px 28px;
+  text-align: center;
+  animation: soAuthIn 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .soAuthCard {
+    animation: none;
+  }
+}
+.soAuthArt {
+  width: 80px;
+  margin: 0 auto 18px;
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 12px;
+  background: var(--riso-paper);
+  padding: 7px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  transform: rotate(-4deg);
+}
+.soAuthArt .soGrid {
+  gap: 3px;
+}
+.soAuthArt .soCell {
+  border-width: 1px;
+  border-radius: 2px;
+}
+.soAuthH {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  margin: 4px 0 8px;
+}
+.soAuthP {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.5;
+  margin: 0 0 22px;
+}
+.soAuthBtns {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.soAuthAlt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.soAuthAlt::before,
+.soAuthAlt::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--riso-hair);
+}
+.soAuthField {
+  text-align: left;
+  margin-bottom: 12px;
+}
+.soFieldLabel {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--riso-muted);
+  margin-bottom: 6px;
+}
+.soInput {
+  width: 100%;
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--riso-ink);
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 12px 14px;
+}
+.soInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+.soError {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-red);
+  text-align: left;
+  margin-bottom: 12px;
+}
+.soAuthFoot {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  margin-top: 18px;
+}
+.soAuthFoot button {
+  border: 0;
+  background: none;
+  color: var(--riso-blue);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.soAuthX {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-size: 14px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+/* ---- responsive ---- */
+@media (max-width: 920px) {
+  .soHero {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    padding: 48px 28px 40px;
+  }
+  .soPosterWrap {
+    order: -1;
+  }
+  .soBoard {
+    max-width: 320px;
+  }
+  .soBeats {
+    grid-template-columns: 1fr;
+  }
+  .soTypes {
+    grid-template-columns: 1fr 1fr;
+  }
+  .soSectionIn,
+  .soNavIn {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .soNavLinks {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .soTypes {
+    grid-template-columns: 1fr;
+  }
+  .soFootLegal {
+    flex-direction: column;
+    gap: 8px;
+  }
+  /* Standalone nav "Sign in" hides — still reachable from the hero button and
+     the modal's signup↔signin toggle. Theme toggle goes icon-only. */
+  .soNavSignIn {
+    display: none;
+  }
+  .soSegLabel {
+    display: none;
+  }
+}

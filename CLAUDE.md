@@ -232,6 +232,10 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── ProgressDerivationPanel.tsx ←→               ProgressDerivationPanelView.swift
     ├── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
     ├── AuthGate.tsx               ←→               Views/AuthGateView.swift
+    │   └── signedOut/ (SignedOutHome,              (web-only: a signed-out marketing
+    │       SignInModal, SignedOutArt,               landing + sign-in modal — no iOS
+    │       useSignedOutTheme)                        counterpart; iOS launches into the
+    │                                                 login form directly. See docs/RISO_WEB.md)
     ├── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
     ├── BoardStatusBadge.tsx       ←→               Views/Components/BoardStatusBadgeView.swift
     ├── BoardListItem.tsx          ←→               Views/Components/BoardListItemView.swift

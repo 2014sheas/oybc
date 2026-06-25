@@ -65,6 +65,14 @@
      (fails WCAG AA) in dark mode. Mirrors iOS risoInkStatic on gold. */
   color: var(--riso-ink-static);
 }
+/* "Sign in with Apple" slab — intentionally ADAPTIVE (not static): Apple's
+   guidance is black-on-light / white-on-dark, so it rides the flipping
+   --riso-ink / --riso-paper (matches iOS signInWithAppleButtonStyle .black/.white).
+   A static-ink slab would vanish on the near-black dark-mode card. */
+.dark {
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+}
 .neutral {
   /* base (.btn) values — paper-2 / ink */
 }

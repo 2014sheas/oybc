@@ -1,0 +1,26 @@
+/* OYBC brand mark — a 3×3 mini-grid logo: red tile, cream dots, gold center.
+   Rendered in markup (no raster asset). Size driven by the `--mark-size` var
+   so callers can scale it (nav vs footer vs sidebar). */
+.mark {
+  width: var(--mark-size, 40px);
+  height: var(--mark-size, 40px);
+  flex: 0 0 auto;
+  border: 2px solid var(--riso-ink);
+  border-radius: 8px;
+  background: var(--riso-red);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 5px;
+}
+.mark i {
+  border-radius: 1px;
+  background: rgba(241, 233, 217, 0.32);
+}
+.mark i.on {
+  background: var(--riso-on-color);
+}
+.mark i.free {
+  background: var(--riso-gold);
+}

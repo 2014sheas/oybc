@@ -21,3 +21,9 @@ export type { RisoSegmentedOption, RisoSegmentedProps } from './RisoSegmented';
 
 export { RisoSectionLabel } from './RisoSectionLabel';
 export type { RisoSectionLabelProps } from './RisoSectionLabel';
+
+export { RisoIcon } from './RisoIcon';
+export type { RisoIconName, RisoIconProps } from './RisoIcon';
+
+export { RisoBrandMark } from './RisoBrandMark';
+export type { RisoBrandMarkProps } from './RisoBrandMark';
