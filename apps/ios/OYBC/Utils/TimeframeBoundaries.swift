@@ -25,6 +25,7 @@ func computeTimeframeBoundaries(
     case .monthly: return computeMonthBoundaries(referenceDate)
     case .yearly:  return computeYearBoundaries(referenceDate)
     case .custom:  return nil
+    case .indefinite: return nil  // No computed window — ongoing board
     }
 }
 
@@ -137,6 +138,8 @@ func stepCoreBoardWindow(
         referenceDate = cal.date(byAdding: .year, value: step, to: firstOfYear)
     case .custom:
         return nil
+    case .indefinite:
+        return nil  // No window cadence — ongoing board
     }
     guard let ref = referenceDate else { return nil }
     return computeTimeframeBoundaries(

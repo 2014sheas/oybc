@@ -172,7 +172,8 @@ final class BoardWizardViewModel {
             self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
             if d.board.timeframe == .custom {
                 self.customStartDate = String(d.board.startDate.prefix(10))
-                self.customEndDate = String(d.board.endDate.prefix(10))
+                // A custom board always has an endDate; default defensively.
+                self.customEndDate = String((d.board.endDate ?? "").prefix(10))
             }
         } else if let t = effectiveTemplate {
             self.name = t.name
@@ -212,10 +213,16 @@ final class BoardWizardViewModel {
                 }
             } else {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
-                // Recurring templates can't use CUSTOM (no computed
-                // window). If the user's default is CUSTOM and they
-                // entered via the recurring CTA, fall back to daily.
-                self.timeframe = (isRecurringAtEntry && resolved == .custom) ? .daily : resolved
+                // The "Custom" segment defaults to an ongoing board (End date =
+                // None); a dated range is opt-in via the End-date control. So a
+                // CUSTOM default resolves to .indefinite for a fresh board.
+                // Recurring templates can't use CUSTOM/INDEFINITE (no computed
+                // window) → fall back to daily in the recurring CTA.
+                if resolved == .custom {
+                    self.timeframe = isRecurringAtEntry ? .daily : .indefinite
+                } else {
+                    self.timeframe = resolved
+                }
             }
             self.centerType = Self.coerceCenterType(
                 size: initialSize,
@@ -281,10 +288,10 @@ final class BoardWizardViewModel {
         }
     }
 
-    /// Recurring templates exclude `.custom` (no computed window).
-    /// Mirrors the web `setTimeframe` defensive guard.
+    /// Recurring templates exclude `.custom` and `.indefinite` (no computed
+    /// window / no cadence). Mirrors the web `setTimeframe` defensive guard.
     func updateTimeframe(_ t: Timeframe) {
-        if isRecurring && t == .custom { return }
+        if isRecurring && (t == .custom || t == .indefinite) { return }
         timeframe = t
     }
 
@@ -335,7 +342,10 @@ final class BoardWizardViewModel {
         name = ""
         let nextSize = initialPreferences.defaultBoardSize.rawValue
         size = nextSize
-        timeframe = Self.resolveTimeframe(initialPreferences.defaultTimeframe)
+        // Mirror init's CUSTOM→INDEFINITE default so a reset wizard opens
+        // ongoing (End date = None), not on .custom with empty dates.
+        let resolvedReset = Self.resolveTimeframe(initialPreferences.defaultTimeframe)
+        timeframe = resolvedReset == .custom ? .indefinite : resolvedReset
         customStartDate = ""
         customEndDate = ""
         // Same coercion the initial factory uses, so reset can never

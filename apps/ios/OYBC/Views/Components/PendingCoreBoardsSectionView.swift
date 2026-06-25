@@ -100,6 +100,7 @@ struct CoreBoardsSectionView: View {
         case .weekly:  return "calendar.day.timeline.left"
         case .daily:   return "sun.max"
         case .custom:  return "pin" // unreachable
+        case .indefinite: return "infinity" // unreachable
         }
     }
 
@@ -110,6 +111,7 @@ struct CoreBoardsSectionView: View {
         case .weekly:  return "Weekly"
         case .daily:   return "Daily"
         case .custom:  return "Custom"
+        case .indefinite: return "Ongoing"
         }
     }
 }

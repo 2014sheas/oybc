@@ -5,6 +5,7 @@ import {
   getDocs,
   onSnapshot,
   setDoc,
+  deleteField,
   query,
   where,
   serverTimestamp,
@@ -1044,6 +1045,16 @@ async function writeSingleDoc(
     }
   }
   cleaned._syncedAt = serverTimestamp();
+
+  // Indefinite boards carry no `endDate`. Because we write with `merge: true`,
+  // omitting the field would PRESERVE a stale deadline on Firestore from
+  // before a convert-to-indefinite edit, which a second device would then
+  // pull — silently un-converting the board. Explicitly delete the field so
+  // the remote doc matches the local source of truth. (Harmless no-op on a
+  // fresh doc / a board that never had an endDate.)
+  if (docRef.parent.id === 'boards' && cleaned.endDate === undefined) {
+    cleaned.endDate = deleteField();
+  }
 
   await setDoc(docRef, cleaned, { merge: true });
 }

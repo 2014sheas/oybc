@@ -27,9 +27,9 @@ CREATE TABLE IF NOT EXISTS boards (
     description TEXT,
     status TEXT NOT NULL, -- draft, active, completed, archived
     boardSize INTEGER NOT NULL, -- 3, 4, or 5
-    timeframe TEXT NOT NULL, -- daily, weekly, monthly, yearly, custom
+    timeframe TEXT NOT NULL, -- daily, weekly, monthly, yearly, custom, indefinite
     startDate TEXT NOT NULL,
-    endDate TEXT NOT NULL,
+    endDate TEXT, -- nullable: NULL = INDEFINITE board (no deadline)
     centerSquareType TEXT NOT NULL, -- free, custom, none
     isRandomized INTEGER NOT NULL DEFAULT 0, -- SQLite boolean (0/1)
     totalTasks INTEGER NOT NULL DEFAULT 0,

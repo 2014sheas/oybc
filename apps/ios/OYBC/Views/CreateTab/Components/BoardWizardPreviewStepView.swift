@@ -449,7 +449,7 @@ private extension BoardWizardPreviewStepView {
         }
 
         let resolved = resolveWizardDates(controller: controller)
-        let dates: (start: String, end: String)
+        let dates: (start: String, end: String?)
         switch resolved {
         case .ok(let start, let end):
             dates = (start, end)

@@ -174,6 +174,7 @@ struct CoreBoardBrowserView: View {
         case .monthly: return "Monthly"
         case .yearly:  return "Yearly"
         case .custom:  return "Core" // never reached (route filters CUSTOM)
+        case .indefinite: return "Core" // never reached (route filters INDEFINITE)
         }
     }
 }

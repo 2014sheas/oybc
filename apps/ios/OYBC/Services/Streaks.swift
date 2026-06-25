@@ -45,7 +45,7 @@ func compactStreakLabel(_ count: Int, timeframe: Timeframe) -> String {
     case .weekly:  unit = "w"
     case .monthly: unit = "mo"
     case .yearly:  unit = "y"
-    case .custom:  unit = ""
+    case .custom, .indefinite:  unit = ""
     }
     return "\(count)\(unit)"
 }

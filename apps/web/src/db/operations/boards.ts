@@ -4,6 +4,7 @@ import {
   BoardStatus,
   SyncOperationType,
   SyncStatus,
+  Timeframe,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
@@ -101,7 +102,16 @@ export async function updateBoardAndCascade(
   if (patch.name !== undefined) sanitized.name = patch.name;
   if (patch.timeframe !== undefined) sanitized.timeframe = patch.timeframe;
   if (patch.startDate != null) sanitized.startDate = patch.startDate;
-  if (patch.endDate != null) sanitized.endDate = patch.endDate;
+  // Clear the deadline when converting to an indefinite board or when the
+  // edit explicitly passes `endDate: null`. Writing `undefined` clears the
+  // stored value (same mechanism the center-name clear above relies on — a
+  // bare omit can't clear, but an undefined write does). Otherwise apply a
+  // provided endDate.
+  if (patch.timeframe === Timeframe.INDEFINITE || patch.endDate === null) {
+    sanitized.endDate = undefined;
+  } else if (patch.endDate != null) {
+    sanitized.endDate = patch.endDate;
+  }
 
   if (patch.centerSquareType !== undefined) {
     sanitized.centerSquareType = patch.centerSquareType;

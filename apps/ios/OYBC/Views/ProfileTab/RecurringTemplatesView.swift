@@ -192,6 +192,7 @@ struct RecurringTemplatesView: View {
         case .daily: return "every morning"
         case .yearly: return "Jan 1"
         case .custom: return "custom"
+        case .indefinite: return "ongoing"
         }
     }
 }
@@ -238,6 +239,7 @@ struct TemplateEditSheet: View {
         case .daily: renew = "every morning"
         case .yearly: renew = "Jan 1"
         case .custom: renew = "custom"
+        case .indefinite: renew = "ongoing"
         }
         return "\(sz) board · \(count)-task pool · renews \(renew)"
     }
@@ -493,6 +495,7 @@ extension Timeframe {
         case .monthly: return "Monthly"
         case .yearly: return "Yearly"
         case .custom: return "Custom"
+        case .indefinite: return "Ongoing"
         }
     }
 
@@ -504,6 +507,7 @@ extension Timeframe {
         case .monthly: return .risoGreen
         case .yearly: return .risoRed
         case .custom: return .risoMuted
+        case .indefinite: return .risoMuted
         }
     }
 }

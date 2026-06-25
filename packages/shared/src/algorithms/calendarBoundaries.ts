@@ -138,6 +138,8 @@ export function getTimeframeBoundaries(
       return getYearBoundaries(referenceDate);
     case Timeframe.CUSTOM:
       throw new Error('Cannot compute boundaries for CUSTOM timeframe — use user-specified dates');
+    case Timeframe.INDEFINITE:
+      throw new Error('Cannot compute boundaries for INDEFINITE timeframe — it has no end date');
   }
 }
 
@@ -177,8 +179,8 @@ export function stepWindow(
   step: number,
   weekStartDay: WeekStartDay = 'monday',
 ): TimeframeBoundaries {
-  if (timeframe === Timeframe.CUSTOM) {
-    throw new Error('Cannot step CUSTOM windows — they have user-specified dates');
+  if (timeframe === Timeframe.CUSTOM || timeframe === Timeframe.INDEFINITE) {
+    throw new Error(`Cannot step ${timeframe} windows — they have no computed cadence`);
   }
   if (!Number.isInteger(step)) {
     throw new Error(`stepWindow: step must be an integer, got ${step}`);
@@ -212,20 +214,28 @@ export function stepWindow(
 
 /**
  * Check whether a date falls within a timeframe's start/end boundaries (inclusive).
+ *
+ * A nullish `endDate` denotes an unbounded window `[startDate, ∞)` — the
+ * model for INDEFINITE boards. In that case only the lower bound is checked.
  */
 export function isWithinTimeframe(
   date: Date | string,
   startDate: string,
-  endDate: string,
+  endDate?: string | null,
 ): boolean {
   const ts = typeof date === 'string' ? new Date(date).getTime() : date.getTime();
-  return ts >= new Date(startDate).getTime() && ts <= new Date(endDate).getTime();
+  const lower = new Date(startDate).getTime();
+  if (endDate == null) return ts >= lower;
+  return ts >= lower && ts <= new Date(endDate).getTime();
 }
 
 /**
  * Check whether a timeframe has expired (current time is past the end date).
+ *
+ * A nullish `endDate` (INDEFINITE board) never expires — returns false.
  */
-export function isTimeframeExpired(endDate: string, now: Date = new Date()): boolean {
+export function isTimeframeExpired(endDate?: string | null, now: Date = new Date()): boolean {
+  if (endDate == null) return false;
   return now.getTime() > new Date(endDate).getTime();
 }
 
@@ -290,6 +300,9 @@ export function formatTimeframeLabel(timeframe: Timeframe, startDate: string): s
 
     case Timeframe.CUSTOM:
       return 'Custom';
+
+    case Timeframe.INDEFINITE:
+      return 'Ongoing';
   }
 }
 
@@ -315,5 +328,6 @@ export function formatRecurringCadence(timeframe: Timeframe): string {
     case Timeframe.MONTHLY: return 'Every month';
     case Timeframe.YEARLY:  return 'Every year';
     case Timeframe.CUSTOM:  return 'Custom';
+    case Timeframe.INDEFINITE: return 'Ongoing';
   }
 }

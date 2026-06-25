@@ -16,6 +16,7 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = {
   [Timeframe.MONTHLY]: 'Monthly',
   [Timeframe.YEARLY]: 'Yearly',
   [Timeframe.CUSTOM]: 'Custom',
+  [Timeframe.INDEFINITE]: 'Ongoing', // unreachable — templates exclude indefinite
 };
 
 const ATTENTION_COPY: Record<

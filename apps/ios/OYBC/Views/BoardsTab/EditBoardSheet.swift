@@ -148,7 +148,7 @@ struct EditBoardSheet: View {
         name = board.name
         timeframe = board.timeframe
         if let s = parseWizardCalendarDate(board.startDate) { customStartDate = s }
-        if let e = parseWizardCalendarDate(board.endDate) { customEndDate = e }
+        if let endStr = board.endDate, let e = parseWizardCalendarDate(endStr) { customEndDate = e }
         centerType = board.centerSquareType
         centerCustomName = board.centerSquareCustomName ?? ""
 
@@ -190,16 +190,23 @@ struct EditBoardSheet: View {
         }
 
         let startISO: String
-        let endISO: String
+        let endISO: String?   // nil → indefinite (cleared via clearEndDate)
+        var clearEnd = false
 
-        if timeframe == .custom {
+        if timeframe == .indefinite {
+            // Ongoing board: anchor startDate to today, no deadline.
+            startISO = wizardLocalISOString(cal.startOfDay(for: Date()))
+            endISO = nil
+            clearEnd = true
+        } else if timeframe == .custom {
             startISO = snapStart(customStartDate)
-            endISO = snapEnd(customEndDate)
+            let snappedEnd = snapEnd(customEndDate)
             // Validate ordering.
-            if endISO < startISO {
+            if snappedEnd < startISO {
                 validationError = "End date must be on or after the start date."
                 return
             }
+            endISO = snappedEnd
         } else if let boundaries = computeTimeframeBoundaries(
             timeframe: timeframe,
             referenceDate: Date(),
@@ -217,6 +224,7 @@ struct EditBoardSheet: View {
             timeframe: timeframe,
             startDate: startISO,
             endDate: endISO,
+            clearEndDate: clearEnd,
             centerSquareType: centerType,
             centerSquareCustomName: centerType == .customFree
                 ? (centerCustomName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : centerCustomName.trimmingCharacters(in: .whitespaces))

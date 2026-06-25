@@ -500,6 +500,53 @@ describe('computeBoardStatsUpdate — Phase 6.3 recurring-template mode', () => 
     expect(result.completedTasks).toBe(1);
   });
 
+  it('indefinite host board admits spawns with no upper window bound (regression)', () => {
+    // Before endDate became optional, an indefinite host (no endDate) produced a
+    // NaN upper bound in isWithinTimeframe and silently dropped ALL spawns, so the
+    // achievement cell could never complete. A spawn months after the host's
+    // startDate must now count.
+    const parent = board('parent', {
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      timeframe: Timeframe.INDEFINITE,
+      startDate: '2026-04-01T00:00:00.000Z',
+      endDate: undefined,
+    });
+    const s1 = board('s1', {
+      spawnedFromTemplateId: 't1',
+      startDate: '2026-04-08T00:00:00.000Z',
+      status: BoardStatus.COMPLETED,
+    });
+    const s2 = board('s2', {
+      spawnedFromTemplateId: 't1',
+      startDate: '2026-06-15T00:00:00.000Z', // well past any monthly window
+      status: BoardStatus.COMPLETED,
+    });
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1', requiredCount: 2 });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, s1, s2]);
+    expect(result.completedTasks).toBe(1);
+  });
+
+  it('indefinite host still excludes spawns before its startDate', () => {
+    const parent = board('parent', {
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      timeframe: Timeframe.INDEFINITE,
+      startDate: '2026-04-01T00:00:00.000Z',
+      endDate: undefined,
+    });
+    const before = board('before', {
+      spawnedFromTemplateId: 't1',
+      startDate: '2026-03-20T00:00:00.000Z', // before host startDate
+      status: BoardStatus.COMPLETED,
+    });
+    const ach = achievementTask('ach1', { referencedTemplateId: 't1', requiredCount: 1 });
+    const bt = boardTask('parent', 'ach1', 0, 0);
+    const result = computeBoardStatsUpdate(parent, [bt], {}, { ach1: ach }, [parent, before]);
+    expect(result.completedTasks).toBe(0);
+  });
+
   it('requiredCount=2 with only 1 met → cell incomplete', () => {
     const parent = board('parent', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const s1 = board('s1', {

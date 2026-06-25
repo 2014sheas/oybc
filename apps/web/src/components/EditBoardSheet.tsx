@@ -118,8 +118,9 @@ export function EditBoardSheet({
 
   // ── Auto-computed boundaries for non-custom timeframes ────────────────────
 
+  // Custom + Indefinite have no computed window (getTimeframeBoundaries throws).
   const computedBoundaries =
-    timeframe !== Timeframe.CUSTOM
+    timeframe !== Timeframe.CUSTOM && timeframe !== Timeframe.INDEFINITE
       ? getTimeframeBoundaries(timeframe, new Date(), weekStartDay)
       : null;
 
@@ -168,7 +169,13 @@ export function EditBoardSheet({
 
     // Timeframe + dates.
     patch.timeframe = timeframe;
-    if (timeframe === Timeframe.CUSTOM) {
+    if (timeframe === Timeframe.INDEFINITE) {
+      // Ongoing board — anchor startDate to today, clear the deadline.
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      patch.startDate = toLocalISO(dayStart);
+      patch.endDate = null; // explicit clear (updateBoardAndCascade)
+    } else if (timeframe === Timeframe.CUSTOM) {
       patch.startDate = snapStart(customStartDate);
       patch.endDate = snapEnd(customEndDate);
     } else if (computedBoundaries) {

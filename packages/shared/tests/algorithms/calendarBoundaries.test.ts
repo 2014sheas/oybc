@@ -187,6 +187,10 @@ describe('getTimeframeBoundaries', () => {
     expect(() => getTimeframeBoundaries(Timeframe.CUSTOM)).toThrow();
   });
 
+  it('throws for INDEFINITE timeframe', () => {
+    expect(() => getTimeframeBoundaries(Timeframe.INDEFINITE)).toThrow();
+  });
+
   it('defaults referenceDate to now when omitted', () => {
     const result = getTimeframeBoundaries(Timeframe.DAILY);
     // Should contain today's date — just verify it returns valid boundaries
@@ -225,6 +229,26 @@ describe('isWithinTimeframe', () => {
     expect(isWithinTimeframe('2026-03-25T12:00:00.000', start, end)).toBe(true);
     expect(isWithinTimeframe('2026-03-30T00:00:00.000', start, end)).toBe(false);
   });
+
+  // Indefinite boards: an absent endDate means an unbounded window [start, ∞).
+  describe('unbounded window (indefinite board — no endDate)', () => {
+    it('returns true for any date at or after start when endDate is undefined', () => {
+      expect(isWithinTimeframe(new Date(2026, 2, 25), start, undefined)).toBe(true);
+      expect(isWithinTimeframe(new Date(2030, 0, 1), start)).toBe(true);
+    });
+
+    it('returns true at the start boundary with no endDate', () => {
+      expect(isWithinTimeframe(new Date(2026, 2, 23, 0, 0, 0, 0), start, undefined)).toBe(true);
+    });
+
+    it('returns false before start even with no endDate', () => {
+      expect(isWithinTimeframe(new Date(2026, 2, 22), start, undefined)).toBe(false);
+    });
+
+    it('treats null endDate the same as undefined (unbounded)', () => {
+      expect(isWithinTimeframe(new Date(2099, 11, 31), start, null)).toBe(true);
+    });
+  });
 });
 
 // ─── isTimeframeExpired ──────────────────────────────────────────────────────
@@ -253,6 +277,11 @@ describe('isTimeframeExpired', () => {
     expect(isTimeframeExpired('2099-12-31T23:59:59.999')).toBe(false);
     // Far past date should be expired
     expect(isTimeframeExpired('2000-01-01T23:59:59.999')).toBe(true);
+  });
+
+  it('returns false when endDate is undefined (indefinite board never expires)', () => {
+    expect(isTimeframeExpired(undefined, new Date(2099, 0, 1))).toBe(false);
+    expect(isTimeframeExpired(null, new Date(2099, 0, 1))).toBe(false);
   });
 });
 
@@ -294,6 +323,11 @@ describe('formatTimeframeLabel', () => {
     const label = formatTimeframeLabel(Timeframe.CUSTOM, '2026-03-01T00:00:00.000');
     expect(label).toBe('Custom');
   });
+
+  it('formats indefinite as "Ongoing"', () => {
+    const label = formatTimeframeLabel(Timeframe.INDEFINITE, '2026-03-01T00:00:00.000');
+    expect(label).toBe('Ongoing');
+  });
 });
 
 // ─── formatRecurringCadence ──────────────────────────────────────────────────
@@ -313,6 +347,9 @@ describe('formatRecurringCadence', () => {
   });
   it('returns "Custom" for CUSTOM (defensive — production excludes it)', () => {
     expect(formatRecurringCadence(Timeframe.CUSTOM)).toBe('Custom');
+  });
+  it('returns "Ongoing" for INDEFINITE (defensive — production excludes it)', () => {
+    expect(formatRecurringCadence(Timeframe.INDEFINITE)).toBe('Ongoing');
   });
 });
 
@@ -427,7 +464,12 @@ describe('stepWindow', () => {
     it('throws for CUSTOM timeframe', () => {
       expect(() =>
         stepWindow(Timeframe.CUSTOM, '2026-05-19T00:00:00.000', 1),
-      ).toThrow(/CUSTOM/);
+      ).toThrow(/custom/i);
+    });
+    it('throws for INDEFINITE timeframe', () => {
+      expect(() =>
+        stepWindow(Timeframe.INDEFINITE, '2026-05-19T00:00:00.000', 1),
+      ).toThrow(/indefinite/i);
     });
     it('throws for non-integer step', () => {
       expect(() =>

@@ -66,17 +66,22 @@ enum DateFormatting {
     /// sorts *before* a local `2026-04-30T23:59:59.000` even though they
     /// represent different instants.
     ///
-    /// Returns `false` if any side fails to parse — conservative degrade
-    /// (matches the shared helper's silent NaN-comparison behaviour for
+    /// Returns `false` if the candidate or start fails to parse — conservative
+    /// degrade (matches the shared helper's silent NaN-comparison behaviour for
     /// unparseable inputs).
+    ///
+    /// A `nil` `endDate` denotes an unbounded window `[startDate, ∞)` — the
+    /// model for INDEFINITE boards — in which case only the lower bound is
+    /// checked. Mirror of the shared `isWithinTimeframe`.
     static func isWithinTimeframe(
         _ candidate: String,
         startDate: String,
-        endDate: String
+        endDate: String?
     ) -> Bool {
         guard let c = parseISO(candidate),
-              let s = parseISO(startDate),
-              let e = parseISO(endDate) else { return false }
+              let s = parseISO(startDate) else { return false }
+        guard let endDate else { return c >= s }
+        guard let e = parseISO(endDate) else { return false }
         return c >= s && c <= e
     }
 }

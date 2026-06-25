@@ -865,6 +865,17 @@ final class SyncService: ObservableObject {
         }
         cleaned["_syncedAt"] = FieldValue.serverTimestamp()
 
+        // Indefinite boards carry no `endDate`. Because we write with
+        // `merge: true`, simply omitting the field would PRESERVE a stale
+        // deadline on Firestore from before a convert-to-indefinite edit —
+        // which a second device would then pull, silently un-converting the
+        // board. Explicitly delete the field so the remote doc matches the
+        // local source of truth. (Harmless no-op on a fresh doc / a board
+        // that never had an endDate.)
+        if docRef.parent.collectionID == "boards", cleaned["endDate"] == nil {
+            cleaned["endDate"] = FieldValue.delete()
+        }
+
         try await docRef.setData(cleaned, merge: true)
     }
 
@@ -1008,6 +1019,21 @@ final class SyncService: ObservableObject {
         }
 
         try db.execute(sql: sql, arguments: StatementArguments(values))
+
+        // Pull is a full-entity replace: the remote doc is the source of truth.
+        // The upsert above only SETs columns PRESENT in the remote doc, so an
+        // indefinite board (whose endDate field was deleted on Firestore) would
+        // leave a STALE endDate on an existing local row — making it
+        // `timeframe = indefinite` yet still carrying a deadline. Explicitly
+        // clear it so the local row matches the remote. Mirrors the push-side
+        // FieldValue.delete(); harmless when the row already had no endDate.
+        if grdbTable == "boards", cleaned["endDate"] == nil,
+           let boardId = cleaned["id"] as? String {
+            try db.execute(
+                sql: "UPDATE \"boards\" SET endDate = NULL WHERE id = ?",
+                arguments: [boardId]
+            )
+        }
     }
 
     /// Cached per-table column names. Populated lazily on first lookup

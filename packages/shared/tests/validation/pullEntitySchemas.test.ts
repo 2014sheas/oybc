@@ -135,6 +135,18 @@ describe('BoardSchema pull validation', () => {
     );
     expect(result.success).toBe(true);
   });
+
+  it('accepts an indefinite board with no endDate', () => {
+    const base = validBoard({ timeframe: Timeframe.INDEFINITE });
+    delete (base as Record<string, unknown>).endDate;
+    expect(BoardSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('accepts a board with timeframe INDEFINITE (new enum value)', () => {
+    expect(
+      BoardSchema.safeParse(validBoard({ timeframe: Timeframe.INDEFINITE })).success
+    ).toBe(true);
+  });
 });
 
 describe('TaskSchema pull validation', () => {
