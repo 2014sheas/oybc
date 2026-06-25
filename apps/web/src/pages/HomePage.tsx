@@ -1,8 +1,16 @@
 import { useNavigate } from 'react-router-dom';
+import { AchievementTrigger, BoardStatus, Timeframe, computeStreak } from '@oybc/shared';
+import { useAuth } from '../firebase/useAuth';
+import { useBoards } from '../hooks/useBoards';
+import { usePreferences } from '../hooks/usePreferences';
 import { RisoButton, RisoCard, RisoIcon, RisoSectionLabel } from '../components/riso';
+import { StreakPill } from '../components/home/StreakPill';
+import { ResumePanel } from '../components/home/ResumePanel';
+import { BoardRail } from '../components/home/BoardRail';
+import homeStyles from '../components/home/Home.module.css';
 import styles from './HomePage.module.css';
 
-/** "Saturday · June 20" — the greeting kicker date. */
+/** "Wednesday · June 25" — the greeting kicker date. */
 function greetingDate(): string {
   return new Date().toLocaleDateString(undefined, {
     weekday: 'long',
@@ -12,16 +20,38 @@ function greetingDate(): string {
 }
 
 /**
- * Home / Resume — the signed-in landing (the new default route).
+ * Home / Resume — the signed-in landing.
  *
- * Phase 2a ships the greeting + a jump-to-boards prompt so the Home tab has a
- * real destination. Phase 2b fills in the streak pill, the "Jump back in"
- * resume panel with a live board poster, and the active-boards rail (which
- * need the boards/streaks data layer). The tutorial card from the prototype is
- * intentionally omitted — web has no tutorial system yet (iOS-only).
+ * Greeting + daily-greenlog streak pill, a "Jump back in" resume panel for the
+ * most-recently-active board, and a rail of the other active boards. All from
+ * the boards' denormalized fields + the shared streaks engine. The board
+ * posters are progress-accurate mini-grids; the real type-aware renderer
+ * arrives in Phase 3 (see docs/RISO_WEB.md). No tutorial card — web has no
+ * tutorial system (iOS-only).
  */
 export function HomePage(): React.ReactElement {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [prefs] = usePreferences();
+  const boards = useBoards(user?.id);
+
+  const activeBoards = boards
+    .filter((b) => b.status === BoardStatus.ACTIVE)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const featured = activeBoards[0];
+  const rail = activeBoards.slice(1, 5);
+
+  const streak = computeStreak(
+    Timeframe.DAILY,
+    AchievementTrigger.GREENLOG,
+    boards,
+    prefs.weekStartDay,
+    new Date()
+  );
+
+  const openBoard = (boardId: string): void => {
+    navigate(`/boards/${boardId}`);
+  };
 
   return (
     <div>
@@ -33,26 +63,52 @@ export function HomePage(): React.ReactElement {
             Pick up where you left off, or print something new. The press is warm.
           </p>
         </div>
+        {streak > 0 && <StreakPill count={streak} />}
       </div>
 
-      <div className={styles.sectionHead}>
-        <h2 className={styles.sectionTitle}>Jump back in</h2>
-        <RisoButton kind="ghost" size="small" onClick={() => navigate('/boards')}>
-          All boards
-        </RisoButton>
-      </div>
-      <RisoCard padded className={styles.placeholder}>
-        <p className={styles.placeholderText}>
-          Your active boards live here. Open one to keep filling squares, or start a fresh board.
-        </p>
-        <RisoButton
-          kind="primary"
-          icon={<RisoIcon name="plus" size={16} />}
-          onClick={() => navigate('/create')}
-        >
-          New board
-        </RisoButton>
-      </RisoCard>
+      {featured ? (
+        <>
+          <div className={homeStyles.sectionHead}>
+            <span className={homeStyles.secLabel}>Jump back in</span>
+            <button type="button" className={homeStyles.sectionLink} onClick={() => navigate('/boards')}>
+              All boards
+              <RisoIcon name="chevron" size={13} />
+            </button>
+          </div>
+          <ResumePanel board={featured} onOpen={openBoard} />
+
+          {rail.length > 0 && (
+            <>
+              <div className={homeStyles.sectionHead}>
+                <span className={homeStyles.secLabel}>Your other active boards</span>
+                <button type="button" className={homeStyles.sectionLink} onClick={() => navigate('/boards')}>
+                  View all
+                  <RisoIcon name="chevron" size={13} />
+                </button>
+              </div>
+              <BoardRail boards={rail} onOpen={openBoard} />
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Jump back in</h2>
+          </div>
+          <RisoCard padded className={styles.placeholder}>
+            <p className={styles.placeholderText}>
+              No active boards yet. Start one — pick a timeframe, drop in your tasks, and print the board.
+            </p>
+            <RisoButton
+              kind="primary"
+              icon={<RisoIcon name="plus" size={16} />}
+              onClick={() => navigate('/create')}
+            >
+              New board
+            </RisoButton>
+          </RisoCard>
+        </>
+      )}
     </div>
   );
 }
