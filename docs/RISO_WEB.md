@@ -168,10 +168,13 @@ preference with an explicit choice (by design; restore System from Profile).
 | 4 | Create wizard + Tasks library | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
-**Fold-ins for this pass** (pre-existing web follow-ups from CLAUDE.md): gate
-`/playground` behind `import.meta.env.DEV`; replace the raw-error leak in web
-`SyncStatusIndicator` with the iOS minimal three-state row; web draft-board
-containment (`createdInWizard` hidden until active; drafts never playable).
+**Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,
+to fold in as the relevant screen is touched / before web launch; still tracked
+in CLAUDE.md's Known follow-ups): gate `/playground` behind
+`import.meta.env.DEV`; replace the raw-error leak in web `SyncStatusIndicator`
+with the iOS minimal three-state row (do with the Profile/sync re-skin, Phase 5);
+web draft-board containment (`createdInWizard` hidden until active; drafts never
+playable — do with the Boards/Create re-skins, Phases 3–4).
 
 ## Conventions for re-skinning a screen
 

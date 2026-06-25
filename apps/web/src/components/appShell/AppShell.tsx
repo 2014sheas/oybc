@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { BoardStatus } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
 import { useBoards } from '../../hooks/useBoards';
+import type { AppliedTheme } from '../../hooks/useAppliedTheme';
 import { AppTopNav } from './AppTopNav';
 import { AppBottomNav } from './AppBottomNav';
 import styles from './AppShell.module.css';
@@ -14,15 +15,23 @@ import styles from './AppShell.module.css';
  *
  * Owns the single active-boards subscription and passes the count to both nav
  * bars (which both render the Boards badge) so there's only one live query.
+ * `appliedTheme` is resolved once by `AuthenticatedLayout` and threaded to the
+ * top nav so the theme toggle reflects the applied state without re-subscribing.
  */
-export function AppShell({ children }: { children: ReactNode }): React.ReactElement {
+export function AppShell({
+  children,
+  appliedTheme,
+}: {
+  children: ReactNode;
+  appliedTheme: AppliedTheme;
+}): React.ReactElement {
   const { user } = useAuth();
   const boards = useBoards(user?.id);
   const activeCount = boards.filter((b) => b.status === BoardStatus.ACTIVE).length;
 
   return (
     <div className={`${styles.app} riso-grain`}>
-      <AppTopNav activeBoardCount={activeCount} />
+      <AppTopNav activeBoardCount={activeCount} appliedTheme={appliedTheme} />
       <main className={styles.main}>
         <div className={styles.canvas}>{children}</div>
       </main>

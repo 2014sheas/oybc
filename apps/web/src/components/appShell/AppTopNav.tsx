@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../firebase/useAuth';
 import { usePreferences } from '../../hooks/usePreferences';
-import { useAppliedTheme } from '../../hooks/useAppliedTheme';
+import type { AppliedTheme } from '../../hooks/useAppliedTheme';
 import { RisoBrandMark, RisoButton, RisoIcon, RisoSegmented } from '../riso';
 import { NAV_ITEMS, isNavItemActive } from './navItems';
 import styles from './AppTopNav.module.css';
@@ -13,6 +13,10 @@ type NavTheme = 'light' | 'dark';
 export interface AppTopNavProps {
   /** Active-board count for the Boards badge (subscribed once in AppShell). */
   activeBoardCount: number;
+  /** Resolved theme (light/dark), threaded from AuthenticatedLayout's single
+   *  `useAppliedTheme` so the toggle reflects the applied state without
+   *  re-subscribing. */
+  appliedTheme: AppliedTheme;
 }
 
 /**
@@ -20,14 +24,14 @@ export interface AppTopNavProps {
  * primary tabs (desktop) + theme toggle + New board + avatar. At ≤760px the
  * tabs detach into `AppBottomNav` and this collapses to icon-only controls.
  */
-export function AppTopNav({ activeBoardCount }: AppTopNavProps): React.ReactElement {
+export function AppTopNav({ activeBoardCount, appliedTheme }: AppTopNavProps): React.ReactElement {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user } = useAuth();
   const [, updatePrefs] = usePreferences();
   // Display the RESOLVED theme (never 'system') so the toggle's selected state
   // matches what's actually applied; the full System control lives on Profile.
-  const theme: NavTheme = useAppliedTheme();
+  const theme: NavTheme = appliedTheme;
 
   const initial = (user?.displayName || user?.email || 'O').trim().charAt(0).toUpperCase();
 

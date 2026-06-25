@@ -90,10 +90,12 @@ function TasksRoute(): React.ReactElement | null {
 function AuthenticatedLayout(): React.ReactElement {
   useSyncLoop();
   useLegacyPreferencesMigration();
-  useAppliedTheme();
+  // Single owner of theme resolution + the `data-theme` side effect; the
+  // resolved value is threaded to the nav so it doesn't re-subscribe.
+  const appliedTheme = useAppliedTheme();
 
   return (
-    <AppShell>
+    <AppShell appliedTheme={appliedTheme}>
       <Routes>
         <Route path="/home" element={<HomePage />} />
         <Route path="/boards" element={<BoardsPage />} />
