@@ -74,9 +74,12 @@ only for content on `--riso-paper`/`--riso-paper-2`.
 - **Halftone** (`.riso-halftone`): dot overprint on **completed cells only**
   (Phase 3).
 - **Keyframes:** `risoCellPop`, `risoToastDrop`, `risoGreenlogIn`,
-  `risoConfettiFall` — all disabled under `prefers-reduced-motion`. Entrance
-  animations must animate **from** a hidden state to a visible resting state,
-  never leave content at `opacity:0` at rest.
+  `risoConfettiFall` — all disabled under `prefers-reduced-motion`. Canonical
+  duration+easing for the three deterministic ones live in `--riso-anim-cell-pop`
+  / `--riso-anim-toast-drop` / `--riso-anim-greenlog-in` (consume via
+  `animation: risoCellPop var(--riso-anim-cell-pop)`); confetti is per-particle
+  (random duration/delay). Entrance animations must animate **from** a hidden
+  state to a visible resting state, never leave content at `opacity:0` at rest.
 
 ### Typography
 

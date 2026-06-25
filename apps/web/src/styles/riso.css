@@ -49,6 +49,14 @@
   /* Type */
   --riso-font-head: 'Bricolage Grotesque', sans-serif;
   --riso-font-body: 'Archivo', sans-serif;
+
+  /* Canonical animation timings (duration + easing), lifted from the prototype,
+     so later-phase consumers write `animation: risoCellPop var(--riso-anim-cell-pop)`
+     without re-deriving the curve. Confetti is intentionally absent — it's
+     per-particle (random duration/delay, linear infinite). */
+  --riso-anim-cell-pop: 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  --riso-anim-toast-drop: 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+  --riso-anim-greenlog-in: 0.32s ease;
 }
 
 [data-theme='dark'] {

@@ -23,3 +23,7 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+.chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
