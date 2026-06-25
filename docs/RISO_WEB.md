@@ -133,21 +133,48 @@ The net-new marketing landing + auth, in `apps/web/src/components/signedOut/`:
 inline login form). The "On Your Bingo Card" wordmark is the correct app-name
 expansion — the handoff prototype's "Own Your Bingo Card" is a typo; don't copy it.
 
+## Phase 2a — App shell + nav (in review)
+
+The signed-in chrome, in `apps/web/src/components/appShell/`:
+
+- `AppShell.tsx` — wraps the authenticated routes: `AppTopNav` (sticky) + paper
+  canvas + `AppBottomNav` (fixed, mobile-only). Replaces the old bottom-only
+  `TabBar` (deleted). Owns the single active-boards live query, passing the
+  count to both nav bars.
+- `AppTopNav.tsx` — brand mark + wordmark + primary tabs (Home · Boards · Tasks
+  · You, ink-active pill) + theme toggle (`RisoSegmented` pill, writes the theme
+  preference; displays the *resolved* theme via `useAppliedTheme` so it's
+  correct under `system`) + New board (→/create) + avatar (→/profile). At ≤760px
+  the tabs hide and the controls collapse to icons.
+- `AppBottomNav.tsx` — the same `NAV_ITEMS` as a fixed bottom tab bar, shown only
+  at ≤760px (a real per-breakpoint layout, not the prototype's CSS-reparenting).
+- `navItems.ts` — shared tab defs + `isNavItemActive` (exact or `path + '/'`).
+- New `/home` route → `HomePage` (Phase 2a ships a minimal greeting; the rich
+  resume content is 2b). `/` and `*` now land on `/home`.
+
+Theme note: the nav toggle is Day/Night only — the full System/Light/Dark
+control stays on the Profile screen (Phase 5). Clicking it overwrites a `system`
+preference with an explicit choice (by design; restore System from Profile).
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | Token layer + fonts + grain/halftone/shadow utilities + primitive kit | **shipped** |
 | **1** | Auth shell + signed-out marketing home (net-new) + sign-in modal | **shipped** |
-| 2 | App shell + nav (→ mobile bottom tab bar) + Home/Resume | planned |
+| 2a | App shell + nav — top nav (→ mobile bottom tab bar) + minimal Home route | **in review** |
+| 2b | Home/Resume landing — streak pill, resume panel w/ live poster, active-boards rail | planned |
 | 3 | Play board + Boards (cell escalation, halftone, gold bingo line, greenlog, toast) | planned |
 | 4 | Create wizard + Tasks library | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
-**Fold-ins for this pass** (pre-existing web follow-ups from CLAUDE.md): gate
-`/playground` behind `import.meta.env.DEV`; replace the raw-error leak in web
-`SyncStatusIndicator` with the iOS minimal three-state row; web draft-board
-containment (`createdInWizard` hidden until active; drafts never playable).
+**Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,
+to fold in as the relevant screen is touched / before web launch; still tracked
+in CLAUDE.md's Known follow-ups): gate `/playground` behind
+`import.meta.env.DEV`; replace the raw-error leak in web `SyncStatusIndicator`
+with the iOS minimal three-state row (do with the Profile/sync re-skin, Phase 5);
+web draft-board containment (`createdInWizard` hidden until active; drafts never
+playable — do with the Boards/Create re-skins, Phases 3–4).
 
 ## Conventions for re-skinning a screen
 

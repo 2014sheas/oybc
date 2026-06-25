@@ -126,11 +126,6 @@ body {
   flex-direction: column;
 }
 
-/* Content area above tab bar — keeps content from being hidden */
-.tabbar-content {
-  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-}
-
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;

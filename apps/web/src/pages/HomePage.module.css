@@ -1,0 +1,50 @@
+/* Home / Resume landing. Phase 2a ships the greeting + a jump-to-boards prompt;
+   the resume panel, board rail, and streak pill arrive in Phase 2b. */
+.greet {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.title {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(38px, 5vw, 56px);
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  margin: 8px 0 0;
+}
+.sub {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  margin: 12px 0 0;
+  max-width: 520px;
+  line-height: 1.5;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 40px 0 16px;
+}
+.sectionTitle {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.placeholder {
+  padding: 28px;
+}
+.placeholderText {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
