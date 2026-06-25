@@ -95,11 +95,13 @@ Reusable, CSS-Module components — the web mirror of iOS
 
 | Component | API highlights | iOS counterpart |
 |---|---|---|
-| `RisoButton` | `kind` (neutral/primary/blue/green/gold/ghost), `size` (default/large/small), `icon`, `fullWidth` | `RisoButton` |
+| `RisoButton` | `kind` (neutral/primary/blue/green/gold/ghost/**dark**), `size` (default/large/small), `icon`, `fullWidth`. `dark` = the Apple sign-in slab, intentionally adaptive (black-on-light / white-on-dark). | `RisoButton` |
 | `RisoCard` | `shadow` (small/default/large), `interactive`, `padded` | `.risoCard()` |
 | `RisoChip` | `on` (selected → ink fill) | `RisoChip` |
 | `RisoSegmented<T>` | generic single-select; `variant` card (blue active) / pill (ink active) | `RisoSegmented<T>` |
 | `RisoSectionLabel` | `variant` section (muted) / kicker (red) | `risoSectionLabel` |
+| `RisoIcon` | stroke-icon set (`name`, `size`); inherits `currentColor`; decorative unless given `aria-label` | SF Symbols |
+| `RisoBrandMark` | 3×3 bingo-grid OYBC logo (`size`) — mascot-agnostic, markup not raster | (markup) |
 
 The board cell, badge, toast, and greenlog overlay land with the play board
 (Phase 3) — they're tied to bingo logic, not pure primitives.
@@ -110,12 +112,33 @@ Dev-only showcase: `/playground` → "Riso Foundation — primitive kit (Phase 0
 (`components/playground/RisoKitPlayground.tsx`) renders the real primitives with
 a local day/night toggle. Use Playwright against it for visual checks.
 
+## Phase 1 — Signed-out home (shipped)
+
+The net-new marketing landing + auth, in `apps/web/src/components/signedOut/`:
+
+- `SignedOutHome.tsx` — the poster landing (nav · hero with the rotated poster
+  board · "How it works" 3-beat escalation · "Not just a checkbox" 4 type
+  cards · red footer CTA). Owns its theme (pre-auth) and the auth-modal state.
+- `SignInModal.tsx` — Apple / Google / email+password, wired to the **real**
+  `useAuth()`. A password field was added vs the prototype's email-only stub;
+  on success the AuthProvider's user flips non-null and `AuthGate` swaps the
+  whole tree for the app, so the modal needs no explicit success callback.
+- `SignedOutArt.tsx` — the static poster grids (hero / beat minis / modal art).
+- `useSignedOutTheme.ts` — mirrors a light/dark choice to `[data-theme]` on
+  `<html>` (the signed-out page can't use `useAppliedTheme`, which reads the
+  signed-in user row); persisted to `localStorage`. `useAppliedTheme` takes over
+  the attribute once signed in.
+
+`AuthGate.tsx` now renders `SignedOutHome` when signed out (it replaced the old
+inline login form). The "On Your Bingo Card" wordmark is the correct app-name
+expansion — the handoff prototype's "Own Your Bingo Card" is a typo; don't copy it.
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | Token layer + fonts + grain/halftone/shadow utilities + primitive kit | **shipped** |
-| 1 | Auth shell + signed-out marketing home (net-new) + sign-in modal | planned |
+| **1** | Auth shell + signed-out marketing home (net-new) + sign-in modal | **shipped** |
 | 2 | App shell + nav (→ mobile bottom tab bar) + Home/Resume | planned |
 | 3 | Play board + Boards (cell escalation, halftone, gold bingo line, greenlog, toast) | planned |
 | 4 | Create wizard + Tasks library | planned |
