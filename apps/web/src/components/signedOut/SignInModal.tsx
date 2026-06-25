@@ -45,6 +45,15 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
     setError(null);
   }, [mode]);
 
+  // Lock background scroll while the modal is open (restored on close).
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   /** Run an auth action with shared busy/error handling. */
   async function run(action: () => Promise<unknown>, fallback: string): Promise<void> {
     if (busy) return;
@@ -119,8 +128,11 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
 
         <form onSubmit={handleEmailSubmit}>
           <div className={styles.soAuthField}>
-            <div className={styles.soFieldLabel}>Email</div>
+            <label htmlFor="so-auth-email" className={styles.soFieldLabel}>
+              Email
+            </label>
             <input
+              id="so-auth-email"
               className={styles.soInput}
               type="email"
               placeholder="you@example.com"
@@ -131,8 +143,11 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
             />
           </div>
           <div className={styles.soAuthField}>
-            <div className={styles.soFieldLabel}>Password</div>
+            <label htmlFor="so-auth-password" className={styles.soFieldLabel}>
+              Password
+            </label>
             <input
+              id="so-auth-password"
               className={styles.soInput}
               type="password"
               placeholder="••••••••"

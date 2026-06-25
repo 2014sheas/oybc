@@ -584,6 +584,7 @@
   margin-bottom: 12px;
 }
 .soFieldLabel {
+  display: block;
   font-family: var(--riso-font-head);
   font-weight: 700;
   font-size: 12px;
@@ -640,6 +641,10 @@
   cursor: pointer;
   display: grid;
   place-items: center;
+}
+.soAuthX:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 /* ---- responsive ---- */
