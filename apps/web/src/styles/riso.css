@@ -33,10 +33,14 @@
   --riso-hair: rgba(24, 18, 11, 0.14);
   --riso-shadow-ink: rgba(24, 18, 11, 1);
 
-  /* Static cream — content sitting ON a colored fill (red/blue/green/
-     gold) must NOT flip in dark mode, so it reads against the fill,
-     never the page. Mirrors iOS Color.risoInkStatic. */
+  /* Content sitting ON a colored fill must NOT flip in dark mode — it
+     reads against the fill, never the page. Two flavors by fill lightness:
+       --riso-on-color : static cream, for DARK fills (red/blue/green).
+       --riso-ink-static: static dark, for LIGHT fills (gold) + halftone dots.
+     Mirrors iOS Color.risoPaper-static / risoInkStatic. Both stay fixed
+     across themes (no [data-theme='dark'] override). */
   --riso-on-color: #fbf6ea;
+  --riso-ink-static: #18120b;
 
   /* Shape */
   --riso-r-card: 8px; /* cards, inputs, buttons */

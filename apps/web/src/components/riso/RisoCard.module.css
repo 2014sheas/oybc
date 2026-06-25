@@ -30,9 +30,17 @@
 .large.interactive:hover {
   box-shadow: 9px 9px 0 var(--riso-shadow-ink); /* large base 8px → 9px */
 }
+/* Press into paper: translate by the RESTING offset so the element lands flush
+   where the shadow was, and collapse the shadow to 0 (depth-aware translate). */
 .interactive:active {
   transform: translate(4px, 4px);
   box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.small.interactive:active {
+  transform: translate(2px, 2px);
+}
+.large.interactive:active {
+  transform: translate(8px, 8px);
 }
 
 /* Convenience inner padding. */

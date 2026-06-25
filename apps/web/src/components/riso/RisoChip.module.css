@@ -19,3 +19,7 @@
   background: var(--riso-ink);
   color: var(--riso-paper);
 }
+.chip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}

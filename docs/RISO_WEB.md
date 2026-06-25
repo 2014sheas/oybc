@@ -48,13 +48,16 @@ are lifted verbatim from the iOS design system so the platforms stay in lockstep
 | `--riso-green` | `#1F9B6B` | `#3BCB92` | success, completed, greenlog field |
 | `--riso-gold` | `#FFC21F` | `#FFC21F` | bingo accents, FREE star (unchanged) |
 | `--riso-achievement` | `#7A3FB0` | `#9D6AD8` | achievement task type |
-| `--riso-on-color` | `#FBF6EA` | `#FBF6EA` | content sitting **on** a colored fill |
+| `--riso-on-color` | `#FBF6EA` | `#FBF6EA` | content on a **dark** fill (red/blue/green) |
+| `--riso-ink-static` | `#18120B` | `#18120B` | content on a **light** fill (gold) + halftone dots |
 
 **The dark contract (matches iOS `risoInkStatic`):** content placed on a colored
-fill (red/blue/green/gold button, done cell, badge) uses `--riso-on-color`
-(static cream) — it must **not** flip with the theme, because it reads against the
-fill, not the page. Adaptive `--riso-ink` is only for content on
-`--riso-paper`/`--riso-paper-2`.
+fill must **not** flip with the theme — it reads against the fill, not the page.
+Which static token depends on the fill's lightness: **dark** fills
+(red/blue/green) carry `--riso-on-color` (static cream); the **light** gold fill
+carries `--riso-ink-static` (static dark) — using adaptive `--riso-ink` on gold
+would go cream-on-gold in dark mode and fail WCAG AA. Adaptive `--riso-ink` is
+only for content on `--riso-paper`/`--riso-paper-2`.
 
 ### Shape & motion (also in `riso.css`)
 

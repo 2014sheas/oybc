@@ -31,6 +31,12 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* Keyboard focus ring — the Riso system overrides native affordances, so
+   replace the default outline with a themed one (blue adapts in both modes). */
+.btn:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 
 .btn svg {
   width: 16px;
@@ -55,7 +61,9 @@
 }
 .gold {
   background: var(--riso-gold);
-  color: var(--riso-ink);
+  /* Static dark ink — gold doesn't flip, so adaptive ink would go cream-on-gold
+     (fails WCAG AA) in dark mode. Mirrors iOS risoInkStatic on gold. */
+  color: var(--riso-ink-static);
 }
 .neutral {
   /* base (.btn) values — paper-2 / ink */

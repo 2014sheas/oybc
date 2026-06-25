@@ -64,3 +64,11 @@
   background: var(--riso-blue);
   color: var(--riso-on-color);
 }
+
+/* Keyboard focus ring for both pill and card segments. */
+.seg:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1;
+}
