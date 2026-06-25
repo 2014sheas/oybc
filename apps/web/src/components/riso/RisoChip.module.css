@@ -1,0 +1,29 @@
+/* Riso chip / pill — filter + toggle affordance. `on` inverts to ink. */
+.chip {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.chip:hover:not(.on) {
+  background: var(--riso-paper);
+}
+.on {
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+}
+.chip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

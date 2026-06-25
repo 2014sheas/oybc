@@ -1,0 +1,74 @@
+/* Riso segmented control — two forms share the picker semantics.
+
+   pill: rounded container, transparent buttons, ink active fill — for
+         theme/compact toggles (.theme-seg / .mini-seg in the prototype).
+   card: bordered card buttons, blue active fill — for the prominent
+         wizard/preferences pickers (.seg / .pref-seg). */
+
+/* ---- pill ---- */
+.pill {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+}
+.pill .seg {
+  flex: 1;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 7px 12px;
+  cursor: pointer;
+  color: var(--riso-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+.pill .on {
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+}
+
+/* ---- card ---- */
+.card {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.card .seg {
+  flex: 1;
+  min-width: 90px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px 0;
+  cursor: pointer;
+  color: var(--riso-ink);
+  transition: background 0.1s, color 0.1s;
+}
+.card .seg:hover:not(.on) {
+  background: var(--riso-paper);
+}
+.card .on {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+
+/* Keyboard focus ring for both pill and card segments. */
+.seg:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1;
+}

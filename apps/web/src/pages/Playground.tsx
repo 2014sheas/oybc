@@ -10,6 +10,7 @@ import { CreateHubPlayground } from '../components/playground/CreateHubPlaygroun
 import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
 import { SharedCounterPlayground } from '../components/playground/SharedCounterPlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
+import { RisoKitPlayground } from '../components/playground/RisoKitPlayground';
 import styles from './Playground.module.css';
 
 /**
@@ -37,6 +38,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'riso-kit',
+      title: 'Riso Foundation — primitive kit (Phase 0)',
+      content: <RisoKitPlayground />,
+    },
     {
       id: 'shared-counter',
       title: 'Shared Counters — Phase 1 spike (deriveDisplayedCount)',
