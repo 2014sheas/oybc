@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider } from './firebase/AuthContext';
 import { AuthGate } from './components/AuthGate';
-import { TabBar } from './components/TabBar';
+import { AppShell } from './components/appShell/AppShell';
+import { HomePage } from './pages/HomePage';
 import { BoardsPage } from './pages/BoardsPage';
 import { BoardPlayPage } from './pages/BoardPlayPage';
 import { CreateHubPage } from './pages/CreateHubPage';
@@ -92,39 +93,25 @@ function AuthenticatedLayout(): React.ReactElement {
   useAppliedTheme();
 
   return (
-    <>
-      <div className="tabbar-content">
-        <Routes>
-          <Route path="/boards" element={<BoardsPage />} />
-          <Route path="/boards/core/:timeframe" element={<CoreBoardBrowserPage />} />
-          <Route path="/boards/core/:timeframe/:date" element={<CoreBoardWindowPage />} />
-          <Route path="/boards/:id" element={<BoardPlayPage />} />
-          <Route path="/create" element={<CreateRoute />} />
-          <Route path="/tasks" element={<TasksRoute />} />
-          <Route path="/tasks/:id" element={<TaskDetailPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route
-            path="/profile/board-preferences"
-            element={<BoardPreferencesPage />}
-          />
-          <Route
-            path="/profile/recurring-templates"
-            element={<RecurringTemplatesPage />}
-          />
-          <Route
-            path="/profile/default-pools"
-            element={<DefaultPoolsListPage />}
-          />
-          <Route
-            path="/profile/default-pools/:timeframe"
-            element={<DefaultPoolEditorPage />}
-          />
-          <Route path="/" element={<Navigate to="/boards" replace />} />
-          <Route path="*" element={<Navigate to="/boards" replace />} />
-        </Routes>
-      </div>
-      <TabBar />
-    </>
+    <AppShell>
+      <Routes>
+        <Route path="/home" element={<HomePage />} />
+        <Route path="/boards" element={<BoardsPage />} />
+        <Route path="/boards/core/:timeframe" element={<CoreBoardBrowserPage />} />
+        <Route path="/boards/core/:timeframe/:date" element={<CoreBoardWindowPage />} />
+        <Route path="/boards/:id" element={<BoardPlayPage />} />
+        <Route path="/create" element={<CreateRoute />} />
+        <Route path="/tasks" element={<TasksRoute />} />
+        <Route path="/tasks/:id" element={<TaskDetailPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile/board-preferences" element={<BoardPreferencesPage />} />
+        <Route path="/profile/recurring-templates" element={<RecurringTemplatesPage />} />
+        <Route path="/profile/default-pools" element={<DefaultPoolsListPage />} />
+        <Route path="/profile/default-pools/:timeframe" element={<DefaultPoolEditorPage />} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
+      </Routes>
+    </AppShell>
   );
 }
 
@@ -135,7 +122,8 @@ function AuthenticatedLayout(): React.ReactElement {
  *
  * - Playground is accessible without auth (dev tool)
  * - All other routes require authentication via AuthGate
- * - Tab bar provides navigation between Boards, Create, and Profile
+ * - The Riso `AppShell` provides the top nav (→ mobile bottom tab bar):
+ *   Home · Boards · Tasks · You, plus New board + avatar
  */
 function App() {
   return (

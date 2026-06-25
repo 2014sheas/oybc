@@ -1,0 +1,31 @@
+/* Riso app shell — the signed-in chrome: top nav, paper canvas, mobile bottom
+   tab bar. Paper background + grain make the whole app a Riso surface; screens
+   are re-skinned phase-by-phase on top of it. */
+.app {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
+}
+.main {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+.canvas {
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 38px 40px 96px;
+}
+
+@media (max-width: 760px) {
+  .canvas {
+    /* clear the fixed bottom tab bar */
+    padding: 24px 18px 92px;
+  }
+}
