@@ -128,9 +128,10 @@
 }
 /* In-flow (not an absolute overlay): an absolute dropdown is clipped by the
    New-task sheet's `.body { overflow-y: auto }` scroll container. Rendering it
-   in normal flow lets the sheet scroll to reveal it — clip-safe in every
-   context the picker is used (sheet, DerivedCounterRow, playground), with none
-   of the position/scroll tracking a fixed-position portal would require. */
+   in normal flow lets the sheet scroll to reveal it — clip-safe wherever the
+   picker renders (the New-task sheet + the wizard Tasks step, both scrollable),
+   with none of the position/scroll tracking a fixed-position portal would
+   require. */
 .dropdown {
   margin-top: 6px;
   background: var(--riso-paper-2);
