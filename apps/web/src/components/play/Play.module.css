@@ -1,0 +1,380 @@
+/* ============================================================
+   OYBC · Riso Web — Play board (Phase 3b)
+   2-col sticky rail + board, Riso stats/hint, bingo toast,
+   greenlog overlay. Translated from the prototype onto --riso-*.
+   Keyframes (risoToastDrop / risoGreenlogIn / risoConfettiFall)
+   live in styles/riso.css.
+   ============================================================ */
+
+.play {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 44px;
+  align-items: start;
+}
+
+/* ---- left rail ---- */
+.rail {
+  position: sticky;
+  top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.railTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  padding: 9px 14px 9px 11px;
+  cursor: pointer;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+.back:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.back:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.back svg {
+  width: 15px;
+  height: 15px;
+}
+.iconBtn {
+  margin-left: auto;
+  padding: 9px 12px;
+}
+.kicker {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--riso-red);
+}
+.title {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 40px;
+  line-height: 0.92;
+  letter-spacing: -0.03em;
+  margin: 8px 0 0;
+}
+
+.statStack {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.stat {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  padding: 14px 16px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.stat.gold {
+  background: var(--riso-gold);
+}
+.statK {
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.stat.gold .statK {
+  color: rgba(24, 18, 11, 0.65);
+}
+.statV {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 1;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stat.gold .statV {
+  color: var(--riso-ink-static);
+}
+.statV small {
+  font-size: 16px;
+  color: var(--riso-muted);
+}
+.starS {
+  width: 22px;
+  height: 22px;
+  background: var(--riso-ink-static);
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+.hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.5;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 12px 14px;
+  text-wrap: pretty;
+}
+.hint b {
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+}
+
+.boardWrap {
+  position: relative;
+}
+
+/* achievement-watch corner badge on a play cell */
+.achvBadge {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--riso-ink);
+  background: var(--riso-achievement);
+  color: var(--riso-on-color);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+}
+
+/* ---- bingo toast ---- */
+.toast {
+  position: fixed;
+  right: 40px;
+  top: 76px;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  padding: 15px 18px;
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink);
+  min-width: 280px;
+  animation: risoToastDrop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+.toastArt {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  border: 2px solid var(--riso-on-color);
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 26px;
+  color: var(--riso-gold);
+}
+.toastH {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.toastS {
+  font-size: 12.5px;
+  margin-top: 5px;
+  font-weight: 700;
+  opacity: 0.92;
+}
+.toastCnt {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 34px;
+  color: var(--riso-gold);
+  margin-left: auto;
+}
+
+/* ---- greenlog overlay (page green, squares stay red) ---- */
+.greenlog {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  /* scroll (not clip) so the CTAs stay reachable on short viewports */
+  overflow-y: auto;
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+  animation: risoGreenlogIn 0.32s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .greenlog {
+    animation: none;
+  }
+}
+.confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.confetti i {
+  position: absolute;
+  top: -24px;
+  display: block;
+  animation: risoConfettiFall var(--dur, 3s) linear var(--delay, 0s) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}
+.glInner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.glKicker {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--riso-gold);
+}
+.glTitle {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(64px, 10vw, 130px);
+  line-height: 0.86;
+  letter-spacing: -0.04em;
+  margin: 14px 0 18px;
+}
+.glSub {
+  font-size: 17px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: rgba(251, 246, 234, 0.85);
+  max-width: 420px;
+}
+.glPoster {
+  display: grid;
+  gap: 5px;
+  width: 200px;
+  margin: 22px 0 26px;
+  transform: rotate(-3deg);
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 12px;
+  padding: 9px;
+  background: var(--riso-paper);
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink);
+}
+.glPoster i {
+  aspect-ratio: 1;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 3px;
+  background: var(--riso-red);
+  background-image: radial-gradient(circle, rgba(24, 18, 11, 0.32) 26%, transparent 28%);
+  background-size: 6px 6px;
+}
+.glPoster i.free {
+  background: var(--riso-ink);
+  display: grid;
+  place-items: center;
+}
+.glPoster i.free::after {
+  content: '★';
+  color: var(--riso-gold);
+  font-size: 11px;
+}
+.glStats {
+  display: flex;
+  gap: 12px;
+  margin: 28px 0 30px;
+}
+.glStat {
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 14px 22px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.glStat b {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 30px;
+  color: var(--riso-ink);
+  line-height: 1;
+}
+.glStat span {
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+.glBtns {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (max-width: 1080px) {
+  .play {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .rail {
+    position: static;
+  }
+  .statStack {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .stat {
+    flex: 1;
+    min-width: 120px;
+  }
+}
+@media (max-width: 560px) {
+  .toast {
+    right: 12px;
+    left: 12px;
+    min-width: 0;
+  }
+}

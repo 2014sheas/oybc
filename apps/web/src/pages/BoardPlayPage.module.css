@@ -21,61 +21,25 @@
 
 /* ─── Flash messages ────────────────────────────────────────────────────────── */
 
+/* Transient flash — only the residual cases (lost bingo / reactivated / error);
+   new bingos + greenlog route to the toast/overlay. */
 .flashMessage {
-  padding: 0.65rem 1rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 600;
-  border-left: 3px solid currentColor;
-  margin-bottom: 12px;
+  position: fixed;
+  top: 76px;
+  right: 40px;
+  z-index: 110;
+  padding: 0.7rem 1rem;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
 
 .flashBingo {
-  background-color: var(--active-bg, #0d6efd);
-  color: #ffffff;
-  border-left-color: rgba(255, 255, 255, 0.6);
-}
-
-.flashGreenlog {
-  background-color: var(--success-bg, #d1e7dd);
-  color: var(--success-text, #198754);
-  border-left-color: var(--success-border, #a3cfbb);
-}
-
-/* ─── Play header ───────────────────────────────────────────────────────────── */
-
-.playHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  margin-bottom: 12px;
-}
-
-.playHeaderLeft {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.nowPlaying {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.playBoardName {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
 }
 
 /* ─── Expired banner ────────────────────────────────────────────────────────── */
@@ -93,63 +57,82 @@
 
 /* ─── Interactive grid ──────────────────────────────────────────────────────── */
 
+/* Riso board frame (Phase 3b) — the inline gridTemplateColumns sets the columns. */
 .playGrid {
   display: grid;
-  gap: 6px;
-  padding: 0.5rem 0;
-  justify-content: start;
+  gap: 8px;
+  padding: 12px;
+  width: fit-content;
+  max-width: 100%;
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper);
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
 }
 
-/* FREE center square placeholder */
+/* FREE center square — inked, gold star + label (matches RisoBoardCell). */
 .freeSquare {
-  width: 90px;
-  height: 90px;
+  aspect-ratio: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background-color: var(--success-bg, #d1e7dd);
-  color: var(--success-text, #198754);
-  border: 1px solid var(--success-border, #a3cfbb);
-  border-radius: var(--radius-md);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  gap: 5px;
+  background: var(--riso-ink);
+  color: var(--riso-gold);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-cell);
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.freeSquare::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  background: var(--riso-gold);
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
 }
 
-/* Empty grid slot (no BoardTask) — neutral, not completed-looking */
+/* Empty grid slot (no BoardTask) — resting paper. */
 .emptySquare {
-  width: 90px;
-  height: 90px;
+  aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--bg-secondary, #f8f9fa);
-  border: 2px dashed var(--border-color);
-  border-radius: var(--radius-md);
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-cell);
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
 }
 
-/* M4 — "+" button inside an empty cell (ACTIVE boards only) */
+/* M4 — "+" affordance inside an empty cell (ACTIVE boards only) */
 .addTaskButton {
   width: 36px;
   height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--riso-ink);
   border-radius: 50%;
-  background: none;
+  background: var(--riso-paper);
+  font-family: var(--riso-font-head);
   font-size: 1.25rem;
-  color: var(--text-secondary);
+  font-weight: 800;
+  color: var(--riso-ink);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .addTaskButton:hover {
-  border-color: var(--accent, #6366f1);
-  color: var(--accent, #6366f1);
-  background-color: var(--accent-bg, rgba(99, 102, 241, 0.07));
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  background: var(--riso-gold);
+}
+.addTaskButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 /* M4 — Remove confirmation dialog */
@@ -220,30 +203,6 @@
 
 .removeConfirmDanger:hover {
   opacity: 0.88;
-}
-
-/* ─── Stats bar ─────────────────────────────────────────────────────────────── */
-
-.statsBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 0;
-  border-top: 1px solid var(--border-color);
-  margin-top: 8px;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.statItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.statDivider {
-  color: var(--border-color);
 }
 
 /* ─── Empty / loading / not found states ────────────────────────────────────── */
