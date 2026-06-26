@@ -220,6 +220,24 @@ surface) — all completion/bingo/greenlog logic preserved.
   (EditBoardSheet, CellSwapModal, FloatingContextMenu, TaskDetailSheet) keep
   current styling — a small Riso-polish follow-up.
 
+## Phase 4a — Tasks library (in review)
+
+Re-skins the Tasks tab (visual pass; all filter/sort/cascade logic preserved):
+
+- `TasksPage` — billboard header (kicker "Reusable tasks" + "Task library" + sub)
+  + a `RisoButton` "New task"; Riso `.list` panel; Riso empty state.
+- `TasksFilterControls` — search + type chips (swapped `FilterTabs` → `RisoChip`)
+  + a "Filters" disclosure with Riso selects (Sort/Status/Usage) + "Group
+  subtasks" pill.
+- `TaskRow` — Riso row with an **inline** square type badge (N/C/K/A) instead of
+  the shared `TypeBadge`, title + status/usage meta, ✎/✕ quick-actions.
+
+**Scope guard:** the shared `TypeBadge` and `NewTaskSheet` are also used by the
+Create wizard (the user's concurrent rework), so 4a deliberately avoids both —
+the row renders its own badge, and "New task" still opens the existing sheet
+(its Riso pass rides with the wizard work). All changes stay in
+Tasks-library-specific files.
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
@@ -229,8 +247,9 @@ surface) — all completion/bingo/greenlog logic preserved.
 | 2a | App shell + nav — top nav (→ mobile bottom tab bar) + minimal Home route | **shipped** |
 | 2b | Home/Resume landing — streak pill, resume panel + poster, active-boards rail | **shipped** |
 | 3a | Boards screen + read-only board renderer (real cell; upgrades Home poster) | **shipped** |
-| 3b | Play board — interactive cell, bingo toast, greenlog overlay | **in review** |
-| 4 | Create wizard + Tasks library | planned |
+| 3b | Play board — interactive cell, bingo toast, greenlog overlay | **shipped** |
+| 4a | Tasks library — billboard header, filter controls, task rows | **in review** |
+| 4b | Create wizard (Setup → Tasks → Preview) | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,

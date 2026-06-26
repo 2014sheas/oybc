@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FilterTabs } from '../../components/FilterTabs';
+import { RisoChip } from '../../components/riso';
 import type {
   SortOption,
   StatusFilter,
@@ -141,12 +141,12 @@ export function TasksFilterControls({
         </button>
       </div>
 
-      <div role="group" aria-label="Filter by task type">
-        <FilterTabs
-          tabs={TYPE_TABS}
-          activeTab={typeFilter}
-          onTabChange={(v) => onTypeFilterChange(v as TypeFilter)}
-        />
+      <div className={styles.typeChips} role="group" aria-label="Filter by task type">
+        {TYPE_TABS.map((t) => (
+          <RisoChip key={t.value} on={typeFilter === t.value} onClick={() => onTypeFilterChange(t.value)}>
+            {t.label}
+          </RisoChip>
+        ))}
       </div>
 
       {/* Issue #73 — Group subtasks chip. Placed after type chips so it reads
