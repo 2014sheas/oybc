@@ -114,7 +114,7 @@ struct RisoTasksPoolHeaderView: View {
             Image(systemName: centerSatisfied ? "star.fill" : "star")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(centerSatisfied ? Color.risoGold : Color.risoMuted)
-            Text(centerSatisfied ? "Center task chosen" : "Center task required")
+            Text(centerSatisfied ? "Center task chosen" : "Tap ☆ on a pool task to set the center")
                 .font(.risoBody(11, .bold))
                 .foregroundStyle(centerSatisfied ? Color.risoGold : Color.risoMuted)
         }

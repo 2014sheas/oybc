@@ -222,6 +222,36 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Leaf: Pool list in center-task (CHOSEN) mode
+
+    /// Bug fix: in CHOSEN center mode each pool row shows a tappable star,
+    /// and the marked row is highlighted gold. Proves the center picker
+    /// actually renders (it was previously absent — "Choose" was a dead end).
+    func testPoolListCenterModeLight() {
+        let view = makePoolListView(centerTaskMode: true, centerTaskId: "t-counting-1")
+            .padding(20)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 300)),
+            record: recordMode
+        )
+    }
+
+    func testPoolListCenterModeDark() {
+        let view = makePoolListView(centerTaskMode: true, centerTaskId: "t-counting-1")
+            .padding(20)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 300),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - Builders
 
     private func makeView(
@@ -241,7 +271,10 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
-    private func makePoolListView() -> some View {
+    private func makePoolListView(
+        centerTaskMode: Bool = false,
+        centerTaskId: String? = nil
+    ) -> some View {
         // Build a stable set of tasks for the pool list
         let normalTask = SnapshotFixtures.makeTask(id: "t-normal-1", title: "Meditate 10 min", type: .normal)
         let countingTask = SnapshotFixtures.makeTask(
@@ -280,7 +313,10 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             effectiveTaskById: taskById,
             effectiveChildrenByCompound: childrenByCompound,
             isRecurring: false,
-            onRemove: { _ in }
+            onRemove: { _ in },
+            centerTaskMode: centerTaskMode,
+            centerTaskId: centerTaskId,
+            onSetCenter: { _ in }
         )
     }
 }

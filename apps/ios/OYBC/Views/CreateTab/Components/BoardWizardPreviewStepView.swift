@@ -26,18 +26,44 @@ struct BoardWizardPreviewStepView: View {
     @State private var isCreating: Bool = false
     @State private var errorMessage: String? = nil
 
+    /// The arrangement shown in the preview grid AND written to the DB.
+    ///
+    /// Captured once (seeded on appear, re-seeded when the selection /
+    /// geometry / center choice changes, or when the user taps Shuffle)
+    /// so the preview and the persisted `BoardTask` rows are guaranteed
+    /// identical. A bare computed property here re-rolled the shuffle on
+    /// every read, so the saved board differed from the previewed one —
+    /// this mirrors web's `useMemo` + `placementRef` capture.
+    @State private var placement: WizardPlacement = []
+
     // MARK: - Computed helpers
 
     private var selectionKey: String {
         Array(controller.selectedTaskIds).sorted().joined(separator: "|")
     }
 
-    private var placement: WizardPlacement {
-        buildWizardPlacement(controller: controller, library: library)
+    /// Re-roll the stored placement from the current wizard state.
+    private func reseedPlacement() {
+        placement = buildWizardPlacement(controller: controller, library: library)
     }
 
     private var taskNames: [String] {
         placement.map { $0?.title ?? "" }
+    }
+
+    /// Number of tasks that actually get shuffled into the grid (a CHOSEN
+    /// center is pinned, so it doesn't count). Drives the Shuffle button's
+    /// visibility — re-rolling <2 tasks is a no-op.
+    private var shuffleableCount: Int {
+        let n = controller.selectedTaskIds.count
+        if controller.isOddBoard && controller.centerType == .chosen {
+            return max(0, n - 1)
+        }
+        return n
+    }
+
+    private var canShuffle: Bool {
+        controller.isRandomized && shuffleableCount >= 2
     }
 
     private var timeframeSummary: String {
@@ -96,6 +122,28 @@ struct BoardWizardPreviewStepView: View {
                     // Mini board grid
                     HStack { Spacer(); previewGrid; Spacer() }
 
+                    // Shuffle control — re-rolls the (stored) arrangement.
+                    if canShuffle {
+                        Button {
+                            reseedPlacement()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "shuffle")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Shuffle")
+                                    .font(.risoHead(13, .bold))
+                            }
+                            .foregroundStyle(Color.risoInk)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .risoCard(fill: .risoPaper2)
+                            .risoHardShadow(Riso.Shadow.small)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isCreating)
+                        .accessibilityLabel("Shuffle board layout")
+                    }
+
                     // Dashed note
                     previewNote
 
@@ -120,6 +168,15 @@ struct BoardWizardPreviewStepView: View {
 
             risoFooter
         }
+        // Seed the stored placement once when the step appears, and re-seed
+        // whenever the inputs that change the grid contents change. The grid
+        // and persist both read this single stored array — never a fresh
+        // re-roll — so what's previewed is exactly what's saved.
+        .onAppear { if placement.isEmpty { reseedPlacement() } }
+        .onChange(of: selectionKey) { _, _ in reseedPlacement() }
+        .onChange(of: controller.size) { _, _ in reseedPlacement() }
+        .onChange(of: controller.centerType) { _, _ in reseedPlacement() }
+        .onChange(of: controller.centerTaskId) { _, _ in reseedPlacement() }
     }
 
     // MARK: - Header
@@ -459,7 +516,11 @@ private extension BoardWizardPreviewStepView {
         }
 
         isCreating = true
-        let snapshot = placement
+        // Persist the exact arrangement the user is looking at. Guard the
+        // (practically impossible) empty case so we never write a blank board.
+        let snapshot = placement.isEmpty
+            ? buildWizardPlacement(controller: controller, library: library)
+            : placement
         persistWizardBoard(
             controller: controller,
             userId: userId,
