@@ -744,7 +744,11 @@ export function BoardWizardTasksStep({
       />
 
       {rowContextMenu && (() => {
-        const target = library.taskMap[rowContextMenu.taskId];
+        // Use effectiveTaskMap (library + this-session pending tasks), not
+        // library.taskMap — otherwise right-clicking a just-created pending
+        // task row finds no target and silently opens no menu. Pending tasks
+        // are valid right-click targets (they're addable to the board).
+        const target = effectiveTaskMap[rowContextMenu.taskId];
         if (!target) {
           return null;
         }
