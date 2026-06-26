@@ -220,7 +220,31 @@ surface) — all completion/bingo/greenlog logic preserved.
   (EditBoardSheet, CellSwapModal, FloatingContextMenu, TaskDetailSheet) keep
   current styling — a small Riso-polish follow-up.
 
-## Phase 4b-ii-a — Wizard Tasks step, main surface (in review)
+## Phase 4b-ii-b1 — New-task sheet + create form (in review)
+
+Re-skins the "+ New task" flow (shared by the wizard Tasks step + the Tasks
+library) for the **normal / counting / achievement** paths. **Pure CSS** (4
+module rewrites; no `.tsx` — the components render via class names). The compound
+builder (`compositeWizard/*`) and the From-a-board picker + inline modals are the
+separate **4b-ii-b2 / b3**.
+
+- `NewTaskSheet.module.css` — Riso sheet chrome (border + hard shadow, header,
+  close) + reduced-motion guard for its local fade/slide keyframes.
+- `CreateNewTaskForm.module.css` — the form: Riso inputs/textarea + char counts,
+  dashed counting cluster, steps section, **green** submit (press-into-paper),
+  success/error banners; plus the reuse-tab list/pool/derive classes.
+- `TaskTypeSelector.module.css` — Riso segmented type picker (blue active); used
+  only here.
+- `CountingTemplatePicker.module.css` — Riso mode toggle + template dropdown +
+  link-derived-counter panel. **Also fixes a pre-existing clip bug:** the
+  template/source dropdowns were `position:absolute` and got clipped by the
+  New-task sheet's `overflow-y:auto` body — now rendered in-flow (clip-safe in
+  every context the picker is used; no portal/scroll-tracking needed).
+
+**Deferred (visible half-state for one cycle):** picking **Compound** opens the
+still-un-Riso `CompositeTaskWizard` inline — that's b2.
+
+## Phase 4b-ii-a — Wizard Tasks step, main surface (shipped)
 
 Re-skins the **main** board-wizard Tasks step (the largest web surface) to Riso,
 and extracts the shared type badge. Scoped to the primary list flow; the
@@ -294,8 +318,10 @@ Tasks-library-specific files.
 | 3b | Play board — interactive cell, bingo toast, greenlog overlay | **shipped** |
 | 4a | Tasks library — billboard header, filter controls, task rows | **shipped** |
 | 4b-i | Create wizard shell — stepper, Setup step, Preview step, cancel dialog | **shipped** |
-| 4b-ii-a | Wizard Tasks step — main surface (count/search/list/rows) + shared RisoTypeBadge | **in review** |
-| 4b-ii-b | Wizard Tasks step — From-a-board picker, NewTaskSheet+form, special-type modals | planned |
+| 4b-ii-a | Wizard Tasks step — main surface (count/search/list/rows) + shared RisoTypeBadge | **shipped** |
+| 4b-ii-b1 | New-task sheet + create form (normal/counting/achievement) + counting template picker | **in review** |
+| 4b-ii-b2 | Compound builder (compositeWizard/*) | planned |
+| 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,

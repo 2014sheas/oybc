@@ -1,90 +1,97 @@
+/* Create-new-task form (Riso, Phase 4b-ii-b1). Rendered inside NewTaskSheet
+   (wizard + Tasks library). Visual re-skin; all creation logic preserved. */
 .container {
-  padding: 0 16px 80px;
+  padding: 0;
 }
 
 .header {
+  font-family: var(--riso-font-head);
   font-size: 28px;
-  font-weight: 700;
-  padding: 20px 4px 12px;
-  color: var(--text-primary);
+  font-weight: 800;
+  padding: 0 0 12px;
+  color: var(--riso-ink);
 }
 
 /* Mode tab row — tabs + pool chip side by side */
 .modeTabRow {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 0.5rem;
+  margin-bottom: 8px;
 }
 
-/* Floating pool count chip — scrolls to pool on click */
+/* Floating pool count chip */
 .poolChip {
-  padding: 0.3rem 0.7rem;
-  border: none;
-  border-radius: var(--radius-card);
-  background-color: var(--active-bg);
-  color: #ffffff;
+  padding: 6px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  font-family: var(--riso-font-head);
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: opacity 0.15s;
+}
+.poolChip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  /* blue-filled chip — cream ring stays visible against the fill */
+  outline-color: var(--riso-on-color);
 }
 
-.poolChip:hover {
-  opacity: 0.85;
-}
-
-/* Top-level mode section */
 .modeSection {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
 }
 
-/* Task Creation Form */
+/* ── Form ── */
 .form {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
 }
 
 .fieldGroup {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 8px;
 }
 
 .label {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--riso-ink);
 }
-
 .required {
-  color: var(--error-text);
+  color: var(--riso-red);
   margin-left: 2px;
 }
 
 .input {
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  font-size: 1rem;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  transition: border-color 0.2s;
+  padding: 12px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
 }
-
-.input:focus {
-  outline: none;
-  border-color: var(--active-bg);
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+.input:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
-
 .input.inputError {
-  border-color: var(--error-text);
+  border-color: var(--riso-red);
+}
+.input.inputError:focus-visible {
+  outline-color: var(--riso-red);
 }
 
 .textarea {
@@ -93,359 +100,368 @@
 }
 
 .charCount {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--riso-muted);
   text-align: right;
 }
-
 .charCount.charCountWarning {
-  color: var(--warning-text);
+  color: var(--riso-gold);
 }
-
 .charCount.charCountError {
-  color: var(--error-text);
+  color: var(--riso-red);
 }
 
 .fieldError {
-  font-size: 0.85rem;
-  color: var(--error-text);
+  font-family: var(--riso-font-head);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--riso-red);
 }
 
-/* Inline explanatory copy (e.g. Achievement watcher blurb, trigger meanings). */
+/* inline explanatory copy */
 .helpText {
   display: block;
   font-size: 0.85rem;
-  line-height: 1.35;
-  color: var(--text-secondary);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--riso-muted);
 }
-
 .helpText.helpTextLead {
-  margin-bottom: 0.5rem;
+  margin-bottom: 8px;
 }
 
-/* Counting Fields */
+/* counting fields cluster */
 .countingFields {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-sm);
-  background-color: var(--card-bg);
+  gap: 10px;
+  padding: 14px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
 }
 
-/* Steps Section */
+/* steps section */
 .stepsSection {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 12px;
 }
-
 .stepsHeader {
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.9rem;
-  color: var(--text-primary);
+  color: var(--riso-ink);
 }
-
 .stepsList {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
 }
-
 .addStepButton {
-  padding: 0.5rem 1rem;
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   cursor: pointer;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.9rem;
-  transition: border-color 0.2s, color 0.2s;
+  transition: background 0.15s, color 0.15s;
   align-self: flex-start;
 }
-
 .addStepButton:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+.addStepButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
-/* Submit Button */
+/* submit (Riso press-into-paper, green = create) */
 .submitButton {
-  padding: 0.75rem 1.5rem;
-  background-color: var(--active-bg);
-  color: #ffffff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  font-size: 1rem;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 13px 20px;
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  transition: background-color 0.2s, transform 0.1s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
   align-self: flex-start;
 }
-
 .submitButton:hover:not(:disabled) {
-  opacity: 0.9;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
 .submitButton:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
 }
-
 .submitButton:disabled {
-  background-color: var(--disabled-bg);
+  opacity: 0.5;
   cursor: not-allowed;
-  opacity: 0.6;
+}
+.submitButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
-/* Success / Error Messages */
+/* success / error banners */
 .successMessage {
-  padding: 0.75rem 1rem;
-  background-color: var(--success-bg);
-  color: var(--success-text);
-  border: 1px solid var(--success-border);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+  padding: 12px 14px;
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  margin-bottom: 8px;
 }
-
 .errorMessage {
-  padding: 0.75rem 1rem;
-  background-color: var(--error-bg);
-  color: var(--error-text);
-  border: 1px solid var(--error-border);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
+  padding: 12px 14px;
+  background: var(--riso-paper);
+  color: var(--riso-red);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
 }
 
-/* Task List — Existing Tasks tab */
+/* ── Task list (reuse-tab usage) ── */
 .taskList {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
 }
-
 .taskItem {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.55rem 0.9rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background-color: var(--card-bg);
+  gap: 12px;
+  padding: 10px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
 }
-
 .taskItemInfo {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   flex: 1;
   min-width: 0;
   flex-wrap: wrap;
 }
-
 .taskItemTitle {
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
   min-width: 0;
 }
-
 .taskItemActions {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 6px;
   flex-shrink: 0;
 }
-
 .deriveButton {
-  width: 1.75rem;
-  height: 1.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
   font-size: 0.6rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, color 0.15s;
+  transition: background 0.15s;
 }
-
 .deriveButton:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
+  background: var(--riso-paper);
 }
-
 .deriveButtonActive {
-  border-color: var(--active-bg);
-  background-color: var(--active-bg);
-  color: #ffffff;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
 }
-
+.deriveButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
 .addButton {
-  padding: 0.3rem 0.7rem;
-  border: 1px solid var(--active-bg);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--active-bg);
+  padding: 7px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
-
 .addButton:hover {
-  background-color: var(--active-bg);
-  color: #ffffff;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.addButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
 
-/* "In Pool" badge */
+/* "In pool" badge */
 .inPoolBadge {
-  padding: 0.3rem 0.7rem;
-  border-radius: var(--radius-sm);
-  background-color: var(--success-bg);
-  color: var(--success-text);
+  padding: 6px 12px;
+  border-radius: var(--riso-r-card);
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+  font-family: var(--riso-font-head);
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   flex-shrink: 0;
-  border: 1px solid var(--success-border, transparent);
+  border: 2px solid var(--riso-ink);
 }
 
-/* Inline derivation panel */
+/* inline derivation panel */
 .inlinePanel {
-  padding: 0.75rem 1rem;
-  margin: 0.25rem 0 0.5rem 0.75rem;
-  border-left: 3px solid var(--active-bg);
-  background-color: var(--card-bg);
-  border-radius: 0 6px 6px 0;
+  padding: 14px;
+  margin: 4px 0 8px 12px;
+  border: 2px solid var(--riso-ink);
+  border-left-width: 5px;
+  background: var(--riso-paper);
+  border-radius: 0 var(--riso-r-card) var(--riso-r-card) 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 12px;
 }
-
 .panelAddRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
 }
-
 .panelAddLabel {
+  font-family: var(--riso-font-head);
   font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .panelDivider {
-  height: 1px;
-  background-color: var(--border-color);
-  margin: 0.5rem 0;
+  height: 1.5px;
+  background: var(--riso-hair);
+  margin: 8px 0;
 }
-
 .panelSectionLabel {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--riso-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.25rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
   display: block;
 }
 
-/* Empty states — centered variant for tab content */
+/* empty states */
 .emptyState {
   text-align: center;
   padding: 40px 24px;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
 }
-
 .emptyIcon {
   font-size: 40px;
   margin-bottom: 12px;
-  opacity: 0.4;
+  opacity: 0.5;
 }
-
 .emptyState p {
   font-size: 14px;
+  font-weight: 500;
   line-height: 1.5;
   margin: 0;
 }
-
-/* Inline empty text for sub-sections (e.g. pool) */
 .emptyStateInline {
-  color: var(--text-secondary);
-  font-style: italic;
+  color: var(--riso-muted);
+  font-weight: 600;
   font-size: 0.9rem;
 }
 
-/* Board Task Pool section */
+/* board-task pool section */
 .poolSection {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 2px solid var(--border-color);
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px solid var(--riso-ink);
 }
-
 .poolTitle {
+  font-family: var(--riso-font-head);
   font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 0.75rem 0;
+  font-weight: 800;
+  color: var(--riso-ink);
+  margin: 0 0 12px;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
 }
-
 .poolCount {
+  font-family: var(--riso-font-head);
   font-size: 0.75rem;
-  font-weight: 700;
-  background-color: var(--active-bg);
-  color: #ffffff;
-  padding: 0.1rem 0.45rem;
+  font-weight: 800;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  padding: 2px 8px;
   border-radius: 10px;
 }
-
 .poolList {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
 }
-
 .poolClearButton {
-  margin-top: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
+  margin-top: 8px;
+  padding: 7px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.8rem;
   cursor: pointer;
   align-self: flex-start;
+  transition: color 0.15s;
 }
-
 .poolClearButton:hover {
-  border-color: var(--error-text);
-  color: var(--error-text);
+  color: var(--riso-red);
+}
+.poolClearButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
-/* Responsive */
+/* responsive */
 @media (max-width: 768px) {
   .submitButton {
     width: 100%;
+    text-align: center;
   }
-
   .addStepButton {
     width: 100%;
     text-align: center;
