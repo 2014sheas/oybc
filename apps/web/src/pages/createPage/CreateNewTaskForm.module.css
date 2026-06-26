@@ -37,6 +37,8 @@
 .poolChip:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
+  /* blue-filled chip — cream ring stays visible against the fill */
+  outline-color: var(--riso-on-color);
 }
 
 .modeSection {

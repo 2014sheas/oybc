@@ -42,6 +42,10 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: -3px;
 }
+/* active tab is blue-filled — a blue ring would vanish; use cream */
+.modeTab.modeTabActive:focus-visible {
+  outline-color: var(--riso-on-color);
+}
 
 /* affordance (dashed pick button) */
 .affordance {
@@ -287,6 +291,8 @@
 .linkCreateButton:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
+  /* blue-filled button — cream ring stays visible against the fill */
+  outline-color: var(--riso-on-color);
 }
 
 /* notes */
