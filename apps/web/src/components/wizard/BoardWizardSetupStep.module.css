@@ -1,66 +1,74 @@
+/* Wizard Setup step container + footer (Riso, Phase 4b). */
 .container {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
-  background-color: var(--card-bg);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-xl);
-  border: 1px solid var(--border-color);
+  gap: 24px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
 
 .footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-md);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--border-color);
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1.5px solid var(--riso-hair);
   flex-wrap: wrap;
 }
 
 .footerMessage {
   font-size: 0.85rem;
-  color: var(--warning-text);
-  font-style: italic;
+  font-weight: 600;
+  color: var(--riso-muted);
 }
 
 .footerButtons {
   display: flex;
-  gap: var(--spacing-sm);
+  gap: 12px;
   margin-left: auto;
 }
 
+/* Riso buttons (press into paper) */
 .cancelButton,
 .nextButton {
-  padding: 0.55rem 1.1rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  border-radius: var(--radius-md);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 13px 18px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  border: 1px solid var(--border-color);
-  transition: background-color 0.15s, opacity 0.15s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .cancelButton {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
 }
-
-.cancelButton:hover {
-  background-color: var(--button-hover-bg);
-}
-
 .nextButton {
-  background-color: var(--active-bg);
-  color: var(--active-text);
-  border-color: var(--active-bg);
+  background: var(--riso-red);
+  color: var(--riso-on-color);
 }
-
+.cancelButton:hover:not(:disabled),
 .nextButton:hover:not(:disabled) {
-  filter: brightness(0.92);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
+.cancelButton:active:not(:disabled),
+.nextButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
 .nextButton:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+.cancelButton:focus-visible,
+.nextButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }

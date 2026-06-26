@@ -1,39 +1,48 @@
+/* Wizard page shell (Riso, Phase 4b). Billboard header + stepped body. */
 .shell {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-  max-width: 720px;
+  max-width: 760px;
   margin: 0 auto;
 }
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding-bottom: var(--spacing-sm);
+  gap: 16px;
 }
 
 .title {
   margin: 0;
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(34px, 4vw, 46px);
+  letter-spacing: -0.03em;
+  line-height: 0.94;
+  color: var(--riso-ink);
 }
 
 .closeButton {
-  background: transparent;
-  border: 1px solid var(--border-color);
+  flex: 0 0 auto;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
   border-radius: 50%;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   font-size: 1rem;
-  color: var(--text-secondary);
+  color: var(--riso-ink);
   cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .closeButton:hover {
-  background-color: var(--hover-bg);
-  color: var(--text-primary);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.closeButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 .stepContainer {
@@ -42,10 +51,12 @@
 }
 
 .globalError {
-  background-color: var(--error-bg);
-  color: var(--error-text);
-  border: 1px solid var(--error-border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 0.9rem;
+  background: var(--riso-paper-2);
+  color: var(--riso-red);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 10px 14px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
 }

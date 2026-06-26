@@ -220,7 +220,31 @@ surface) — all completion/bingo/greenlog logic preserved.
   (EditBoardSheet, CellSwapModal, FloatingContextMenu, TaskDetailSheet) keep
   current styling — a small Riso-polish follow-up.
 
-## Phase 4a — Tasks library (in review)
+## Phase 4b-i — Create wizard shell (in review)
+
+Re-skins the board wizard's shell + Setup + Preview steps to Riso. **Pure CSS —
+no `.tsx` edits** (preserves the wizard logic from the concurrent wizard rework;
+a CSS-only diff can restyle but not conflict). The Tasks step is the separate
+**4b-ii** (it overlaps the rework most, and is the richest surface).
+
+- `BoardWizardPage.module.css` — billboard title + Riso close (✕) + step body.
+- `BoardWizardStepper.module.css` — Setup→Tasks→Preview bar; active = red dot,
+  complete = green dot, ink connectors.
+- `BoardSetupForm.module.css` — Riso name input + segmented (size / timeframe,
+  blue active w/ `--riso-on-color`) + Riso date fields/select + dashed note.
+- `BoardWizardSetupStep.module.css` / `BoardWizardPreviewStep.module.css` — Riso
+  step container + footer buttons (press-into-paper; Next red, Create green) +
+  Preview summary panel + shuffle.
+- `BoardThumbnail.module.css` — Riso mini-grid (done = red, center = inked FREE);
+  wizard-only (preview + FromBoardPicker).
+- `BoardWizardCancelDialog.module.css` — Riso smart-cancel dialog (Save Draft
+  blue / Discard red-text / Delete-draft solid-red / Keep Editing).
+
+**Note:** kept the functional dynamic title ("New board" / "Edit template") rather
+than the prototype's playful "Print a fresh board" — the title is state-driven and
+a static kicker would read redundant.
+
+## Phase 4a — Tasks library (shipped)
 
 Re-skins the Tasks tab (visual pass; all filter/sort/cascade logic preserved):
 
@@ -248,8 +272,9 @@ Tasks-library-specific files.
 | 2b | Home/Resume landing — streak pill, resume panel + poster, active-boards rail | **shipped** |
 | 3a | Boards screen + read-only board renderer (real cell; upgrades Home poster) | **shipped** |
 | 3b | Play board — interactive cell, bingo toast, greenlog overlay | **shipped** |
-| 4a | Tasks library — billboard header, filter controls, task rows | **in review** |
-| 4b | Create wizard (Setup → Tasks → Preview) | planned |
+| 4a | Tasks library — billboard header, filter controls, task rows | **shipped** |
+| 4b-i | Create wizard shell — stepper, Setup step, Preview step, cancel dialog | **in review** |
+| 4b-ii | Create wizard Tasks step — pool, special-type panel, From-a-board picker | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,
