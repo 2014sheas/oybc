@@ -123,22 +123,22 @@
   outline-offset: 1px;
 }
 
-/* dropdown overlay */
 .dropdownWrapper {
   position: relative;
 }
+/* In-flow (not an absolute overlay): an absolute dropdown is clipped by the
+   New-task sheet's `.body { overflow-y: auto }` scroll container. Rendering it
+   in normal flow lets the sheet scroll to reveal it — clip-safe in every
+   context the picker is used (sheet, DerivedCounterRow, playground), with none
+   of the position/scroll tracking a fixed-position portal would require. */
 .dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  margin-top: 6px;
   background: var(--riso-paper-2);
   border: 2px solid var(--riso-ink);
   border-radius: var(--riso-r-card);
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
   max-height: 220px;
   overflow-y: auto;
-  z-index: 200;
 }
 .dropdownEmpty {
   padding: 16px;

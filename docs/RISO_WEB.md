@@ -236,7 +236,10 @@ separate **4b-ii-b2 / b3**.
 - `TaskTypeSelector.module.css` — Riso segmented type picker (blue active); used
   only here.
 - `CountingTemplatePicker.module.css` — Riso mode toggle + template dropdown +
-  link-derived-counter panel.
+  link-derived-counter panel. **Also fixes a pre-existing clip bug:** the
+  template/source dropdowns were `position:absolute` and got clipped by the
+  New-task sheet's `overflow-y:auto` body — now rendered in-flow (clip-safe in
+  every context the picker is used; no portal/scroll-tracking needed).
 
 **Deferred (visible half-state for one cycle):** picking **Compound** opens the
 still-un-Riso `CompositeTaskWizard` inline — that's b2.
