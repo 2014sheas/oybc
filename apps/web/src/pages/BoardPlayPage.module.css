@@ -42,42 +42,6 @@
   color: var(--riso-ink);
 }
 
-/* ─── Play header ───────────────────────────────────────────────────────────── */
-
-.playHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  margin-bottom: 12px;
-}
-
-.playHeaderLeft {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.nowPlaying {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.playBoardName {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ─── Expired banner ────────────────────────────────────────────────────────── */
 
 .expiredBanner {
@@ -239,30 +203,6 @@
 
 .removeConfirmDanger:hover {
   opacity: 0.88;
-}
-
-/* ─── Stats bar ─────────────────────────────────────────────────────────────── */
-
-.statsBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 0;
-  border-top: 1px solid var(--border-color);
-  margin-top: 8px;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.statItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.statDivider {
-  color: var(--border-color);
 }
 
 /* ─── Empty / loading / not found states ────────────────────────────────────── */

@@ -225,7 +225,8 @@
   position: fixed;
   inset: 0;
   z-index: 200;
-  overflow: hidden;
+  /* scroll (not clip) so the CTAs stay reachable on short viewports */
+  overflow-y: auto;
   background: var(--riso-green);
   color: var(--riso-on-color);
   display: flex;

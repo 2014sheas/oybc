@@ -542,7 +542,7 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
 
       {/* Board column */}
       <div className={play.boardWrap}>
-        {/* Interactive grid */}
+      {/* Interactive grid */}
       {sortedBoardTasks.length === 0 ? (
         <p className={styles.emptyState}>Loading board tasks…</p>
       ) : (
