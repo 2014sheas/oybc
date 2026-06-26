@@ -17,6 +17,16 @@ struct RisoPoolListView: View {
     let isRecurring: Bool
     let onRemove: (_ taskId: String) -> Void
 
+    /// When true (center type == CHOSEN), each pool row shows a tappable
+    /// star to mark that task as the board's center square. Mirrors web's
+    /// per-row center radio in `BoardWizardTasksStep`.
+    var centerTaskMode: Bool = false
+    /// The currently-marked center task id, or `nil` if none picked.
+    var centerTaskId: String? = nil
+    /// Fired when the user taps a row's star. Caller toggles the mark
+    /// (set, or unset when tapping the already-marked task).
+    var onSetCenter: ((_ taskId: String) -> Void)? = nil
+
     // MARK: - Ordered pool
 
     /// Pool ordered by insertion (descending) — we approximate insertion order
@@ -77,12 +87,28 @@ struct RisoPoolListView: View {
 
     private func poolRow(_ task: OYBC.Task) -> some View {
         let detail = typeDetailSubtitle(task)
+        let isCenter = centerTaskMode && centerTaskId == task.id
 
         return HStack(alignment: .center, spacing: 9) {
-            // Grip affordance
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color.risoMuted)
+            // Leading affordance: center star (in CHOSEN mode) or grip.
+            if centerTaskMode {
+                Button {
+                    onSetCenter?(task.id)
+                } label: {
+                    Image(systemName: isCenter ? "star.fill" : "star")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(isCenter ? Color.risoGold : Color.risoMuted)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityLabel(isCenter ? "Center task" : "Mark as center task")
+                .accessibilityAddTraits(isCenter ? [.isSelected] : [])
+            } else {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+            }
 
             // Name + detail
             VStack(alignment: .leading, spacing: 2) {
@@ -116,7 +142,13 @@ struct RisoPoolListView: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .risoCard(fill: .risoPaper2)
+        .risoCard(fill: isCenter ? Color.risoGold.opacity(0.16) : .risoPaper2)
+        .overlay(
+            isCenter
+                ? RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(Color.risoGold, lineWidth: Riso.Keyline.container)
+                : nil
+        )
     }
 
     // MARK: - Helpers

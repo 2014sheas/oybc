@@ -253,7 +253,13 @@ struct BoardWizardTasksStepView: View {
                     effectiveTaskById: effectiveTaskById,
                     effectiveChildrenByCompound: effectiveChildrenByCompound,
                     isRecurring: isRecurring,
-                    onRemove: { taskId in toggleSelection(taskId) }
+                    onRemove: { taskId in toggleSelection(taskId) },
+                    centerTaskMode: centerTaskMode,
+                    centerTaskId: centerTaskId,
+                    onSetCenter: { taskId in
+                        // Toggle: tapping the marked task again clears it.
+                        centerTaskId = (centerTaskId == taskId) ? nil : taskId
+                    }
                 )
             }
             .padding(Riso.gutter)

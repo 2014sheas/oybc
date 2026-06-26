@@ -268,13 +268,20 @@ final class BoardWizardViewModel {
 
     /// Changes board size and resets center type when crossing the
     /// odd/even boundary so the model stays consistent.
+    ///
+    /// The NONE→FREE coercion only fires when actually crossing from an
+    /// even board to an odd one (where the even board had forced NONE and
+    /// an odd board wants a visible default). Re-selecting the same — or
+    /// another — odd size must NOT silently discard a deliberate NONE the
+    /// user picked on an already-odd board.
     func updateSize(_ s: Int) {
+        let oldIsOdd = size % 2 != 0
         size = s
         let newIsOdd = s % 2 != 0
         if !newIsOdd {
             centerType = .none
             centerTaskId = nil
-        } else if centerType == .none {
+        } else if !oldIsOdd && centerType == .none {
             centerType = .free
         }
     }

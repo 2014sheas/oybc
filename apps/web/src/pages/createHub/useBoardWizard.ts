@@ -441,18 +441,25 @@ export function useBoardWizard({
   // these setters keep the model consistent so step components don't
   // have to re-implement the same guards.
 
-  const setSize = useCallback((s: 3 | 4 | 5) => {
-    setSizeRaw(s);
-    const newIsOdd = s % 2 !== 0;
-    if (!newIsOdd) {
-      setCenterTypeRaw(CenterSquareType.NONE);
-      setCenterTaskIdRaw(null);
-    } else {
-      setCenterTypeRaw((prev) =>
-        prev === CenterSquareType.NONE ? CenterSquareType.FREE : prev,
-      );
-    }
-  }, []);
+  const setSize = useCallback(
+    (s: 3 | 4 | 5) => {
+      const oldIsOdd = size % 2 !== 0;
+      setSizeRaw(s);
+      const newIsOdd = s % 2 !== 0;
+      if (!newIsOdd) {
+        setCenterTypeRaw(CenterSquareType.NONE);
+        setCenterTaskIdRaw(null);
+      } else if (!oldIsOdd) {
+        // Only coerce NONE→FREE when actually crossing even→odd (the even
+        // board had forced NONE). Re-selecting the same/another odd size
+        // must preserve a deliberate NONE the user picked while already odd.
+        setCenterTypeRaw((prev) =>
+          prev === CenterSquareType.NONE ? CenterSquareType.FREE : prev,
+        );
+      }
+    },
+    [size],
+  );
 
   const setCenterType = useCallback((t: CenterSquareType) => {
     setCenterTypeRaw(t);
