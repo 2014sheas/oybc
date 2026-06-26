@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { Task } from '@oybc/shared';
+import styles from './DeriveCounterModal.module.css';
 
 interface DeriveCounterModalProps {
   /** Counting Task being derived from. */
@@ -54,32 +55,15 @@ export function DeriveCounterModal({
       role="dialog"
       aria-modal="true"
       aria-label="Derive smaller counter"
+      className={styles.backdrop}
       onClick={onCancel}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1100,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
     >
       <div
+        className={styles.dialog}
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--color-bg-elevated, #1c1c1e)',
-          color: 'inherit',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          padding: 20,
-          minWidth: 320,
-          maxWidth: 420,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
-        }}
       >
-        <h3 style={{ margin: '0 0 12px', fontSize: 17 }}>Derive smaller version</h3>
-        <div style={{ marginBottom: 12, fontSize: 14, opacity: 0.75 }}>
+        <h3 className={styles.title}>Derive smaller version</h3>
+        <div className={styles.sourceHint}>
           From <strong>{source.title}</strong>
           {source.maxCount != null && (
             <span>
@@ -88,7 +72,7 @@ export function DeriveCounterModal({
             </span>
           )}
         </div>
-        <label style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>
+        <label className={styles.fieldLabel}>
           New goal
         </label>
         <input
@@ -101,61 +85,28 @@ export function DeriveCounterModal({
           onKeyDown={(e) => {
             if (e.key === 'Enter') onSave();
           }}
-          style={{
-            width: '100%',
-            padding: '8px 10px',
-            borderRadius: 6,
-            border: '1px solid rgba(255,255,255,0.15)',
-            background: 'rgba(255,255,255,0.04)',
-            color: 'inherit',
-            font: 'inherit',
-            boxSizing: 'border-box',
-          }}
+          className={styles.fieldInput}
         />
         {previewTitle && (
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.6 }}>
+          <div className={styles.preview}>
             New title: <strong>{previewTitle}</strong>
           </div>
         )}
         {error && (
-          <div style={{ marginTop: 8, fontSize: 13, color: '#ff6b6b' }}>{error}</div>
+          <div className={styles.error}>{error}</div>
         )}
-        <div
-          style={{
-            marginTop: 16,
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-          }}
-        >
+        <div className={styles.actions}>
           <button
             type="button"
             onClick={onCancel}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 6,
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: 'inherit',
-              cursor: 'pointer',
-              font: 'inherit',
-            }}
+            className={styles.cancelButton}
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onSave}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 6,
-              background: '#0a84ff',
-              border: 0,
-              color: '#fff',
-              cursor: 'pointer',
-              font: 'inherit',
-              fontWeight: 600,
-            }}
+            className={styles.saveButton}
           >
             Save
           </button>

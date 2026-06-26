@@ -1,0 +1,58 @@
+/* RowContextMenu — cursor-anchored floating context menu.
+   Riso re-skin (Phase 4b-ii-b3): card look (2px ink border, paper-2,
+   hard shadow). Existing fixed positioning + click-outside logic unchanged. */
+
+.menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--riso-ink);
+  font: inherit;
+  font-family: var(--riso-font-body);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.08s;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--riso-paper);
+}
+
+.item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.item:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+  border-radius: 4px;
+}
+
+.glyph {
+  width: 16px;
+  text-align: center;
+  color: var(--riso-muted);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item {
+    transition: none;
+  }
+}

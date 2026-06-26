@@ -1,0 +1,185 @@
+/* CopyTaskModal — "Add a copy of this task" dialog.
+   Riso re-skin (Phase 4b-ii-b3). Pattern mirrors BoardWizardCancelDialog. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(24, 18, 11, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.dialog {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  min-width: 340px;
+  max-width: 440px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  animation: slideUp 0.2s ease-out;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-family: var(--riso-font-head);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+.sourceHint {
+  margin-bottom: 14px;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  color: var(--riso-muted);
+}
+
+/* Field wrapper */
+.field {
+  display: block;
+  margin-top: 10px;
+}
+
+.fieldLabel {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--riso-muted);
+  margin-bottom: 4px;
+}
+
+.fieldInput {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-card);
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font: inherit;
+  font-family: var(--riso-font-body);
+  box-sizing: border-box;
+  transition: box-shadow 0.1s;
+}
+
+.fieldInput:focus {
+  outline: none;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.fieldInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* Inline hint text (compound / achievement footnotes) */
+.hint {
+  margin-top: 8px;
+  font-family: var(--riso-font-body);
+  font-size: 11px;
+  color: var(--riso-muted);
+  line-height: 1.4;
+}
+
+/* Validation error */
+.error {
+  margin-top: 12px;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  color: var(--riso-red);
+  font-weight: 600;
+}
+
+/* Button row */
+.actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Shared button base */
+.cancelButton,
+.saveButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 9px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.cancelButton {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+
+.saveButton {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+
+.cancelButton:hover:not(:disabled),
+.saveButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.cancelButton:active:not(:disabled),
+.saveButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.cancelButton:disabled,
+.saveButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* Green-filled save button — cream ring so it shows against the fill */
+.saveButton:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .dialog {
+    animation: none;
+  }
+  .cancelButton,
+  .saveButton,
+  .fieldInput {
+    transition: none;
+  }
+}
