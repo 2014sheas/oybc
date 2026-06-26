@@ -220,7 +220,26 @@ surface) — all completion/bingo/greenlog logic preserved.
   (EditBoardSheet, CellSwapModal, FloatingContextMenu, TaskDetailSheet) keep
   current styling — a small Riso-polish follow-up.
 
-## Phase 4b-ii-b1 — New-task sheet + create form (in review)
+## Phase 4b-ii-b2 + b3 — compound builder, From-a-board, modals (in review)
+
+The last two Tasks-step slices, built **in parallel** (two agents, isolated
+worktrees off dev, zero file overlap):
+
+- **b2 — compound builder** (`compositeWizard/*`, PR): 6 CSS modules re-skinned +
+  `FilterTabs`→`RisoChip` / `TypeBadge`→`RisoTypeBadge` in BuildStep + SubtaskCard.
+- **b3 — From-a-board + modals** (PR #178): `FromBoardGrid`/`FromBoardPicker` CSS;
+  the 3 inline-styled modals (`CopyTaskModal`/`DeriveCounterModal`/`RowContextMenu`)
+  converted to `.module.css`. FREE center uses `--riso-ink-static`.
+
+**⚠️ Recurring re-skin gotcha (caught 4× now — b3 once, b2 thrice):** never use
+adaptive `var(--riso-ink)` as a **fill** behind static `var(--riso-on-color)`
+content — `--riso-ink` flips to cream in dark mode, so cream-text-on-cream-fill
+goes invisible. For any inked badge/pill/checkbox/center cell, the fill must be
+**`--riso-ink-static`**. (Candidate kit-level fix: an inked-fill helper class.)
+This is the most common dark-contract mistake in the pass — check it first on any
+new colored-fill element.
+
+## Phase 4b-ii-b1 — New-task sheet + create form (shipped)
 
 Re-skins the "+ New task" flow (shared by the wizard Tasks step + the Tasks
 library) for the **normal / counting / achievement** paths. **Pure CSS** (4
@@ -319,9 +338,9 @@ Tasks-library-specific files.
 | 4a | Tasks library — billboard header, filter controls, task rows | **shipped** |
 | 4b-i | Create wizard shell — stepper, Setup step, Preview step, cancel dialog | **shipped** |
 | 4b-ii-a | Wizard Tasks step — main surface (count/search/list/rows) + shared RisoTypeBadge | **shipped** |
-| 4b-ii-b1 | New-task sheet + create form (normal/counting/achievement) + counting template picker | **in review** |
-| 4b-ii-b2 | Compound builder (compositeWizard/*) | planned |
-| 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | planned |
+| 4b-ii-b1 | New-task sheet + create form (normal/counting/achievement) + counting template picker | **shipped** |
+| 4b-ii-b2 | Compound builder (compositeWizard/*) | **in review** |
+| 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | **in review** |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,

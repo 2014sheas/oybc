@@ -1,110 +1,279 @@
+/* SubtaskCard (Riso, Phase 4b-ii-b2). Two rendering modes:
+   - Inline-mode: full Riso card frame with readiness footer.
+   - Existing-mode: flat borderless row with hairline separator. */
+
+/* ── Inline-mode card ── */
+
 .card {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  padding: 1rem;
-  background-color: var(--bg-primary);
-  border: 1.5px solid var(--border-color);
-  border-radius: 10px;
-  transition: border-color 0.18s, box-shadow 0.18s, background-color 0.18s;
+  gap: 14px;
+  padding: 16px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  transition: border-color 0.18s;
 }
 
+/* Ready = green border accent; incomplete = default ink border */
 .cardReady {
-  border-color: var(--success-border, #22c55e);
-  background-color: var(--success-bg, rgba(34, 197, 94, 0.06));
-  box-shadow: 0 0 0 1px var(--success-border, rgba(34, 197, 94, 0.35));
+  border-color: var(--riso-green);
 }
 
 .cardIncomplete {
-  border-color: var(--border-color);
+  border-color: var(--riso-ink);
 }
 
+/* Card header row */
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .modeLabel {
-  font-size: 0.78rem;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
 }
 
+/* Remove button — small neutral Riso press-into-paper */
 .removeButton {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 0.25rem 0.65rem;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  padding: 5px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s, color 0.1s;
 }
-
 .removeButton:hover {
-  background-color: var(--button-hover-bg);
-  border-color: var(--button-hover-border);
-  color: var(--text-primary);
+  color: var(--riso-red);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.removeButton:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.removeButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
+/* Inline fields area */
+.inlineFields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Field group */
 .fieldGroup {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 6px;
 }
 
+/* Riso label */
 .label {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--riso-ink);
 }
 
 .optionalHint {
+  font-family: var(--riso-font-body);
   font-weight: 400;
-  color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--riso-muted);
 }
 
+/* Riso input */
 .titleInput {
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 0.95rem;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  transition: border-color 0.18s, box-shadow 0.18s;
+  padding: 12px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
   width: 100%;
   box-sizing: border-box;
 }
-
-.titleInput:focus {
-  outline: none;
-  border-color: var(--active-bg);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+.titleInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
 
-/* ── Existing-mode flat row (no card frame) ── */
+/* ── Inline-type picker (Normal / Counting) ── */
+
+.typePicker {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  width: fit-content;
+}
+
+.typeButton,
+.typeButtonActive {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--riso-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.typeButton:hover {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.typeButtonActive {
+  /* static ink — adaptive --riso-ink flips to cream in dark mode → cream-on-cream */
+  background: var(--riso-ink-static);
+  color: var(--riso-on-color);
+}
+.typeButton:focus-visible,
+.typeButtonActive:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+/* Active type button has ink fill — blue ring stays visible against ink */
+
+/* ── Type-switch confirm panel ── */
+
+.switchConfirmPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--riso-paper);
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+}
+
+.switchConfirmText {
+  margin: 0;
+  font-family: var(--riso-font-body);
+  font-size: 0.9rem;
+  color: var(--riso-ink);
+  line-height: 1.4;
+}
+
+.switchConfirmActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.switchCancelButton,
+.switchConfirmButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 8px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.switchCancelButton {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.switchConfirmButton {
+  /* "Confirm switch" = gold/warning tone — gold is a light fill, use ink-static */
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.switchCancelButton:hover,
+.switchConfirmButton:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.switchCancelButton:active,
+.switchConfirmButton:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.switchCancelButton:focus-visible,
+.switchConfirmButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* ── Readiness footer ── */
+
+.readinessReady,
+.readinessIncomplete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--riso-font-head);
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: var(--riso-r-card);
+}
+
+.readinessReady {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+
+.readinessIncomplete {
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  border: 1.5px solid var(--riso-hair);
+}
+
+.readinessIcon {
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+/* ── Existing-mode: flat borderless row ── */
 
 .flatRow {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.55rem 0.4rem;
-  border-bottom: 1px solid var(--border-color);
-  background-color: transparent;
-  transition: background-color 0.15s;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1.5px solid var(--riso-hair);
+  background: transparent;
+  transition: background 0.1s;
 }
-
 .flatRow:hover {
-  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
+  background: var(--riso-paper-2);
 }
-
+/* Suppress border on the last flat row in the subtask list */
 .flatRow:last-child {
-  border-bottom: 1px solid transparent;
+  border-bottom: 1.5px solid transparent;
 }
 
 .flatCenter {
@@ -129,23 +298,29 @@
   font: inherit;
   color: inherit;
 }
-
 .flatCenterButton:hover .flatTitle {
-  color: var(--accent, #2563eb);
+  color: var(--riso-blue);
+}
+.flatCenterButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  border-radius: var(--riso-r-card);
 }
 
 .flatTitle {
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .flatSubtitle {
+  font-family: var(--riso-font-body);
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -153,195 +328,76 @@
 
 .flatUsage {
   flex: 0 0 auto;
-  font-size: 0.78rem;
-  /* Tertiary weight — the hint is less relevant once the task is
-   * already in the composite, so it shouldn't compete with the title. */
-  color: var(--text-tertiary, rgba(128, 128, 128, 0.75));
+  font-family: var(--riso-font-head);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--riso-muted);
   white-space: nowrap;
 }
 
+/* 44×44 remove tap target — matches iOS HIG minimum */
 .flatRemoveButton {
   flex: 0 0 auto;
-  /* 44×44 matches iOS HIG; earlier 26×26 was tap-hostile next to the
-   * bigger library-row checkboxes. */
   width: 44px;
   height: 44px;
   padding: 0;
   font-size: 1.15rem;
   line-height: 1;
   background: transparent;
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
-  color: var(--text-tertiary, rgba(128, 128, 128, 0.7));
+  color: var(--riso-muted);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
-
 .flatRemoveButton:hover {
-  background-color: var(--button-hover-bg);
-  border-color: var(--border-color);
-  color: var(--text-primary);
+  background: var(--riso-paper);
+  border-color: var(--riso-hair);
+  color: var(--riso-red);
+}
+.flatRemoveButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
-/* ── Inline-type picker ── */
-
-.inlineFields {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.typePicker {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  background-color: var(--bg-secondary);
-  border-radius: 8px;
-  width: fit-content;
-}
-
-.typeButton,
-.typeButtonActive {
-  padding: 0.4rem 0.95rem;
-  font-size: 0.85rem;
-  font-weight: 500;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
-}
-
-.typeButton:hover {
-  background-color: var(--button-hover-bg);
-  color: var(--text-primary);
-}
-
-.typeButtonActive {
-  background-color: var(--active-bg);
-  color: var(--active-text);
-  font-weight: 600;
-}
-
-/* ── Type-switch confirm panel ── */
-
-.switchConfirmPanel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.85rem 0.95rem;
-  background-color: var(--warning-bg, rgba(251, 191, 36, 0.1));
-  border: 1px solid var(--warning-border, rgba(251, 191, 36, 0.4));
-  border-radius: 8px;
-}
-
-.switchConfirmText {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-  line-height: 1.4;
-}
-
-.switchConfirmActions {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-.switchCancelButton,
-.switchConfirmButton {
-  padding: 0.45rem 0.9rem;
-  font-size: 0.88rem;
-  border-radius: 6px;
-  cursor: pointer;
-  border: 1px solid var(--border-color);
-  transition: filter 0.15s, background-color 0.15s;
-}
-
-.switchCancelButton {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.switchCancelButton:hover {
-  background-color: var(--button-hover-bg);
-}
-
-.switchConfirmButton {
-  background-color: var(--warning-text, #92400e);
-  border-color: var(--warning-text, #92400e);
-  color: #fff;
-  font-weight: 600;
-}
-
-.switchConfirmButton:hover {
-  filter: brightness(0.92);
-}
-
-/* ── Progress-subtask step rows ── */
+/* ── Step-rows container (legacy — no longer actively rendered,
+   kept so build won't fail if any path references these classes) ── */
 
 .stepsContainer {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background-color: var(--bg-secondary);
-  border-radius: 8px;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
 }
 
 .stepsLabel {
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.88rem;
-  color: var(--text-primary);
+  color: var(--riso-ink);
 }
 
 .addStepButton {
   align-self: flex-start;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.85rem;
-  background-color: var(--bg-primary);
-  border: 1px dashed var(--border-color);
-  border-radius: 6px;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s;
-}
-
-.addStepButton:hover {
-  background-color: var(--button-hover-bg);
-  border-color: var(--active-bg);
-  border-style: solid;
-}
-
-/* ── Readiness footer ── */
-
-.readinessReady,
-.readinessIncomplete {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  padding: 0.35rem 0.55rem;
-  border-radius: 6px;
-}
-
-.readinessReady {
-  color: var(--success-text, #166534);
-  background-color: rgba(34, 197, 94, 0.1);
-}
-
-.readinessIncomplete {
-  color: var(--text-secondary);
-  background-color: var(--bg-secondary);
-}
-
-.readinessIcon {
+  font-family: var(--riso-font-head);
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
+  padding: 8px 14px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: transparent;
+  color: var(--riso-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
-
-.readinessReady .readinessIcon {
-  color: var(--success-text, #16a34a);
+.addStepButton:hover {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.addStepButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
