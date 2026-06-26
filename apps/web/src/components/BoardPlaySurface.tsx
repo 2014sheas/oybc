@@ -21,7 +21,6 @@ import { addToSyncQueue } from '../db/operations/syncQueue';
 import { incrementSharedCounter } from '../db/operations/tasks';
 import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard } from '../db/operations/boardTasks';
 import {
-  InteractiveTaskSquare,
   DetailModal,
   FloatingContextMenu,
   type AchievementSquareBadgeData,
@@ -34,7 +33,15 @@ import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { EditBoardSheet } from './EditBoardSheet';
 import { usePreferences } from '../hooks/usePreferences';
+import { useNavigate } from 'react-router-dom';
+import { computeStreak, getHighlightedSquares } from '@oybc/shared';
+import { getExpiryLabel } from '../utils/boardDisplayUtils';
+import { RisoIcon } from './riso';
+import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
+import { RisoBingoToast } from './play/RisoBingoToast';
+import { RisoGreenlog } from './play/RisoGreenlog';
 import styles from '../pages/BoardPlayPage.module.css';
+import play from './play/Play.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -56,9 +63,15 @@ const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** What `showFlash` is called with. `greenlog` routes to the overlay and a
+ *  new bingo to the toast; only the residual cases reach the transient flash. */
+type FlashVariant = 'bingo' | 'greenlog';
+
 interface FlashMessage {
   text: string;
-  variant: 'bingo' | 'greenlog';
+  // The transient flash only ever holds 'bingo'-class messages (lost bingo /
+  // reactivated / errors); greenlog + new bingos are intercepted in showFlash.
+  variant: 'bingo';
 }
 
 export interface BoardPlaySurfaceProps {
@@ -110,7 +123,12 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
 
   // ── UI state ───────────────────────────────────────────────────────────
 
+  const navigate = useNavigate();
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
+  // Riso bingo toast (keyed to replay the drop) + greenlog overlay.
+  const [bingoToast, setBingoToast] = useState<{ key: number } | null>(null);
+  const [greenlogOpen, setGreenlogOpen] = useState(false);
+  const bingoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
@@ -129,7 +147,10 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
 
   // Clean up flash timer on unmount
   useEffect(() => {
-    return () => { if (flashTimerRef.current) clearTimeout(flashTimerRef.current); };
+    return () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      if (bingoTimerRef.current) clearTimeout(bingoTimerRef.current);
+    };
   }, []);
 
   // ── Derived data ───────────────────────────────────────────────────────
@@ -236,7 +257,21 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
   // (eslint-plugin-react-hooks v7.1+) is conservative about ref access
   // chains; useCallback makes the function's role explicit (event-time,
   // never during render) so the analyzer doesn't flag the call sites.
-  const showFlash = useCallback((text: string, variant: FlashMessage['variant']): void => {
+  const showFlash = useCallback((text: string, variant: FlashVariant): void => {
+    // Route the completion signal to the Riso surfaces:
+    //  - greenlog → the full-screen overlay (persists until dismissed)
+    //  - a newly-formed bingo → the drop-in toast (auto-dismiss)
+    //  - everything else (lost bingo, reactivated, errors) → transient flash
+    if (variant === 'greenlog') {
+      setGreenlogOpen(true);
+      return;
+    }
+    if (variant === 'bingo' && text.startsWith('Bingo!')) {
+      if (bingoTimerRef.current) clearTimeout(bingoTimerRef.current);
+      setBingoToast({ key: Date.now() });
+      bingoTimerRef.current = setTimeout(() => setBingoToast(null), 2600);
+      return;
+    }
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     const msg = { text, variant };
     setFlashMessage(msg);
@@ -404,61 +439,110 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className={styles.container}>
-      {header}
+    <div className={play.play}>
+      {/* Greenlog overlay (page green, squares stay red) */}
+      {greenlogOpen && (
+        <RisoGreenlog
+          boardName={board.name}
+          boardSize={board.boardSize}
+          bingos={board.linesCompleted}
+          streak={computeStreak(
+            board.timeframe,
+            AchievementTrigger.GREENLOG,
+            allBoards,
+            prefs.weekStartDay,
+            new Date(),
+          )}
+          onShare={() => setGreenlogOpen(false)}
+          onNewBoard={() => navigate('/create')}
+          onClose={() => setGreenlogOpen(false)}
+        />
+      )}
+      {/* Bingo toast */}
+      {bingoToast && <RisoBingoToast key={bingoToast.key} count={board.linesCompleted} />}
 
-      {/* Flash message */}
+      {/* Transient flash — lost bingo / reactivated / errors (bingo + greenlog
+          route to the toast/overlay above). */}
       {flashMessage && (
-        <div
-          className={`${styles.flashMessage} ${flashMessage.variant === 'greenlog' ? styles.flashGreenlog : styles.flashBingo}`}
-          role="status"
-          aria-live="polite"
-        >
+        <div className={`${styles.flashMessage} ${styles.flashBingo}`} role="status" aria-live="polite">
           {flashMessage.text}
         </div>
       )}
 
-      {/* Play header */}
-      <div className={styles.playHeader}>
-        <div className={styles.playHeaderLeft}>
-          <span className={styles.nowPlaying}>Now Playing</span>
-          <h2 className={styles.playBoardName}>{board.name}</h2>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <BoardStatusBadge status={board.status} />
-          {/* M2 — edit button only on ACTIVE boards (DRAFT uses wizard; COMPLETED/ARCHIVED are immutable). */}
+      {/* Left rail */}
+      <aside className={play.rail}>
+        <div className={play.railTop}>
+          {header}
+          {/* M2 — edit only on ACTIVE boards (DRAFT uses wizard; COMPLETED/ARCHIVED immutable). */}
           {board.status === BoardStatus.ACTIVE && (
             <button
               type="button"
+              className={`${play.back} ${play.iconBtn}`}
               onClick={() => setEditBoardOpen(true)}
               aria-label="Edit board"
               title="Edit board"
-              style={{
-                padding: '4px 10px',
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: 'var(--text-secondary)',
-                lineHeight: 1.4,
-              }}
             >
-              Edit
+              <RisoIcon name="dots" size={16} />
             </button>
           )}
         </div>
-      </div>
-
-      {/* Expired banner */}
-      {isExpired && (
-        <div className={styles.expiredBanner}>
-          Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
+        <div>
+          <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
+          <h2 className={play.title}>{board.name}</h2>
+          <div style={{ marginTop: 10 }}>
+            <BoardStatusBadge status={board.status} />
+          </div>
         </div>
-      )}
 
-      {/* Interactive grid */}
+        {isExpired && (
+          <div className={styles.expiredBanner}>
+            Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
+          </div>
+        )}
+
+        <div className={play.statStack}>
+          <div className={play.stat}>
+            <div className={play.statK}>Squares</div>
+            <div className={play.statV}>
+              {board.completedTasks}
+              <small>/{board.totalTasks}</small>
+            </div>
+          </div>
+          <div className={play.stat}>
+            <div className={play.statK}>Left</div>
+            <div className={play.statV} style={{ fontSize: '18px' }}>
+              {getExpiryLabel(board) || '—'}
+            </div>
+          </div>
+          <div className={`${play.stat} ${play.gold}`}>
+            <div className={play.statK}>Bingos</div>
+            <div className={play.statV}>
+              <span className={play.starS} aria-hidden="true" />
+              {board.linesCompleted}
+            </div>
+          </div>
+        </div>
+
+        <div className={play.hint}>
+          {board.completedTasks === 0 ? (
+            <>
+              Resting paper. <b>Complete a square</b> to slap ink on it — fill a line for a bingo.
+            </>
+          ) : board.linesCompleted > 0 ? (
+            <>
+              Nice work — keep filling. <b>Clear the board</b> for a GREENLOG.
+            </>
+          ) : (
+            <>
+              Keep going — line up a row, column, or diagonal for a <b>bingo.</b>
+            </>
+          )}
+        </div>
+      </aside>
+
+      {/* Board column */}
+      <div className={play.boardWrap}>
+        {/* Interactive grid */}
       {sortedBoardTasks.length === 0 ? (
         <p className={styles.emptyState}>Loading board tasks…</p>
       ) : (
@@ -468,6 +552,8 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         >
           {(() => {
             const cells: React.ReactElement[] = [];
+            // Gold-ring the cells in completed bingo lines.
+            const highlightedSquares = getHighlightedSquares(board.completedLineIds ?? [], gridSize);
 
             for (let row = 0; row < gridSize; row++) {
               for (let col = 0; col < gridSize; col++) {
@@ -532,13 +618,36 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                 // counters). For standalone counters this equals task.currentCount.
                 const taskCurrentCount = squareState.currentCount;
 
+                const cellModel: BoardCellModel = {
+                  key: bt.id,
+                  label: task.title ?? '',
+                  type:
+                    squareData.type === 'counting'
+                      ? 'counting'
+                      : squareData.type === 'compound' || squareData.type === 'progress'
+                        ? 'compound'
+                        : 'normal',
+                  done: taskIsCompleted,
+                  count:
+                    squareData.type === 'counting'
+                      ? { cur: taskCurrentCount, max: task.maxCount ?? 0 }
+                      : undefined,
+                  isFree: false,
+                  isLine: highlightedSquares.has(row * gridSize + col),
+                };
+
                 cells.push(
-                  <InteractiveTaskSquare
+                  <RisoBoardCell
                     key={bt.id}
-                    sq={squareData}
-                    state={squareState}
-                    achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
-                    onAct={() => {
+                    cell={cellModel}
+                    badge={
+                      achievementBadgesByBoardTaskId[bt.id] ? (
+                        <span className={play.achvBadge} title="Achievement">
+                          A
+                        </span>
+                      ) : undefined
+                    }
+                    onClick={() => {
                       if (isExpired) return;
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
                         setSelectedSquareId(bt.id);
@@ -568,11 +677,9 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                     }}
                     onContextMenu={(e) => {
                       if (isExpired) return;
+                      e.preventDefault();
                       setContextMenu({ squareId: bt.id, x: e.clientX, y: e.clientY });
                     }}
-                    onCompoundChildToggle={
-                      squareData.type === 'compound' ? handleCompoundChildToggle : undefined
-                    }
                   />
                 );
               }
@@ -583,22 +690,6 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         </div>
       )}
 
-      {/* Stats bar */}
-      <div className={styles.statsBar}>
-        <span className={styles.statItem}>
-          <strong>Progress:</strong>{' '}
-          {board.completedTasks}/{board.totalTasks}
-          {board.totalTasks > 0 && (
-            <> ({Math.round((board.completedTasks / board.totalTasks) * 100)}%)</>
-          )}
-        </span>
-        <span className={styles.statDivider}>·</span>
-        <span className={styles.statItem}>
-          <strong>Bingos:</strong>{' '}
-          {board.linesCompleted > 0
-            ? `${board.linesCompleted} (${(board.completedLineIds ?? []).join(', ')})`
-            : 'None yet'}
-        </span>
       </div>
 
       {/* Detail Modal (progress / compound tasks) */}

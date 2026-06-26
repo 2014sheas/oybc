@@ -198,6 +198,28 @@ The Boards-grid cards + Home rail keep the count-approximation `BoardMiniGrid`
 (true positions there would mean a live query per card); the prominent resume
 poster uses the real renderer.
 
+## Phase 3b — Play board (in review)
+
+Re-skins the **existing** `BoardPlaySurface` in place (the completion-critical
+surface) — all completion/bingo/greenlog logic preserved.
+
+- Return restructured into the 2-col Riso layout: left rail (back-slot + edit ⋯,
+  `{timeframe} BOARD` kicker, title, status badge, Squares/Left/Bingos-gold stat
+  stack, dashed hint) + right board column.
+- The grid cell is now the Phase-3a `RisoBoardCell` (extended with `onContextMenu`
+  + a `badge` slot) — the existing `onAct` tap routing (normal→toggle,
+  counting→increment, compound→DetailModal) and context menu are wired verbatim.
+  Completed bingo lines get gold rings via `getHighlightedSquares`.
+- `components/play/`: `RisoBingoToast` (blue drop-in) + `RisoGreenlog` (page-green
+  overlay, confetti, all-red poster — **squares stay red**, stats incl. the
+  timeframe greenlog streak, Share/New-board CTAs). Both driven off the existing
+  `showFlash` choke point: greenlog→overlay, new bingo→toast; residual flashes
+  (lost bingo / reactivated / error) keep a small transient toast. **No
+  completion logic changed.**
+- DetailModal + grid/free/empty/add cells restyled to Riso. Secondary modals
+  (EditBoardSheet, CellSwapModal, FloatingContextMenu, TaskDetailSheet) keep
+  current styling — a small Riso-polish follow-up.
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
@@ -206,8 +228,8 @@ poster uses the real renderer.
 | **1** | Auth shell + signed-out marketing home (net-new) + sign-in modal | **shipped** |
 | 2a | App shell + nav — top nav (→ mobile bottom tab bar) + minimal Home route | **shipped** |
 | 2b | Home/Resume landing — streak pill, resume panel + poster, active-boards rail | **shipped** |
-| 3a | Boards screen + read-only board renderer (real cell; upgrades Home poster) | **in review** |
-| 3b | Play board — interactive cell, steppers, bingo toast, greenlog overlay | planned |
+| 3a | Boards screen + read-only board renderer (real cell; upgrades Home poster) | **shipped** |
+| 3b | Play board — interactive cell, bingo toast, greenlog overlay | **in review** |
 | 4 | Create wizard + Tasks library | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 

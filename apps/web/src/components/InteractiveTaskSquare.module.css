@@ -159,7 +159,7 @@
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: rgba(24, 18, 11, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -167,29 +167,33 @@
 }
 
 .modal {
-  background-color: var(--card-bg);
-  border-radius: 12px;
+  background: var(--riso-paper);
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 16px;
   padding: 1.5rem;
   min-width: 280px;
   max-width: 360px;
   width: 90%;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
   display: flex;
   flex-direction: column;
   gap: 1rem;
   position: relative;
+  color: var(--riso-ink);
 }
 
 .modalTitle {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
   margin: 0;
 }
 
 .modalMeta {
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   margin: 0;
 }
 
@@ -267,22 +271,30 @@
 }
 
 .counterButton {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 1.1rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-size: 1.4rem;
+  font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s, background-color 0.12s;
 }
 
 .counterButton:hover:not(:disabled) {
-  background-color: var(--border-color);
+  background: var(--riso-gold);
+}
+
+.counterButton:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
 }
 
 .counterButton:disabled {
@@ -291,11 +303,13 @@
 }
 
 .counterValue {
-  font-weight: 700;
-  font-size: 1rem;
-  color: var(--text-primary);
-  min-width: 2.5rem;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--riso-ink);
+  min-width: 3rem;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Step checkboxes */
@@ -326,28 +340,36 @@
 /* Modal action button */
 
 .modalButton {
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  border: none;
-  font-weight: 600;
-  font-size: 0.9rem;
+  padding: 0.7rem 1.25rem;
+  border-radius: var(--riso-r-card);
+  border: 2px solid var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.95rem;
   cursor: pointer;
   align-self: flex-start;
-  transition: opacity 0.15s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
 
 .modalButton:hover {
-  opacity: 0.85;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.modalButton:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
 }
 
 .modalButtonComplete {
-  background-color: #34c759;
-  color: #ffffff;
+  background: var(--riso-green);
+  color: var(--riso-on-color);
 }
 
 .modalButtonIncomplete {
-  background-color: var(--border-color);
-  color: var(--text-primary);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
 }
 
 .modalCloseButton {

@@ -24,14 +24,20 @@ export interface RisoBoardCellProps {
   cell: BoardCellModel;
   /** When provided, the cell becomes an interactive button (Phase 3b play). */
   onClick?: () => void;
+  /** Right-click / long-press → the play board's context menu (Phase 3b). */
+  onContextMenu?: (e: React.MouseEvent) => void;
+  /** Optional corner badge (e.g. an ACHIEVEMENT-watch indicator). */
+  badge?: React.ReactNode;
 }
 
 /**
  * A single read-only Riso board cell — colored by type, halftone + gold check
  * when done, counting bar for counters, FREE center, gold ring on bingo lines.
- * Presentational only; `onClick` (Phase 3b) makes it an interactive button.
+ * Presentational only; `onClick` (Phase 3b) makes it an interactive button,
+ * `onContextMenu` wires the play board's context menu, and `badge` renders a
+ * corner indicator (achievement watch).
  */
-export function RisoBoardCell({ cell, onClick }: RisoBoardCellProps): React.ReactElement {
+export function RisoBoardCell({ cell, onClick, onContextMenu, badge }: RisoBoardCellProps): React.ReactElement {
   const tagClass = cell.type === 'counting' ? styles.counting : cell.type === 'compound' ? styles.compound : '';
   const className = [
     styles.cell,
@@ -50,6 +56,7 @@ export function RisoBoardCell({ cell, onClick }: RisoBoardCellProps): React.Reac
     </>
   ) : (
     <>
+      {badge}
       {(cell.type === 'counting' || cell.type === 'compound') && (
         <span className={`${styles.tag} ${cell.type === 'counting' ? styles.counting : styles.compound}`}>
           {cell.type === 'counting' && cell.count ? `×${cell.count.max}` : '≡'}
@@ -78,7 +85,13 @@ export function RisoBoardCell({ cell, onClick }: RisoBoardCellProps): React.Reac
 
   if (onClick) {
     return (
-      <button type="button" className={className} onClick={onClick} aria-pressed={cell.done}>
+      <button
+        type="button"
+        className={className}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        aria-pressed={cell.done}
+      >
         {inner}
       </button>
     );
