@@ -220,7 +220,27 @@ surface) — all completion/bingo/greenlog logic preserved.
   (EditBoardSheet, CellSwapModal, FloatingContextMenu, TaskDetailSheet) keep
   current styling — a small Riso-polish follow-up.
 
-## Phase 4b-i — Create wizard shell (in review)
+## Phase 4b-ii-a — Wizard Tasks step, main surface (in review)
+
+Re-skins the **main** board-wizard Tasks step (the largest web surface) to Riso,
+and extracts the shared type badge. Scoped to the primary list flow; the
+secondary paths (From-a-board picker, NewTaskSheet + its form, the special-type
+modals) are **4b-ii-b**.
+
+- `BoardWizardTasksStep.module.css` + `.tsx` — Riso card + count header
+  (green/red ok/short) + center badges + Riso search; the pool/library list as a
+  bordered panel with hairline rows, the selected state = blue tint + blue
+  leading bar, compound expansion, footer (Back / Next-red). Swapped the shared
+  `FilterTabs`→`RisoChip` (filter + group-subtasks chips — same swap as 4a) and
+  the shared `TypeBadge`→the new `RisoTypeBadge` (extracted, see below).
+- **New shared `components/riso/RisoTypeBadge.tsx`** — the square N/C/K/A type
+  badge, color-coded (normal paper / counting blue / compound green / achievement
+  purple), `aria-hidden`. **Extract-at-three:** 4a's `TaskRow` had an inline copy;
+  this PR refactors `TaskRow` to consume the shared component too (removing its
+  `.tbadge*` CSS + `badgeLetter`/`badgeClass` helpers), so library + wizard share
+  one badge source.
+
+## Phase 4b-i — Create wizard shell (shipped)
 
 Re-skins the board wizard's shell + Setup + Preview steps to Riso. **Pure CSS —
 no `.tsx` edits** (preserves the wizard logic from the concurrent wizard rework;
@@ -273,8 +293,9 @@ Tasks-library-specific files.
 | 3a | Boards screen + read-only board renderer (real cell; upgrades Home poster) | **shipped** |
 | 3b | Play board — interactive cell, bingo toast, greenlog overlay | **shipped** |
 | 4a | Tasks library — billboard header, filter controls, task rows | **shipped** |
-| 4b-i | Create wizard shell — stepper, Setup step, Preview step, cancel dialog | **in review** |
-| 4b-ii | Create wizard Tasks step — pool, special-type panel, From-a-board picker | planned |
+| 4b-i | Create wizard shell — stepper, Setup step, Preview step, cancel dialog | **shipped** |
+| 4b-ii-a | Wizard Tasks step — main surface (count/search/list/rows) + shared RisoTypeBadge | **in review** |
+| 4b-ii-b | Wizard Tasks step — From-a-board picker, NewTaskSheet+form, special-type modals | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,

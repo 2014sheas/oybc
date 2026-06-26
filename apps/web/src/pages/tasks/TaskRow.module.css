@@ -39,36 +39,6 @@
   flex: 1;
 }
 
-/* inline Riso type badge (own, not the shared TypeBadge) */
-.tbadge {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 auto;
-  border: 2px solid var(--riso-ink);
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  font-family: var(--riso-font-head);
-  font-weight: 800;
-  font-size: 15px;
-}
-.tbadgeNormal {
-  background: var(--riso-paper);
-  color: var(--riso-muted);
-}
-.tbadgeCounting {
-  background: var(--riso-blue);
-  color: var(--riso-on-color);
-}
-.tbadgeCompound {
-  background: var(--riso-green);
-  color: var(--riso-on-color);
-}
-.tbadgeAchievement {
-  background: var(--riso-achievement);
-  color: var(--riso-on-color);
-}
-
 .rowText {
   display: flex;
   flex-direction: column;

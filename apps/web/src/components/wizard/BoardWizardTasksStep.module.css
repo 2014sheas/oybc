@@ -1,95 +1,124 @@
+/* Wizard Tasks step (Riso, Phase 4b-ii). Header count + search, pool/library
+   list with selectable rows + compound expansion, footer. Visual re-skin;
+   all selection / filter / derivation logic preserved. */
 .container {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
-  background-color: var(--card-bg);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-xl);
-  /* No outer border — card-bg against page background already delimits
-   * the step. Matches the composite wizard's Build step. */
+  gap: 20px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
 
 /* ── Header ── */
-
 .header {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: 14px;
 }
-
 .countRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-md);
+  gap: 14px;
   flex-wrap: wrap;
 }
-
 .countGroup {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: 12px;
   flex-wrap: wrap;
 }
-
 .countLabel {
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 500;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--riso-muted);
 }
-
 .countOk {
-  color: var(--success-text);
-  font-weight: 600;
+  color: var(--riso-green);
+  font-weight: 800;
 }
-
 .countShort {
-  color: var(--warning-text);
-  font-weight: 600;
+  color: var(--riso-red);
+  font-weight: 800;
 }
 
 .centerBadgeOk,
 .centerBadgeWarn {
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 4px 10px;
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 11px;
   border-radius: 999px;
+  border: 2px solid var(--riso-ink);
 }
-
 .centerBadgeOk {
-  background-color: var(--success-bg);
-  color: var(--success-text);
-  border: 1px solid var(--success-border);
+  background: var(--riso-green);
+  color: var(--riso-on-color);
 }
-
 .centerBadgeWarn {
-  background-color: var(--warning-bg);
-  color: var(--warning-text);
-  border: 1px solid var(--warning-border);
+  background: var(--riso-paper-2);
+  color: var(--riso-red);
 }
 
 .search {
   width: 100%;
-  padding: 0.55rem 0.85rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  font-size: 0.95rem;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+.search:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
 
-.search:focus {
-  outline: none;
-  border-color: var(--active-bg);
+/* filter chips (type / from-parents / from-board) */
+.filterChips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-/* ── List ──
- *
- * Rows used to be individually boxed (per-row border + rounded
- * corners). Matches the composite wizard now: a flat list inside the
- * step body, hairline dividers between rows, leading 3pt blue bar
- * + tinted fill for the selected state. No scroll container border. */
+/* group-subtasks pill (issue #73) */
+.groupRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.groupChip {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.groupChip:hover {
+  background: var(--riso-paper);
+}
+.groupChipActive {
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+}
+.groupChip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 
+/* ── List ── flush rows, hairline dividers, leading bar + tint for selected ── */
 .list {
   list-style: none;
   margin: 0;
@@ -98,12 +127,13 @@
   flex-direction: column;
   max-height: 520px;
   overflow-y: auto;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
 }
-
 .list > li {
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1.5px solid var(--riso-hair);
 }
-
 .list > li:last-child {
   border-bottom: none;
 }
@@ -113,62 +143,53 @@
   display: flex;
   align-items: stretch;
   width: 100%;
-  background-color: var(--bg-primary);
+  background: var(--riso-paper);
   transition: background-color 0.15s;
 }
-
 .rowSelectedWrap {
-  background-color: var(--active-bg-subtle, rgba(59, 130, 246, 0.12));
+  background: color-mix(in srgb, var(--riso-blue) 13%, var(--riso-paper));
 }
 
 .row {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.8rem 0.9rem;
+  padding: 13px 15px;
   background: transparent;
   border: none;
   cursor: pointer;
   text-align: left;
-  font-size: 0.95rem;
-  color: var(--text-primary);
+  font: inherit;
+  color: var(--riso-ink);
   min-width: 0;
   transition: background-color 0.15s;
 }
-
 .row:hover {
-  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
+  background: var(--riso-paper-2);
+}
+.row:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
 }
 
-/* The row is a flex button; we use its ::before to draw the leading bar
- * without altering the inner geometry. Selected state is signaled by
- * rowSelectedWrap tinted background + the ::before blue bar below. */
-.row {
-  position: relative;
-}
-
+/* leading bar — drawn on ::before so inner geometry is untouched */
 .row::before {
   content: '';
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
-  background-color: transparent;
+  width: 4px;
+  background: transparent;
   transition: background-color 0.15s;
 }
-
 .rowSelectedWrap .row::before {
-  background-color: var(--active-bg);
+  background: var(--riso-blue);
 }
 
-/* .checkbox and .checkboxOn removed — selection is indicated by the
- * row-level highlight (rowSelectedWrap tint + ::before leading bar)
- * rather than a per-row checkbox element. */
-
-/* Disclosure button — sits at the trailing edge of a compound row,
- * independent of the row-body select tap target. */
+/* disclosure (compound expand) at the trailing edge */
 .disclosureButton {
   flex: 0 0 auto;
   display: flex;
@@ -177,16 +198,19 @@
   padding: 0 14px;
   background: transparent;
   border: none;
-  border-left: 1px solid var(--border-color);
+  border-left: 1.5px solid var(--riso-hair);
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   transition: background-color 0.15s, color 0.15s;
   align-self: stretch;
 }
-
 .disclosureButton:hover {
-  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
-  color: var(--text-primary);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.disclosureButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
 }
 
 .chevron,
@@ -197,10 +221,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 0.8rem;
   transition: transform 0.15s;
 }
-
 .chevronOpen {
   transform: rotate(90deg);
 }
@@ -212,31 +237,33 @@
   flex-direction: column;
   gap: 3px;
 }
-
 .rowTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .rowSubtitle {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .rowUsage {
   flex: 0 0 auto;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
   white-space: nowrap;
 }
 
+/* center-pin radio (FREE star) */
 .centerRadio {
   flex: 0 0 auto;
   background: transparent;
@@ -244,124 +271,121 @@
   cursor: pointer;
   font-size: 1.3rem;
   padding: 0 12px;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   transition: color 0.15s;
 }
-
-.centerRadio:hover {
-  color: var(--warning-text);
-}
-
+.centerRadio:hover,
 .centerRadioOn {
-  color: var(--warning-text);
+  color: var(--riso-gold);
+}
+.centerRadio:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
 }
 
-/* ── Composite expansion — leaves rendered as indented task rows ──
- *
- * Replaces the old CompositeDerivationPanel (which had its own mini
- * UI with an Operator row + per-leaf "+ Add" buttons). Leaves now
- * use the same task-row rendering as top-level tasks, indented so
- * hierarchy is clear. Keeps the visual language consistent. */
-
+/* ── Compound expansion — indented leaf rows ── */
 .leafList {
   list-style: none;
   margin: 0;
   padding: 0;
-  background-color: var(--bg-secondary);
+  background: var(--riso-paper-2);
 }
-
 .leafItem {
-  border-top: 1px solid var(--border-color);
-  /* Indent via padding on the wrap so the leading bar + checkbox line
-   * up inside the child row. */
+  border-top: 1.5px solid var(--riso-hair);
   padding-left: 2rem;
 }
-
 .leafEmpty {
   padding: 0.75rem 1rem 0.75rem 2rem;
   font-size: 0.88rem;
-  font-style: italic;
-  color: var(--text-secondary);
-  border-top: 1px solid var(--border-color);
+  font-weight: 600;
+  color: var(--riso-muted);
+  border-top: 1.5px solid var(--riso-hair);
 }
 
 /* ── Empty state ── */
-
 .emptyState {
   text-align: center;
-  padding: var(--spacing-2xl);
-  color: var(--text-secondary);
-  font-style: italic;
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-md);
-}
-
-.newTaskButton {
-  background-color: var(--active-bg);
-  color: var(--active-text);
-  border: 1px solid var(--active-bg);
-  border-radius: var(--radius-md);
-  padding: 0.55rem 1.1rem;
-  font-size: 0.95rem;
+  padding: 40px 24px;
+  color: var(--riso-muted);
   font-weight: 600;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+}
+
+/* "+ New task" — Riso neutral button */
+.newTaskButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 11px 16px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  transition: filter 0.15s, box-shadow 0.15s, transform 0.05s;
   white-space: nowrap;
-  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.25);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .newTaskButton:hover {
-  filter: brightness(0.94);
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
 .newTaskButton:active {
-  transform: translateY(1px);
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.newTaskButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 /* ── Footer ── */
-
 .footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--border-color);
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1.5px solid var(--riso-hair);
   flex-wrap: wrap;
 }
-
 .backButton,
 .nextButton {
-  padding: 0.55rem 1.1rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  border-radius: var(--radius-md);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 13px 18px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  border: 1px solid var(--border-color);
-  transition: background-color 0.15s, opacity 0.15s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .backButton {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
 }
-
-.backButton:hover {
-  background-color: var(--button-hover-bg);
-}
-
 .nextButton {
-  background-color: var(--active-bg);
-  color: var(--active-text);
-  border-color: var(--active-bg);
+  background: var(--riso-red);
+  color: var(--riso-on-color);
 }
-
+.backButton:hover:not(:disabled),
 .nextButton:hover:not(:disabled) {
-  filter: brightness(0.92);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
+.backButton:active:not(:disabled),
+.nextButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
 .nextButton:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+.backButton:focus-visible,
+.nextButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }

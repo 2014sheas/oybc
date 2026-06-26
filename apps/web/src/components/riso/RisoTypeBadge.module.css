@@ -1,0 +1,30 @@
+/* Square Riso task-type badge (shared — Tasks library + wizard Tasks step). */
+.badge {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 2px solid var(--riso-ink);
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.normal {
+  background: var(--riso-paper);
+  color: var(--riso-muted);
+}
+.counting {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.compound {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+.achievement {
+  background: var(--riso-achievement);
+  color: var(--riso-on-color);
+}
