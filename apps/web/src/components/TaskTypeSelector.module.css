@@ -1,29 +1,38 @@
+/* Task-type selector (Riso, Phase 4b-ii-b1). Segmented button group — bordered
+   tiles, blue active. Used only by CreateNewTaskForm. */
 .typeSelector {
   display: flex;
-  gap: 0.5rem;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .typeButton {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
+  flex: 1;
+  min-width: 90px;
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
   cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  transition: background 0.1s;
 }
 
-.typeButton:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
+.typeButton:hover:not(.typeButtonActive) {
+  background: var(--riso-paper);
 }
 
 .typeButton.typeButtonActive {
-  border-color: var(--active-bg);
-  background-color: var(--active-bg);
-  color: #ffffff;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+
+.typeButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 @media (max-width: 600px) {

@@ -1,294 +1,305 @@
-/* ── Root container ─────────────────────────────────────────────────────────── */
+/* Counting template picker (Riso, Phase 4b-ii-b1). Mode toggle + template
+   dropdown + link-derived-counter panel. Visual re-skin; logic preserved. */
 
+/* root */
 .pickerRoot {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 10px;
 }
 
-/* ── Mode toggle (tab strip) ────────────────────────────────────────────────── */
-
+/* mode toggle (segmented tab strip) */
 .modeToggle {
   display: flex;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   overflow: hidden;
 }
-
 .modeTab {
   flex: 1;
-  padding: 0.35rem 0.5rem;
+  padding: 8px 10px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.78rem;
-  background: transparent;
+  background: var(--riso-paper-2);
   border: none;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--riso-ink);
   transition: background-color 0.12s, color 0.12s;
   text-align: center;
 }
-
 .modeTab:not(:last-child) {
-  border-right: 1px solid var(--border-color);
+  border-right: 2px solid var(--riso-ink);
 }
-
 .modeTab:hover:not(.modeTabActive) {
-  background-color: var(--hover-bg);
+  background: var(--riso-paper);
 }
-
 .modeTabActive {
-  background-color: var(--active-bg);
-  color: var(--active-text, #fff);
-  font-weight: 500;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.modeTab:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
 }
 
-/* ── Shared: affordance button ──────────────────────────────────────────────── */
-
+/* affordance (dashed pick button) */
 .affordance {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
   background: transparent;
   cursor: pointer;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.85rem;
-  color: var(--text-secondary);
-  transition: border-color 0.15s, color 0.15s;
+  color: var(--riso-muted);
+  transition: background 0.15s, color 0.15s;
   width: 100%;
   text-align: left;
 }
-
 .affordance:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+.affordance:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
-/* ── Shared: selected banner ────────────────────────────────────────────────── */
-
+/* selected banner */
 .selectedBanner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.75rem;
-  border: 1px solid var(--active-bg);
-  border-radius: var(--radius-sm);
-  background-color: var(--card-bg);
+  gap: 8px;
+  padding: 9px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
   font-size: 0.85rem;
 }
-
 .selectedLabel {
-  color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-family: var(--riso-font-head);
+  color: var(--riso-muted);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   flex-shrink: 0;
 }
-
 .selectedTitle {
-  color: var(--text-primary);
-  font-weight: 500;
+  font-family: var(--riso-font-head);
+  color: var(--riso-ink);
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
   min-width: 0;
 }
-
 .clearButton {
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   font-size: 0.85rem;
   cursor: pointer;
   padding: 2px 4px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--riso-r-card);
   flex-shrink: 0;
 }
-
 .clearButton:hover {
-  color: var(--error-text);
+  color: var(--riso-red);
+}
+.clearButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
 
-/* ── Shared: dropdown overlay ───────────────────────────────────────────────── */
-
+/* dropdown overlay */
 .dropdownWrapper {
   position: relative;
 }
-
 .dropdown {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background-color: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
   max-height: 220px;
   overflow-y: auto;
   z-index: 200;
 }
-
 .dropdownEmpty {
-  padding: 1rem;
+  padding: 16px;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   font-size: 0.85rem;
-  font-style: italic;
+  font-weight: 600;
 }
-
 .dropdownItem {
   display: block;
   width: 100%;
-  padding: 0.6rem 0.75rem;
+  padding: 10px 12px;
   text-align: left;
   background: transparent;
   border: none;
   cursor: pointer;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.9rem;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-color);
+  color: var(--riso-ink);
+  border-bottom: 1.5px solid var(--riso-hair);
   transition: background-color 0.1s;
 }
-
 .dropdownItem:last-child {
   border-bottom: none;
 }
-
 .dropdownItem:hover {
-  background-color: var(--hover-bg);
+  background: var(--riso-paper);
 }
-
+.dropdownItem:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
 .dropdownMeta {
   display: block;
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
   margin-top: 1px;
 }
 
-/* ── Link mode panel ────────────────────────────────────────────────────────── */
-
+/* link-mode panel */
 .linkPanel {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background-color: var(--card-bg);
+  gap: 12px;
+  padding: 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
 }
-
 .linkField {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 6px;
 }
-
 .linkLabel {
+  font-family: var(--riso-font-head);
   font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--riso-muted);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
 }
-
 .linkRequired {
-  color: var(--error-text);
+  color: var(--riso-red);
   margin-left: 2px;
 }
-
 .linkInput {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-body);
   font-size: 0.9rem;
-  background: var(--input-bg, transparent);
-  color: var(--text-primary);
+  font-weight: 500;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
   width: 100%;
 }
-
-.linkInput:focus {
-  outline: 2px solid var(--active-bg);
+.linkInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
   outline-offset: 1px;
 }
 
-/* ── Baseline radio group ───────────────────────────────────────────────────── */
-
+/* baseline radios */
 .baselineRadioGroup {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
 }
-
 .baselineRadioLabel {
   display: flex;
   align-items: flex-start;
-  gap: 0.4rem;
+  gap: 7px;
   font-size: 0.85rem;
-  color: var(--text-primary);
+  font-weight: 600;
+  color: var(--riso-ink);
   cursor: pointer;
 }
-
 .baselineRadioLabel input[type='radio'] {
   margin-top: 2px;
   flex-shrink: 0;
 }
-
 .baselineHint {
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   font-size: 0.78rem;
 }
 
-/* ── Preview block ──────────────────────────────────────────────────────────── */
-
+/* preview */
 .linkPreview {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
 }
-
 .linkPreviewLabel {
+  font-family: var(--riso-font-head);
   font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--riso-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
-/* ── Create button ──────────────────────────────────────────────────────────── */
-
+/* create button (Riso press) */
 .linkCreateButton {
-  padding: 0.5rem 0.75rem;
-  background-color: var(--active-bg);
-  color: var(--active-text, #fff);
-  border: none;
-  border-radius: var(--radius-sm);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.9rem;
-  font-weight: 500;
+  padding: 11px 14px;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  transition: opacity 0.15s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .linkCreateButton:hover:not(:disabled) {
-  opacity: 0.88;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
+.linkCreateButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
 .linkCreateButton:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
 }
-
-/* ── Stub note ──────────────────────────────────────────────────────────────── */
-
-.linkStubNote {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  font-style: italic;
-  margin: 0;
+.linkCreateButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
+/* notes */
+.linkStubNote {
+  font-size: 0.75rem;
+  color: var(--riso-muted);
+  font-weight: 500;
+  margin: 0;
+}
 .linkError {
+  font-family: var(--riso-font-head);
   font-size: 0.8rem;
-  color: var(--error-text);
+  font-weight: 700;
+  color: var(--riso-red);
   margin: 0;
 }
