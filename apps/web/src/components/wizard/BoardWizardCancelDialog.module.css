@@ -108,6 +108,10 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+/* Save Draft is blue-filled — a blue outline would vanish; use cream */
+.saveButton:focus-visible {
+  outline-color: var(--riso-on-color);
+}
 
 @keyframes fadeIn {
   from { opacity: 0; }

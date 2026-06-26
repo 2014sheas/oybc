@@ -79,6 +79,10 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+/* active button is blue-filled — a blue outline would vanish; use cream */
+.segmentedButtonActive:focus-visible {
+  outline-color: var(--riso-on-color);
+}
 
 .dateDisplay {
   display: flex;
