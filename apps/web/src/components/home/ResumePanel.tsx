@@ -1,7 +1,7 @@
 import { formatTimeframeLabel, Timeframe, type Board } from '@oybc/shared';
 import { getExpiryLabel } from '../../utils/boardDisplayUtils';
 import { RisoButton, RisoIcon } from '../riso';
-import { BoardMiniGrid } from './BoardMiniGrid';
+import { RisoBoard } from '../board/RisoBoard';
 import styles from './Home.module.css';
 
 /** Status-dot color by timeframe (matches the prototype's dotColor map). */
@@ -75,7 +75,8 @@ export function ResumePanel({ board, onOpen }: ResumePanelProps): React.ReactEle
         onClick={() => onOpen(board.id)}
         aria-label={`Open ${board.name}`}
       >
-        <BoardMiniGrid board={board} cell={56} gap={8} framed />
+        {/* Real type/done-aware poster (Phase 3a renderer) — true cell positions. */}
+        <RisoBoard board={board} cellSize={58} />
       </button>
     </div>
   );

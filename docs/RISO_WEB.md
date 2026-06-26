@@ -177,15 +177,37 @@ Fills the minimal 2a `HomePage` with real data, in `apps/web/src/components/home
 All data comes from the boards' denormalized fields (`completedTasks`,
 `totalTasks`, `linesCompleted`, `timeframe`, `endDate`) — no per-board task query.
 
+## Phase 3a — Boards screen + read-only renderer (in review)
+
+- `components/board/RisoBoard.tsx` + `RisoBoardCell.tsx` — the **read-only board
+  renderer**: loads `useBoardTasks` + `useTaskLibrary`, maps `BoardTask.row/col`
+  → position, resolves each cell via `taskToSquareState` (global Task
+  completion), renders the Riso cell (type color, halftone + gold check on done,
+  counting bar, FREE center, gold ring on completed bingo lines via
+  `detectBingos`/`getHighlightedSquares`). `RisoBoardCell` takes an optional
+  `onClick` so Phase 3b reuses it as the interactive play cell. Sizing reads the
+  canonical `board.boardSize` (never `sqrt(totalTasks)`).
+- `components/boards/` — `BoardCard` (name + timeframe + `RisoBadge` + progress +
+  meta + count mini-grid), `CoreStrip` (per-timeframe status cards). `BoardsPage`
+  re-skinned: billboard header + `RisoChip` filters + `CoreStrip` + card grid +
+  empty state. (Per-card delete dropped — moves to the board edit sheet in 3b.)
+- `RisoBadge` added to the kit. The Home resume poster now uses the real
+  `RisoBoard` (true positions), replacing the 2b count-approximation.
+
+The Boards-grid cards + Home rail keep the count-approximation `BoardMiniGrid`
+(true positions there would mean a live query per card); the prominent resume
+poster uses the real renderer.
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | Token layer + fonts + grain/halftone/shadow utilities + primitive kit | **shipped** |
 | **1** | Auth shell + signed-out marketing home (net-new) + sign-in modal | **shipped** |
-| 2a | App shell + nav — top nav (→ mobile bottom tab bar) + minimal Home route | **in review** |
-| 2b | Home/Resume landing — streak pill, resume panel + poster, active-boards rail | **in review** |
-| 3 | Play board + Boards (cell escalation, halftone, gold bingo line, greenlog, toast) | planned |
+| 2a | App shell + nav — top nav (→ mobile bottom tab bar) + minimal Home route | **shipped** |
+| 2b | Home/Resume landing — streak pill, resume panel + poster, active-boards rail | **shipped** |
+| 3a | Boards screen + read-only board renderer (real cell; upgrades Home poster) | **in review** |
+| 3b | Play board — interactive cell, steppers, bingo toast, greenlog overlay | planned |
 | 4 | Create wizard + Tasks library | planned |
 | 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
 
