@@ -1,3 +1,7 @@
+/* FromBoardPicker — Source-board list for the wizard's "From a board…"
+   filter chip. Re-skinned to the Riso design system (Phase 4b-ii-b3).
+   All class names preserved. */
+
 .pickerHeader {
   display: flex;
   flex-direction: column;
@@ -5,10 +9,12 @@
 }
 
 .headline {
-  font-size: 12px;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.6;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
   padding: 8px 4px 0;
 }
 
@@ -19,9 +25,12 @@
 }
 
 .list li + li {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1.5px solid var(--riso-hair);
 }
 
+/* Card: full-width tap target, no card chrome — sits inside a parent
+   container that already has the card border. Hover shows a subtle
+   paper wash. */
 .card {
   display: flex;
   align-items: center;
@@ -30,14 +39,21 @@
   padding: 12px 8px;
   background: transparent;
   border: 0;
-  color: inherit;
+  color: var(--riso-ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background 0.1s;
+  border-radius: var(--riso-r-card);
 }
 
 .card:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--riso-paper);
+}
+
+.card:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 .cardBody {
@@ -46,34 +62,46 @@
 }
 
 .cardTitle {
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
   font-size: 14px;
+  color: var(--riso-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .cardMeta {
+  font-family: var(--riso-font-body);
   font-size: 12px;
-  opacity: 0.6;
+  color: var(--riso-muted);
   margin-top: 2px;
 }
 
 .cardCompletion {
+  font-family: var(--riso-font-body);
   font-size: 11px;
-  opacity: 0.5;
+  color: var(--riso-muted);
   margin-top: 1px;
 }
 
 .cardChevron {
   font-size: 18px;
-  opacity: 0.5;
+  color: var(--riso-muted);
   padding-right: 4px;
 }
 
+/* Empty state */
 .empty {
   padding: 24px 16px;
   text-align: center;
+  font-family: var(--riso-font-body);
   font-size: 13px;
-  opacity: 0.6;
+  color: var(--riso-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
 }

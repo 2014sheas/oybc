@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import styles from './RowContextMenu.module.css';
 
 /**
  * One item in a {@link RowContextMenu}.
@@ -61,18 +62,8 @@ export function RowContextMenu({
   return (
     <div
       role="menu"
-      style={{
-        position: 'fixed',
-        left: x,
-        top: y,
-        zIndex: 1000,
-        background: 'var(--color-bg-elevated, #1c1c1e)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 8,
-        padding: '4px 0',
-        minWidth: 180,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-      }}
+      className={styles.menu}
+      style={{ left: x, top: y }}
       onClick={(e) => e.stopPropagation()}
     >
       {items.map((it, i) => (
@@ -91,34 +82,9 @@ export function RowContextMenu({
             onClose();
           }}
           disabled={it.disabled}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            width: '100%',
-            padding: '8px 14px',
-            background: 'transparent',
-            border: 0,
-            color: 'inherit',
-            font: 'inherit',
-            cursor: it.disabled ? 'default' : 'pointer',
-            textAlign: 'left',
-            opacity: it.disabled ? 0.5 : 1,
-          }}
-          onMouseEnter={(e) => {
-            if (!it.disabled) {
-              (e.currentTarget as HTMLButtonElement).style.background =
-                'rgba(255,255,255,0.08)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-          }}
+          className={styles.item}
         >
-          <span
-            aria-hidden="true"
-            style={{ width: 16, textAlign: 'center', opacity: 0.7 }}
-          >
+          <span aria-hidden="true" className={styles.glyph}>
             {it.glyph}
           </span>
           <span>{it.label}</span>

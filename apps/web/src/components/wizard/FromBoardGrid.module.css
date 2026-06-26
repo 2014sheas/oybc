@@ -1,3 +1,7 @@
+/* FromBoardGrid — Source-board bingo grid for the wizard's "From a board…"
+   filter. Re-skinned to the Riso design system (Phase 4b-ii-b3).
+   All class names preserved. */
+
 .container {
   display: flex;
   flex-direction: column;
@@ -9,7 +13,7 @@
   align-items: center;
   justify-content: flex-start;
   padding: 6px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1.5px solid var(--riso-hair);
 }
 
 .sourceLabel {
@@ -18,43 +22,54 @@
   gap: 6px;
   background: transparent;
   border: 0;
-  color: inherit;
+  color: var(--riso-ink);
   font: inherit;
   cursor: pointer;
   padding: 4px 0;
+  border-radius: var(--riso-r-card);
+}
+
+.sourceLabel:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 .sourcePrefix {
-  opacity: 0.55;
-  font-size: 12px;
+  color: var(--riso-muted);
+  font-size: 11px;
+  font-family: var(--riso-font-head);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  font-weight: 700;
 }
 
 .sourceName {
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
   font-size: 14px;
+  color: var(--riso-ink);
 }
 
 .sourceChevron {
-  opacity: 0.55;
+  color: var(--riso-muted);
   font-size: 12px;
 }
 
 .grid {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   padding: 4px;
 }
 
+/* Base cell — paper-2 fill, 2px ink border, hard shadow when linked */
 .cell {
   position: relative;
   aspect-ratio: 1;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  color: inherit;
+  padding: 4px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-cell);
+  color: var(--riso-ink);
   font: inherit;
   cursor: pointer;
   display: flex;
@@ -62,15 +77,30 @@
   justify-content: center;
   text-align: center;
   overflow: hidden;
+  transition: transform 0.09s, box-shadow 0.09s;
 }
 
 .cell:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+
+.cell:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+.cell:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  z-index: 2;
 }
 
 .cellTitle {
-  font-size: 11px;
-  line-height: 1.25;
+  font-family: var(--riso-font-body);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
   max-height: 100%;
   overflow: hidden;
   display: -webkit-box;
@@ -78,74 +108,116 @@
   -webkit-box-orient: vertical;
 }
 
+/* Linked = blue ink slap. Content on blue fill → on-color (cream). */
 .cellLinked {
-  background: rgba(10, 132, 255, 0.22);
-  border-color: rgba(10, 132, 255, 0.5);
+  background: var(--riso-blue);
+  border-color: var(--riso-ink);
+  color: var(--riso-on-color);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transform: translate(-1px, -1px);
 }
 
 .cellLinked:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.28);
+  transform: translate(-2px, -2px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
 
+.cellLinked:focus-visible {
+  /* Blue fill — white/cream ring so it's visible */
+  outline-color: var(--riso-on-color);
+}
+
+/* Copied = gold tint indicator */
 .cellCopied {
-  background: rgba(255, 193, 7, 0.18);
-  border-color: rgba(255, 193, 7, 0.45);
+  background: var(--riso-gold);
+  border-color: var(--riso-ink);
+  /* Gold is a light fill — use static ink for content */
+  color: var(--riso-ink-static);
 }
 
 .cellCopied:hover:not(:disabled) {
-  background: rgba(255, 193, 7, 0.24);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
 }
 
+.cellCopied:focus-visible {
+  outline-color: var(--riso-ink-static);
+}
+
+/* Expired — muted, non-interactive */
 .cellExpired {
   opacity: 0.35;
   cursor: default;
 }
 
+/* Source's center square — gold ring to distinguish from ordinary cells */
 .cellCenter {
-  border-color: var(--color-warning, #ff9500);
-  border-width: 2px;
+  box-shadow: 0 0 0 2px var(--riso-gold), 2px 2px 0 var(--riso-shadow-ink);
 }
 
+/* FREE / CUSTOM_FREE virtual center — ink fill, gold star text, non-interactive */
 .cellFree {
-  background: rgba(255, 149, 0, 0.12);
-  border: 2px solid var(--color-warning, #ff9500);
+  /* static ink fill — adaptive --riso-ink flips to cream in dark mode, which
+     would leave gold text on a cream cell (invisible). */
+  background: var(--riso-ink-static);
+  border: 2px solid var(--riso-ink-static);
+  color: var(--riso-gold);
   cursor: default;
   pointer-events: none;
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
 }
 
+/* Empty cell placeholder (hole in the source board) */
 .cellEmpty {
   aspect-ratio: 1;
   background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
+  border: 2px dashed var(--riso-hair);
+  border-radius: var(--riso-r-cell);
 }
 
+/* Expired pill badge */
 .cellExpiredPill {
   position: absolute;
-  bottom: 4px;
-  font-size: 9px;
+  bottom: 3px;
+  font-family: var(--riso-font-head);
+  font-size: 8px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border: 1px solid currentColor;
+  letter-spacing: 0.06em;
+  border: 1.5px solid currentColor;
   border-radius: 3px;
-  padding: 0 4px;
-  opacity: 0.8;
+  padding: 0 3px;
 }
 
+/* Empty/not-found state */
 .empty {
   padding: 32px 16px;
   text-align: center;
+  font-family: var(--riso-font-body);
   font-size: 13px;
-  opacity: 0.6;
+  color: var(--riso-muted);
 }
 
+/* Inline link in the not-found message */
 .changeSourceButton {
   background: transparent;
   border: 0;
-  color: var(--color-accent, #0a84ff);
+  color: var(--riso-blue);
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
   padding: 0;
+  border-radius: 3px;
+}
+
+.changeSourceButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell {
+    transition: none;
+  }
 }

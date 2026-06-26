@@ -5,6 +5,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import { copyTask, copyCompound, type CopyTaskOverrides } from '../../db/operations/tasks';
+import styles from './CopyTaskModal.module.css';
 
 interface CopyTaskModalProps {
   /** Source task being copied. */
@@ -119,32 +120,15 @@ export function CopyTaskModal({
       role="dialog"
       aria-modal="true"
       aria-label="Copy task"
+      className={styles.backdrop}
       onClick={onCancel}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1100,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
     >
       <div
+        className={styles.dialog}
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--color-bg-elevated, #1c1c1e)',
-          color: 'inherit',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          padding: 20,
-          minWidth: 340,
-          maxWidth: 440,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
-        }}
       >
-        <h3 style={{ margin: '0 0 4px', fontSize: 17 }}>Add a copy of this task</h3>
-        <div style={{ marginBottom: 14, fontSize: 12, opacity: 0.55 }}>
+        <h3 className={styles.title}>Add a copy of this task</h3>
+        <div className={styles.sourceHint}>
           Source: <strong>{source.title}</strong>
         </div>
 
@@ -154,7 +138,7 @@ export function CopyTaskModal({
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            style={fieldInputStyle}
+            className={styles.fieldInput}
           />
         </Field>
 
@@ -165,7 +149,7 @@ export function CopyTaskModal({
                 type="text"
                 value={action}
                 onChange={(e) => setAction(e.target.value)}
-                style={fieldInputStyle}
+                className={styles.fieldInput}
               />
             </Field>
             <Field label="Goal">
@@ -175,7 +159,7 @@ export function CopyTaskModal({
                 min={1}
                 value={maxCountInput}
                 onChange={(e) => setMaxCountInput(e.target.value)}
-                style={fieldInputStyle}
+                className={styles.fieldInput}
               />
             </Field>
             <Field label="Unit">
@@ -183,7 +167,7 @@ export function CopyTaskModal({
                 type="text"
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                style={fieldInputStyle}
+                className={styles.fieldInput}
               />
             </Field>
           </>
@@ -195,7 +179,7 @@ export function CopyTaskModal({
               <select
                 value={trigger}
                 onChange={(e) => setTrigger(e.target.value as AchievementTrigger)}
-                style={fieldInputStyle}
+                className={styles.fieldInput}
               >
                 <option value={AchievementTrigger.GREENLOG}>Greenlog</option>
                 <option value={AchievementTrigger.BINGO}>Bingo</option>
@@ -209,11 +193,11 @@ export function CopyTaskModal({
                   min={1}
                   value={requiredCountInput}
                   onChange={(e) => setRequiredCountInput(e.target.value)}
-                  style={fieldInputStyle}
+                  className={styles.fieldInput}
                 />
               </Field>
             )}
-            <div style={{ marginTop: 8, fontSize: 11, opacity: 0.55 }}>
+            <div className={styles.hint}>
               The copy watches the same target as the source. To re-target, edit the
               new task from the Tasks tab after Save.
             </div>
@@ -221,29 +205,22 @@ export function CopyTaskModal({
         )}
 
         {isCompound && (
-          <div style={{ marginTop: 8, fontSize: 11, opacity: 0.55 }}>
+          <div className={styles.hint}>
             The copy reuses the source's subtasks. Completing the original subtasks
             still completes them on the copy and vice versa (shared children).
           </div>
         )}
 
         {error && (
-          <div style={{ marginTop: 12, fontSize: 13, color: '#ff6b6b' }}>{error}</div>
+          <div className={styles.error}>{error}</div>
         )}
 
-        <div
-          style={{
-            marginTop: 18,
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-          }}
-        >
+        <div className={styles.actions}>
           <button
             type="button"
             onClick={onCancel}
             disabled={saving}
-            style={cancelButtonStyle}
+            className={styles.cancelButton}
           >
             Cancel
           </button>
@@ -251,7 +228,7 @@ export function CopyTaskModal({
             type="button"
             onClick={() => void handleSave()}
             disabled={saving}
-            style={primaryButtonStyle}
+            className={styles.saveButton}
           >
             {saving ? 'Saving…' : 'Save copy'}
           </button>
@@ -269,41 +246,9 @@ function Field({
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <label style={{ display: 'block', marginTop: 10 }}>
-      <div style={{ fontSize: 12, marginBottom: 4, opacity: 0.7 }}>{label}</div>
+    <label className={styles.field}>
+      <div className={styles.fieldLabel}>{label}</div>
       {children}
     </label>
   );
 }
-
-const fieldInputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  borderRadius: 6,
-  border: '1px solid rgba(255,255,255,0.15)',
-  background: 'rgba(255,255,255,0.04)',
-  color: 'inherit',
-  font: 'inherit',
-  boxSizing: 'border-box',
-};
-
-const cancelButtonStyle: React.CSSProperties = {
-  padding: '8px 14px',
-  borderRadius: 6,
-  background: 'transparent',
-  border: '1px solid rgba(255,255,255,0.2)',
-  color: 'inherit',
-  cursor: 'pointer',
-  font: 'inherit',
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  padding: '8px 14px',
-  borderRadius: 6,
-  background: '#0a84ff',
-  border: 0,
-  color: '#fff',
-  cursor: 'pointer',
-  font: 'inherit',
-  fontWeight: 600,
-};
