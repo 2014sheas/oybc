@@ -19,6 +19,7 @@ function slotStatus(slot: CoreBoardSlot): { text: string; dot: string } {
   const b = slot.currentBoard;
   if (!b) return { text: 'Set up', dot: '' };
   if (b.status === BoardStatus.COMPLETED) return { text: 'Cleared', dot: styles.green };
+  if (b.status === BoardStatus.DRAFT) return { text: 'Resume draft', dot: styles.warn };
   if (b.status === BoardStatus.ACTIVE && isBoardExpired(b)) return { text: 'Expired', dot: styles.warn };
   return { text: `${b.completedTasks}/${b.totalTasks}`, dot: styles.blue };
 }
