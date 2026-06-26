@@ -42,6 +42,19 @@ struct BoardWizardPreviewStepView: View {
         Array(controller.selectedTaskIds).sorted().joined(separator: "|")
     }
 
+    /// Single composite token that drives placement re-seeding. Folds in
+    /// every input `buildWizardPlacement` actually reads so that:
+    ///   - a size tap (which mutates size + centerType + centerTaskId in
+    ///     one action) re-seeds ONCE, not three times; and
+    ///   - the grid re-resolves once the async library / pending tasks
+    ///     finish loading (selected ids that weren't yet in the library
+    ///     would otherwise stay nil slots and persist as blank squares).
+    /// Mirrors web's `useMemo` deps (`library.allTasks`,
+    /// `controller.pendingTasks`, size, centerType, centerTaskId, selection).
+    private var placementKey: String {
+        "\(selectionKey)|\(controller.size)|\(controller.centerType.rawValue)|\(controller.centerTaskId ?? "")|\(library.libraryTasks.count)|\(controller.pendingTasks.count)"
+    }
+
     /// Re-roll the stored placement from the current wizard state.
     private func reseedPlacement() {
         placement = buildWizardPlacement(controller: controller, library: library)
@@ -169,14 +182,13 @@ struct BoardWizardPreviewStepView: View {
             risoFooter
         }
         // Seed the stored placement once when the step appears, and re-seed
-        // whenever the inputs that change the grid contents change. The grid
-        // and persist both read this single stored array — never a fresh
-        // re-roll — so what's previewed is exactly what's saved.
+        // whenever any placement input changes — collapsed into one keyed
+        // handler so a single size tap re-seeds once (not per mutated field)
+        // and a late async library load re-resolves the grid. The grid and
+        // persist both read this single stored array — never a fresh re-roll
+        // — so what's previewed is exactly what's saved.
         .onAppear { if placement.isEmpty { reseedPlacement() } }
-        .onChange(of: selectionKey) { _, _ in reseedPlacement() }
-        .onChange(of: controller.size) { _, _ in reseedPlacement() }
-        .onChange(of: controller.centerType) { _, _ in reseedPlacement() }
-        .onChange(of: controller.centerTaskId) { _, _ in reseedPlacement() }
+        .onChange(of: placementKey) { _, _ in reseedPlacement() }
     }
 
     // MARK: - Header

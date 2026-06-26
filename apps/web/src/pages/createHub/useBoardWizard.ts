@@ -317,6 +317,15 @@ export function useBoardWizard({
       (effectiveTemplate?.boardSize as 3 | 4 | 5 | undefined) ??
       preferences.defaultBoardSize,
   );
+  // Live mirror of `size` so `setSize` can read the previous value
+  // synchronously (matching iOS `updateSize`, which reads the model
+  // property) — a render-closure read would go stale if `setSize` were
+  // called twice in one render. Synced via effect so external size changes
+  // (e.g. `reset`) keep it current.
+  const sizeRef = useRef(size);
+  useEffect(() => {
+    sizeRef.current = size;
+  }, [size]);
   const [timeframe, setTimeframeRaw] = useState<Timeframe>(() => {
     const explicitSource =
       draftBoard?.timeframe ??
@@ -441,25 +450,23 @@ export function useBoardWizard({
   // these setters keep the model consistent so step components don't
   // have to re-implement the same guards.
 
-  const setSize = useCallback(
-    (s: 3 | 4 | 5) => {
-      const oldIsOdd = size % 2 !== 0;
-      setSizeRaw(s);
-      const newIsOdd = s % 2 !== 0;
-      if (!newIsOdd) {
-        setCenterTypeRaw(CenterSquareType.NONE);
-        setCenterTaskIdRaw(null);
-      } else if (!oldIsOdd) {
-        // Only coerce NONE→FREE when actually crossing even→odd (the even
-        // board had forced NONE). Re-selecting the same/another odd size
-        // must preserve a deliberate NONE the user picked while already odd.
-        setCenterTypeRaw((prev) =>
-          prev === CenterSquareType.NONE ? CenterSquareType.FREE : prev,
-        );
-      }
-    },
-    [size],
-  );
+  const setSize = useCallback((s: 3 | 4 | 5) => {
+    const oldIsOdd = sizeRef.current % 2 !== 0;
+    sizeRef.current = s; // sync so a back-to-back call sees the live value
+    setSizeRaw(s);
+    const newIsOdd = s % 2 !== 0;
+    if (!newIsOdd) {
+      setCenterTypeRaw(CenterSquareType.NONE);
+      setCenterTaskIdRaw(null);
+    } else if (!oldIsOdd) {
+      // Only coerce NONE→FREE when actually crossing even→odd (the even
+      // board had forced NONE). Re-selecting the same/another odd size
+      // must preserve a deliberate NONE the user picked while already odd.
+      setCenterTypeRaw((prev) =>
+        prev === CenterSquareType.NONE ? CenterSquareType.FREE : prev,
+      );
+    }
+  }, []);
 
   const setCenterType = useCallback((t: CenterSquareType) => {
     setCenterTypeRaw(t);

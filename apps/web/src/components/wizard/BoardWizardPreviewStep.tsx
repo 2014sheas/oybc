@@ -67,6 +67,10 @@ export function BoardWizardPreviewStep({
 }: BoardWizardPreviewStepProps): React.ReactElement {
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Bumped by the Shuffle button to re-roll the placement on demand (the
+  // memo below re-runs, producing a fresh randomized arrangement). Mirrors
+  // iOS's `reseedPlacement()` on the preview step.
+  const [shuffleNonce, setShuffleNonce] = useState(0);
 
   const selectionKey = useMemo(
     () => Array.from(controller.selectedTaskIds).sort().join('|'),
@@ -83,8 +87,18 @@ export function BoardWizardPreviewStep({
       selectionKey,
       library.allTasks,
       controller.pendingTasks,
+      shuffleNonce,
     ],
   );
+
+  // Tasks actually shuffled into the grid (a CHOSEN centre is pinned, so it
+  // doesn't count). Re-rolling <2 tiles is a no-op, so hide Shuffle then.
+  const shuffleableCount =
+    controller.size % 2 !== 0 &&
+    controller.centerType === CenterSquareType.CHOSEN
+      ? Math.max(0, controller.selectedTaskIds.size - 1)
+      : controller.selectedTaskIds.size;
+  const canShuffle = controller.isRandomized && shuffleableCount >= 2;
 
   // Keep a ref synchronized with the latest `placement` so the async
   // save handler (line ~190) reads the current value rather than a
@@ -241,6 +255,7 @@ export function BoardWizardPreviewStep({
             controller.centerTaskId ?? '',
             controller.centerCustomName,
             selectionKey,
+            shuffleNonce,
           ].join('|')}
           taskNames={taskNames}
           gridSize={controller.size}
@@ -250,6 +265,20 @@ export function BoardWizardPreviewStep({
           readOnly
         />
       </div>
+
+      {canShuffle && (
+        <div className={styles.shuffleRow}>
+          <button
+            type="button"
+            className={styles.shuffleButton}
+            onClick={() => setShuffleNonce((n) => n + 1)}
+            disabled={isCreating}
+            aria-label="Shuffle board layout"
+          >
+            ⤮ Shuffle
+          </button>
+        </div>
+      )}
 
       {/* Summary card with edit jumps */}
       <div className={styles.summary}>
