@@ -1,99 +1,105 @@
+/* Tasks library (Riso, Phase 4a). Sits on the AppShell paper canvas. */
 .shell {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-md);
-  max-width: 720px;
-  margin: 0 auto;
 }
 
+/* ── billboard header ── */
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--spacing-md);
+  gap: 24px;
+  flex-wrap: wrap;
 }
-
-.title {
-  font-size: 1.6rem;
+.kicker {
+  font-family: var(--riso-font-head);
   font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--riso-red);
 }
-
-.newTaskButton {
-  padding: 8px 14px;
-  border: none;
-  border-radius: 8px;
-  background: var(--active-bg);
-  color: var(--active-text);
-  font-size: 0.9rem;
+.title {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(34px, 4vw, 52px);
+  letter-spacing: -0.03em;
+  line-height: 0.92;
+  margin: 8px 0 0;
+}
+.sub {
+  font-size: 15px;
+  color: var(--riso-muted);
   font-weight: 600;
-  cursor: pointer;
-  transition: filter 0.12s;
-  white-space: nowrap;
+  margin: 10px 0 0;
+  max-width: 520px;
+  line-height: 1.5;
 }
 
-.newTaskButton:hover {
-  filter: brightness(0.95);
-}
-
-.newTaskButton:focus-visible {
-  outline: 2px solid var(--active-bg);
-  outline-offset: 2px;
-}
-
+/* ── task list panel ── */
 .list {
   list-style: none;
-  margin: 0;
+  margin: 22px 0 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  overflow: hidden;
+}
+/* hairline between top-level rows */
+.list > li + li {
+  border-top: 1.5px solid var(--riso-hair);
 }
 
-/* ── Nested child rows (compound grouping — issue #73) ───────────────────── */
-
+/* nested compound children (issue #73) */
 .childList {
   list-style: none;
-  margin: var(--spacing-sm) 0 0;
-  padding: 0 0 0 24px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0 0 0 22px;
+  border-top: 1.5px solid var(--riso-hair);
+}
+.childList > li + li {
+  border-top: 1.5px solid var(--riso-hair);
 }
 
+/* ── empty state ── */
 .empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: var(--spacing-lg);
-  border: 1px dashed var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-secondary);
+  padding: 60px 24px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  margin-top: 22px;
 }
-
 .emptyTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 var(--spacing-sm) 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--riso-ink);
+  margin: 0 0 8px;
 }
-
 .emptyBody {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
+  font-size: 14px;
+  color: var(--riso-muted);
+  font-weight: 500;
   margin: 0;
   max-width: 360px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .error {
-  margin: 0;
-  padding: var(--spacing-sm);
-  background: rgba(220, 53, 69, 0.1);
-  color: #b91c1c;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
 }

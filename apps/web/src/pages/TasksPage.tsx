@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TaskType, type Task } from '@oybc/shared';
+import { RisoButton, RisoIcon } from '../components/riso';
 import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
 import {
   computeTaskDeletionImpact,
@@ -107,14 +108,21 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Tasks</h1>
-        <button
-          type="button"
-          className={styles.newTaskButton}
+        <div>
+          <div className={styles.kicker}>Reusable tasks</div>
+          <h1 className={styles.title}>Task library</h1>
+          <p className={styles.sub}>
+            Every task you’ve written, ready to drop onto any board. Reuse keeps your streak history
+            intact.
+          </p>
+        </div>
+        <RisoButton
+          kind="primary"
+          icon={<RisoIcon name="plus" size={16} />}
           onClick={() => setShowNewTaskSheet(true)}
         >
-          + Create task
-        </button>
+          New task
+        </RisoButton>
       </header>
 
       <TasksFilterControls

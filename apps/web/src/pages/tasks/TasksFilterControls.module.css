@@ -1,28 +1,31 @@
+/* Tasks-library filter controls (Riso, Phase 4a). */
 .controls {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: 14px;
+  margin-top: 24px;
 }
 
 .searchRow {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: 10px;
 }
 
 .search {
   flex: 1;
-  padding: 10px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 1rem;
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
 }
-
-.search:focus {
-  outline: 2px solid var(--active-bg);
-  outline-offset: -1px;
+.search:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
 
 .disclosure {
@@ -30,24 +33,25 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 0.9rem;
-  font-weight: 500;
+  padding: 9px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.12s, background-color 0.12s;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .disclosure:hover {
-  border-color: var(--active-bg);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
-
 .disclosure:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
 
@@ -56,105 +60,105 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--active-bg);
+  border: 1.5px solid var(--riso-ink);
+  background: var(--riso-red);
   margin-left: 2px;
+}
+
+/* type-filter chip row */
+.typeChips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .expandedPanel {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-md);
-  padding: var(--spacing-md);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
 
 .dropdownLabel {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--riso-ink);
 }
-
 .dropdownLabelText {
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+  color: var(--riso-muted);
 }
 
 .dropdown {
-  padding: 6px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 0.9rem;
+  padding: 8px 10px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
   cursor: pointer;
 }
-
-.dropdown:focus {
-  outline: 2px solid var(--active-bg);
-  outline-offset: -1px;
+.dropdown:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
 
 .clearAll {
   margin-left: auto;
   padding: 6px 12px;
-  border: none;
-  background: transparent;
-  color: var(--active-bg);
-  font-size: 0.85rem;
-  font-weight: 600;
+  border: 0;
+  background: none;
+  color: var(--riso-blue);
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
-  text-decoration: underline;
 }
-
-.clearAll:hover {
-  filter: brightness(0.9);
-}
-
 .clearAll:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
-  text-decoration: none;
 }
 
-/* ── Group subtasks chip (issue #73) ──────────────────────────────────────── */
-
+/* group-subtasks pill (issue #73) */
 .groupChipRow {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 8px;
 }
-
 .groupChip {
-  padding: 4px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  font-weight: 500;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
   cursor: pointer;
-  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
   white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
 }
-
 .groupChip:hover {
-  background-color: var(--bg-hover, var(--bg-secondary));
-  color: var(--text-primary);
+  background: var(--riso-paper);
 }
-
 .groupChipActive {
-  background-color: var(--active-bg-soft, rgba(13, 110, 253, 0.1));
-  border-color: var(--active-bg);
-  color: var(--active-bg);
+  background: var(--riso-ink);
+  color: var(--riso-paper);
 }
-
 .groupChip:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
