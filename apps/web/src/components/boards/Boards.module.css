@@ -1,0 +1,235 @@
+/* ============================================================
+   OYBC · Riso Web — Boards screen (Phase 3a)
+   Billboard header, core-timeframe strip, board-card grid,
+   empty state. Translated from the prototype onto --riso-* tokens.
+   ============================================================ */
+
+/* ---- billboard header ---- */
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.kicker {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--riso-red);
+}
+.title {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 52px;
+  letter-spacing: -0.03em;
+  line-height: 0.9;
+  margin: 8px 0 0;
+  white-space: nowrap;
+}
+.filters {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+/* ---- core-timeframe strip ---- */
+.coreStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 28px 0 26px;
+}
+.coreCard {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  padding: 14px 15px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.coreCard:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.coreCard:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.coreCard:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.coreK {
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.coreV {
+  font-family: var(--riso-font-head);
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1;
+}
+.coreDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink);
+  flex: 0 0 auto;
+  background: var(--riso-paper);
+}
+.coreDot.green {
+  background: var(--riso-green);
+}
+.coreDot.blue {
+  background: var(--riso-blue);
+}
+.coreDot.warn {
+  background: var(--riso-gold);
+}
+
+/* ---- board-card grid ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 18px;
+}
+.bcard {
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper-2);
+  padding: 20px 22px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.bcard:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+}
+.bcard:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.bcard:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.bcardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bcardName {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.bcardTf {
+  font-size: 12.5px;
+  color: var(--riso-muted);
+  font-weight: 700;
+  margin-top: 7px;
+}
+.bcardBody {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: 18px;
+}
+.bcardL {
+  flex: 1;
+  min-width: 0;
+}
+.bcardMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+.bcardMeta .bingo {
+  color: var(--riso-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.star {
+  color: var(--riso-gold);
+  -webkit-text-stroke: 0.5px var(--riso-ink);
+}
+
+/* shared progress bar (board-card variant) */
+.progress {
+  position: relative;
+  height: 13px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+  margin: 2px 0 10px;
+}
+.progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--riso-red);
+}
+.progressGreen .progressFill {
+  background: var(--riso-green);
+}
+
+/* ---- empty state ---- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 72px 24px;
+}
+.emptyTitle {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 26px;
+  margin: 0 0 10px;
+}
+.emptyText {
+  font-size: 15px;
+  color: var(--riso-muted);
+  font-weight: 600;
+  line-height: 1.5;
+  margin: 0 0 22px;
+  max-width: 320px;
+}
+
+@media (max-width: 860px) {
+  .title {
+    font-size: 40px;
+    white-space: normal;
+  }
+  .coreStrip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,205 @@
+/* ============================================================
+   OYBC · Riso Web — read-only board renderer (Phase 3a)
+   The real type/done-aware bingo grid: cells colored by type,
+   halftone overprint on done, gold check badge, counting bars,
+   FREE center, gold bingo-line ring. Read-only here; Phase 3b
+   adds the interactive play variant on the same cell.
+   Translated from the prototype's .cell block onto --riso-* tokens.
+   ============================================================ */
+
+.board {
+  display: grid;
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper);
+  padding: 12px;
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-cell);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 7px;
+  overflow: hidden;
+}
+.cellText {
+  font-family: var(--riso-font-body);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+/* DONE = loud ink slap + halftone overprint + gold check */
+.done {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transform: translate(-1px, -1px);
+}
+.done::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(24, 18, 11, 0.5) 26%, transparent 28%);
+  background-size: 9px 9px;
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+}
+.check {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--riso-gold);
+  border: 2px solid var(--riso-ink-static);
+  display: grid;
+  place-items: center;
+}
+.check svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--riso-ink-static);
+  stroke-width: 3;
+  fill: none;
+}
+
+/* counting / compound — typed done fills + tag + progress bar */
+.counting.done {
+  background: var(--riso-blue);
+}
+.compound.done {
+  background: var(--riso-green);
+}
+.counting,
+.compound {
+  justify-content: flex-start;
+  padding-top: 14px;
+}
+.counting .cellText,
+.compound .cellText {
+  margin-top: 10px;
+  -webkit-line-clamp: 2;
+}
+.tag {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  z-index: 2;
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1.5px solid var(--riso-ink);
+  color: var(--riso-on-color);
+}
+.tag.counting {
+  background: var(--riso-blue);
+}
+.tag.compound {
+  background: var(--riso-green);
+}
+.cbar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  height: 15px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+.cbar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--riso-blue);
+}
+.cbar.compound > i {
+  background: var(--riso-green);
+}
+.cbar > span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--riso-font-head);
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--riso-ink);
+  z-index: 1;
+}
+.done .cbar {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* FREE / center */
+.free {
+  background: var(--riso-ink);
+  color: var(--riso-gold);
+}
+.freeStar {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 7px;
+  background: var(--riso-gold);
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.free .freeLabel {
+  color: var(--riso-gold);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  position: relative;
+  z-index: 1;
+}
+
+/* bingo-line highlight */
+.line {
+  box-shadow: 0 0 0 4px var(--riso-gold), 3px 3px 0 var(--riso-shadow-ink);
+  z-index: 3;
+}
+.line:not(.done) {
+  background: var(--riso-gold);
+}
+
+/* interactive variant (Phase 3b play board) */
+.interactive {
+  cursor: pointer;
+  transition: transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.3), box-shadow 0.12s, background 0.15s;
+}
+.interactive:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.interactive.done:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.interactive:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  z-index: 4;
+}
