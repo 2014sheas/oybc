@@ -1,106 +1,92 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
-import {
-  useBoards,
-  useCoreBoardSlots,
-  useRecurringBoardSpawn,
-} from '../hooks';
-import { FilterTabs } from '../components/FilterTabs';
-import { BoardListItem } from '../components/BoardListItem';
-import { CoreBoardsSection } from '../components/CoreBoardsSection';
-import { deleteBoard } from '../db/operations/boards';
+import { useBoards, useCoreBoardSlots, useRecurringBoardSpawn } from '../hooks';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
-import styles from './BoardsPage.module.css';
+import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
+import { CoreStrip } from '../components/boards/CoreStrip';
+import { BoardCard } from '../components/boards/BoardCard';
+import styles from '../components/boards/Boards.module.css';
 
 const FILTER_TABS = [
-  { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
   { value: 'completed', label: 'Completed' },
   { value: 'draft', label: 'Draft' },
-];
+  { value: 'all', label: 'All' },
+] as const;
 
 /**
- * BoardsPage — Shows the user's boards with status filtering.
- *
- * Each board row shows name, progress, bingo count, timeframe, expiry, and status.
- * Tapping a board navigates to the board play view.
+ * BoardsPage (Riso) — billboard header + filter chips, the core-timeframe
+ * strip, and a grid of board cards. Tapping a card opens the play view; the
+ * core-strip cards open the per-timeframe window pager. Visual re-skin of the
+ * existing logic (filtering, recurring-spawn, core slots).
  */
 export function BoardsPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
   const allBoards = useBoards(user?.id) ?? [];
   const coreBoardSlots = useCoreBoardSlots(user?.id);
-  // Phase 6.2: fire template spawns on Boards-tab mount. The hook is
-  // structurally idempotent — repeated mounts are no-ops once
-  // `lastSpawnedWindowKey` is written. We don't currently consume the
-  // returned digest here; the Profile recurring-templates page does its
-  // own synchronous validation against the library to surface "needs
-  // attention" badges (see `RecurringTemplatesPage` + the
-  // `templateAttention` memo it derives).
+  // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
   useRecurringBoardSpawn(user?.id);
-  // Default to 'active' so the boards a user is currently playing are
-  // front-and-center. They can switch to 'all' for drafts / completed /
-  // expired boards. Session-local — no UserPreferences persistence.
-  const [activeFilter, setActiveFilter] = useState('active');
+  const [activeFilter, setActiveFilter] = useState<string>('active');
 
   const filteredBoards = allBoards.filter((b) => {
     if (activeFilter === 'all') return true;
     if (b.status !== activeFilter) return false;
-    // Expiry-aware: a board whose status is ACTIVE but whose endDate
-    // has passed is no longer "active" for the user's purposes.
-    // Excluded from the Active tab (still visible under All). Other
-    // filters (Completed, Draft) don't apply the expiry check.
+    // The Active tab hides expired-but-still-ACTIVE boards (still visible under All).
     if (activeFilter === 'active' && isBoardExpired(b)) return false;
     return true;
   });
 
   return (
-    <div className={styles.container}>
-      <h1 className={styles.header}>Boards</h1>
+    <div>
+      <div className={styles.head}>
+        <div>
+          <div className={styles.kicker}>Your boards</div>
+          <h1 className={styles.title}>All boards</h1>
+        </div>
+        {allBoards.length > 0 && (
+          <div className={styles.filters}>
+            {FILTER_TABS.map((tab) => (
+              <RisoChip
+                key={tab.value}
+                on={activeFilter === tab.value}
+                onClick={() => setActiveFilter(tab.value)}
+              >
+                {tab.label}
+              </RisoChip>
+            ))}
+          </div>
+        )}
+      </div>
 
-      <CoreBoardsSection
+      <CoreStrip
         slots={coreBoardSlots}
-        // Whole-row tap → the current window's board (pager). The full window
-        // list is reachable from the pager's ≡ List button.
         onSelect={(slot) => navigate(`/boards/core/${slot.timeframe}/${slot.windowStart.slice(0, 10)}`)}
       />
 
-      {allBoards.length > 0 && (
-        <div className={styles.filterRow}>
-          <FilterTabs
-            tabs={FILTER_TABS}
-            activeTab={activeFilter}
-            onTabChange={setActiveFilter}
-          />
-        </div>
-      )}
-
       {filteredBoards.length === 0 ? (
-        <div className={styles.emptyState}>
-          <div className={styles.emptyIcon} aria-hidden="true">
-            &#9638;
-          </div>
-          <p>
-            {allBoards.length === 0 ? (
-              <>
-                No boards yet.<br />
-                Head to the <strong>Create</strong> tab to build your first board.
-              </>
-            ) : (
-              <>No {activeFilter} boards found.</>
-            )}
+        <div className={styles.empty}>
+          <h3 className={styles.emptyTitle}>
+            {allBoards.length === 0 ? 'Nothing here yet.' : `No ${activeFilter} boards.`}
+          </h3>
+          <p className={styles.emptyText}>
+            {allBoards.length === 0
+              ? 'Start one — pick a timeframe, drop in your tasks, and print the board.'
+              : 'Switch filters, or start a new board.'}
           </p>
+          <RisoButton
+            kind="primary"
+            icon={<RisoIcon name="plus" size={16} />}
+            onClick={() => navigate('/create')}
+          >
+            New board
+          </RisoButton>
         </div>
       ) : (
-        <div className={styles.boardList}>
+        <div className={styles.grid}>
           {filteredBoards.map((board) => (
-            <BoardListItem
-              key={board.id}
-              board={board}
-              onClick={() => navigate(`/boards/${board.id}`)}
-              onDelete={(id) => deleteBoard(id)}
-            />
+            <BoardCard key={board.id} board={board} onOpen={(id) => navigate(`/boards/${id}`)} />
           ))}
         </div>
       )}
