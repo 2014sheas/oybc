@@ -30,3 +30,6 @@ export type { RisoBrandMarkProps } from './RisoBrandMark';
 
 export { RisoBadge } from './RisoBadge';
 export type { RisoBadgeKind, RisoBadgeProps } from './RisoBadge';
+
+export { RisoTypeBadge } from './RisoTypeBadge';
+export type { RisoTaskType, RisoTypeBadgeProps } from './RisoTypeBadge';

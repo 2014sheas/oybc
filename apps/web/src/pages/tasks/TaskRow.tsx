@@ -1,23 +1,7 @@
 import { generateCounterTaskTitle, TaskType, type Task } from '@oybc/shared';
+import { RisoTypeBadge } from '../../components/riso';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import styles from './TaskRow.module.css';
-
-/** Single-letter type marker for the Riso square badge. */
-function badgeLetter(task: Task): string {
-  if (task.type === TaskType.COUNTING) return 'C';
-  if (task.type === TaskType.COMPOUND) return 'K';
-  if (task.type === TaskType.ACHIEVEMENT) return 'A';
-  return 'N';
-}
-
-/** Riso badge color class by task type (own badge — not the shared TypeBadge,
- *  which is still used by the in-flight wizard surfaces). */
-function badgeClass(task: Task): string {
-  if (task.type === TaskType.COUNTING) return styles.tbadgeCounting;
-  if (task.type === TaskType.COMPOUND) return styles.tbadgeCompound;
-  if (task.type === TaskType.ACHIEVEMENT) return styles.tbadgeAchievement;
-  return styles.tbadgeNormal;
-}
 
 export interface TaskRowProps {
   task: Task;
@@ -105,9 +89,7 @@ export function TaskRow({
         aria-label={`Open ${titleForA11y} details`}
       >
         <div className={styles.rowMain}>
-          <span className={`${styles.tbadge} ${badgeClass(task)}`} aria-hidden="true">
-            {badgeLetter(task)}
-          </span>
+          <RisoTypeBadge type={task.type} />
           <div className={styles.rowText}>
             <span className={styles.rowTitle}>{titleForA11y}</span>
             {(subtitle || status || lastCompleted || usage) && (

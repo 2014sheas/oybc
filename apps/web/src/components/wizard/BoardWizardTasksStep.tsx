@@ -14,8 +14,7 @@ import { createTask } from '../../db/operations/tasks';
 import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
-import { TypeBadge } from '../TypeBadge';
-import { FilterTabs } from '../FilterTabs';
+import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
 import { FromBoardGrid } from './FromBoardGrid';
@@ -493,41 +492,34 @@ export function BoardWizardTasksStep({
           />
         )}
 
-        <FilterTabs
-          tabs={filterTabs}
-          activeTab={activeFilter}
-          onTabChange={(value) => {
-            const next = value as TasksFilter;
-            setActiveFilter(next);
-            setExpandedCompositeId(null);
-            // Re-entering the From-a-board flow resets the picker so
-            // the user always lands in "pick a board" mode.
-            if (next === 'from-board') {
-              setPickedSourceBoardId(null);
-            }
-          }}
-        />
+        <div className={styles.filterChips} role="group" aria-label="Filter tasks">
+          {filterTabs.map((t) => (
+            <RisoChip
+              key={t.value}
+              on={activeFilter === t.value}
+              onClick={() => {
+                const next = t.value;
+                setActiveFilter(next);
+                setExpandedCompositeId(null);
+                // Re-entering the From-a-board flow resets the picker so
+                // the user always lands in "pick a board" mode.
+                if (next === 'from-board') {
+                  setPickedSourceBoardId(null);
+                }
+              }}
+            >
+              {t.label}
+            </RisoChip>
+          ))}
+        </div>
 
         {/* Issue #73 — Group subtasks chip. When on (default), compound children
             are hidden from the primitives pool — reach them via the composites
-            region expand. Inline styles match the wizard's existing ad-hoc chip
-            pattern (From parent boards uses FilterTabs; this one is standalone). */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+            region expand. */}
+        <div className={styles.groupRow}>
           <button
             type="button"
-            style={{
-              padding: '4px 12px',
-              border: `1px solid ${groupByCompound ? 'var(--active-bg)' : 'var(--border-color)'}`,
-              borderRadius: 20,
-              background: groupByCompound
-                ? 'var(--active-bg-soft, rgba(13,110,253,0.1))'
-                : 'transparent',
-              color: groupByCompound ? 'var(--active-bg)' : 'var(--text-secondary)',
-              fontSize: '0.82rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            className={`${styles.groupChip} ${groupByCompound ? styles.groupChipActive : ''}`}
             aria-pressed={groupByCompound}
             onClick={() => {
               setGroupByCompound((v) => !v);
@@ -642,7 +634,7 @@ export function BoardWizardTasksStep({
                     }}
                     aria-pressed={isCompoundSelected}
                   >
-                    <TypeBadge type="compound" size="small" letterOnly />
+                    <RisoTypeBadge type="compound" />
                     <div className={styles.rowCenter}>
                       <span className={styles.rowTitle}>{ct.title}</span>
                       {previewSubtitle && (
@@ -951,7 +943,7 @@ function renderTaskRow({
         onContextMenu={onContextMenu}
         aria-pressed={isSelected}
       >
-        <TypeBadge type={task.type} size="small" letterOnly />
+        <RisoTypeBadge type={task.type} />
         <div className={styles.rowCenter}>
           <span className={styles.rowTitle}>{task.title}</span>
           {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
