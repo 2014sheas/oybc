@@ -1,74 +1,96 @@
+/* Composite wizard Review step (Riso, Phase 4b-ii-b2). Summary + chip list
+   + error banner + footer. Mirrors BoardWizardPreviewStep.module.css panel shape. */
+
 .container {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  background-color: var(--card-bg, var(--bg-primary));
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  gap: 20px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
 
+/* Section heading */
 .heading {
   margin: 0;
+  font-family: var(--riso-font-head);
   font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--riso-ink);
 }
 
-/* ── Summary ── */
+/* ── Summary dl ── */
 
 .summary {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
   margin: 0;
-  padding: 0.75rem 0.9rem;
-  background-color: var(--bg-secondary);
-  border-radius: 8px;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  overflow: hidden;
 }
 
 .row {
   display: grid;
   grid-template-columns: 140px 1fr;
-  gap: 0.5rem;
+  gap: 14px;
+  align-items: baseline;
+  padding: 12px 14px;
   font-size: 0.9rem;
+}
+.row + .row {
+  border-top: 1.5px solid var(--riso-hair);
 }
 
 .row dt {
-  color: var(--text-secondary);
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
 }
 
 .row dd {
   margin: 0;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  color: var(--riso-ink);
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .rowHint {
-  color: var(--text-secondary);
+  font-family: var(--riso-font-body);
+  color: var(--riso-muted);
   font-weight: 400;
-  margin-left: 0.15rem;
+  margin-left: 2px;
 }
 
 .placeholder {
   font-style: italic;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
 }
 
-/* ── Chip list ── */
+/* ── Chip list (subtask summary) ── */
 
 .chipSection {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 8px;
 }
 
+/* Riso uppercase section label */
 .chipSectionHeading {
-  font-size: 0.78rem;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
 }
 
 .chipList {
@@ -77,29 +99,52 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
 }
 
 .chipInline,
 .chipLibrary {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.7rem;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   font-size: 0.9rem;
+  /* Reset button appearance when rendered as <button> */
+  background: none;
+  width: 100%;
+  text-align: left;
+  cursor: default;
+  font-family: inherit;
 }
 
+/* Inline chips — paper-2 fill (neutral "new") */
 .chipInline {
-  background-color: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
 }
 
+/* Library chips — paper fill (existing task) */
 .chipLibrary {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
 }
 
+/* When chipLibrary is a button (onClick present) — make it interactive */
+button.chipLibrary {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+button.chipLibrary:hover {
+  background: var(--riso-paper-2);
+}
+button.chipLibrary:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* chip sub-elements */
 .chipIndex {
   flex: 0 0 auto;
   display: inline-flex;
@@ -107,30 +152,34 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  background-color: var(--text-secondary);
-  color: var(--bg-primary);
+  /* static ink — adaptive --riso-ink flips to cream in dark mode → invisible */
+  background: var(--riso-ink-static);
+  color: var(--riso-on-color);
   border-radius: 50%;
+  font-family: var(--riso-font-head);
   font-size: 0.72rem;
   font-weight: 700;
 }
 
 .chipBadge {
   flex: 0 0 auto;
-  padding: 0.15rem 0.5rem;
+  padding: 2px 8px;
+  border: 2px solid var(--riso-ink);
   border-radius: 999px;
-  background-color: var(--bg-primary);
-  color: var(--text-secondary);
+  background: var(--riso-paper);
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.03em;
-  border: 1px solid var(--border-color);
 }
 
 .chipTitle {
   flex: 1;
   min-width: 0;
-  color: var(--text-primary);
-  font-weight: 500;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  color: var(--riso-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -138,7 +187,8 @@
 
 .chipMeta {
   flex: 0 0 auto;
-  color: var(--text-secondary);
+  font-family: var(--riso-font-body);
+  color: var(--riso-muted);
   font-size: 0.8rem;
 }
 
@@ -147,12 +197,13 @@
 .libraryCallout {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 0.85rem;
-  background-color: rgba(59, 130, 246, 0.06);
-  border: 1px dashed rgba(59, 130, 246, 0.35);
-  border-radius: 8px;
-  color: var(--text-primary);
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--riso-paper);
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
   font-size: 0.88rem;
 }
 
@@ -165,13 +216,15 @@
 .errorBanner {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 0.8rem;
-  background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
-  color: var(--error-text);
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
   font-size: 0.9rem;
+  font-weight: 700;
 }
 
 .errorBannerMessage {
@@ -180,24 +233,33 @@
 
 .retryButton {
   flex: 0 0 auto;
-  padding: 0.35rem 0.8rem;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.85rem;
-  font-weight: 600;
-  background-color: var(--error-text);
-  color: #fff;
-  border: 1px solid var(--error-text);
-  border-radius: 5px;
+  padding: 7px 14px;
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  transition: filter 0.15s;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .retryButton:hover:not(:disabled) {
-  filter: brightness(0.92);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
-
+.retryButton:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
 .retryButton:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+.retryButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 /* ── Footer ── */
@@ -205,61 +267,76 @@
 .footer {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border-color);
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1.5px solid var(--riso-hair);
 }
 
 .backButton,
 .createButton {
-  padding: 0.55rem 1.1rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  border-radius: 6px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 13px 18px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  border: 1px solid var(--border-color);
-  transition: background-color 0.15s, opacity 0.15s, filter 0.15s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
 }
-
 .backButton {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
 }
-
-.backButton:hover:not(:disabled) {
-  background-color: var(--button-hover-bg);
-}
-
+/* Create / confirm = green */
 .createButton {
-  background-color: var(--success-text, #16a34a);
-  border-color: var(--success-text, #16a34a);
-  color: #fff;
-  font-weight: 600;
+  background: var(--riso-green);
+  color: var(--riso-on-color);
 }
-
+.backButton:hover:not(:disabled),
 .createButton:hover:not(:disabled) {
-  filter: brightness(0.94);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
-.createButton:disabled,
-.backButton:disabled {
-  opacity: 0.55;
+.backButton:active:not(:disabled),
+.createButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.backButton:disabled,
+.createButton:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
+.backButton:focus-visible,
+.createButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 
+/* Spinner inside create button */
 .spinner {
   width: 13px;
   height: 13px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  border: 2px solid rgba(251, 246, 234, 0.35);
+  border-top-color: var(--riso-on-color);
   border-radius: 50%;
   animation: reviewSpinnerSpin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
 @keyframes reviewSpinnerSpin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+
+/* Local keyframe — guard reduced-motion (riso.css's name-based guard won't
+   match this local name) */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }

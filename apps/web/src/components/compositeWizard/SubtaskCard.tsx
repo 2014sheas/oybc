@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Task } from '@oybc/shared';
 import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
-import { TypeBadge } from '../TypeBadge';
+import { RisoTypeBadge, type RisoTaskType } from '../riso';
 import { CountingStepFields } from '../CountingStepFields';
 import type { CompositeLeafPreview } from './BuildStep';
 import {
@@ -129,7 +129,7 @@ function ExistingFlatRow({
 
   return (
     <div className={styles.flatRow}>
-      <TypeBadge type={row.type} size="small" letterOnly />
+      <RisoTypeBadge type={row.type as RisoTaskType} />
       {onOpenTask ? (
         <button
           type="button"

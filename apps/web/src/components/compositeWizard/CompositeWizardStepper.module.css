@@ -1,8 +1,12 @@
+/* Composite wizard step bar (Riso, Phase 4b-ii-b2). Setup → Build → Review;
+   active = red dot, complete = green dot, ink connectors.
+   Mirrors BoardWizardStepper.module.css exactly. */
+
 .stepper {
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 0.5rem 0;
+  margin: 30px 0 32px;
 }
 
 .stepRow {
@@ -15,72 +19,65 @@
 .connector {
   flex: 1;
   height: 2px;
-  background-color: var(--border-color);
-  margin: 0 8px;
+  background: var(--riso-ink);
+  opacity: 0.25;
+  margin: 0 14px;
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px 6px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background-color: var(--bg-primary);
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  font-weight: 500;
+  gap: 9px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--riso-muted);
   cursor: not-allowed;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
-
 .chip:not(:disabled) {
   cursor: pointer;
 }
 
-.chip:not(:disabled):hover {
-  background-color: var(--button-hover-bg);
-}
-
 .chipActive {
-  background-color: var(--active-bg);
-  color: var(--active-text);
-  border-color: var(--active-bg);
-  font-weight: 600;
+  color: var(--riso-ink);
 }
-
-.chipComplete {
-  color: var(--success-text);
-  border-color: var(--success-border);
-  background-color: var(--success-bg);
-}
-
-.chipComplete:not(:disabled):hover {
-  filter: brightness(0.97);
+.chipActive .label {
+  color: var(--riso-ink);
 }
 
 .dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.18);
-  font-size: 0.75rem;
-  font-weight: 700;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--riso-ink);
 }
-
 .chipActive .dot {
-  background-color: rgba(255, 255, 255, 0.25);
+  background: var(--riso-red);
+  color: var(--riso-on-color);
 }
-
 .chipComplete .dot {
-  background-color: var(--success-text);
-  color: var(--success-bg);
+  background: var(--riso-green);
+  color: var(--riso-on-color);
 }
 
 .label {
-  font-size: 0.85rem;
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+
+.chip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 3px;
+  border-radius: 999px;
 }

@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Task } from '@oybc/shared';
 import { OperatorType, TaskType, generateCounterTaskTitle } from '@oybc/shared';
 import { CounterStepper } from '../CounterStepper';
-import { TypeBadge } from '../TypeBadge';
-import { FilterTabs } from '../FilterTabs';
+import { RisoChip, RisoTypeBadge } from '../riso';
 import { SubtaskCard } from './SubtaskCard';
 import {
   type SubtaskDraft,
@@ -285,11 +284,17 @@ export function BuildStep({
           />
         </div>
 
-        <FilterTabs
-          tabs={FILTER_TABS}
-          activeTab={filter}
-          onTabChange={(v) => setFilter(v as LibraryFilter)}
-        />
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {FILTER_TABS.map((tab) => (
+            <RisoChip
+              key={tab.value}
+              on={filter === tab.value}
+              onClick={() => setFilter(tab.value as LibraryFilter)}
+            >
+              {tab.label}
+            </RisoChip>
+          ))}
+        </div>
 
         <div className={styles.libraryList}>
           {showEmptyLibrary && (
@@ -322,7 +327,7 @@ export function BuildStep({
                       >
                         {checked ? '✓' : ''}
                       </span>
-                      <TypeBadge type={row.type} size="small" letterOnly />
+                      <RisoTypeBadge type={row.type} />
                       <div className={styles.libraryRowCenter}>
                         <span className={styles.libraryRowTitle}>{row.title}</span>
                         {row.subtitle && (
