@@ -380,7 +380,8 @@ A token audit after the phase work found reachable surfaces the phase-by-phase
 re-skin missed (mostly modals, leaf controls, and secondary pages — reachable
 only a few taps in, so happy-path screenshots never caught them). Audit method:
 grep every `*.module.css` for legacy `--bg-`/`--text-`/`--border-color`/hex vs
-`--riso-*`, then map each to a routed view (vs dead / dev-only). Fix PRs:
+`--riso-*`, then map each to a routed view (vs dead / dev-only). Fix PRs (**all
+shipped — pass complete**; A #185, B #186, C #187, E #188, D last):
 
 - **A** — Task detail page (`/tasks/:id`): `TaskDetailContent.module.css` (shared
   by TaskDetail + TaskEditSheet + TaskConfirmDeleteDialog — the dialog also closes
