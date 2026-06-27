@@ -342,7 +342,7 @@
 .editButton:focus-visible,
 .deleteButton:focus-visible {
   outline: 3px solid var(--riso-on-color);
-  outline-offset: 2px;
+  outline-offset: -3px;
 }
 
 /* ── Edit sheet / confirm dialog ── */
@@ -484,6 +484,7 @@
 }
 .saveButton:focus-visible {
   outline-color: var(--riso-on-color);
+  outline-offset: -3px;
 }
 .confirmBody {
   margin: 0;

@@ -494,7 +494,7 @@
   position: fixed;
   inset: 0;
   z-index: 220;
-  background: rgba(24, 18, 11, 0.5);
+  background: rgba(0, 0, 0, 0.5);
   display: grid;
   place-items: center;
   padding: 24px;

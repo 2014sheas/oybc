@@ -125,6 +125,7 @@
 .cellLinked:focus-visible {
   /* Blue fill — white/cream ring so it's visible */
   outline-color: var(--riso-on-color);
+  outline-offset: -3px;
 }
 
 /* Copied = gold tint indicator */
