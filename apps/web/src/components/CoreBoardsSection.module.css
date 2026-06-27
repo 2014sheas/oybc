@@ -1,82 +1,79 @@
+/* Core boards section on the Create hub (Riso). Per-timeframe row → window. */
 .section {
-  margin: 0 16px 16px;
+  margin: 0;
 }
-
 .heading {
+  font-family: var(--riso-font-head);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  letter-spacing: 0.1em;
+  color: var(--riso-muted);
   margin: 0 0 10px;
-  padding: 0 4px;
+  padding: 0 2px;
 }
-
 .cards {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
-/* Whole row is a single tap target — wired by the parent to push the
- * per-timeframe browser (Boards tab) or launch the wizard for the
- * current window (Create tab). No competing buttons inside the row. */
 .card {
   display: flex;
   align-items: center;
   gap: 14px;
   width: 100%;
-  padding: 16px 16px;
-  background: var(--surface-elevated, rgba(10, 132, 255, 0.08));
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: 16px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
   cursor: pointer;
   text-align: left;
   font: inherit;
   color: inherit;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
+.card:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
 .card:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
-
 .icon {
   font-size: 28px;
   width: 40px;
   text-align: center;
   flex-shrink: 0;
 }
-
 .label {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-
 .timeframeLabel {
+  font-family: var(--riso-font-head);
   font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--riso-ink);
 }
-
 .windowLabel {
   font-size: 13px;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
   margin-top: 2px;
 }
-
 .chevron {
-  font-size: 22px;
-  color: var(--text-secondary);
-  margin-left: var(--spacing-sm);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--riso-muted);
+  margin-left: 8px;
   flex-shrink: 0;
 }
