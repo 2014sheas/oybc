@@ -26,6 +26,11 @@
   background: var(--riso-green);
   border-color: var(--riso-ink);
 }
+/* keep green on hover — else .square:hover swaps it to paper and the on-color
+   (cream) task name goes invisible on it in light mode. */
+.completed:hover {
+  background: var(--riso-green);
+}
 
 .taskName {
   font-family: var(--riso-font-head);

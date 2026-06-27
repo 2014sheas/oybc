@@ -135,6 +135,8 @@
   transform: translate(-1px, -1px);
   box-shadow: 2px 2px 0 var(--riso-shadow-ink);
   background: var(--riso-gold);
+  /* gold fill → static ink (adaptive --riso-ink flips light in dark mode) */
+  color: var(--riso-ink-static);
 }
 .addTaskButton:focus-visible {
   outline: 3px solid var(--riso-blue);

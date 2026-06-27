@@ -133,6 +133,11 @@
 .taskRowSelected .taskRowTitle {
   color: var(--riso-ink-static);
 }
+/* keep the gold fill on hover — else .taskRow:hover (higher specificity) swaps it
+   to paper-2 and the ink-static title goes invisible on it in dark mode. */
+.taskRowSelected:hover {
+  background: var(--riso-gold);
+}
 
 .footer {
   display: flex;
