@@ -1,7 +1,9 @@
 /**
- * Non-component helpers + types shared by `ProgressStepRow` and its
- * parent forms. Split out from `ProgressStepRow.tsx` so that file
- * exports components only — required for Fast Refresh / HMR.
+ * Non-component helpers + types for progress/counting step forms.
+ * Consumed by the composite-task wizard (CompositeTaskWizard,
+ * compositeSubtaskDraft) and useCreateFormState. (The original
+ * `ProgressStepRow` component was removed as dead code; these shared
+ * helpers live on.)
  */
 
 /**

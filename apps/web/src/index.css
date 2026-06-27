@@ -12,8 +12,7 @@
   --text-secondary: #666666;
   --border-color: #e0e0e0;
 
-  /* Navbar */
-  --navbar-bg: #ffffff;
+  /* Legacy interaction colors (InteractiveTaskSquare + playground) */
   --hover-bg: #f0f0f0;
   --active-bg: #007bff;
   --active-text: #ffffff;
@@ -71,8 +70,7 @@
   --text-secondary: #a0a0a0;
   --border-color: #404040;
 
-  /* Navbar */
-  --navbar-bg: #2d2d2d;
+  /* Legacy interaction colors (InteractiveTaskSquare + playground) */
   --hover-bg: #3d3d3d;
   --active-bg: #0066cc;
   --active-text: #ffffff;
