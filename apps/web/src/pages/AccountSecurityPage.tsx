@@ -198,7 +198,7 @@ function ChangePasswordSheet({ onClose }: { onClose: () => void }): React.ReactE
   };
 
   return (
-    <Sheet title="Change password" onClose={onClose}>
+    <Sheet title="Change password" onClose={onClose} busy={busy}>
       <Field label="Current password" type="password" value={current} onChange={setCurrent} autoFocus />
       <Field label="New password" type="password" value={next} onChange={setNext} />
       <button type="button" className={styles.linkButton} onClick={() => void forgot()}>
@@ -238,7 +238,7 @@ function ChangeEmailSheet({
   };
 
   return (
-    <Sheet title="Change email" onClose={onClose}>
+    <Sheet title="Change email" onClose={onClose} busy={busy}>
       <p className={styles.sheetBody}>
         We’ll email a verification link to the new address. Your email changes once you click it.
       </p>
@@ -282,7 +282,7 @@ function AddPasswordSheet({
   };
 
   return (
-    <Sheet title="Add a password" onClose={onClose}>
+    <Sheet title="Add a password" onClose={onClose} busy={busy}>
       <p className={styles.sheetBody}>
         Add a password to <b>{email || 'your account'}</b> so you can also sign in with email — and
         change your email or password later.
@@ -299,19 +299,25 @@ function AddPasswordSheet({
 function Sheet({
   title,
   onClose,
+  busy = false,
   children,
 }: {
   title: string;
   onClose: () => void;
+  /** While an op is in flight, no dismiss gesture works (backdrop/Escape) — the
+   *  same guard the Cancel button has. Prevents an in-flight submit's success
+   *  callback from closing a sheet the user already reopened. */
+  busy?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
   const sheetRef = useRef<HTMLDivElement>(null);
 
-  // Escape closes; Tab/Shift+Tab cycle within the dialog (aria-modal alone does
-  // not trap physical keyboard focus — important for a sensitive auth form).
+  // Escape closes (unless busy); Tab/Shift+Tab cycle within the dialog
+  // (aria-modal alone does not trap physical keyboard focus — important for a
+  // sensitive auth form).
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Escape') {
-      onClose();
+      if (!busy) onClose();
       return;
     }
     if (e.key !== 'Tab') return;
@@ -331,7 +337,7 @@ function Sheet({
   };
 
   return (
-    <div className={styles.backdrop} onClick={onClose} role="presentation">
+    <div className={styles.backdrop} onClick={busy ? undefined : onClose} role="presentation">
       <div
         ref={sheetRef}
         className={styles.sheet}
