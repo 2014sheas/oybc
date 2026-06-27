@@ -551,7 +551,10 @@
   align-items: center;
   padding: 3px 9px;
   border: 1.5px solid var(--riso-ink);
-  border-radius: 999px;
+  /* 6px to match BoardStatusBadge — the delete dialog renders this "Expired"
+     tag alongside <BoardStatusBadge> for non-expired boards; same shape avoids
+     a pill-vs-rect mix in one list. */
+  border-radius: 6px;
   font-family: var(--riso-font-head);
   font-size: 0.72rem;
   font-weight: 700;
