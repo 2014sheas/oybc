@@ -24,7 +24,9 @@
   box-shadow: 0 0 0 var(--riso-shadow-ink);
 }
 .card:focus-visible {
-  outline: 3px solid var(--riso-on-color);
+  /* blue, not cream: outline-offset is positive so the ring sits on the page
+     paper (not the red fill) — cream there is invisible in light mode. */
+  outline: 3px solid var(--riso-blue);
   outline-offset: 3px;
 }
 .icon {
