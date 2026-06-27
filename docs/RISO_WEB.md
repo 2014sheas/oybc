@@ -343,11 +343,12 @@ shared sub-page chrome:
 Next: **5a-ii** (the other sub-page modules: RecurringTemplates, DefaultPools),
 then **5b** (net-new Account & security).
 
-## Phase 5b — Account & security (net-new, in progress)
+## Phase 5b — Account & security (net-new) — FINAL phase
 
 The web counterpart of the iOS §5c screen — **net-new** (not a re-skin), built
 with the Firebase **JS** SDK. New route `/profile/account-security` + a Profile
-"Account" row. Three sub-PRs:
+"Account" row. Three sub-PRs (5b-iii completes Phase 5b **and the whole web Riso
+pass**):
 
 - **5b-i (in review)** — the auth layer (`firebase/accountSecurity.ts`: provider
   state, `isRecentLoginRequired`, reauth ×3, `updateAccountPassword`,
@@ -392,8 +393,8 @@ toggles would be dishonest UI (App Store 4.5.4-adjacent).
 | 5a-i | Profile (You tab) main + shared sub-page styles + Sync row (3-state, leak fixed) | **shipped** |
 | 5a-ii | Profile sub-pages — Board preferences, Recurring templates, Default pools | **shipped** |
 | 5b-i | Account & security (net-new) — auth layer + Sign-in section (change email/password, add password, reauth) | **shipped** |
-| 5b-ii | Account & security — Connected accounts (Apple/Google link/unlink) | **in review** |
-| 5b-iii | Account & security — Danger zone (delete account: user.delete() → onUserDeleted trigger → local wipe) | planned |
+| 5b-ii | Account & security — Connected accounts (Apple/Google link/unlink) | **shipped** |
+| 5b-iii | Account & security — Danger zone (delete account: user.delete() → onUserDeleted trigger → local wipe) | **in review** |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,
 to fold in as the relevant screen is touched / before web launch; still tracked

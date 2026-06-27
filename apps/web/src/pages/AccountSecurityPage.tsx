@@ -8,11 +8,14 @@ import {
   EMPTY_PROVIDER_STATE,
   GOOGLE_PROVIDER_ID,
   LAST_PROVIDER_ERROR,
+  deleteAccount,
   getProviderState,
   isRecentLoginRequired,
   linkApple,
   linkGoogle,
   linkPassword,
+  reauthWithApple,
+  reauthWithGoogle,
   reauthWithPassword,
   reconcileEmailIfChanged,
   sendPasswordResetToCurrentUser,
@@ -23,14 +26,14 @@ import {
 } from '../firebase/accountSecurity';
 import styles from './AccountSecurityPage.module.css';
 
-/** Which action sheet is open (Sign-in section — Phase 5b-i). */
-type SheetMode = 'changeEmail' | 'changePassword' | 'addPassword' | null;
+/** Which action sheet is open. */
+type SheetMode = 'changeEmail' | 'changePassword' | 'addPassword' | 'deleteAccount' | null;
 
 /**
  * Account & security (Phase 5b, web). Net-new screen mirroring iOS §5c.
- * Sections: **Sign in** (change email/password, add password — 5b-i) and
- * **Connected accounts** (Apple/Google link/unlink — 5b-ii). Account deletion
- * (Danger zone) lands in 5b-iii.
+ * Sections: **Sign in** (change email/password, add password — 5b-i),
+ * **Connected accounts** (Apple/Google link/unlink — 5b-ii), and **Danger zone**
+ * (delete account — 5b-iii).
  *
  * The dev bypass user has no real Firebase session, so the live auth flows here
  * are exercised on a real account (relay-to-user), like the iOS screen.
@@ -175,6 +178,20 @@ export function AccountSecurityPage(): React.ReactElement {
         </p>
       )}
 
+      <div className={styles.sectionLabel}>Danger zone</div>
+      <div className={`${styles.card} ${styles.dangerCard}`}>
+        <button
+          type="button"
+          className={styles.dangerRow}
+          onClick={() => setSheet('deleteAccount')}
+        >
+          <span className={styles.dangerLabel}>Delete account</span>
+          <span className={styles.actionArrow} aria-hidden="true">
+            ›
+          </span>
+        </button>
+      </div>
+
       {sheet === 'changePassword' && (
         <ChangePasswordSheet onClose={() => setSheet(null)} />
       )}
@@ -196,6 +213,9 @@ export function AccountSecurityPage(): React.ReactElement {
             setSheet(null);
           }}
         />
+      )}
+      {sheet === 'deleteAccount' && (
+        <DeleteAccountSheet providers={providers} onClose={() => setSheet(null)} />
       )}
     </div>
   );
@@ -413,6 +433,77 @@ function AddPasswordSheet({
       <Field label="New password" type="password" value={next} onChange={setNext} autoFocus />
       {error && <p className={styles.sheetError}>{error}</p>}
       <SheetActions onClose={onClose} onSubmit={() => void submit()} busy={busy} disabled={next.length < 6} submitLabel="Add password" />
+    </Sheet>
+  );
+}
+
+/**
+ * Delete-account sheet — reauthenticate (password field, or OAuth popup), then
+ * permanently delete. On success the Firebase auth listener nils the session and
+ * the app swaps to the signed-out home, so this component unmounts (busy stays
+ * true until then). `busy` is only reset on failure.
+ */
+function DeleteAccountSheet({
+  providers,
+  onClose,
+}: {
+  providers: ProviderState;
+  onClose: () => void;
+}): React.ReactElement {
+  const [current, setCurrent] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      // Reauth (delete requires recent login) using whatever provider they have.
+      if (providers.hasPassword) await reauthWithPassword(current);
+      else if (providers.hasGoogle) await reauthWithGoogle();
+      else if (providers.hasApple) await reauthWithApple();
+      await deleteAccount();
+      // Success: auth-state listener tears down the session → signed-out home.
+    } catch (err) {
+      setError(friendlyError(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet title="Delete your account?" onClose={onClose} busy={busy}>
+      <p className={styles.sheetBody}>
+        This permanently erases every board, streak, and GREENLOG across all your devices. It
+        can’t be undone.
+      </p>
+      {providers.hasPassword ? (
+        <Field
+          label="Current password"
+          type="password"
+          value={current}
+          onChange={setCurrent}
+          autoFocus
+        />
+      ) : (
+        <p className={styles.sheetBody}>
+          You’ll be asked to re-authenticate with{' '}
+          {providers.hasGoogle ? 'Google' : 'Apple'} to confirm.
+        </p>
+      )}
+      {error && <p className={styles.sheetError}>{error}</p>}
+      <div className={styles.sheetActions}>
+        <button type="button" className={styles.cancelButton} onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={styles.deleteForeverButton}
+          onClick={() => void submit()}
+          disabled={busy || (providers.hasPassword && !current)}
+        >
+          {busy ? 'Deleting…' : 'Delete forever'}
+        </button>
+      </div>
     </Sheet>
   );
 }

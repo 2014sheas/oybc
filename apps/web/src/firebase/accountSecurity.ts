@@ -23,6 +23,7 @@ import {
   type AuthError,
 } from 'firebase/auth';
 import { auth } from './config';
+import { db } from '../db/database';
 import { updateUserEmail } from '../db/operations/users';
 
 // ─── Provider state ─────────────────────────────────────────────────────────
@@ -137,7 +138,6 @@ export async function reconcileEmailIfChanged(): Promise<void> {
   }
   const firebaseEmail = auth.currentUser?.email;
   if (!firebaseEmail) return;
-  const { db } = await import('../db/database');
   const local = await db.users.get(user.uid);
   if (!local || local.email === firebaseEmail) return;
   await updateUserEmail(user.uid, firebaseEmail);
@@ -217,4 +217,37 @@ export async function unlinkProvider(providerId: string): Promise<void> {
     throw new Error(LAST_PROVIDER_ERROR);
   }
   await fbUnlink(user, providerId);
+}
+
+// ─── Danger zone: delete account (Phase 5b-iii) ───────────────────────────────
+
+/**
+ * Permanently delete the account + all of its data. Mirrors iOS `deleteAccount`.
+ *
+ * Ordering is load-bearing: delete the Firebase Auth user FIRST. That's the only
+ * step that can fail for auth reasons (`requires-recent-login` → the caller
+ * reauthenticates and retries), and if it fails nothing has been purged, so the
+ * account is left cleanly intact. Deleting the Auth user fires the
+ * `onUserDeleted` Cloud Function, which recursively purges this user's Firestore
+ * data server-side (the only way to remove the parent `users/{uid}` doc — client
+ * rules forbid it). We do NOT call the `deleteUserData` callable: the trigger
+ * covers web too, and callable-first would risk purging Firestore and then
+ * leaving a live account if `delete()` failed.
+ *
+ * After the Auth user is gone we wipe every local Dexie table (sync queue
+ * included, so nothing re-pushes and resurrects the just-purged Firestore data).
+ * The Firebase auth-state listener then nils the session → the app shows the
+ * signed-out home. Requires recent login (caller reauthenticates first).
+ */
+export async function deleteAccount(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No signed-in user');
+
+  // 1. Delete the Auth user (→ server-side onUserDeleted purges Firestore).
+  await user.delete();
+
+  // 2. Wipe all device-local data. Clearing every table (vs db.delete()) keeps
+  //    the Dexie connection open and is FK-free under IndexedDB, so order
+  //    doesn't matter. The sync queue is one of the tables — cleared too.
+  await Promise.all(db.tables.map((table) => table.clear()));
 }

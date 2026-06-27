@@ -249,6 +249,69 @@
   font-size: 0.85rem;
 }
 
+/* ── Danger zone (5b-iii) ── */
+.dangerCard {
+  border-color: var(--riso-red);
+}
+.dangerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background-color 0.12s;
+}
+.dangerRow:hover {
+  background: var(--riso-paper);
+}
+.dangerRow:focus-visible {
+  outline: 3px solid var(--riso-red);
+  outline-offset: -3px;
+}
+.dangerLabel {
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-red);
+}
+
+/* destructive confirm button (red fill + static cream) */
+.deleteForeverButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 11px 18px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.deleteForeverButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.deleteForeverButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.deleteForeverButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.deleteForeverButton:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+
 /* ── Action sheet (change email/password, add password, reauth) ── */
 .backdrop {
   position: fixed;
