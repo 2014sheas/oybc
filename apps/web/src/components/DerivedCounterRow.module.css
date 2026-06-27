@@ -148,3 +148,8 @@
 .rowCompleted .removeButton {
   color: var(--riso-on-color);
 }
+/* On hover the bg turns to paper; keep the red affordance (the rule above
+   outranks .removeButton:hover, so cream-on-paper would be invisible in light). */
+.rowCompleted .removeButton:hover {
+  color: var(--riso-red);
+}
