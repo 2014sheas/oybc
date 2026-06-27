@@ -214,21 +214,21 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── riso/ (RisoButton/Card/    ←→               Views/Riso/RisoControls.swift
     │   Chip/Segmented/SectionLabel;                (web Riso primitive kit; tokens in
     │   barrel index.ts)                             src/styles/riso.css — see docs/RISO_WEB.md)
-    ├── Navbar.tsx                 (dev-only)       (no iOS counterpart — iOS launches straight into tabs)
+    │   (Navbar.tsx — REMOVED, dead code; was web dev-only, no iOS counterpart)
     ├── BingoBoard.tsx          ←→                  BingoBoard.swift
     ├── BingoSquare.tsx         ←→                  BingoSquare.swift
     ├── InteractiveTaskSquare.tsx ←→                 (iOS: removed — Riso uses RisoBoardPlayCell)
     ├── TypeBadge.tsx           ←→                  (iOS: removed — Riso uses RisoTypeBadge)
-    ├── FilterTabs.tsx          ←→                  (iOS: removed — Riso uses RisoChip)
+    │   (FilterTabs.tsx — REMOVED, dead code; iOS already removed — Riso uses RisoChip)
     ├── TaskTypeSelector.tsx    ←→                  (iOS: removed — Riso uses RisoSegmented)
-    ├── SelectableTaskItem.tsx  ←→                  SelectableTaskItemView.swift
+    │   (SelectableTaskItem.tsx — REMOVED, dead code; iOS SelectableTaskItemView.swift may still exist)
     ├── PoolItem.tsx            ←→                  PoolItemView.swift
-    ├── SubtaskChip.tsx         ←→                  SubtaskChipView.swift
+    │   (SubtaskChip.tsx — REMOVED, dead code; iOS SubtaskChipView.swift may still exist)
     ├── OperatorSelector.tsx    ←→                  OperatorSelectorView.swift
     ├── CounterStepper.tsx      ←→                  CounterStepperView.swift
-    ├── ProgressStepRow.tsx     ←→                  ProgressStepRowView.swift
+    │   (ProgressStepRow.tsx — REMOVED, dead code; helpers live on in progressStepUtils.ts)
     ├── CountingStepFields.tsx  ←→                  CountingStepFieldsView.swift
-    ├── CountingDerivationPanel.tsx ←→               CountingDerivationPanelView.swift
+    │   (CountingDerivationPanel.tsx — REMOVED, dead code; iOS CountingDerivationPanelView.swift may still exist)
     ├── ProgressDerivationPanel.tsx ←→               ProgressDerivationPanelView.swift
     ├── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
     ├── AuthGate.tsx               ←→               Views/AuthGateView.swift
@@ -283,7 +283,7 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 
 - **Account & security is iOS-only (handoff §5c)**: `Views/ProfileTab/AccountSecurityView.swift` (container + `AccountSecurityContent` leaf) + the supporting AuthService methods (reauth ×3, `updatePassword`/`updateEmail` via `verifyBeforeUpdateEmail`, link/unlink, `deleteAccount`) + `Services/ProviderState.swift` + `Services/AppleNonce.swift` (shared nonce/coordinator/rootVC helpers, lifted out of `AuthGateView`) have no web counterpart yet. The screen does change-email/password (provider-gated), real Apple/Google account linking, and account deletion. The handoff's 2FA + Active-sessions rows are intentionally **omitted** — Firebase has no client API to back them and fake toggles are dishonest UI (App Store 4.5.4-adjacent). The **Cloud Function backend (`functions/`) is shared** — a future web account-security effort reuses `deleteUserData`. Apple's Guideline 5.1.1(v) (in-app account deletion) makes this a launch prerequisite. Deliberate rule-6 exception.
 - **Notifications are iOS-only (Phase 7)**: `Services/Notification{Service,Planner,Delegate}.swift` + `Views/ProfileTab/NotificationPreferencesView.swift` have no web counterpart yet. iOS has local OS-scheduled notifications; web would need a PWA + service worker + FCM/VAPID + a backend scheduler (which also reintroduces server push, against the offline-first invariant). The four notification prefs are in shared types and round-trip via sync on both platforms, but only iOS acts on them. This is a deliberate, documented rule-6 exception — see [§Notifications](#notifications-phase-7--ios-local-reminders) + `docs/NOTIFICATIONS.md`. Web is a separately-scoped follow-up.
-- `Navbar.tsx` / `Home.tsx` are web-only: React Router boots to `/home`, while iOS launches `AuthGateView` → `MainTabView` directly.
+- `Home.tsx` is web-only: React Router boots to `/home`, while iOS launches `AuthGateView` → `MainTabView` directly. (The old web-only `Navbar.tsx` was removed as dead code — the Riso `appShell/` nav replaced it.)
 - `appShell/` (web Riso: `AppTopNav` desktop top nav that detaches into the `AppBottomNav` mobile bottom tab bar) ←→ `MainTabView.swift` (SwiftUI `TabView`). Same UX, platform-native implementation. The old `TabBar.tsx` was removed in the Riso pass.
 - `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
 - `syncService.ts` uses module-level functions + a React hook for orchestration; iOS embeds orchestration in a `@MainActor ObservableObject` bound to `AuthService`'s lifecycle. Same push/pull/LWW rules, same collection list — when you change one, mirror the other in the same PR.
