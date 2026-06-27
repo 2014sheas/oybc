@@ -86,5 +86,5 @@ export function CoreBoardWindowPage(): React.ReactElement {
       </div>
     );
   }
-  return <BoardPlaySurface board={board} userId={user?.id} header={bar} />;
+  return <BoardPlaySurface board={board} userId={user?.id} header={bar} allowEdit={false} />;
 }

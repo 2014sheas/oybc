@@ -1,0 +1,254 @@
+/* ============================================================
+   OYBC · Riso Web — Board Edit Panel (Phase 1)
+   In-place edit chrome: left-rail panel replacing the normal stats
+   rail while the board is in edit mode. Sticky positioning comes
+   from the parent play.rail; this module styles the panel content.
+   Token map: all prototype --ink/--gold/etc → --riso-*.
+   Dark contract: gold fill → --riso-ink-static (static dark, never
+   adaptive --riso-ink); cream focus rings on colored fills are inset.
+   ============================================================ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- Header: Cancel ← + "Editing" gold pill ---- */
+.editbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cancelBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 14px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+.cancelBtn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.cancelBtn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.cancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cancelBtn:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* "Editing" gold pill with red dot.
+   Dark contract: gold fill → --riso-ink-static (static dark ink, never
+   adaptive). Using adaptive --riso-ink would go cream-on-gold in dark mode
+   and fail WCAG AA. The red dot uses --riso-red directly (not a fill token,
+   so no dark-contract issue). */
+.editingPill {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  /* content on gold fill → static dark, never cream */
+  color: var(--riso-ink-static);
+  background: var(--riso-gold);
+  border: 2px solid var(--riso-ink-static);
+  border-radius: 999px;
+  padding: 7px 14px;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  white-space: nowrap;
+  user-select: none;
+}
+.editingPill::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--riso-red);
+  flex-shrink: 0;
+}
+
+/* ---- Read-only board-size chip ---- */
+.sizeChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--riso-paper);
+  border: 1.5px solid var(--riso-hair);
+  border-radius: var(--riso-r-card);
+  flex-wrap: wrap;
+}
+.sizeLabel {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.sizeValue {
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  background: var(--riso-paper-2);
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.sizeNote {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--riso-muted);
+}
+
+/* ---- Validation error ---- */
+.validationError {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--riso-paper);
+  color: var(--riso-red);
+  border: 2px solid var(--riso-red);
+  border-radius: var(--riso-r-card);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ---- Squares sub-mode section ---- */
+.squaresSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Stretch the RisoSegmented pill to fill the rail column.
+   Inside a flex container, the child's outer inline-flex display is
+   overridden by the flex formatting context; flex: 1 then stretches
+   it. The component's internal pill layout is unaffected. */
+.modeSeg {
+  display: flex;
+}
+.modeSeg > * {
+  flex: 1;
+}
+
+.hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  margin: 0;
+}
+.hint b {
+  font-family: var(--riso-font-head);
+  color: var(--riso-ink);
+  font-weight: 800;
+}
+
+/* ---- Save row (edit counter + Save button) ---- */
+.saveRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.editCounter {
+  flex: 0 0 auto;
+  text-align: center;
+  min-width: 44px;
+}
+.editCount {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--riso-ink);
+  font-variant-numeric: tabular-nums;
+}
+.editLabel {
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+  margin-top: 2px;
+}
+
+/* ---- Archive ghost button ---- */
+.archiveBtn {
+  border: 2px solid var(--riso-muted);
+  border-radius: var(--riso-r-card);
+  background: transparent;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 11px;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.archiveBtn:hover:not(:disabled) {
+  background: var(--riso-muted);
+  color: var(--riso-paper);
+}
+.archiveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.archiveBtn:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* ---- Inline confirm card (Cancel-if-dirty / Archive) ---- */
+.confirmCard {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  padding: 14px;
+}
+.confirmTitle {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--riso-ink);
+  margin-bottom: 6px;
+}
+.confirmBody {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.4;
+  margin: 0 0 13px;
+}
+.confirmBtns {
+  display: flex;
+  gap: 10px;
+}
+.confirmBtns > * {
+  flex: 1;
+}

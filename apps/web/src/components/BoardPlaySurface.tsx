@@ -31,7 +31,7 @@ import { BoardStatusBadge } from './BoardStatusBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
-import { EditBoardSheet } from './EditBoardSheet';
+import { BoardEditPanel } from './boardEdit/BoardEditPanel';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
 import { computeStreak, getHighlightedSquares } from '@oybc/shared';
@@ -82,6 +82,12 @@ export interface BoardPlaySurfaceProps {
   /** Chrome rendered at the very top of the container (back link on the
    *  plain page; the window bar in the pager). */
   header?: React.ReactNode;
+  /**
+   * When false, the Edit button is hidden even on ACTIVE boards.
+   * Use in embedded contexts (e.g., the core-board pager) where in-place
+   * edit would conflict with the pager's own chrome. Defaults to true.
+   */
+  allowEdit?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -94,7 +100,7 @@ export interface BoardPlaySurfaceProps {
  * (the per-window core-board pager). The `header` slot lets each consumer
  * supply its own top chrome.
  */
-export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProps): React.ReactElement {
+export function BoardPlaySurface({ board, userId, header, allowEdit = true }: BoardPlaySurfaceProps): React.ReactElement {
   const boardId = board.id;
 
   // ── Reactive data ──────────────────────────────────────────────────────
@@ -133,8 +139,11 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // M2 — edit-board sheet (ACTIVE boards only).
-  const [editBoardOpen, setEditBoardOpen] = useState(false);
+  // Edit mode: replaces the stats rail with the in-place edit panel (Phase 1).
+  const [editMode, setEditMode] = useState(false);
+  // "Board saved" green toast shown after a successful edit-mode save.
+  const [savedToast, setSavedToast] = useState(false);
+  const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // M3 — cell swap: the boardTaskId whose square the user requested a swap for.
   const [swapBoardTaskId, setSwapBoardTaskId] = useState<string | null>(null);
   // M4 — remove from board: the boardTaskId pending removal confirmation.
@@ -142,14 +151,15 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
   // M4 — add to empty cell: the grid position {row, col} awaiting task selection.
   const [addCellPos, setAddCellPos] = useState<{ row: number; col: number } | null>(null);
 
-  // User preferences (for weekStartDay, used by EditBoardSheet).
+  // User preferences (weekStartDay is forwarded to BoardEditPanel + BoardSetupForm).
   const [prefs] = usePreferences();
 
-  // Clean up flash timer on unmount
+  // Clean up timers on unmount.
   useEffect(() => {
     return () => {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       if (bingoTimerRef.current) clearTimeout(bingoTimerRef.current);
+      if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
     };
   }, []);
 
@@ -469,76 +479,98 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
         </div>
       )}
 
-      {/* Left rail */}
-      <aside className={play.rail}>
-        <div className={play.railTop}>
-          {header}
-          {/* M2 — edit only on ACTIVE boards (DRAFT uses wizard; COMPLETED/ARCHIVED immutable). */}
-          {board.status === BoardStatus.ACTIVE && (
-            <button
-              type="button"
-              className={`${play.back} ${play.iconBtn}`}
-              onClick={() => setEditBoardOpen(true)}
-              aria-label="Edit board"
-              title="Edit board"
-            >
-              <RisoIcon name="dots" size={16} />
-            </button>
+      {/* Left rail — normal stats rail OR the in-place edit panel */}
+      {editMode ? (
+        /* Edit mode: replace the stats rail with the metadata edit panel.
+           BoardEditPanel renders inside the same sticky play.rail aside so
+           the two-column .play layout is preserved. */
+        <aside className={play.rail}>
+          <BoardEditPanel
+            board={board}
+            weekStartDay={prefs.weekStartDay}
+            onCancel={() => setEditMode(false)}
+            onSaved={() => {
+              setEditMode(false);
+              setSavedToast(true);
+              if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
+              savedToastTimerRef.current = setTimeout(() => setSavedToast(false), 2400);
+            }}
+            onArchived={() => navigate('/boards')}
+          />
+        </aside>
+      ) : (
+        /* Normal play rail: header slot + title + stats + hint */
+        <aside className={play.rail}>
+          <div className={play.railTop}>
+            {header}
+            {/* Edit entry: ACTIVE boards only, and only when the container allows
+                editing (allowEdit=false in the core-board pager). */}
+            {board.status === BoardStatus.ACTIVE && allowEdit && (
+              <button
+                type="button"
+                className={`${play.back} ${play.iconBtn}`}
+                onClick={() => setEditMode(true)}
+                aria-label="Edit board"
+                title="Edit board"
+              >
+                <RisoIcon name="dots" size={16} />
+              </button>
+            )}
+          </div>
+          <div>
+            <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
+            <h2 className={play.title}>{board.name}</h2>
+            <div style={{ marginTop: 10 }}>
+              <BoardStatusBadge status={board.status} />
+            </div>
+          </div>
+
+          {isExpired && (
+            <div className={styles.expiredBanner}>
+              Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
+            </div>
           )}
-        </div>
-        <div>
-          <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
-          <h2 className={play.title}>{board.name}</h2>
-          <div style={{ marginTop: 10 }}>
-            <BoardStatusBadge status={board.status} />
-          </div>
-        </div>
 
-        {isExpired && (
-          <div className={styles.expiredBanner}>
-            Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
-          </div>
-        )}
-
-        <div className={play.statStack}>
-          <div className={play.stat}>
-            <div className={play.statK}>Squares</div>
-            <div className={play.statV}>
-              {board.completedTasks}
-              <small>/{board.totalTasks}</small>
+          <div className={play.statStack}>
+            <div className={play.stat}>
+              <div className={play.statK}>Squares</div>
+              <div className={play.statV}>
+                {board.completedTasks}
+                <small>/{board.totalTasks}</small>
+              </div>
+            </div>
+            <div className={play.stat}>
+              <div className={play.statK}>Left</div>
+              <div className={play.statV} style={{ fontSize: '18px' }}>
+                {getExpiryLabel(board) || '—'}
+              </div>
+            </div>
+            <div className={`${play.stat} ${play.gold}`}>
+              <div className={play.statK}>Bingos</div>
+              <div className={play.statV}>
+                <span className={play.starS} aria-hidden="true" />
+                {board.linesCompleted}
+              </div>
             </div>
           </div>
-          <div className={play.stat}>
-            <div className={play.statK}>Left</div>
-            <div className={play.statV} style={{ fontSize: '18px' }}>
-              {getExpiryLabel(board) || '—'}
-            </div>
-          </div>
-          <div className={`${play.stat} ${play.gold}`}>
-            <div className={play.statK}>Bingos</div>
-            <div className={play.statV}>
-              <span className={play.starS} aria-hidden="true" />
-              {board.linesCompleted}
-            </div>
-          </div>
-        </div>
 
-        <div className={play.hint}>
-          {board.completedTasks === 0 ? (
-            <>
-              Resting paper. <b>Complete a square</b> to slap ink on it — fill a line for a bingo.
-            </>
-          ) : board.linesCompleted > 0 ? (
-            <>
-              Nice work — keep filling. <b>Clear the board</b> for a GREENLOG.
-            </>
-          ) : (
-            <>
-              Keep going — line up a row, column, or diagonal for a <b>bingo.</b>
-            </>
-          )}
-        </div>
-      </aside>
+          <div className={play.hint}>
+            {board.completedTasks === 0 ? (
+              <>
+                Resting paper. <b>Complete a square</b> to slap ink on it — fill a line for a bingo.
+              </>
+            ) : board.linesCompleted > 0 ? (
+              <>
+                Nice work — keep filling. <b>Clear the board</b> for a GREENLOG.
+              </>
+            ) : (
+              <>
+                Keep going — line up a row, column, or diagonal for a <b>bingo.</b>
+              </>
+            )}
+          </div>
+        </aside>
+      )}
 
       {/* Board column */}
       <div className={play.boardWrap}>
@@ -573,7 +605,9 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                     );
                   } else {
                     // M4 — empty cells on ACTIVE non-expired boards show a `+` affordance.
+                    // Gate the affordance on !editMode: the grid is display-only in edit mode.
                     const addEligible =
+                      !editMode &&
                       !isCenter &&
                       board.status === BoardStatus.ACTIVE &&
                       !isExpired;
@@ -647,7 +681,11 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                         </span>
                       ) : undefined
                     }
-                    onClick={() => {
+                    // In edit mode the grid is display-only: no tap handlers,
+                    // no context menu. Handlers are undefined, making the cells
+                    // inert. RisoBoardCell checks for onClick presence to decide
+                    // whether to render a cursor: pointer.
+                    onClick={editMode ? undefined : () => {
                       if (isExpired) return;
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
                         setSelectedSquareId(bt.id);
@@ -675,7 +713,7 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
                         });
                       }
                     }}
-                    onContextMenu={(e) => {
+                    onContextMenu={editMode ? undefined : (e) => {
                       if (isExpired) return;
                       e.preventDefault();
                       setContextMenu({ squareId: bt.id, x: e.clientX, y: e.clientY });
@@ -692,8 +730,9 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
 
       </div>
 
-      {/* Detail Modal (progress / compound tasks) */}
-      {selectedSquareId && (() => {
+      {/* Detail Modal, context menu, swap modal, remove/add modals — all hidden
+          in edit mode (the grid is display-only; no tap interactions allowed). */}
+      {!editMode && selectedSquareId && (() => {
         const bt = boardTasks.find((b) => b.id === selectedSquareId);
         if (!bt) return null;
         const task = taskMap[bt.taskId];
@@ -770,23 +809,16 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
       })()}
 
       {/* Task library sheet — "Open in library" from context menu or compound child rows */}
-      <TaskDetailSheet
-        taskId={openedTaskInLibrary}
-        onClose={() => setOpenedTaskInLibrary(null)}
-        onOpenTask={(id) => setOpenedTaskInLibrary(id)}
-      />
-
-      {/* M2 — Edit board sheet (ACTIVE boards only). */}
-      {editBoardOpen && (
-        <EditBoardSheet
-          board={board.status === BoardStatus.ACTIVE ? board : null}
-          weekStartDay={prefs.weekStartDay}
-          onClose={() => setEditBoardOpen(false)}
+      {!editMode && (
+        <TaskDetailSheet
+          taskId={openedTaskInLibrary}
+          onClose={() => setOpenedTaskInLibrary(null)}
+          onOpenTask={(id) => setOpenedTaskInLibrary(id)}
         />
       )}
 
       {/* Floating Context Menu */}
-      {contextMenu && (() => {
+      {!editMode && contextMenu && (() => {
         const bt = boardTasks.find((b) => b.id === contextMenu.squareId);
         if (!bt) return null;
         const task = taskMap[bt.taskId];
@@ -863,7 +895,7 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
       })()}
 
       {/* M3 — Cell Swap Modal */}
-      {swapBoardTaskId && (() => {
+      {!editMode && swapBoardTaskId && (() => {
         const bt = boardTasks.find((b) => b.id === swapBoardTaskId);
         if (!bt) return null;
         return (
@@ -891,7 +923,7 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
       })()}
 
       {/* M4 — Remove from board confirmation */}
-      {removeBoardTaskId && (() => {
+      {!editMode && removeBoardTaskId && (() => {
         const bt = boardTasks.find((b) => b.id === removeBoardTaskId);
         const task = bt ? taskMap[bt.taskId] : undefined;
         return (
@@ -947,7 +979,7 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
       })()}
 
       {/* M4 — Add task to empty cell modal */}
-      {addCellPos && (
+      {!editMode && addCellPos && (
         <CellSwapModal
           mode="add"
           candidateTasks={Object.values(taskMap)}
@@ -963,6 +995,14 @@ export function BoardPlaySurface({ board, userId, header }: BoardPlaySurfaceProp
             }
           }}
         />
+      )}
+
+      {/* "Board saved" toast — displayed after a successful edit-mode save (~2.4s). */}
+      {savedToast && (
+        <div className={play.savedToast} role="status" aria-live="polite">
+          <div className={play.savedToastIco} aria-hidden="true">✓</div>
+          <div className={play.savedToastH}>Board saved</div>
+        </div>
       )}
     </div>
   );

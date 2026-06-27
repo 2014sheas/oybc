@@ -237,6 +237,7 @@ struct BoardPlayView: View {
     /// guard still suppresses the grid but offers no resume action.
     var onResumeDraft: ((String) -> Void)? = nil
     @EnvironmentObject var authService: AuthService
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
@@ -276,8 +277,36 @@ struct BoardPlayView: View {
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
-    /// M2 — edit-board sheet (ACTIVE boards only).
-    @State private var isEditBoardPresented: Bool = false
+    // MARK: Edit-mode draft state (Phase 1 board-edit chrome)
+    /// True while the in-place `BoardEditPanel` is overlaid on `BoardPlayView`.
+    @State private var editMode: Bool = false
+    /// Draft board name input.
+    @State private var editName: String = ""
+    /// Draft timeframe segmented picker value.
+    @State private var editTimeframe: Timeframe = .monthly
+    /// Draft custom start-date picker value.
+    @State private var editCustomStartDate: Date = Date()
+    /// Draft custom end-date picker value.
+    @State private var editCustomEndDate: Date = Date()
+    /// Original parsed start date seeded from `board.startDate` — used by the
+    /// `BoardEditPanel` dirty-check comparison.
+    @State private var editOriginalCustomStartDate: Date = Date()
+    /// Original parsed end date seeded from `board.endDate` — used by the
+    /// `BoardEditPanel` dirty-check comparison.
+    @State private var editOriginalCustomEndDate: Date = Date()
+    /// Draft center-square type selector value.
+    @State private var editCenterType: CenterSquareType = .free
+    /// Draft custom center name input (only relevant when `editCenterType == .customFree`).
+    @State private var editCenterCustomName: String = ""
+    /// True when the board already has a center-task placement (gates CHOSEN option).
+    /// Loaded asynchronously by `seedEditDraft(from:)`.
+    @State private var editHasCandidateTasks: Bool = false
+    /// Which squares sub-mode (Edit tasks / Rearrange) is active.
+    @State private var editSubMode: BoardEditSubMode = .editTasks
+    /// True while `updateBoardAndCascade` is in flight — disables the Save pill.
+    @State private var editSaving: Bool = false
+    /// Controls the "Board saved" success toast (auto-dismissed after 2.4 s).
+    @State private var showEditSavedToast: Bool = false
     /// M3 — live-edit cell swap: the square whose task the user wants to replace.
     @State private var swapTarget: SwapTarget? = nil
     /// M4 — live-edit remove from board: the boardTaskId pending confirmation.
@@ -461,6 +490,74 @@ struct BoardPlayView: View {
                 .zIndex(20)
             }
 
+            // ── "Board saved" toast (drops from top after a successful edit save) ──
+            if showEditSavedToast {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.risoGreen)
+                    Text("Board saved")
+                        .font(.risoBody(14, .semibold))
+                        .foregroundStyle(Color.risoInk)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.risoPaper2)
+                .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(Color.risoGreen, lineWidth: Riso.Keyline.container)
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .fill(Color.risoInk)
+                        .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Riso.gutter)
+                .padding(.top, 54)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    )
+                )
+                .zIndex(11)
+            }
+
+            // ── In-place board edit chrome (Phase 1) ──
+            // Full-screen overlay that replaces the retired `EditBoardSheet` modal.
+            // Sits above the GREENLOG overlay (zIndex 20) so it covers celebrations
+            // triggered just before the user taps Save.
+            if editMode, let b = board {
+                BoardEditPanel(
+                    board: b,
+                    boardTasks: boardTasks,
+                    taskMap: taskMap,
+                    weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
+                    originalCustomStartDate: editOriginalCustomStartDate,
+                    originalCustomEndDate: editOriginalCustomEndDate,
+                    name: $editName,
+                    timeframe: $editTimeframe,
+                    customStartDate: $editCustomStartDate,
+                    customEndDate: $editCustomEndDate,
+                    centerType: $editCenterType,
+                    centerCustomName: $editCenterCustomName,
+                    hasCandidateTasks: editHasCandidateTasks,
+                    subMode: $editSubMode,
+                    isSaving: editSaving,
+                    onSave: handleEditSave,
+                    onCancelConfirmed: {
+                        withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                    },
+                    onArchiveConfirmed: handleEditArchive
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.risoPaper.ignoresSafeArea())
+                .transition(.opacity)
+                .zIndex(30)
+            }
+
             // ── Counting stepper sheet ──
             // Presented as a sheet (see .sheet modifier below)
         }
@@ -468,29 +565,16 @@ struct BoardPlayView: View {
         // M2 — toolbar "Edit" button (ACTIVE boards only; DRAFT uses the wizard;
         // COMPLETED / ARCHIVED boards are immutable).
         .toolbar {
-            if let b = board, b.status == .active, !embedded {
+            // M2 — "Edit" button: visible on ACTIVE non-embedded boards when the
+            // edit-mode panel is not already open (hide it once we're editing so
+            // the top bar inside `BoardEditPanel` owns all navigation).
+            if let b = board, b.status == .active, !embedded, !editMode {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Edit") {
-                        isEditBoardPresented = true
+                        seedEditDraft(from: b)
+                        withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
                     }
                 }
-            }
-        }
-        .sheet(isPresented: $isEditBoardPresented, onDismiss: {
-            // Reload the board record so the updated name / timeframe
-            // are reflected immediately without a manual scroll or pull.
-            loadBoard()
-            loadBoardTasks()
-            loadTaskData()
-        }) {
-            if let b = board {
-                EditBoardSheet(
-                    board: b,
-                    weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
-                    onSaved: {
-                        isEditBoardPresented = false
-                    }
-                )
             }
         }
         // M3 — Cell swap sheet. Presented when the user taps "⎘ Swap with
@@ -2061,6 +2145,154 @@ struct BoardPlayView: View {
                     bingoMessage = "Error: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    // MARK: - Edit Mode
+
+    /// Seeds all edit-draft @State vars from the live board record before
+    /// entering edit mode. Called synchronously on the main actor immediately
+    /// before `editMode = true` so the form shows the current board values on
+    /// first render.
+    ///
+    /// - Parameter b: The current active `Board` from `self.board`.
+    private func seedEditDraft(from b: Board) {
+        editName = b.name
+        editTimeframe = b.timeframe
+
+        let cal = Calendar.current
+        let fallbackStart = cal.startOfDay(for: Date())
+        let fallbackEnd = cal.date(byAdding: .day, value: 30, to: fallbackStart) ?? Date()
+        let seedStart = parseWizardCalendarDate(b.startDate) ?? fallbackStart
+        let seedEnd: Date = {
+            if let endStr = b.endDate, let parsed = parseWizardCalendarDate(endStr) { return parsed }
+            return fallbackEnd
+        }()
+        editCustomStartDate = seedStart
+        editOriginalCustomStartDate = seedStart
+        editCustomEndDate = seedEnd
+        editOriginalCustomEndDate = seedEnd
+        editCenterType = b.centerSquareType
+        editCenterCustomName = b.centerSquareCustomName ?? ""
+        editSubMode = .editTasks
+        editSaving = false
+        editHasCandidateTasks = false
+
+        // Async: check whether the board has any center-task placement so
+        // BoardEditPanel can gate the CHOSEN option in BoardSetupFormView.
+        let bid = b.id
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let count = (try? AppDatabase.shared.fetchBoardTasks(boardId: bid).count) ?? 0
+            await MainActor.run { editHasCandidateTasks = count > 0 }
+        }
+    }
+
+    /// Builds the metadata patch from current draft state and writes it via
+    /// `updateBoardAndCascade`. On success: exits edit mode, reloads the
+    /// board from GRDB, and shows a 2.4-second "Board saved" toast.
+    private func handleEditSave() {
+        guard !editSaving else { return }
+        let trimmedName = editName.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else { return }
+
+        let cal = Calendar.current
+        let weekStart = authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday"
+
+        func snapStart(_ d: Date) -> String {
+            wizardLocalISOString(cal.startOfDay(for: d))
+        }
+        func snapEnd(_ d: Date) -> String {
+            let nextDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: d))!
+            return wizardLocalISOString(nextDay.addingTimeInterval(-0.001))
+        }
+
+        let startISO: String
+        let endISO: String?
+        var clearEnd = false
+
+        if editTimeframe == .indefinite {
+            startISO = wizardLocalISOString(cal.startOfDay(for: Date()))
+            endISO = nil
+            clearEnd = true
+        } else if editTimeframe == .custom {
+            startISO = snapStart(editCustomStartDate)
+            let snappedEnd = snapEnd(editCustomEndDate)
+            // Carry over EditBoardSheet's guard: the end-date picker's min can lag a
+            // start-date change, so re-validate end >= start before persisting.
+            guard snappedEnd >= startISO else { return }
+            endISO = snappedEnd
+        } else if let boundaries = computeTimeframeBoundaries(
+            timeframe: editTimeframe,
+            referenceDate: Date(),
+            weekStartDay: weekStart
+        ) {
+            startISO = wizardLocalISOString(boundaries.start)
+            endISO = wizardLocalISOString(boundaries.end)
+        } else {
+            return
+        }
+
+        let patch = AppDatabase.UpdateActiveBoardPatch(
+            name: trimmedName,
+            timeframe: editTimeframe,
+            startDate: startISO,
+            endDate: endISO,
+            clearEndDate: clearEnd,
+            centerSquareType: editCenterType,
+            centerSquareCustomName: editCenterType == .customFree
+                ? (editCenterCustomName.trimmingCharacters(in: .whitespaces).isEmpty
+                    ? nil
+                    : editCenterCustomName.trimmingCharacters(in: .whitespaces))
+                : nil
+        )
+
+        editSaving = true
+        let bid = boardId
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                try AppDatabase.shared.updateBoardAndCascade(boardId: bid, patch: patch)
+                await MainActor.run {
+                    editSaving = false
+                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                    loadBoard()
+                    loadBoardTasks()
+                    loadTaskData()
+                    triggerBoardSavedToast()
+                }
+            } catch {
+                print("⚠️ BoardPlayView.handleEditSave: \(error)")
+                await MainActor.run { editSaving = false }
+            }
+        }
+    }
+
+    /// Archives the board by setting `status = .archived` in GRDB, then
+    /// dismisses `BoardPlayView` back to the Boards list.
+    ///
+    /// The archive confirm alert in `BoardEditPanel` calls this callback only
+    /// after the user confirms — no further confirmation required here.
+    private func handleEditArchive() {
+        let bid = boardId
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                try AppDatabase.shared.archiveBoard(id: bid)
+            } catch {
+                print("⚠️ BoardPlayView.handleEditArchive: \(error)")
+            }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                dismiss()
+            }
+        }
+    }
+
+    /// Flashes the "Board saved" success toast for 2.4 s, then hides it.
+    /// Safe to call multiple times — the latest invocation wins.
+    private func triggerBoardSavedToast() {
+        withAnimation(.easeOut(duration: 0.2)) { showEditSavedToast = true }
+        _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 2_400_000_000)
+            withAnimation(.easeOut(duration: 0.2)) { showEditSavedToast = false }
         }
     }
 

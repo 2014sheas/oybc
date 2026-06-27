@@ -322,6 +322,25 @@ export async function updateBoard(
 }
 
 /**
+ * Archive a board. Sets `status = ARCHIVED`, bumps `version`, enqueues sync.
+ *
+ * The board is NOT deleted — it remains readable and can be restored.
+ * Mirrors the shape of the soft-`deleteBoard` helper (read → update → re-fetch → enqueue).
+ * `BoardStatus.ARCHIVED` already exists in the shared enum; no schema change needed.
+ */
+export async function archiveBoard(id: string): Promise<void> {
+  const existing = await db.boards.get(id);
+  if (!existing) return;
+  await db.boards.update(id, {
+    status: BoardStatus.ARCHIVED,
+    updatedAt: currentTimestamp(),
+    version: (existing.version ?? 0) + 1,
+  });
+  const board = await db.boards.get(id);
+  if (board) await addToSyncQueue('boards', id, SyncOperationType.UPDATE, board);
+}
+
+/**
  * Soft delete a board.
  *
  * Increments `version` so LWW conflict resolution treats the deletion
