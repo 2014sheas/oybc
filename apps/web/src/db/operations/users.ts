@@ -96,3 +96,40 @@ export async function updateUserDisplayName(
 
   return result;
 }
+
+/**
+ * Update the locally-stored email for a user + enqueue a sync.
+ *
+ * Used by the Account & security email-change reconcile: Firebase's
+ * `verifyBeforeUpdateEmail` swaps `currentUser.email` out-of-band (after the
+ * user clicks the link in the new inbox), so the local row + Firestore must be
+ * healed to the verified address. Mirrors `updateUserDisplayName`.
+ *
+ * @param userId - ID of the User row to update
+ * @param email - The new (verified) email address
+ * @returns The updated User row, or `undefined` if the row does not exist
+ */
+export async function updateUserEmail(
+  userId: string,
+  email: string
+): Promise<User | undefined> {
+  let result: User | undefined;
+
+  await db.transaction('rw', [db.users, db.syncQueue], async () => {
+    const existing = await db.users.get(userId);
+    if (!existing) return;
+
+    const updated: User = {
+      ...existing,
+      email,
+      version: (existing.version ?? 0) + 1,
+      updatedAt: currentTimestamp(),
+    };
+
+    await db.users.put(updated);
+    await addToSyncQueue('users', userId, SyncOperationType.UPDATE, updated);
+    result = updated;
+  });
+
+  return result;
+}

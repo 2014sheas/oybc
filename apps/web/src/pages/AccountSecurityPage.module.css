@@ -1,0 +1,310 @@
+/* Account & security (Riso, Phase 5b). Net-new web screen mirroring iOS §5c.
+   Sign-in section in 5b-i; Connected accounts (5b-ii) + Danger zone (5b-iii)
+   land in later sub-PRs. */
+.container {
+  display: flex;
+  flex-direction: column;
+}
+
+.subPageHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 50%;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  text-decoration: none;
+  font-size: 18px;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.backLink:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.backLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.title {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(26px, 3.5vw, 38px);
+  letter-spacing: -0.03em;
+  line-height: 0.94;
+  color: var(--riso-ink);
+}
+.intro {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+
+.sectionLabel {
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0 2px;
+  margin-bottom: 8px;
+}
+
+.card {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+/* read-only value row (email) */
+.infoRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1.5px solid var(--riso-hair);
+}
+.infoRow:last-child {
+  border-bottom: none;
+}
+.infoLabel {
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
+}
+.infoValue {
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* action row (button-styled list row) */
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1.5px solid var(--riso-hair);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--riso-ink);
+  transition: background-color 0.12s;
+}
+.actionRow:last-child {
+  border-bottom: none;
+}
+.actionRow:hover {
+  background: var(--riso-paper);
+}
+.actionRow:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+.actionLabel {
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.actionArrow {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--riso-muted);
+}
+
+/* pending-email banner */
+.pendingBanner {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-ink);
+  line-height: 1.45;
+}
+.pendingBanner b {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+}
+
+/* ── Action sheet (change email/password, add password, reauth) ── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 18, 11, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1100;
+  animation: fadeIn 0.15s ease-out;
+}
+.sheet {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  animation: slideUp 0.2s ease-out;
+}
+.sheetTitle {
+  margin: 0 0 6px;
+  font-family: var(--riso-font-head);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+.sheetBody {
+  margin: 0 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.45;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.fieldLabel {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
+}
+.input {
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+}
+.input:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+.sheetError {
+  margin: 0 0 12px;
+  font-family: var(--riso-font-head);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--riso-red);
+}
+.linkButton {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: -4px 0 14px;
+  color: var(--riso-blue);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+}
+.linkButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.sheetActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.cancelButton,
+.submitButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 11px 18px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.cancelButton {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.submitButton {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.cancelButton:hover:not(:disabled),
+.submitButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.cancelButton:active:not(:disabled),
+.submitButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cancelButton:focus-visible,
+.submitButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.submitButton:focus-visible {
+  outline-color: var(--riso-on-color);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .sheet {
+    animation: none;
+  }
+}
