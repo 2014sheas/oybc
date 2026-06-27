@@ -1,8 +1,10 @@
+/* Core-board browser + window pager chrome (Riso, completeness pass). Shared by
+   CoreBoardBrowserPage, CoreBoardWindowPage, CoreBoardWindowBar, CoreBoardWindowCell,
+   CoreBoardSetupPrompt. The board itself reuses BoardPlaySurface (already Riso). */
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-md);
+  gap: 20px;
   max-width: 720px;
   margin: 0 auto;
 }
@@ -10,277 +12,255 @@
 .header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
-
 .backLink {
   background: none;
   border: none;
   padding: 0;
-  color: var(--active-bg);
-  font-weight: 500;
-  font-size: 0.95rem;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.9rem;
   cursor: pointer;
   align-self: flex-start;
 }
-
 .backLink:hover {
-  text-decoration: underline;
+  color: var(--riso-ink);
 }
-
+.backLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .title {
   margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(26px, 3.5vw, 38px);
+  letter-spacing: -0.03em;
+  line-height: 0.94;
+  color: var(--riso-ink);
 }
-
 .subtitle {
   margin: 0;
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 10px;
 }
-
 .sentinel {
   height: 1px;
 }
-
 .emptyState {
-  margin: var(--spacing-lg) auto;
+  margin: 24px auto;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
+  font-weight: 500;
   font-size: 0.95rem;
 }
 
-/* ── Row container (wraps either a BoardListItem or an empty CTA) ─────────── */
-
+/* ── Window row (wraps a BoardListItem or an empty CTA) ── */
 .row {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: var(--spacing-sm);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--surface-bg, var(--bg-secondary));
+  padding: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper-2);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
-
 .rowCurrent {
-  border-color: var(--active-bg);
-  box-shadow: 0 0 0 1px var(--active-bg);
+  /* current window: blue offset shadow instead of ink to draw the eye */
+  box-shadow: 4px 4px 0 var(--riso-blue);
 }
-
 .rowMeta {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 8px;
 }
-
 .windowLabel {
+  font-family: var(--riso-font-head);
   font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--riso-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.currentBadge {
+  font-family: var(--riso-font-head);
+  font-size: 0.7rem;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
 }
-
-.currentBadge {
+.pastBadge {
+  font-family: var(--riso-font-head);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 2px 8px;
+  padding: 3px 9px;
+  border: 1.5px solid var(--riso-ink);
   border-radius: 999px;
-  background: var(--active-bg);
-  color: var(--active-text, #ffffff);
+  background: var(--riso-paper-2);
+  color: var(--riso-muted);
 }
 
-.pastBadge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-}
-
-/* ── Empty CTA button ──────────────────────────────────────────────────────── */
-
+/* ── Empty CTA button ── */
 .emptyButton {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 8px;
   width: 100%;
-  padding: var(--spacing-md);
-  border: 1px dashed var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  padding: 14px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+  transition: background-color 0.12s;
 }
-
 .emptyButton:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
-  background: var(--active-bg-soft, rgba(13, 110, 253, 0.06));
+  background: var(--riso-paper-2);
 }
-
 .emptyButton:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
-
 .emptyButtonPast {
-  opacity: 0.75;
+  opacity: 0.7;
 }
-
 .emptyButtonPast:hover {
   opacity: 1;
 }
-
 .emptyIcon {
   font-size: 1.1rem;
   flex-shrink: 0;
 }
-
 .emptyLabel {
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
-/* ── CoreBoardWindowBar ────────────────────────────────────────────────────── */
-
+/* ── CoreBoardWindowBar ── */
 .windowBar {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--border-color);
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 2px solid var(--riso-ink);
 }
-
 .windowNav {
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 44px;
   min-height: 44px;
-  padding: 0 var(--spacing-sm);
-  background: none;
-  border: none;
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 1.4rem;
+  padding: 0 8px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-ink);
+  font-size: 1.3rem;
   line-height: 1;
   cursor: pointer;
-  transition: background-color 0.12s, color 0.12s;
+  transition: background-color 0.12s;
   flex-shrink: 0;
 }
-
 .windowNav:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  background: var(--riso-paper);
 }
-
 .windowNav:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
-
 .windowBarLabel {
   flex: 1;
   text-align: center;
+  font-family: var(--riso-font-head);
   font-size: 1rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--riso-ink);
 }
-
 .windowListButton {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px var(--spacing-sm);
+  padding: 8px 12px;
   min-height: 44px;
-  background: none;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font: inherit;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background-color 0.12s;
+  transition: background-color 0.12s;
   flex-shrink: 0;
 }
-
 .windowListButton:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
-  background: var(--active-bg-soft, rgba(13, 110, 253, 0.06));
+  background: var(--riso-paper);
 }
-
 .windowListButton:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
 
-/* ── CoreBoardSetupPrompt ──────────────────────────────────────────────────── */
-
+/* ── CoreBoardSetupPrompt ── */
 .setupPrompt {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-lg) var(--spacing-md);
+  gap: 14px;
+  padding: 24px 16px;
 }
-
 .setupIcon {
   font-size: 2.5rem;
   line-height: 1;
 }
-
 .setupText {
   margin: 0;
   font-size: 0.95rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
   text-align: center;
 }
-
 .setupButton {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  border: 1px dashed var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  gap: 8px;
+  padding: 14px 16px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
   cursor: pointer;
-  font: inherit;
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
   text-align: left;
-  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+  transition: background-color 0.12s;
 }
-
 .setupButton:hover {
-  border-color: var(--active-bg);
-  color: var(--active-bg);
-  background: var(--active-bg-soft, rgba(13, 110, 253, 0.06));
+  background: var(--riso-paper-2);
 }
-
 .setupButton:focus-visible {
-  outline: 2px solid var(--active-bg);
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
