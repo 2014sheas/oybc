@@ -1,56 +1,53 @@
+/* Shared type pill (Riso). The text-label variant of the task-type indicator
+   (RisoTypeBadge is the square N/C/K/A form). Re-skinned to Riso colors so every
+   consumer (TaskDetail, DefaultPool editor, CellSwapModal, DerivedCounterRow…)
+   is on-palette in one place. */
 .typeBadge {
+  font-family: var(--riso-font-head);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 6px;
   white-space: nowrap;
 }
 
 .small {
   font-size: 0.65rem;
-  padding: 0.1rem 0.4rem;
+  padding: 1px 6px;
   letter-spacing: 0.04em;
 }
 
 .typeBadgeNormal {
-  background-color: var(--info-bg);
-  color: var(--info-text);
+  background: var(--riso-paper-2);
+  color: var(--riso-muted);
 }
-
 .typeBadgeCounting {
-  background-color: var(--warning-bg, #fff3cd);
-  color: var(--warning-text, #856404);
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
 }
-
 .typeBadgeCompound {
-  background-color: var(--success-bg);
-  color: var(--success-text);
+  background: var(--riso-green);
+  color: var(--riso-on-color);
 }
-
-/* Phase 6.3 — Achievement (cross-board watcher). Distinct tint from
- * the other types so it reads at a glance on the wizard library list. */
 .typeBadgeAchievement {
-  background-color: var(--accent-bg, #f6e6ff);
-  color: var(--accent-text, #6b21a8);
+  background: var(--riso-achievement);
+  color: var(--riso-on-color);
 }
 
-/* Abbreviated 4-letter variant — fixed width so stacked badges align
- * regardless of task type. Still uses the pill shape of the default
- * badge, but the width is locked via min-width/justify-content so no
- * amount of font-width jitter shifts the adjacent column. */
+/* abbreviated fixed-width variant (stacked list alignment) */
 .letter {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 46px;
-  padding: 0.15rem 0.4rem;
+  min-width: 48px;
+  padding: 2px 6px;
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
-
 .letter.small {
-  min-width: 42px;
-  padding: 0.1rem 0.35rem;
+  min-width: 44px;
+  padding: 1px 5px;
 }

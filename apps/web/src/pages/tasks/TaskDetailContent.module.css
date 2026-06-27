@@ -1,537 +1,520 @@
-/* ── Shell ─────────────────────────────────────────────────────────────────── */
+/* Task detail + edit sheet + confirm-delete dialog (Riso, completeness pass).
+   Shared by TaskDetailContent, TaskEditSheet, TaskConfirmDeleteDialog (the last
+   also used by the Tasks tab). Visual re-skin; all logic preserved. */
 
+/* ── Shell ── */
 .shell {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-md);
+  gap: 20px;
   max-width: 720px;
   margin: 0 auto;
 }
 
-/* ── Header (back / done button row) ────────────────────────────────────────── */
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.back {
-  font-size: 0.95rem;
-  color: var(--active-bg);
-  text-decoration: none;
-  font-weight: 500;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-}
-
-.back:hover {
-  text-decoration: underline;
-}
-
-/* ── Title section ──────────────────────────────────────────────────────────── */
-
+/* ── Title section ── */
 .titleSection {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 10px;
 }
-
 .title {
   margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -0.03em;
+  line-height: 0.94;
+  color: var(--riso-ink);
 }
-
 .badges {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 8px;
 }
-
 .statusPill {
   display: inline-flex;
   align-items: center;
-  padding: 2px 10px;
+  padding: 4px 11px;
+  border: 2px solid var(--riso-ink);
   border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
-
 .statusCompleted {
-  background: #1f6f3f;
-  color: white;
+  background: var(--riso-green);
+  color: var(--riso-on-color);
 }
-
 .statusInProgress {
-  background: #c97a1c;
-  color: white;
+  /* gold is a light static fill → static ink for its content */
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
 }
-
 .statusNeverStarted {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--riso-paper-2);
+  color: var(--riso-muted);
 }
-
 .description {
   margin: 0;
   font-size: 0.95rem;
-  color: var(--text-secondary);
-  line-height: 1.4;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.45;
 }
 
-/* ── Generic section card ────────────────────────────────────────────────────── */
-
+/* ── Section card ── */
 .section {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: var(--spacing-md);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  padding: 16px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
 .sectionHeading {
-  margin: 0 0 var(--spacing-sm) 0;
+  margin: 0 0 8px;
+  font-family: var(--riso-font-head);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  letter-spacing: 0.1em;
+  color: var(--riso-muted);
 }
-
 .metaLine {
   margin: 0;
   font-size: 0.9rem;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: var(--riso-ink);
 }
 
-/* ── Progress bar (counting) ─────────────────────────────────────────────────── */
-
+/* ── Counting progress bar ── */
 .progressBar {
-  margin-top: var(--spacing-sm);
-  height: 8px;
-  background: var(--border-color);
+  margin-top: 8px;
+  height: 10px;
+  background: var(--riso-paper);
+  border: 1.5px solid var(--riso-ink);
   border-radius: 999px;
   overflow: hidden;
 }
-
 .progressFill {
   height: 100%;
-  background: var(--active-bg);
+  background: var(--riso-blue);
   transition: width 0.2s;
 }
-
-/* ── Linked counter caption (Phase 2 — counting tasks) ──────────────────────── */
-
 .linkedCounterCaption {
   margin: 0.4rem 0 0;
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
 
-/* ── Board list (usage section) ──────────────────────────────────────────────── */
-
+/* ── Board list (usage) ── */
 .boardList {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
-
 .boardLink {
-  color: var(--active-bg);
+  font-family: var(--riso-font-head);
+  color: var(--riso-blue);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 700;
 }
-
 .boardLink:hover {
   text-decoration: underline;
 }
-
 .boardStatusTag {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+  font-family: var(--riso-font-head);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--riso-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
 
-/* ── Timestamps section ──────────────────────────────────────────────────────── */
-
+/* ── Timestamps ── */
 .timestampGrid {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-
 .timestampRow {
   display: flex;
   align-items: baseline;
-  gap: var(--spacing-sm);
+  gap: 8px;
 }
-
 .timestampLabel {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
   min-width: 100px;
   flex-shrink: 0;
 }
-
 .timestampValue {
   font-size: 0.9rem;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: var(--riso-ink);
 }
-
 .timestampRelative {
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   margin-left: 4px;
 }
-
 .timestampLead {
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
 }
 
-/* ── Chip row (subtask-of / part-of template) ────────────────────────────────── */
-
+/* ── Chips ── */
 .chipRow {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-sm);
+  gap: 8px;
   margin-top: 2px;
 }
-
 .taskChip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px 4px 6px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  padding: 5px 12px 5px 8px;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
   border-radius: 999px;
+  font-family: var(--riso-font-head);
   font-size: 0.85rem;
+  font-weight: 700;
   cursor: pointer;
-  color: var(--text-primary);
-  font-weight: 500;
+  color: var(--riso-ink);
   transition: background 0.1s;
 }
-
 .taskChip:hover {
-  background: var(--border-color);
+  background: var(--riso-paper-2);
 }
-
+.taskChip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .templateChip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  padding: 5px 12px;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
   border-radius: 999px;
+  font-family: var(--riso-font-head);
   font-size: 0.85rem;
-  color: var(--active-bg);
-  font-weight: 500;
+  font-weight: 700;
+  color: var(--riso-blue);
   text-decoration: none;
 }
-
 .templateChip:hover {
-  text-decoration: underline;
+  background: var(--riso-paper-2);
+}
+.templateChip:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
-/* ── Subtask child list ───────────────────────────────────────────────────────── */
-
+/* ── Subtask child list ── */
 .subtaskList {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin-top: 2px;
 }
-
 .subtaskRow {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 6px 8px;
-  border-radius: 6px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-card);
   cursor: pointer;
-  background: var(--bg-primary);
-  border: 1px solid transparent;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
   width: 100%;
   text-align: left;
+  transition: background 0.1s;
 }
-
 .subtaskRow:hover {
-  border-color: var(--border-color);
-  background: var(--bg-primary);
+  background: var(--riso-paper-2);
 }
-
+.subtaskRow:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
 .subtaskCheck {
   font-size: 0.9rem;
-  color: #1f6f3f;
+  color: var(--riso-green);
   min-width: 16px;
   text-align: center;
 }
-
 .subtaskCheckEmpty {
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   min-width: 16px;
   text-align: center;
 }
-
 .subtaskTitle {
   flex: 1;
+  font-family: var(--riso-font-head);
   font-size: 0.9rem;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .subtaskTitleDone {
   text-decoration: line-through;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
 }
-
 .subtaskHint {
-  margin: var(--spacing-sm) 0 0;
-  padding: var(--spacing-sm);
-  background: var(--bg-secondary);
-  border-left: 3px solid var(--active-bg);
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--riso-paper);
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
 
-/* ── Error / loading ─────────────────────────────────────────────────────────── */
-
+/* ── Error / loading ── */
 .error {
   margin: 0;
-  padding: var(--spacing-sm);
-  background: rgba(220, 53, 69, 0.1);
-  color: #b91c1c;
-  border-radius: 6px;
+  padding: 10px 14px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.9rem;
 }
-
-.loading {
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-  text-align: center;
-  padding: var(--spacing-lg);
-}
-
-/* ── Footer actions ──────────────────────────────────────────────────────────── */
-
+/* ── Footer actions ── */
 .actions {
   display: flex;
-  gap: var(--spacing-md);
+  gap: 12px;
   justify-content: flex-end;
 }
-
-.editButton {
-  padding: 10px 20px;
-  background: var(--active-bg);
-  color: var(--active-text);
-  border: none;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.editButton:hover {
-  filter: brightness(0.95);
-}
-
+.editButton,
 .deleteButton {
-  padding: 10px 20px;
-  background: #b91c1c;
-  color: white;
-  border: none;
-  border-radius: 8px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.95rem;
-  font-weight: 600;
+  padding: 12px 20px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
+.editButton {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.deleteButton {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+.editButton:hover,
 .deleteButton:hover {
-  filter: brightness(0.95);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.editButton:active,
+.deleteButton:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.editButton:focus-visible,
+.deleteButton:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 2px;
 }
 
-/* ── Edit sheet / dialog overlays ────────────────────────────────────────────── */
-
+/* ── Edit sheet / confirm dialog ── */
 .sheetBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(24, 18, 11, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-md);
+  padding: 16px;
   z-index: 100;
 }
-
 .sheet {
   width: 100%;
   max-width: 480px;
-  background: var(--bg-primary);
-  border-radius: 12px;
-  padding: var(--spacing-lg);
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: 14px;
   max-height: 90vh;
   overflow-y: auto;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
 }
-
 .sheetHeading {
   margin: 0;
+  font-family: var(--riso-font-head);
   font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--riso-ink);
 }
-
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
-
 .fieldLabel {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--riso-font-head);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
 }
-
 .fieldInput,
 .fieldTextarea {
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
   font-size: 0.95rem;
-  font-family: inherit;
+  font-weight: 500;
   box-sizing: border-box;
 }
-
 .fieldTextarea {
   resize: vertical;
 }
-
-.fieldInput:focus,
-.fieldTextarea:focus {
-  outline: 2px solid var(--active-bg);
-  outline-offset: -1px;
+.fieldInput:focus-visible,
+.fieldTextarea:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
-
 .compoundHint {
   margin: 0;
-  padding: var(--spacing-sm);
-  background: var(--bg-secondary);
-  border-left: 3px solid var(--active-bg);
+  padding: 10px 12px;
+  background: var(--riso-paper);
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
-
 .fieldset {
-  border: 1px solid var(--border-color, #e0e0e0);
-  border-radius: 6px;
-  padding: var(--spacing-sm);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 12px;
   margin: 0;
 }
-
 .fieldsetLegend {
   padding: 0 4px;
+  font-family: var(--riso-font-head);
   font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--riso-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
-
 .sheetActions {
   display: flex;
-  gap: var(--spacing-sm);
+  gap: 12px;
   justify-content: flex-end;
 }
-
-.cancelButton {
-  padding: 10px 16px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  font-size: 0.95rem;
-  cursor: pointer;
-}
-
-.cancelButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
+.cancelButton,
 .saveButton {
-  padding: 10px 16px;
-  background: var(--active-bg);
-  color: var(--active-text);
-  border: none;
-  border-radius: 8px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.95rem;
-  font-weight: 600;
+  padding: 11px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
+.cancelButton {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.saveButton {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.cancelButton:hover:not(:disabled),
+.saveButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.cancelButton:active:not(:disabled),
+.saveButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.cancelButton:disabled,
 .saveButton:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
-
+.cancelButton:focus-visible,
+.saveButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.saveButton:focus-visible {
+  outline-color: var(--riso-on-color);
+}
 .confirmBody {
   margin: 0;
   font-size: 0.95rem;
-  color: var(--text-primary);
-  line-height: 1.4;
+  font-weight: 500;
+  color: var(--riso-ink);
+  line-height: 1.45;
 }
-
 .impactList {
   margin: 0;
-  padding-left: var(--spacing-md);
+  padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 0.9rem;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: var(--riso-ink);
 }
 
-/* ── Affected-boards section (delete-confirm dialog) ─────────────────────────── */
-
+/* ── Affected boards (delete confirm) ── */
 .affectedBoardsSection {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 8px;
 }
-
 .affectedBoardsHeading {
   margin: 0;
+  font-family: var(--riso-font-head);
   font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
 }
-
 .affectedBoardsList {
   margin: 0;
   padding: 0;
@@ -542,38 +525,39 @@
   max-height: 180px;
   overflow-y: auto;
 }
-
 .affectedBoardsItem {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 6px 10px;
-  background: var(--bg-secondary);
-  border-radius: 6px;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--riso-paper);
+  border: 1.5px solid var(--riso-hair);
+  border-radius: var(--riso-r-card);
 }
-
 .affectedBoardsName {
   flex: 1;
+  font-family: var(--riso-font-head);
   font-size: 0.9rem;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .affectedBoardsPill {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 9px;
+  border: 1.5px solid var(--riso-ink);
   border-radius: 999px;
+  font-family: var(--riso-font-head);
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
 }
-
 .affectedBoardsPillExpired {
-  background: rgba(220, 53, 69, 0.12);
-  color: #b91c1c;
+  background: var(--riso-red);
+  color: var(--riso-on-color);
 }

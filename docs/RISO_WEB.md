@@ -374,6 +374,30 @@ cover the logic; Playwright covers the chrome + sheets.
 **Omitted (same as iOS):** 2FA + active-sessions — no Firebase client API; fake
 toggles would be dishonest UI (App Store 4.5.4-adjacent).
 
+## Completeness pass (post-5b)
+
+A token audit after the phase work found reachable surfaces the phase-by-phase
+re-skin missed (mostly modals, leaf controls, and secondary pages — reachable
+only a few taps in, so happy-path screenshots never caught them). Audit method:
+grep every `*.module.css` for legacy `--bg-`/`--text-`/`--border-color`/hex vs
+`--riso-*`, then map each to a routed view (vs dead / dev-only). Fix PRs:
+
+- **A** — Task detail page (`/tasks/:id`): `TaskDetailContent.module.css` (shared
+  by TaskDetail + TaskEditSheet + TaskConfirmDeleteDialog — the dialog also closes
+  a 4a Tasks-tab follow-up), `TaskDetailPage.module.css` (slimmed — dropped a dead
+  duplicate of the content styles), and the shared **`TypeBadge.module.css`**
+  (one file → every TypeBadge consumer on-palette).
+- **B** — Create hub (`/create`): CreateHubPage, CoreBoardsSection, createHub/*.
+- **C** — Core-board browser (`/boards/core/:timeframe`): CoreBoardBrowserPage,
+  BoardListItem.
+- **D** — Play-board modals + create-form leaf controls + wizard preview board:
+  EditBoardSheet, CellSwapModal, TaskDetailSheet, BoardStatusBadge, CounterStepper,
+  OperatorSelector, CountingStepFields, DerivedCounterRow, BingoBoard.
+
+Dead-in-prod (audit, safe to delete later): InteractiveTaskSquare (replaced by
+RisoBoardCell), FilterTabs, Navbar, CountingDerivationPanel, ProgressStepRow,
+SelectableTaskItem, SubtaskChip. Dev-only `/playground` is gated, not re-skinned.
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
