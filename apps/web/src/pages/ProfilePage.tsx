@@ -159,6 +159,18 @@ export function ProfilePage(): React.ReactElement {
         <SyncStatusIndicator />
       </div>
 
+      {/* Account management */}
+      <div className={styles.sectionLabel}>Account</div>
+      <div className={styles.card}>
+        <Link
+          to="/profile/account-security"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Account &amp; security</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
+      </div>
+
       {/* Preferences sub-pages */}
       <div className={styles.sectionLabel}>Preferences</div>
       <div className={styles.card}>

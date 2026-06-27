@@ -9,6 +9,7 @@ import { CreateHubPage } from './pages/CreateHubPage';
 import { TasksPage } from './pages/TasksPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { AccountSecurityPage } from './pages/AccountSecurityPage';
 import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
 import { DefaultPoolsListPage } from './pages/DefaultPoolsListPage';
@@ -110,6 +111,7 @@ function AuthenticatedLayout(): React.ReactElement {
         <Route path="/profile/recurring-templates" element={<RecurringTemplatesPage />} />
         <Route path="/profile/default-pools" element={<DefaultPoolsListPage />} />
         <Route path="/profile/default-pools/:timeframe" element={<DefaultPoolEditorPage />} />
+        <Route path="/profile/account-security" element={<AccountSecurityPage />} />
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>

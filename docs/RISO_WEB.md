@@ -343,6 +343,36 @@ shared sub-page chrome:
 Next: **5a-ii** (the other sub-page modules: RecurringTemplates, DefaultPools),
 then **5b** (net-new Account & security).
 
+## Phase 5b — Account & security (net-new, in progress)
+
+The web counterpart of the iOS §5c screen — **net-new** (not a re-skin), built
+with the Firebase **JS** SDK. New route `/profile/account-security` + a Profile
+"Account" row. Three sub-PRs:
+
+- **5b-i (in review)** — the auth layer (`firebase/accountSecurity.ts`: provider
+  state, `isRecentLoginRequired`, reauth ×3, `updateAccountPassword`,
+  `updateAccountEmail` via `verifyBeforeUpdateEmail`, `sendPasswordResetToCurrentUser`,
+  `reconcileEmailIfChanged`, `linkPassword`) + `db/operations/users.updateUserEmail`
+  + the `AccountSecurityPage` scaffold + the **Sign in** section (change email /
+  password for password users; "Add a password" for OAuth-only) with inline-reauth
+  sheets. Password users reauth via a current-password field inside the change
+  sheet (no separate reauth modal needed for the common case).
+- **5b-ii** — **Connected accounts** section: link/unlink Apple + Google
+  (`linkWithPopup`/`unlink`), block last-provider unlink.
+- **5b-iii** — **Danger zone**: delete account. Ordering mirrors iOS exactly —
+  `currentUser.delete()` FIRST (fires the `onUserDeleted` Auth trigger that purges
+  Firestore server-side; **no `deleteUserData` callable** — the trigger covers
+  web too), then stop sync + wipe local Dexie. Delete-first is load-bearing: it's
+  the only step that can fail for auth reasons, so a failure leaves nothing purged.
+
+**Verification note:** the dev bypass user has no real Firebase session, so the
+live flows (reauth, change email/password, link, delete) are exercised on a real
+account via relay-to-user — exactly like the iOS screen. Build + code-reviewer
+cover the logic; Playwright covers the chrome + sheets.
+
+**Omitted (same as iOS):** 2FA + active-sessions — no Firebase client API; fake
+toggles would be dishonest UI (App Store 4.5.4-adjacent).
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
@@ -359,9 +389,11 @@ then **5b** (net-new Account & security).
 | 4b-ii-b1 | New-task sheet + create form (normal/counting/achievement) + counting template picker | **shipped** |
 | 4b-ii-b2 | Compound builder (compositeWizard/*) | **shipped** |
 | 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | **shipped** |
-| 5a-i | Profile (You tab) main + shared sub-page styles + Sync row (3-state, leak fixed) | **in review** |
-| 5a-ii | Profile sub-pages — Board preferences, Recurring templates, Default pools | planned |
-| 5b | Account & security (net-new web screen, reuses shared deleteUserData CF) | planned |
+| 5a-i | Profile (You tab) main + shared sub-page styles + Sync row (3-state, leak fixed) | **shipped** |
+| 5a-ii | Profile sub-pages — Board preferences, Recurring templates, Default pools | **shipped** |
+| 5b-i | Account & security (net-new) — auth layer + Sign-in section (change email/password, add password, reauth) | **in review** |
+| 5b-ii | Account & security — Connected accounts (Apple/Google link/unlink) | planned |
+| 5b-iii | Account & security — Danger zone (delete account: user.delete() → onUserDeleted trigger → local wipe) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,
 to fold in as the relevant screen is touched / before web launch; still tracked
