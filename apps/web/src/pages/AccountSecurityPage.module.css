@@ -159,6 +159,96 @@
   font-weight: 800;
 }
 
+/* ── Connected accounts (5b-ii) ── */
+.providerRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1.5px solid var(--riso-hair);
+}
+.providerRow:last-child {
+  border-bottom: none;
+}
+.providerName {
+  flex: 1;
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.providerMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+.providerDot,
+.providerDotOn {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink);
+  flex-shrink: 0;
+}
+.providerDot {
+  background: var(--riso-muted);
+}
+.providerDotOn {
+  background: var(--riso-green);
+}
+.providerButton,
+.providerButtonPrimary {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.providerButton {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.providerButton:hover:not(:disabled) {
+  background: var(--riso-paper);
+}
+.providerButtonPrimary {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.providerButton:disabled,
+.providerButtonPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.providerButton:focus-visible,
+.providerButtonPrimary:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.providerButtonPrimary:focus-visible {
+  outline-color: var(--riso-on-color);
+}
+
+.sectionError {
+  margin: -12px 0 20px;
+  padding: 10px 14px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
 /* ── Action sheet (change email/password, add password, reauth) ── */
 .backdrop {
   position: fixed;

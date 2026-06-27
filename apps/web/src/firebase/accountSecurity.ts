@@ -13,9 +13,11 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   linkWithCredential,
+  linkWithPopup,
   reauthenticateWithCredential,
   reauthenticateWithPopup,
   sendPasswordResetEmail,
+  unlink as fbUnlink,
   updatePassword as fbUpdatePassword,
   verifyBeforeUpdateEmail,
   type AuthError,
@@ -153,8 +155,8 @@ export async function sendPasswordResetToCurrentUser(): Promise<void> {
 
 /**
  * Add an email/password sign-in method to an OAuth-only account, unlocking
- * change-email / change-password. (Provider link/unlink for Google/Apple lands
- * in Phase 5b-ii.) Treats "already linked" as an idempotent success.
+ * change-email / change-password. Treats "already linked" as an idempotent
+ * success.
  */
 export async function linkPassword(email: string, password: string): Promise<void> {
   const user = auth.currentUser;
@@ -166,4 +168,53 @@ export async function linkPassword(email: string, password: string): Promise<voi
     if ((error as AuthError).code === 'auth/provider-already-linked') return;
     throw error;
   }
+}
+
+// ─── Connected accounts: link / unlink (Phase 5b-ii) ──────────────────────────
+
+/** Link a Google identity to the current account via popup. Idempotent on
+ *  "already linked"; `credential-already-in-use` (the Google account is on
+ *  ANOTHER OYBC account) propagates for the UI to surface. */
+export async function linkGoogle(): Promise<void> {
+  await linkProvider(new GoogleAuthProvider());
+}
+
+/** Link an Apple identity to the current account via popup. */
+export async function linkApple(): Promise<void> {
+  const provider = new OAuthProvider('apple.com');
+  provider.addScope('email');
+  provider.addScope('name');
+  await linkProvider(provider);
+}
+
+/** Shared popup-link path: idempotent on already-linked; refreshes nothing
+ *  (callers re-read provider state). Other errors (incl. credential-already-in-use)
+ *  propagate. */
+async function linkProvider(provider: GoogleAuthProvider | OAuthProvider): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No signed-in user');
+  try {
+    await linkWithPopup(user, provider);
+  } catch (error) {
+    if ((error as AuthError).code === 'auth/provider-already-linked') return;
+    throw error;
+  }
+}
+
+/** Error thrown when the user tries to unlink their only remaining sign-in
+ *  method (would lock them out). Callers should block this in the UI too. */
+export const LAST_PROVIDER_ERROR = 'cannot-unlink-last-provider';
+
+/**
+ * Unlink a provider (`google.com` / `apple.com` / `password`). Refuses to
+ * remove the account's only sign-in method — that would lock the user out.
+ * Caller should pass a fresh provider count (or rely on the live read here).
+ */
+export async function unlinkProvider(providerId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No signed-in user');
+  if ((user.providerData ?? []).length <= 1) {
+    throw new Error(LAST_PROVIDER_ERROR);
+  }
+  await fbUnlink(user, providerId);
 }

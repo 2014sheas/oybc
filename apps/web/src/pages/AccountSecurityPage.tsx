@@ -4,13 +4,19 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../firebase/useAuth';
 import { db } from '../db/database';
 import {
+  APPLE_PROVIDER_ID,
   EMPTY_PROVIDER_STATE,
+  GOOGLE_PROVIDER_ID,
+  LAST_PROVIDER_ERROR,
   getProviderState,
   isRecentLoginRequired,
+  linkApple,
+  linkGoogle,
   linkPassword,
   reauthWithPassword,
   reconcileEmailIfChanged,
   sendPasswordResetToCurrentUser,
+  unlinkProvider,
   updateAccountEmail,
   updateAccountPassword,
   type ProviderState,
@@ -21,10 +27,10 @@ import styles from './AccountSecurityPage.module.css';
 type SheetMode = 'changeEmail' | 'changePassword' | 'addPassword' | null;
 
 /**
- * Account & security (Phase 5b, web). Net-new screen mirroring iOS §5c. This
- * sub-PR (5b-i) ships the **Sign in** section: view email, change email /
- * password (password users), or add a password (OAuth-only accounts). Provider
- * link/unlink (5b-ii) and account deletion (5b-iii) land in later sub-PRs.
+ * Account & security (Phase 5b, web). Net-new screen mirroring iOS §5c.
+ * Sections: **Sign in** (change email/password, add password — 5b-i) and
+ * **Connected accounts** (Apple/Google link/unlink — 5b-ii). Account deletion
+ * (Danger zone) lands in 5b-iii.
  *
  * The dev bypass user has no real Firebase session, so the live auth flows here
  * are exercised on a real account (relay-to-user), like the iOS screen.
@@ -40,6 +46,9 @@ export function AccountSecurityPage(): React.ReactElement {
   const [providers, setProviders] = useState<ProviderState>(EMPTY_PROVIDER_STATE);
   const [sheet, setSheet] = useState<SheetMode>(null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  // Connected-accounts (5b-ii) per-action busy + error.
+  const [providerBusy, setProviderBusy] = useState<string | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
 
   // On mount: load linked-provider state + heal the local email if a
   // verifyBeforeUpdateEmail flow completed out-of-band since last visit.
@@ -57,6 +66,21 @@ export function AccountSecurityPage(): React.ReactElement {
 
   const refreshProviders = async (): Promise<void> => {
     setProviders(await getProviderState());
+  };
+
+  /** Link or unlink a provider, then re-read state. `key` ('google'|'apple')
+   *  drives the per-row busy spinner; errors route through `friendlyError`. */
+  const runProviderAction = async (key: string, action: () => Promise<void>): Promise<void> => {
+    setProviderBusy(key);
+    setProviderError(null);
+    try {
+      await action();
+      await refreshProviders();
+    } catch (err) {
+      setProviderError(friendlyError(err));
+    } finally {
+      setProviderBusy(null);
+    }
   };
 
   return (
@@ -122,6 +146,31 @@ export function AccountSecurityPage(): React.ReactElement {
         )}
       </div>
 
+      <div className={styles.sectionLabel}>Connected accounts</div>
+      <div className={styles.card}>
+        <ProviderRow
+          name="Apple"
+          linked={providers.hasApple}
+          canUnlink={providers.providerCount > 1}
+          busy={providerBusy === 'apple'}
+          onConnect={() => void runProviderAction('apple', linkApple)}
+          onDisconnect={() => void runProviderAction('apple', () => unlinkProvider(APPLE_PROVIDER_ID))}
+        />
+        <ProviderRow
+          name="Google"
+          linked={providers.hasGoogle}
+          canUnlink={providers.providerCount > 1}
+          busy={providerBusy === 'google'}
+          onConnect={() => void runProviderAction('google', linkGoogle)}
+          onDisconnect={() => void runProviderAction('google', () => unlinkProvider(GOOGLE_PROVIDER_ID))}
+        />
+      </div>
+      {providerError && (
+        <p className={styles.sectionError} role="alert">
+          {providerError}
+        </p>
+      )}
+
       {sheet === 'changePassword' && (
         <ChangePasswordSheet onClose={() => setSheet(null)} />
       )}
@@ -155,6 +204,10 @@ function friendlyError(err: unknown): string {
   if (isRecentLoginRequired(err)) {
     return 'For your security, the current password didn’t match or your session is stale. Re-enter it and try again.';
   }
+  // Connected-accounts (5b-ii) cases.
+  if ((err as { message?: string } | undefined)?.message === LAST_PROVIDER_ERROR) {
+    return 'You can’t disconnect your only sign-in method — add another first.';
+  }
   const code = (err as { code?: string } | undefined)?.code;
   if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
     return 'That current password is incorrect.';
@@ -162,7 +215,68 @@ function friendlyError(err: unknown): string {
   if (code === 'auth/weak-password') return 'Pick a stronger password (at least 6 characters).';
   if (code === 'auth/email-already-in-use') return 'That email is already in use by another account.';
   if (code === 'auth/invalid-email') return 'That email address looks invalid.';
+  if (code === 'auth/credential-already-in-use' || code === 'auth/account-exists-with-different-credential') {
+    return 'That account is already linked to a different On Your Bingo Card account.';
+  }
+  // Popup dismissed/cancelled — benign; don't alarm the user.
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return 'Connection cancelled.';
+  }
+  // Popup blocked — retrying won't help; the user must allow popups.
+  if (code === 'auth/popup-blocked') {
+    return 'Your browser blocked the sign-in popup — allow popups for this site, then try again.';
+  }
   return 'Something went wrong. Please try again.';
+}
+
+/** A single connected-account row (Apple / Google) with link/unlink action. */
+function ProviderRow({
+  name,
+  linked,
+  canUnlink,
+  busy,
+  onConnect,
+  onDisconnect,
+}: {
+  name: string;
+  linked: boolean;
+  canUnlink: boolean;
+  busy: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}): React.ReactElement {
+  return (
+    <div className={styles.providerRow}>
+      <span className={styles.providerName}>{name}</span>
+      <span className={styles.providerMeta}>
+        <span
+          className={linked ? styles.providerDotOn : styles.providerDot}
+          aria-hidden="true"
+        />
+        {linked ? 'Connected' : 'Not connected'}
+      </span>
+      {linked ? (
+        <button
+          type="button"
+          className={styles.providerButton}
+          onClick={onDisconnect}
+          disabled={busy || !canUnlink}
+          title={!canUnlink ? 'Add another sign-in method before disconnecting this one.' : undefined}
+        >
+          {busy ? '…' : 'Disconnect'}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={styles.providerButtonPrimary}
+          onClick={onConnect}
+          disabled={busy}
+        >
+          {busy ? '…' : 'Connect'}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Change-password sheet — reauth with current password, then set the new one. */
