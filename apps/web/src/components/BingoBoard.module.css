@@ -1,3 +1,5 @@
+/* Bingo board (Riso) — the wizard-preview board renderer (BingoBoard → BingoSquare).
+   Matches the Riso play-grid frame from Phase 3b. */
 .boardContainer {
   display: flex;
   flex-direction: column;
@@ -7,10 +9,12 @@
 
 .grid {
   display: grid;
-  gap: 4px;
-  padding: 4px;
-  background-color: var(--border-color, #ddd);
-  border-radius: 10px;
+  gap: 6px;
+  padding: 10px;
+  background: var(--riso-paper);
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
   width: fit-content;
 }
 
@@ -20,40 +24,39 @@
   justify-content: stretch;
 }
 
+/* Center square — gold-accented border to mark the FREE/center cell. */
 .centerCell {
   position: relative;
 }
-
-/* Thicker border for center square */
 .centerCell > * {
   border-width: 3px;
-  border-color: #FF9800;
+  border-color: var(--riso-gold);
 }
 
-/* Highlight for squares that are part of a completed bingo line */
+/* Squares in a completed bingo line — gold ring (not a blurry glow). */
 .highlightedCell > * {
-  border-color: #FFD700;
+  border-color: var(--riso-gold);
   border-width: 3px;
-  box-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+  box-shadow: 0 0 0 3px var(--riso-gold);
 }
 
-/* Bingo detection message */
+/* Bingo detection message. */
 .bingoMessage {
+  font-family: var(--riso-font-head);
   font-size: 1.1rem;
-  font-weight: 700;
-  color: #FFD700;
+  font-weight: 800;
   text-align: center;
   padding: 0.5rem 1rem;
-  border: 2px solid #FFD700;
-  border-radius: 8px;
-  background-color: rgba(255, 215, 0, 0.1);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  /* gold is a light static fill → static ink content */
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
-
-/* GREENLOG message styling */
 .greenlog {
-  color: #4CAF50;
-  border-color: #4CAF50;
-  background-color: rgba(76, 175, 80, 0.1);
+  background: var(--riso-green);
+  color: var(--riso-on-color);
   font-size: 1.3rem;
 }
 
@@ -65,58 +68,56 @@
   width: 100%;
   max-width: 420px;
 }
-
 .progressText {
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-secondary, #666);
+  font-weight: 700;
+  color: var(--riso-muted);
 }
 
 .buttonGroup {
   display: flex;
   gap: 0.5rem;
 }
-
 .shuffleButton,
 .resetButton,
 .fillButton {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--border-color, #ddd);
-  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: background-color 0.2s, transform 0.1s;
-  background-color: var(--card-bg, #f5f5f5);
-  color: var(--text-primary, #333);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .shuffleButton:hover,
 .resetButton:hover,
 .fillButton:hover {
-  opacity: 0.85;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
 .shuffleButton:active,
 .resetButton:active,
 .fillButton:active {
-  transform: scale(0.97);
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
 }
-
 .shuffleButton:focus-visible,
 .resetButton:focus-visible,
 .fillButton:focus-visible {
-  outline: 3px solid #2196F3;
+  outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
 
-/* Responsive: shrink squares on small screens */
 @media (max-width: 500px) {
   .grid {
-    gap: 2px;
-    padding: 2px;
+    gap: 4px;
+    padding: 6px;
   }
-
   .controls {
     flex-direction: column;
     align-items: center;

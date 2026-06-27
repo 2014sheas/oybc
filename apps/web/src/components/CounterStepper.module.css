@@ -1,3 +1,4 @@
+/* Counter stepper (Riso) — −/+ around a value, used in the compound builder. */
 .stepperRow {
   display: flex;
   align-items: center;
@@ -8,36 +9,45 @@
 .stepperButton {
   width: 2rem;
   height: 2rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  border: 2px solid var(--riso-ink);
+  border-radius: 8px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
   font-size: 1.1rem;
+  font-weight: 800;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s;
+  transition: background-color 0.12s;
 }
-
 .stepperButton:hover:not(:disabled) {
-  border-color: var(--active-bg);
+  background: var(--riso-gold);
+  /* gold fill → static ink (adaptive --riso-ink flips light in dark mode) */
+  color: var(--riso-ink-static);
 }
-
+.stepperButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .stepperButton:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
 .stepperValue {
+  font-family: var(--riso-font-head);
   font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--riso-ink);
   min-width: 1.5rem;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .stepperLabel {
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }

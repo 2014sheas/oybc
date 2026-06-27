@@ -1,13 +1,13 @@
-/* CountingStepFields - Reusable counting step sub-fields (Action → Max Count → Unit) */
-
+/* Counting step sub-fields (Riso) — Action → Goal → Unit, used in the compound
+   builder + progress rows. */
 .countingFields {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px dashed var(--border-color);
-  border-radius: 6px;
-  background-color: var(--card-bg);
+  gap: 0.6rem;
+  padding: 12px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
 }
 
 .fieldGroup {
@@ -17,37 +17,40 @@
 }
 
 .label {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
 }
 
 .required {
-  color: var(--error-text);
+  color: var(--riso-red);
   margin-left: 2px;
 }
 
 .input {
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+  padding: 11px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-body);
   font-size: 1rem;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  transition: border-color 0.2s;
+  font-weight: 500;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  box-sizing: border-box;
 }
-
-.input:focus {
-  outline: none;
-  border-color: var(--active-bg);
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+.input:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
-
 .input.inputError {
-  border-color: var(--error-text);
+  border-color: var(--riso-red);
 }
 
 .fieldError {
   font-size: 0.85rem;
-  color: var(--error-text);
+  font-weight: 600;
+  color: var(--riso-red);
 }

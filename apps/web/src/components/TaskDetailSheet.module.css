@@ -1,14 +1,14 @@
+/* Task detail sheet (Riso) — bottom-sheet (mobile) / centered (desktop) wrapper
+   around TaskDetailContent, opened from a board cell. */
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 200;
-  /* Sheet slides up from the bottom on mobile; centered on desktop */
 }
-
 @media (min-width: 600px) {
   .backdrop {
     align-items: center;
@@ -18,59 +18,70 @@
 .sheetPanel {
   width: 100%;
   max-width: 680px;
-  background: var(--bg-primary);
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
   border-radius: 16px 16px 0 0;
   max-height: 92vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 -6px 0 var(--riso-shadow-ink);
 }
-
 @media (min-width: 600px) {
   .sheetPanel {
     border-radius: 16px;
     max-height: 88vh;
+    box-shadow: 6px 6px 0 var(--riso-shadow-ink);
   }
 }
 
 .sheetToolbar {
   display: flex;
   justify-content: flex-end;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-bottom: 1px solid var(--border-color);
+  padding: 10px 16px;
+  border-bottom: 2px solid var(--riso-ink);
   position: sticky;
   top: 0;
-  background: var(--bg-primary);
+  background: var(--riso-paper-2);
   z-index: 1;
 }
-
 .doneButton {
-  padding: 6px 16px;
-  background: var(--active-bg);
-  color: var(--active-text);
-  border: none;
-  border-radius: 8px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.9rem;
-  font-weight: 600;
+  padding: 8px 16px;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .doneButton:hover {
-  filter: brightness(0.95);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.doneButton:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.doneButton:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: -3px;
 }
 
 .statusMessage {
   text-align: center;
-  padding: var(--spacing-lg);
-  color: var(--text-secondary);
+  padding: 24px;
+  color: var(--riso-muted);
+  font-weight: 500;
   font-size: 0.95rem;
 }
-
 .missingState {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-lg);
+  gap: 14px;
+  padding: 24px;
 }

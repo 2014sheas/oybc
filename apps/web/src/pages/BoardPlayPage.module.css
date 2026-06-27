@@ -8,15 +8,20 @@
 
 .backLink {
   display: inline-block;
+  font-family: var(--riso-font-head);
   font-size: 0.9rem;
-  color: var(--active-bg);
+  color: var(--riso-muted);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 700;
   margin-bottom: 12px;
 }
 
 .backLink:hover {
-  text-decoration: underline;
+  color: var(--riso-ink);
+}
+.backLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 /* ─── Flash messages ────────────────────────────────────────────────────────── */
@@ -45,13 +50,14 @@
 /* ─── Expired banner ────────────────────────────────────────────────────────── */
 
 .expiredBanner {
-  padding: 0.5rem 0.75rem;
-  background-color: var(--error-bg, #f8d7da);
-  color: var(--error-text, #dc3545);
-  border: 1px solid var(--error-border, #f5c6cb);
-  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--riso-paper-2);
+  color: var(--riso-red);
+  border: 2px solid var(--riso-red);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
   font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 12px;
 }
 
@@ -147,24 +153,28 @@
 }
 
 .removeConfirmDialog {
-  background: var(--card-bg, #fff);
-  border-radius: 12px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
   padding: 24px;
   max-width: 360px;
   width: 90%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
 }
 
 .removeConfirmTitle {
   margin: 0 0 8px;
+  font-family: var(--riso-font-head);
   font-size: 1.1rem;
-  font-weight: 700;
+  font-weight: 800;
+  color: var(--riso-ink);
 }
 
 .removeConfirmBody {
   margin: 0 0 20px;
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
   line-height: 1.5;
 }
 
@@ -174,43 +184,51 @@
   justify-content: flex-end;
 }
 
-.removeConfirmCancel {
-  padding: 8px 20px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: none;
-  cursor: pointer;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-  transition: background-color 0.1s;
-}
-
-.removeConfirmCancel:hover {
-  background-color: var(--hover-bg);
-}
-
+.removeConfirmCancel,
 .removeConfirmDanger {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 8px;
-  background-color: var(--danger, #dc2626);
-  color: #fff;
-  cursor: pointer;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 0.9rem;
-  font-weight: 600;
-  transition: opacity 0.1s;
+  padding: 9px 18px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
+.removeConfirmCancel {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.removeConfirmDanger {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+.removeConfirmCancel:hover,
 .removeConfirmDanger:hover {
-  opacity: 0.88;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.removeConfirmCancel:active,
+.removeConfirmDanger:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.removeConfirmCancel:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.removeConfirmDanger:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: -3px;
 }
 
 /* ─── Empty / loading / not found states ────────────────────────────────────── */
 
 .emptyState {
   font-size: 0.85rem;
-  color: var(--text-secondary);
-  font-style: italic;
+  font-weight: 500;
+  color: var(--riso-muted);
   margin: 0;
   padding: 1rem 0;
 }
@@ -218,6 +236,7 @@
 .notFound {
   text-align: center;
   padding: 60px 24px;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
+  font-weight: 500;
   font-size: 15px;
 }
