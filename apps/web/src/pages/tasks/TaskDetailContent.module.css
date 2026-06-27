@@ -349,7 +349,8 @@
 .sheetBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(24, 18, 11, 0.55);
+  /* true black, not ink — an ink scrim over dark-mode paper barely darkens. */
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
