@@ -393,6 +393,16 @@ grep every `*.module.css` for legacy `--bg-`/`--text-`/`--border-color`/hex vs
 - **D** — Play-board modals + create-form leaf controls + wizard preview board:
   EditBoardSheet, CellSwapModal, TaskDetailSheet, BoardStatusBadge, CounterStepper,
   OperatorSelector, CountingStepFields, DerivedCounterRow, BingoBoard.
+- **E (theme-correctness sweep)** — two systemic dark/light-mode bugs the reviews
+  surfaced, fixed across all shipped surfaces at once: (1) modal scrims used an
+  ink tint (`rgba(24,18,11,…)`) that's ~invisible over dark-mode paper → true
+  black (`rgba(0,0,0,…)`) on all 7 backdrops; (2) cream (`--riso-on-color`) focus
+  rings on colored-fill buttons used a *positive* `outline-offset`, putting the
+  ring on light paper (cream-on-cream, invisible in light mode) → flipped to
+  `-3px` inset so the ring sits on the fill. **Rule going forward**: scrims are
+  always `rgba(0,0,0,…)`, never ink; a cream focus ring must be inset (negative
+  offset) onto its fill — outset rings use `--riso-blue`. (SignedOut's cream rings
+  are correct as-is: its buttons sit on red full-bleed sections, not paper.)
 
 Dead-in-prod (audit, safe to delete later): InteractiveTaskSquare (replaced by
 RisoBoardCell), FilterTabs, Navbar, CountingDerivationPanel, ProgressStepRow,

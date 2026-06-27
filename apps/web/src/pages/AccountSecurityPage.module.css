@@ -235,6 +235,7 @@
 }
 .providerButtonPrimary:focus-visible {
   outline-color: var(--riso-on-color);
+  outline-offset: -3px;
 }
 
 .sectionError {
@@ -309,14 +310,14 @@
 }
 .deleteForeverButton:focus-visible {
   outline: 3px solid var(--riso-on-color);
-  outline-offset: 2px;
+  outline-offset: -3px;
 }
 
 /* ── Action sheet (change email/password, add password, reauth) ── */
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(24, 18, 11, 0.55);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -445,6 +446,7 @@
 }
 .submitButton:focus-visible {
   outline-color: var(--riso-on-color);
+  outline-offset: -3px;
 }
 
 @keyframes fadeIn {

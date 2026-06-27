@@ -37,6 +37,7 @@
 /* active tile is blue-filled — a blue ring would vanish; use cream */
 .typeButton.typeButtonActive:focus-visible {
   outline-color: var(--riso-on-color);
+  outline-offset: -3px;
 }
 
 @media (max-width: 600px) {

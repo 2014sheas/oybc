@@ -191,4 +191,5 @@
 }
 .saveButton:focus-visible {
   outline-color: var(--riso-on-color);
+  outline-offset: -3px;
 }
