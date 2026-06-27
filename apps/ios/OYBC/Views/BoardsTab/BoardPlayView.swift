@@ -2276,12 +2276,16 @@ struct BoardPlayView: View {
         _Concurrency.Task.detached(priority: .userInitiated) {
             do {
                 try AppDatabase.shared.archiveBoard(id: bid)
+                // Only leave the board if the archive actually committed.
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                    dismiss()
+                }
             } catch {
                 print("⚠️ BoardPlayView.handleEditArchive: \(error)")
-            }
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                dismiss()
+                await MainActor.run {
+                    bingoMessage = "Archive failed — please try again."
+                }
             }
         }
     }

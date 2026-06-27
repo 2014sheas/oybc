@@ -277,6 +277,9 @@ export function BoardEditPanel({
           onClick={requestCancel}
           disabled={saving}
           aria-label="Cancel editing"
+          /* move focus into the panel on entry — the Edit button that had focus
+             just unmounted, so without this keyboard focus drops to <body>. */
+          autoFocus
         >
           ← Cancel
         </button>
