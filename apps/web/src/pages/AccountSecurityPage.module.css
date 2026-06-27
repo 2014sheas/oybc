@@ -1,6 +1,6 @@
 /* Account & security (Riso, Phase 5b). Net-new web screen mirroring iOS §5c.
-   Sign-in section in 5b-i; Connected accounts (5b-ii) + Danger zone (5b-iii)
-   land in later sub-PRs. */
+   Sign-in section (5b-i) + Connected accounts (5b-ii) shipped; Danger zone
+   (delete account, 5b-iii) lands next. */
 .container {
   display: flex;
   flex-direction: column;

@@ -79,7 +79,9 @@ export function AccountSecurityPage(): React.ReactElement {
     } catch (err) {
       setProviderError(friendlyError(err));
     } finally {
-      setProviderBusy(null);
+      // Clear only our own slot — a late-resolving action must not wipe a
+      // different action the user started in the meantime.
+      setProviderBusy((prev) => (prev === key ? null : prev));
     }
   };
 
@@ -153,6 +155,7 @@ export function AccountSecurityPage(): React.ReactElement {
           linked={providers.hasApple}
           canUnlink={providers.providerCount > 1}
           busy={providerBusy === 'apple'}
+          anyBusy={providerBusy !== null}
           onConnect={() => void runProviderAction('apple', linkApple)}
           onDisconnect={() => void runProviderAction('apple', () => unlinkProvider(APPLE_PROVIDER_ID))}
         />
@@ -161,6 +164,7 @@ export function AccountSecurityPage(): React.ReactElement {
           linked={providers.hasGoogle}
           canUnlink={providers.providerCount > 1}
           busy={providerBusy === 'google'}
+          anyBusy={providerBusy !== null}
           onConnect={() => void runProviderAction('google', linkGoogle)}
           onDisconnect={() => void runProviderAction('google', () => unlinkProvider(GOOGLE_PROVIDER_ID))}
         />
@@ -235,13 +239,18 @@ function ProviderRow({
   linked,
   canUnlink,
   busy,
+  anyBusy,
   onConnect,
   onDisconnect,
 }: {
   name: string;
   linked: boolean;
   canUnlink: boolean;
+  /** This row's own action is in flight (drives the spinner). */
   busy: boolean;
+  /** ANY provider action is in flight — disables both rows so two link/unlink
+   *  popups can't run concurrently and race on auth state. */
+  anyBusy: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
 }): React.ReactElement {
@@ -260,7 +269,7 @@ function ProviderRow({
           type="button"
           className={styles.providerButton}
           onClick={onDisconnect}
-          disabled={busy || !canUnlink}
+          disabled={anyBusy || !canUnlink}
           title={!canUnlink ? 'Add another sign-in method before disconnecting this one.' : undefined}
         >
           {busy ? '…' : 'Disconnect'}
@@ -270,7 +279,7 @@ function ProviderRow({
           type="button"
           className={styles.providerButtonPrimary}
           onClick={onConnect}
-          disabled={busy}
+          disabled={anyBusy}
         >
           {busy ? '…' : 'Connect'}
         </button>
