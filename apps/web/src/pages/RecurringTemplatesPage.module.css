@@ -101,13 +101,15 @@
 .attentionBadge {
   margin-top: 6px;
   padding: 7px 10px;
-  background: var(--riso-paper);
+  /* filled warning badge — red text on cream paper is only ~3:1 (fails AA);
+     a red fill + static cream follows the dark contract and reads clearly. */
+  background: var(--riso-red);
   border: 2px solid var(--riso-ink);
   border-radius: var(--riso-r-card);
   font-family: var(--riso-font-head);
   font-size: 12px;
   font-weight: 700;
-  color: var(--riso-red);
+  color: var(--riso-on-color);
 }
 
 .rowActions {
