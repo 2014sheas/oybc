@@ -391,8 +391,8 @@ toggles would be dishonest UI (App Store 4.5.4-adjacent).
 | 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | **shipped** |
 | 5a-i | Profile (You tab) main + shared sub-page styles + Sync row (3-state, leak fixed) | **shipped** |
 | 5a-ii | Profile sub-pages — Board preferences, Recurring templates, Default pools | **shipped** |
-| 5b-i | Account & security (net-new) — auth layer + Sign-in section (change email/password, add password, reauth) | **in review** |
-| 5b-ii | Account & security — Connected accounts (Apple/Google link/unlink) | planned |
+| 5b-i | Account & security (net-new) — auth layer + Sign-in section (change email/password, add password, reauth) | **shipped** |
+| 5b-ii | Account & security — Connected accounts (Apple/Google link/unlink) | **in review** |
 | 5b-iii | Account & security — Danger zone (delete account: user.delete() → onUserDeleted trigger → local wipe) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,
