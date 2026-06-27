@@ -1,5 +1,6 @@
+/* Default-pool editor sub-page (Riso, Phase 5a-ii). Visual re-skin; logic kept. */
 .page {
-  padding: 1.25rem 1rem 6rem;
+  padding: 0 0 6rem;
   max-width: 42rem;
   margin: 0 auto;
 }
@@ -7,147 +8,187 @@
 .header {
   margin-bottom: 1rem;
 }
-
 .backLink {
-  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--riso-muted);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
 }
-
-.backLink:hover { color: var(--text-primary); }
-
+.backLink:hover {
+  color: var(--riso-ink);
+}
+.backLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .title {
-  margin: 0.4rem 0 0.15rem;
-  font-size: 1.4rem;
-  font-weight: 600;
+  margin: 0.5rem 0 0.2rem;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(26px, 3.5vw, 38px);
+  letter-spacing: -0.03em;
+  line-height: 0.94;
+  color: var(--riso-ink);
 }
-
 .subtitle {
   margin: 0;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
 
 .search {
   width: 100%;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font: inherit;
-  background: var(--card-bg, #ffffff);
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--riso-ink);
+  background: var(--riso-paper);
   margin-bottom: 0.75rem;
+}
+.search:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
 }
 
 .list {
   list-style: none;
   padding: 0;
   margin: 0 0 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   overflow: hidden;
-  background: var(--card-bg, #ffffff);
+  background: var(--riso-paper);
 }
-
 .row {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.6rem 0.75rem;
+  padding: 12px 14px;
   border: none;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1.5px solid var(--riso-hair);
   background: transparent;
   cursor: pointer;
   text-align: left;
   font: inherit;
-  color: inherit;
+  color: var(--riso-ink);
   transition: background-color 0.15s;
 }
-
-.row:last-child { border-bottom: none; }
-
-.row:hover { background-color: var(--row-hover, #f8f9fa); }
-
-.rowSelected {
-  background-color: var(--row-selected, #e7f1ff);
+.row:last-child {
+  border-bottom: none;
 }
-
+.row:hover {
+  background: var(--riso-paper-2);
+}
+.row:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+.rowSelected {
+  background: color-mix(in srgb, var(--riso-blue) 13%, var(--riso-paper));
+}
 .check {
   display: inline-block;
   width: 1.2rem;
   text-align: center;
-  font-weight: 700;
-  color: var(--active-bg, #0d6efd);
+  font-weight: 800;
+  color: var(--riso-blue);
 }
-
 .rowTitle {
   flex: 1;
-  font-size: 0.9rem;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.92rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .emptyState {
-  padding: 1.5rem 1rem;
+  padding: 28px 20px;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
+  font-weight: 500;
   font-size: 0.9rem;
-  border: 1px dashed var(--border-color);
-  border-radius: 8px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
 }
-
 .error {
   margin: 0 0 0.75rem;
+  font-family: var(--riso-font-head);
   font-size: 0.85rem;
-  color: var(--error-text, #dc3545);
+  font-weight: 700;
+  color: var(--riso-red);
 }
 
 .actions {
   position: sticky;
   bottom: 0;
-  background: var(--page-bg, #ffffff);
+  background: var(--riso-paper);
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
-  padding: 0.75rem 0;
-  border-top: 1px solid var(--border-color);
+  padding: 0.85rem 0;
+  border-top: 2px solid var(--riso-ink);
 }
 
+.clearButton,
+.cancelButton,
+.saveButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  padding: 11px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
 .clearButton {
   margin-right: auto;
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--error-text, #dc3545);
-  background: transparent;
-  color: var(--error-text, #dc3545);
-  border-radius: 6px;
-  cursor: pointer;
-  font: inherit;
+  background: var(--riso-paper-2);
+  color: var(--riso-red);
 }
-
-.clearButton:disabled { opacity: 0.5; cursor: not-allowed; }
-
 .cancelButton {
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--text-primary);
-  border-radius: 6px;
-  cursor: pointer;
-  font: inherit;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
 }
-
-.cancelButton:disabled { opacity: 0.5; cursor: not-allowed; }
-
 .saveButton {
-  padding: 0.5rem 0.9rem;
-  border: none;
-  background: var(--active-bg, #0d6efd);
-  color: #ffffff;
-  border-radius: 6px;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
 }
-
-.saveButton:disabled { opacity: 0.5; cursor: not-allowed; }
+.clearButton:hover:not(:disabled),
+.cancelButton:hover:not(:disabled),
+.saveButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.clearButton:active:not(:disabled),
+.cancelButton:active:not(:disabled),
+.saveButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.clearButton:disabled,
+.cancelButton:disabled,
+.saveButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.clearButton:focus-visible,
+.cancelButton:focus-visible,
+.saveButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.saveButton:focus-visible {
+  outline-color: var(--riso-on-color);
+}
