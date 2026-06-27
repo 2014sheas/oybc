@@ -1,77 +1,84 @@
+/* Sync status row (Riso, Phase 5a-i). Lives inside a Profile card; rows are
+   flush with hairline dividers. Minimal 3-state status, no raw error. */
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 13px 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1.5px solid var(--riso-hair);
 }
-
 .row:last-child {
   border-bottom: none;
 }
 
 .label {
+  font-family: var(--riso-font-head);
   font-size: 15px;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
 }
-
 .value {
   font-size: 14px;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  font-family: var(--riso-font-head);
   font-size: 14px;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--riso-ink);
 }
 
+.dotOnline,
+.dotOffline,
+.dotSyncing {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink);
+  flex-shrink: 0;
+}
 .dotOnline {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #198754;
-  flex-shrink: 0;
+  background: var(--riso-green);
 }
-
+.dotSyncing {
+  background: var(--riso-blue);
+}
 .dotOffline {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ed6c02;
-  flex-shrink: 0;
-}
-
-.errorValue {
-  font-size: 13px;
-  color: var(--error-text, #dc3545);
-  text-align: right;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--riso-muted);
 }
 
 .syncButton {
   width: 100%;
-  padding: 8px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--active-bg);
+  padding: 11px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .syncButton:hover:not(:disabled) {
-  background: rgba(13, 110, 253, 0.06);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
+.syncButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
 .syncButton:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+.syncButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }

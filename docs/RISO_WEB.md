@@ -325,6 +325,24 @@ the row renders its own badge, and "New task" still opens the existing sheet
 (its Riso pass rides with the wizard work). All changes stay in
 Tasks-library-specific files.
 
+## Phase 5a-i — Profile main + Sync row (in review)
+
+Starts the final phase (Profile + sub-pages). Re-skins the **You tab** + the
+shared sub-page chrome:
+
+- `ProfilePage.module.css` — billboard header, Riso cards (ink border + hard
+  shadow), monogram avatar (blue fill), settings rows w/ hairlines, segmented
+  theme toggle, Riso selects/inputs/toggle-switch, sign-out + confirm modal.
+  **Shared** — also styles `BoardPreferencesPage` (it imports this module), so
+  that sub-page is re-skinned for free.
+- `SyncStatusIndicator` — re-skinned **and** fixed the long-standing raw-error
+  leak (CLAUDE.md follow-up): dropped the `{lastError.message}` row for the iOS
+  minimal **3-state** status (Up to date / Syncing… / Offline, colored dot). No
+  internal error string shown to users.
+
+Next: **5a-ii** (the other sub-page modules: RecurringTemplates, DefaultPools),
+then **5b** (net-new Account & security).
+
 ## Phase roadmap
 
 | Phase | Scope | Status |
@@ -339,9 +357,11 @@ Tasks-library-specific files.
 | 4b-i | Create wizard shell — stepper, Setup step, Preview step, cancel dialog | **shipped** |
 | 4b-ii-a | Wizard Tasks step — main surface (count/search/list/rows) + shared RisoTypeBadge | **shipped** |
 | 4b-ii-b1 | New-task sheet + create form (normal/counting/achievement) + counting template picker | **shipped** |
-| 4b-ii-b2 | Compound builder (compositeWizard/*) | **in review** |
-| 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | **in review** |
-| 5 | Profile + sub-pages (Streaks, prefs, templates, pools, Account & security, Sync sheet) | planned |
+| 4b-ii-b2 | Compound builder (compositeWizard/*) | **shipped** |
+| 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | **shipped** |
+| 5a-i | Profile (You tab) main + shared sub-page styles + Sync row (3-state, leak fixed) | **in review** |
+| 5a-ii | Profile sub-pages — Board preferences, Recurring templates, Default pools | planned |
+| 5b | Account & security (net-new web screen, reuses shared deleteUserData CF) | planned |
 
 **Planned fold-ins — NOT yet done** (pre-existing web follow-ups from CLAUDE.md,
 to fold in as the relevant screen is touched / before web launch; still tracked

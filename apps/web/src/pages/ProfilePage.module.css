@@ -1,114 +1,124 @@
+/* Profile (You tab) + shared sub-page styles (Riso, Phase 5a-i). Also consumed
+   by BoardPreferencesPage. Visual re-skin; all logic preserved. */
 .container {
-  padding: 0 16px 24px;
+  padding: 0;
 }
 
 .header {
-  font-size: 28px;
-  font-weight: 700;
-  padding: 20px 4px 16px;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(30px, 4vw, 46px);
+  letter-spacing: -0.03em;
+  line-height: 0.94;
+  padding: 0 0 16px;
+  color: var(--riso-ink);
 }
 
 /* ─── Sub-page header (back link + title) ───────────────────── */
-
 .subPageHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding-right: 4px;
 }
-
 .subPageHeader .header {
   padding-left: 0;
+  font-size: clamp(26px, 3.5vw, 38px);
 }
-
 .backLink {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 50%;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
   text-decoration: none;
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
-  transition: background 0.15s;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .backLink:hover {
-  background: var(--card-bg, #f8f9fa);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
-
+.backLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .subPageIntro {
   font-size: 14px;
-  color: var(--text-secondary);
-  padding: 0 4px;
-  margin: 0 0 14px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  padding: 0;
+  margin: 0 0 16px;
+  line-height: 1.5;
 }
 
 /* ─── Cards ─────────────────────────────────────────────────── */
-
 .card {
-  background: var(--card-bg, #f8f9fa);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-card);
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
   overflow: hidden;
   margin-bottom: 20px;
 }
-
 .sectionLabel {
+  font-family: var(--riso-font-head);
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--riso-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0 4px;
-  margin-bottom: 6px;
+  letter-spacing: 0.1em;
+  padding: 0 2px;
+  margin-bottom: 8px;
 }
 
 /* ─── Account row ───────────────────────────────────────────── */
-
 .accountRow {
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 16px;
 }
-
 .avatar {
   width: 48px;
   height: 48px;
   border-radius: 50%;
+  border: 2px solid var(--riso-ink);
   flex-shrink: 0;
 }
-
 .avatarPlaceholder {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: var(--active-bg);
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-blue);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: var(--riso-on-color);
+  font-family: var(--riso-font-head);
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
   flex-shrink: 0;
 }
-
 .accountInfo {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-
 .accountName {
+  font-family: var(--riso-font-head);
   font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
 }
-
 .accountNameButton {
   display: inline-flex;
   align-items: center;
@@ -120,78 +130,82 @@
   color: inherit;
   font: inherit;
 }
-
+.accountNameButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .editIcon {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   opacity: 0;
   transition: opacity 0.15s;
 }
-
 .accountNameButton:hover .editIcon {
   opacity: 1;
 }
-
 .nameError {
+  font-family: var(--riso-font-head);
   font-size: 12px;
-  color: var(--error-text, #dc3545);
+  font-weight: 700;
+  color: var(--riso-red);
 }
-
 .editNameInput {
+  font-family: var(--riso-font-head);
   font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  border: 1px solid var(--active-bg);
-  border-radius: var(--radius-sm);
-  padding: 2px 6px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  padding: 4px 8px;
   outline: none;
   width: 200px;
 }
-
+.editNameInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
 .accountEmail {
   font-size: 13px;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
 
 /* ─── Settings rows ─────────────────────────────────────────── */
-
 .settingsRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 13px 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1.5px solid var(--riso-hair);
 }
-
 .settingsRow:last-child {
   border-bottom: none;
 }
-
 .rowLabel {
+  font-family: var(--riso-font-head);
   font-size: 15px;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
 }
 
-.rowValue {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-/* Browse link used on BoardPreferencesPage to jump from a recurring
- * toggle into the per-timeframe core-board browser. Sits to the right
- * of the toggle on each row. */
+/* Browse link (BoardPreferencesPage per-timeframe jump) */
 .browseLink {
   margin-left: 12px;
+  font-family: var(--riso-font-head);
   font-size: 13px;
-  font-weight: 600;
-  color: var(--active-bg);
+  font-weight: 700;
+  color: var(--riso-blue);
   text-decoration: none;
   white-space: nowrap;
 }
-
 .browseLink:hover {
   text-decoration: underline;
+}
+.browseLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 .rowLink {
@@ -202,211 +216,203 @@
   text-decoration: none;
   color: inherit;
 }
-
+.rowLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
 .rowArrow {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-/* ─── Theme toggle ──────────────────────────────────────────── */
-
-/* Screen-reader only utility */
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.toggleGroup {
-  display: flex;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  padding: 0;
-  margin: 0;
-}
-
-.toggleBtn {
-  padding: 5px 14px;
-  border: none;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  transition: background 0.15s, color 0.15s;
-}
-
-.toggleBtnActive {
-  background: var(--active-bg);
-  color: #ffffff;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--riso-muted);
 }
 
 /* ─── Select / input controls in settings rows ─────────────── */
-
-.select {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 14px;
-  padding: 4px 8px;
-  min-width: 112px;
-}
-
+.select,
 .textInput {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 14px;
-  padding: 4px 8px;
+  padding: 7px 10px;
+}
+.select {
+  min-width: 112px;
+  cursor: pointer;
+}
+.textInput {
+  font-family: var(--riso-font-body);
+  font-weight: 500;
   width: 160px;
 }
+.select:focus-visible,
+.textInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
 
-/* Stacked row for wider controls (e.g. custom-name text input) */
 .stackedRow {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 13px 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1.5px solid var(--riso-hair);
 }
-
 .stackedRow:last-child {
   border-bottom: none;
 }
-
 .stackedRow .textInput {
   width: 100%;
 }
 
+/* toggle switch */
 .toggleSwitch {
   position: relative;
   display: inline-block;
-  width: 44px;
-  height: 24px;
+  width: 46px;
+  height: 26px;
   cursor: pointer;
+  flex-shrink: 0;
 }
-
 .toggleSwitch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
-
 .toggleTrack {
   position: absolute;
   inset: 0;
-  background: var(--border-color);
-  border-radius: var(--radius-card);
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
   transition: background 0.15s;
 }
-
 .toggleTrack::before {
   content: '';
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 20px;
-  height: 20px;
-  background: #ffffff;
+  width: 18px;
+  height: 18px;
+  background: var(--riso-ink);
   border-radius: 50%;
-  transition: transform 0.15s;
+  transition: transform 0.15s, background 0.15s;
 }
-
 .toggleSwitch input:checked + .toggleTrack {
-  background: var(--active-bg);
+  background: var(--riso-green);
 }
-
 .toggleSwitch input:checked + .toggleTrack::before {
   transform: translateX(20px);
+  background: var(--riso-on-color);
+}
+.toggleSwitch input:focus-visible + .toggleTrack {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 /* ─── Sign out ──────────────────────────────────────────────── */
-
 .signOutButton {
   width: 100%;
   padding: 13px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-card);
-  background: var(--card-bg, #f8f9fa);
-  color: var(--error-text, #dc3545);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper-2);
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   text-align: center;
-  transition: background 0.15s;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .signOutButton:hover {
-  background: rgba(220, 53, 69, 0.08);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.signOutButton:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.signOutButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
 
 /* ─── Sign-out confirmation modal ──────────────────────────── */
-
 .confirmBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(24, 18, 11, 0.55);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.confirmModal {
-  background: var(--bg-primary);
-  border-radius: var(--radius-card);
   padding: 24px;
-  max-width: 340px;
-  width: 90%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
-
+.confirmModal {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+}
 .confirmTitle {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--riso-ink);
   margin: 0 0 8px;
 }
-
 .confirmBody {
   font-size: 14px;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
   margin: 0 0 20px;
+  line-height: 1.45;
 }
-
 .confirmActions {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   justify-content: flex-end;
 }
-
-.confirmCancel {
-  padding: 8px 18px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
+.confirmCancel,
 .confirmDestructive {
-  padding: 8px 18px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--error-text, #dc3545);
-  color: #ffffff;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
   font-size: 14px;
-  font-weight: 600;
+  padding: 11px 18px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
   cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.confirmCancel {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.confirmDestructive {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+.confirmCancel:hover,
+.confirmDestructive:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.confirmCancel:active,
+.confirmDestructive:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.confirmCancel:focus-visible,
+.confirmDestructive:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
 }
