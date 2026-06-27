@@ -1,7 +1,9 @@
+/* Create hub landing (Riso, completeness pass). The wizard itself is already
+   Riso (4b); this is the /create hub that hosts the CTAs + drafts + core cards. */
 .shell {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: 24px;
   max-width: 720px;
   margin: 0 auto;
 }
@@ -11,35 +13,14 @@
   align-items: center;
   justify-content: space-between;
 }
-
 .title {
   margin: 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: clamp(30px, 4vw, 46px);
+  letter-spacing: -0.03em;
+  line-height: 0.94;
+  color: var(--riso-ink);
 }
-
-.librarySection {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--spacing-md) var(--spacing-lg);
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-}
-
-.librarySectionHeading {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.librarySectionMeta {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-}
+/* (the old .librarySection* classes were dead — the library moved to the Tasks
+   tab before this re-skin — and were removed.) */

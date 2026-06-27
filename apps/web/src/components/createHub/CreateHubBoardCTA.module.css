@@ -1,36 +1,37 @@
+/* Create-hub CTA cards (Riso). Primary = bold red board card; secondary =
+   neutral paper card. Both press into the paper. */
 .card {
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
+  gap: 18px;
   width: 100%;
-  padding: var(--spacing-xl);
-  background: linear-gradient(135deg, var(--active-bg) 0%, #4f46e5 100%);
-  border: none;
-  border-radius: var(--radius-card);
-  color: var(--active-text);
+  padding: 22px;
+  background: var(--riso-red);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  color: var(--riso-on-color);
   cursor: pointer;
   text-align: left;
-  transition: transform 0.15s ease-out, filter 0.15s ease-out;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .card:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.05);
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.35);
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
 }
-
 .card:active {
-  transform: translateY(0);
-  filter: brightness(0.97);
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
 }
-
+.card:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: 3px;
+}
 .icon {
   flex: 0 0 auto;
   font-size: 2rem;
   line-height: 1;
 }
-
 .text {
   flex: 1;
   display: flex;
@@ -38,74 +39,79 @@
   gap: 4px;
   min-width: 0;
 }
-
 .title {
+  font-family: var(--riso-font-head);
   font-size: 1.15rem;
-  font-weight: 700;
+  font-weight: 800;
 }
-
 .subtitle {
   font-size: 0.9rem;
+  font-weight: 500;
   opacity: 0.85;
 }
-
 .chevron {
   flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
   font-size: 1.75rem;
-  opacity: 0.9;
 }
 
-/* ─── Secondary variant (Phase 6.1d) ─────────────────────────────────────── */
-/* Flatter, less visually loud than the primary card. Used as a fallback
- * affordance below PendingCoreBoardsSection so the prominent core-boards
- * section reads as the headline action. */
-
+/* ─── Secondary variant ─────────────────────────────────────────────────── */
 .cardSecondary {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: 14px;
   width: 100%;
   padding: 14px 16px;
-  background: var(--surface-elevated, transparent);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-card);
-  color: var(--text-primary);
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  color: var(--riso-ink);
   cursor: pointer;
   text-align: left;
-  transition: background 0.1s ease;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
 }
-
 .cardSecondary:hover {
-  background: rgba(255, 255, 255, 0.04);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
-
+.cardSecondary:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.cardSecondary:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .iconSecondary {
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.2rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  border: 2px solid var(--riso-ink);
+  border-radius: 8px;
 }
-
 .titleSecondary {
+  font-family: var(--riso-font-head);
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--riso-ink);
 }
-
 .subtitleSecondary {
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--riso-muted);
 }
-
 .chevronSecondary {
   flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
   font-size: 1.25rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
 }
