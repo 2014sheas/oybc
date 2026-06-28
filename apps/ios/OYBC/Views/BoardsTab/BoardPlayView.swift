@@ -2428,8 +2428,21 @@ struct BoardPlayView: View {
     ///   - cellKey: The "row-col" key into `editSquaresDraft`.
     ///   - newTaskId: The task the user selected from `CellSwapSheet`.
     private func handleEditCellReplace(cellKey: String, newTaskId: String) {
-        guard editSquaresDraft[cellKey] != nil else { return }
+        guard let draft = editSquaresDraft[cellKey] else { return }
         editSquaresDraft[cellKey]?.stagedTaskId = newTaskId
+        // Keep an already-seeded rearrange grid in sync so a Replace made after
+        // switching to Rearrange (which doesn't re-seed) shows the new task label.
+        if let idx = editRearrangeCells?.firstIndex(where: { $0.id == draft.boardTaskId }) {
+            let old = editRearrangeCells![idx]
+            editRearrangeCells![idx] = RearrangeCellData(
+                id: old.id,
+                taskId: newTaskId,
+                isCenter: old.isCenter,
+                isEmpty: old.isEmpty,
+                originalRow: old.originalRow,
+                originalCol: old.originalCol
+            )
+        }
     }
 
     /// Stages task-field overrides for a global Task (no DB write).

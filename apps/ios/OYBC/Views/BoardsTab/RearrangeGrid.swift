@@ -59,7 +59,8 @@ struct RearrangeCellData: Identifiable, Equatable {
 /// - Parameters:
 ///   - cells: Ordered (row-major) array of all grid slots — task cells, center, empties.
 ///   - gridSize: Column (= row) count for the square bingo grid.
-///   - taskMap: `[boardTaskId: Task]` looked up per cell for title + type display.
+///   - taskMap: `[Task.id: Task]` — each cell's staged `taskId` is looked up here
+///     for title + type display. (NOT keyed by boardTaskId.)
 ///   - centerSquareType: Controls the center cell label.
 ///   - centerCustomName: Custom label when `centerSquareType == .customFree`.
 ///   - rearrange: When `false` the grid is display-only — no jiggle, no gestures.
