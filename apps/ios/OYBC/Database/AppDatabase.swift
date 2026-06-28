@@ -728,6 +728,36 @@ extension AppDatabase {
         }
     }
 
+    /// Move an ACTIVE board to the `.archived` status.
+    ///
+    /// Mirrors the pattern of `deleteBoard(id:)` + `updateBoardAndCascade`:
+    ///   - Mutates status, bumps version, writes `updatedAt`.
+    ///   - Enqueues a `boards` UPDATE item in the sync queue so the change
+    ///     propagates to Firestore (and thence to other devices) on the next
+    ///     sync pass.
+    ///   - Does NOT touch BoardTask rows — placements stay intact so the board
+    ///     appears correctly in the archive view.
+    ///
+    /// Caller is responsible for any pre-confirmation UI (e.g., the alert in
+    /// `BoardEditPanel`).
+    func archiveBoard(id: String) throws {
+        try write { db in
+            guard var board = try Board.fetchOne(db, key: id) else { return }
+            let now = Self.currentTimestamp()
+            board.status = .archived
+            board.updatedAt = now
+            board.version += 1
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: id,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).save(db)
+        }
+    }
+
     /// Delete a DRAFT board and its attached BoardTask placements atomically.
     ///
     /// Used by the Create Hub's drafts-list delete affordance (per-row
