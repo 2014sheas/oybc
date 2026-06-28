@@ -21,7 +21,7 @@ import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
 import { addToSyncQueue } from '../db/operations/syncQueue';
 import { incrementSharedCounter } from '../db/operations/tasks';
-import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard } from '../db/operations/boardTasks';
+import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard, reorderBoardTasks } from '../db/operations/boardTasks';
 import { updateTaskAndCascade, type UpdateTaskPatch } from '../db/operations/tasks';
 import {
   DetailModal,
@@ -35,6 +35,7 @@ import { TaskDetailSheet } from './TaskDetailSheet';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { BoardEditPanel, type SubMode } from './boardEdit/BoardEditPanel';
+import { ArrangeGrid, type ArrangeSlot } from './boardEdit/ArrangeGrid';
 import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
 import { usePreferences } from '../hooks/usePreferences';
@@ -76,13 +77,19 @@ const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[]
  */
 interface SquareDraftCell {
   boardTaskId: string;
+  /** Current staged row — may differ from originalRow after a Rearrange. */
   row: number;
+  /** Current staged col — may differ from originalCol after a Rearrange. */
   col: number;
   isCenter: boolean;
   /** Current staged taskId — may differ from originalTaskId after a Replace. */
   taskId: string;
   /** The taskId at the time edit mode was entered. Never changes. */
   originalTaskId: string;
+  /** The row at the time edit mode was entered. Never changes (Phase 3). */
+  originalRow: number;
+  /** The col at the time edit mode was entered. Never changes (Phase 3). */
+  originalCol: number;
 }
 
 /** What `showFlash` is called with. `greenlog` routes to the overlay and a
@@ -191,9 +198,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // Count of staged square edits — DERIVED from draft state (not an action
   // counter) so reverting a cell to its original task un-counts it (no phantom
   // edits / no "Board saved" for a net-zero session). Mirrors iOS.
+  // Phase 3: also counts cells whose position differs from the original
+  // (drag-to-insert / tap-to-swap), so a net-zero rearrange contributes 0.
   const squareEditCount =
     squaresDraft.filter((c) => c.taskId !== c.originalTaskId).length +
-    taskOverrides.size;
+    taskOverrides.size +
+    squaresDraft.filter(
+      (c) => !c.isCenter && (c.row !== c.originalRow || c.col !== c.originalCol),
+    ).length;
 
   // Tap menu: set when a non-center square is tapped in editTasks sub-mode.
   // Stores click coordinates (not a DOMRect) because RisoBoardCell's onClick
@@ -247,6 +259,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         isCenter: bt.isCenter ?? false,
         taskId: bt.taskId,
         originalTaskId: bt.taskId,
+        // Phase 3: original positions for derived rearrange-edit count.
+        originalRow: bt.row,
+        originalCol: bt.col,
       })),
     );
     setTaskOverrides(new Map());
@@ -428,6 +443,143 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
    * Called by BoardEditPanel.handleSave BEFORE the metadata patch.
    * Order: task replacements first, then task-field edits.
    */
+  /**
+   * Phase 3 — Rearrange reorder callback.
+   *
+   * Called by ArrangeGrid whenever the user commits a drag-drop or tap-swap.
+   * Maps the new flat slot order back to (row, col) by index position and
+   * updates `squaresDraft` in place for non-center, non-empty slots.
+   * The center square's position is never modified.
+   */
+  const handleRearrangeReorder = useCallback(
+    (newSlots: ArrangeSlot[]) => {
+      setSquaresDraft((prev) => {
+        const newPositions = new Map<string, { row: number; col: number }>();
+        newSlots.forEach((slot, i) => {
+          if (!slot.isEmpty && !slot.isCenter) {
+            newPositions.set(slot.cid, {
+              row: Math.floor(i / gridSize),
+              col: i % gridSize,
+            });
+          }
+        });
+        return prev.map((cell) => {
+          const pos = newPositions.get(cell.boardTaskId);
+          return pos ? { ...cell, row: pos.row, col: pos.col } : cell;
+        });
+      });
+    },
+    [gridSize],
+  );
+
+  /**
+   * Phase 3 — Build the ArrangeSlot[] for rearrange sub-mode.
+   *
+   * Each slot carries the current staged (row, col) from squaresDraft.
+   * Bingo highlights are suppressed (isLine: false) — the post-save
+   * derivation pass will re-compute correct lines.
+   *
+   * Centre squares are flagged isCenter:true so ArrangeGrid pins them.
+   * Empty positions (no draftCell at a given row/col) are flagged isEmpty:true.
+   */
+  const arrangeSlots = useMemo<ArrangeSlot[]>(() => {
+    if (!editMode || subMode !== 'rearrange') return [];
+
+    const half = Math.floor(gridSize / 2);
+
+    const slots: ArrangeSlot[] = [];
+    for (let r = 0; r < gridSize; r++) {
+      for (let c = 0; c < gridSize; c++) {
+        const isCenter = gridSize % 2 === 1 && r === half && c === half;
+        const draftCell = squaresDraft.find((d) => d.row === r && d.col === c);
+
+        if (isCenter && !draftCell) {
+          // FREE/CUSTOM_FREE centre (no BoardTask at this position).
+          slots.push({
+            cid: `center-${r}-${c}`,
+            isCenter: true,
+            isEmpty: false,
+            model: {
+              key: `center-${r}-${c}`,
+              label: 'FREE',
+              type: 'normal',
+              done: false,
+              isFree: true,
+              isLine: false,
+            },
+          });
+        } else if (draftCell) {
+          // Real tile (including CHOSEN centre).
+          const baseTask: Task | undefined = taskMap[draftCell.taskId];
+          let model: BoardCellModel | null = null;
+          if (baseTask) {
+            const task: Task =
+              taskOverrides.has(draftCell.taskId)
+                ? { ...baseTask, ...(taskOverrides.get(draftCell.taskId) as Partial<Task>) }
+                : baseTask;
+            const taskChildren = compoundChildrenByCompound[task.id] ?? [];
+            const squareData = taskToSquareData(
+              task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+            );
+            const squareState = taskToSquareState(
+              task, taskChildren, taskMap, compoundChildrenByCompound,
+            );
+            const displayLabel =
+              task.title && task.title.trim()
+                ? task.title
+                : task.type === TaskType.COUNTING
+                  ? generateCounterTaskTitle(
+                      task.action ?? '',
+                      task.maxCount ?? 0,
+                      task.unit ?? '',
+                    )
+                  : '';
+            model = {
+              key: draftCell.boardTaskId,
+              label: displayLabel,
+              type:
+                squareData.type === 'counting'
+                  ? 'counting'
+                  : squareData.type === 'compound' || squareData.type === 'progress'
+                    ? 'compound'
+                    : 'normal',
+              done: squareState.isCompleted,
+              count:
+                squareData.type === 'counting'
+                  ? { cur: squareState.currentCount, max: task.maxCount ?? 0 }
+                  : undefined,
+              isFree: false,
+              isLine: false, // suppressed during rearrange
+            };
+          }
+          slots.push({
+            cid: draftCell.boardTaskId,
+            isCenter,
+            isEmpty: false,
+            model,
+          });
+        } else {
+          // Empty slot (no task placed here in the current draft).
+          slots.push({
+            cid: `empty-${r}-${c}`,
+            isCenter: false,
+            isEmpty: true,
+            model: null,
+          });
+        }
+      }
+    }
+    return slots;
+  }, [
+    editMode,
+    subMode,
+    gridSize,
+    squaresDraft,
+    taskMap,
+    taskOverrides,
+    compoundChildrenByCompound,
+  ]);
+
   const commitSquareEdits = useCallback(async (): Promise<void> => {
     // 1. Cell replacements: cells whose staged taskId differs from the original.
     for (const cell of squaresDraft) {
@@ -439,7 +591,17 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     for (const [taskId, patch] of taskOverrides.entries()) {
       await updateTaskAndCascade(taskId, patch);
     }
-  }, [squaresDraft, taskOverrides]);
+    // 3. Position reorders (Phase 3): cells whose staged row/col differs from original.
+    //    Committed as a single atomic Dexie transaction via reorderBoardTasks.
+    const moves = squaresDraft
+      .filter(
+        (c) => !c.isCenter && (c.row !== c.originalRow || c.col !== c.originalCol),
+      )
+      .map((c) => ({ boardTaskId: c.boardTaskId, row: c.row, col: c.col }));
+    if (moves.length > 0) {
+      await reorderBoardTasks(boardId, moves);
+    }
+  }, [squaresDraft, taskOverrides, boardId]);
 
   // ── Completion handler ─────────────────────────────────────────────────
 
@@ -640,7 +802,15 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             board={board}
             weekStartDay={prefs.weekStartDay}
             subMode={subMode}
-            onSubModeChange={setSubMode}
+            onSubModeChange={(mode) => {
+              // Clear editTasks overlays when switching sub-modes so a
+              // tap-menu or replace sheet open in editTasks doesn't
+              // bleed into the rearrange view.
+              setSubMode(mode);
+              setSquareTapMenu(null);
+              setEditReplaceId(null);
+              setEditTaskSheetId(null);
+            }}
             squareEditCount={squareEditCount}
             onExtraCommit={commitSquareEdits}
             onCancel={() => setEditMode(false)}
@@ -732,6 +902,15 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       {/* Interactive grid */}
       {sortedBoardTasks.length === 0 ? (
         <p className={styles.emptyState}>Loading board tasks…</p>
+      ) : editMode && subMode === 'rearrange' ? (
+        /* Phase 3 — Rearrange sub-mode: full drag-to-insert + tap-to-swap grid.
+           ArrangeGrid owns all pointer events; BoardPlaySurface owns the staging. */
+        <ArrangeGrid
+          slots={arrangeSlots}
+          gridSize={gridSize}
+          rearrange={true}
+          onReorder={handleRearrangeReorder}
+        />
       ) : (
         <div
           className={styles.playGrid}

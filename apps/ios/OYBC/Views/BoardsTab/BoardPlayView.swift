@@ -337,6 +337,11 @@ struct BoardPlayView: View {
     /// M4 — tracks whether the add-cell sheet was dismissed via a confirmed selection.
     /// `onDismiss` skips the reload when true because `handleAddTaskToCell` already reloads.
     @State private var addTaskConfirmed: Bool = false
+    /// Phase 3 — Rearrange sub-mode staged state.
+    /// Ordered `[RearrangeCellData]` array shown by `RearrangeGrid`. nil until
+    /// the user first enters Rearrange sub-mode (built lazily by `seedRearrangeCells`).
+    @State private var editRearrangeCells: [RearrangeCellData]? = nil
+
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
     /// sheet is dismissing — SwiftUI swallows the path change during
@@ -390,15 +395,40 @@ struct BoardPlayView: View {
         return map
     }
 
-    /// Number of staged square edits: cell replacements + task-field overrides.
-    /// Forwarded to `BoardEditPanel.squareEditCount` so the counter and Save
-    /// pill react to square-level changes, not just metadata changes.
+    /// Number of staged square edits: cell replacements + task-field overrides +
+    /// position moves (from Rearrange sub-mode).
+    ///
+    /// Position moves are DERIVED: a drag that returns a cell to its original slot
+    /// is net-zero and does not inflate the counter. Each `RearrangeCellData` carries
+    /// its `originalRow`/`originalCol` so we can compare the current slot index to
+    /// the original position. The staged positions are inferred from the order of
+    /// `editRearrangeCells` (index → row-major row/col).
+    ///
+    /// Forwarded to `BoardEditPanel.squareEditCount` so the counter and Save pill
+    /// react to square-level changes, not just metadata changes.
     private var editSquaresEditCount: Int {
         guard editMode else { return 0 }
         let replacements = editSquaresDraft.values
             .filter { $0.stagedTaskId != $0.originalTaskId }.count
         let overrides = editTaskOverrides.count
-        return replacements + overrides
+        let positionMoves = countPositionMoves(in: editRearrangeCells, gridSize: gridSize)
+        return replacements + overrides + positionMoves
+    }
+
+    /// Returns the number of task cells that are in a different grid slot from
+    /// their `originalRow`/`originalCol`. Center and empty slots are excluded.
+    private func countPositionMoves(in cells: [RearrangeCellData]?, gridSize: Int) -> Int {
+        guard let cells, gridSize > 0 else { return 0 }
+        var count = 0
+        for (slotIdx, cell) in cells.enumerated() {
+            guard !cell.isCenter, !cell.isEmpty else { continue }
+            let stagedRow = slotIdx / gridSize
+            let stagedCol = slotIdx % gridSize
+            if stagedRow != cell.originalRow || stagedCol != cell.originalCol {
+                count += 1
+            }
+        }
+        return count
     }
 
     /// Display title for the tap-menu confirmationDialog — the staged task name
@@ -625,6 +655,9 @@ struct BoardPlayView: View {
                     subMode: $editSubMode,
                     squareEditCount: editSquaresEditCount,
                     onCellTap: { row, col in handleEditCellTap(row: row, col: col) },
+                    // Phase 3 — Rearrange
+                    rearrangeCells: editRearrangeCells,
+                    onReorder: handleRearrange,
                     isSaving: editSaving,
                     onSave: handleEditSave,
                     onCancelConfirmed: {
@@ -636,6 +669,12 @@ struct BoardPlayView: View {
                 .background(Color.risoPaper.ignoresSafeArea())
                 .transition(.opacity)
                 .zIndex(30)
+                // Phase 3 — seed rearrange cells lazily on sub-mode switch to Rearrange.
+                .onChange(of: editSubMode) { _, newMode in
+                    if newMode == .rearrange {
+                        seedRearrangeCells(for: b)
+                    }
+                }
             }
 
             // ── Counting stepper sheet ──
@@ -2336,6 +2375,8 @@ struct BoardPlayView: View {
             )
         }
         editTaskOverrides = [:]
+        // Phase 3 — reset rearrange cells so they're rebuilt fresh on next sub-mode entry.
+        editRearrangeCells = nil
 
         // Async: check whether the board has any center-task placement so
         // BoardEditPanel can gate the CHOSEN option in BoardSetupFormView.
@@ -2344,6 +2385,26 @@ struct BoardPlayView: View {
             let count = (try? AppDatabase.shared.fetchBoardTasks(boardId: bid).count) ?? 0
             await MainActor.run { editHasCandidateTasks = count > 0 }
         }
+    }
+
+    // MARK: - Phase 3 rearrange handlers
+
+    /// Lazily builds `editRearrangeCells` the first time the user switches to
+    /// Rearrange sub-mode. Subsequent sub-mode switches preserve the staged order.
+    private func seedRearrangeCells(for b: Board) {
+        guard editRearrangeCells == nil else { return }
+        editRearrangeCells = buildRearrangeCells(
+            squaresDraft: editSquaresDraft,
+            gridSize: b.boardSize,
+            centerSquareType: editCenterType
+        )
+    }
+
+    /// Called by `RearrangeGrid.onReorder` when a drag-to-insert or tap-to-swap
+    /// is committed. Updates the staged rearrange cells and leaves everything else
+    /// in place — no DB write until Save.
+    private func handleRearrange(newCells: [RearrangeCellData]) {
+        editRearrangeCells = newCells
     }
 
     // MARK: - Phase 2 edit-mode tap-menu handlers
@@ -2367,8 +2428,21 @@ struct BoardPlayView: View {
     ///   - cellKey: The "row-col" key into `editSquaresDraft`.
     ///   - newTaskId: The task the user selected from `CellSwapSheet`.
     private func handleEditCellReplace(cellKey: String, newTaskId: String) {
-        guard editSquaresDraft[cellKey] != nil else { return }
+        guard let draft = editSquaresDraft[cellKey] else { return }
         editSquaresDraft[cellKey]?.stagedTaskId = newTaskId
+        // Keep an already-seeded rearrange grid in sync so a Replace made after
+        // switching to Rearrange (which doesn't re-seed) shows the new task label.
+        if let idx = editRearrangeCells?.firstIndex(where: { $0.id == draft.boardTaskId }) {
+            let old = editRearrangeCells![idx]
+            editRearrangeCells![idx] = RearrangeCellData(
+                id: old.id,
+                taskId: newTaskId,
+                isCenter: old.isCenter,
+                isEmpty: old.isEmpty,
+                originalRow: old.originalRow,
+                originalCol: old.originalCol
+            )
+        }
     }
 
     /// Stages task-field overrides for a global Task (no DB write).
@@ -2466,6 +2540,23 @@ struct BoardPlayView: View {
             }
         }
 
+        // Phase 3 — snapshot staged position moves.
+        // Compare each cell's slot in `editRearrangeCells` to its originalRow/Col.
+        // Center and empty slots are excluded (they don't correspond to BoardTask rows).
+        let positionMoves: [(boardTaskId: String, row: Int, col: Int)] = {
+            guard let rearranged = editRearrangeCells, gridSize > 0 else { return [] }
+            var moves: [(boardTaskId: String, row: Int, col: Int)] = []
+            for (slotIdx, cell) in rearranged.enumerated() {
+                guard !cell.isCenter, !cell.isEmpty else { continue }
+                let stagedRow = slotIdx / gridSize
+                let stagedCol = slotIdx % gridSize
+                if stagedRow != cell.originalRow || stagedCol != cell.originalCol {
+                    moves.append((boardTaskId: cell.id, row: stagedRow, col: stagedCol))
+                }
+            }
+            return moves
+        }()
+
         editSaving = true
         let bid = boardId
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -2509,6 +2600,21 @@ struct BoardPlayView: View {
                     updated.updatedAt = now
                     updated.version  += 1
                     try AppDatabase.shared.saveTaskAndCascade(updated)
+                }
+
+                // 4. Phase 3 — Staged position moves: rewrite row/col on moved BoardTask rows
+                //    in a single atomic transaction, then re-derive bingo lines for this board.
+                if !positionMoves.isEmpty {
+                    try AppDatabase.shared.updateBoardTaskPositions(
+                        boardId: bid,
+                        moves: positionMoves.map {
+                            AppDatabase.BoardTaskPositionMove(
+                                boardTaskId: $0.boardTaskId,
+                                row: $0.row,
+                                col: $0.col
+                            )
+                        }
+                    )
                 }
 
                 await MainActor.run {

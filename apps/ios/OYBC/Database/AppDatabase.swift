@@ -1963,6 +1963,121 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - Phase 3 — Rearrange commit op
+
+    /// A single position move produced by the Rearrange sub-mode.
+    struct BoardTaskPositionMove: Sendable {
+        /// The `BoardTask.id` whose grid position changed.
+        let boardTaskId: String
+        /// New 0-based grid row.
+        let row: Int
+        /// New 0-based grid column.
+        let col: Int
+    }
+
+    /// Writes new `row`/`col` for each moved `BoardTask` row atomically, then
+    /// re-derives the board's positional bingo lines (`completedLineIds` /
+    /// `linesCompleted`) in the same transaction.
+    ///
+    /// Design principles:
+    ///   - **Atomic**: all moves + bingo re-derive land in ONE `write { db in … }`
+    ///     block — no two rows transiently collide on the same `(row, col)` from
+    ///     the perspective of any external reader.
+    ///   - **Bingo-only re-derive**: rearranging doesn't change Task completion
+    ///     state, so `completedTasks` stays constant; only the positional line
+    ///     detection (`completedLineIds` / `linesCompleted`) needs a fresh pass.
+    ///     `DerivationPass.computeBoardStatsUpdate` recomputes both — the pass is
+    ///     cheap for boards ≤ 5×5 and keeps the logic in one canonical place.
+    ///   - **Global Task completion untouched**: `Task.isCompleted` / `currentCount`
+    ///     are never read or written here.
+    ///   - **Sync queue**: one `boardTasks` UPDATE is enqueued per moved row + one
+    ///     `boards` UPDATE for the updated bingo state.
+    ///   - **Empty `moves` list**: returns immediately (no-op).
+    ///
+    /// - Parameters:
+    ///   - boardId: The board whose tiles are being reordered.
+    ///   - moves: Array of `(boardTaskId, row, col)` tuples — only cells that
+    ///     actually changed position should be included (callers compare against
+    ///     original positions; sending unchanged rows is harmless but wasteful).
+    func updateBoardTaskPositions(
+        boardId: String,
+        moves: [BoardTaskPositionMove]
+    ) throws {
+        guard !moves.isEmpty else { return }
+
+        let now = Self.currentTimestamp()
+
+        try write { db in
+            // ── 1. Apply position patches ──
+            for move in moves {
+                guard var boardTask = try BoardTask.fetchOne(db, key: move.boardTaskId),
+                      boardTask.boardId == boardId else { continue }
+                boardTask.row = move.row
+                boardTask.col = move.col
+                // `isCenter` follows the center-square-type rule set by the board,
+                // not the position. Center is fixed and never in the moves list.
+                boardTask.updatedAt = now
+                boardTask.version += 1
+                try boardTask.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: move.boardTaskId,
+                    operationType: .update,
+                    payload: boardTask,
+                    now: now
+                ).save(db)
+            }
+
+            // ── 2. Re-derive bingo lines for this board ──
+            // Only one board is affected — the one being rearranged.
+            guard var board = try Board.fetchOne(db, key: boardId),
+                  !board.isDeleted else { return }
+
+            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
+            let update = DerivationPass.computeBoardStatsUpdate(
+                board: board,
+                boardTasksOnBoard: boardTasksOnBoard,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoards
+            )
+
+            // Rearranging cannot change which tasks are completed, so
+            // `completedTasks` is stable. The line-detection geometry changes
+            // (a completed task may now be in a different row/col), so update
+            // the positional bingo fields unconditionally.
+            board.linesCompleted = update.linesCompleted
+            board.completedLineIds = update.completedLineIds.isEmpty
+                ? nil
+                : update.completedLineIds
+            board.updatedAt = now
+            board.version += 1
+
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: boardId,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).save(db)
+        }
+    }
+
     // MARK: - M4 Live-Edit: Placement Add / Remove
 
     /// Remove a single BoardTask placement from an ACTIVE board (live-edit M4).

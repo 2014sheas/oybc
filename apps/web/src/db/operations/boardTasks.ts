@@ -398,6 +398,154 @@ export async function addBoardTaskToBoard(
   return newBoardTask;
 }
 
+// ─── reorderBoardTasks ───────────────────────────────────────────────────────
+
+/**
+ * Describes a single position-change for a BoardTask row.
+ * Used by the Phase-3 staged-rearrange Save commit path.
+ */
+export interface BoardTaskMove {
+  boardTaskId: string;
+  row: number;
+  col: number;
+}
+
+/**
+ * Atomically apply position changes to one board's BoardTask rows, then
+ * re-derive the board's positional bingo lines.
+ *
+ * Called at Save time after staged-draft Replace/Edit commits (Phase 3).
+ *
+ * Design invariants:
+ *   - All moves are written in ONE Dexie transaction → no two rows transiently
+ *     share the same (row, col) from the perspective of outside readers.
+ *   - Global Task completion (isCompleted / currentCount) is NEVER touched —
+ *     it rides with the task to its new slot.
+ *   - Bingo lines (`completedLineIds` / `linesCompleted`) are re-derived via
+ *     `computeBoardStatsUpdate` on the post-move board-task snapshot because
+ *     bingos are positional (row, column, diagonal).
+ *   - `completedTasks` is also re-derived (unchanged in value — task completion
+ *     states are global) but kept consistent via the same cascade pass.
+ *   - Each moved BoardTask row is bump-versioned and enqueued for sync UPDATE.
+ *   - The board row is bump-versioned and enqueued for sync UPDATE.
+ *
+ * @param boardId - The board whose placements are being reordered.
+ * @param moves - Array of `{ boardTaskId, row, col }` describing each moved row.
+ *                Must not include center-square rows (the caller — BoardPlaySurface —
+ *                filters them out since the center is pinned). Must not be empty.
+ */
+export async function reorderBoardTasks(
+  boardId: string,
+  moves: BoardTaskMove[],
+): Promise<void> {
+  if (moves.length === 0) return;
+
+  const now = currentTimestamp();
+
+  // Gather workspace data once before the transaction (cheap snapshot reads).
+  const allTasks = await db.tasks.toArray();
+  const allBoards = await db.boards.toArray();
+  const allChildren = await db.compoundChildren.toArray();
+
+  const taskById: Record<string, Task> = {};
+  for (const t of allTasks) taskById[t.id] = t;
+
+  const childrenByCompound: Record<string, CompoundChild[]> = {};
+  for (const c of allChildren) {
+    if (!c.isDeleted) {
+      (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+    }
+  }
+
+  const board = allBoards.find((b) => b.id === boardId);
+  if (!board || board.isDeleted) return;
+
+  await db.transaction(
+    'rw',
+    [db.boardTasks, db.boards, db.syncQueue],
+    async () => {
+      // 1. Write new row/col for every moved BoardTask (version-bumped; isCenter kept).
+      for (const move of moves) {
+        const existing = await db.boardTasks.get(move.boardTaskId);
+        if (!existing) continue;
+
+        const patched: BoardTask = {
+          ...existing,
+          row: move.row,
+          col: move.col,
+          // isCenter is intentionally preserved — rearrange never converts center squares.
+          updatedAt: now,
+          version: (existing.version ?? 0) + 1,
+        };
+        await db.boardTasks.put(patched);
+        await db.syncQueue.add({
+          id: generateUUID(),
+          entityType: 'boardTasks',
+          entityId: move.boardTaskId,
+          operationType: SyncOperationType.UPDATE,
+          payload: JSON.stringify(patched),
+          status: SyncStatus.PENDING,
+          retryCount: 0,
+          createdAt: now,
+          priority: 0,
+        });
+      }
+
+      // 2. Re-derive bingo lines for this board from the post-move snapshot.
+      //    Bingo lines are positional (row / col / diagonal), so any position
+      //    change can create or break lines. Global Task completion is unchanged.
+      const boardTasksOnBoard = await db.boardTasks
+        .where('boardId')
+        .equals(boardId)
+        .toArray();
+
+      const stats: BoardStatsUpdate = computeBoardStatsUpdate(
+        board,
+        boardTasksOnBoard,
+        childrenByCompound,
+        taskById,
+        allBoards,
+      );
+
+      const totalSquares = board.boardSize * board.boardSize;
+      const isGreenlog = stats.completedTasks >= totalSquares;
+
+      const boardUpdate: Partial<Board> = {
+        completedTasks: stats.completedTasks,
+        linesCompleted: stats.linesCompleted,
+        completedLineIds: stats.completedLineIds,
+        updatedAt: now,
+        version: (board.version ?? 1) + 1,
+      };
+
+      if (isGreenlog && board.status === BoardStatus.ACTIVE) {
+        boardUpdate.status = BoardStatus.COMPLETED;
+        boardUpdate.completedAt = now;
+      } else if (!isGreenlog && board.status === BoardStatus.COMPLETED) {
+        boardUpdate.status = BoardStatus.ACTIVE;
+        boardUpdate.completedAt = undefined;
+      }
+
+      await db.boards.update(boardId, boardUpdate);
+
+      const updatedBoard = await db.boards.get(boardId);
+      if (updatedBoard) {
+        await db.syncQueue.add({
+          id: generateUUID(),
+          entityType: 'boards',
+          entityId: boardId,
+          operationType: SyncOperationType.UPDATE,
+          payload: JSON.stringify(updatedBoard),
+          status: SyncStatus.PENDING,
+          retryCount: 0,
+          createdAt: now,
+          priority: 0,
+        });
+      }
+    },
+  );
+}
+
 // ─── updateBoardTaskAndCascade ────────────────────────────────────────────────
 
 /**

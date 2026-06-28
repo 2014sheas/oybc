@@ -1,0 +1,209 @@
+/* ============================================================
+   OYBC · Riso Web — Arrange Grid (Phase 3 rearrange sub-mode)
+   Self-contained drag-to-insert + tap-to-swap interactive grid.
+   Translates wb-* prototype CSS onto --riso-* tokens.
+   Reuses RisoBoardCell visuals via CSS Module child selectors.
+   ============================================================ */
+
+/* ---- Outer wrap (relative so the fixed ghost stays inside the stacking context) ---- */
+.wrap {
+  position: relative;
+}
+
+/* ---- Grid frame (mirrors .playGrid from BoardPlayPage.module.css) ---- */
+/* position:relative makes this the offsetParent for FLIP offset readings */
+.grid {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  width: fit-content;
+  max-width: 100%;
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper);
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
+}
+
+/* ---- Cell wrapper — direct grid child; FLIP tracking via data-cid ---- */
+/* position:relative so (a) the grip icon can be absolutely positioned and
+   (b) the offsetParent chain terminates at .grid for FLIP reads. */
+.cellWrapper {
+  position: relative;
+  cursor: default;
+  /* No aspect-ratio: RisoBoardCell's own aspect-ratio:1 sets the height. */
+}
+
+/* In editing mode every non-locked cell should show a pointer cursor */
+.editing .cellWrapper {
+  cursor: grab;
+}
+.editing .cellWrapper:active {
+  cursor: grabbing;
+}
+
+/* ---- Dim: non-selected, non-target cells fade while a tile is held ---- */
+/* .dim is on the grid; .sel / .tgt are on the wrapper */
+.dim .cellWrapper:not(.sel):not(.tgt) {
+  opacity: 0.5;
+}
+
+/* ---- Selected (tap-picked) ---- */
+/* The inner RisoBoardCell div is targeted via > * to apply the gold ring.
+   !important beats the done/counting/compound fill specificity. */
+.sel > * {
+  box-shadow: 0 0 0 4px var(--riso-gold), 4px 4px 0 var(--riso-shadow-ink) !important;
+  z-index: 6;
+  transform: translate(-1px, -1px) scale(1.03) !important;
+}
+
+/* ---- Swap target (dimmed + blue ring; opposite of sel) ---- */
+.tgt > * {
+  box-shadow: 0 0 0 3px var(--riso-blue) !important;
+  z-index: 5;
+}
+.tgt > *::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: var(--riso-r-cell);
+  background: radial-gradient(circle, var(--riso-blue-scrim) 30%, transparent 32%);
+  background-size: 10px 10px;
+  pointer-events: none;
+}
+
+/* ---- Hole: the dragged tile's original slot becomes a dashed gap ---- */
+.hole > * {
+  background: transparent !important;
+  border-style: dashed !important;
+  box-shadow: none !important;
+  /* Reset any done-state translate so the hole is flush with its slot */
+  transform: none !important;
+}
+.hole > *::before,
+.hole > *::after {
+  opacity: 0 !important;
+}
+/* Hide all child content (label, tag, cbar, check) inside the hole */
+.hole > * > * {
+  visibility: hidden;
+}
+
+/* ---- Jiggle: all non-locked cells in rearrange mode ---- */
+@keyframes wbJiggle {
+  from { transform: rotate(-0.8deg); }
+  to   { transform: rotate(0.8deg); }
+}
+.jiggle {
+  animation: wbJiggle 0.34s ease-in-out infinite alternate;
+}
+/* Stagger phase by child index so the grid doesn't rock in unison */
+.jiggle:nth-child(2n) { animation-delay: -0.17s; }
+.jiggle:nth-child(3n) { animation-delay: -0.09s; }
+/* Reduced-motion: no jiggle, just cursor change */
+@media (prefers-reduced-motion: reduce) {
+  .jiggle { animation: none; }
+}
+/* Suspend jiggle entirely during live-insert drag so it doesn't fight FLIP transforms */
+.sorting .cellWrapper {
+  animation: none;
+}
+
+/* ---- Grip icon: small dot-grid handle in the top-right corner ---- */
+.grip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: repeat(2, 5px);
+  grid-template-rows: repeat(3, 5px);
+  gap: 2.5px;
+  opacity: 0.45;
+}
+.grip i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--riso-ink);
+  display: block;
+}
+/* On a done (red/blue/green) cell the grip dots should be cream */
+.cellWrapper .done + .grip i,
+.cellWrapper:has(.done) .grip i {
+  background: var(--riso-on-color);
+}
+
+/* ---- Empty slot: visual placeholder for an unfilled position ---- */
+.emptyCell {
+  aspect-ratio: 1;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-cell);
+  background: var(--riso-paper-2);
+  opacity: 0.4;
+}
+
+/* ---- Drag ghost: tilted, fixed, follows the pointer ---- */
+.ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  width: 90px;
+  height: 90px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-cell);
+  /* Use a mid-intensity fill (paper-2) — task completion colors are complex;
+     a neutral ghost is safer than trying to replicate type-color fills. */
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  box-shadow: 5px 7px 0 rgba(0, 0, 0, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--riso-font-body);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px;
+  /* Lift + tilt: centered on the pointer, slightly rotated */
+  transform: translate(-50%, -50%) rotate(-4deg) scale(1.04);
+  line-height: 1.25;
+  overflow: hidden;
+  word-break: break-word;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ghost {
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* ---- Dynamic hint line (tap-to-swap in progress) ---- */
+/* Shown above the grid when a tile is picked (moveSrc != null). */
+.hintBar {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-ink);
+  line-height: 1.45;
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 2px solid var(--riso-blue);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.hintBar b {
+  font-family: var(--riso-font-head);
+  color: var(--riso-blue);
+  font-weight: 800;
+}
+
+/* ---- Mobile: narrower ghost ---- */
+@media (max-width: 880px) {
+  .ghost {
+    width: 72px;
+    height: 72px;
+    font-size: 11px;
+  }
+}

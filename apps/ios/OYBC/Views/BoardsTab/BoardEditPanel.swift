@@ -89,16 +89,26 @@ struct BoardEditPanel: View {
 
     // MARK: - Squares draft (Phase 2)
 
-    /// Number of staged square edits — replacements + task-field overrides —
-    /// computed by `BoardPlayView` from `editSquaresDraft` + `editTaskOverrides`.
-    /// Added to `editCount` / `isDirty` so the panel counter and Save pill
-    /// react to cell-level changes, not just metadata changes.
+    /// Number of staged square edits — replacements + task-field overrides +
+    /// position moves — computed by `BoardPlayView`. Added to `editCount` /
+    /// `isDirty` so the panel counter and Save pill react to cell-level changes.
     var squareEditCount: Int = 0
 
     /// Called when the user taps a non-center square in the `.editTasks`
     /// sub-mode. `BoardPlayView` handles routing to the Replace / Edit menu.
     /// nil in Phase 1 (grid was display-only); provided by the parent in Phase 2+.
     var onCellTap: ((Int, Int) -> Void)? = nil
+
+    // MARK: - Rearrange draft (Phase 3)
+
+    /// Staged rearrange order for `RearrangeGrid`. `nil` until the user enters
+    /// Rearrange sub-mode for the first time (built lazily by `BoardPlayView`
+    /// from `editSquaresDraft`). Updated via `onReorder`.
+    var rearrangeCells: [RearrangeCellData]? = nil
+
+    /// Called when `RearrangeGrid` commits a reorder (drag-to-insert or
+    /// tap-to-swap). Parent (`BoardPlayView`) updates `editRearrangeCells`.
+    var onReorder: (([RearrangeCellData]) -> Void)? = nil
 
     // MARK: - Saving indicator
 
@@ -302,8 +312,6 @@ struct BoardEditPanel: View {
             Text("SQUARES")
                 .risoSectionLabel()
 
-            // Sub-mode toggle — switches the hint text only in Phase 1.
-            // Tapping squares (Phase 2) and drag-rearrange (Phase 3) are inert.
             RisoSegmented(
                 options: [
                     (.editTasks, "Edit tasks"),
@@ -317,18 +325,34 @@ struct BoardEditPanel: View {
                 .foregroundStyle(Color.risoMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Interactive grid in Edit-tasks sub-mode (Phase 2); display-only
-            // in Rearrange sub-mode (Phase 3) and when onCellTap is nil (Phase 1).
-            BoardEditStaticGrid(
-                boardSize: board.boardSize,
-                boardTasks: boardTasks,
-                taskMap: taskMap,
-                centerSquareType: centerType,
-                centerCustomName: centerCustomName.isEmpty
-                    ? board.centerSquareCustomName
-                    : centerCustomName,
-                onCellTap: subMode == .editTasks ? onCellTap : nil
-            )
+            if subMode == .rearrange, let cells = rearrangeCells {
+                // Phase 3 — Rearrange sub-mode: live drag/tap grid. RearrangeGrid
+                // resolves each cell's staged taskId against this taskId-keyed map.
+                RearrangeGrid(
+                    cells: cells,
+                    gridSize: board.boardSize,
+                    taskMap: taskMap,
+                    centerSquareType: centerType,
+                    centerCustomName: centerCustomName.isEmpty
+                        ? (board.centerSquareCustomName ?? "")
+                        : centerCustomName,
+                    rearrange: true,
+                    onReorder: { onReorder?($0) }
+                )
+            } else {
+                // Edit-tasks sub-mode (Phase 2) or rearrange cells not yet seeded —
+                // show the static grid with optional tap affordances.
+                BoardEditStaticGrid(
+                    boardSize: board.boardSize,
+                    boardTasks: boardTasks,
+                    taskMap: taskMap,
+                    centerSquareType: centerType,
+                    centerCustomName: centerCustomName.isEmpty
+                        ? board.centerSquareCustomName
+                        : centerCustomName,
+                    onCellTap: subMode == .editTasks ? onCellTap : nil
+                )
+            }
         }
     }
 
@@ -560,6 +584,7 @@ private struct BoardEditStaticCell: View {
                 onSave: {},
                 onCancelConfirmed: {},
                 onArchiveConfirmed: {}
+                // rearrangeCells + onReorder default to nil (Phase 3 not active in preview)
             )
         }
     }
