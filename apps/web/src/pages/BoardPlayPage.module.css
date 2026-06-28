@@ -242,3 +242,26 @@
   font-weight: 500;
   font-size: 15px;
 }
+
+/* ─── Phase 2 edit-mode: tap wrapper for grid cells ─────────────────────────── */
+
+/*
+ * In editTasks sub-mode, non-center cells are wrapped in a button so we can
+ * capture the click event's coordinates (needed for SquareTapMenu positioning).
+ * The button is a zero-chrome wrapper: no padding, no border, no background —
+ * visual styling all comes from the inner RisoBoardCell.
+ */
+.editCellBtn {
+  display: contents; /* transparently passes grid placement to the child */
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+/* display:contents has no box to paint a focus ring on — route it onto the
+   child cell so keyboard focus is visible in the editable grid. */
+.editCellBtn:focus-visible > * {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}

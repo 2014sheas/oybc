@@ -1,0 +1,123 @@
+/* ============================================================
+   SquareTapMenu — context menu popover for edit-tasks mode.
+   Ported from .wb-menu* in board-edit.css prototype.
+   Token map: prototype --ink/--paper/etc → --riso-*.
+   Dark contract: gold hover background → --riso-ink-static text
+   (gold is a light fill; adaptive --riso-ink flips to cream in dark
+   mode, which fails WCAG AA against gold).
+   Scrim: rgba(0,0,0,…), never adaptive --riso-ink.
+   ============================================================ */
+
+/* ─── Scrim (click-away dismiss) ─── */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  /* rgba(0,0,0,…) per RISO_WEB.md: adaptive --riso-ink is cream in dark
+     mode and barely darkens a dark background. */
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* ─── Menu card ─── */
+.menu {
+  position: fixed;
+  z-index: 95;
+  width: 216px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 12px;
+  background: var(--riso-paper-2);
+  box-shadow: 5px 6px 0 var(--riso-shadow-ink);
+  overflow: hidden;
+  animation: menuIn 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+@keyframes menuIn {
+  from {
+    transform: scale(0.96);
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+  }
+}
+
+/* ─── Header row: SQUARE kicker + task name ─── */
+.menuTask {
+  padding: 11px 14px 9px;
+  border-bottom: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+}
+
+.menuKicker {
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+
+.menuName {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* ─── Menu item buttons ─── */
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  border-bottom: 1.5px solid var(--riso-hair);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14.5px;
+  transition: background 0.07s, color 0.07s;
+}
+
+.menuItem:last-child {
+  border-bottom: 0;
+}
+
+/* Dark contract: gold fill → ink-static text (never adaptive --riso-ink). */
+.menuItem:hover {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+
+.menuItem:focus-visible {
+  outline: none;
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+
+.menuItem:active {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  opacity: 0.8;
+}
+
+.menuItem svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  fill: none;
+  flex: 0 0 auto;
+}

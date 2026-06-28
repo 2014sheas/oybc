@@ -77,12 +77,38 @@ and these invariants are locked — adapt, don't copy:
 focus-ring + scrim rules from `docs/RISO_WEB.md` apply verbatim (gold fills →
 ink-static content; cream rings inset; scrims `rgba(0,0,0,…)`).
 
+## Staged-draft model (DECIDED — applies to phases 2–4)
+
+The flow is **fully staged**, faithful to the prototype: **nothing hits the DB until
+"Save changes."** This is a deliberate divergence from the app's usual instant-write
+model, justified by the handoff's explicit "staged draft + explicit Save" design.
+
+On entering edit mode, seed a **squares draft** from the board's live `BoardTask`
+rows + their `Task`s — a per-cell record `{ boardTaskId, row, col, isCenter,
+taskId, + any staged Task-field overrides (name/type/max/unit) }`. While editing:
+
+- **Replace(cell, newTaskId)** → set that cell's draft `taskId` (no DB write); counter++.
+- **Edit-task(taskId, fields)** → stage Task-field overrides for that taskId (no DB
+  write); counter++. NOTE: a `Task` is global — committing this edits the task on
+  **every** board it's on; show a subtle "edits this task everywhere it's used" hint.
+- **Rearrange** (Phase 3) → reorder a draft `preview` array; counter += 1 per move.
+- The **grid renders from the squares draft** (staged taskId + staged Task fields),
+  not the live placements, while in edit mode.
+
+On **Save**, commit in order: metadata patch (Phase 1) → for each cell whose draft
+`taskId` changed, `updateBoardTaskAndCascade(boardTaskId, newTaskId)` → for each Task
+with staged field overrides, the existing global task-update op → (Phase 3) the
+reorder op for changed positions. Then exit + "Board saved" toast. **Cancel**
+discards the whole draft (confirm if dirty). The edit counter + `dirty`/`canSave`
+already in Phase 1 extend to these staged square edits.
+
 ## Phases
 
 | Phase | Scope | Key new code |
 | --- | --- | --- |
 | **1 — Edit-mode shell** | In-place edit chrome replacing the modal: Cancel + Editing pill, name, timeframe (+ custom dates), center, immutable-size chip, sub-mode toggle (UI only), Save + edit counter, Archive, confirm dialogs. Grid renders display-only. Retire `EditBoardSheet`. | `archiveBoard` op; edit-mode chrome; gate entry to non-embedded |
-| **2 — Edit tasks** | Tap square → context menu (Replace / Edit) → bottom sheets. Replace reuses CellSwap (repoint taskId). Edit-task sheet edits the global Task (name/type/goal). | tap-menu, edit-task sheet |
+| **2 — Edit tasks** | Tap square (Edit-tasks sub-mode) → context menu (Replace / Edit) → bottom sheets. Replace reuses CellSwap (repoint taskId). Edit-task sheet edits the **global Task** (name/type/goal) for normal/counting/compound squares. **Center FREE↔task conversion split out to 2b.** | tap-menu, edit-task sheet |
+| **2b — Center conversion** | FREE center ↔ real task (Edit-task offers "Free" only on center) — touches `centerSquareType` + the center placement, not just a task edit. Deferred from Phase 2. | center type + placement swap |
 | **3 — Rearrange** | jiggle + drag-to-insert (FLIP) + tap-to-swap; pinned center. | reorder DB op (+ bingo re-derive); drag/FLIP grid |
 | **4 — Create Arrange** | Wizard Preview → arrangeable board (Preview⇄Rearrange + existing Shuffle); pure in-memory placement reorder, persists via existing path. | reuse Phase-3 grid over the wizard `[Task?]` placement |
 

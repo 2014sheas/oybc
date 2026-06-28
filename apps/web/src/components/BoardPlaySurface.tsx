@@ -6,9 +6,11 @@ import {
   CenterSquareType,
   SyncOperationType,
   TaskType,
+  generateCounterTaskTitle,
   isWithinTimeframe,
   type Board,
   type RecurringBoardTemplate,
+  type Task,
   type TaskStep,
   type BoardTask,
 } from '@oybc/shared';
@@ -20,6 +22,7 @@ import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/o
 import { addToSyncQueue } from '../db/operations/syncQueue';
 import { incrementSharedCounter } from '../db/operations/tasks';
 import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard } from '../db/operations/boardTasks';
+import { updateTaskAndCascade, type UpdateTaskPatch } from '../db/operations/tasks';
 import {
   DetailModal,
   FloatingContextMenu,
@@ -31,7 +34,9 @@ import { BoardStatusBadge } from './BoardStatusBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
-import { BoardEditPanel } from './boardEdit/BoardEditPanel';
+import { BoardEditPanel, type SubMode } from './boardEdit/BoardEditPanel';
+import { SquareTapMenu } from './boardEdit/SquareTapMenu';
+import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
 import { computeStreak, getHighlightedSquares } from '@oybc/shared';
@@ -62,6 +67,23 @@ const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
 const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-cell staged entry for the squares draft (Phase 2 — staged edit model).
+ * Seeded from live `BoardTask` rows on entering edit mode; mutated only by
+ * Replace/Edit actions — never by live-query updates (to avoid clobbering
+ * staged changes mid-session).
+ */
+interface SquareDraftCell {
+  boardTaskId: string;
+  row: number;
+  col: number;
+  isCenter: boolean;
+  /** Current staged taskId — may differ from originalTaskId after a Replace. */
+  taskId: string;
+  /** The taskId at the time edit mode was entered. Never changes. */
+  originalTaskId: string;
+}
 
 /** What `showFlash` is called with. `greenlog` routes to the overlay and a
  *  new bingo to the toast; only the residual cases reach the transient flash. */
@@ -151,6 +173,45 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // M4 — add to empty cell: the grid position {row, col} awaiting task selection.
   const [addCellPos, setAddCellPos] = useState<{ row: number; col: number } | null>(null);
 
+  // ── Phase 2 — Edit tasks sub-mode + squares draft ────────────────────────
+
+  // Sub-mode is hoisted here (from BoardEditPanel) so the grid can gate taps.
+  const [subMode, setSubMode] = useState<SubMode>('editTasks');
+
+  // Squares draft: per-cell staged state seeded when entering edit mode.
+  // Never updated by live boardTasks changes (only by Replace/Edit actions).
+  const [squaresDraft, setSquaresDraft] = useState<SquareDraftCell[]>([]);
+
+  // Staged task-field overrides, keyed by taskId.
+  // Applied to the grid display while in edit mode; committed on Save.
+  const [taskOverrides, setTaskOverrides] = useState<Map<string, UpdateTaskPatch>>(
+    () => new Map(),
+  );
+
+  // Count of staged square edits — DERIVED from draft state (not an action
+  // counter) so reverting a cell to its original task un-counts it (no phantom
+  // edits / no "Board saved" for a net-zero session). Mirrors iOS.
+  const squareEditCount =
+    squaresDraft.filter((c) => c.taskId !== c.originalTaskId).length +
+    taskOverrides.size;
+
+  // Tap menu: set when a non-center square is tapped in editTasks sub-mode.
+  // Stores click coordinates (not a DOMRect) because RisoBoardCell's onClick
+  // is `() => void` (no event parameter). The SquareTapMenu positions itself
+  // from these coordinates.
+  const [squareTapMenu, setSquareTapMenu] = useState<{
+    boardTaskId: string;
+    taskId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // The boardTaskId whose cell is being replaced in edit mode (opens CellSwapModal).
+  const [editReplaceId, setEditReplaceId] = useState<string | null>(null);
+
+  // The taskId being edited in edit mode (opens BoardEditTaskSheet).
+  const [editTaskSheetId, setEditTaskSheetId] = useState<string | null>(null);
+
   // User preferences (weekStartDay is forwarded to BoardEditPanel + BoardSetupForm).
   const [prefs] = usePreferences();
 
@@ -162,6 +223,35 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
     };
   }, []);
+
+  // Seed the squares draft when entering edit mode; reset all draft state when
+  // exiting. boardTasks is intentionally NOT in the dep array — we seed once
+  // on entry and must not re-seed on live-query updates (that would clobber
+  // staged changes mid-session).
+  useEffect(() => {
+    if (!editMode) {
+      setSquaresDraft([]);
+      setTaskOverrides(new Map());
+      setSubMode('editTasks');
+      setSquareTapMenu(null);
+      setEditReplaceId(null);
+      setEditTaskSheetId(null);
+      return;
+    }
+    // Seed from the current boardTasks snapshot.
+    setSquaresDraft(
+      boardTasks.map((bt) => ({
+        boardTaskId: bt.id,
+        row: bt.row,
+        col: bt.col,
+        isCenter: bt.isCenter ?? false,
+        taskId: bt.taskId,
+        originalTaskId: bt.taskId,
+      })),
+    );
+    setTaskOverrides(new Map());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode]);
 
   // ── Derived data ───────────────────────────────────────────────────────
 
@@ -256,6 +346,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     btByPosition[`${bt.row}-${bt.col}`] = bt;
   }
 
+  // Phase 2 — draft position lookup (edit mode only; stable key format matches btByPosition).
+  const draftByPosition: Record<string, SquareDraftCell> = {};
+  if (editMode) {
+    for (const cell of squaresDraft) {
+      draftByPosition[`${cell.row}-${cell.col}`] = cell;
+    }
+  }
+
   const isExpired = isBoardExpired(board);
 
   // ── Flash message helper ───────────────────────────────────────────────
@@ -289,6 +387,59 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       setFlashMessage((current) => current === msg ? null : current);
     }, FLASH_MS);
   }, []);
+
+  // ── Phase 2 — Square-edit handlers ────────────────────────────────────────
+
+  /**
+   * Stage a Replace for the given boardTaskId.
+   * Called when the CellSwapModal (edit-mode flow) confirms a new task.
+   * NO DB write happens here — committed in onExtraCommit at Save time.
+   */
+  const handleEditReplace = useCallback((boardTaskId: string, newTaskId: string) => {
+    setSquaresDraft((prev) =>
+      prev.map((cell) =>
+        cell.boardTaskId === boardTaskId ? { ...cell, taskId: newTaskId } : cell,
+      ),
+    );
+    // squareEditCount is derived from squaresDraft — no manual increment.
+  }, []);
+
+  /**
+   * Stage Task-field edits for the given taskId.
+   * Called when BoardEditTaskSheet's Done fires.
+   * Merges with any previously staged override for the same taskId.
+   * NO DB write happens here — committed in onExtraCommit at Save time.
+   */
+  const handleEditTaskDone = useCallback(
+    (taskId: string, patch: UpdateTaskPatch) => {
+      setTaskOverrides((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(taskId) ?? {};
+        next.set(taskId, { ...existing, ...patch });
+        return next;
+      });
+      // squareEditCount is derived from taskOverrides — no manual increment.
+    },
+    [],
+  );
+
+  /**
+   * Commits all staged square edits.
+   * Called by BoardEditPanel.handleSave BEFORE the metadata patch.
+   * Order: task replacements first, then task-field edits.
+   */
+  const commitSquareEdits = useCallback(async (): Promise<void> => {
+    // 1. Cell replacements: cells whose staged taskId differs from the original.
+    for (const cell of squaresDraft) {
+      if (cell.taskId !== cell.originalTaskId) {
+        await updateBoardTaskAndCascade(cell.boardTaskId, cell.taskId);
+      }
+    }
+    // 2. Global task-field edits: apply UpdateTaskPatch for each staged override.
+    for (const [taskId, patch] of taskOverrides.entries()) {
+      await updateTaskAndCascade(taskId, patch);
+    }
+  }, [squaresDraft, taskOverrides]);
 
   // ── Completion handler ─────────────────────────────────────────────────
 
@@ -488,6 +639,10 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           <BoardEditPanel
             board={board}
             weekStartDay={prefs.weekStartDay}
+            subMode={subMode}
+            onSubModeChange={setSubMode}
+            squareEditCount={squareEditCount}
+            onExtraCommit={commitSquareEdits}
             onCancel={() => setEditMode(false)}
             onSaved={() => {
               setEditMode(false);
@@ -589,13 +744,24 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
 
             for (let row = 0; row < gridSize; row++) {
               for (let col = 0; col < gridSize; col++) {
-                const bt = btByPosition[`${row}-${col}`];
+                const posKey = `${row}-${col}`;
                 const isCenter =
                   gridSize % 2 === 1 &&
                   row === Math.floor(gridSize / 2) &&
                   col === Math.floor(gridSize / 2);
 
-                if (!bt) {
+                // ── Resolve the cell source ──────────────────────────────
+                // In edit mode, read from the squares draft (staged taskIds).
+                // In play mode, read from the live boardTasks index.
+                const draftCell = editMode ? draftByPosition[posKey] : undefined;
+                const bt = editMode ? undefined : btByPosition[posKey];
+
+                // Determine the boardTaskId and resolved taskId for this position.
+                const boardTaskId = editMode ? draftCell?.boardTaskId : bt?.id;
+                const resolvedTaskId = editMode ? draftCell?.taskId : bt?.taskId;
+
+                // ── Empty / center cells ─────────────────────────────────
+                if (!boardTaskId) {
                   if (isCenter && (board.centerSquareType === CenterSquareType.FREE ||
                       board.centerSquareType === CenterSquareType.CUSTOM_FREE)) {
                     cells.push(
@@ -632,13 +798,20 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   continue;
                 }
 
-                const task = taskMap[bt.taskId];
-                if (!task) {
+                // ── Resolve the base task from taskMap ───────────────────
+                const baseTask: Task | undefined = resolvedTaskId ? taskMap[resolvedTaskId] : undefined;
+                if (!baseTask) {
                   cells.push(
-                    <div key={`missing-${row}-${col}`} className={styles.emptySquare}>?</div>
+                    <div key={`missing-${boardTaskId}`} className={styles.emptySquare}>?</div>
                   );
                   continue;
                 }
+
+                // In edit mode, apply any staged task-field overrides for display.
+                // In play mode, use the base task directly (no overrides).
+                const task: Task = (editMode && resolvedTaskId && taskOverrides.has(resolvedTaskId))
+                  ? { ...baseTask, ...taskOverrides.get(resolvedTaskId) as Partial<Task> }
+                  : baseTask;
 
                 const taskChildren = compoundChildrenByCompound[task.id] ?? [];
                 const squareData = taskToSquareData(
@@ -652,9 +825,18 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 // counters). For standalone counters this equals task.currentCount.
                 const taskCurrentCount = squareState.currentCount;
 
+                // Resolve the display label:
+                // - If the task has a title, use it.
+                // - For COUNTING tasks without a title, generate from action+maxCount+unit.
+                const displayLabel = task.title && task.title.trim()
+                  ? task.title
+                  : (task.type === TaskType.COUNTING
+                      ? generateCounterTaskTitle(task.action ?? '', task.maxCount ?? 0, task.unit ?? '')
+                      : '');
+
                 const cellModel: BoardCellModel = {
-                  key: bt.id,
-                  label: task.title ?? '',
+                  key: boardTaskId,
+                  label: displayLabel,
                   type:
                     squareData.type === 'counting'
                       ? 'counting'
@@ -670,25 +852,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   isLine: highlightedSquares.has(row * gridSize + col),
                 };
 
-                cells.push(
-                  <RisoBoardCell
-                    key={bt.id}
-                    cell={cellModel}
-                    badge={
-                      achievementBadgesByBoardTaskId[bt.id] ? (
-                        <span className={play.achvBadge} title="Achievement">
-                          A
-                        </span>
-                      ) : undefined
-                    }
-                    // In edit mode the grid is display-only: no tap handlers,
-                    // no context menu. Handlers are undefined, making the cells
-                    // inert. RisoBoardCell checks for onClick presence to decide
-                    // whether to render a cursor: pointer.
-                    onClick={editMode ? undefined : () => {
-                      if (isExpired) return;
+                // ── Click handler (play mode) ────────────────────────────
+                // Edit mode taps are handled by a wrapper div below (we need
+                // mouse coordinates which RisoBoardCell's onClick: () => void
+                // does not expose).
+                const handlePlayClick = (!editMode && !isExpired)
+                  ? () => {
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
-                        setSelectedSquareId(bt.id);
+                        setSelectedSquareId(boardTaskId);
                       } else if (squareData.type === 'counting') {
                         // Phase 3 — Shared Counters routing:
                         //  (a) Linked derived counter (task.sharedCounterId != null):
@@ -705,20 +876,63 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                         } else {
                           // Standalone (unlinked) counting task — no propagation needed.
                           const next = taskCurrentCount + 1;
-                          void handleComplete(bt.id, { currentCount: next });
+                          void handleComplete(boardTaskId, { currentCount: next });
                         }
                       } else {
-                        void handleComplete(bt.id, {
+                        void handleComplete(boardTaskId, {
                           isCompleted: !taskIsCompleted,
                         });
                       }
-                    }}
+                    }
+                  : undefined;
+
+                // ── Edit-mode cell wrapper ───────────────────────────────
+                // In editTasks sub-mode, non-center cells are wrapped in a
+                // button that captures the click position for the tap menu.
+                // RisoBoardCell itself gets onClick=undefined (display-only);
+                // the wrapper provides the pointer cursor and accessibility role.
+                const isEditTapTarget = editMode && subMode === 'editTasks' && !isCenter;
+                const capturedBoardTaskId = boardTaskId;
+                const capturedTaskId = resolvedTaskId ?? task.id;
+
+                const cellNode = (
+                  <RisoBoardCell
+                    cell={cellModel}
+                    badge={
+                      achievementBadgesByBoardTaskId[boardTaskId] ? (
+                        <span className={play.achvBadge} title="Achievement">
+                          A
+                        </span>
+                      ) : undefined
+                    }
+                    onClick={editMode ? undefined : handlePlayClick}
                     onContextMenu={editMode ? undefined : (e) => {
                       if (isExpired) return;
                       e.preventDefault();
-                      setContextMenu({ squareId: bt.id, x: e.clientX, y: e.clientY });
+                      setContextMenu({ squareId: boardTaskId, x: e.clientX, y: e.clientY });
                     }}
                   />
+                );
+
+                cells.push(
+                  isEditTapTarget ? (
+                    <button
+                      key={boardTaskId}
+                      type="button"
+                      className={styles.editCellBtn}
+                      aria-label={`Edit square: ${displayLabel}`}
+                      onClick={(e) => {
+                        setSquareTapMenu({
+                          boardTaskId: capturedBoardTaskId,
+                          taskId: capturedTaskId,
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
+                      }}
+                    >
+                      {cellNode}
+                    </button>
+                  ) : cellNode,
                 );
               }
             }
@@ -729,6 +943,86 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       )}
 
       </div>
+
+      {/* ── Phase 2 — Edit-mode overlays ────────────────────────────────────── */}
+
+      {/* Square tap menu: shown when tapping a non-center cell in editTasks mode. */}
+      {editMode && squareTapMenu && (() => {
+        const menuTaskId = squareTapMenu.taskId;
+        // Resolve task title for display — apply any staged override.
+        const menuBaseTask = taskMap[menuTaskId];
+        const menuOverride = taskOverrides.get(menuTaskId);
+        const menuTask = menuBaseTask
+          ? (menuOverride ? { ...menuBaseTask, ...menuOverride as Partial<Task> } : menuBaseTask)
+          : undefined;
+        // Mirror the square's displayLabel: counting tasks with a blank title
+        // show their auto-generated "Action N unit" name, not "(untitled)".
+        const menuTitle =
+          menuTask && menuTask.title && menuTask.title.trim()
+            ? menuTask.title
+            : menuTask?.type === TaskType.COUNTING
+              ? generateCounterTaskTitle(
+                  menuTask.action ?? '',
+                  menuTask.maxCount ?? 0,
+                  menuTask.unit ?? '',
+                )
+              : '(untitled)';
+        return (
+          <SquareTapMenu
+            taskTitle={menuTitle}
+            x={squareTapMenu.x}
+            y={squareTapMenu.y}
+            onReplace={() => {
+              setEditReplaceId(squareTapMenu.boardTaskId);
+            }}
+            onEdit={() => {
+              setEditTaskSheetId(squareTapMenu.taskId);
+            }}
+            onClose={() => setSquareTapMenu(null)}
+          />
+        );
+      })()}
+
+      {/* Edit-mode Replace: opens CellSwapModal to pick a new task.
+          On confirm, stages the replacement in the draft (no DB write). */}
+      {editMode && editReplaceId && (() => {
+        const replaceDraftCell = squaresDraft.find((c) => c.boardTaskId === editReplaceId);
+        if (!replaceDraftCell) return null;
+        return (
+          <CellSwapModal
+            mode="swap"
+            currentTaskId={replaceDraftCell.taskId}
+            candidateTasks={Object.values(taskMap)}
+            onClose={() => setEditReplaceId(null)}
+            onConfirm={(newTaskId) => {
+              handleEditReplace(editReplaceId, newTaskId);
+              setEditReplaceId(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* Edit-mode Task editor: opens BoardEditTaskSheet to stage field changes.
+          On Done, stages the patch in taskOverrides (no DB write). */}
+      {editMode && editTaskSheetId && (() => {
+        const sheetBaseTask = taskMap[editTaskSheetId];
+        if (!sheetBaseTask) return null;
+        // Pre-merge any already-staged overrides so re-opening shows prior edits.
+        const sheetOverride = taskOverrides.get(editTaskSheetId);
+        const sheetTask: Task = sheetOverride
+          ? { ...sheetBaseTask, ...sheetOverride as Partial<Task> }
+          : sheetBaseTask;
+        return (
+          <BoardEditTaskSheet
+            task={sheetTask}
+            onDone={(taskId, patch) => {
+              handleEditTaskDone(taskId, patch);
+              setEditTaskSheetId(null);
+            }}
+            onCancel={() => setEditTaskSheetId(null)}
+          />
+        );
+      })()}
 
       {/* Detail Modal, context menu, swap modal, remove/add modals — all hidden
           in edit mode (the grid is display-only; no tap interactions allowed). */}

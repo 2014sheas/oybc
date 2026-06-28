@@ -20,7 +20,7 @@ import styles from './BoardEditPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SubMode = 'editTasks' | 'rearrange';
+export type SubMode = 'editTasks' | 'rearrange';
 
 const SUB_MODE_OPTIONS: ReadonlyArray<RisoSegmentedOption<SubMode>> = [
   { value: 'editTasks', label: 'Edit tasks' },
@@ -33,13 +33,34 @@ export interface BoardEditPanelProps {
   /** Week-start preference for timeframe boundary computation. */
   weekStartDay: WeekStartDay;
   /**
+   * Current square-editing sub-mode — lifted to BoardPlaySurface so the
+   * grid can gate tap interactions. The panel renders the toggle but
+   * delegates state ownership to the parent.
+   */
+  subMode: SubMode;
+  /** Called when the user switches sub-mode via the segmented toggle. */
+  onSubModeChange: (mode: SubMode) => void;
+  /**
+   * Number of staged square edits (Replace + Edit-task Done actions) from
+   * BoardPlaySurface. Added to the metadata edit count for the combined
+   * display and dirty/canSave checks.
+   */
+  squareEditCount: number;
+  /**
+   * Called at the START of handleSave — commits all staged square edits
+   * (BoardTask replacements + global Task field patches) BEFORE the
+   * metadata `updateBoardAndCascade` write. Must throw on error (the
+   * panel's catch block will surface the failure to the user).
+   */
+  onExtraCommit: () => Promise<void>;
+  /**
    * Called when the user cancels with no unsaved changes, or after
    * the inline "Discard changes?" confirm. The parent exits edit mode.
    */
   onCancel: () => void;
   /**
-   * Called after a successful metadata save. The parent exits edit mode
-   * and shows the "Board saved" green toast.
+   * Called after a successful save (both square commits and metadata patch).
+   * The parent exits edit mode and shows the "Board saved" green toast.
    */
   onSaved: () => void;
   /**
@@ -94,6 +115,10 @@ function snapEnd(ymd: string): string {
 export function BoardEditPanel({
   board,
   weekStartDay,
+  subMode,
+  onSubModeChange,
+  squareEditCount,
+  onExtraCommit,
   onCancel,
   onSaved,
   onArchived,
@@ -107,7 +132,7 @@ export function BoardEditPanel({
   const [centerType, setCenterType] = useState<CenterSquareType>(CenterSquareType.FREE);
   const [centerCustomName, setCenterCustomName] = useState('');
 
-  const [subMode, setSubMode] = useState<SubMode>('editTasks');
+  // subMode is now a prop (lifted to BoardPlaySurface so the grid can gate taps).
   const [confirm, setConfirm] = useState<'cancel' | 'archive' | null>(null);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -154,22 +179,25 @@ export function BoardEditPanel({
 
   // Count the number of metadata field-groups that differ from the stored board.
   // Each group counts as 1 edit so the counter reflects meaningful changes,
-  // not raw keystrokes. Square edits (Phases 2–3) will increment the same counter.
+  // not raw keystrokes.
   const origStart = toYMD(board.startDate);
   const origEnd = toYMD(board.endDate);
   const origCenterCustomName = board.centerSquareCustomName ?? '';
 
-  let editCount = 0;
-  if (name !== board.name) editCount++;
-  if (timeframe !== (board.timeframe as Timeframe)) editCount++;
+  let metaEditCount = 0;
+  if (name !== board.name) metaEditCount++;
+  if (timeframe !== (board.timeframe as Timeframe)) metaEditCount++;
   // Dates: count as one group (start + end together reflect one timeframe window).
-  if (customStartDate !== origStart || customEndDate !== origEnd) editCount++;
+  if (customStartDate !== origStart || customEndDate !== origEnd) metaEditCount++;
   // Center: count as one group (type + custom name are one logical change).
   if (
     centerType !== (board.centerSquareType as CenterSquareType) ||
     centerCustomName !== origCenterCustomName
   )
-    editCount++;
+    metaEditCount++;
+
+  // Combined edit count: metadata changes + square edits from BoardPlaySurface.
+  const editCount = metaEditCount + squareEditCount;
 
   const dirty = editCount > 0;
   const canSave = dirty && name.trim().length > 0 && !saving;
@@ -239,6 +267,10 @@ export function BoardEditPanel({
 
     setSaving(true);
     try {
+      // 1. Commit square edits (replacements + task-field patches) first.
+      //    onExtraCommit throws on failure; the catch block surfaces the error.
+      await onExtraCommit();
+      // 2. Commit metadata (name / timeframe / dates / center).
       await updateBoardAndCascade(board.id, patch);
       onSaved();
     } catch (err) {
@@ -328,15 +360,15 @@ export function BoardEditPanel({
       />
 
       {/* Squares sub-mode: Edit tasks ⇄ Rearrange.
-          Phase 1: toggle renders and switches the hint text only.
-          Neither sub-mode is interactive until Phases 2–3. */}
+          Phase 2: "Edit tasks" is interactive (tap → menu → Replace/Edit).
+          "Rearrange" is still display-only until Phase 3. */}
       <div className={styles.squaresSection}>
         <RisoSectionLabel>Squares</RisoSectionLabel>
         <div className={styles.modeSeg}>
           <RisoSegmented
             options={SUB_MODE_OPTIONS}
             value={subMode}
-            onChange={setSubMode}
+            onChange={onSubModeChange}
             variant="pill"
             aria-label="Square edit mode"
           />
