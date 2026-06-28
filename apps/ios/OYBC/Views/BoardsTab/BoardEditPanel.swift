@@ -84,8 +84,21 @@ struct BoardEditPanel: View {
     var hasCandidateTasks: Bool
 
     /// Which sub-mode the segmented toggle shows. Flips the hint text only
-    /// (neither sub-mode is interactive until Phase 2 / 3).
+    /// (Rearrange is inert until Phase 3).
     @Binding var subMode: BoardEditSubMode
+
+    // MARK: - Squares draft (Phase 2)
+
+    /// Number of staged square edits — replacements + task-field overrides —
+    /// computed by `BoardPlayView` from `editSquaresDraft` + `editTaskOverrides`.
+    /// Added to `editCount` / `isDirty` so the panel counter and Save pill
+    /// react to cell-level changes, not just metadata changes.
+    var squareEditCount: Int = 0
+
+    /// Called when the user taps a non-center square in the `.editTasks`
+    /// sub-mode. `BoardPlayView` handles routing to the Replace / Edit menu.
+    /// nil in Phase 1 (grid was display-only); provided by the parent in Phase 2+.
+    var onCellTap: ((Int, Int) -> Void)? = nil
 
     // MARK: - Saving indicator
 
@@ -112,8 +125,10 @@ struct BoardEditPanel: View {
 
     // MARK: - Derived
 
-    /// True if any draft field has been changed from the original board values.
+    /// True if any draft field has been changed from the original board values,
+    /// or if any square has a staged replacement or task-field edit.
     private var isDirty: Bool {
+        if squareEditCount > 0 { return true }
         if name.trimmingCharacters(in: .whitespaces) != board.name { return true }
         if timeframe != board.timeframe { return true }
         if centerType != board.centerSquareType { return true }
@@ -129,10 +144,10 @@ struct BoardEditPanel: View {
         return false
     }
 
-    /// Count of staged metadata changes (one per logical field group:
-    /// name, timeframe/dates, center). Phases 2–3 will add square edits.
+    /// Count of all staged changes: metadata (name / timeframe / center) +
+    /// squares (replacements + task-field overrides from `squareEditCount`).
     private var editCount: Int {
-        var n = 0
+        var n = squareEditCount
         if name.trimmingCharacters(in: .whitespaces) != board.name { n += 1 }
         let tfChanged = timeframe != board.timeframe
         let dateChanged: Bool = {
@@ -302,7 +317,8 @@ struct BoardEditPanel: View {
                 .foregroundStyle(Color.risoMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Display-only grid — no gesture handlers in Phase 1.
+            // Interactive grid in Edit-tasks sub-mode (Phase 2); display-only
+            // in Rearrange sub-mode (Phase 3) and when onCellTap is nil (Phase 1).
             BoardEditStaticGrid(
                 boardSize: board.boardSize,
                 boardTasks: boardTasks,
@@ -310,7 +326,8 @@ struct BoardEditPanel: View {
                 centerSquareType: centerType,
                 centerCustomName: centerCustomName.isEmpty
                     ? board.centerSquareCustomName
-                    : centerCustomName
+                    : centerCustomName,
+                onCellTap: subMode == .editTasks ? onCellTap : nil
             )
         }
     }
@@ -372,17 +389,20 @@ struct BoardEditPanel: View {
 
 // MARK: - BoardEditStaticGrid
 
-/// Display-only board grid for Phase 1 edit mode.
+/// Board grid for edit mode.
 ///
-/// Renders current placements without gesture handlers. Each cell shows task
-/// title + basic completion tinting. Made interactive in Phase 2 (Edit tasks)
-/// and Phase 3 (Rearrange).
+/// Renders placements with optional tap-gesture support. When `onCellTap` is
+/// provided (Phase 2 Edit-tasks sub-mode), tapping a non-center occupied cell
+/// triggers the Replace / Edit context menu via the parent. Center cells and
+/// empty cells are always inert. Rearrange (Phase 3) and Phase 1 pass nil.
 private struct BoardEditStaticGrid: View {
     let boardSize: Int
     let boardTasks: [BoardTask]
     let taskMap: [String: Task]
     let centerSquareType: CenterSquareType
     let centerCustomName: String?
+    /// Phase 2: callback for non-center occupied cell taps. nil = display-only.
+    var onCellTap: ((Int, Int) -> Void)? = nil
 
     private var btByPosition: [String: BoardTask] {
         var map: [String: BoardTask] = [:]
@@ -400,11 +420,16 @@ private struct BoardEditStaticGrid: View {
                 let row = idx / boardSize
                 let col = idx % boardSize
                 let bt = btByPosition["\(row)-\(col)"]
+                let isCenter = bt?.isCenter == true
+                // Tapping: enabled on non-center occupied cells when onCellTap is set.
+                let tapEnabled = onCellTap != nil && !isCenter && bt != nil
                 BoardEditStaticCell(
                     task: bt.flatMap { taskMap[$0.taskId] },
-                    isCenter: bt?.isCenter == true,
+                    isCenter: isCenter,
                     centerSquareType: centerSquareType,
-                    centerCustomName: centerCustomName
+                    centerCustomName: centerCustomName,
+                    isInteractive: tapEnabled,
+                    onTap: tapEnabled ? { onCellTap?(row, col) } : nil
                 )
             }
         }
@@ -413,12 +438,19 @@ private struct BoardEditStaticGrid: View {
 
 // MARK: - BoardEditStaticCell
 
-/// A single display-only cell in the Phase 1 edit-mode grid.
+/// A single cell in the edit-mode grid.
+///
+/// When `isInteractive` is true (Phase 2 Edit-tasks sub-mode, non-center
+/// occupied cell), the cell renders with a subtle pencil badge and a tap
+/// gesture that calls `onTap`. Center and empty cells are always passive.
 private struct BoardEditStaticCell: View {
     let task: Task?
     let isCenter: Bool
     let centerSquareType: CenterSquareType
     let centerCustomName: String?
+    /// Phase 2: when true the cell shows an edit-affordance and fires `onTap`.
+    var isInteractive: Bool = false
+    var onTap: (() -> Void)? = nil
 
     private var label: String {
         if isCenter {
@@ -450,17 +482,20 @@ private struct BoardEditStaticCell: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
+            // Cell background + keyline
             RoundedRectangle(cornerRadius: Riso.cellRadius)
                 .fill(fill)
                 .overlay(
                     RoundedRectangle(cornerRadius: Riso.cellRadius)
                         .strokeBorder(
-                            isCenter ? Color.risoInkStatic.opacity(0.3) : Color.risoInk,
-                            lineWidth: Riso.Keyline.dense
+                            isCenter ? Color.risoInkStatic.opacity(0.3)
+                                     : (isInteractive ? Color.risoBlue : Color.risoInk),
+                            lineWidth: isInteractive ? Riso.Keyline.container : Riso.Keyline.dense
                         )
                 )
 
+            // Cell label
             if !label.isEmpty {
                 Text(label)
                     .font(.risoBody(8, .semibold))
@@ -468,9 +503,24 @@ private struct BoardEditStaticCell: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
                     .padding(4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            // Pencil affordance — small icon in the top-trailing corner for
+            // interactive cells, signalling "tap to edit". Inset slightly so
+            // it doesn't overlap the cell keyline.
+            if isInteractive {
+                Image(systemName: "pencil")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.risoBlue)
+                    .padding(3)
             }
         }
         .aspectRatio(1, contentMode: .fit)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isInteractive { onTap?() }
+        }
     }
 }
 

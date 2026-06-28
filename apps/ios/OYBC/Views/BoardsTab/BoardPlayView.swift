@@ -305,8 +305,29 @@ struct BoardPlayView: View {
     @State private var editSubMode: BoardEditSubMode = .editTasks
     /// True while `updateBoardAndCascade` is in flight — disables the Save pill.
     @State private var editSaving: Bool = false
+    /// Surfaces a board-edit Save failure (the edit panel overlays the inline
+    /// flash, so a system alert is used — it pierces the overlay).
+    @State private var editSaveError: String?
     /// Controls the "Board saved" success toast (auto-dismissed after 2.4 s).
     @State private var showEditSavedToast: Bool = false
+    // MARK: Edit-mode squares draft (Phase 2 — Edit tasks)
+    /// Per-cell staged state keyed by "row-col". Seeded from live `BoardTask`
+    /// rows when the user enters edit mode; modified by Replace / Edit-task actions.
+    /// Nothing is written to the DB until `handleEditSave` commits.
+    @State private var editSquaresDraft: [String: SquaresDraftCell] = [:]
+    /// Staged task-field overrides keyed by taskId (global — shared by all squares
+    /// that reference the same task). Applied to `editDraftTaskMap` for rendering and
+    /// committed via `saveTaskAndCascade` in `handleEditSave`.
+    @State private var editTaskOverrides: [String: StagedTaskOverride] = [:]
+    /// Target for the "Replace task" sheet triggered from a cell tap in edit mode.
+    @State private var editModeReplaceTarget: EditModeSwapTarget? = nil
+    /// Target for the "Edit task" sheet triggered from a cell tap in edit mode.
+    @State private var editModeTaskTarget: EditModeTaskTarget? = nil
+    /// Row/col of the cell whose tap-menu is displayed. Set alongside the
+    /// `.confirmationDialog` trigger.
+    @State private var editCellMenuRow: Int = 0
+    @State private var editCellMenuCol: Int = 0
+    @State private var editCellMenuVisible: Bool = false
     /// M3 — live-edit cell swap: the square whose task the user wants to replace.
     @State private var swapTarget: SwapTarget? = nil
     /// M4 — live-edit remove from board: the boardTaskId pending confirmation.
@@ -330,6 +351,63 @@ struct BoardPlayView: View {
     /// O(1) task lookup by task ID.
     private var taskMap: [String: Task] {
         Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+    }
+
+    // MARK: - Edit-mode squares draft (Phase 2)
+
+    /// Live `BoardTask` rows with staged task-ID replacements applied.
+    /// Used as `boardTasks:` in `BoardEditPanel` so the draft grid shows
+    /// the staged tasks without touching the database.
+    private var editDraftBoardTasks: [BoardTask] {
+        guard editMode, !editSquaresDraft.isEmpty else { return boardTasks }
+        return boardTasks.map { bt in
+            let key = "\(bt.row)-\(bt.col)"
+            guard let draft = editSquaresDraft[key],
+                  draft.stagedTaskId != bt.taskId else { return bt }
+            var copy = bt
+            copy.taskId = draft.stagedTaskId
+            return copy
+        }
+    }
+
+    /// `taskMap` with staged task-field overrides applied.
+    /// Used as `taskMap:` in `BoardEditPanel` so cell labels show the
+    /// staged title/type without a database write.
+    private var editDraftTaskMap: [String: Task] {
+        guard editMode, !editTaskOverrides.isEmpty else { return taskMap }
+        var map = taskMap
+        for (taskId, override) in editTaskOverrides {
+            guard var t = map[taskId] else { continue }
+            t.title = override.title
+            t.type  = override.type
+            if override.type == .counting {
+                t.action   = override.action
+                t.unit     = override.unit
+                t.maxCount = override.maxCount
+            }
+            map[taskId] = t
+        }
+        return map
+    }
+
+    /// Number of staged square edits: cell replacements + task-field overrides.
+    /// Forwarded to `BoardEditPanel.squareEditCount` so the counter and Save
+    /// pill react to square-level changes, not just metadata changes.
+    private var editSquaresEditCount: Int {
+        guard editMode else { return 0 }
+        let replacements = editSquaresDraft.values
+            .filter { $0.stagedTaskId != $0.originalTaskId }.count
+        let overrides = editTaskOverrides.count
+        return replacements + overrides
+    }
+
+    /// Display title for the tap-menu confirmationDialog — the staged task name
+    /// for the cell at `(editCellMenuRow, editCellMenuCol)`.
+    private var editCellMenuTitle: String {
+        let key = "\(editCellMenuRow)-\(editCellMenuCol)"
+        guard let draft = editSquaresDraft[key] else { return "Square" }
+        let map = editDraftTaskMap
+        return map[draft.stagedTaskId]?.title ?? "Square"
     }
 
     /// Compound children grouped by parent compound task ID, sorted by childIndex.
@@ -532,8 +610,8 @@ struct BoardPlayView: View {
             if editMode, let b = board {
                 BoardEditPanel(
                     board: b,
-                    boardTasks: boardTasks,
-                    taskMap: taskMap,
+                    boardTasks: editDraftBoardTasks,
+                    taskMap: editDraftTaskMap,
                     weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
                     originalCustomStartDate: editOriginalCustomStartDate,
                     originalCustomEndDate: editOriginalCustomEndDate,
@@ -545,6 +623,8 @@ struct BoardPlayView: View {
                     centerCustomName: $editCenterCustomName,
                     hasCandidateTasks: editHasCandidateTasks,
                     subMode: $editSubMode,
+                    squareEditCount: editSquaresEditCount,
+                    onCellTap: { row, col in handleEditCellTap(row: row, col: col) },
                     isSaving: editSaving,
                     onSave: handleEditSave,
                     onCancelConfirmed: {
@@ -576,6 +656,59 @@ struct BoardPlayView: View {
                     }
                 }
             }
+        }
+        // Phase 2 — Tap-menu: Replace task / Edit task.
+        // Presented when the user taps a non-center occupied square while in
+        // edit mode + Edit-tasks sub-mode. Uses a .confirmationDialog so it
+        // anchors natively to the bottom (iOS action-sheet idiom).
+        .confirmationDialog(
+            editCellMenuTitle,
+            isPresented: $editCellMenuVisible,
+            titleVisibility: .visible
+        ) {
+            Button("Replace task") {
+                let key = "\(editCellMenuRow)-\(editCellMenuCol)"
+                if let draft = editSquaresDraft[key] {
+                    editModeReplaceTarget = EditModeSwapTarget(
+                        id: key,
+                        currentTaskId: draft.stagedTaskId
+                    )
+                }
+            }
+            Button("Edit task") {
+                let key = "\(editCellMenuRow)-\(editCellMenuCol)"
+                if let draft = editSquaresDraft[key] {
+                    let map = editDraftTaskMap
+                    if let task = map[draft.stagedTaskId] {
+                        editModeTaskTarget = EditModeTaskTarget(id: key, task: task)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        // Phase 2 — Replace task sheet (staged; no DB write on confirm).
+        .sheet(item: $editModeReplaceTarget) { target in
+            CellSwapSheet(
+                mode: .swap,
+                currentTaskId: target.currentTaskId,
+                candidateTasks: allTasks,
+                onDismiss: { editModeReplaceTarget = nil },
+                onConfirm: { newTaskId in
+                    editModeReplaceTarget = nil
+                    handleEditCellReplace(cellKey: target.id, newTaskId: newTaskId)
+                }
+            )
+        }
+        // Phase 2 — Edit task sheet (staged; no DB write on Done).
+        .sheet(item: $editModeTaskTarget) { target in
+            SquareEditTaskSheet(
+                task: target.task,
+                onDone: { patch in
+                    editModeTaskTarget = nil
+                    handleEditTaskOverride(taskId: target.task.id, patch: patch)
+                },
+                onCancel: { editModeTaskTarget = nil }
+            )
         }
         // M3 — Cell swap sheet. Presented when the user taps "⎘ Swap with
         // another task…" in the context menu of a non-center ACTIVE square.
@@ -623,6 +756,16 @@ struct BoardPlayView: View {
                     Text("This task will be removed from this board. The task stays in your library and on any other boards where it appears.")
                 }
             }
+        )
+        // Board-edit Save failure — a system alert pierces the edit overlay.
+        .alert(
+            "Couldn’t save",
+            isPresented: Binding(
+                get: { editSaveError != nil },
+                set: { if !$0 { editSaveError = nil } }
+            ),
+            actions: { Button("OK", role: .cancel) { editSaveError = nil } },
+            message: { Text(editSaveError ?? "") }
         )
         // M4 — Add task to empty cell sheet. Presented when the user taps
         // the "+" affordance on an empty cell.
@@ -2178,6 +2321,22 @@ struct BoardPlayView: View {
         editSaving = false
         editHasCandidateTasks = false
 
+        // Phase 2 — seed the squares draft from the current live placement rows.
+        // `boardTasks` is already loaded by `loadBoardTasks()` on appear.
+        editSquaresDraft = [:]
+        for bt in boardTasks {
+            let key = "\(bt.row)-\(bt.col)"
+            editSquaresDraft[key] = SquaresDraftCell(
+                boardTaskId: bt.id,
+                row: bt.row,
+                col: bt.col,
+                isCenter: bt.isCenter,
+                originalTaskId: bt.taskId,
+                stagedTaskId: bt.taskId
+            )
+        }
+        editTaskOverrides = [:]
+
         // Async: check whether the board has any center-task placement so
         // BoardEditPanel can gate the CHOSEN option in BoardSetupFormView.
         let bid = b.id
@@ -2185,6 +2344,50 @@ struct BoardPlayView: View {
             let count = (try? AppDatabase.shared.fetchBoardTasks(boardId: bid).count) ?? 0
             await MainActor.run { editHasCandidateTasks = count > 0 }
         }
+    }
+
+    // MARK: - Phase 2 edit-mode tap-menu handlers
+
+    /// Called by `BoardEditPanel.onCellTap` when the user taps a non-center
+    /// occupied cell in Edit-tasks sub-mode. Records the row/col and presents
+    /// the Replace / Edit confirmationDialog.
+    private func handleEditCellTap(row: Int, col: Int) {
+        editCellMenuRow = row
+        editCellMenuCol = col
+        editCellMenuVisible = true
+    }
+
+    /// Stages a task-ID replacement on one cell (no DB write).
+    ///
+    /// Called when the user picks a task from the Replace-task sheet in
+    /// board-edit mode. Increments the squares draft so the panel counter
+    /// and Save pill reflect this staged change.
+    ///
+    /// - Parameters:
+    ///   - cellKey: The "row-col" key into `editSquaresDraft`.
+    ///   - newTaskId: The task the user selected from `CellSwapSheet`.
+    private func handleEditCellReplace(cellKey: String, newTaskId: String) {
+        guard editSquaresDraft[cellKey] != nil else { return }
+        editSquaresDraft[cellKey]?.stagedTaskId = newTaskId
+    }
+
+    /// Stages task-field overrides for a global Task (no DB write).
+    ///
+    /// Called when the user taps Done in `SquareEditTaskSheet`. Stores the
+    /// patch as a `StagedTaskOverride` keyed by `taskId`. The edit-mode draft
+    /// task map picks this up immediately so the grid label updates.
+    ///
+    /// - Parameters:
+    ///   - taskId: The global Task being edited.
+    ///   - patch: Name / type / counting fields from `SquareEditTaskSheet`.
+    private func handleEditTaskOverride(taskId: String, patch: SquareEditTaskSheet.Patch) {
+        editTaskOverrides[taskId] = StagedTaskOverride(
+            title: patch.title,
+            type: patch.type,
+            action: patch.action.isEmpty ? nil : patch.action,
+            unit: patch.unit.isEmpty ? nil : patch.unit,
+            maxCount: patch.maxCount
+        )
     }
 
     /// Builds the metadata patch from current draft state and writes it via
@@ -2246,11 +2449,68 @@ struct BoardPlayView: View {
                 : nil
         )
 
+        // Phase 2 — snapshot squares draft before entering the detached task.
+        // `@State` vars are only safe on the MainActor; capture copies as
+        // value types so the detached task has stable, sendable data.
+        let cellReplacements: [(boardTaskId: String, newTaskId: String)] =
+            editSquaresDraft.values
+                .filter { $0.stagedTaskId != $0.originalTaskId }
+                .map { (boardTaskId: $0.boardTaskId, newTaskId: $0.stagedTaskId) }
+
+        // Build (task, override) pairs from the live taskMap + staged overrides.
+        // De-duplicated by taskId so each global Task is saved at most once.
+        var taskOverridePairs: [(task: Task, override: StagedTaskOverride)] = []
+        for (taskId, override) in editTaskOverrides {
+            if let task = taskMap[taskId] {
+                taskOverridePairs.append((task: task, override: override))
+            }
+        }
+
         editSaving = true
         let bid = boardId
         _Concurrency.Task.detached(priority: .userInitiated) {
             do {
+                // 1. Metadata patch (name / timeframe / center).
                 try AppDatabase.shared.updateBoardAndCascade(boardId: bid, patch: patch)
+
+                // 2. Staged cell replacements — each repoints one BoardTask row
+                //    and re-derives board stats for the old + new task contexts.
+                for replacement in cellReplacements {
+                    try AppDatabase.shared.updateBoardTaskAndCascade(
+                        boardTaskId: replacement.boardTaskId,
+                        newTaskId: replacement.newTaskId
+                    )
+                }
+
+                // 3. Staged task-field overrides — each writes the global Task
+                //    and re-derives board stats for all boards the task is on.
+                let now = AppDatabase.currentTimestamp()
+                for (task, override) in taskOverridePairs {
+                    var updated = task
+                    updated.title = override.title
+                    updated.type  = override.type
+                    switch override.type {
+                    case .counting:
+                        // action can be cleared (nil) — assign unconditionally so the
+                        // commit matches the draft grid (which clears it on blank).
+                        updated.action = override.action
+                        if let u = override.unit   { updated.unit   = u }
+                        if let m = override.maxCount { updated.maxCount = m }
+                    case .normal:
+                        // Switching from Counting → Simple: clear counting fields.
+                        if task.type == .counting {
+                            updated.action   = nil
+                            updated.unit     = nil
+                            updated.maxCount = nil
+                        }
+                    default:
+                        break
+                    }
+                    updated.updatedAt = now
+                    updated.version  += 1
+                    try AppDatabase.shared.saveTaskAndCascade(updated)
+                }
+
                 await MainActor.run {
                     editSaving = false
                     withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
@@ -2261,7 +2521,10 @@ struct BoardPlayView: View {
                 }
             } catch {
                 print("⚠️ BoardPlayView.handleEditSave: \(error)")
-                await MainActor.run { editSaving = false }
+                await MainActor.run {
+                    editSaving = false
+                    editSaveError = "Couldn’t save your changes — please try again."
+                }
             }
         }
     }

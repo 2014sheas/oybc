@@ -1,0 +1,251 @@
+/* ============================================================
+   BoardEditTaskSheet — staged task-field editor in Board Edit mode.
+   Bottom-sheet dialog; tokens from riso.css (--riso-*).
+   Dark contract:
+     • Backdrop: rgba(0,0,0,0.55) — never adaptive --riso-ink
+     • Cream focus rings on the backdrop-over inputs: outset --riso-blue
+     • Gold fills are not used in this sheet
+   ============================================================ */
+
+/* ─── Backdrop ─── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  /* rgba(0,0,0,…) per RISO_WEB.md scrim rule (not adaptive ink). */
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+/* ─── Sheet card ─── */
+.sheet {
+  width: 100%;
+  max-width: 460px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+}
+
+/* ─── Header ─── */
+.sheetHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sheetTitle {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+/* Global-impact hint — muted text below the title */
+.globalHint {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.4;
+}
+
+/* ─── Type row (read-only indicator) ─── */
+.typeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.typeLabel {
+  font-family: var(--riso-font-head);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
+  flex: 0 0 auto;
+}
+
+.typeBadgeWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typeReadOnly {
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+
+/* ─── Fields ─── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-family: var(--riso-font-head);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
+}
+
+.optional {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.fieldInput {
+  width: 100%;
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
+  font-size: 0.95rem;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+
+.fieldInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+
+.fieldInput::placeholder {
+  color: var(--riso-muted);
+  font-weight: 500;
+  opacity: 1;
+}
+
+/* ─── Goal + Unit side-by-side row (Counting) ─── */
+.countRow {
+  display: flex;
+  gap: 12px;
+}
+
+.goalField {
+  flex: 0 0 110px;
+}
+
+.unitField {
+  flex: 1;
+}
+
+/* ─── "Reads as" preview ─── */
+.preview {
+  margin: -6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.4;
+}
+
+.preview strong {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+/* ─── Compound note ─── */
+.compoundNote {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--riso-paper);
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.4;
+}
+
+/* ─── Footer ─── */
+.footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.cancelBtn,
+.doneBtn {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 11px 20px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.cancelBtn {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+
+.doneBtn {
+  background: var(--riso-blue);
+  /* dark fill → --riso-on-color (static cream) */
+  color: var(--riso-on-color);
+}
+
+.cancelBtn:hover:not(:disabled),
+.doneBtn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.cancelBtn:active:not(:disabled),
+.doneBtn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.doneBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cancelBtn:focus-visible,
+.doneBtn:focus-visible {
+  /* inset cream — a blue ring on the blue fill would be invisible */
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: -3px;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 480px) {
+  .sheet {
+    padding: 18px 16px 14px;
+  }
+
+  .countRow {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .goalField {
+    flex: 1;
+  }
+}
