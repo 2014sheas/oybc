@@ -79,3 +79,79 @@ struct EditModeTaskTarget: Identifiable {
     /// by `BoardPlayView.editDraftTaskMap`.
     let task: Task
 }
+
+// MARK: - RearrangeCellData builders (Phase 3)
+
+/// Builds the ordered `[RearrangeCellData]` array for `RearrangeGrid` from the
+/// current edit draft state. The array is row-major (row 0 col 0 … row N col N).
+///
+/// - Parameters:
+///   - squaresDraft: Keyed by `"\(row)-\(col)"` — task cells only (no center/empty entries).
+///   - gridSize: Board edge length (3, 4, or 5).
+///   - centerSquareType: Determines whether the mid-cell is a FREE center or occupied.
+///   - positionDraft: Optional override: maps boardTaskId → staged (row, col). When
+///     non-nil, cells are placed at their STAGED positions rather than their draft
+///     `row`/`col`. Used to preserve a previously staged reorder across sub-mode switches.
+/// - Returns: Row-major ordered array with every slot filled (task cell, center, or empty).
+func buildRearrangeCells(
+    squaresDraft: [String: SquaresDraftCell],
+    gridSize: Int,
+    centerSquareType: CenterSquareType,
+    positionDraft: [String: (row: Int, col: Int)]? = nil
+) -> [RearrangeCellData] {
+    let mid = gridSize / 2
+    let hasFreeCenter = gridSize % 2 == 1
+        && (centerSquareType == .free || centerSquareType == .customFree)
+
+    // If a positionDraft exists, remap draft cells to their staged positions.
+    // Build a (stagedRow, stagedCol) → SquaresDraftCell map for slot lookup.
+    var byPosition: [String: SquaresDraftCell]
+    if let pos = positionDraft {
+        byPosition = [:]
+        for (_, cell) in squaresDraft {
+            if let staged = pos[cell.boardTaskId] {
+                byPosition["\(staged.row)-\(staged.col)"] = cell
+            } else {
+                byPosition["\(cell.row)-\(cell.col)"] = cell
+            }
+        }
+    } else {
+        byPosition = squaresDraft
+    }
+
+    var result: [RearrangeCellData] = []
+    for row in 0..<gridSize {
+        for col in 0..<gridSize {
+            let isCenter = hasFreeCenter && row == mid && col == mid
+            if isCenter {
+                result.append(RearrangeCellData(
+                    id: "center",
+                    taskId: nil,
+                    isCenter: true,
+                    isEmpty: false,
+                    originalRow: row,
+                    originalCol: col
+                ))
+            } else if let cell = byPosition["\(row)-\(col)"] {
+                result.append(RearrangeCellData(
+                    id: cell.boardTaskId,
+                    taskId: cell.stagedTaskId,
+                    isCenter: false,
+                    isEmpty: false,
+                    originalRow: cell.row,
+                    originalCol: cell.col
+                ))
+            } else {
+                result.append(RearrangeCellData(
+                    id: "empty-\(row)-\(col)",
+                    taskId: nil,
+                    isCenter: false,
+                    isEmpty: true,
+                    originalRow: row,
+                    originalCol: col
+                ))
+            }
+        }
+    }
+    return result
+}

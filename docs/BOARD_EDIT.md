@@ -158,6 +158,54 @@ inert; the sub-mode toggle flips the hint text only.
 (UPDATE). Mirror the existing soft-`deleteBoard` shape. Both platforms in the
 same PR.
 
+## Phase 3 — detailed scope (Rearrange)
+
+In edit mode + **Rearrange** sub-mode, squares **jiggle** and can be reordered two
+ways, each producing **one staged edit**:
+
+- **Drag-to-insert (default).** Press + move past a ~6px threshold lifts a tile (a
+  tilted ghost follows the pointer; its old slot becomes a dashed gap). As you drag
+  over other slots the grid **cascades live** (FLIP slide) and the gap follows the
+  insertion point; release drops it and everything reflows. Row-major cascade.
+- **Tap-to-swap.** Tap a tile to pick it up (gold ring, rest dims); tap another to
+  swap; tap the same to cancel.
+
+**Center FREE is pinned:** never lifts, never a drop target, cascade flows around it.
+
+**Staged (per the staged-draft model).** Rearrange reorders a **dense,
+position-indexed view** of the squares draft (slot → cell-or-null) — extend Phase
+2's `squaresDraft` with a position-keyed projection for the drag. Nothing writes
+until Save. The grid renders the staged order. The edit counter increments per
+committed move (and stays DERIVED — a drag that returns a tile to its original slot
+is net-zero, like the Phase-2 count fix).
+
+**Reorder commit op (NEW).** On Save, after replaces/overrides, commit position
+changes: web **`reorderBoardTasks(boardId, [{boardTaskId, row, col}])`** in
+`db/operations/boardTasks.ts`; iOS **`AppDatabase.updateBoardTaskPositions(boardId,
+[(boardTaskId, row, col)])`**. Each: in ONE transaction, write the new `row`/`col`
+(+ keep `isCenter`) + bump `version` + enqueue a `boardTasks` UPDATE per moved row;
+then **re-derive the board's positional bingo lines** (`completedLineIds` /
+`linesCompleted`) via the existing stats-derivation helper (reuse the cascade block
+already in `updateBoardTaskAndCascade`). **Never touch global `Task` completion** —
+it rides with the task to its new slot. Apply all moved rows atomically so no two
+rows transiently collide on the same `(row,col)`.
+
+**Implementation refs (translate, don't copy):** web prototype
+`web/board-edit.jsx` (`reorderToSlot`, `captureSlots`, `slotAt`, the FLIP
+`useLayoutEffect`, `onCellPointerDown`, `rearrangeTap`) + `web/arrange-board.jsx`
+(the trimmed reusable version) + `web/board-edit.css` (`wb-jiggle`, `wb-hole`,
+`wb-ghost`, `wb-sel`, `wb-tgt`, `wb-dim`, `wb-sorting`). iOS prototype
+`proto/arrange-board-ios.jsx` + `proto/create-arrange-ios.css`. Web uses
+hand-rolled pointer + FLIP (no DnD lib); iOS uses `DragGesture` +
+`matchedGeometryEffect` (FLIP-equivalent) + an autoreversing `rotationEffect`
+jiggle. **Static slot-rect hit-testing** (capture slot rects at drag start; map
+pointer→fixed slot) — NOT `elementFromPoint` on live tiles — to avoid cascade
+flicker. Suspend the jiggle while sorting so it doesn't fight the FLIP transform.
+
+This phase's grid component is **reused by Phase 4** (create-arrange), so build the
+drag/FLIP as a self-contained, controlled piece (cells + onReorder), gated by a
+`rearrange` flag.
+
 ## Cross-platform file map
 
 | Concern | Web | iOS |

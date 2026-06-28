@@ -143,7 +143,13 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - OYBCSnapshotTests
+      - path: OYBCSnapshotTests
+        excludes:
+          # swift-snapshot-testing locates baselines via #file (source-relative),
+          # NOT the test bundle. Exclude the PNG trees from bundling to avoid
+          # "Multiple commands produce" conflicts when two test classes share a
+          # test function name (e.g. testNormalLight.1.png).
+          - "**/__Snapshots__/**"
     dependencies:
       - target: OYBC
       - package: SnapshotTesting

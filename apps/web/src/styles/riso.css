@@ -24,6 +24,7 @@
   --riso-ink: #18120b; /* text, keylines, hard shadows */
   --riso-muted: #7e7460; /* secondary text */
   --riso-blue: #2c44c9; /* counting type, active states, progress */
+  --riso-blue-scrim: rgba(44, 68, 201, 0.16); /* low-alpha blue (drop-target dots) */
   --riso-red: #eb4d2e; /* primary buttons, done cells, danger */
   --riso-green: #1f9b6b; /* success, completed, greenlog field */
   --riso-gold: #ffc21f; /* bingo accents, FREE star, highlights */
@@ -66,6 +67,7 @@
   --riso-ink: #f1e9d9; /* flips to cream */
   --riso-muted: #a39781;
   --riso-blue: #6678f2;
+  --riso-blue-scrim: rgba(102, 120, 242, 0.16);
   --riso-red: #ff6a4a;
   --riso-green: #3bcb92;
   --riso-gold: #ffc21f; /* unchanged */
