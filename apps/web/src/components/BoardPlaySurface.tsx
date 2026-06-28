@@ -188,8 +188,12 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     () => new Map(),
   );
 
-  // Count of staged square edits (each Replace confirm + Edit-task Done = +1).
-  const [squareEditCount, setSquareEditCount] = useState(0);
+  // Count of staged square edits — DERIVED from draft state (not an action
+  // counter) so reverting a cell to its original task un-counts it (no phantom
+  // edits / no "Board saved" for a net-zero session). Mirrors iOS.
+  const squareEditCount =
+    squaresDraft.filter((c) => c.taskId !== c.originalTaskId).length +
+    taskOverrides.size;
 
   // Tap menu: set when a non-center square is tapped in editTasks sub-mode.
   // Stores click coordinates (not a DOMRect) because RisoBoardCell's onClick
@@ -228,7 +232,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     if (!editMode) {
       setSquaresDraft([]);
       setTaskOverrides(new Map());
-      setSquareEditCount(0);
       setSubMode('editTasks');
       setSquareTapMenu(null);
       setEditReplaceId(null);
@@ -247,7 +250,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       })),
     );
     setTaskOverrides(new Map());
-    setSquareEditCount(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode]);
 
@@ -399,7 +401,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         cell.boardTaskId === boardTaskId ? { ...cell, taskId: newTaskId } : cell,
       ),
     );
-    setSquareEditCount((n) => n + 1);
+    // squareEditCount is derived from squaresDraft — no manual increment.
   }, []);
 
   /**
@@ -416,7 +418,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         next.set(taskId, { ...existing, ...patch });
         return next;
       });
-      setSquareEditCount((n) => n + 1);
+      // squareEditCount is derived from taskOverrides — no manual increment.
     },
     [],
   );
