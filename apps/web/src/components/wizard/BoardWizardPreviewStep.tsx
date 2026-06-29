@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CenterSquareType,
+  TaskType,
   Timeframe,
   formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
 } from '@oybc/shared';
+import type { Task } from '@oybc/shared';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
-import { BingoBoard } from '../BingoBoard';
+import { ArrangeGrid } from '../boardEdit/ArrangeGrid';
+import type { ArrangeSlot } from '../boardEdit/ArrangeGrid';
+import type { BoardCellModel } from '../board/RisoBoardCell';
+import { RisoSegmented } from '../riso';
+import type { RisoSegmentedOption } from '../riso';
 import {
   buildWizardPlacement,
   persistRecurringTemplate,
@@ -45,17 +51,126 @@ export interface BoardWizardPreviewStepProps {
   onTemplateComplete?: (templateId: string) => void;
 }
 
+// ─── Arrange mode ─────────────────────────────────────────────────────────────
+
+type ArrangeMode = 'preview' | 'rearrange';
+
+const ARRANGE_MODE_OPTIONS: ReadonlyArray<RisoSegmentedOption<ArrangeMode>> = [
+  { value: 'preview', label: 'Preview' },
+  { value: 'rearrange', label: 'Rearrange' },
+];
+
+// ─── Cell model helpers ───────────────────────────────────────────────────────
+
 /**
- * BoardWizardPreviewStep — Step 3 of the wizard. Renders a read-only
- * `BingoBoard` preview, a summary card with edit-jumps, and Activate
- * / Save Draft buttons. The actual DB writes delegate to
- * `persistWizardBoard` in `wizardPersist.ts` so the same logic can
- * be reused by the cancel dialog's Save-Draft path.
+ * Map a Task to a BoardCellModel for ArrangeGrid rendering.
+ * Progress (done) and count values reflect the task's GLOBAL state at
+ * preview time — they are informational only; the wizard doesn't write them.
+ */
+function taskToModel(task: Task): BoardCellModel {
+  return {
+    key: task.id,
+    label: task.title,
+    type:
+      task.type === TaskType.COUNTING
+        ? 'counting'
+        : task.type === TaskType.COMPOUND
+          ? 'compound'
+          : 'normal',
+    done: task.isCompleted,
+    count:
+      task.type === TaskType.COUNTING && task.maxCount != null
+        ? { cur: task.currentCount ?? 0, max: task.maxCount }
+        : undefined,
+    isFree: false,
+    isLine: false,
+  };
+}
+
+/**
+ * Build a flat ArrangeSlot[] from a WizardPlacement.
  *
- * The placement (which task goes where) is computed once via
- * `useMemo` keyed on a stable selection signature so the visual
- * preview and the persisted records stay in sync and re-shuffles
- * only happen on layout-affecting changes.
+ * Center pinning:
+ *   - FREE / CUSTOM_FREE (null at centerIdx) → isCenter=true, isFree=true.
+ *   - CHOSEN (Task at centerIdx) → isCenter=true, real task model.
+ *   - NONE on odd board → no pinning (regular moveable task at centerIdx).
+ *   - Even boards → centerIdx=-1, no center slot.
+ *
+ * Empty non-center slots (null) become droppable empty slots in the grid.
+ */
+function buildArrangeSlots(
+  placement: WizardPlacement,
+  gridSize: number,
+  centerType: CenterSquareType,
+  centerCustomName: string,
+): ArrangeSlot[] {
+  const isOdd = gridSize % 2 !== 0;
+  const centerIdx = isOdd
+    ? Math.floor(gridSize / 2) * gridSize + Math.floor(gridSize / 2)
+    : -1;
+
+  return placement.map((task, i) => {
+    // Center is pinned for FREE / CUSTOM_FREE / CHOSEN — not for NONE.
+    const isPinnedCenter =
+      isOdd && i === centerIdx && centerType !== CenterSquareType.NONE;
+
+    if (isPinnedCenter) {
+      if (task === null) {
+        // FREE / CUSTOM_FREE center: star cell, pinned, not a real task.
+        const label =
+          centerType === CenterSquareType.CUSTOM_FREE && centerCustomName.trim()
+            ? centerCustomName.trim()
+            : 'FREE';
+        return {
+          cid: 'center',
+          isCenter: true,
+          isEmpty: false,
+          model: {
+            key: 'center',
+            label,
+            type: 'normal',
+            done: false,
+            isFree: true,
+            isLine: false,
+          } as BoardCellModel,
+        };
+      }
+      // CHOSEN center: real task pinned at the center.
+      return {
+        cid: task.id,
+        isCenter: true,
+        isEmpty: false,
+        model: taskToModel(task),
+      };
+    }
+
+    if (task === null) {
+      // Empty slot: fewer tasks than grid squares.
+      return { cid: `empty-${i}`, isCenter: false, isEmpty: true, model: null };
+    }
+
+    return {
+      cid: task.id,
+      isCenter: false,
+      isEmpty: false,
+      model: taskToModel(task),
+    };
+  });
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+/**
+ * BoardWizardPreviewStep — Step 3 of the wizard. Renders an arrangeable
+ * board preview (Preview ⇄ Rearrange toggle + Shuffle), a compact summary
+ * chip row, a full summary card with edit-jumps, and Activate / Save Draft
+ * buttons.
+ *
+ * Placement is lifted into state so user reorders mutate it in place.
+ * `buildWizardPlacement` re-seeds the state whenever selection / size /
+ * center / shuffle changes. The async save handler reads `placementRef.current`
+ * (synced after every placement state update) so the user's arranged order is
+ * exactly what gets written to the DB — no re-computation at save time.
  */
 export function BoardWizardPreviewStep({
   controller,
@@ -67,32 +182,89 @@ export function BoardWizardPreviewStep({
 }: BoardWizardPreviewStepProps): React.ReactElement {
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // Bumped by the Shuffle button to re-roll the placement on demand (the
-  // memo below re-runs, producing a fresh randomized arrangement). Mirrors
-  // iOS's `reseedPlacement()` on the preview step.
+  // Bumped by the Shuffle button to re-roll the placement on demand.
   const [shuffleNonce, setShuffleNonce] = useState(0);
+  // Arrange sub-mode: default is Preview (display-only), Rearrange enables drag+swap.
+  const [subMode, setSubMode] = useState<ArrangeMode>('preview');
 
+  // Stable key derived from the current task selection.
   const selectionKey = useMemo(
     () => Array.from(controller.selectedTaskIds).sort().join('|'),
     [controller.selectedTaskIds],
   );
 
-  const placement: WizardPlacement = useMemo(
-    () => buildWizardPlacement(controller, library, controller.pendingTasks),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      controller.size,
-      controller.centerType,
-      controller.centerTaskId,
-      selectionKey,
-      library.allTasks,
-      controller.pendingTasks,
-      shuffleNonce,
-    ],
+  // Placement as state so user reorders are preserved between renders.
+  // The lazy initializer seeds it once at mount; the effect below re-seeds on
+  // layout-affecting dep changes.
+  const [placement, setPlacement] = useState<WizardPlacement>(() =>
+    buildWizardPlacement(controller, library, controller.pendingTasks),
   );
 
-  // Tasks actually shuffled into the grid (a CHOSEN centre is pinned, so it
-  // doesn't count). Re-rolling <2 tiles is a no-op, so hide Shuffle then.
+  // Re-seed placement when any layout-affecting input changes (same dep set as
+  // the old useMemo). User reorders are discarded on dep changes — this is correct:
+  // a task-selection change or size change invalidates the prior arrangement.
+  useEffect(() => {
+    setPlacement(buildWizardPlacement(controller, library, controller.pendingTasks));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    controller.size,
+    controller.centerType,
+    controller.centerTaskId,
+    selectionKey,
+    library.allTasks,
+    controller.pendingTasks,
+    shuffleNonce,
+  ]);
+
+  // Keep a ref synchronized with the latest placement so the async save handler
+  // reads the current arranged order rather than a stale closure capture.
+  const placementRef = useRef<WizardPlacement>(placement);
+  useEffect(() => {
+    placementRef.current = placement;
+  }, [placement]);
+
+  // ── Arrange slot derivation ──────────────────────────────────────────────
+
+  // Build the ArrangeSlot[] from the current (possibly user-reordered) placement.
+  const arrangeSlots = useMemo(
+    () =>
+      buildArrangeSlots(
+        placement,
+        controller.size,
+        controller.centerType,
+        controller.centerCustomName,
+      ),
+    [placement, controller.size, controller.centerType, controller.centerCustomName],
+  );
+
+  // cid → Task look-up used inside handleReorder.
+  const taskByCid = useMemo<Map<string, Task>>(() => {
+    const map = new Map<string, Task>();
+    for (const task of placement) {
+      if (task !== null) map.set(task.id, task);
+    }
+    return map;
+  }, [placement]);
+
+  /**
+   * Handle a committed reorder from ArrangeGrid (drag drop or tap-swap).
+   * Maps the new ArrangeSlot[] back to WizardPlacement: center slots are
+   * preserved verbatim (ArrangeGrid never moves them), and each non-center
+   * cid is resolved to its Task via taskByCid.
+   */
+  function handleReorder(newSlots: ArrangeSlot[]): void {
+    const newPlacement: WizardPlacement = newSlots.map((slot, i) => {
+      // Center never moves; preserve original value (null for FREE, Task for CHOSEN).
+      if (slot.isCenter) return placement[i];
+      if (slot.isEmpty) return null;
+      return taskByCid.get(slot.cid) ?? null;
+    });
+    setPlacement(newPlacement);
+  }
+
+  // ── Shuffle + canShuffle ─────────────────────────────────────────────────
+
+  // Tasks actually shuffled in the grid (CHOSEN center is pinned, so -1).
   const shuffleableCount =
     controller.size % 2 !== 0 &&
     controller.centerType === CenterSquareType.CHOSEN
@@ -100,24 +272,8 @@ export function BoardWizardPreviewStep({
       : controller.selectedTaskIds.size;
   const canShuffle = controller.isRandomized && shuffleableCount >= 2;
 
-  // Keep a ref synchronized with the latest `placement` so the async
-  // save handler (line ~190) reads the current value rather than a
-  // stale closure. Use an effect rather than writing during render —
-  // `react-hooks/refs` (eslint-plugin-react-hooks v7.1+) flags the
-  // in-render write and the lint signal is correct: an effect-driven
-  // sync runs after commit, which is what the async handler needs
-  // anyway (the user clicks Save well after render completes).
-  const placementRef = useRef<WizardPlacement>(placement);
-  useEffect(() => {
-    placementRef.current = placement;
-  }, [placement]);
+  // ── Summary helpers ──────────────────────────────────────────────────────
 
-  const taskNames = useMemo<string[]>(
-    () => placement.map((t) => (t === null ? '' : t.title)),
-    [placement],
-  );
-
-  // ── Summary helpers ──
   const timeframeSummary = useMemo<string>(() => {
     if (controller.timeframe === Timeframe.CUSTOM) {
       if (controller.customStartDate && controller.customEndDate) {
@@ -132,9 +288,6 @@ export function BoardWizardPreviewStep({
     );
     const windowLabel = formatTimeframeLabel(controller.timeframe, b.startDate);
     if (controller.isRecurring) {
-      // Recurring: lead with the cadence ("Every week") and show the
-      // first-spawn window after, so the preview row can't be confused
-      // with a one-off board for that single window.
       return `${formatRecurringCadence(controller.timeframe)} · starting ${windowLabel}`;
     }
     return windowLabel;
@@ -168,6 +321,26 @@ export function BoardWizardPreviewStep({
     }
   })();
 
+  // Short labels for the compact chip row above the board.
+  const centerChip: string = (() => {
+    if (!isOddBoard) return 'None';
+    switch (controller.centerType) {
+      case CenterSquareType.FREE:
+        return 'Free';
+      case CenterSquareType.CUSTOM_FREE:
+        return controller.centerCustomName.trim() || 'Custom';
+      case CenterSquareType.CHOSEN:
+        return 'Chosen';
+      case CenterSquareType.NONE:
+        return 'None';
+    }
+  })();
+
+  const timeframeChip =
+    controller.timeframe.charAt(0).toUpperCase() + controller.timeframe.slice(1);
+
+  // ── Async creation ────────────────────────────────────────────────────────
+
   async function performCreation(status: CompletionStatus): Promise<void> {
     setErrorMessage(null);
 
@@ -178,16 +351,6 @@ export function BoardWizardPreviewStep({
       setIsCreating(true);
       try {
         const result = await persistRecurringTemplate({ controller, userId });
-        // Two completion paths so the parent doesn't have to guess
-        // which id it received:
-        //   - Spawn succeeded → `onComplete(boardId, status)` — parent
-        //     navigates to `/boards/${boardId}` as it would for a
-        //     one-off creation.
-        //   - Spawn skipped or template edit → `onTemplateComplete(templateId)`
-        //     — parent routes to `/profile/recurring-templates` so the
-        //     user lands on the templates list (with the attention
-        //     badge if it was a skip), not on a board id that doesn't
-        //     exist.
         if (result.spawnedBoardId !== null) {
           onComplete(result.spawnedBoardId, status);
         } else {
@@ -206,9 +369,8 @@ export function BoardWizardPreviewStep({
       return;
     }
 
-    // One-off branch — existing behavior unchanged, except the
-    // core-board browser may supply a future `targetWindowDate` so the
-    // persisted window matches the user's pick.
+    // One-off branch — use placementRef.current so the user's arranged
+    // order is persisted (not a freshly shuffled placement).
     const dates = resolveWizardDates(controller, controller.targetWindowDate ?? undefined);
     if ('error' in dates) {
       setErrorMessage(dates.error);
@@ -240,34 +402,40 @@ export function BoardWizardPreviewStep({
 
   return (
     <div className={styles.container}>
-      {/* Live preview using the existing BingoBoard in readOnly mode */}
-      <div className={styles.previewWrapper}>
-        <BingoBoard
-          // BingoBoard snapshots taskNames into internal state on mount,
-          // so any field that affects placement must remount it via key.
-          // centerTaskId swaps which selection sits at the centre under
-          // CHOSEN; centerCustomName is the displayed label for
-          // CUSTOM_FREE. (Placement is always randomized — #69 — so
-          // there's no randomize term in the key.)
-          key={[
-            controller.size,
-            controller.centerType,
-            controller.centerTaskId ?? '',
-            controller.centerCustomName,
-            selectionKey,
-            shuffleNonce,
-          ].join('|')}
-          taskNames={taskNames}
-          gridSize={controller.size}
-          squareSize={84}
-          centerSquareType={controller.centerType}
-          centerSquareCustomName={controller.centerCustomName || undefined}
-          readOnly
-        />
+      {/* Compact summary chips — quick-glance overview above the board */}
+      <div className={styles.chipRow}>
+        <span className={styles.chip}>
+          <span className={styles.chipKey}>Name</span>
+          <b>{controller.name || '(unset)'}</b>
+        </span>
+        <span className={styles.chip}>
+          <span className={styles.chipKey}>When</span>
+          <b>{timeframeChip}</b>
+        </span>
+        <span className={styles.chip}>
+          <span className={styles.chipKey}>Size</span>
+          <b>{controller.size}×{controller.size}</b>
+        </span>
+        <span className={styles.chip}>
+          <span className={styles.chipKey}>Center</span>
+          <b>{centerChip}</b>
+        </span>
+        <span className={styles.chip}>
+          <span className={styles.chipKey}>Tasks</span>
+          <b>{controller.selectedTaskIds.size}</b>
+        </span>
       </div>
 
-      {canShuffle && (
-        <div className={styles.shuffleRow}>
+      {/* Toggle bar: Preview ⇄ Rearrange + Shuffle */}
+      <div className={styles.arrangeBar}>
+        <RisoSegmented
+          options={ARRANGE_MODE_OPTIONS}
+          value={subMode}
+          onChange={setSubMode}
+          variant="pill"
+          aria-label="Board arrangement mode"
+        />
+        {canShuffle && (
           <button
             type="button"
             className={styles.shuffleButton}
@@ -277,10 +445,29 @@ export function BoardWizardPreviewStep({
           >
             ⤮ Shuffle
           </button>
-        </div>
+        )}
+      </div>
+
+      {/* Static rearrange-mode hint. ArrangeGrid supplies its own in-progress
+          tap-swap hint (hintBar) when a tile is picked. */}
+      {subMode === 'rearrange' && (
+        <p className={styles.rearrangeHint}>
+          <b>Drag a square</b> to drop it in — the rest shift to make room.
+          Or <b>tap two squares</b> to swap them.
+        </p>
       )}
 
-      {/* Summary card with edit jumps */}
+      {/* ArrangeGrid — display-only in Preview, interactive in Rearrange */}
+      <div className={styles.previewWrapper}>
+        <ArrangeGrid
+          slots={arrangeSlots}
+          gridSize={controller.size}
+          rearrange={subMode === 'rearrange'}
+          onReorder={handleReorder}
+        />
+      </div>
+
+      {/* Full summary card with edit-jump links */}
       <div className={styles.summary}>
         <div className={styles.summaryRow}>
           <span className={styles.summaryLabel}>Name</span>
