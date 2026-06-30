@@ -54,7 +54,8 @@ struct RearrangeCellData: Identifiable, Equatable {
 /// ### Phase 4 reuse
 /// Phase 4 (create arrange) will pass its own `[RearrangeCellData]` with `originalRow/Col`
 /// reflecting the wizard's placement array. The view is self-contained; the caller only needs
-/// to supply `cells`, `gridSize`, `taskMap`, `centerSquareType`, and handle `onReorder`.
+/// to supply `cells`, `gridSize`, `taskMap`, `centerSquareType`, `sideLength`, and
+/// handle `onReorder`.
 ///
 /// - Parameters:
 ///   - cells: Ordered (row-major) array of all grid slots — task cells, center, empties.
@@ -64,6 +65,11 @@ struct RearrangeCellData: Identifiable, Equatable {
 ///   - centerSquareType: Controls the center cell label.
 ///   - centerCustomName: Custom label when `centerSquareType == .customFree`.
 ///   - rearrange: When `false` the grid is display-only — no jiggle, no gestures.
+///   - sideLength: Explicit side length for the square grid in points. The caller provides
+///     this (e.g. `UIScreen.main.bounds.width - 2 * Riso.gutter`). Derived explicitly
+///     rather than via internal `GeometryReader` to avoid a known SwiftUI issue where
+///     `proxy.size.width` reflects the pre-padding or screen width instead of the
+///     correctly inset width when nested inside `.padding()` modifier chains.
 ///   - onReorder: Fires after each committed reorder with the new full ordered array.
 struct RearrangeGrid: View {
 
@@ -75,6 +81,7 @@ struct RearrangeGrid: View {
     let centerSquareType: CenterSquareType
     var centerCustomName: String = ""
     var rearrange: Bool
+    let sideLength: CGFloat
     var onReorder: ([RearrangeCellData]) -> Void
 
     // MARK: - Internal state
@@ -102,77 +109,93 @@ struct RearrangeGrid: View {
     // MARK: - Body
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let cellSize = (width - CGFloat(gridSize - 1) * Riso.cellGap) / CGFloat(gridSize)
-            let stride = cellSize + Riso.cellGap
+        // `displayCells` is empty until `onAppear` fires. When the caller provides
+        // cells before the first appearance (e.g. Phase 4 wizard — `cells` updates
+        // via a computed prop, `displayCells` lags one frame), fall back to `cells`
+        // so the initial render is never blank.  After `onAppear` fires, both are
+        // identical and `displayCells` is used for all animation / drag state.
+        let renderCells = displayCells.isEmpty ? cells : displayCells
 
-            ZStack(alignment: .topLeading) {
+        // Cell geometry derived from the caller-supplied side length.
+        // Previously used GeometryReader to measure the available width, but
+        // GeometryReader.proxy.size.width can reflect the pre-padding or screen width
+        // instead of the inset width when nested inside .padding() modifier chains —
+        // a known SwiftUI quirk that caused cells to be sized and positioned incorrectly.
+        let cellSize = (sideLength - CGFloat(gridSize - 1) * Riso.cellGap) / CGFloat(gridSize)
+        let stride = cellSize + Riso.cellGap
 
-                // ── Grid cells ──
-                ForEach(displayCells) { cell in
-                    let slotIdx = displayCells.firstIndex(where: { $0.id == cell.id }) ?? 0
-                    let col = slotIdx % gridSize
-                    let row = slotIdx / gridSize
-                    let xOff = CGFloat(col) * stride
-                    let yOff = CGFloat(row) * stride
+        ZStack(alignment: .topLeading) {
+            // Transparent fill so the ZStack accepts the full proposed size from
+            // .frame(width: sideLength, height: sideLength) below. Without this,
+            // ZStack's natural size = one cell (cellSize × cellSize), and the .frame()
+            // modifier centers the small ZStack within the larger frame — producing a
+            // (sideLength - cellSize) / 2 centering offset on both axes. Color.clear
+            // fills the full proposed space, giving ZStack a natural size of sideLength²
+            // so the .frame() wraps it with no centering offset.
+            Color.clear
 
-                    let isHole = dragActive && cell.id == draggingId
-                    let isSelected = cell.id == tapPickedId
-                    // Dim when: dragging anything (except the dragged cell itself and center),
-                    // or a tap-pick is active (except the picked cell and center/empty).
-                    let isDimmed: Bool = {
-                        if cell.isCenter { return false }
-                        if dragActive && cell.id != draggingId { return true }
-                        if let picked = tapPickedId, cell.id != picked, !cell.isEmpty { return true }
-                        return false
-                    }()
-                    let showJiggle = rearrange
-                        && !cell.isCenter
-                        && !cell.isEmpty
-                        && !dragActive
-                        && tapPickedId == nil
+            // ── Grid cells ──
+            ForEach(renderCells) { cell in
+                let slotIdx = renderCells.firstIndex(where: { $0.id == cell.id }) ?? 0
+                let col = slotIdx % gridSize
+                let row = slotIdx / gridSize
+                let xOff = CGFloat(col) * stride
+                let yOff = CGFloat(row) * stride
 
-                    rearrangeCellView(
-                        cell: cell,
-                        cellSize: cellSize,
-                        isHole: isHole,
-                        isSelected: isSelected,
-                        isDimmed: isDimmed,
-                        jiggleActive: showJiggle
-                    )
-                    .frame(width: cellSize, height: cellSize)
-                    .offset(x: xOff, y: yOff)
-                    // Animate position changes during live cascade and committed reorders.
-                    .animation(
-                        .spring(response: 0.22, dampingFraction: 0.82),
-                        value: slotIdx
-                    )
-                    .gesture(rearrange && !cell.isCenter && !cell.isEmpty
-                        ? makeDragGesture(for: cell, cellSize: cellSize, stride: stride)
-                        : nil)
-                    .onTapGesture { handleTap(cell: cell) }
-                }
+                let isHole = dragActive && cell.id == draggingId
+                let isSelected = cell.id == tapPickedId
+                // Dim when: dragging anything (except the dragged cell itself and center),
+                // or a tap-pick is active (except the picked cell and center/empty).
+                let isDimmed: Bool = {
+                    if cell.isCenter { return false }
+                    if dragActive && cell.id != draggingId { return true }
+                    if let picked = tapPickedId, cell.id != picked, !cell.isEmpty { return true }
+                    return false
+                }()
+                let showJiggle = rearrange
+                    && !cell.isCenter
+                    && !cell.isEmpty
+                    && !dragActive
+                    && tapPickedId == nil
 
-                // ── Ghost (lifted tile that follows the finger) ──
-                if dragActive,
-                   let dragId = draggingId,
-                   let draggedCell = displayCells.first(where: { $0.id == dragId }) {
-                    ghostView(for: draggedCell, cellSize: cellSize)
-                        .frame(width: cellSize, height: cellSize)
-                        .offset(
-                            x: dragPosition.x - cellSize / 2,
-                            y: dragPosition.y - cellSize / 2
-                        )
-                        .allowsHitTesting(false)
-                        .zIndex(20)
-                }
+                rearrangeCellView(
+                    cell: cell,
+                    cellSize: cellSize,
+                    isHole: isHole,
+                    isSelected: isSelected,
+                    isDimmed: isDimmed,
+                    jiggleActive: showJiggle
+                )
+                .frame(width: cellSize, height: cellSize)
+                .offset(x: xOff, y: yOff)
+                // Animate position changes during live cascade and committed reorders.
+                .animation(
+                    .spring(response: 0.22, dampingFraction: 0.82),
+                    value: slotIdx
+                )
+                .gesture(rearrange && !cell.isCenter && !cell.isEmpty
+                    ? makeDragGesture(for: cell, cellSize: cellSize, stride: stride)
+                    : nil)
+                .onTapGesture { handleTap(cell: cell) }
             }
-            .frame(width: width, height: width)  // square: height == width for n×n grid
-            .coordinateSpace(name: "rearrangeGrid")
+
+            // ── Ghost (lifted tile that follows the finger) ──
+            if dragActive,
+               let dragId = draggingId,
+               let draggedCell = displayCells.first(where: { $0.id == dragId }) {
+                ghostView(for: draggedCell, cellSize: cellSize)
+                    .frame(width: cellSize, height: cellSize)
+                    .offset(
+                        x: dragPosition.x - cellSize / 2,
+                        y: dragPosition.y - cellSize / 2
+                    )
+                    .allowsHitTesting(false)
+                    .zIndex(20)
+            }
         }
-        // Force a 1:1 aspect ratio so GeometryReader receives a square frame.
-        .aspectRatio(1, contentMode: .fit)
+        // Exact square frame from the caller-supplied side length.
+        .frame(width: sideLength, height: sideLength)
+        .coordinateSpace(name: "rearrangeGrid")
         .onAppear {
             displayCells = cells
             if rearrange { kickJiggle() }

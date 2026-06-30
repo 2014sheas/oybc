@@ -177,6 +177,7 @@
 		CA6A365E971E5525D4D5B1AC /* SquaresDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CCA5F38CADF019F95D379B /* SquaresDraft.swift */; };
 		CE07C85AF829CC175500EFC7 /* TutorialCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA7B8E59A68730D7671C1855 /* TutorialCard.swift */; };
 		CE63ACD37CD28AA97C9DEA1E /* RecurringBoardSpawn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14228E76A2DE23D976EB65E8 /* RecurringBoardSpawn.swift */; };
+		CE80463FD56D322E9897BD2F /* WizardArrangePreviewSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B31483D982FC77ED07752C11 /* WizardArrangePreviewSnapshotTests.swift */; };
 		CF24435FF0BB3B8ECB002C5D /* RisoEditTaskSheetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3CC8AF3A0BB5E9CAB8BBA73 /* RisoEditTaskSheetSnapshotTests.swift */; };
 		D2466E1A5762957C57034530 /* BoardEditPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B9B2902751B15B77ADB6E9C /* BoardEditPanel.swift */; };
 		D320A494CF042F1562DB4221 /* TutorialGreenlogOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36EA507F7599B0592665136D /* TutorialGreenlogOverlay.swift */; };
@@ -384,6 +385,7 @@
 		B16160656C7F522E5CA80BCA /* SharedCounterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedCounterTests.swift; sourceTree = "<group>"; };
 		B20CC65AB1DB6B9DD8FFDF21 /* TutorialLessonSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialLessonSheet.swift; sourceTree = "<group>"; };
 		B28405EE386B4A89AEA8EC0B /* RisoBoardSetupForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardSetupForm.swift; sourceTree = "<group>"; };
+		B31483D982FC77ED07752C11 /* WizardArrangePreviewSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WizardArrangePreviewSnapshotTests.swift; sourceTree = "<group>"; };
 		B31EFBC131E94BA5D5BB91DB /* RecurringBoardsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoardsTests.swift; sourceTree = "<group>"; };
 		B70713D5FB25DE3392CD3CEE /* Schema.sql */ = {isa = PBXFileReference; path = Schema.sql; sourceTree = "<group>"; };
 		B83DFD85AA00628F63C7EDA5 /* TutorialSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialSnapshotTests.swift; sourceTree = "<group>"; };
@@ -434,7 +436,7 @@
 		FB232C1863B435E292BEC505 /* SyncSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSheet.swift; sourceTree = "<group>"; };
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_4E1066A0-D8DB-4C75-B6A5-1E746C7CD7DF" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_0F5EC143-E361-450E-A1D2-BBB7DEBFB8BE" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -773,6 +775,7 @@
 				7254F5B6BC87E8E94EA7AF93 /* StreaksSnapshotTests.swift */,
 				ED876DC1362EC646372D55A5 /* SyncSheetSnapshotTests.swift */,
 				B83DFD85AA00628F63C7EDA5 /* TutorialSnapshotTests.swift */,
+				B31483D982FC77ED07752C11 /* WizardArrangePreviewSnapshotTests.swift */,
 			);
 			path = OYBCSnapshotTests;
 			sourceTree = "<group>";
@@ -870,10 +873,10 @@
 			path = BoardsTab;
 			sourceTree = "<group>";
 		};
-		"TEMP_83F2CB70-5ED2-46C8-8470-57CF80EB8833" /* ios */ = {
+		"TEMP_7460EC5B-BF14-441F-9791-C78215B6D458" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_4E1066A0-D8DB-4C75-B6A5-1E746C7CD7DF" /* Signing.xcconfig */,
+				"TEMP_0F5EC143-E361-450E-A1D2-BBB7DEBFB8BE" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1241,6 +1244,7 @@
 				2B6F6C03476720E965004C77 /* StreaksSnapshotTests.swift in Sources */,
 				FFE805C5B9237854A0B6650F /* SyncSheetSnapshotTests.swift in Sources */,
 				5A8C9533BA0E45EBC75A71E0 /* TutorialSnapshotTests.swift in Sources */,
+				CE80463FD56D322E9897BD2F /* WizardArrangePreviewSnapshotTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1262,7 +1266,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_4E1066A0-D8DB-4C75-B6A5-1E746C7CD7DF" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_0F5EC143-E361-450E-A1D2-BBB7DEBFB8BE" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1359,7 +1363,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_4E1066A0-D8DB-4C75-B6A5-1E746C7CD7DF" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_0F5EC143-E361-450E-A1D2-BBB7DEBFB8BE" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

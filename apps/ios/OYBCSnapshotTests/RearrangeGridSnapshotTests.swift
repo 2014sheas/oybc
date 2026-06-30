@@ -109,6 +109,11 @@ final class RearrangeGridSnapshotTests: XCTestCase {
     ) -> some View {
         let (cells, taskMap) = makeFixtures(gridSize: gridSize, showCompletedCell: showCompletedCell)
 
+        // sideLength = snapshot width (393pt) minus gutters on both sides.
+        // Passed explicitly because RearrangeGrid no longer uses GeometryReader
+        // internally (proxy.size.width was unreliable inside .padding() chains).
+        let side = CGFloat(393) - 2 * Riso.gutter
+
         return ZStack {
             Color.risoPaper.ignoresSafeArea()
             VStack(spacing: 0) {
@@ -119,6 +124,7 @@ final class RearrangeGridSnapshotTests: XCTestCase {
                     centerSquareType: .free,
                     centerCustomName: "",
                     rearrange: rearrange,
+                    sideLength: side,
                     onReorder: { _ in }  // no-op for snapshot
                 )
                 .padding(.horizontal, Riso.gutter)

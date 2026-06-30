@@ -1,5 +1,7 @@
-/* Wizard Preview step (Riso, Phase 4b). Review summary + live board preview +
-   footer actions (Back / Save draft / Create board) + shuffle. */
+/* Wizard Preview step (Riso, Phase 4). Arrangeable board preview (Preview ⇄
+   Rearrange toggle + Shuffle), compact chip row, summary card + footer actions.
+   ArrangeGrid supplies its own styles via ArrangeGrid.module.css. */
+
 .container {
   display: flex;
   flex-direction: column;
@@ -11,11 +13,68 @@
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
 
+/* ---- Compact summary chips (above the toggle bar) ---- */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  padding: 5px 13px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--riso-ink);
+}
+
+.chipKey {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+
+/* ---- Arrange bar: Preview ⇄ Rearrange toggle + Shuffle ---- */
+.arrangeBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---- Rearrange mode hint (static; ArrangeGrid's hintBar covers tap-swap) ---- */
+.rearrangeHint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  margin: -8px 0 0; /* pull up slightly — container gap already provides top space */
+  padding: 8px 12px;
+  border: 2px solid var(--riso-blue);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.rearrangeHint b {
+  font-family: var(--riso-font-head);
+  color: var(--riso-blue);
+  font-weight: 800;
+}
+
+/* ---- Board area: center the ArrangeGrid ---- */
 .previewWrapper {
   display: flex;
   justify-content: center;
 }
 
+/* ---- Summary card with edit-jump links ---- */
 .summary {
   display: flex;
   flex-direction: column;
@@ -70,6 +129,7 @@
   outline-offset: 2px;
 }
 
+/* ---- Error banner ---- */
 .errorMessage {
   background: var(--riso-paper);
   color: var(--riso-red);
@@ -81,6 +141,7 @@
   font-size: 0.85rem;
 }
 
+/* ---- Footer: Back / Save Draft / Activate ---- */
 .footer {
   display: flex;
   align-items: center;
@@ -95,7 +156,7 @@
   gap: 12px;
 }
 
-/* Riso buttons */
+/* ---- Riso buttons (back / draft / activate / shuffle) ---- */
 .backButton,
 .draftButton,
 .activateButton,
@@ -119,6 +180,15 @@
   background: var(--riso-green);
   color: var(--riso-on-color);
 }
+/* Shuffle lives in the arrange bar — smaller than the footer buttons */
+.shuffleButton {
+  margin-left: auto;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-size: 13px;
+  padding: 8px 14px;
+}
+
 .backButton:hover:not(:disabled),
 .draftButton:hover:not(:disabled),
 .activateButton:hover:not(:disabled),
@@ -146,16 +216,4 @@
 .shuffleButton:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
-}
-
-.shuffleRow {
-  display: flex;
-  justify-content: center;
-  margin-top: 0.5rem;
-}
-.shuffleButton {
-  background: var(--riso-paper-2);
-  color: var(--riso-ink);
-  font-size: 13px;
-  padding: 9px 14px;
 }

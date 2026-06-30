@@ -337,6 +337,7 @@ struct BoardEditPanel: View {
                         ? (board.centerSquareCustomName ?? "")
                         : centerCustomName,
                     rearrange: true,
+                    sideLength: UIScreen.main.bounds.width - 2 * Riso.gutter,
                     onReorder: { onReorder?($0) }
                 )
             } else {

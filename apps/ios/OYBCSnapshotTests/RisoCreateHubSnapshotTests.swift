@@ -11,10 +11,10 @@ import SnapshotTesting
 ///    Riso draft-row styling is exercised.
 /// 3. **BoardWizardCancelDialogView** — rendered in both the enabled and
 ///    disabled save states, and the delete-draft variant.
-/// 4. **RisoPreviewGrid** — the private read-only grid extracted from
-///    `BoardWizardPreviewStepView` is exercised indirectly by snapshotting
-///    the full `BoardWizardPreviewStepView`. The grid itself is `private` so
-///    it can only be reached through the parent.
+/// 4. **BoardWizardPreviewStepView (Preview mode)** — the full step view in its
+///    default Preview sub-mode, exercising the `RearrangeGrid` in display-only
+///    mode alongside the toggle bar and summary card. Rearrange-mode coverage
+///    is in `WizardArrangePreviewSnapshotTests`.
 ///
 /// **Why not CreateHubView itself?**
 /// `CreateHubView.hubContent` calls `pendingRecurringVM.reloadAsync()` and
@@ -223,11 +223,10 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - 4. Wizard Preview Step (exercises RisoPreviewGrid)
+    // MARK: - 4. Wizard Preview Step (exercises RearrangeGrid in Preview mode)
 
-    /// Full `BoardWizardPreviewStepView` — the private `RisoPreviewGrid` is
-    /// exercised here since it's not accessible directly from tests.
-    ///
+    /// Full `BoardWizardPreviewStepView` in its default Preview sub-mode.
+    /// Exercises `RearrangeGrid` (display-only), the toggle bar, and the summary card.
     /// Pinned date (2026-04-01) prevents month-rollover flakiness.
     func testPreviewStepWithRisoGrid() {
         let library = SnapshotFixtures.makeTaskLibrary(state: .dense)

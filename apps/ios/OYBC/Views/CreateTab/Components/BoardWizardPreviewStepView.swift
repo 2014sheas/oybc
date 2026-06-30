@@ -1,5 +1,20 @@
 import SwiftUI
 
+// MARK: - ArrangeSubMode
+
+/// The two sub-modes available in the wizard's Preview step.
+///
+/// - `preview`: display-only — no jiggle, no drag. Default.
+/// - `rearrange`: squares jiggle; drag-to-insert + tap-to-swap enabled.
+///
+/// `internal` so `@testable import OYBC` can address it in snapshot tests.
+enum ArrangeSubMode: String, Hashable {
+    case preview   = "Preview"
+    case rearrange = "Rearrange"
+}
+
+// MARK: - BoardWizardPreviewStepView
+
 /// BoardWizardPreviewStepView — Step 3 of the wizard.
 ///
 /// **Riso reskin** — wizard-only view, reskinned in place. All persist logic,
@@ -10,11 +25,19 @@ import SwiftUI
 ///
 /// Layout (per README §3 Step-3 + wizard.jsx):
 ///   - Centred board name (Bricolage 800 24px) + meta line (timeframe · size · task count).
-///   - Riso preview mini-grid: keyline cells, task titles, ink FREE + gold star.
+///   - Preview ⇄ Rearrange toggle + optional Shuffle button.
+///   - Rearrange hint line (when in Rearrange mode).
+///   - `RearrangeGrid` — display-only in Preview mode, interactive in Rearrange mode.
+///     Drag-to-insert + tap-to-swap; the center square is pinned.
 ///   - Dashed note: "Tap Create and your board goes live right away."
 ///   - Summary card rows: Name / Size / Timeframe / Center / Tasks [/ Recurring] with
 ///     Edit jumps per step.
 ///   - Riso footer buttons per variant.
+///
+/// Persistence: `placement` (`@State`) is the single source of truth for both the
+/// grid and `persistWizardBoard`. Rearranging via drag/tap updates `placement` via
+/// `handleReorder(_:)`; Shuffle re-seeds via `reseedPlacement()`. Both paths ensure
+/// what the user sees is exactly what gets saved — no re-roll at persist time.
 struct BoardWizardPreviewStepView: View {
     @Bindable var controller: BoardWizardViewModel
     let library: TaskLibraryViewModel
@@ -35,6 +58,11 @@ struct BoardWizardPreviewStepView: View {
     /// every read, so the saved board differed from the previewed one —
     /// this mirrors web's `useMemo` + `placementRef` capture.
     @State private var placement: WizardPlacement = []
+
+    /// Current sub-mode for the Preview ⇄ Rearrange toggle.
+    /// Defaults to `.preview` (display-only). Switches to `.rearrange` when
+    /// the user taps the Rearrange segment; the grid gains jiggle + drag/tap.
+    @State private var arrangeSubMode: ArrangeSubMode = .preview
 
     // MARK: - Computed helpers
 
@@ -60,6 +88,93 @@ struct BoardWizardPreviewStepView: View {
         placement = buildWizardPlacement(controller: controller, library: library)
     }
 
+    // MARK: - Arrange grid helpers
+
+    /// Converts `placement` to `[RearrangeCellData]` for `RearrangeGrid`.
+    ///
+    /// Center detection mirrors `buildWizardPlacement`:
+    ///   - `FREE` / `CUSTOM_FREE`: center slot is nil in placement → pinned,
+    ///     taskId nil.
+    ///   - `CHOSEN`: center slot holds the chosen Task → pinned, taskId set.
+    ///   - `NONE`: center slot holds a regular task (no pinning).
+    ///   - Even boards: no center slot.
+    private var wizardCells: [RearrangeCellData] {
+        let size = controller.size
+        let isOdd = controller.isOddBoard
+        let centerIdx = isOdd ? (size / 2) * size + (size / 2) : -1
+
+        return placement.enumerated().map { (i, task) in
+            let row = i / size
+            let col = i % size
+            // Pin FREE, CUSTOM_FREE, and CHOSEN center slots on odd boards.
+            // NONE falls through — the task occupying the center is movable.
+            let isPinnedCenter = isOdd && i == centerIdx && controller.centerType != .none
+
+            if isPinnedCenter, task == nil {
+                // FREE or CUSTOM_FREE — nil slot, always pinned.
+                return RearrangeCellData(
+                    id: "center",
+                    taskId: nil,
+                    isCenter: true,
+                    isEmpty: false,
+                    originalRow: row,
+                    originalCol: col
+                )
+            } else if let task = task {
+                // Task cell — also pinned when it is the CHOSEN center.
+                return RearrangeCellData(
+                    id: isPinnedCenter ? "center" : task.id,
+                    taskId: task.id,
+                    isCenter: isPinnedCenter,
+                    isEmpty: false,
+                    originalRow: row,
+                    originalCol: col
+                )
+            } else {
+                // Nil non-center slot: empty grid slot (fewer tasks than cells).
+                return RearrangeCellData(
+                    id: "empty-\(row)-\(col)",
+                    taskId: nil,
+                    isCenter: false,
+                    isEmpty: true,
+                    originalRow: row,
+                    originalCol: col
+                )
+            }
+        }
+    }
+
+    /// `Task.id`-keyed lookup map for `RearrangeGrid`. Derived from `placement`.
+    private var wizardTaskMap: [String: Task] {
+        var map: [String: Task] = [:]
+        for task in placement.compactMap({ $0 }) {
+            map[task.id] = task
+        }
+        return map
+    }
+
+    /// Maps a `RearrangeGrid` reorder callback back to `@State placement`.
+    ///
+    /// Array index → slot: center cells (isCenter + no taskId) produce nil;
+    /// task cells look up the `Task` by `taskId`; empty cells produce nil.
+    /// This ensures `placement` always matches the grid the user is looking at,
+    /// and `persistWizardBoard` writes exactly that arrangement — no re-roll.
+    private func handleReorder(_ newCells: [RearrangeCellData]) {
+        let taskMap = wizardTaskMap
+        var newPlacement: WizardPlacement = Array(repeating: nil, count: newCells.count)
+        for (i, cell) in newCells.enumerated() {
+            if cell.isCenter, cell.taskId == nil {
+                // FREE / CUSTOM_FREE center — remains nil in placement.
+                newPlacement[i] = nil
+            } else if let taskId = cell.taskId, let task = taskMap[taskId] {
+                // Task cell (including a CHOSEN center that is pinned).
+                newPlacement[i] = task
+            }
+            // else: empty slot → nil (Array(repeating: nil, …) default)
+        }
+        placement = newPlacement
+    }
+
     private var taskNames: [String] {
         placement.map { $0?.title ?? "" }
     }
@@ -77,6 +192,21 @@ struct BoardWizardPreviewStepView: View {
 
     private var canShuffle: Bool {
         controller.isRandomized && shuffleableCount >= 2
+    }
+
+    /// Side length for the bingo grid in points, passed explicitly to `RearrangeGrid`.
+    ///
+    /// `RearrangeGrid` accepts `sideLength` directly rather than measuring via an
+    /// internal `GeometryReader` because `proxy.size.width` can reflect the pre-padding
+    /// or screen width instead of the correctly inset width when nested inside
+    /// `.padding()` modifier chains — a known SwiftUI behaviour that caused cells to
+    /// be sized too large and positioned in the wrong area.
+    ///
+    /// Derived from `UIScreen.main.bounds.width` (reliable for all current iPhone form
+    /// factors) minus the horizontal gutters applied by the enclosing VStack's
+    /// `.padding(.horizontal, Riso.gutter)`.
+    private var gridSideLength: CGFloat {
+        max(0, UIScreen.main.bounds.width - 2 * Riso.gutter)
     }
 
     private var timeframeSummary: String {
@@ -132,30 +262,33 @@ struct BoardWizardPreviewStepView: View {
                     // Centred name + meta
                     previewHeader
 
-                    // Mini board grid
-                    HStack { Spacer(); previewGrid; Spacer() }
+                    // Preview ⇄ Rearrange toggle + optional Shuffle button
+                    arrangeControlBar
 
-                    // Shuffle control — re-rolls the (stored) arrangement.
-                    if canShuffle {
-                        Button {
-                            reseedPlacement()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "shuffle")
-                                    .font(.system(size: 12, weight: .bold))
-                                Text("Shuffle")
-                                    .font(.risoHead(13, .bold))
-                            }
-                            .foregroundStyle(Color.risoInk)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 9)
-                            .risoCard(fill: .risoPaper2)
-                            .risoHardShadow(Riso.Shadow.small)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isCreating)
-                        .accessibilityLabel("Shuffle board layout")
+                    // Rearrange hint — visible only in Rearrange mode
+                    if arrangeSubMode == .rearrange {
+                        Text("Drag to rearrange · tap two squares to swap")
+                            .font(.risoBody(12, .regular))
+                            .foregroundStyle(Color.risoMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+
+                    // Arrangeable board grid — display-only in Preview mode,
+                    // drag+tap interactive in Rearrange mode.
+                    // sideLength is passed explicitly: GeometryReader inside RearrangeGrid
+                    // does not correctly derive the inset width when nested inside
+                    // .padding() modifier chains in a ScrollView context. The caller
+                    // provides the known side length (screen width minus gutters) directly.
+                    RearrangeGrid(
+                        cells: wizardCells,
+                        gridSize: controller.size,
+                        taskMap: wizardTaskMap,
+                        centerSquareType: controller.centerType,
+                        centerCustomName: controller.centerCustomName,
+                        rearrange: arrangeSubMode == .rearrange,
+                        sideLength: gridSideLength,
+                        onReorder: { handleReorder($0) }
+                    )
 
                     // Dashed note
                     previewNote
@@ -210,123 +343,49 @@ struct BoardWizardPreviewStepView: View {
         .padding(.top, 4)
     }
 
-    // MARK: - Preview grid
+    // MARK: - Arrange control bar
 
+    /// Toggle (Preview ⇄ Rearrange) + optional Shuffle button in one horizontal bar.
+    ///
+    /// The Shuffle button re-seeds `placement` from scratch via `reseedPlacement()`,
+    /// which triggers `RearrangeGrid.onChange(of:cells)` to animate the new order.
+    /// Shuffle is only visible when `canShuffle` (isRandomized + ≥2 shuffleable tasks).
     @ViewBuilder
-    private var previewGrid: some View {
-        // Riso read-only preview grid — replaces legacy BingoBoard.
-        // `.id(...)` forces re-mount on layout-affecting changes (same as
-        // the original implementation).
-        RisoPreviewGrid(
-            taskNames: taskNames,
-            gridSize: controller.size,
-            centerType: controller.centerType,
-            centerCustomName: controller.centerCustomName.isEmpty ? nil : controller.centerCustomName
-        )
-        .id("\(controller.size)-\(controller.centerType.rawValue)-\(selectionKey)-\(controller.centerTaskId ?? "")")
-        .padding(8)
-        .risoCard(fill: .risoPaper2)
-        .risoHardShadow(Riso.Shadow.card)
-    }
-}
+    private var arrangeControlBar: some View {
+        HStack(spacing: 8) {
+            RisoSegmented(
+                options: [
+                    (value: ArrangeSubMode.preview,   label: "Preview"),
+                    (value: ArrangeSubMode.rearrange, label: "Rearrange"),
+                ],
+                selection: $arrangeSubMode
+            )
 
-// MARK: - RisoPreviewGrid
-
-/// Read-only Riso bingo grid for the wizard preview step.
-///
-/// Renders cells in the Riso resting-cell style (paper2 fill, 1.5 px ink
-/// keyline, clamped task-title label). The FREE/customFree center cell uses
-/// the same ink-black + gold-star treatment as `RisoBoardPlayCell`. No
-/// interactivity — tap gestures are suppressed. Used exclusively by
-/// `BoardWizardPreviewStepView` so BingoBoard/BingoSquare have zero
-/// remaining callers in the production app.
-private struct RisoPreviewGrid: View {
-
-    let taskNames: [String]
-    let gridSize: Int
-    let centerType: CenterSquareType
-    var centerCustomName: String? = nil
-
-    private var cellSize: CGFloat { 60 }
-    private var gap: CGFloat { Riso.cellGap }
-
-    private var totalCells: Int { gridSize * gridSize }
-
-    private var centerIndex: Int {
-        CenterSquare.getCenterSquareIndex(gridSize: gridSize)
-    }
-
-    private var centerDisplayText: String {
-        CenterSquare.getCenterDisplayText(type: centerType, customName: centerCustomName)
-    }
-
-    private var isCenterSpecial: Bool {
-        centerIndex >= 0 && centerType != .none
-    }
-
-    var body: some View {
-        let cols = Array(repeating: GridItem(.fixed(cellSize), spacing: gap), count: gridSize)
-        LazyVGrid(columns: cols, spacing: gap) {
-            ForEach(0..<totalCells, id: \.self) { idx in
-                let isCenter = idx == centerIndex && isCenterSpecial
-                let isFreeCenter = isCenter && (centerType == .free || centerType == .customFree)
-                let rawTitle = idx < taskNames.count ? taskNames[idx] : ""
-                let displayTitle = isCenter ? centerDisplayText : rawTitle
-
-                Group {
-                    if isFreeCenter {
-                        risoFreeCell
-                    } else {
-                        risoTaskCell(title: displayTitle)
+            if canShuffle {
+                Button {
+                    reseedPlacement()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "shuffle")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Shuffle")
+                            .font(.risoHead(12, .bold))
                     }
+                    .foregroundStyle(Color.risoInk)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .risoCard(fill: .risoPaper2)
+                    .risoHardShadow(Riso.Shadow.small)
                 }
-                .frame(width: cellSize, height: cellSize)
-                .allowsHitTesting(false)
+                .buttonStyle(.plain)
+                .disabled(isCreating)
+                .accessibilityLabel("Shuffle board layout")
             }
-        }
-        .accessibilityLabel("\(gridSize) by \(gridSize) board preview")
-    }
-
-    /// Ink-black FREE cell with gold star + "FREE" label, matching
-    /// `RisoBoardPlayCell.centerCellContent`.
-    private var risoFreeCell: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: Riso.cellRadius)
-                .fill(Color.risoInk)
-            VStack(spacing: 3) {
-                StarShape()
-                    .fill(Color.risoGold)
-                    .frame(width: 17, height: 17)
-                Text("FREE")
-                    .font(.risoHead(9, .extraBold))
-                    .tracking(1.0)
-                    .foregroundStyle(Color.risoGold)
-            }
-            RoundedRectangle(cornerRadius: Riso.cellRadius)
-                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
-        }
-    }
-
-    /// Paper2 resting cell with clamped title label, matching the resting
-    /// state of `RisoBoardPlayCell.taskCellContent`.
-    private func risoTaskCell(title: String) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: Riso.cellRadius)
-                .fill(Color.risoPaper2)
-            Text(title)
-                .font(.risoBody(9, .bold))
-                .tracking(-0.09)
-                .lineLimit(3)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(Color.risoInk)
-                .padding(4)
-            RoundedRectangle(cornerRadius: Riso.cellRadius)
-                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
         }
     }
 }
 
-// Closing brace for BoardWizardPreviewStepView was moved above RisoPreviewGrid.
+// Closing brace for BoardWizardPreviewStepView is above.
 // The private extension below keeps the file self-contained.
 private extension BoardWizardPreviewStepView {
 
