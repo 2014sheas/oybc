@@ -100,8 +100,11 @@ func buildRearrangeCells(
     positionDraft: [String: (row: Int, col: Int)]? = nil
 ) -> [RearrangeCellData] {
     let mid = gridSize / 2
-    let hasFreeCenter = gridSize % 2 == 1
-        && (centerSquareType == .free || centerSquareType == .customFree)
+    // A cell is pinned (immovable, excluded from drag/swap) when it is the
+    // positional center AND the board's center type is not .none. This is the
+    // Phase-2b predicate: .free / .customFree / .chosen are all pinned;
+    // .none makes the center position a fully normal cell.
+    let hasPinnedCenter = gridSize % 2 == 1 && centerSquareType != .none
 
     // If a positionDraft exists, remap draft cells to their staged positions.
     // Build a (stagedRow, stagedCol) → SquaresDraftCell map for slot lookup.
@@ -122,11 +125,16 @@ func buildRearrangeCells(
     var result: [RearrangeCellData] = []
     for row in 0..<gridSize {
         for col in 0..<gridSize {
-            let isCenter = hasFreeCenter && row == mid && col == mid
-            if isCenter {
+            let isPinnedSlot = hasPinnedCenter && row == mid && col == mid
+            if isPinnedSlot {
+                // For .chosen, pass the task ID so the rearrange grid can render
+                // the task's label inside the pinned center cell.
+                let chosenTaskId: String? = centerSquareType == .chosen
+                    ? byPosition["\(mid)-\(mid)"]?.stagedTaskId
+                    : nil
                 result.append(RearrangeCellData(
                     id: "center",
-                    taskId: nil,
+                    taskId: chosenTaskId,
                     isCenter: true,
                     isEmpty: false,
                     originalRow: row,

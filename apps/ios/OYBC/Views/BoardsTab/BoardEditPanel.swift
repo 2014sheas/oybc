@@ -20,10 +20,17 @@ enum BoardEditSubMode: Hashable {
     }
 
     /// One-line hint shown below the sub-mode toggle.
-    var hint: String {
+    ///
+    /// - Parameter hasPinnedCenter: Pass `true` when the board's draft
+    ///   `centerSquareType != .none` so the rearrange hint accurately
+    ///   reports whether the center is pinned.
+    func hint(hasPinnedCenter: Bool) -> String {
         switch self {
         case .editTasks: return "Tap a square to replace or edit a task."
-        case .rearrange: return "Drag squares to rearrange. The center square is pinned."
+        case .rearrange:
+            return hasPinnedCenter
+                ? "Drag squares to rearrange. The center square is pinned."
+                : "Drag squares to rearrange."
         }
     }
 }
@@ -98,6 +105,12 @@ struct BoardEditPanel: View {
     /// sub-mode. `BoardPlayView` handles routing to the Replace / Edit menu.
     /// nil in Phase 1 (grid was display-only); provided by the parent in Phase 2+.
     var onCellTap: ((Int, Int) -> Void)? = nil
+
+    /// Called when the user taps the center cell in `.editTasks` sub-mode
+    /// and the center is currently a free space (`.free`/`.customFree`).
+    /// `BoardPlayView` presents the "Make it a task square" action sheet.
+    /// nil = center is inert (Phase 1; non-edit-tasks sub-mode; non-free center).
+    var onCenterTap: (() -> Void)? = nil
 
     // MARK: - Rearrange draft (Phase 3)
 
@@ -320,7 +333,7 @@ struct BoardEditPanel: View {
                 selection: $subMode
             )
 
-            Text(subMode.hint)
+            Text(subMode.hint(hasPinnedCenter: centerType != .none))
                 .font(.risoBody(12, .regular))
                 .foregroundStyle(Color.risoMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -351,7 +364,8 @@ struct BoardEditPanel: View {
                     centerCustomName: centerCustomName.isEmpty
                         ? board.centerSquareCustomName
                         : centerCustomName,
-                    onCellTap: subMode == .editTasks ? onCellTap : nil
+                    onCellTap: subMode == .editTasks ? onCellTap : nil,
+                    onCenterTap: subMode == .editTasks ? onCenterTap : nil
                 )
             }
         }
@@ -418,8 +432,18 @@ struct BoardEditPanel: View {
 ///
 /// Renders placements with optional tap-gesture support. When `onCellTap` is
 /// provided (Phase 2 Edit-tasks sub-mode), tapping a non-center occupied cell
-/// triggers the Replace / Edit context menu via the parent. Center cells and
-/// empty cells are always inert. Rearrange (Phase 3) and Phase 1 pass nil.
+/// triggers the Replace / Edit context menu via the parent.
+///
+/// The "pinned center" predicate is Phase-2b–correct:
+///   `isPinnedCenter = (positional center) && centerSquareType != .none`
+///
+/// A `.none`-center middle cell is treated as a normal cell — tappable when
+/// it holds a task, and not given the gold FREE label. When `onCenterTap` is
+/// provided and the center is `.free`/`.customFree`, the center cell becomes
+/// interactive (shows a pencil badge and calls `onCenterTap` on tap) so the
+/// user can trigger "Make it a task square."
+///
+/// Rearrange (Phase 3) and Phase 1 pass nil for both callbacks.
 private struct BoardEditStaticGrid: View {
     let boardSize: Int
     let boardTasks: [BoardTask]
@@ -428,6 +452,9 @@ private struct BoardEditStaticGrid: View {
     let centerCustomName: String?
     /// Phase 2: callback for non-center occupied cell taps. nil = display-only.
     var onCellTap: ((Int, Int) -> Void)? = nil
+    /// Phase 2b: callback for tapping the FREE/CUSTOM_FREE center cell.
+    /// nil = center inert. Set only in edit-tasks sub-mode.
+    var onCenterTap: (() -> Void)? = nil
 
     private var btByPosition: [String: BoardTask] {
         var map: [String: BoardTask] = [:]
@@ -445,16 +472,32 @@ private struct BoardEditStaticGrid: View {
                 let row = idx / boardSize
                 let col = idx % boardSize
                 let bt = btByPosition["\(row)-\(col)"]
-                let isCenter = bt?.isCenter == true
-                // Tapping: enabled on non-center occupied cells when onCellTap is set.
-                let tapEnabled = onCellTap != nil && !isCenter && bt != nil
+
+                // Phase-2b predicate: the center is pinned (gold FREE, inert to
+                // normal cell taps) only when centerSquareType != .none. A .none
+                // center is a regular cell regardless of its positional index.
+                let isPositionalCenter = boardSize % 2 == 1
+                    && row == boardSize / 2
+                    && col == boardSize / 2
+                let isCenter = isPositionalCenter && centerSquareType != .none
+
+                // Free-center tap: center is .free/.customFree, onCenterTap provided.
+                let isFreeCenter = isPositionalCenter
+                    && (centerSquareType == .free || centerSquareType == .customFree)
+                let centerTapEnabled = isFreeCenter && onCenterTap != nil
+
+                // Normal task-cell tap: occupied, not a pinned center.
+                let taskTapEnabled = onCellTap != nil && !isCenter && bt != nil
+
                 BoardEditStaticCell(
                     task: bt.flatMap { taskMap[$0.taskId] },
                     isCenter: isCenter,
                     centerSquareType: centerSquareType,
                     centerCustomName: centerCustomName,
-                    isInteractive: tapEnabled,
-                    onTap: tapEnabled ? { onCellTap?(row, col) } : nil
+                    isInteractive: taskTapEnabled || centerTapEnabled,
+                    onTap: centerTapEnabled
+                        ? { onCenterTap?() }
+                        : (taskTapEnabled ? { onCellTap?(row, col) } : nil)
                 )
             }
         }
@@ -465,9 +508,10 @@ private struct BoardEditStaticGrid: View {
 
 /// A single cell in the edit-mode grid.
 ///
-/// When `isInteractive` is true (Phase 2 Edit-tasks sub-mode, non-center
-/// occupied cell), the cell renders with a subtle pencil badge and a tap
-/// gesture that calls `onTap`. Center and empty cells are always passive.
+/// When `isInteractive` is true the cell renders with a pencil badge and a
+/// tap gesture that calls `onTap`. Two cases:
+/// - Non-center occupied cell (Phase 2): Replace / Edit task flow.
+/// - FREE/CUSTOM_FREE center cell (Phase 2b): "Make it a task square" action.
 private struct BoardEditStaticCell: View {
     let task: Task?
     let isCenter: Bool
@@ -534,10 +578,12 @@ private struct BoardEditStaticCell: View {
             // Pencil affordance — small icon in the top-trailing corner for
             // interactive cells, signalling "tap to edit". Inset slightly so
             // it doesn't overlap the cell keyline.
+            // Color rule: gold fill (center cells) requires risoInkStatic so
+            // the icon reads correctly in dark mode; non-center cells use risoBlue.
             if isInteractive {
                 Image(systemName: "pencil")
                     .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(Color.risoBlue)
+                    .foregroundStyle(isCenter ? Color.risoInkStatic : Color.risoBlue)
                     .padding(3)
             }
         }

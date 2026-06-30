@@ -328,6 +328,10 @@ struct BoardPlayView: View {
     @State private var editCellMenuRow: Int = 0
     @State private var editCellMenuCol: Int = 0
     @State private var editCellMenuVisible: Bool = false
+    /// True when the tap-menu was opened for the positional center cell
+    /// (used to show the Phase-2b "Make it a free space" / "Make it a task
+    /// square" toggle items in `confirmationDialog`).
+    @State private var editCellMenuIsCenter: Bool = false
     /// M3 — live-edit cell swap: the square whose task the user wants to replace.
     @State private var swapTarget: SwapTarget? = nil
     /// M4 — live-edit remove from board: the boardTaskId pending confirmation.
@@ -431,13 +435,32 @@ struct BoardPlayView: View {
         return count
     }
 
-    /// Display title for the tap-menu confirmationDialog — the staged task name
-    /// for the cell at `(editCellMenuRow, editCellMenuCol)`.
+    /// Display title for the tap-menu confirmationDialog.
+    ///
+    /// - For a free-center tap (no draft entry): returns "Center square".
+    /// - For any task cell: returns the staged task title.
     private var editCellMenuTitle: String {
+        // Free center tap has no squaresDraft entry — give it a clear title.
+        if editCellMenuIsCenter
+            && (editCenterType == .free || editCenterType == .customFree) {
+            return "Center square"
+        }
         let key = "\(editCellMenuRow)-\(editCellMenuCol)"
         guard let draft = editSquaresDraft[key] else { return "Square" }
         let map = editDraftTaskMap
         return map[draft.stagedTaskId]?.title ?? "Square"
+    }
+
+    /// Returns true when `boardTask.isCenter` AND the board's center type
+    /// (using the edit draft while in edit mode) is non-`.none`. This is the
+    /// Phase-2b "pinned center" predicate used by the live context menus.
+    ///
+    /// A `.none`-center board task that happens to sit at the middle position
+    /// is NOT pinned — Swap and Remove are enabled for it.
+    private func isPinnedCenter(boardTask: BoardTask) -> Bool {
+        guard boardTask.isCenter else { return false }
+        let effectiveCenterType = editMode ? editCenterType : (board?.centerSquareType ?? .none)
+        return effectiveCenterType != .none
     }
 
     /// Compound children grouped by parent compound task ID, sorted by childIndex.
@@ -655,6 +678,8 @@ struct BoardPlayView: View {
                     subMode: $editSubMode,
                     squareEditCount: editSquaresEditCount,
                     onCellTap: { row, col in handleEditCellTap(row: row, col: col) },
+                    // Phase 2b — center toggle (free center → task square).
+                    onCenterTap: handleFreeCenterTap,
                     // Phase 3 — Rearrange
                     rearrangeCells: editRearrangeCells,
                     onReorder: handleRearrange,
@@ -674,6 +699,19 @@ struct BoardPlayView: View {
                     if newMode == .rearrange {
                         seedRearrangeCells(for: b)
                     }
+                }
+                // Phase 2b — when center type changes (via the toggle or the
+                // BoardSetupFormView picker), rebuild the staged rearrange cells
+                // so the Rearrange sub-mode immediately reflects the new pinning.
+                // If no rearrange cells exist yet, seedRearrangeCells will build
+                // them with the correct type on the next sub-mode switch.
+                .onChange(of: editCenterType) { _, newType in
+                    guard editRearrangeCells != nil else { return }
+                    editRearrangeCells = buildRearrangeCells(
+                        squaresDraft: editSquaresDraft,
+                        gridSize: b.boardSize,
+                        centerSquareType: newType
+                    )
                 }
             }
 
@@ -696,33 +734,71 @@ struct BoardPlayView: View {
                 }
             }
         }
-        // Phase 2 — Tap-menu: Replace task / Edit task.
-        // Presented when the user taps a non-center occupied square while in
-        // edit mode + Edit-tasks sub-mode. Uses a .confirmationDialog so it
-        // anchors natively to the bottom (iOS action-sheet idiom).
+        // Phase 2 — Tap-menu: Replace task / Edit task (+ Phase-2b center toggle).
+        // Presented when the user taps an occupied square OR the free center cell
+        // while in edit mode + Edit-tasks sub-mode.
+        // Uses .confirmationDialog so it anchors natively to the bottom (iOS
+        // action-sheet idiom).
         .confirmationDialog(
             editCellMenuTitle,
             isPresented: $editCellMenuVisible,
             titleVisibility: .visible
         ) {
-            Button("Replace task") {
-                let key = "\(editCellMenuRow)-\(editCellMenuCol)"
-                if let draft = editSquaresDraft[key] {
-                    editModeReplaceTarget = EditModeSwapTarget(
-                        id: key,
-                        currentTaskId: draft.stagedTaskId
-                    )
+            // Replace / Edit task: shown for any occupied cell (including a .none
+            // center with a task). Not shown for a free center (no task draft entry).
+            let cellKey = "\(editCellMenuRow)-\(editCellMenuCol)"
+            if editSquaresDraft[cellKey] != nil {
+                Button("Replace task") {
+                    if let draft = editSquaresDraft[cellKey] {
+                        editModeReplaceTarget = EditModeSwapTarget(
+                            id: cellKey,
+                            currentTaskId: draft.stagedTaskId
+                        )
+                    }
                 }
-            }
-            Button("Edit task") {
-                let key = "\(editCellMenuRow)-\(editCellMenuCol)"
-                if let draft = editSquaresDraft[key] {
-                    let map = editDraftTaskMap
-                    if let task = map[draft.stagedTaskId] {
-                        editModeTaskTarget = EditModeTaskTarget(id: key, task: task)
+                Button("Edit task") {
+                    if let draft = editSquaresDraft[cellKey] {
+                        let map = editDraftTaskMap
+                        if let task = map[draft.stagedTaskId] {
+                            editModeTaskTarget = EditModeTaskTarget(id: cellKey, task: task)
+                        }
                     }
                 }
             }
+
+            // Phase 2b — Center toggle buttons. Only shown when the tapped cell
+            // is the positional center. .chosen is intentionally excluded — the
+            // BoardSetupFormView chrome is the way out of CHOSEN.
+            if editCellMenuIsCenter {
+                if editCenterType == .free || editCenterType == .customFree {
+                    // Free center → task square (empty; fill via the live "+" flow).
+                    Button("Make it a task square") {
+                        editCenterType = .none
+                        // Rebuild staged rearrange cells so the Rearrange sub-mode
+                        // correctly treats the center as a normal slot.
+                        if let b = board, editRearrangeCells != nil {
+                            editRearrangeCells = buildRearrangeCells(
+                                squaresDraft: editSquaresDraft,
+                                gridSize: b.boardSize,
+                                centerSquareType: .none
+                            )
+                        }
+                    }
+                } else if editCenterType == .none {
+                    // Task square (or empty slot) → free space.
+                    Button("Make it a free space") {
+                        editCenterType = .free
+                        if let b = board, editRearrangeCells != nil {
+                            editRearrangeCells = buildRearrangeCells(
+                                squaresDraft: editSquaresDraft,
+                                gridSize: b.boardSize,
+                                centerSquareType: .free
+                            )
+                        }
+                    }
+                }
+            }
+
             Button("Cancel", role: .cancel) {}
         }
         // Phase 2 — Replace task sheet (staged; no DB write on confirm).
@@ -1188,7 +1264,7 @@ struct BoardPlayView: View {
                 } else if isCenter,
                           let b = board,
                           (b.centerSquareType == .free || b.centerSquareType == .customFree) {
-                    // FREE center cell
+                    // FREE center cell — gold FREE label, not interactive in play mode.
                     RisoBoardPlayCell(
                         title: "FREE",
                         taskType: .normal,
@@ -1196,11 +1272,13 @@ struct BoardPlayView: View {
                         isBingoLine: highlighted.contains(index),
                         isCenter: true
                     )
-                } else if !isCenter,
-                          let b = board,
+                } else if let b = board,
+                          // Phase-2b: a .none center is a normal cell, so show the
+                          // "+" affordance for the positional center too when empty.
+                          (!isCenter || b.centerSquareType == .none),
                           b.status == .active,
                           !isBoardLocked {
-                    // M4 — Empty non-center cell on an ACTIVE board: dashed "+" affordance.
+                    // M4 — Empty non-center cell (or .none center) on an ACTIVE board: dashed "+" affordance.
                     ZStack {
                         RoundedRectangle(cornerRadius: Riso.cellRadius)
                             .strokeBorder(
@@ -1361,7 +1439,7 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
                 Divider()
                 Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                     swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
@@ -1392,7 +1470,7 @@ struct BoardPlayView: View {
                 Button("Open in library", systemImage: "book") {
                     taskDetailSheetTaskId = TaskIdItem(id: t.id)
                 }
-                if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+                if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
                     Divider()
                     Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                         swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
@@ -1410,7 +1488,7 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
                 Divider()
                 Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                     swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
@@ -1427,7 +1505,7 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !boardTask.isCenter {
+            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
                 Divider()
                 Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
                     swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
@@ -2409,12 +2487,25 @@ struct BoardPlayView: View {
 
     // MARK: - Phase 2 edit-mode tap-menu handlers
 
-    /// Called by `BoardEditPanel.onCellTap` when the user taps a non-center
-    /// occupied cell in Edit-tasks sub-mode. Records the row/col and presents
-    /// the Replace / Edit confirmationDialog.
+    /// Called by `BoardEditPanel.onCellTap` when the user taps an occupied
+    /// cell in Edit-tasks sub-mode. Records the row/col and presents the
+    /// Replace / Edit (+ Phase-2b center toggle) confirmationDialog.
     private func handleEditCellTap(row: Int, col: Int) {
         editCellMenuRow = row
         editCellMenuCol = col
+        let mid = gridSize / 2
+        editCellMenuIsCenter = gridSize % 2 == 1 && row == mid && col == mid
+        editCellMenuVisible = true
+    }
+
+    /// Called by `BoardEditPanel.onCenterTap` when the user taps the FREE /
+    /// CUSTOM_FREE center cell in Edit-tasks sub-mode. Shows the center-toggle
+    /// confirmationDialog ("Make it a task square").
+    private func handleFreeCenterTap() {
+        let mid = gridSize / 2
+        editCellMenuRow = mid
+        editCellMenuCol = mid
+        editCellMenuIsCenter = true
         editCellMenuVisible = true
     }
 
