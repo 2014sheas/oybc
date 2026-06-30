@@ -706,11 +706,21 @@ struct BoardPlayView: View {
                 // If no rearrange cells exist yet, seedRearrangeCells will build
                 // them with the correct type on the next sub-mode switch.
                 .onChange(of: editCenterType) { _, newType in
-                    guard editRearrangeCells != nil else { return }
+                    guard let current = editRearrangeCells else { return }
+                    // Preserve any staged rearrange order: map each non-center,
+                    // non-empty cell's CURRENT slot index back to (row, col) and pass
+                    // it as the positionDraft, so changing the center type doesn't
+                    // discard the user's in-progress rearrange.
+                    let size = b.boardSize
+                    var positions: [String: (row: Int, col: Int)] = [:]
+                    for (i, cell) in current.enumerated() where !cell.isCenter && !cell.isEmpty {
+                        positions[cell.id] = (row: i / size, col: i % size)
+                    }
                     editRearrangeCells = buildRearrangeCells(
                         squaresDraft: editSquaresDraft,
-                        gridSize: b.boardSize,
-                        centerSquareType: newType
+                        gridSize: size,
+                        centerSquareType: newType,
+                        positionDraft: positions
                     )
                 }
             }
@@ -772,30 +782,12 @@ struct BoardPlayView: View {
             if editCellMenuIsCenter {
                 if editCenterType == .free || editCenterType == .customFree {
                     // Free center → task square (empty; fill via the live "+" flow).
-                    Button("Make it a task square") {
-                        editCenterType = .none
-                        // Rebuild staged rearrange cells so the Rearrange sub-mode
-                        // correctly treats the center as a normal slot.
-                        if let b = board, editRearrangeCells != nil {
-                            editRearrangeCells = buildRearrangeCells(
-                                squaresDraft: editSquaresDraft,
-                                gridSize: b.boardSize,
-                                centerSquareType: .none
-                            )
-                        }
-                    }
+                    // The .onChange(of: editCenterType) handler rebuilds the rearrange
+                    // cells (preserving any staged order) — no inline rebuild here.
+                    Button("Make it a task square") { editCenterType = .none }
                 } else if editCenterType == .none {
                     // Task square (or empty slot) → free space.
-                    Button("Make it a free space") {
-                        editCenterType = .free
-                        if let b = board, editRearrangeCells != nil {
-                            editRearrangeCells = buildRearrangeCells(
-                                squaresDraft: editSquaresDraft,
-                                gridSize: b.boardSize,
-                                centerSquareType: .free
-                            )
-                        }
-                    }
+                    Button("Make it a free space") { editCenterType = .free }
                 }
             }
 

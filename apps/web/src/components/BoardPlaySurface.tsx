@@ -271,8 +271,11 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       setSquareTapMenu(null);
       setEditReplaceId(null);
       setEditTaskSheetId(null);
-      // Phase 2b: clear center-related menus.
+      // Phase 2b: clear center-related menus + reset the draft center type, so a
+      // toggle-then-cancel-then-reedit doesn't flash a stale FREE center for one
+      // frame before the entry seed runs.
       setFreeCenterTapMenu(null);
+      setDraftCenterType(board.centerSquareType as CenterSquareType);
       return;
     }
     // Phase 2b: seed draft center type from the board's current stored value.
