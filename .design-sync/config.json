@@ -1,0 +1,33 @@
+{
+  "projectId": "868cbd0e-dc0f-49ef-b0e2-f09eaf04b24c",
+  "shape": "package",
+  "readmeHeader": ".design-sync/conventions.md",
+  "pkg": "@oybc/web",
+  "globalName": "OYBCRiso",
+  "srcDir": "src/components/riso",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "src/styles/riso.css",
+  "extraFonts": [
+    "../../.design-sync/fonts/riso-webfonts.css"
+  ],
+  "componentSrcMap": {
+    "RisoButton": "src/components/riso/RisoButton.tsx",
+    "RisoCard": "src/components/riso/RisoCard.tsx",
+    "RisoChip": "src/components/riso/RisoChip.tsx",
+    "RisoSegmented": "src/components/riso/RisoSegmented.tsx",
+    "RisoSectionLabel": "src/components/riso/RisoSectionLabel.tsx",
+    "RisoIcon": "src/components/riso/RisoIcon.tsx",
+    "RisoBrandMark": "src/components/riso/RisoBrandMark.tsx",
+    "RisoBadge": "src/components/riso/RisoBadge.tsx"
+  },
+  "dtsPropsFor": {
+    "RisoButton": "  /** Button label / content. */\n  children: React.ReactNode;\n  /** Visual fill. Defaults to 'neutral'. 'gold' = highlight CTA, 'ghost' = outline secondary, 'dark' = Apple sign-in slab (adaptive). */\n  kind?: 'neutral' | 'primary' | 'blue' | 'green' | 'gold' | 'ghost' | 'dark';\n  /** Size variant. Defaults to 'default'. */\n  size?: 'default' | 'large' | 'small';\n  /** Optional leading inline-SVG icon (e.g. a RisoIcon). */\n  icon?: React.ReactNode;\n  /** Stretch to the container width. */\n  fullWidth?: boolean;\n  /** Click handler. */\n  onClick?: React.MouseEventHandler<HTMLButtonElement>;\n  /** Disable the button. */\n  disabled?: boolean;\n  /** Native button type. Defaults to 'button'. */\n  type?: 'button' | 'submit' | 'reset';",
+    "RisoCard": "  /** Card contents. */\n  children: React.ReactNode;\n  /** Hard-shadow depth. Defaults to 'default' (4px). */\n  shadow?: 'small' | 'default' | 'large';\n  /** Add hover-lift + press feedback (use for tappable cards). */\n  interactive?: boolean;\n  /** Apply the convenience 16px inner padding. */\n  padded?: boolean;\n  /** Extra class names to merge (e.g. a screen-specific layout module). */\n  className?: string;\n  /** Click handler (for interactive cards). */\n  onClick?: React.MouseEventHandler<HTMLDivElement>;",
+    "RisoChip": "  /** Chip label. */\n  children: React.ReactNode;\n  /** Selected/active state — inverts the chip to ink fill, cream text. */\n  on?: boolean;\n  /** Click handler. */\n  onClick?: React.MouseEventHandler<HTMLButtonElement>;\n  /** Disable the chip. */\n  disabled?: boolean;",
+    "RisoSegmented": "  /** Selectable options, rendered left-to-right. Each: { value, label }. */\n  options: ReadonlyArray<{ value: string | number; label: React.ReactNode }>;\n  /** Currently-selected value. */\n  value: string | number;\n  /** Called with the chosen value when a segment is pressed. */\n  onChange: (value: string | number) => void;\n  /** 'card' (default) = bordered buttons, blue active. 'pill' = compact toggle, ink active. */\n  variant?: 'card' | 'pill';\n  /** Accessible group label — REQUIRED (a role=\"group\" needs an accessible name). */\n  'aria-label': string;",
+    "RisoSectionLabel": "  /** Eyebrow text (rendered uppercase, tracked). */\n  children: React.ReactNode;\n  /** 'section' (default) = quiet muted eyebrow over a card. 'kicker' = loud red eyebrow over a headline. */\n  variant?: 'section' | 'kicker';",
+    "RisoIcon": "  /** Which glyph to render. */\n  name: 'boards' | 'home' | 'tasks' | 'you' | 'plus' | 'back' | 'check' | 'sun' | 'moon' | 'share' | 'sync' | 'sliders' | 'repeat' | 'grid' | 'flame' | 'shield' | 'bell' | 'logout' | 'chevron' | 'edit' | 'trash' | 'dots';\n  /** Pixel size (width = height). Omit to inherit via CSS. Strokes inherit currentColor. */\n  size?: number;\n  /** Accessible label. Omit for a decorative icon (renders aria-hidden). */\n  'aria-label'?: string;\n  /** Extra class names for the <svg>. */\n  className?: string;",
+    "RisoBrandMark": "  /** Pixel size of the square mark. Defaults to 40. */\n  size?: number;",
+    "RisoBadge": "  /** Status this badge represents (sets the color). */\n  kind: 'active' | 'completed' | 'draft' | 'expiring' | 'archived';\n  /** Badge label (rendered uppercase). */\n  children: React.ReactNode;"
+  }
+}
