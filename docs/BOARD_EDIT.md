@@ -108,7 +108,7 @@ already in Phase 1 extend to these staged square edits.
 | --- | --- | --- |
 | **1 — Edit-mode shell** | In-place edit chrome replacing the modal: Cancel + Editing pill, name, timeframe (+ custom dates), center, immutable-size chip, sub-mode toggle (UI only), Save + edit counter, Archive, confirm dialogs. Grid renders display-only. Retire `EditBoardSheet`. | `archiveBoard` op; edit-mode chrome; gate entry to non-embedded |
 | **2 — Edit tasks** | Tap square (Edit-tasks sub-mode) → context menu (Replace / Edit) → bottom sheets. Replace reuses CellSwap (repoint taskId). Edit-task sheet edits the **global Task** (name/type/goal) for normal/counting/compound squares. **Center FREE↔task conversion split out to 2b.** | tap-menu, edit-task sheet |
-| **2b — Center conversion** | FREE center ↔ real task (Edit-task offers "Free" only on center) — touches `centerSquareType` + the center placement, not just a task edit. Deferred from Phase 2. | center type + placement swap |
+| **2b — Center Free⇄Task toggle** | **Reframed** (see §Phase 2b): the center toggles between a **free space** (`FREE`/`CUSTOM_FREE`) and a **task square** (`NONE`). Metadata-only — no new op, no schema. The core is a latent-bug fix: the "pinned center" predicate becomes `centerSquareType ≠ NONE` (not positional), so a `NONE` center is a normal editable/rearrangeable cell. `CHOSEN` is left untouched (retired later by the separate **cell-locking** feature). | predicate fix + center toggle |
 | **3 — Rearrange** | jiggle + drag-to-insert (FLIP) + tap-to-swap; pinned center. | reorder DB op (+ bingo re-derive); drag/FLIP grid |
 | **4 — Create Arrange** | Wizard Preview → arrangeable board (Preview⇄Rearrange + existing Shuffle); pure in-memory placement reorder, persists via existing path. | reuse Phase-3 grid over the wizard `[Task?]` placement |
 
@@ -205,6 +205,49 @@ flicker. Suspend the jiggle while sorting so it doesn't fight the FLIP transform
 This phase's grid component is **reused by Phase 4** (create-arrange), so build the
 drag/FLIP as a self-contained, controlled piece (cells + onReorder), gated by a
 `rearrange` flag.
+
+## Phase 2b — detailed scope (center Free⇄Task toggle)
+
+**Why this shape (architecture):** the center square bundles two *orthogonal*
+properties — (1) *is it a free space?* (`FREE`/`CUSTOM_FREE`, auto-completed, no
+task) vs a real task cell, and (2) *is a task pinned there during randomization?*
+(`CHOSEN`). Property #2 only serves the create-wizard's Shuffle; **in edit mode
+there's no randomization, so the pin is inert** — a `CHOSEN` center is just a task
+that happens to sit in the middle. So the only edit-relevant center property is #1:
+free space or task square. That maps to `FREE`/`CUSTOM_FREE` ⇄ `NONE`. (The general
+"pin any cell" idea — a per-cell **lock** that Shuffle/rearrange skip — is the right
+long-term replacement for `CHOSEN`, but it's a separate, schema-bearing feature
+being spec'd elsewhere; **do not build locking here.**)
+
+**1. Pinned-center predicate fix (the core).** Today the edit/rearrange guards key
+off the *positional* center (`gridSize odd && row==col==mid`), which wrongly locks a
+`NONE`-center middle cell. Change the predicate everywhere to **`isPinnedCenter =
+(positional center) && centerSquareType ≠ NONE`** (i.e. `FREE`/`CUSTOM_FREE`/`CHOSEN`
+are pinned; `NONE` is not). Effect: a `NONE` center becomes a fully normal cell —
+tappable (Replace/Edit), a valid place/`+` target, and **rearrangeable** (drag/swap;
+no longer pinned, cascade includes it). Apply to every guard the recon listed:
+web `BoardPlaySurface` (`isEditTapTarget`, the swap context-menu `swapEligible`, the
+rearrange `newPositions`/counter filters, the `ArrangeSlot` `isCenter` flag); iOS
+`BoardPlayView`/`BoardEditPanel`/`RearrangeGrid` (the `.contextMenu` guards, the
+`buildRearrangeCells`/reorder/`countPositionMoves` `isCenter` checks).
+
+**2. The center toggle (the affordance).** In edit-tasks mode, the center cell gets a
+quick action to flip its free-ness:
+- **Free space → task square:** `FREE`/`CUSTOM_FREE` → `NONE`. The cell becomes a
+  normal (empty) editable cell; the user fills it with the existing place/replace
+  flow. (UX decision: convert to an *empty* editable cell, not auto-open a picker.)
+- **Task square → free space:** `NONE` → `FREE`. The cell becomes a free space.
+- Both are **metadata-only** — stage the `centerSquareType` change in the existing
+  edit draft (the same draft Phase 1's chrome already tracks) and commit via the
+  existing `updateBoardAndCascade` patch. **No new DB op, no schema change.** A
+  task-holding center converted to free leaves its placement exactly as the chrome's
+  `CHOSEN→FREE` does today (consistent pre-existing behavior; the cascade handles it).
+
+Surface the toggle wherever it reads cleanly per platform (a center-cell tap menu
+item / long-press action), alongside the normal Replace/Edit items when the center
+holds a task. `CHOSEN` is **not** part of the toggle and is not normalized — the
+chrome's center selector remains the way out of `CHOSEN`, and the future locking
+feature will retire it.
 
 ## Cross-platform file map
 

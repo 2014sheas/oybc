@@ -200,22 +200,44 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // edits / no "Board saved" for a net-zero session). Mirrors iOS.
   // Phase 3: also counts cells whose position differs from the original
   // (drag-to-insert / tap-to-swap), so a net-zero rearrange contributes 0.
+  // Phase 2b: the rearrange-move count excludes only truly pinned centers
+  // (CHOSEN / FREE / CUSTOM_FREE). A NONE center is a regular movable cell.
   const squareEditCount =
     squaresDraft.filter((c) => c.taskId !== c.originalTaskId).length +
     taskOverrides.size +
     squaresDraft.filter(
-      (c) => !c.isCenter && (c.row !== c.originalRow || c.col !== c.originalCol),
+      (c) =>
+        !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
+        (c.row !== c.originalRow || c.col !== c.originalCol),
     ).length;
 
-  // Tap menu: set when a non-center square is tapped in editTasks sub-mode.
+  // Phase 2b — draft centerSquareType, lifted so the grid can compute
+  // isPinnedCenter. Seeded on edit-mode entry from board.centerSquareType;
+  // updated by both the BoardSetupForm selector (via BoardEditPanel) and the
+  // center cell toggle (direct tap in editTasks mode).
+  const [draftCenterType, setDraftCenterType] = useState<CenterSquareType>(
+    board.centerSquareType as CenterSquareType,
+  );
+
+  // Phase 2b — tap menu for the FREE/CUSTOM_FREE center in editTasks mode.
+  // The free center has no boardTaskId so it can't use squareTapMenu.
+  const [freeCenterTapMenu, setFreeCenterTapMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Tap menu: set when a non-pinned square is tapped in editTasks sub-mode.
   // Stores click coordinates (not a DOMRect) because RisoBoardCell's onClick
   // is `() => void` (no event parameter). The SquareTapMenu positions itself
   // from these coordinates.
+  // Phase 2b: isCenterTask added — true when the tapped cell is the NONE center;
+  // causes SquareTapMenu to show the "Make it a free space" toggle item.
   const [squareTapMenu, setSquareTapMenu] = useState<{
     boardTaskId: string;
     taskId: string;
     x: number;
     y: number;
+    isCenterTask: boolean;
   } | null>(null);
 
   // The boardTaskId whose cell is being replaced in edit mode (opens CellSwapModal).
@@ -239,7 +261,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // Seed the squares draft when entering edit mode; reset all draft state when
   // exiting. boardTasks is intentionally NOT in the dep array — we seed once
   // on entry and must not re-seed on live-query updates (that would clobber
-  // staged changes mid-session).
+  // staged changes mid-session). board is also not in deps for the same reason;
+  // we read board.centerSquareType once at entry time (the snapshot rule).
   useEffect(() => {
     if (!editMode) {
       setSquaresDraft([]);
@@ -248,8 +271,15 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       setSquareTapMenu(null);
       setEditReplaceId(null);
       setEditTaskSheetId(null);
+      // Phase 2b: clear center-related menus + reset the draft center type, so a
+      // toggle-then-cancel-then-reedit doesn't flash a stale FREE center for one
+      // frame before the entry seed runs.
+      setFreeCenterTapMenu(null);
+      setDraftCenterType(board.centerSquareType as CenterSquareType);
       return;
     }
+    // Phase 2b: seed draft center type from the board's current stored value.
+    setDraftCenterType(board.centerSquareType as CenterSquareType);
     // Seed from the current boardTasks snapshot.
     setSquaresDraft(
       boardTasks.map((bt) => ({
@@ -490,11 +520,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     const slots: ArrangeSlot[] = [];
     for (let r = 0; r < gridSize; r++) {
       for (let c = 0; c < gridSize; c++) {
-        const isCenter = gridSize % 2 === 1 && r === half && c === half;
+        // Phase 2b: distinguish positional center from "pinned" center.
+        // NONE center is NOT pinned — it participates in drag/swap normally.
+        const isPositionalCenter = gridSize % 2 === 1 && r === half && c === half;
+        const isCenter = isPositionalCenter && draftCenterType !== CenterSquareType.NONE;
         const draftCell = squaresDraft.find((d) => d.row === r && d.col === c);
 
-        if (isCenter && !draftCell) {
-          // FREE/CUSTOM_FREE centre (no BoardTask at this position).
+        if (isPositionalCenter && !draftCell && draftCenterType !== CenterSquareType.NONE) {
+          // FREE/CUSTOM_FREE (or CHOSEN with no task) centre — pinned, not draggable.
           slots.push({
             cid: `center-${r}-${c}`,
             isCenter: true,
@@ -578,6 +611,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     taskMap,
     taskOverrides,
     compoundChildrenByCompound,
+    draftCenterType, // Phase 2b: NONE center is not pinned
   ]);
 
   const commitSquareEdits = useCallback(async (): Promise<void> => {
@@ -593,15 +627,18 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     }
     // 3. Position reorders (Phase 3): cells whose staged row/col differs from original.
     //    Committed as a single atomic Dexie transaction via reorderBoardTasks.
+    //    Phase 2b: NONE center is not pinned — its moves ARE included.
     const moves = squaresDraft
       .filter(
-        (c) => !c.isCenter && (c.row !== c.originalRow || c.col !== c.originalCol),
+        (c) =>
+          !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
+          (c.row !== c.originalRow || c.col !== c.originalCol),
       )
       .map((c) => ({ boardTaskId: c.boardTaskId, row: c.row, col: c.col }));
     if (moves.length > 0) {
       await reorderBoardTasks(boardId, moves);
     }
-  }, [squaresDraft, taskOverrides, boardId]);
+  }, [squaresDraft, taskOverrides, boardId, draftCenterType]);
 
   // ── Completion handler ─────────────────────────────────────────────────
 
@@ -808,6 +845,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               // bleed into the rearrange view.
               setSubMode(mode);
               setSquareTapMenu(null);
+              setFreeCenterTapMenu(null); // Phase 2b
               setEditReplaceId(null);
               setEditTaskSheetId(null);
             }}
@@ -821,6 +859,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               savedToastTimerRef.current = setTimeout(() => setSavedToast(false), 2400);
             }}
             onArchived={() => navigate('/boards')}
+            centerType={draftCenterType}
+            onCenterTypeChange={setDraftCenterType}
           />
         </aside>
       ) : (
@@ -929,6 +969,15 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   row === Math.floor(gridSize / 2) &&
                   col === Math.floor(gridSize / 2);
 
+                // Phase 2b: isPinnedCenter = positional center AND type is not NONE.
+                // FREE / CUSTOM_FREE / CHOSEN centers are pinned (not editable/rearrangeable).
+                // NONE center is a fully normal cell — tappable, placeable, rearrangeable.
+                const effectiveCenterType = editMode
+                  ? draftCenterType
+                  : (board.centerSquareType as CenterSquareType);
+                const isPinnedCenter =
+                  isCenter && effectiveCenterType !== CenterSquareType.NONE;
+
                 // ── Resolve the cell source ──────────────────────────────
                 // In edit mode, read from the squares draft (staged taskIds).
                 // In play mode, read from the live boardTasks index.
@@ -941,19 +990,53 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
 
                 // ── Empty / center cells ─────────────────────────────────
                 if (!boardTaskId) {
-                  if (isCenter && (board.centerSquareType === CenterSquareType.FREE ||
-                      board.centerSquareType === CenterSquareType.CUSTOM_FREE)) {
+                  // Resolve the center type for display (draft in edit mode, live in play mode).
+                  const centerTypeForDisplay = editMode
+                    ? draftCenterType
+                    : (board.centerSquareType as CenterSquareType);
+                  const isFreeCenter =
+                    isCenter &&
+                    (centerTypeForDisplay === CenterSquareType.FREE ||
+                      centerTypeForDisplay === CenterSquareType.CUSTOM_FREE);
+
+                  if (isFreeCenter && !editMode) {
+                    // Play mode: static FREE label.
+                    cells.push(
+                      <div key={`center-${row}-${col}`} className={styles.freeSquare}>
+                        FREE
+                      </div>
+                    );
+                  } else if (isFreeCenter && editMode && subMode === 'editTasks') {
+                    // Phase 2b — Edit mode, editTasks sub-mode: FREE center is
+                    // tappable so the user can toggle it to a task square.
+                    cells.push(
+                      <button
+                        key={`center-${row}-${col}`}
+                        type="button"
+                        className={`${styles.freeSquare} ${styles.editableFreeSquare}`}
+                        aria-label="Free space — tap to convert to a task square"
+                        onClick={(e) => {
+                          setFreeCenterTapMenu({ x: e.clientX, y: e.clientY });
+                        }}
+                      >
+                        FREE
+                      </button>
+                    );
+                  } else if (isFreeCenter && editMode) {
+                    // Rearrange sub-mode: FREE center is not tappable (pinned display).
                     cells.push(
                       <div key={`center-${row}-${col}`} className={styles.freeSquare}>
                         FREE
                       </div>
                     );
                   } else {
-                    // M4 — empty cells on ACTIVE non-expired boards show a `+` affordance.
-                    // Gate the affordance on !editMode: the grid is display-only in edit mode.
+                    // Empty cell (non-center, or NONE center with no task in edit mode,
+                    // or NONE center with no task in play mode — all treated as empty).
+                    // M4 — show `+` affordance on ACTIVE non-expired boards in play mode.
+                    // Phase 2b: NONE center is eligible (not blocked by isPinnedCenter).
                     const addEligible =
                       !editMode &&
-                      !isCenter &&
+                      !isPinnedCenter &&
                       board.status === BoardStatus.ACTIVE &&
                       !isExpired;
                     cells.push(
@@ -1066,13 +1149,20 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   : undefined;
 
                 // ── Edit-mode cell wrapper ───────────────────────────────
-                // In editTasks sub-mode, non-center cells are wrapped in a
+                // In editTasks sub-mode, non-pinned cells are wrapped in a
                 // button that captures the click position for the tap menu.
                 // RisoBoardCell itself gets onClick=undefined (display-only);
                 // the wrapper provides the pointer cursor and accessibility role.
-                const isEditTapTarget = editMode && subMode === 'editTasks' && !isCenter;
+                //
+                // Phase 2b: isPinnedCenter replaces !isCenter — a NONE center
+                // (isPinnedCenter=false) IS a valid tap target in editTasks mode.
+                const isEditTapTarget =
+                  editMode && subMode === 'editTasks' && !isPinnedCenter;
                 const capturedBoardTaskId = boardTaskId;
                 const capturedTaskId = resolvedTaskId ?? task.id;
+                // Phase 2b: mark if this cell is the unpinned center (NONE type)
+                // so SquareTapMenu can show the "Make it a free space" toggle.
+                const isCenterTask = isCenter && draftCenterType === CenterSquareType.NONE;
 
                 const cellNode = (
                   <RisoBoardCell
@@ -1106,6 +1196,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                           taskId: capturedTaskId,
                           x: e.clientX,
                           y: e.clientY,
+                          isCenterTask, // Phase 2b
                         });
                       }}
                     >
@@ -1157,10 +1248,28 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             onEdit={() => {
               setEditTaskSheetId(squareTapMenu.taskId);
             }}
+            // Phase 2b: NONE center task shows "Make it a free space" toggle.
+            onMakeFree={squareTapMenu.isCenterTask ? () => {
+              setDraftCenterType(CenterSquareType.FREE);
+            } : undefined}
             onClose={() => setSquareTapMenu(null)}
           />
         );
       })()}
+
+      {/* Phase 2b — Center toggle menu: shown when tapping a FREE/CUSTOM_FREE
+          center in editTasks mode. No boardTaskId (free centers have no task). */}
+      {editMode && freeCenterTapMenu && (
+        <SquareTapMenu
+          taskTitle="Free space"
+          x={freeCenterTapMenu.x}
+          y={freeCenterTapMenu.y}
+          onMakeTask={() => {
+            setDraftCenterType(CenterSquareType.NONE);
+          }}
+          onClose={() => setFreeCenterTapMenu(null)}
+        />
+      )}
 
       {/* Edit-mode Replace: opens CellSwapModal to pick a new task.
           On confirm, stages the replacement in the draft (no DB write). */}
@@ -1308,9 +1417,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         // Linked derived counters are read-only — decrement/reset must be gated.
         const isLinkedCounter = squareData.sharedCounterId != null;
 
-        // M3 — Swap is only available on ACTIVE non-expired, non-center squares.
+        // M3 — Swap is available on ACTIVE non-expired squares that are not a
+        // pinned center. Phase 2b: NONE center (bt.isCenter may be true in DB
+        // for wizard-placed boards) is swappable — only FREE/CUSTOM_FREE/CHOSEN
+        // centers are pinned.
         const swapEligible =
-          board.status === BoardStatus.ACTIVE && !isExpired && !bt.isCenter;
+          board.status === BoardStatus.ACTIVE &&
+          !isExpired &&
+          !(bt.isCenter && board.centerSquareType !== CenterSquareType.NONE);
 
         return (
           <FloatingContextMenu

@@ -68,6 +68,19 @@ export interface BoardEditPanelProps {
    * should navigate away (e.g., to /boards).
    */
   onArchived: () => void;
+  /**
+   * Phase 2b — controlled draft centerSquareType. Lifted to BoardPlaySurface
+   * so the grid can compute `isPinnedCenter` for the predicate fix, and so
+   * the center toggle (grid tap) and the BoardSetupForm center-selector both
+   * update the same draft value.
+   */
+  centerType: CenterSquareType;
+  /**
+   * Phase 2b — called whenever the draft centerSquareType changes (via
+   * BoardSetupForm selection or the grid center toggle). The parent
+   * (`BoardPlaySurface`) holds the state and flows it back as `centerType`.
+   */
+  onCenterTypeChange: (type: CenterSquareType) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -122,6 +135,8 @@ export function BoardEditPanel({
   onCancel,
   onSaved,
   onArchived,
+  centerType,
+  onCenterTypeChange,
 }: BoardEditPanelProps): React.ReactElement {
   // ── Controlled form state ────────────────────────────────────────────────
 
@@ -129,7 +144,8 @@ export function BoardEditPanel({
   const [timeframe, setTimeframe] = useState<Timeframe>(Timeframe.MONTHLY);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [centerType, setCenterType] = useState<CenterSquareType>(CenterSquareType.FREE);
+  // centerType is now a controlled prop (Phase 2b — lifted to BoardPlaySurface).
+  // centerCustomName stays internal (not needed by the grid predicate).
   const [centerCustomName, setCenterCustomName] = useState('');
 
   // subMode is now a prop (lifted to BoardPlaySurface so the grid can gate taps).
@@ -151,7 +167,8 @@ export function BoardEditPanel({
     setTimeframe(board.timeframe as Timeframe);
     setCustomStartDate(toYMD(board.startDate));
     setCustomEndDate(toYMD(board.endDate));
-    setCenterType(board.centerSquareType as CenterSquareType);
+    // centerType is a controlled prop seeded by BoardPlaySurface on edit-mode
+    // entry — do NOT re-seed here, or a grid center-toggle would be overwritten.
     setCenterCustomName(board.centerSquareCustomName ?? '');
     setValidationError(null);
     setSaving(false);
@@ -350,7 +367,7 @@ export function BoardEditPanel({
         customEndDate={customEndDate}
         onCustomEndDateChange={setCustomEndDate}
         centerType={centerType}
-        onCenterTypeChange={setCenterType}
+        onCenterTypeChange={onCenterTypeChange}
         centerCustomName={centerCustomName}
         onCenterCustomNameChange={setCenterCustomName}
         isRecurring={false}

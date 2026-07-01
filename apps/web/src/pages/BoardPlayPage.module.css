@@ -265,3 +265,24 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+
+/*
+ * Phase 2b — FREE/CUSTOM_FREE center in editTasks mode.
+ * Same visual as .freeSquare but rendered as a <button> so the user can tap
+ * it to open the center toggle menu ("Make it a task square").
+ * Reset UA button defaults; freeSquare class provides the visual styling.
+ * Dark contract: gold fill content uses --riso-ink-static per RISO_WEB.md.
+ */
+.editableFreeSquare {
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 0.09s;
+}
+.editableFreeSquare:hover {
+  opacity: 0.82;
+}
+.editableFreeSquare:focus-visible {
+  /* Inset ring per RISO_WEB.md: cream rings must be inset on dark fills */
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
