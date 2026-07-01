@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OYBC — On Your Bingo Card · Coming Fall 2026</title>
+    <meta
+      name="description"
+      content="OYBC — On Your Bingo Card. A goal tracker built on bingo boards. Launching Fall 2026 — get one note the day we open the doors."
+    />
+    <meta name="theme-color" content="#F1E9D9" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <!-- Open Graph / social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OYBC — On Your Bingo Card" />
+    <meta
+      property="og:description"
+      content="A goal tracker built on bingo boards. Launching Fall 2026."
+    />
+    <meta property="og:url" content="https://oybc.com/" />
+
+    <!-- Riso design system fonts: Bricolage Grotesque (head) + Archivo (body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Archivo:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="grain">
+    <div class="cs loud">
+      <!-- nav -->
+      <header class="cs-nav">
+        <div class="cs-brand">
+          <div class="cs-mark" aria-hidden="true">
+            <i class="on"></i><i></i><i class="on"></i>
+            <i></i><i class="free"></i><i></i>
+            <i class="on"></i><i></i><i class="on"></i>
+          </div>
+          <div class="cs-word">OYBC<small>ON YOUR BINGO CARD</small></div>
+        </div>
+        <div class="cs-nav-badge"><span class="pulse"></span>Coming Fall 2026</div>
+        <div class="cs-nav-right">
+          <div class="cs-seg" role="group" aria-label="Colour theme">
+            <button type="button" data-theme="day" class="on" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.2" />
+                <path
+                  d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"
+                />
+              </svg>
+              Day
+            </button>
+            <button type="button" data-theme="night" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />
+              </svg>
+              Night
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- hero -->
+      <main class="cs-hero split">
+        <div class="cs-copy">
+          <div class="cs-kicker">
+            <span class="cs-kicker-name">OYBC</span>Launching Fall 2026
+          </div>
+          <h1 class="cs-display">
+            We're filling<br /><span class="ink2">in the squares.</span>
+          </h1>
+          <p class="cs-sub">
+            A goal tracker built on bingo boards — drop what you're chasing onto a
+            grid, line up a row for the win, clear it, repeat. We're putting the
+            finishing ink on it now.
+          </p>
+
+          <div class="cs-capture">
+            <form class="cs-form" novalidate>
+              <!-- honeypot: hidden from users; bots that fill it are dropped -->
+              <input
+                class="cs-hp"
+                type="text"
+                name="company"
+                tabindex="-1"
+                autocomplete="off"
+                aria-hidden="true"
+              />
+              <input
+                class="input"
+                type="email"
+                name="email"
+                placeholder="you@example.com"
+                aria-label="Email address"
+                required
+              />
+              <button class="btn primary" type="submit">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z" />
+                  <path d="M10.5 20a2 2 0 0 0 3 0" />
+                </svg>
+                Notify me
+              </button>
+            </form>
+            <div class="cs-hint" role="alert" aria-live="assertive" hidden></div>
+            <div class="cs-note">
+              <i class="star" aria-hidden="true"></i>No spam — one note the day we open
+              the doors.
+            </div>
+
+            <!-- confirmation (revealed on submit; replaces the form) -->
+            <div class="cs-confirm" hidden>
+              <div class="cs-confirm-row">
+                <div class="cs-confirm-stamp" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg>
+                </div>
+                <div>
+                  <div class="cs-confirm-h">You're on the board.</div>
+                  <div class="cs-confirm-p">
+                    We'll email <b data-confirm-email></b> the moment OYBC opens —
+                    <b>Fall 2026</b>. That's a bingo.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cs-poster-wrap">
+          <div class="cs-board">
+            <div class="cs-grid" aria-hidden="true"></div>
+            <div class="cs-board-cap">Launching FALL 2026</div>
+            <div class="cs-board-stamp" aria-hidden="true">
+              <b>SPOT</b><span>saved</span>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- how it works -->
+      <section class="cs-beats">
+        <div class="cs-beats-in">
+          <div class="cs-beats-lead">
+            <div class="lab">While you wait</div>
+            <div class="txt">Here's the whole loop.</div>
+          </div>
+          <!-- three beats populated by main.ts -->
+        </div>
+      </section>
+
+      <!-- footer -->
+      <footer class="cs-foot">
+        <div class="cs-foot-in">
+          <span>OYBC · On Your Bingo Card · oybc.com</span>
+          <span class="cs-foot-links">
+            <a href="https://instagram.com/" rel="noopener">Instagram</a>
+            <a href="https://x.com/" rel="noopener">X</a>
+            <a href="mailto:hello@oybc.com">hello@oybc.com</a>
+          </span>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

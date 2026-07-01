@@ -1,0 +1,896 @@
+/* ============================================================
+   OYBC · Coming Soon — self-contained stylesheet for oybc.com.
+   Riso tokens + base components + page styles in one file so the
+   placeholder has zero dependency on the app build. Token values
+   are byte-identical to apps/web/src/styles/riso.css (the app's
+   --riso-* prefixed equivalents). See docs/COMING_SOON.md.
+   ============================================================ */
+
+/* ---- design tokens: Day (default) / Night ---- */
+:root {
+  --paper: #f1e9d9; /* page background */
+  --paper-2: #fbf6ea; /* cards, inputs, cells */
+  --ink: #18120b; /* text, keylines, hard shadows */
+  --muted: #7e7460; /* secondary text */
+  --blue: #2c44c9;
+  --red: #eb4d2e;
+  --green: #1f9b6b;
+  --gold: #ffc21f;
+
+  --hair: rgba(24, 18, 11, 0.14);
+  --shadow-ink: rgba(24, 18, 11, 1); /* all hard offset shadows */
+
+  --r-card: 8px; /* cards, inputs, buttons */
+  --r-cell: 7px; /* board cells */
+
+  --font-head: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Archivo', sans-serif;
+}
+
+.night {
+  --paper: #171310;
+  --paper-2: #221c15;
+  --ink: #f1e9d9; /* flips to cream */
+  --muted: #a39781;
+  --blue: #6678f2;
+  --red: #ff6a4a;
+  --green: #3bcb92;
+  --gold: #ffc21f; /* unchanged */
+  --hair: rgba(241, 233, 217, 0.16);
+  /* --shadow-ink stays the dark ink hue in Night, matching the handoff. */
+}
+
+/* ---- base ---- */
+* {
+  box-sizing: border-box;
+}
+/* The `hidden` attribute must win over component `display` rules (e.g. the
+   flex form/note swapped out on submit). The UA `[hidden]{display:none}` has
+   the lowest specificity and would otherwise lose to `.cs-form{display:flex}`. */
+[hidden] {
+  display: none !important;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* page-wide paper grain */
+.grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    rgba(24, 18, 11, 0.05) 0.5px,
+    transparent 0.6px
+  );
+  background-size: 3px 3px;
+}
+.night .grain::before {
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    rgba(241, 233, 217, 0.07) 0.5px,
+    transparent 0.6px
+  );
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+/* ---- base components (from riso-web.css) ---- */
+.btn {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 15px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-card);
+  padding: 12px 18px;
+  cursor: pointer;
+  background: var(--paper-2);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+  transition:
+    transform 0.09s,
+    box-shadow 0.09s;
+}
+.btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--shadow-ink);
+}
+.btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--shadow-ink);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+}
+.btn.primary {
+  background: var(--red);
+  color: #fbf6ea;
+}
+.btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+}
+
+.input {
+  width: 100%;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-card);
+  background: var(--paper-2);
+  padding: 14px 16px;
+  font-family: var(--font-head);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  outline: none;
+}
+.input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.input:focus {
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+}
+
+.star {
+  background: var(--gold);
+  border: 1px solid var(--ink);
+  clip-path: polygon(
+    50% 0,
+    61% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    39% 35%
+  );
+  display: inline-block;
+}
+
+/* ============================================================
+   PAGE
+   ============================================================ */
+.cs {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* faint oversized halftone wash bleeding off one corner — poster texture */
+.cs::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  width: 70vw;
+  height: 70vw;
+  right: -22vw;
+  top: -26vw;
+  border-radius: 50%;
+  background-image: radial-gradient(circle, var(--ink) 22%, transparent 24%);
+  background-size: 16px 16px;
+  mix-blend-mode: multiply;
+  opacity: 0.06;
+}
+.cs.loud::after {
+  opacity: 0.12;
+}
+.night .cs::after {
+  mix-blend-mode: screen;
+  opacity: 0.08;
+}
+
+/* ---- top bar ---- */
+.cs-nav {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 44px;
+}
+.cs-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cs-mark {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 2px solid var(--ink);
+  border-radius: 9px;
+  background: var(--red);
+  box-shadow: 2.5px 2.5px 0 var(--shadow-ink);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2.5px;
+  padding: 5px;
+}
+.cs-mark i {
+  border-radius: 1px;
+  background: rgba(241, 233, 217, 0.34);
+}
+.cs-mark i.on {
+  background: var(--paper);
+}
+.cs-mark i.free {
+  background: var(--gold);
+}
+.cs-word {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 23px;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.cs-word small {
+  display: block;
+  font-family: var(--font-head);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.cs-nav-badge {
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 6px 13px;
+  background: var(--paper-2);
+}
+.cs-nav-badge .pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  border: 1.5px solid var(--ink);
+  box-shadow: 0 0 0 0 var(--green);
+  animation: csPulse 2.4s infinite;
+}
+@keyframes csPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.cs-nav-right {
+  margin-left: auto;
+}
+
+/* theme seg */
+.cs-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-2);
+}
+.cs-seg button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 7px 13px;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cs-seg button.on {
+  background: var(--ink);
+  color: var(--paper);
+}
+.cs-seg svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+/* ---- hero ---- */
+.cs-hero {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 30px 44px 64px;
+  display: grid;
+  align-items: center;
+  gap: 64px;
+}
+.cs-hero.split {
+  grid-template-columns: 1.04fr 0.96fr;
+}
+
+.cs-copy {
+  max-width: 540px;
+}
+
+.cs-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+.cs-kicker-name {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  background: var(--gold);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 3px 9px;
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+
+.cs-display {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: clamp(54px, 7vw, 108px);
+  line-height: 0.84;
+  letter-spacing: -0.045em;
+  margin: 18px 0 0;
+  text-wrap: balance;
+}
+.cs-display .ink2 {
+  color: var(--red);
+}
+
+.cs-sub {
+  font-size: 19px;
+  line-height: 1.55;
+  font-weight: 500;
+  color: var(--muted);
+  margin: 24px 0 0;
+  max-width: 470px;
+  text-wrap: pretty;
+}
+
+/* ---- email capture ---- */
+.cs-capture {
+  margin-top: 34px;
+}
+.cs-form {
+  display: flex;
+  gap: 12px;
+  max-width: 480px;
+}
+.cs-form .input {
+  flex: 1;
+  font-size: 16px;
+  padding: 14px 16px;
+}
+.cs-form .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* honeypot — visually removed, still submitted */
+.cs-hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.cs-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 14px;
+}
+.cs-note .star {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+.cs-hint {
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--red);
+}
+
+/* confirmation (reveal) */
+.cs-confirm {
+  max-width: 480px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-card);
+  background: var(--green);
+  color: #fbf6ea;
+  padding: 20px 22px;
+  box-shadow: 4px 4px 0 var(--shadow-ink);
+  position: relative;
+  overflow: hidden;
+  animation: csConfirmIn 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+@keyframes csConfirmIn {
+  0% {
+    transform: translateY(10px) scale(0.98);
+  }
+  100% {
+    transform: none;
+  }
+}
+.cs-confirm::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    rgba(24, 18, 11, 0.3) 26%,
+    transparent 28%
+  );
+  background-size: 11px 11px;
+  mix-blend-mode: multiply;
+  opacity: 0.22;
+  pointer-events: none;
+}
+.cs-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+.cs-confirm-stamp {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  border: 2px solid #fbf6ea;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.14);
+}
+.cs-confirm-stamp svg {
+  width: 22px;
+  height: 22px;
+  stroke: #fbf6ea;
+  stroke-width: 3;
+  fill: none;
+}
+.cs-confirm-h {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.cs-confirm-p {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-top: 6px;
+  opacity: 0.92;
+  line-height: 1.45;
+}
+.cs-confirm-p b {
+  font-weight: 800;
+}
+
+/* ---- poster board ---- */
+.cs-poster-wrap {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+}
+.cs-board {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  border: 3px solid var(--ink);
+  border-radius: 22px;
+  background: var(--paper);
+  padding: 20px;
+  box-shadow: 14px 14px 0 var(--shadow-ink);
+  transform: rotate(-2.2deg);
+  transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.cs-board.won {
+  transform: rotate(-1deg) scale(1.012);
+}
+
+.cs-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 9px;
+}
+.cs-cell {
+  aspect-ratio: 1;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-cell);
+  background: var(--paper-2);
+  position: relative;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.3),
+    box-shadow 0.12s;
+}
+.cs-cell:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+.cs-cell.ink {
+  background: var(--red);
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+  transform: translate(-1px, -1px);
+}
+.cs-cell.ink.blue {
+  background: var(--blue);
+}
+.cs-cell.ink::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    rgba(24, 18, 11, 0.45) 26%,
+    transparent 28%
+  );
+  background-size: 9px 9px;
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+  border-radius: 5px;
+}
+.cs-cell.pop {
+  animation: csPop 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.45);
+}
+@keyframes csPop {
+  0% {
+    transform: translate(-1px, -1px) scale(0.8);
+  }
+  55% {
+    transform: translate(-1px, -1px) scale(1.09);
+  }
+  100% {
+    transform: translate(-1px, -1px) scale(1);
+  }
+}
+.cs-cell.line {
+  box-shadow:
+    0 0 0 4px var(--gold),
+    2px 2px 0 var(--shadow-ink);
+  z-index: 1;
+}
+.cs-cell.line:not(.ink) {
+  background: var(--gold);
+}
+.cs-cell.free {
+  background: var(--ink);
+  cursor: default;
+}
+.night .cs-cell.free {
+  background: #000;
+}
+.cs-cell.free:hover {
+  transform: none;
+  box-shadow: none;
+}
+.cs-cell.free::after {
+  content: '★';
+  color: var(--gold);
+  font-size: 22px;
+}
+
+/* board "spot saved" stamp on win */
+.cs-board-stamp {
+  position: absolute;
+  z-index: 6;
+  right: -16px;
+  top: -16px;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ink);
+  background: var(--green);
+  color: #fbf6ea;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  box-shadow: 4px 4px 0 var(--shadow-ink);
+  transform: rotate(9deg) scale(0);
+}
+.cs-board-stamp.in {
+  transform: rotate(9deg) scale(1);
+  animation: csStampIn 0.5s 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.5);
+}
+@keyframes csStampIn {
+  0% {
+    transform: rotate(-30deg) scale(0);
+  }
+  65% {
+    transform: rotate(12deg) scale(1.12);
+  }
+  100% {
+    transform: rotate(9deg) scale(1);
+  }
+}
+.cs-board-stamp b {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.cs-board-stamp span {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+
+.cs-board-cap {
+  position: absolute;
+  left: 20px;
+  bottom: -16px;
+  transform: translateY(50%) rotate(-2.2deg);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 5px 12px;
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+
+/* ---- how-it-works strip ---- */
+.cs-beats {
+  position: relative;
+  z-index: 2;
+  border-top: 2px solid var(--ink);
+  background: var(--paper-2);
+}
+.cs-beats-in {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 30px 44px;
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 1fr;
+  gap: 26px;
+  align-items: center;
+}
+.cs-beats-lead {
+  max-width: 180px;
+}
+.cs-beats-lead .lab {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cs-beats-lead .txt {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-top: 8px;
+}
+.cs-beat {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.cs-beat-mini {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  width: 50px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--ink);
+  border-radius: 5px;
+  background: var(--paper);
+  padding: 3px;
+}
+.cs-beat-mini i {
+  aspect-ratio: 1;
+  border-radius: 1px;
+  background: var(--paper-2);
+  border: 0.5px solid var(--hair);
+}
+.cs-beat-mini i.on {
+  background: var(--red);
+}
+.cs-beat-mini i.free {
+  background: var(--ink);
+}
+.cs-beat-mini i.line {
+  background: var(--gold);
+}
+.cs-beat-n {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cs-beat-h {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+}
+.cs-beat-p {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+/* ---- footer ---- */
+.cs-foot {
+  position: relative;
+  z-index: 2;
+  border-top: 2px solid var(--ink);
+}
+.cs-foot-in {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 22px 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.cs-foot-in a {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.cs-foot-in a:hover {
+  color: var(--ink);
+}
+.cs-foot-links {
+  display: flex;
+  gap: 20px;
+}
+
+/* ---- responsive ---- */
+@media (max-width: 940px) {
+  .cs-hero.split {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    justify-items: center;
+    text-align: center;
+  }
+  .cs-hero.split .cs-poster-wrap {
+    order: -1;
+  }
+  .cs-hero.split .cs-sub,
+  .cs-hero.split .cs-form,
+  .cs-hero.split .cs-note,
+  .cs-hero.split .cs-confirm {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .cs-hero.split .cs-note {
+    justify-content: center;
+  }
+  .cs-hero.split .cs-confirm {
+    text-align: left;
+  }
+  .cs-beats-in {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .cs-beats-lead {
+    max-width: none;
+  }
+}
+@media (max-width: 620px) {
+  .cs-nav {
+    padding: 18px 22px;
+    flex-wrap: wrap;
+  }
+  .cs-hero {
+    padding: 22px 22px 48px;
+  }
+  .cs-beats-in,
+  .cs-foot-in {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+  .cs-form {
+    flex-direction: column;
+  }
+  .cs-board {
+    max-width: 320px;
+  }
+  .cs-nav-badge {
+    display: none;
+  }
+}
+
+/* reduced motion: no entrance/pulse motion; resting state is the final state */
+@media (prefers-reduced-motion: reduce) {
+  .cs-cell.pop,
+  .cs-board-stamp.in,
+  .cs-confirm,
+  .cs-nav-badge .pulse {
+    animation: none;
+  }
+}

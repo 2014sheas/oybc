@@ -1,0 +1,23 @@
+{
+  "name": "@oybc/coming-soon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone risograph-poster placeholder for oybc.com (launch-email capture). Not part of the app bundle.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --report-unused-disable-directives"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.61.1",
+    "@typescript-eslint/parser": "^8.61.1",
+    "eslint": "^10.5.0",
+    "globals": "^17.6.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
+  }
+}
