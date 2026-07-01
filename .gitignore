@@ -84,6 +84,8 @@ OYBC design handoff*.zip
 design_handoff_riso_redesign/
 OYBC web handoff*.zip
 design_handoff_web/
+OYBC Coming Soon*.zip
+design_handoff_coming_soon/
 
 # design-sync (claude.ai/design) — staged scripts, build output, machine state
 .ds-sync/
