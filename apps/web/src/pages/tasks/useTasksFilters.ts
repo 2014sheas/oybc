@@ -118,13 +118,29 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   }, [allBoards]);
 
   const { placementCountByTaskId, activePlacementCountByTaskId } = useMemo(() => {
-    const all: Record<string, number> = {};
-    const active: Record<string, number> = {};
+    // Count DISTINCT non-deleted boards per task (drafts included) — matching
+    // the task-detail page (dedup by boardId + `!isDeleted` filter). Gating on
+    // `boardStatusById` drops placements on soft-deleted boards; the Set dedups
+    // duplicate rows on one board. Previously this counted every raw row incl.
+    // rows on deleted boards, so the pool disagreed with task-detail.
+    const allBoardsByTask: Record<string, Set<string>> = {};
+    const activeBoardsByTask: Record<string, Set<string>> = {};
     for (const bt of allBoardTasks) {
-      all[bt.taskId] = (all[bt.taskId] ?? 0) + 1;
+      if (!boardStatusById[bt.boardId]) continue; // skip soft-deleted boards
+      (allBoardsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
       if (boardStatusById[bt.boardId] === BoardStatus.ACTIVE) {
-        active[bt.taskId] = (active[bt.taskId] ?? 0) + 1;
+        // DISTINCT active boards too — the row's "N active" must match the
+        // task-detail page (distinct active boards), not raw row count.
+        (activeBoardsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
       }
+    }
+    const all: Record<string, number> = {};
+    for (const [taskId, boardIds] of Object.entries(allBoardsByTask)) {
+      all[taskId] = boardIds.size;
+    }
+    const active: Record<string, number> = {};
+    for (const [taskId, boardIds] of Object.entries(activeBoardsByTask)) {
+      active[taskId] = boardIds.size;
     }
     return { placementCountByTaskId: all, activePlacementCountByTaskId: active };
   }, [allBoardTasks, boardStatusById]);

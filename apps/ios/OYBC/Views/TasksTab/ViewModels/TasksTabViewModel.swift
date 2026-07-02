@@ -108,26 +108,37 @@ final class TasksTabViewModel {
 
     // MARK: - Derived placement counts
 
-    /// `taskId` → count of non-deleted BoardTask placements (any board
-    /// status). Used for the "Most-used" sort and "Placed on N boards"
-    /// hint when there are no active-board placements.
+    /// `taskId` → count of DISTINCT non-deleted boards the task is placed on
+    /// (any board status, drafts included). Used for the "Most-used" sort and
+    /// "Placed on N boards" hint when there are no active-board placements.
+    ///
+    /// `boardStatusById` holds only live (non-deleted) boards, so gating on it
+    /// drops placements whose board was soft-deleted; deduping by `boardId`
+    /// collapses multiple rows on one board. Both are required to match the
+    /// task-detail page (`Set(bts.map(\.boardId))` + `fetchBoards` isDeleted
+    /// filter) — previously this counted every raw row, including rows on
+    /// soft-deleted boards, so the two surfaces disagreed.
     func placementCounts(boardTasks: [BoardTask]) -> [String: Int] {
-        var counts: [String: Int] = [:]
-        for bt in boardTasks {
-            counts[bt.taskId, default: 0] += 1
+        var boardsByTask: [String: Set<String>] = [:]
+        for bt in boardTasks where boardStatusById[bt.boardId] != nil {
+            boardsByTask[bt.taskId, default: []].insert(bt.boardId)
         }
-        return counts
+        return boardsByTask.mapValues { $0.count }
     }
 
     /// `taskId` → count of placements on boards whose `status == .active`.
     /// Drives the usage filter's "On active boards" value plus the row's
     /// primary usage hint.
     func activePlacementCounts(boardTasks: [BoardTask]) -> [String: Int] {
-        var counts: [String: Int] = [:]
+        // DISTINCT active boards per task — matches the task-detail page
+        // (`affectedBoards.filter { $0.status == .active }.count`) so the row's
+        // "N active" agrees with detail. (Was raw row count, which over-counts
+        // if a task has >1 board_task row on the same active board.)
+        var boardsByTask: [String: Set<String>] = [:]
         for bt in boardTasks where boardStatusById[bt.boardId] == .active {
-            counts[bt.taskId, default: 0] += 1
+            boardsByTask[bt.taskId, default: []].insert(bt.boardId)
         }
-        return counts
+        return boardsByTask.mapValues { $0.count }
     }
 
     // MARK: - Pipeline

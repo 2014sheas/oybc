@@ -357,6 +357,7 @@ private struct TasksStepHost: View {
             // .custom hides the "From parent boards" filter chip (no parent
             // timeframes for custom), keeping baselines stable.
             currentTimeframe: .custom,
+            onToggleSelection: { _ in },
             onTaskCreated: { _, _, _ in },
             onCompositeCreated: { _ in },
             onLibraryReloadRequested: { },

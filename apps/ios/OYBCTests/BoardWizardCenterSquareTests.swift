@@ -81,4 +81,50 @@ final class BoardWizardCenterSquareTests: XCTestCase {
             "Even boards have no center; chosen task id must clear"
         )
     }
+
+    // MARK: - Persisted BoardTask.isCenter (bugfix/ios-wizard-draft-leakage)
+    //
+    // The bug: `persistWizardBoard` set `isCenter` for `.none` centers too,
+    // so the play grid rendered a gold "FREE" cell over a real task (the
+    // preview never did — it gates on `centerType != .none`). These pin the
+    // shared `makeWizardBoardTaskRows` helper both the wizard and recurring
+    // spawn use.
+
+    private func t(_ id: String) -> OYBC.Task {
+        OYBC.Task(
+            id: id, userId: "u1", title: "T\(id)", type: .normal,
+            totalCompletions: 0, totalInstances: 0,
+            createdAt: "2026-07-01T12:00:00.000", updatedAt: "2026-07-01T12:00:00.000",
+            version: 1, isDeleted: false, createdInWizard: false
+        )
+    }
+
+    /// 3×3 placement with a real task in every cell (center = index 4).
+    private func full3x3() -> WizardPlacement { (0..<9).map { i -> OYBC.Task? in t("t\(i)") } }
+
+    func testPersistedCenterFlaggedOnlyForChosen() {
+        let now = "2026-07-01T12:00:00.000"
+
+        let chosen = makeWizardBoardTaskRows(placement: full3x3(), boardId: "b", size: 3, centerType: .chosen, now: now)
+        XCTAssertEqual(chosen.count, 9)
+        XCTAssertTrue(chosen.first { $0.row == 1 && $0.col == 1 }!.isCenter,
+                      "A CHOSEN center task must be flagged isCenter")
+        XCTAssertEqual(chosen.filter { $0.isCenter }.count, 1)
+
+        let none = makeWizardBoardTaskRows(placement: full3x3(), boardId: "b", size: 3, centerType: .none, now: now)
+        XCTAssertFalse(none.first { $0.row == 1 && $0.col == 1 }!.isCenter,
+                       "A NONE center holds an ordinary task and must NOT be isCenter (was rendering a FREE cell)")
+        XCTAssertEqual(none.filter { $0.isCenter }.count, 0)
+    }
+
+    func testPersistedFreeCenterHasNoRow() {
+        // FREE / CUSTOM_FREE reserve the center as a nil slot → no BoardTask row,
+        // and nothing is flagged isCenter (the play grid renders FREE positionally).
+        var p = full3x3()
+        p[4] = nil
+        let rows = makeWizardBoardTaskRows(placement: p, boardId: "b", size: 3, centerType: .free, now: "n")
+        XCTAssertEqual(rows.count, 8)
+        XCTAssertFalse(rows.contains { $0.row == 1 && $0.col == 1 }, "No row at the reserved FREE center")
+        XCTAssertEqual(rows.filter { $0.isCenter }.count, 0)
+    }
 }

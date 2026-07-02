@@ -264,6 +264,9 @@ struct BoardWizardView: View {
                 currentTimeframe: wizard.timeframe,
                 currentStartDate: { if case .ok(let s, _) = currentDates { return s }; return nil }(),
                 currentEndDate: { if case .ok(_, let e) = currentDates { return e }; return nil }(),
+                onToggleSelection: { taskId in
+                    wizard.toggleTaskSelection(taskId)
+                },
                 onTaskCreated: { taskId, _, _ in
                     wizard.toggleTaskSelection(taskId)
                 },

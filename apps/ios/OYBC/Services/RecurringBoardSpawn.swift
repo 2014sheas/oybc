@@ -108,25 +108,16 @@ enum RecurringBoardSpawn {
                 let boardData = try JSONSerialization.data(withJSONObject: boardDict)
                 let board = try JSONDecoder().decode(Board.self, from: boardData)
 
-                let centerCellIndex = size % 2 == 1 ? (size * size) / 2 : -1
-
-                var boardTasks: [BoardTask] = []
-                for (cell, t) in placement.enumerated() {
-                    guard let task = t else { continue } // FREE / CUSTOM_FREE center
-                    let row = cell / size
-                    let col = cell % size
-                    boardTasks.append(BoardTask(
-                        id: AppDatabase.generateUUID(),
-                        boardId: boardId,
-                        taskId: task.id,
-                        row: row,
-                        col: col,
-                        isCenter: cell == centerCellIndex,
-                        createdAt: now,
-                        updatedAt: now,
-                        version: 1
-                    ))
-                }
+                // Shared with the wizard-save path so the `isCenter` rule
+                // stays identical: only a `.chosen` centre task is flagged
+                // (a `.none` centre holds an ordinary task, not a FREE cell).
+                let boardTasks = makeWizardBoardTaskRows(
+                    placement: placement,
+                    boardId: boardId,
+                    size: size,
+                    centerType: template.centerSquareType,
+                    now: now
+                )
 
                 var updatedTemplate = template
                 updatedTemplate.lastSpawnedWindowKey = spawn.windowStart
