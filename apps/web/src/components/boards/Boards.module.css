@@ -100,6 +100,74 @@
   background: var(--riso-gold);
 }
 
+/* ---- recurring-window banner (Phase 6.1 web parity) ---- */
+.recurringBanner {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  padding: 14px 16px;
+  margin: 0 0 20px;
+}
+.recurringBannerHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--riso-green);
+  margin-bottom: 12px;
+}
+.recurringBannerItems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.recurringBannerItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  padding: 10px 14px;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+  min-width: 160px;
+}
+.recurringBannerItem:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.recurringBannerItem:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.recurringBannerItem:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.recurringBannerLabel {
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  flex: 1;
+  color: var(--riso-ink);
+}
+.recurringBannerCta {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--riso-green);
+  white-space: nowrap;
+}
+
 /* ---- board-card grid ---- */
 .grid {
   display: grid;
