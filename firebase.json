@@ -13,5 +13,17 @@
       "ignore": ["node_modules", ".git", "*.log"],
       "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
     }
-  ]
+  ],
+  "hosting": {
+    "public": "apps/coming-soon/dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "/api/subscribe",
+        "function": { "functionId": "subscribe", "region": "us-central1" }
+      },
+      { "source": "**", "destination": "/index.html" }
+    ],
+    "predeploy": ["pnpm --filter @oybc/coming-soon run build"]
+  }
 }
