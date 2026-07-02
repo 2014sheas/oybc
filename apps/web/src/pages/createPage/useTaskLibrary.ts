@@ -1,6 +1,14 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { TaskType, type Task, type CompoundChild } from '@oybc/shared';
+import {
+  TaskType,
+  BoardStatus,
+  computeBrowsableTasks,
+  type Task,
+  type CompoundChild,
+  type Board,
+  type BoardTask,
+} from '@oybc/shared';
 import { db } from '../../db/database';
 import { useTasks } from '../../hooks';
 
@@ -9,6 +17,8 @@ export type ExistingFilter = 'all' | 'normal' | 'counting' | 'compound';
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
 const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
+const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
 
 /**
  * Loads the user's task library — unified under the compound model.
@@ -110,6 +120,40 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     childTaskIds,
     childToParents,
   };
+}
+
+/**
+ * The draft-filtered subset of `allTasks` to BROWSE — hides wizard-born tasks
+ * that live only on draft boards (or are orphaned, e.g. removed from the pool)
+ * until they land on a live non-draft board. Mirrors iOS
+ * `TaskLibraryViewModel.browsableTasks`.
+ *
+ * Subscribes to the boards + board_tasks tables, so call this ONLY from browse
+ * surfaces (the Tasks tab, the wizard "add from library"). Lookup-only callers
+ * of `useTaskLibrary` (BoardPlaySurface, RisoBoard, …) must NOT pay for these
+ * subscriptions — that's why this is a separate hook.
+ */
+export function useBrowsableTasks(
+  allTasks: Task[],
+  childToParents: Record<string, string[]> = {},
+): Task[] {
+  const allBoardTasks =
+    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+  const allBoards =
+    useLiveQuery(
+      () => db.boards.filter((b: Board) => !b.isDeleted).toArray(),
+      [],
+    ) ?? EMPTY_BOARDS;
+  const boardStatusById = useMemo(() => {
+    const m: Record<string, BoardStatus> = {};
+    for (const b of allBoards) m[b.id] = b.status;
+    return m;
+  }, [allBoards]);
+  return useMemo(
+    () =>
+      computeBrowsableTasks(allTasks, allBoardTasks, boardStatusById, childToParents),
+    [allTasks, allBoardTasks, boardStatusById, childToParents],
+  );
 }
 
 /**

@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   BoardStatus,
   TaskType,
+  computeBrowsableTasks,
   isTaskExpired,
   type Board,
   type BoardTask,
@@ -117,6 +118,20 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     return m;
   }, [allBoards]);
 
+  // Draft-visibility filter (mirrors iOS): hide wizard-born tasks that live
+  // only on draft boards, or are orphaned (removed from the pool / board gone),
+  // until they land on a live board. Reuses the board data loaded above.
+  const browsableTasks = useMemo(
+    () =>
+      computeBrowsableTasks(
+        library.allTasks,
+        allBoardTasks,
+        boardStatusById,
+        library.childToParents,
+      ),
+    [library.allTasks, allBoardTasks, boardStatusById, library.childToParents],
+  );
+
   const { placementCountByTaskId, activePlacementCountByTaskId } = useMemo(() => {
     // Count DISTINCT non-deleted boards per task (drafts included) — matching
     // the task-detail page (dedup by boardId + `!isDeleted` filter). Gating on
@@ -183,7 +198,9 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
 
   const filteredTasks = useMemo(() => {
     const trimmed = search.trim().toLowerCase();
-    const typed = library.allTasks
+    // Browse the draft-filtered set: wizard-born tasks placed only on draft
+    // boards (or orphaned) stay hidden until their board goes active.
+    const typed = browsableTasks
       .filter((t) => matchesTypeFilter(t, typeFilter))
       .filter((t) => {
         // Issue #73 — suppress non-independent children from top level when on.
@@ -209,6 +226,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
       .sort((a, b) => compareTasks(a, b, sortBy, placementCountByTaskId));
   }, [
     library,
+    browsableTasks,
     search,
     typeFilter,
     statusFilter,
