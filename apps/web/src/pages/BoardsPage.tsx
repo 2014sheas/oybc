@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
-import { useBoards, useCoreBoardSlots, useRecurringBoardSpawn } from '../hooks';
+import { useBoards, useCoreBoardSlots, usePendingRecurringBoards, useRecurringBoardSpawn } from '../hooks';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
+import { RecurringWindowBanner } from '../components/boards/RecurringWindowBanner';
+import type { PendingRecurringBoard } from '@oybc/shared';
 import styles from '../components/boards/Boards.module.css';
 
 const FILTER_TABS = [
@@ -26,9 +28,18 @@ export function BoardsPage(): React.ReactElement {
   const navigate = useNavigate();
   const allBoards = useBoards(user?.id) ?? [];
   const coreBoardSlots = useCoreBoardSlots(user?.id);
+  // Phase 6.1: detect new recurring windows that need a board created.
+  const pendingRecurring = usePendingRecurringBoards(user?.id);
   // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
   useRecurringBoardSpawn(user?.id);
   const [activeFilter, setActiveFilter] = useState<string>('active');
+
+  /** Navigate to the wizard prefilled for the given pending window.
+   *  No board is written here — lazy/observed only, per the recurring-boards
+   *  invariant. The wizard creates the board when the user taps Save. */
+  function handleRecurringSetUp(p: PendingRecurringBoard): void {
+    navigate(`/create?recurringTimeframe=${p.timeframe}&windowDate=${p.startDate.slice(0, 10)}`);
+  }
 
   const filteredBoards = allBoards.filter((b) => {
     if (activeFilter === 'all') return true;
@@ -63,6 +74,11 @@ export function BoardsPage(): React.ReactElement {
       <CoreStrip
         slots={coreBoardSlots}
         onSelect={(slot) => navigate(`/boards/core/${slot.timeframe}/${slot.windowStart.slice(0, 10)}`)}
+      />
+
+      <RecurringWindowBanner
+        pending={pendingRecurring}
+        onSetUp={handleRecurringSetUp}
       />
 
       {filteredBoards.length === 0 ? (
