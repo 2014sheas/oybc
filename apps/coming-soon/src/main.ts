@@ -99,9 +99,11 @@ interface Beat {
   h: string;
   p: string;
 }
+// Fills are scattered so NO row/column/diagonal is fully coloured except the
+// intended gold `line` in beat 02 (grid col = index % 5; col 1 = {1,6,11,16,21}).
 const BEATS: Beat[] = [
-  { n: '01', on: [1, 3, 6, 8, 11, 16, 18, 21], h: 'Fill your squares', p: 'Drop your goals on a board.' },
-  { n: '02', on: [1, 3, 6, 8, 16, 18, 21], line: [10, 11, 13, 14], h: 'Line up a bingo', p: 'Any row, column or diagonal wins.' },
+  { n: '01', on: [0, 3, 6, 9, 13, 16, 19, 22], h: 'Fill your squares', p: 'Drop your goals on a board.' },
+  { n: '02', on: [0, 6, 8, 16, 19, 22], line: [10, 11, 13, 14], h: 'Line up a bingo', p: 'Any row, column or diagonal wins.' },
   { n: '03', on: 'all', h: 'Clear & renew', p: 'Finish it, start fresh, streak carries.' },
 ];
 
