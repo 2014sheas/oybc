@@ -504,6 +504,9 @@ export function useCreateFormState({
               timeframe: defaultTimeframe,
               startDate: defaultStartDate,
               endDate: defaultEndDate,
+              // Wizard-born (deferred-persist). Hidden from the library until
+              // its board goes active (see computeBrowsableTasks). Mirrors iOS.
+              createdInWizard: true,
             };
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
             onTaskCreated(newTask);
@@ -536,6 +539,9 @@ export function useCreateFormState({
               timeframe: defaultTimeframe,
               startDate: defaultStartDate,
               endDate: defaultEndDate,
+              // Wizard-born (deferred-persist). Hidden from the library until
+              // its board goes active (see computeBrowsableTasks). Mirrors iOS.
+              createdInWizard: true,
             };
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
             onTaskCreated(newTask);
@@ -570,6 +576,9 @@ export function useCreateFormState({
               timeframe: defaultTimeframe,
               startDate: defaultStartDate,
               endDate: defaultEndDate,
+              // Wizard-born (deferred-persist). Hidden from the library until
+              // its board goes active (see computeBrowsableTasks). Mirrors iOS.
+              createdInWizard: true,
             };
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
             onTaskCreated(newTask);

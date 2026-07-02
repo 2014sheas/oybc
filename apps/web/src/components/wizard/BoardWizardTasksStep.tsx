@@ -13,7 +13,7 @@ import { db } from '../../db/database';
 import { createTask } from '../../db/operations/tasks';
 import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
-import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
@@ -183,13 +183,17 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.taskMap, pendingTasks]);
+  const browsableTasks = useBrowsableTasks(library.allTasks);
   const effectiveAllTasks = useMemo<Task[]>(() => {
-    if (!pendingTasks || pendingTasks.size === 0) return library.allTasks;
+    // Browse the draft-filtered set (hides other drafts' wizard-orphans), but
+    // always merge THIS session's in-memory pending tasks so the just-created
+    // ones still appear.
+    if (!pendingTasks || pendingTasks.size === 0) return browsableTasks;
     const pendingArr = Array.from(pendingTasks.values()).map((p) => p.task);
     // Deduplicate: library tasks first, pending tasks fill any gaps.
-    const ids = new Set(library.allTasks.map((t) => t.id));
-    return [...library.allTasks, ...pendingArr.filter((t) => !ids.has(t.id))];
-  }, [library.allTasks, pendingTasks]);
+    const ids = new Set(browsableTasks.map((t) => t.id));
+    return [...browsableTasks, ...pendingArr.filter((t) => !ids.has(t.id))];
+  }, [browsableTasks, pendingTasks]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<TasksFilter>('all');
 
