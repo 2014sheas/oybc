@@ -151,6 +151,41 @@ final class DraftTaskVisibilityTests: XCTestCase {
         XCTAssertEqual(ids(result), ["standalone", "wizActive"])
     }
 
+    // MARK: - Compound children inherit parent-compound placements
+
+    func testWizardCompoundChild_inheritsActiveParent_isVisible() {
+        // A wizard-born inline subtask has no direct placement; it inherits its
+        // parent compound's active placement → visible (stays pool-addable).
+        let tasks = [task("parent", createdInWizard: true), task("child", createdInWizard: true)]
+        let placements = [placement("parent", on: "activeBoard")]
+        let statuses: [String: BoardStatus] = ["activeBoard": .active]
+        let result = TaskLibraryViewModel.computeBrowsableTasks(
+            tasks: tasks, boardTasks: placements, boardStatusById: statuses,
+            childToParents: ["child": ["parent"]]
+        )
+        XCTAssertEqual(ids(result), ["parent", "child"])
+    }
+
+    func testWizardCompoundChild_draftOnlyParent_isHidden() {
+        let tasks = [task("parent", createdInWizard: true), task("child", createdInWizard: true)]
+        let placements = [placement("parent", on: "draftBoard")]
+        let statuses: [String: BoardStatus] = ["draftBoard": .draft]
+        let result = TaskLibraryViewModel.computeBrowsableTasks(
+            tasks: tasks, boardTasks: placements, boardStatusById: statuses,
+            childToParents: ["child": ["parent"]]
+        )
+        XCTAssertTrue(result.isEmpty, "Child of a draft-only parent should be hidden")
+    }
+
+    func testWizardCompoundChild_noParentPlacement_isHidden() {
+        let tasks = [task("parent", createdInWizard: true), task("child", createdInWizard: true)]
+        let result = TaskLibraryViewModel.computeBrowsableTasks(
+            tasks: tasks, boardTasks: [], boardStatusById: [:],
+            childToParents: ["child": ["parent"]]
+        )
+        XCTAssertTrue(result.isEmpty, "Child with no parent placement should be hidden")
+    }
+
     // MARK: - pendingPayloadsToPersist (bugfix/ios-wizard-draft-leakage)
     //
     // A task removed from the wizard pool lingers in `pendingTasks` (removal
