@@ -192,6 +192,10 @@ export function StreaksPage(): React.ReactElement {
   const { user } = useAuth();
   const [prefs] = usePreferences();
   const boards = useBoards(user?.id);
+  // Frozen at mount (empty deps). "Today/Yesterday" labels and the week strip
+  // won't re-anchor if the page is left open across midnight — an accepted
+  // trade-off for a profile sub-page (mirrors CoreBoardWindowPage's frozen
+  // `now`); a midnight-tick interval would be disproportionate here.
   const now = useMemo(() => new Date(), []);
 
   // Derived values — all computed from boards (same pattern as iOS loadData).
