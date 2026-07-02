@@ -9,6 +9,37 @@ import { usePreferences } from '../hooks';
 import styles from './ProfilePage.module.css';
 
 /**
+ * Human-readable label for a celebration intensity value.
+ * Mirrors the iOS BoardPreferencesView.intensityWord() mapping exactly.
+ */
+function intensityWord(v: number): string {
+  if (v <= 2) return 'Whisper';
+  if (v <= 4) return 'Quiet';
+  if (v <= 6) return 'Steady';
+  if (v <= 8) return 'Full press';
+  if (v === 9) return 'Loud';
+  return 'Detonate';
+}
+
+/**
+ * Background and border color for a single intensity tick.
+ *
+ * iOS mapping:
+ *   - ticks 1–7, active  → gold fill + ink-static border
+ *   - ticks 8–10, active → red fill + ink-static border
+ *   - inactive            → paper-2 fill + adaptive ink border
+ */
+function tickStyle(tick: number, current: number): React.CSSProperties {
+  if (tick <= current) {
+    const bg = tick >= 8 ? 'var(--riso-red)' : 'var(--riso-gold)';
+    // Colored fill → border must be ink-static (dark-mode contract).
+    return { background: bg, borderColor: 'var(--riso-ink-static)' };
+  }
+  // Paper fill → adaptive ink border is the safe pair.
+  return { background: 'var(--riso-paper-2)', borderColor: 'var(--riso-ink)' };
+}
+
+/**
  * BoardPreferencesPage — Sub-page of Profile for board-creation defaults.
  *
  * Split out from the top-level Profile page so the primary settings surface
@@ -153,6 +184,42 @@ export function BoardPreferencesPage(): React.ReactElement {
               }
             }}
           />
+        </div>
+      </div>
+
+      {/* Playing card — celebration intensity (parity with iOS "Playing" card) */}
+      <h2 className={styles.sectionLabel} style={{ marginTop: 8 }}>
+        Playing
+      </h2>
+      <div className={styles.card}>
+        <div className={styles.stackedRow}>
+          <div className={styles.intensityHeader}>
+            <span className={styles.intensityLabel}>
+              <span className={styles.intensityLabelIcon} aria-hidden="true">✦</span>
+              Celebration intensity
+            </span>
+            <span className={styles.intensityValue}>
+              {prefs.celebrationIntensity} · {intensityWord(prefs.celebrationIntensity)}
+            </span>
+          </div>
+          {/* 10-tick strip. Mirrors iOS intensityStrip exactly: gold for 1–7,
+              red for 8–10 when at or below current; paper otherwise. */}
+          <div className={styles.intensityStrip} role="group" aria-label="Celebration intensity">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((tick) => (
+              <button
+                key={tick}
+                type="button"
+                className={styles.intensityTick}
+                style={tickStyle(tick, prefs.celebrationIntensity)}
+                aria-label={`Intensity ${tick}: ${intensityWord(tick)}`}
+                aria-pressed={tick === prefs.celebrationIntensity}
+                onClick={() => set('celebrationIntensity', tick)}
+              />
+            ))}
+          </div>
+          <p className={styles.intensityCaption}>
+            How loud bingos and GREENLOGs get — confetti scales with it.
+          </p>
         </div>
       </div>
 

@@ -416,3 +416,75 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+
+/* ─── Celebration intensity strip (BoardPreferencesPage) ───── */
+
+/*
+ * The "Playing" card intensity row — stacked layout inside a .stackedRow.
+ * iOS parity: 10 equal-width clickable ticks, gold for 1–7 (active),
+ * red for 8–10 (active), paper for inactive. Borders follow the
+ * dark-mode contract: ink-static on colored fills, adaptive ink on paper.
+ */
+.intensityHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.intensityLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.intensityLabelIcon {
+  font-size: 16px;
+  line-height: 1;
+}
+.intensityValue {
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+.intensityStrip {
+  display: flex;
+  gap: 5px;
+  margin-top: 2px;
+}
+.intensityTick {
+  flex: 1;
+  height: 28px;
+  border-radius: 4px;
+  border-width: 2px;
+  border-style: solid;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.07s, box-shadow 0.07s;
+}
+.intensityTick:hover {
+  transform: translateY(-2px);
+}
+.intensityTick:active {
+  transform: translateY(1px);
+}
+.intensityTick:focus-visible {
+  /* Inset ring so it reads clearly on both gold and paper ticks. */
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.intensityCaption {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .intensityTick {
+    transition: none;
+  }
+}
