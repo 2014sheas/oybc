@@ -813,6 +813,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             prefs.weekStartDay,
             new Date(),
           )}
+          celebrationIntensity={prefs.celebrationIntensity}
           onShare={() => setGreenlogOpen(false)}
           onNewBoard={() => navigate('/create')}
           onClose={() => setGreenlogOpen(false)}
