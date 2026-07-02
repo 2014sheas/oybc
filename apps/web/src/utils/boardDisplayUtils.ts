@@ -30,6 +30,32 @@ export function isBoardExpired(board: { timeframe: string; endDate?: string }): 
 }
 
 /**
+ * Returns whether an active board's end date is within the next 24 hours but
+ * has not yet passed.
+ *
+ * Mirrors iOS `isBoardExpiringSoon(_:)` in `BoardListView.swift`. Only fires
+ * for ACTIVE boards with a non-custom, non-indefinite timeframe and a valid
+ * endDate — all other boards return false.
+ *
+ * @param board - Object with status, timeframe, and endDate fields
+ * @returns true when endDate is in [now, now + 24h)
+ */
+export function isBoardExpiringSoon(board: {
+  status: string;
+  timeframe: string;
+  endDate?: string;
+}): boolean {
+  if (board.status !== BoardStatus.ACTIVE) return false;
+  if (board.timeframe === Timeframe.CUSTOM) return false;
+  // Mirror isBoardIndefinite: INDEFINITE timeframe or absent endDate = never expires.
+  if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return false;
+  const end = new Date(board.endDate).getTime();
+  if (!Number.isFinite(end)) return false;
+  const msLeft = end - Date.now();
+  return msLeft >= 0 && msLeft < 24 * 60 * 60 * 1000;
+}
+
+/**
  * Returns a human-readable expiry indicator for a board.
  *
  * @param board - Object with timeframe and endDate fields
