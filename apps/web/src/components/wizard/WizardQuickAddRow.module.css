@@ -1,0 +1,43 @@
+/* WizardQuickAddRow — inline quick-add input for NORMAL tasks in the
+   wizard Tasks step. Mirrors iOS RisoQuickAddRowView. */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Text input — keyline border, paper fill, ink text.
+   Uses static ink for border and text (safe on paper background).
+   Dark-mode note: --riso-ink is adaptive on a paper fill → correct here
+   (paper and ink both flip together, so text stays readable). */
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  caret-color: var(--riso-blue);
+  /* Prevent shrinking below a useful minimum in narrow containers */
+  min-width: 120px;
+}
+
+.input::placeholder {
+  color: var(--riso-muted);
+  font-weight: 600;
+}
+
+.input:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

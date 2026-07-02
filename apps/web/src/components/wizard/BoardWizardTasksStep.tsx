@@ -21,6 +21,7 @@ import { FromBoardGrid } from './FromBoardGrid';
 import { FromBoardPicker } from './FromBoardPicker';
 import { NewTaskSheet } from './NewTaskSheet';
 import { RowContextMenu } from './RowContextMenu';
+import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import styles from './BoardWizardTasksStep.module.css';
 
@@ -539,6 +540,21 @@ export function BoardWizardTasksStep({
           </button>
         </div>
       </div>
+
+      {/* Quick-add row — inline NORMAL task entry. Hidden in "From a board…"
+          mode since that flow has its own grid interaction. The full modal
+          (NewTaskSheet) remains for Counting/Compound/Achievement types.
+          Web twin of iOS RisoQuickAddRowView. */}
+      {activeFilter !== 'from-board' && (
+        <WizardQuickAddRow
+          userId={userId}
+          currentTimeframe={currentTimeframe}
+          currentStartDate={currentStartDate}
+          currentEndDate={currentEndDate}
+          onTaskCreated={onTaskCreated}
+          onPendingCreated={onPendingCreated}
+        />
+      )}
 
       {/* From-a-board flow — picker (no source) or grid (source picked) */}
       {activeFilter === 'from-board' ? (
