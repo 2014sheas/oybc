@@ -133,7 +133,10 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
  * of `useTaskLibrary` (BoardPlaySurface, RisoBoard, …) must NOT pay for these
  * subscriptions — that's why this is a separate hook.
  */
-export function useBrowsableTasks(allTasks: Task[]): Task[] {
+export function useBrowsableTasks(
+  allTasks: Task[],
+  childToParents: Record<string, string[]> = {},
+): Task[] {
   const allBoardTasks =
     useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
   const allBoards =
@@ -147,8 +150,9 @@ export function useBrowsableTasks(allTasks: Task[]): Task[] {
     return m;
   }, [allBoards]);
   return useMemo(
-    () => computeBrowsableTasks(allTasks, allBoardTasks, boardStatusById),
-    [allTasks, allBoardTasks, boardStatusById],
+    () =>
+      computeBrowsableTasks(allTasks, allBoardTasks, boardStatusById, childToParents),
+    [allTasks, allBoardTasks, boardStatusById, childToParents],
   );
 }
 

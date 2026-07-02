@@ -183,7 +183,7 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.taskMap, pendingTasks]);
-  const browsableTasks = useBrowsableTasks(library.allTasks);
+  const browsableTasks = useBrowsableTasks(library.allTasks, library.childToParents);
   const effectiveAllTasks = useMemo<Task[]>(() => {
     // Browse the draft-filtered set (hides other drafts' wizard-orphans), but
     // always merge THIS session's in-memory pending tasks so the just-created

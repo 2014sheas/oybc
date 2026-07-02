@@ -126,4 +126,32 @@ describe('computeBrowsableTasks', () => {
     const result = computeBrowsableTasks(tasks, placements, statuses);
     expect(ids(result)).toEqual(new Set(['standalone', 'wizActive']));
   });
+
+  it('wizard-born compound child inherits parent placement — parent active → child visible', () => {
+    // A compound inline subtask is never directly placed; it must inherit the
+    // parent compound's placements or it would hide forever.
+    const tasks = [task('parent', true), task('child', true)];
+    const placements = [placement('parent', 'activeBoard')];
+    const statuses = { activeBoard: BoardStatus.ACTIVE };
+    const result = computeBrowsableTasks(tasks, placements, statuses, {
+      child: ['parent'],
+    });
+    expect(ids(result)).toEqual(new Set(['parent', 'child']));
+  });
+
+  it('wizard-born compound child of a draft-only parent is hidden', () => {
+    const tasks = [task('parent', true), task('child', true)];
+    const placements = [placement('parent', 'draftBoard')];
+    const statuses = { draftBoard: BoardStatus.DRAFT };
+    const result = computeBrowsableTasks(tasks, placements, statuses, {
+      child: ['parent'],
+    });
+    expect(result).toHaveLength(0);
+  });
+
+  it('wizard-born compound child with no parent placement is hidden', () => {
+    const tasks = [task('parent', true), task('child', true)];
+    const result = computeBrowsableTasks(tasks, [], {}, { child: ['parent'] });
+    expect(result).toHaveLength(0);
+  });
 });

@@ -20,16 +20,25 @@ import { BoardStatus } from '../constants/enums';
  * time — no clearing logic: a hidden wizard-orphan reappears automatically the
  * moment it lands on a non-draft board.
  *
+ * Compound children inherit their parent compound's placements — a wizard-born
+ * inline subtask is never *directly* placed (it lives under its parent), so
+ * without inheritance it would look like a placement-less orphan and hide
+ * forever. With inheritance it's visible exactly when its parent compound is
+ * (keeping wizard-created subtasks pool-addable once the board goes active).
+ *
  * @param tasks - candidate library tasks (already user-scoped + non-deleted).
  * @param boardTasks - all `board_task` placement rows.
  * @param boardStatusById - non-deleted `boardId → status`. Placements on
  *   missing (deleted) boards are ignored — a board absent from this map is
  *   treated as no live placement.
+ * @param childToParents - child taskId → parent compound taskId(s). A child's
+ *   effective placements = its own ∪ its parents'. Omit for a flat library.
  */
 export function computeBrowsableTasks(
   tasks: Task[],
   boardTasks: BoardTask[],
   boardStatusById: Record<string, BoardStatus>,
+  childToParents: Record<string, string[]> = {},
 ): Task[] {
   // taskId → set of non-deleted board ids it's placed on.
   const placementsByTask: Record<string, Set<string>> = {};
@@ -39,9 +48,14 @@ export function computeBrowsableTasks(
   }
   return tasks.filter((task) => {
     if (!task.createdInWizard) return true;
-    const boardIds = placementsByTask[task.id];
-    // No live placement → orphan (removed from pool / board deleted) → hidden.
-    if (!boardIds || boardIds.size === 0) return false;
+    // Effective placements: own + inherited from parent compound(s).
+    const boardIds = new Set<string>(placementsByTask[task.id]);
+    for (const parentId of childToParents[task.id] ?? []) {
+      for (const b of placementsByTask[parentId] ?? []) boardIds.add(b);
+    }
+    // No live placement (direct or inherited) → orphan (removed from pool /
+    // board deleted) → hidden.
+    if (boardIds.size === 0) return false;
     // Visible iff placed on at least one non-draft (active/completed) board.
     for (const id of boardIds) {
       if (boardStatusById[id] !== BoardStatus.DRAFT) return true;

@@ -122,8 +122,14 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   // only on draft boards, or are orphaned (removed from the pool / board gone),
   // until they land on a live board. Reuses the board data loaded above.
   const browsableTasks = useMemo(
-    () => computeBrowsableTasks(library.allTasks, allBoardTasks, boardStatusById),
-    [library.allTasks, allBoardTasks, boardStatusById],
+    () =>
+      computeBrowsableTasks(
+        library.allTasks,
+        allBoardTasks,
+        boardStatusById,
+        library.childToParents,
+      ),
+    [library.allTasks, allBoardTasks, boardStatusById, library.childToParents],
   );
 
   const { placementCountByTaskId, activePlacementCountByTaskId } = useMemo(() => {
