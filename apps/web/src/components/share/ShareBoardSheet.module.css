@@ -1,0 +1,243 @@
+/*
+  ShareBoardSheet — GREENLOG share poster modal.
+
+  Sheet CHROME uses adaptive Riso tokens (responsive to light/dark theme).
+  The poster card INSIDE the sheet uses static colors — see SharePoster.module.css.
+
+  Dark-contract rules applied here (RISO_WEB.md):
+    - Body text on riso-paper background  → var(--riso-ink)  [adaptive, flips]
+    - "Done" label on risoGold fill       → var(--riso-ink-static)  [never flips]
+    - Toast text on risoInk fill          → var(--riso-on-color)    [never flips]
+    - Hard-shadow offset                  → var(--riso-shadow-ink)  [near-black both modes]
+    - Modal scrim                         → rgba(0, 0, 0, 0.55)     [fixed]
+    - Focus rings                         → var(--riso-ink) inset outline
+*/
+
+/* ── Scrim ── */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 300; /* above the z-200 greenlog overlay */
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* On wider viewports: centre the sheet like a dialog */
+@media (min-width: 640px) {
+  .scrim {
+    align-items: center;
+  }
+}
+
+/* ── Sheet ── */
+.sheet {
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  /* Bottom edge open on mobile (aligns with the screen edge) */
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 0 0 var(--riso-shadow-ink);
+  width: 100%;
+  max-width: 440px;
+  max-height: 92dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* On wider viewports: close the bottom edge and use a card border */
+@media (min-width: 640px) {
+  .sheet {
+    border-bottom: 2px solid var(--riso-ink);
+    border-radius: 12px;
+    box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+    max-height: 90dvh;
+  }
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 2px solid var(--riso-ink);
+  flex: 0 0 auto;
+}
+
+.headerTitle {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--riso-ink);
+}
+
+/* Gold pill "Done" button — mirrors iOS header close button */
+.doneBtn {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 12px;
+  /*
+   * "Done" text sits on a gold fill → use ink-static (never adaptive ink,
+   * which would go cream-on-gold in dark mode — unreadable).
+   */
+  color: var(--riso-ink-static);
+  background: var(--riso-gold);
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 100px;
+  padding: 6px 13px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+.doneBtn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.doneBtn:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.doneBtn:focus-visible {
+  outline: 2px solid var(--riso-ink);
+  outline-offset: 2px;
+}
+
+/* ── Scrollable body ── */
+.body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  padding: 16px 16px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
+}
+
+/* ── Poster elevation wrapper ── */
+.posterWrap {
+  display: flex;
+  justify-content: center;
+}
+
+/*
+ * 2 px keyline + 4 px hard shadow — mirrors iOS `posterCardElevated`.
+ * overflow: hidden clips the inner card's border-radius cleanly.
+ */
+.posterElevated {
+  border: 2px solid var(--riso-ink);
+  border-radius: 10px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  overflow: hidden;
+  /* The inner SharePoster sets its own border-radius; this wrapper just
+     provides the outer keyline + shadow so they are NOT part of the
+     rasterised PNG (html-to-image targets the inner ref). */
+}
+
+/* ── Include stats toggle row ── */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.toggleRow:focus-visible {
+  outline: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  outline-offset: 2px;
+}
+
+/*
+ * Ink pill toggle — 46×27 px. Mirrors iOS `RisoInkSwitch`.
+ * Track is paper-2 (off) / risoGreen (on); knob is paper-2 → paper.
+ */
+.inkSwitch {
+  flex: 0 0 46px;
+  width: 46px;
+  height: 27px;
+  border-radius: 100px;
+  border: 1.5px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  position: relative;
+  display: block;
+  transition: background 0.16s;
+}
+.inkSwitch.switchOn {
+  background: var(--riso-green);
+}
+
+.switchKnob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  transition: left 0.16s ease, background 0.16s;
+}
+/* Knob at right edge when on: 46 - 19 - 3 - 3(border) = 21px */
+.switchOn .switchKnob {
+  left: 21px;
+  background: var(--riso-paper);
+}
+
+.toggleLabel {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--riso-ink);
+}
+
+/* ── Action buttons ── */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Transient toast ── */
+.toast {
+  position: absolute;
+  top: 64px; /* below the header */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 12px;
+  /* Toast text on dark ink fill → static cream (never flips) */
+  color: var(--riso-on-color);
+  background: var(--riso-ink);
+  border-radius: 100px;
+  padding: 8px 14px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: sharePosterToastIn 0.2s ease;
+}
+
+@keyframes sharePosterToastIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}

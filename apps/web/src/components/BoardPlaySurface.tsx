@@ -46,12 +46,25 @@ import { RisoIcon } from './riso';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
+import { ShareBoardSheet } from './share/ShareBoardSheet';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FLASH_MS = 3000;
+
+/**
+ * Compact streak-label suffix by timeframe — used to format the streak count
+ * into the share poster's "Xd" / "Xw" / "Xm" / "Xy" label.
+ * CUSTOM and INDEFINITE boards have no streaks; their keys are absent.
+ */
+const TIMEFRAME_STREAK_SUFFIX: Record<string, string> = {
+  daily: 'd',
+  weekly: 'w',
+  monthly: 'm',
+  yearly: 'y',
+};
 
 // Module-scoped frozen empty arrays. Reused as a stable fallback for
 // `useLiveQuery(...) ?? FALLBACK` so React Compiler can preserve memoization
@@ -163,6 +176,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // Riso bingo toast (keyed to replay the drop) + greenlog overlay.
   const [bingoToast, setBingoToast] = useState<{ key: number } | null>(null);
   const [greenlogOpen, setGreenlogOpen] = useState(false);
+  // Share sheet: opens from the GREENLOG overlay's "Share my board" button.
+  const [shareSheetOpen, setShareSheetOpen] = useState(false);
   const bingoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -798,6 +813,23 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
 
   // ── Render ─────────────────────────────────────────────────────────────
 
+  // Compute streak once so both RisoGreenlog and ShareBoardSheet use the same value.
+  const greenlogStreak = computeStreak(
+    board.timeframe,
+    AchievementTrigger.GREENLOG,
+    allBoards,
+    prefs.weekStartDay,
+    new Date(),
+  );
+
+  // Format as compact label for the share poster (e.g. "3d", "2w").
+  // Only core boards (daily/weekly/monthly/yearly) have streaks; CUSTOM/INDEFINITE
+  // boards are absent from TIMEFRAME_STREAK_SUFFIX so they get undefined.
+  const shareStreakLabel: string | undefined =
+    greenlogStreak > 0 && TIMEFRAME_STREAK_SUFFIX[board.timeframe]
+      ? `${greenlogStreak}${TIMEFRAME_STREAK_SUFFIX[board.timeframe]}`
+      : undefined;
+
   return (
     <div className={play.play}>
       {/* Greenlog overlay (page green, squares stay red) */}
@@ -806,17 +838,23 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           boardName={board.name}
           boardSize={board.boardSize}
           bingos={board.linesCompleted}
-          streak={computeStreak(
-            board.timeframe,
-            AchievementTrigger.GREENLOG,
-            allBoards,
-            prefs.weekStartDay,
-            new Date(),
-          )}
+          streak={greenlogStreak}
           celebrationIntensity={prefs.celebrationIntensity}
-          onShare={() => setGreenlogOpen(false)}
+          onShare={() => setShareSheetOpen(true)}
           onNewBoard={() => navigate('/create')}
           onClose={() => setGreenlogOpen(false)}
+        />
+      )}
+
+      {/* Share poster sheet — opens from the GREENLOG "Share my board" button */}
+      {shareSheetOpen && (
+        <ShareBoardSheet
+          boardName={board.name}
+          completedTasks={board.completedTasks}
+          totalTasks={board.totalTasks}
+          linesCompleted={board.linesCompleted}
+          streak={shareStreakLabel}
+          onDismiss={() => setShareSheetOpen(false)}
         />
       )}
       {/* Bingo toast */}
