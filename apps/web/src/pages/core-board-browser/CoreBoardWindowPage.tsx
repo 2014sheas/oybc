@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   AchievementTrigger,
+  BoardStatus,
   Timeframe,
   computeStreak,
   getTimeframeBoundaries,
@@ -13,6 +14,7 @@ import { useAuth } from '../../firebase/useAuth';
 import { useBoards } from '../../hooks/useBoards';
 import { usePreferences } from '../../hooks';
 import { BoardPlaySurface } from '../../components/BoardPlaySurface';
+import { DraftResumePrompt } from '../../components/boards/DraftResumePrompt';
 import { useCoreBoardForWindow } from './useCoreBoardForWindow';
 import { CoreBoardWindowBar } from './CoreBoardWindowBar';
 import { CoreBoardSetupPrompt } from './CoreBoardSetupPrompt';
@@ -109,6 +111,20 @@ export function CoreBoardWindowPage(): React.ReactElement {
       <div className={styles.page}>
         {bar}
         <CoreBoardSetupPrompt timeframe={timeframe} windowStart={windowStart} isPast={isPast} onSetUp={handleSetUp} />
+      </div>
+    );
+  }
+  if (board.status === BoardStatus.DRAFT) {
+    // Draft core boards in the pager show a resume prompt in place of
+    // the grid (keeping the window bar visible). Mirrors iOS BoardListView
+    // core-grid slot routing — onResumeDraft fires instead of the pager.
+    // Primary surfaces (CoreStrip tap on BoardsPage) already route to
+    // /create?resumeDraft before reaching here; this is the safety net for
+    // direct-URL and prev/next navigation landing on a draft window.
+    return (
+      <div className={styles.page}>
+        {bar}
+        <DraftResumePrompt boardId={board.id} boardName={board.name} />
       </div>
     );
   }
