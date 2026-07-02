@@ -54,6 +54,12 @@ struct BoardWizardTasksStepView: View {
     var currentStartDate: String? = nil
     var currentEndDate: String? = nil
 
+    /// Toggles a task's board selection. MUST route through the wizard's
+    /// `toggleTaskSelection` so deselecting a newly-created task also purges
+    /// its deferred (Bug #85) `pendingTasks` payload — otherwise the removed
+    /// task is still written to the DB on save and leaks into the library.
+    let onToggleSelection: (_ taskId: String) -> Void
+
     /// Fired after a non-composite task is created from the sheet.
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
 
@@ -325,14 +331,10 @@ struct BoardWizardTasksStepView: View {
     // MARK: - Selection helper
 
     private func toggleSelection(_ taskId: String) {
-        let wasSelected = selectedTaskIds.contains(taskId)
-        if wasSelected {
-            selectedTaskIds.remove(taskId)
-            if centerTaskId == taskId {
-                centerTaskId = nil
-            }
-        } else {
-            selectedTaskIds.insert(taskId)
-        }
+        // Delegate to the wizard VM: it updates selection, clears the center
+        // mark, AND purges the deferred `pendingTasks` payload on deselect.
+        // The old local-only version skipped the pending purge, so removed
+        // tasks were persisted as orphans and leaked into the library.
+        onToggleSelection(taskId)
     }
 }

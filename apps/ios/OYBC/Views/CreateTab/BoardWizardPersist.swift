@@ -7,6 +7,61 @@ import GRDB
 /// `WizardPlacement`.
 typealias WizardPlacement = [Task?]
 
+/// Builds the persisted `BoardTask` rows for a board from a wizard placement.
+///
+/// `isCenter` is TRUE **only** for a `.chosen` centre task. FREE / CUSTOM_FREE
+/// centres have a `nil` placement slot (so no row is produced), and a `.none`
+/// centre holds an ordinary task that must render as a normal square — so it is
+/// NOT flagged. Marking a `.none` centre `isCenter` makes the play grid render
+/// a gold "FREE" cell over a real task (the preview never did, because it gates
+/// on `centreType != .none`). This helper is the single source of truth shared
+/// by the wizard-save and recurring-spawn paths so the rule can't diverge.
+func makeWizardBoardTaskRows(
+    placement: WizardPlacement,
+    boardId: String,
+    size: Int,
+    centerType: CenterSquareType,
+    now: String
+) -> [BoardTask] {
+    let isOdd = size % 2 != 0
+    let centerRow = size / 2
+    let centerCol = size / 2
+    var rows: [BoardTask] = []
+    for (i, slot) in placement.enumerated() {
+        guard let task = slot else { continue }
+        let row = i / size
+        let col = i % size
+        let isCenterPos = isOdd && row == centerRow && col == centerCol
+        rows.append(BoardTask(
+            id: AppDatabase.generateUUID(),
+            boardId: boardId,
+            taskId: task.id,
+            row: row,
+            col: col,
+            isCenter: isCenterPos && centerType == .chosen,
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+        ))
+    }
+    return rows
+}
+
+/// The pending (deferred-persist, Bug #85) payloads that should actually be
+/// written when saving a board: only those whose task is placed on the board.
+///
+/// A task removed from the wizard pool can linger in `pendingTasks` (removal
+/// only updates the selection binding). Without this guard it would be written
+/// as an orphan `createdInWizard` Task row with no placement — which then leaks
+/// into the library (a wizard-orphan with no live placement is browsable) and
+/// reappears on draft resume.
+func pendingPayloadsToPersist(
+    pending: [String: PendingTaskPayload],
+    placedTaskIds: Set<String>
+) -> [PendingTaskPayload] {
+    pending.values.filter { placedTaskIds.contains($0.task.id) }
+}
+
 /// Resolution result for the wizard's start/end dates. Mirrors web's
 /// `ResolvedDates` discriminated union.
 enum ResolvedWizardDates {
@@ -156,9 +211,6 @@ func persistWizardBoard(
 ) {
     let trimmedName = controller.name.trimmingCharacters(in: .whitespacesAndNewlines)
     let size = controller.size
-    let isOdd = size % 2 != 0
-    let centerRow = size / 2
-    let centerCol = size / 2
     let centerType = controller.centerType
     let customCenterName: String? = centerType == .customFree
         ? controller.centerCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -224,25 +276,21 @@ func persistWizardBoard(
             let boardData = try JSONSerialization.data(withJSONObject: boardDict)
             let board = try JSONDecoder().decode(Board.self, from: boardData)
 
-            var boardTasks: [BoardTask] = []
-            for (i, slot) in placement.enumerated() {
-                guard let task = slot else { continue }
-                let row = i / size
-                let col = i % size
-                let isCenterPos = isOdd && row == centerRow && col == centerCol
-                let bt = BoardTask(
-                    id: UUID().uuidString.lowercased(),
-                    boardId: boardId,
-                    taskId: task.id,
-                    row: row,
-                    col: col,
-                    isCenter: isCenterPos && (centerType == .chosen || centerType == .none),
-                    createdAt: now,
-                    updatedAt: now,
-                    version: 1
-                )
-                boardTasks.append(bt)
-            }
+            let boardTasks = makeWizardBoardTaskRows(
+                placement: placement,
+                boardId: boardId,
+                size: size,
+                centerType: centerType,
+                now: now
+            )
+            // Only persist deferred (Bug #85) tasks that are actually placed —
+            // a task removed from the pool lingers in `pendingTasks` and must
+            // not be written as an orphan Task row (see pendingPayloadsToPersist).
+            let placedTaskIds = Set(boardTasks.map { $0.taskId })
+            let pendingToPersist = pendingPayloadsToPersist(
+                pending: capturedPendingTasks,
+                placedTaskIds: placedTaskIds
+            )
 
             // Single atomic transaction: writing pending new tasks, then
             // the board record + its BoardTask rows — plus all matching
@@ -255,8 +303,8 @@ func persistWizardBoard(
             // so the referential integrity of task → board_task is never
             // violated even during a crash mid-write (the txn rolls back).
             try AppDatabase.shared.write { db in
-                // ── Bug #85: pending tasks ─────────────────────────────
-                for payload in capturedPendingTasks.values {
+                // ── Bug #85: pending tasks (placed-only) ───────────────
+                for payload in pendingToPersist {
                     try payload.task.save(db)
                     try SyncQueueBuilder.makeItem(
                         entityType: "tasks",

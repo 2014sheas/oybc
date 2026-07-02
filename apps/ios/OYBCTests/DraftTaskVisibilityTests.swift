@@ -146,4 +146,51 @@ final class DraftTaskVisibilityTests: XCTestCase {
         )
         XCTAssertEqual(ids(result), ["standalone", "wizActive", "wizOrphan"])
     }
+
+    // MARK: - pendingPayloadsToPersist (bugfix/ios-wizard-draft-leakage)
+    //
+    // A task removed from the wizard pool lingers in `pendingTasks` (removal
+    // only updates the selection). Persisting it anyway created an orphan
+    // `createdInWizard` Task row that leaked into the library and reappeared
+    // on resume. persistWizardBoard now writes only placed pending tasks.
+
+    private func payload(_ id: String) -> PendingTaskPayload {
+        PendingTaskPayload(task: task(id, createdInWizard: true), childTasks: [], childLinks: [])
+    }
+
+    func testPendingPayloads_excludeUnplaced() {
+        let pending = ["a": payload("a"), "b": payload("b")]
+        // "b" was removed from the pool but still sits in pendingTasks.
+        let result = pendingPayloadsToPersist(pending: pending, placedTaskIds: ["a"])
+        XCTAssertEqual(Set(result.map { $0.task.id }), ["a"],
+                       "A pending task not placed on the board must not be persisted (orphan-leak guard)")
+    }
+
+    func testPendingPayloads_keepAllPlaced() {
+        let pending = ["a": payload("a"), "b": payload("b")]
+        let result = pendingPayloadsToPersist(pending: pending, placedTaskIds: ["a", "b"])
+        XCTAssertEqual(Set(result.map { $0.task.id }), ["a", "b"])
+    }
+
+    // MARK: - placementCounts board-count parity (bugfix/ios-wizard-draft-leakage)
+    //
+    // The pool over-counted vs the task-detail page: it counted every raw
+    // board_task row (including rows on soft-deleted boards, and duplicate
+    // rows on one board). It must count DISTINCT non-deleted boards to match
+    // the detail page.
+
+    func testPlacementCounts_distinctNonDeletedBoards() {
+        let vm = TasksTabViewModel()
+        // "deleted1" is absent from the status map → soft-deleted.
+        vm.boardStatusById = ["active1": .active, "draft1": .draft]
+        let bts = [
+            placement("t", on: "active1"),
+            placement("t", on: "active1"),   // duplicate row on the same board
+            placement("t", on: "draft1"),
+            placement("t", on: "deleted1"),  // soft-deleted board → excluded
+        ]
+        let counts = vm.placementCounts(boardTasks: bts)
+        XCTAssertEqual(counts["t"], 2,
+                       "Distinct non-deleted boards {active1, draft1}: deleted board excluded, duplicate row collapsed")
+    }
 }
