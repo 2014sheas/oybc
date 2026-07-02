@@ -78,8 +78,13 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 
-/** From-address for the confirmation email; must be a Resend-verified domain. */
-const CONFIRM_FROM = "OYBC <hello@oybc.com>";
+/**
+ * From-address for the confirmation email; must be a Resend-verified domain in
+ * production. Overridable via the `CONFIRM_FROM` env var so local testing can use
+ * Resend's shared `onboarding@resend.dev` (which needs no domain verification)
+ * without a code edit.
+ */
+const CONFIRM_FROM = process.env.CONFIRM_FROM || "OYBC <hello@oybc.com>";
 const SEASON = "Fall 2026";
 
 /**
