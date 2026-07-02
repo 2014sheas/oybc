@@ -171,6 +171,18 @@ export function ProfilePage(): React.ReactElement {
         </Link>
       </div>
 
+      {/* Streaks */}
+      <div className={styles.sectionLabel}>Activity</div>
+      <div className={styles.card}>
+        <Link
+          to="/profile/streaks"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Streaks</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
+      </div>
+
       {/* Preferences sub-pages */}
       <div className={styles.sectionLabel}>Preferences</div>
       <div className={styles.card}>

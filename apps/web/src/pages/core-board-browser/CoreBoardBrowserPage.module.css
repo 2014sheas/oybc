@@ -222,6 +222,48 @@
   outline-offset: 2px;
 }
 
+/* ── Window bar label + optional streak chip ── */
+.windowBarCenter {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Gold capsule flame chip — mirrors iOS `streakChip`. */
+.streakChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--riso-gold);
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--riso-ink-static); /* on gold — static dark, no flip */
+}
+.streakChipFlame {
+  /* Stroke icon inherits currentColor (ink-static). */
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+.streakChipFlame svg {
+  width: 10px;
+  height: 10px;
+  stroke: var(--riso-ink-static);
+  fill: none;
+  stroke-width: 2.1;
+}
+.streakChipLabel {
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--riso-ink-static);
+}
+
 /* ── CoreBoardSetupPrompt ── */
 .setupPrompt {
   display: flex;

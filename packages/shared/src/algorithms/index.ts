@@ -99,6 +99,8 @@ export {
   STREAK_TIMEFRAMES,
   computeStreak,
   computeAllStreaks,
+  computeLongestStreak,
+  compactStreakLabel,
 } from './streaks';
 
 export type { StreakPair, StreaksByTimeframe } from './streaks';
