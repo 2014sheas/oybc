@@ -11,7 +11,8 @@
 /* ── Hero card (gold fill) ── */
 .heroCard {
   background: var(--riso-gold);
-  border: 2px solid var(--riso-ink);
+  /* Static ink — adaptive --riso-ink flips cream on the gold fill in dark mode. */
+  border: 2px solid var(--riso-ink-static);
   border-radius: 14px;
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
   margin-bottom: 12px;

@@ -238,7 +238,8 @@
   align-items: center;
   gap: 2px;
   background: var(--riso-gold);
-  border: 1.5px solid var(--riso-ink);
+  /* Static ink — adaptive --riso-ink flips cream on the gold fill in dark mode. */
+  border: 1.5px solid var(--riso-ink-static);
   border-radius: 999px;
   padding: 2px 6px;
   color: var(--riso-ink-static); /* on gold — static dark, no flip */

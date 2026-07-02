@@ -51,6 +51,7 @@ export function RecurringWindowBanner({
             type="button"
             className={styles.recurringBannerItem}
             onClick={() => onSetUp(p)}
+            aria-label={`Set up board for ${p.suggestedName}`}
           >
             <span className={styles.recurringBannerLabel}>{p.suggestedName}</span>
             <span className={styles.recurringBannerCta} aria-hidden>

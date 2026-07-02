@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
 import { useBoards, useCoreBoardSlots, usePendingRecurringBoards, useRecurringBoardSpawn } from '../hooks';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
-import { deleteBoard } from '../db/operations/boards';
+import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
 import { RecurringWindowBanner } from '../components/boards/RecurringWindowBanner';
-import type { PendingRecurringBoard } from '@oybc/shared';
+import { BoardStatus, type PendingRecurringBoard } from '@oybc/shared';
 import styles from '../components/boards/Boards.module.css';
 
 const FILTER_TABS = [
@@ -35,11 +35,20 @@ export function BoardsPage(): React.ReactElement {
   useRecurringBoardSpawn(user?.id);
   const [activeFilter, setActiveFilter] = useState<string>('active');
 
-  /** Soft-delete a board from the boards list. The live query (`useBoards`)
-   *  re-runs immediately since Dexie marks the row as deleted, so the card
-   *  disappears without a manual reload. */
+  /** Delete a board from the boards list. Draft boards route through
+   *  `deleteDraftWithCascade` so their placement rows are hard-deleted and
+   *  tombstoned (a plain soft-delete would orphan the BoardTask rows and
+   *  never queue them for sync); active/completed boards use `deleteBoard`,
+   *  which intentionally leaves placements in place. The live query
+   *  (`useBoards`) re-runs immediately since Dexie marks the row deleted, so
+   *  the card disappears without a manual reload. */
   const handleDeleteBoard = async (id: string): Promise<void> => {
-    await deleteBoard(id);
+    const board = allBoards.find((b) => b.id === id);
+    if (board?.status === BoardStatus.DRAFT) {
+      await deleteDraftWithCascade(id);
+    } else {
+      await deleteBoard(id);
+    }
   };
 
   /** Navigate to the wizard prefilled for the given pending window.

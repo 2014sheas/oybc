@@ -1,5 +1,4 @@
-import { compactStreakLabel } from '@oybc/shared';
-import type { Timeframe } from '@oybc/shared';
+import { compactStreakLabel, Timeframe } from '@oybc/shared';
 import { RisoIcon } from '../../components/riso/RisoIcon';
 import styles from './CoreBoardBrowserPage.module.css';
 
@@ -28,11 +27,11 @@ export interface CoreBoardWindowBarProps {
  */
 function streakA11yWord(timeframe: Timeframe | undefined): string {
   switch (timeframe) {
-    case 'daily':      return 'daily';
-    case 'weekly':     return 'weekly';
-    case 'monthly':    return 'monthly';
-    case 'yearly':     return 'yearly';
-    default:           return '';
+    case Timeframe.DAILY:   return 'daily';
+    case Timeframe.WEEKLY:  return 'weekly';
+    case Timeframe.MONTHLY: return 'monthly';
+    case Timeframe.YEARLY:  return 'yearly';
+    default:                return '';
   }
 }
 

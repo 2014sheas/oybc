@@ -259,5 +259,6 @@ describe('compactStreakLabel', () => {
 
   it('has no suffix for non-recurring timeframes', () => {
     expect(compactStreakLabel(4, Timeframe.CUSTOM)).toBe('4');
+    expect(compactStreakLabel(4, Timeframe.INDEFINITE)).toBe('4');
   });
 });

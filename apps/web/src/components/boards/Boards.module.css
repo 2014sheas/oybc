@@ -210,7 +210,8 @@
 }
 .bcardDeleteBtn:hover {
   background: var(--riso-red);
-  color: var(--riso-paper);
+  /* Static cream — adaptive --riso-paper flips dark and vanishes on the red fill. */
+  color: var(--riso-on-color);
   border-color: var(--riso-red);
 }
 .bcardDeleteBtn:focus-visible {
