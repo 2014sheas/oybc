@@ -90,7 +90,15 @@ export function BoardsPage(): React.ReactElement {
 
       <CoreStrip
         slots={coreBoardSlots}
-        onSelect={(slot) => navigate(`/boards/core/${slot.timeframe}/${slot.windowStart.slice(0, 10)}`)}
+        onSelect={(slot) => {
+          // A DRAFT core board for this window resumes the wizard (never
+          // opens as the pager). No board → the pager handles the empty state.
+          if (slot.currentBoard?.status === BoardStatus.DRAFT) {
+            navigate(`/create?resumeDraft=${slot.currentBoard.id}`);
+          } else {
+            navigate(`/boards/core/${slot.timeframe}/${slot.windowStart.slice(0, 10)}`);
+          }
+        }}
       />
 
       <RecurringWindowBanner
@@ -122,7 +130,15 @@ export function BoardsPage(): React.ReactElement {
             <BoardCard
                 key={board.id}
                 board={board}
-                onOpen={(id) => navigate(`/boards/${id}`)}
+                onOpen={(id) => {
+                  // Drafts never open as a playable board — tap routes to
+                  // the wizard resume flow (cross-tab via ?resumeDraft).
+                  if (board.status === BoardStatus.DRAFT) {
+                    navigate(`/create?resumeDraft=${id}`);
+                  } else {
+                    navigate(`/boards/${id}`);
+                  }
+                }}
                 onDelete={handleDeleteBoard}
               />
           ))}

@@ -9,6 +9,7 @@ import { useDrafts } from './createHub/useDrafts';
 import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframeParam';
 import { useEditTemplateParam } from './createHub/useEditTemplateParam';
 import { useResumableDraft } from './createHub/useResumableDraft';
+import { useResumeDraftParam } from './createHub/useResumeDraftParam';
 import { useCoreBoardSlots } from '../hooks';
 import { deleteDraftWithCascade } from '../db/operations/boards';
 import { BoardWizardPage } from './BoardWizardPage';
@@ -124,6 +125,18 @@ export function CreateHubPage({
       setMode({ kind: 'wizard', draft });
     },
     [resolveDraft],
+  );
+
+  // Cross-tab draft-resume bridge: `/create?resumeDraft=<boardId>` (set by
+  // the Boards tab when the user taps a DRAFT card or a draft CoreStrip slot,
+  // the CoreBoardBrowser row, and by the BoardPlayPage catch-all guard).
+  // Reuses `handleResumeDraft` — the same path the CreateHub drafts list uses
+  // — so there's exactly one resume path. Handles not-found / non-draft boards
+  // gracefully (no callback fired).
+  useResumeDraftParam(
+    useCallback((board) => {
+      void handleResumeDraft(board);
+    }, [handleResumeDraft]),
   );
 
   const handleDeleteDraft = useCallback(async (board: Board): Promise<void> => {

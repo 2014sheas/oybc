@@ -131,6 +131,13 @@ export function CoreBoardBrowserPage(): React.ReactElement {
     [],
   );
 
+  // Draft boards in the browser navigate to the wizard resume flow instead
+  // of the play page (mirrors iOS CoreBoardBrowserPage onResumeDraft wiring).
+  const handleResumeDraft = useMemo(
+    () => (boardId: string) => navigate(`/create?resumeDraft=${boardId}`),
+    [navigate],
+  );
+
   if (!isValidTimeframe) {
     return <Navigate to="/boards" replace />;
   }
@@ -168,6 +175,7 @@ export function CoreBoardBrowserPage(): React.ReactElement {
               onOpenBoard={handleOpenBoard}
               onCreate={handleCreate}
               onDeleteBoard={handleDeleteBoard}
+              onResumeDraft={handleResumeDraft}
             />
           </div>
         ))}

@@ -1,0 +1,53 @@
+/**
+ * DraftResumePrompt — inline "this board is a draft" section shown in place
+ * of a playable bingo grid. Mirrors iOS BoardPlayView.draftResumeSection.
+ *
+ * Dark-contract audit (see docs/RISO_WEB.md):
+ *   .name / .heading  → var(--riso-ink) on paper fill  — safe adaptive pair.
+ *   .body             → var(--riso-muted) on paper fill — safe.
+ *   No colored fills in this component; no --riso-ink-static / --riso-on-color
+ *   overrides needed.
+ */
+
+.prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  padding: 48px 24px;
+}
+
+/* Board name + DRAFT badge side-by-side */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.name {
+  font-family: var(--riso-font-head);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+  margin: 0;
+}
+
+.heading {
+  font-family: var(--riso-font-head);
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+  margin: 0;
+}
+
+.body {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.5;
+  max-width: 320px;
+  margin: 0;
+}
