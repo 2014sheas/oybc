@@ -83,10 +83,19 @@ Decision: capture to **Firestore**, reusing the existing `functions/` codebase.
   client-writable `signups` rule — the function is the only writer.
 - Honeypot: a visually-hidden `hp` field. If non-empty, the function returns
   `{ ok: true }` **without** writing (don't tip off bots) — no CAPTCHA.
-- **Deferred to launch** (not blocking the placeholder): double opt-in +
-  unsubscribe (needs a mail provider), per-IP rate limiting, and the consent line
-  under the field. Firestore capture holds the list; wire a provider before the
-  launch announcement send.
+- **Confirmation email (Resend)**: on a *genuinely new* signup (detected via a
+  `get()` before the `set`) the function sends a one-time "you're on the board"
+  email through [Resend](https://resend.com). It is **best-effort** — wrapped in
+  its own try/catch so a send failure (or an unverified Resend domain pre-launch)
+  never fails the request or drops the address. Re-submitting a known address is
+  a no-op merge and does **not** re-send, so duplicates aren't spammed. The
+  `RESEND_API_KEY` is a Cloud Functions **secret** (`defineSecret`, bound via
+  `secrets:` on the function) — set it with
+  `firebase functions:secrets:set RESEND_API_KEY` before deploying. The from
+  address (`hello@oybc.com`) must be a Resend-**verified domain** or sends fail.
+- **Still deferred to launch**: double opt-in, unsubscribe/list management, and
+  per-IP rate limiting — these belong with the bulk launch-announcement send, not
+  the placeholder. Firestore holds the list for that send.
 
 ### Submit states (handoff)
 
