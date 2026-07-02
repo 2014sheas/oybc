@@ -106,9 +106,11 @@ final class DraftTaskVisibilityTests: XCTestCase {
         XCTAssertEqual(ids(result), ["a"])
     }
 
-    func testWizardOrphanTaskNoLivePlacement_isVisible() {
+    func testWizardOrphanTaskNoLivePlacement_isHidden() {
         // Its only placement points at a board absent from the status map
-        // (deleted) → treated as no live placement → visible (orphan).
+        // (deleted) → no live placement → an orphan. A wizard-born task with
+        // no live placement is deleted/abandoned, so it's HIDDEN (was the leak
+        // that showed deleted-in-wizard tasks in the library).
         let tasks = [task("a", createdInWizard: true)]
         let placements = [placement("a", on: "deletedBoard")]
         let statuses: [String: BoardStatus] = [:] // deletedBoard not present
@@ -116,15 +118,17 @@ final class DraftTaskVisibilityTests: XCTestCase {
         let result = TaskLibraryViewModel.computeBrowsableTasks(
             tasks: tasks, boardTasks: placements, boardStatusById: statuses
         )
-        XCTAssertEqual(ids(result), ["a"])
+        XCTAssertTrue(result.isEmpty, "Wizard-born orphan (no live placement) should be hidden")
     }
 
-    func testWizardTaskWithNoPlacements_isVisible() {
+    func testWizardTaskWithNoPlacements_isHidden() {
+        // A wizard-born task with zero placements = created in the wizard then
+        // removed from the pool (its Task row lingers) → hidden.
         let tasks = [task("a", createdInWizard: true)]
         let result = TaskLibraryViewModel.computeBrowsableTasks(
             tasks: tasks, boardTasks: [], boardStatusById: [:]
         )
-        XCTAssertEqual(ids(result), ["a"])
+        XCTAssertTrue(result.isEmpty, "Wizard-born task with no placements should be hidden")
     }
 
     func testMixedSet_onlyDraftOnlyWizardTasksHidden() {
@@ -132,7 +136,7 @@ final class DraftTaskVisibilityTests: XCTestCase {
             task("standalone", createdInWizard: false),   // visible
             task("wizDraft", createdInWizard: true),       // hidden (only on draft)
             task("wizActive", createdInWizard: true),      // visible (on active)
-            task("wizOrphan", createdInWizard: true),      // visible (no placement)
+            task("wizOrphan", createdInWizard: true),      // hidden (no placement — deleted/abandoned)
         ]
         let placements = [
             placement("standalone", on: "draftBoard"),
@@ -144,7 +148,7 @@ final class DraftTaskVisibilityTests: XCTestCase {
         let result = TaskLibraryViewModel.computeBrowsableTasks(
             tasks: tasks, boardTasks: placements, boardStatusById: statuses
         )
-        XCTAssertEqual(ids(result), ["standalone", "wizActive", "wizOrphan"])
+        XCTAssertEqual(ids(result), ["standalone", "wizActive"])
     }
 
     // MARK: - pendingPayloadsToPersist (bugfix/ios-wizard-draft-leakage)
@@ -192,5 +196,19 @@ final class DraftTaskVisibilityTests: XCTestCase {
         let counts = vm.placementCounts(boardTasks: bts)
         XCTAssertEqual(counts["t"], 2,
                        "Distinct non-deleted boards {active1, draft1}: deleted board excluded, duplicate row collapsed")
+    }
+
+    func testActivePlacementCounts_distinctActiveBoards() {
+        let vm = TasksTabViewModel()
+        vm.boardStatusById = ["active1": .active, "active2": .active, "draft1": .draft]
+        let bts = [
+            placement("t", on: "active1"),
+            placement("t", on: "active1"),  // duplicate row on the same active board
+            placement("t", on: "active2"),
+            placement("t", on: "draft1"),   // draft → not counted as active
+        ]
+        let counts = vm.activePlacementCounts(boardTasks: bts)
+        XCTAssertEqual(counts["t"], 2,
+                       "Distinct ACTIVE boards {active1, active2}: duplicate row collapsed, draft excluded — matches the task-detail 'N active'")
     }
 }

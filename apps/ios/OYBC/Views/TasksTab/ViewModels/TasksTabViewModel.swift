@@ -130,11 +130,15 @@ final class TasksTabViewModel {
     /// Drives the usage filter's "On active boards" value plus the row's
     /// primary usage hint.
     func activePlacementCounts(boardTasks: [BoardTask]) -> [String: Int] {
-        var counts: [String: Int] = [:]
+        // DISTINCT active boards per task — matches the task-detail page
+        // (`affectedBoards.filter { $0.status == .active }.count`) so the row's
+        // "N active" agrees with detail. (Was raw row count, which over-counts
+        // if a task has >1 board_task row on the same active board.)
+        var boardsByTask: [String: Set<String>] = [:]
         for bt in boardTasks where boardStatusById[bt.boardId] == .active {
-            counts[bt.taskId, default: 0] += 1
+            boardsByTask[bt.taskId, default: []].insert(bt.boardId)
         }
-        return counts
+        return boardsByTask.mapValues { $0.count }
     }
 
     // MARK: - Pipeline

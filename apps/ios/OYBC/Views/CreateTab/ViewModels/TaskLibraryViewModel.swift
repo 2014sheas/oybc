@@ -256,7 +256,13 @@ final class TaskLibraryViewModel {
         return tasks.filter { task in
             guard task.createdInWizard else { return true }
             let boardIds = placementsByTask[task.id] ?? []
-            if boardIds.isEmpty { return true }
+            // A wizard-born task with NO live placement is an orphan — deleted
+            // from the pool (its Task row lingers after persist drops the
+            // board_task) or its only board was deleted. Hide it: it's never a
+            // standalone library task, and it reappears automatically if it
+            // later lands on a non-draft board. (Was `return true`, which
+            // leaked deleted-in-wizard tasks into the library.)
+            if boardIds.isEmpty { return false }
             return boardIds.contains { boardStatusById[$0] != .draft }
         }
     }
