@@ -285,7 +285,16 @@ export async function persistWizardBoard({
       // `db.syncQueue.add`) so the DEV playground-user-1 guard fires
       // here too — otherwise playground sessions can leak pending
       // tasks into the real sync queue.
+      // Bug #85 — only persist pending tasks that are actually placed on the
+      // board. Deselecting a task purges it from pendingMap (toggleTaskSelection),
+      // but guard here too: a stray pending payload must never be written as an
+      // orphan Task row — it would show in the library (web has no
+      // createdInWizard filter yet) and reappear on draft resume.
+      const placedTaskIds = new Set(
+        placement.map((t) => t?.id).filter((id): id is string => id != null),
+      );
       for (const payload of pendingMap.values()) {
+        if (!placedTaskIds.has(payload.task.id)) continue;
         await db.tasks.add(payload.task);
         await addToSyncQueue(
           'tasks',
@@ -341,11 +350,13 @@ export async function persistWizardBoard({
           taskId: task.id,
           row,
           col,
-          // Mark centre for CHOSEN (real task at centre) and NONE.
+          // Mark centre only for CHOSEN (a real task pinned at centre). NONE
+          // holds an ordinary task (isCenter false); FREE/CUSTOM_FREE have a
+          // null centre slot (no row). Marking NONE was a bug — it renders a
+          // gold "FREE" cell over the task on iOS (which reads isCenter) and
+          // syncs there via board_tasks.
           isCenter:
-            isCenterPos &&
-            (controller.centerType === CenterSquareType.CHOSEN ||
-              controller.centerType === CenterSquareType.NONE),
+            isCenterPos && controller.centerType === CenterSquareType.CHOSEN,
         });
       }
 

@@ -1,6 +1,7 @@
 import { db } from '../database';
 import {
   BoardStatus,
+  CenterSquareType,
   SyncOperationType,
   SyncStatus,
   buildSpawnPlacement,
@@ -159,7 +160,14 @@ export async function spawnTemplateBoard(
           taskId: t.id,
           row,
           col,
-          isCenter: cell === centerCellIndex,
+          // isCenter marks a CHOSEN centre task only. Recurring templates
+          // never use CHOSEN (free/customFree = null centre slot, none = an
+          // ordinary task), so this is effectively always false — but gating
+          // on CHOSEN keeps it correct + prevents a stale isCenter from
+          // syncing to iOS as a gold "FREE" cell over a real task.
+          isCenter:
+            cell === centerCellIndex &&
+            template.centerSquareType === CenterSquareType.CHOSEN,
           createdAt: now,
           updatedAt: now,
           version: 1,
