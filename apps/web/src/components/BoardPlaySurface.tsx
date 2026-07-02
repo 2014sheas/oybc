@@ -40,7 +40,7 @@ import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
-import { computeStreak, getHighlightedSquares } from '@oybc/shared';
+import { compactStreakLabel, computeStreak, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
 import { RisoIcon } from './riso';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
@@ -55,16 +55,12 @@ import play from './play/Play.module.css';
 const FLASH_MS = 3000;
 
 /**
- * Compact streak-label suffix by timeframe — used to format the streak count
- * into the share poster's "Xd" / "Xw" / "Xm" / "Xy" label.
- * CUSTOM and INDEFINITE boards have no streaks; their keys are absent.
+ * Core timeframes that carry a streak. Used to gate the share poster's
+ * STREAK stat — CUSTOM / INDEFINITE boards have no streak. The label itself
+ * is formatted by the shared `compactStreakLabel` so the suffix ("mo" for
+ * monthly) matches the rest of the app (CoreBoardWindowBar, StreaksPage).
  */
-const TIMEFRAME_STREAK_SUFFIX: Record<string, string> = {
-  daily: 'd',
-  weekly: 'w',
-  monthly: 'm',
-  yearly: 'y',
-};
+const CORE_STREAK_TIMEFRAMES = new Set<string>(['daily', 'weekly', 'monthly', 'yearly']);
 
 // Module-scoped frozen empty arrays. Reused as a stable fallback for
 // `useLiveQuery(...) ?? FALLBACK` so React Compiler can preserve memoization
@@ -822,12 +818,12 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     new Date(),
   );
 
-  // Format as compact label for the share poster (e.g. "3d", "2w").
+  // Format as compact label for the share poster (e.g. "3d", "2w", "5mo").
   // Only core boards (daily/weekly/monthly/yearly) have streaks; CUSTOM/INDEFINITE
-  // boards are absent from TIMEFRAME_STREAK_SUFFIX so they get undefined.
+  // fall through to undefined so the poster's STREAK card is hidden.
   const shareStreakLabel: string | undefined =
-    greenlogStreak > 0 && TIMEFRAME_STREAK_SUFFIX[board.timeframe]
-      ? `${greenlogStreak}${TIMEFRAME_STREAK_SUFFIX[board.timeframe]}`
+    greenlogStreak > 0 && CORE_STREAK_TIMEFRAMES.has(board.timeframe)
+      ? compactStreakLabel(greenlogStreak, board.timeframe)
       : undefined;
 
   return (
