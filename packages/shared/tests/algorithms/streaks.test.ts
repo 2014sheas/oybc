@@ -1,4 +1,9 @@
-import { computeStreak, computeAllStreaks } from '../../src/algorithms/streaks';
+import {
+  computeStreak,
+  computeAllStreaks,
+  computeLongestStreak,
+  compactStreakLabel,
+} from '../../src/algorithms/streaks';
 import {
   getTimeframeBoundaries,
   stepWindow,
@@ -190,5 +195,69 @@ describe('computeAllStreaks', () => {
     expect(all[Timeframe.WEEKLY]).toEqual({ bingo: 0, greenlog: 0 });
     expect(all[Timeframe.MONTHLY]).toEqual({ bingo: 0, greenlog: 0 });
     expect(all[Timeframe.YEARLY]).toEqual({ bingo: 0, greenlog: 0 });
+  });
+});
+
+// ─── computeLongestStreak ─────────────────────────────────────────────────────
+
+describe('computeLongestStreak', () => {
+  const longest = (tf: Timeframe, boards: Board[]) =>
+    computeLongestStreak(tf, boards, 'monday', NOW);
+
+  it('is 0 with no core boards', () => {
+    expect(longest(Timeframe.DAILY, [])).toBe(0);
+  });
+
+  it('is 0 for CUSTOM / INDEFINITE timeframes', () => {
+    const w = windowsBack(Timeframe.DAILY, NOW, 3);
+    const boards = w.map((win) => coreBoard(Timeframe.DAILY, win, greenlog));
+    expect(longest(Timeframe.CUSTOM, boards)).toBe(0);
+    expect(longest(Timeframe.INDEFINITE, boards)).toBe(0);
+  });
+
+  it('counts consecutive completed windows including the current', () => {
+    const w = windowsBack(Timeframe.DAILY, NOW, 3);
+    const boards = w.map((win) => coreBoard(Timeframe.DAILY, win, greenlog));
+    expect(longest(Timeframe.DAILY, boards)).toBe(3);
+  });
+
+  it('no grace: an unfinished current window does not shorten the past run', () => {
+    // current active (not greenlogged), 3 prior greenlogged → longest past run = 3.
+    const w = windowsBack(Timeframe.DAILY, NOW, 4);
+    const boards = [
+      coreBoard(Timeframe.DAILY, w[0], bingoOnly),
+      coreBoard(Timeframe.DAILY, w[1], greenlog),
+      coreBoard(Timeframe.DAILY, w[2], greenlog),
+      coreBoard(Timeframe.DAILY, w[3], greenlog),
+    ];
+    expect(longest(Timeframe.DAILY, boards)).toBe(3);
+  });
+
+  it('retains the longest run across a gap', () => {
+    // current+prev greenlogged (run 2), gap, then two more greenlogged (run 2) → 2.
+    const w = windowsBack(Timeframe.DAILY, NOW, 5);
+    const boards = [
+      coreBoard(Timeframe.DAILY, w[0], greenlog),
+      coreBoard(Timeframe.DAILY, w[1], greenlog),
+      // w[2] missing → gap resets the run
+      coreBoard(Timeframe.DAILY, w[3], greenlog),
+      coreBoard(Timeframe.DAILY, w[4], greenlog),
+    ];
+    expect(longest(Timeframe.DAILY, boards)).toBe(2);
+  });
+});
+
+// ─── compactStreakLabel ───────────────────────────────────────────────────────
+
+describe('compactStreakLabel', () => {
+  it('suffixes the count by timeframe', () => {
+    expect(compactStreakLabel(3, Timeframe.DAILY)).toBe('3d');
+    expect(compactStreakLabel(2, Timeframe.WEEKLY)).toBe('2w');
+    expect(compactStreakLabel(5, Timeframe.MONTHLY)).toBe('5mo');
+    expect(compactStreakLabel(1, Timeframe.YEARLY)).toBe('1y');
+  });
+
+  it('has no suffix for non-recurring timeframes', () => {
+    expect(compactStreakLabel(4, Timeframe.CUSTOM)).toBe('4');
   });
 });

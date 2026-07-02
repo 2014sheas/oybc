@@ -1,9 +1,16 @@
 import { useMemo } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
-  Timeframe, getTimeframeBoundaries, stepWindow, formatTimeframeLabel, isTimeframeExpired,
+  AchievementTrigger,
+  Timeframe,
+  computeStreak,
+  getTimeframeBoundaries,
+  stepWindow,
+  formatTimeframeLabel,
+  isTimeframeExpired,
 } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
+import { useBoards } from '../../hooks/useBoards';
 import { usePreferences } from '../../hooks';
 import { BoardPlaySurface } from '../../components/BoardPlaySurface';
 import { useCoreBoardForWindow } from './useCoreBoardForWindow';
@@ -28,6 +35,9 @@ export function CoreBoardWindowPage(): React.ReactElement {
   const { timeframe: rawTf, date: rawDate } = useParams<{ timeframe: string; date: string }>();
   const { user } = useAuth();
   const [preferences] = usePreferences();
+  // Load all boards for the streak computation — `useBoards` is a live
+  // query that updates reactively when boards change.
+  const allBoards = useBoards(user?.id);
 
   const routeDateOnly = rawDate?.slice(0, 10);
   const isValidDate =
@@ -52,6 +62,20 @@ export function CoreBoardWindowPage(): React.ReactElement {
 
   const board = useCoreBoardForWindow(user?.id, timeframe, windowStart);
 
+  // Greenlog streak for this timeframe — shown in the window bar chip.
+  // Only recurrable timeframes have streaks; CUSTOM has no cadence.
+  const streakCount = useMemo(
+    () =>
+      computeStreak(
+        timeframe,
+        AchievementTrigger.GREENLOG,
+        allBoards,
+        preferences.weekStartDay,
+        now,
+      ),
+    [timeframe, allBoards, preferences.weekStartDay, now],
+  );
+
   const go = (offset: -1 | 1) => {
     const { startDate } = stepWindow(timeframe, windowStart, offset, preferences.weekStartDay);
     navigate(`/boards/core/${timeframe}/${startDate.slice(0, 10)}`, { replace: true });
@@ -72,6 +96,8 @@ export function CoreBoardWindowPage(): React.ReactElement {
       onPrev={() => go(-1)}
       onNext={() => go(1)}
       onOpenList={() => navigate(`/boards/core/${timeframe}`)}
+      streakCount={streakCount}
+      timeframe={timeframe}
     />
   );
 
