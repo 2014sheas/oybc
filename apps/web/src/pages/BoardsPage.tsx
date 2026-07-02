@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
 import { useBoards, useCoreBoardSlots, useRecurringBoardSpawn } from '../hooks';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
+import { deleteBoard } from '../db/operations/boards';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
@@ -29,6 +30,13 @@ export function BoardsPage(): React.ReactElement {
   // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
   useRecurringBoardSpawn(user?.id);
   const [activeFilter, setActiveFilter] = useState<string>('active');
+
+  /** Soft-delete a board from the boards list. The live query (`useBoards`)
+   *  re-runs immediately since Dexie marks the row as deleted, so the card
+   *  disappears without a manual reload. */
+  const handleDeleteBoard = async (id: string): Promise<void> => {
+    await deleteBoard(id);
+  };
 
   const filteredBoards = allBoards.filter((b) => {
     if (activeFilter === 'all') return true;
@@ -86,7 +94,12 @@ export function BoardsPage(): React.ReactElement {
       ) : (
         <div className={styles.grid}>
           {filteredBoards.map((board) => (
-            <BoardCard key={board.id} board={board} onOpen={(id) => navigate(`/boards/${id}`)} />
+            <BoardCard
+                key={board.id}
+                board={board}
+                onOpen={(id) => navigate(`/boards/${id}`)}
+                onDelete={handleDeleteBoard}
+              />
           ))}
         </div>
       )}
