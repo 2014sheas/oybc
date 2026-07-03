@@ -298,6 +298,22 @@ struct ProfileView: View {
 
             rowDivider
 
+            rowDivider
+
+            // Shared counters (Shared Counters P1)
+            NavigationLink {
+                CountersHubView()
+            } label: {
+                RisoProfileRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    label: "Shared counters",
+                    chevron: true
+                )
+            }
+            .buttonStyle(.plain)
+
+            rowDivider
+
             // Default pools (with async count)
             NavigationLink {
                 DefaultPoolsListView()
