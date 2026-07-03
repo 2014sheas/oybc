@@ -2,15 +2,14 @@ import SwiftUI
 
 // MARK: - CounterDetailView (container)
 
-/// Profile sub-page — one shared counter's home (Shared Counters P1).
+/// Profile sub-page — one shared counter's home (Shared Counters P1 + P2).
 ///
 /// Container: loads fresh data on appear/after log, resolves the group from
 /// `buildSharedCounterGroups`, then renders `CounterDetailContent`.
 ///
 /// MVP sections (per docs/SHARED_COUNTERS.md P1):
 ///   1. Hero: action/unit tag + lifetime hero + optional milestone bar.
-///   2. Log control: "Log {name}" + ±1 stepper (increment via
-///      `incrementSharedCounter`; decrement is P2 — see TODO below).
+///   2. Log control: "Log {name}" + ±1 stepper (increment + decrement wired in P2).
 ///   3. "Appears on" timeframe chips.
 ///   4. "Shared by N tasks" — one card per active member (tappable → board).
 ///   5. "Not counting now" — inactive members greyed.
@@ -42,6 +41,7 @@ struct CounterDetailView: View {
                     isLogging: isLogging,
                     logError: logError,
                     onIncrement: { handleIncrement(group: group) },
+                    onDecrement: { handleDecrement(group: group) },
                     onNavigateToBoard: { _ in /* routed via NavigationLink in content */ }
                 )
             } else if isLoaded {
@@ -80,7 +80,7 @@ struct CounterDetailView: View {
         logError = nil
         _Concurrency.Task.detached(priority: .userInitiated) {
             do {
-                try AppDatabase.shared.incrementSharedCounter(sourceTaskId: group.counterId, by: 1)
+                _ = try AppDatabase.shared.incrementSharedCounter(sourceTaskId: group.counterId, by: 1)
                 await MainActor.run {
                     isLogging = false
                     loadData() // reload to reflect new lifetime
@@ -94,12 +94,30 @@ struct CounterDetailView: View {
         }
     }
 
-    // TODO(P2): source-decrement path. The handoff spec rule #4 says a `−`
-    // clamps to what the acting window holds. `BoardPlayView.handleCountingDecrement`
-    // is board-context-specific (calls `runOrchestration` via board state) and
-    // can't be reused here as-is. P2 should extract a shared
-    // `AppDatabase.decrementSharedCounter(sourceTaskId:by:)` that mirrors
-    // `incrementSharedCounter` but decrements, and wire it here + in BoardPlayView.
+    // MARK: - Log decrement (P2)
+
+    /// Decrements the source counter by 1. Silent no-op when `group.lifetime == 0`
+    /// (the engine also clamps via `eff = min(by, source.currentCount)`).
+    private func handleDecrement(group: SharedCounterGroup) {
+        guard !isLogging else { return }
+        guard group.lifetime > 0 else { return }  // fast-path guard; engine also clamps
+        isLogging = true
+        logError = nil
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                _ = try AppDatabase.shared.decrementSharedCounter(sourceTaskId: group.counterId, by: 1)
+                await MainActor.run {
+                    isLogging = false
+                    loadData()
+                }
+            } catch {
+                await MainActor.run {
+                    isLogging = false
+                    logError = error.localizedDescription
+                }
+            }
+        }
+    }
 
     // MARK: - Not-found state
 
@@ -126,6 +144,7 @@ struct CounterDetailContent: View {
     var isLogging: Bool = false
     var logError: String? = nil
     var onIncrement: () -> Void = {}
+    var onDecrement: () -> Void = {}
     var onNavigateToBoard: (String) -> Void = { _ in }
 
     // MARK: - Derived
@@ -302,13 +321,36 @@ struct CounterDetailContent: View {
                 }
             }
 
-            // ±1 stepper — P1: increment-only.
-            // TODO(P2): add `−` once `AppDatabase.decrementSharedCounter` exists
-            //           (see CounterDetailView). Ship +1 only for now.
+            // ±1 stepper (P2: both + and − are wired)
             HStack(spacing: 12) {
                 Spacer()
 
-                // Log +1 button
+                // −1 button (disabled at lifetime 0)
+                Button {
+                    onDecrement()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "minus")
+                            .font(.system(size: 16, weight: .bold))
+                        Text("−1 \(unitLabel)")
+                            .font(.risoHead(15, .bold))
+                    }
+                    .foregroundStyle(Color.risoPaper)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: Riso.cardRadius)
+                            .fill(Color.risoPaper.opacity(0.12))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Riso.cardRadius)
+                            .strokeBorder(Color.risoPaper.opacity(0.45), lineWidth: Riso.Keyline.dense)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isLogging || group.lifetime == 0)
+
+                // +1 button
                 Button {
                     onIncrement()
                 } label: {

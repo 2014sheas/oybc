@@ -25,6 +25,9 @@ struct RisoBoardPlayCell: View {
     // Counting cells
     var currentCount: Int = 0
     var maxCount: Int = 0
+    /// True when this counting square belongs to a shared-counter group (source or linked).
+    /// Renders the ↔ shared marker (two stacked dots) on not-yet-completed counting cells.
+    var isSharedCounter: Bool = false
 
     // Compound cells
     var compoundDoneCount: Int = 0
@@ -123,7 +126,8 @@ struct RisoBoardPlayCell: View {
         if isCenter { return "Free space" }
         switch taskType {
         case .counting:
-            return "\(title), counting, \(currentCount) of \(maxCount)"
+            let sharedSuffix = isSharedCounter ? ", shared counter" : ""
+            return "\(title), counting, \(currentCount) of \(maxCount)\(sharedSuffix)"
         case .compound:
             return "\(title), compound, \(compoundDoneCount) of \(compoundChildCount) subtasks done"
         case .achievement:
@@ -221,6 +225,23 @@ struct RisoBoardPlayCell: View {
                 }
                 .padding(.top, 3)
                 .padding(.trailing, 3)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+
+            // ↔ Shared-counter marker — top-right, not-done shared counting cells only.
+            // Two stacked dots (handoff `.cn-link`) indicate this square feeds a shared
+            // counter. Hidden once completed (check takes over the slot).
+            if isSharedCounter && !isCompleted && taskType == .counting {
+                VStack(spacing: 2) {
+                    Circle()
+                        .fill(Color.risoBlue)
+                        .frame(width: 3, height: 3)
+                    Circle()
+                        .fill(Color.risoBlue)
+                        .frame(width: 3, height: 3)
+                }
+                .padding(.top, 4)
+                .padding(.trailing, 4)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
 
@@ -374,6 +395,9 @@ struct StarShape: Shape {
             RisoBoardPlayCell(title: "Bingo line", taskType: .normal, isCompleted: false, isBingoLine: true)
             RisoBoardPlayCell(title: "Bingo done", taskType: .normal, isCompleted: true, isBingoLine: true)
             RisoBoardPlayCell(title: "Journal", taskType: .normal, isCompleted: false)
+            // P2: shared-counter marker
+            RisoBoardPlayCell(title: "Push-ups", taskType: .counting, isCompleted: false, currentCount: 20, maxCount: 30, isSharedCounter: true)
+            RisoBoardPlayCell(title: "Push-ups", taskType: .counting, isCompleted: true, currentCount: 30, maxCount: 30, isSharedCounter: true)
         }
         .padding(Riso.gutter)
     }
