@@ -1,18 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import type { SharedCounterMemberTask } from '@oybc/shared';
-import { Timeframe } from '@oybc/shared';
+import { timeframeDotColor } from './timeframeDotColor';
 import styles from './CounterDetailTaskCard.module.css';
-
-/** Returns the timeframe accent-dot background color for shared-counter rows. */
-function timeframeDotColor(tf: Timeframe | null): string {
-  switch (tf) {
-    case Timeframe.DAILY:   return 'var(--riso-gold)';
-    case Timeframe.WEEKLY:  return 'var(--riso-blue)';
-    case Timeframe.MONTHLY: return 'var(--riso-green)';
-    case Timeframe.YEARLY:  return 'var(--riso-red)';
-    default:                return 'var(--riso-muted)';
-  }
-}
 
 interface CounterDetailTaskCardProps {
   /** The member task to render. */

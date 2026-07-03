@@ -5,6 +5,7 @@ import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
 import { incrementSharedCounter } from '../db/operations/tasks';
 import { CounterDetailTaskCard } from '../components/counters';
+import { timeframeDotColor } from '../components/counters/timeframeDotColor';
 import { RisoSectionLabel } from '../components/riso';
 import profileStyles from './ProfilePage.module.css';
 import styles from './CounterDetailPage.module.css';
@@ -15,17 +16,6 @@ import styles from './CounterDetailPage.module.css';
 function nextMilestone(n: number): number {
   const steps = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100_000];
   return steps.find((s) => s > n) ?? Math.ceil((n + 1) / 10_000) * 10_000;
-}
-
-/** Returns the timeframe accent-dot background color. */
-function timeframeDotColor(tf: Timeframe | null): string {
-  switch (tf) {
-    case Timeframe.DAILY:   return 'var(--riso-gold)';
-    case Timeframe.WEEKLY:  return 'var(--riso-blue)';
-    case Timeframe.MONTHLY: return 'var(--riso-green)';
-    case Timeframe.YEARLY:  return 'var(--riso-red)';
-    default:                return 'var(--riso-muted)';
-  }
 }
 
 /** Display label for a timeframe value. */
