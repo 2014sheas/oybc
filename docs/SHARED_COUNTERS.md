@@ -67,7 +67,14 @@ No engine change: P2's `incrementSharedCounter` already fans the log out to ever
 - **P4 rich stats** — 7-day sparkline, counter-level streak, best-window, closed-window history. The only real schema addition (needs a per-day / per-window increment log). The Detail screen is built with seams for these.
 - **True per-window resets** ("a fresh weekly task starts at 0 while all-time climbs") — OYBC's already-deferred "Decision 6 / v2"; the prototype only conveys it via copy + independent goals.
 - **Never-reset lifetime accumulator** — MVP uses `currentCount`.
-- **Auto-grouping by action+unit** — MVP surfaces existing explicit `sharedCounterId` groups only; linking stays via the current "link to counter" flow.
+- **Fully-automatic grouping by action+unit** (silent link, no prompt) — NOT building. Instead see "Link suggestions" below.
+
+## Link suggestions — adding a task to an existing counter (BUILDING)
+
+The handoff's "counters link up on their own" is core, not deferred: without it, adding a task to an existing counter means hunting a dropdown. We build the **suggest-confirm** version (user chose this over silent-auto and over passive-suggest): when a new COUNTING task's `action + unit` match an existing counter, the create form surfaces a one-tap "Counts on your existing **{name}** counter" suggestion (OFF until tapped — never silent). Accepting routes through the existing linked-counter create path (`sharedCounterId` + baseline; default **start-this-window-at-0**). No engine change.
+
+- **Shared:** `findLinkableCounter({action, unit, excludeTaskId?}, tasks) → { counterId, name, lifetime, memberCount } | null` (`packages/shared/src/algorithms/linkableCounter.ts`, Jest-tested). In OYBC the counting `action` field carries the activity ("Push-ups"), so `action+unit` cleanly identifies a counter (Push-ups ≠ Sit-ups). Matches non-derived candidates; most-established counter wins. iOS ports it (`LinkableCounter.swift`).
+- **UI (both platforms):** an inline suggestion in the counting create sub-fields, wherever counting tasks are created (board-wizard Tasks step special panel, Tasks-tab New Task sheet, quick-add). Tap to link (baseline choice), or ignore. Reuses `LinkedCounterInput` / `sharedCounterId`.
 
 ## Locked decisions
 
