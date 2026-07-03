@@ -145,3 +145,8 @@ export type {
   SharedCounterMemberTask,
   BuildSharedCounterGroupsInput,
 } from './sharedCounterGroups';
+
+// ===== Shared Counters — "link a new task to an existing counter" match =====
+export { findLinkableCounter } from './linkableCounter';
+
+export type { LinkableCounter, FindLinkableCounterInput } from './linkableCounter';
