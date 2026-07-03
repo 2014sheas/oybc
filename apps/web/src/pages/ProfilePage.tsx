@@ -7,6 +7,7 @@ import { updateDisplayName } from '../firebase/authService';
 import { db } from '../db/database';
 import { usePreferences } from '../hooks';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
+import { RisoSegmented } from '../components/riso';
 import styles from './ProfilePage.module.css';
 
 /**
@@ -140,21 +141,18 @@ export function ProfilePage(): React.ReactElement {
       <div className={styles.sectionLabel}>App</div>
       <div className={styles.card}>
         <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-theme">
-            Theme
-          </label>
-          <select
-            id="pref-theme"
-            className={styles.select}
+          <span className={styles.rowLabel}>Theme</span>
+          <RisoSegmented<UserPreferences['theme']>
+            aria-label="Theme"
+            variant="pill"
             value={prefs.theme}
-            onChange={(e) =>
-              updatePrefs({ theme: e.target.value as UserPreferences['theme'] })
-            }
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
+            onChange={(value) => updatePrefs({ theme: value })}
+            options={[
+              { value: 'system', label: 'System' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+          />
         </div>
         <SyncStatusIndicator />
       </div>
@@ -226,6 +224,13 @@ export function ProfilePage(): React.ReactElement {
       >
         Sign Out
       </button>
+
+      {/* Version footer — mirrors iOS ProfileView "OYBC · v{version} ({build})" footer.
+          Web has no build number (no bundle metadata at runtime), so we show semver only.
+          Version is injected at build time from package.json via vite.config.ts `define`. */}
+      <p className={styles.versionFooter}>
+        OYBC · v{__APP_VERSION__}
+      </p>
 
       {/* Sign-out confirmation modal */}
       {showSignOutConfirm && (
