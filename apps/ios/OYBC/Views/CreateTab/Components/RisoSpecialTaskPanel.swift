@@ -170,6 +170,18 @@ struct RisoSpecialTaskPanel: View {
     @State private var countingGoalText: String = "5"
     @State private var countingUnitText: String = ""
 
+    // Counter-link suggestion state. Updated whenever action or unit changes.
+    @State private var linkSuggestion: LinkableCounterSuggestion? = nil
+    @State private var linkConfirmed: Bool = false
+    @State private var linkBaselineMode: CounterLinkBaseline = .fresh
+
+    /// Baseline mode for the counter-link suggestion.
+    ///   - `fresh`: baseline = source.currentCount at link time
+    ///     → this task's displayed count starts at 0 (all-time keeps climbing).
+    ///   - `inheritTotal`: baseline = 0
+    ///     → displayed count starts at the current lifetime total.
+    private enum CounterLinkBaseline { case fresh, inheritTotal }
+
     private var countingTitle: String {
         let a = countingActionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let g = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -229,12 +241,133 @@ struct RisoSpecialTaskPanel: View {
                     .foregroundStyle(Color.risoMuted))
             }
 
+            // Counter-link suggestion banner (only when a match exists)
+            counterLinkBanner
+
             // Add button
             RisoButton(title: "Add to board ✦", kind: .blue, fullWidth: true) {
                 submitCounting()
             }
             .opacity(canSubmitCounting ? 1 : 0.45)
             .allowsHitTesting(canSubmitCounting)
+        }
+        .onChange(of: countingActionText) { _, _ in updateLinkSuggestion() }
+        .onChange(of: countingUnitText) { _, _ in updateLinkSuggestion() }
+    }
+
+    // MARK: Counter-link suggestion banner
+
+    /// Recomputes the link suggestion whenever action or unit changes.
+    /// Resets confirmed state so the user always sees a fresh suggestion.
+    private func updateLinkSuggestion() {
+        linkSuggestion = findLinkableCounter(
+            action: countingActionText,
+            unit: countingUnitText,
+            tasks: taskLibrary
+        )
+        linkConfirmed = false
+        linkBaselineMode = .fresh
+    }
+
+    /// Banner shown in the counting create panel when an existing counter
+    /// matches the typed action+unit. Two states:
+    ///
+    /// 1. **Unconfirmed** — shows the suggestion copy + a "Link" button.
+    ///    Ignoring the banner (tapping "Add to board ✦" without linking)
+    ///    creates a standalone counting task as usual.
+    ///
+    /// 2. **Confirmed** — user tapped "Link"; shows a baseline picker
+    ///    ("Start fresh" vs "Inherit total") + an "Unlink" affordance.
+    @ViewBuilder
+    private var counterLinkBanner: some View {
+        if let suggestion = linkSuggestion {
+            if !linkConfirmed {
+                // ── Suggestion state ─────────────────────────────────────
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            (Text("↔ ")
+                                .font(.risoHead(13, .bold))
+                                .foregroundStyle(Color.risoBlue)
+                            + Text("Counts on your existing \"")
+                                .font(.risoHead(13, .bold))
+                                .foregroundStyle(Color.risoInk)
+                            + Text(suggestion.name)
+                                .font(.risoHead(13, .extraBold))
+                                .foregroundStyle(Color.risoBlue)
+                            + Text("\" counter")
+                                .font(.risoHead(13, .bold))
+                                .foregroundStyle(Color.risoInk))
+                            Text("\(suggestion.lifetime) all-time · \(suggestion.memberCount) task\(suggestion.memberCount == 1 ? "" : "s")")
+                                .font(.risoBody(11, .semibold))
+                                .foregroundStyle(Color.risoMuted)
+                        }
+                        Spacer(minLength: 0)
+                        RisoButton(title: "Link", kind: .blue, small: true) {
+                            linkConfirmed = true
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.risoPaper)
+                .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(Color.risoBlue, lineWidth: Riso.Keyline.container)
+                )
+            } else {
+                // ── Confirmed state — baseline picker ────────────────────
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
+                        (Text("↔ ")
+                            .font(.risoHead(13, .bold))
+                            .foregroundStyle(Color.risoBlue)
+                        + Text("Linking to \"")
+                            .font(.risoHead(13, .bold))
+                            .foregroundStyle(Color.risoInk)
+                        + Text(suggestion.name)
+                            .font(.risoHead(13, .extraBold))
+                            .foregroundStyle(Color.risoBlue)
+                        + Text("\"")
+                            .font(.risoHead(13, .bold))
+                            .foregroundStyle(Color.risoInk))
+                        Spacer(minLength: 0)
+                        Button {
+                            linkConfirmed = false
+                        } label: {
+                            Text("Unlink")
+                                .font(.risoBody(12, .semibold))
+                                .foregroundStyle(Color.risoMuted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Baseline picker chips
+                    HStack(spacing: 6) {
+                        ruleChip("Start fresh", isOn: linkBaselineMode == .fresh) {
+                            linkBaselineMode = .fresh
+                        }
+                        ruleChip("Inherit total", isOn: linkBaselineMode == .inheritTotal) {
+                            linkBaselineMode = .inheritTotal
+                        }
+                    }
+
+                    Text(
+                        linkBaselineMode == .fresh
+                            ? "Your count for this task starts at 0 — all-time keeps climbing."
+                            : "Your count for this task starts at the current total (\(suggestion.lifetime))."
+                    )
+                    .font(.risoBody(10, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                }
+                .padding(10)
+                .background(Color.risoPaper)
+                .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(Color.risoBlue, lineWidth: Riso.Keyline.container)
+                )
+            }
         }
     }
 
@@ -245,6 +378,19 @@ struct RisoSpecialTaskPanel: View {
         form.countingUnit = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
         form.countingMaxCount = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         form.title = ""
+
+        // Apply the confirmed link suggestion (if any).
+        if linkConfirmed, let suggestion = linkSuggestion {
+            form.countingSharedCounterId = suggestion.counterId
+            // "Start fresh": baseline = source.currentCount at link time
+            //   → displayed = source.currentCount − baseline (starts at 0).
+            // "Inherit total": baseline = 0
+            //   → displayed = source.currentCount (starts at the running total).
+            form.countingBaseline = (linkBaselineMode == .fresh) ? suggestion.lifetime : 0
+        } else {
+            form.countingSharedCounterId = nil
+            form.countingBaseline = nil
+        }
 
         form.handleCreateAndAddToPool(
             userId: userId,
@@ -490,6 +636,10 @@ struct RisoSpecialTaskPanel: View {
         countingActionText = ""
         countingGoalText = "5"
         countingUnitText = ""
+        // Counter-link suggestion
+        linkSuggestion = nil
+        linkConfirmed = false
+        linkBaselineMode = .fresh
         // Achievement
         achievementTitle = ""
         achievementBoardId = nil

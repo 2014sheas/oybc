@@ -28,6 +28,12 @@ struct NewTaskSheetView: View {
     /// Called after any successful creation so the library can refresh.
     let onLibraryReloadRequested: () -> Void
 
+    /// All non-deleted tasks for the authenticated user. Passed through to
+    /// `RisoSpecialTaskPanel` so the counter-link suggestion can run against
+    /// the full live task set. Defaults to `[]` (no suggestions shown)
+    /// so callers that don't have the library yet don't need to change.
+    var taskLibrary: [OYBC.Task] = []
+
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Body
@@ -38,7 +44,8 @@ struct NewTaskSheetView: View {
                 NewTaskSheetContentView(
                     userId: userId,
                     onTaskCreated: onTaskCreated,
-                    onLibraryReloadRequested: onLibraryReloadRequested
+                    onLibraryReloadRequested: onLibraryReloadRequested,
+                    taskLibrary: taskLibrary
                 )
                 .padding(16)
             }
@@ -74,6 +81,12 @@ struct NewTaskSheetContentView: View {
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
     let onLibraryReloadRequested: () -> Void
 
+    /// All non-deleted tasks for the authenticated user — forwarded to
+    /// `RisoSpecialTaskPanel` for the counter-link suggestion. Defaults
+    /// to `[]` so snapshot tests and callers that lack the library don't
+    /// break (no suggestions shown when empty).
+    var taskLibrary: [OYBC.Task] = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
 
@@ -100,7 +113,8 @@ struct NewTaskSheetContentView: View {
                 .risoHardShadow(Riso.Shadow.small)
             }
 
-            // Special-type panel
+            // Special-type panel — receives the real task library so the
+            // counter-link suggestion can fire on action+unit match.
             VStack(alignment: .leading, spacing: 10) {
                 Text("Special type")
                     .risoSectionLabel()
@@ -110,7 +124,7 @@ struct NewTaskSheetContentView: View {
                     // defaultTimeframe: nil — indefinite Tasks-tab tasks
                     defaultStartDate: nil,
                     defaultEndDate: nil,
-                    taskLibrary: [],
+                    taskLibrary: taskLibrary,
                     onTaskCreated: { taskId, title, type in
                         onTaskCreated(taskId, title, type)
                     },
