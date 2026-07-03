@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useCreateFormState, type PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
-import type { Task, Timeframe } from '@oybc/shared';
+import { type LinkedCounterInput } from './CountingTemplatePicker';
+import { createTask } from '../../db/operations/tasks';
+import { generateUUID, currentTimestamp } from '../../db/utils';
+import { TaskType, type Task, type Timeframe } from '@oybc/shared';
 import styles from './NewTaskSheet.module.css';
 
 export interface NewTaskSheetProps {
@@ -127,6 +130,80 @@ function NewTaskSheetBody({
     deferPersist,
   });
 
+  /**
+   * Handles the "Link to existing counter" confirm from CountingTemplatePicker.
+   * Creates a new COUNTING task with `sharedCounterId` + `baseline` set, then
+   * notifies the parent and closes the sheet. Respects the same deferred-persist
+   * path as the regular COUNTING create so wizard usage stays atomic.
+   */
+  const handleCreateLinked = useCallback(
+    async (input: LinkedCounterInput): Promise<void> => {
+      if (!userId) return;
+      try {
+        let newTask: Task;
+        if (deferPersist) {
+          // Build in-memory for the wizard — written inside the board-save txn.
+          const now = currentTimestamp();
+          newTask = {
+            id: generateUUID(),
+            userId,
+            title: input.title,
+            type: TaskType.COUNTING,
+            action: input.source.action ?? '',
+            unit: input.source.unit ?? '',
+            maxCount: input.maxCount,
+            currentCount: 0,
+            sharedCounterId: input.source.id,
+            baseline: input.baseline,
+            isCompleted: false,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
+            // Wizard-born — hidden from the task library until the board goes active.
+            createdInWizard: true,
+          };
+          onPendingCreated?.({ task: newTask, childTasks: [], childLinks: [] });
+        } else {
+          // Immediate-persist path (Tasks-tab standalone quick-add).
+          newTask = await createTask(userId, {
+            title: input.title,
+            type: TaskType.COUNTING,
+            action: input.source.action ?? '',
+            unit: input.source.unit ?? '',
+            maxCount: input.maxCount,
+            sharedCounterId: input.source.id,
+            baseline: input.baseline,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
+          });
+        }
+        onTaskCreated(newTask);
+        onClose();
+      } catch (err) {
+        // Surface to the console; the form has no dedicated error banner for
+        // the link path. A future iteration can thread an error state.
+        console.error('[NewTaskSheet] handleCreateLinked failed:', err);
+      }
+    },
+    [
+      userId,
+      deferPersist,
+      onTaskCreated,
+      onPendingCreated,
+      onClose,
+      defaultTimeframe,
+      defaultStartDate,
+      defaultEndDate,
+    ],
+  );
+
   return (
     <div
       className={styles.backdrop}
@@ -163,6 +240,7 @@ function NewTaskSheetBody({
               onClose();
             }}
             submitLabel={submitLabel ?? 'Create & Select'}
+            onCreateLinked={handleCreateLinked}
           />
         </div>
       </div>

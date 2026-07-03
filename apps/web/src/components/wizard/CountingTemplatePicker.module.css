@@ -297,13 +297,116 @@
   outline-color: var(--riso-on-color);
 }
 
-/* notes */
-.linkStubNote {
-  font-size: 0.75rem;
-  color: var(--riso-muted);
-  font-weight: 500;
-  margin: 0;
+/* notes (linkStubNote removed — Phase 3 shipped) */
+
+/* link suggestion card */
+
+/* Blue fill with static tokens — dark-mode contract: colored fill → riso-on-color
+   for text, riso-ink-static for border. Never use adaptive --riso-ink/--riso-paper
+   as fill or on a colored fill (invisible in dark mode). */
+.suggestionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--riso-blue);
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
+.suggestionContent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.suggestionIcon {
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--riso-on-color);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.suggestionText {
+  flex: 1;
+  min-width: 0;
+}
+.suggestionTitle {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--riso-on-color);
+  line-height: 1.3;
+}
+.suggestionTitle strong {
+  font-weight: 800;
+}
+.suggestionMeta {
+  margin: 3px 0 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.75rem;
+  font-weight: 500;
+  /* Slightly dimmed cream — riso-on-color at reduced opacity stays cream on blue. */
+  color: var(--riso-on-color);
+  opacity: 0.82;
+}
+.suggestionActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* "Link" — solid cream Riso press button on blue. */
+.suggestionLinkBtn {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 7px 14px;
+  background: var(--riso-on-color);
+  color: var(--riso-ink-static);
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+  white-space: nowrap;
+}
+.suggestionLinkBtn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.suggestionLinkBtn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.suggestionLinkBtn:focus-visible {
+  outline: 3px solid var(--riso-ink-static);
+  outline-offset: 2px;
+}
+/* "No thanks" — ghost link on blue. */
+.suggestionDismissBtn {
+  background: transparent;
+  border: none;
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--riso-on-color);
+  opacity: 0.75;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: opacity 0.12s;
+}
+.suggestionDismissBtn:hover {
+  opacity: 1;
+}
+.suggestionDismissBtn:focus-visible {
+  outline: 2px solid var(--riso-on-color);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* notes */
 .linkError {
   font-family: var(--riso-font-head);
   font-size: 0.8rem;
