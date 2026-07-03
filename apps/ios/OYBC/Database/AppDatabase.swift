@@ -1807,13 +1807,17 @@ extension AppDatabase {
                 let derivedCompleted = displayed >= derivedMaxCount
 
                 // ONE-WAY LATCH: latch is ORed in; decrement never un-completes.
-                let linkedNowCompleted = linked.isCompleted || derivedCompleted
+                // Capture the pre-overwrite state so the newly-completing check
+                // below isn't structurally dead (mirrors the increment path).
+                let linkedWasCompleted = linked.isCompleted
+                let linkedNowCompleted = linkedWasCompleted || derivedCompleted
 
                 linked.currentCount = newSourceCount  // mirror source count
                 linked.isCompleted = linkedNowCompleted
                 // completedAt: only set if newly completing (unusual on decrement,
-                // but consistent with latch semantics).
-                if !linked.isCompleted && linkedNowCompleted {
+                // but consistent with latch semantics). Preserves the invariant
+                // isCompleted set ⟹ completedAt set.
+                if !linkedWasCompleted && linkedNowCompleted {
                     linked.completedAt = now
                 }
                 linked.updatedAt = now

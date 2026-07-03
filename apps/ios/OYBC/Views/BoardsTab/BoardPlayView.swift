@@ -2244,11 +2244,9 @@ struct BoardPlayView: View {
                     return
                 }
 
-                // Re-fetch the board to detect bingo state changes.
-                let boardBefore: Board? = currentBoardId.flatMap { id in
-                    try? AppDatabase.shared.read { db in try Board.fetchOne(db, key: id) }
-                }
-
+                // No bingo-state-change toast on decrement: the one-way task
+                // latch means completion can't regress, so bingo lines can't be
+                // lost via a decrement (unlike the increment path).
                 let otherBoards = decrementResult.affectedBoards.filter { $0.boardId != currentBoardId }
                 let creditText: String? = otherBoards.isEmpty ? nil :
                     sharedCreditToastText(counterName: counterName, otherBoards: otherBoards, isIncrement: false)

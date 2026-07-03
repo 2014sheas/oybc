@@ -306,6 +306,39 @@ final class AppDatabaseSharedCounterDecrementTests: XCTestCase {
         XCTAssertNotNil(fetchedLinked.completedAt, "completedAt must not be cleared")
     }
 
+    /// Regression: a linked task whose displayed value already meets its goal
+    /// but was left un-latched (e.g. a sync-conflict reset of `isCompleted`)
+    /// FIRST completes during a decrement — `completedAt` must be set alongside
+    /// `isCompleted`. The bug: the newly-completing check read the POST-overwrite
+    /// `isCompleted` (always false), so the row persisted `isCompleted=true` with
+    /// `completedAt=nil`, breaking the `isCompleted ⟹ completedAt` invariant.
+    func test_linkedTask_firstCompletesOnDecrement_setsCompletedAt() throws {
+        let db = try makeDb()
+        try seedUser(db)
+
+        // Source at 15; linked baseline=0, maxCount=10 → displayed=15 ≥ 10.
+        let source = makeSourceTask(id: "src-first-complete", currentCount: 15, maxCount: 100)
+        try db.saveTask(source)
+
+        // Linked NOT marked complete despite displayed ≥ maxCount (the inconsistent
+        // state a sync conflict can produce); makeLinkedTask leaves completedAt nil.
+        let linked = makeLinkedTask(
+            id: "lnk-fc", sourceId: "src-first-complete",
+            baseline: 0, maxCount: 10, isCompleted: false
+        )
+        try db.saveTask(linked)
+
+        // Decrement to 12 — displayed=12 ≥ 10, so the linked first latches now.
+        _ = try db.decrementSharedCounter(sourceTaskId: "src-first-complete", by: 3)
+
+        let fetched = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "lnk-fc") })
+        XCTAssertTrue(fetched.isCompleted, "linked task should latch complete when displayed ≥ maxCount")
+        XCTAssertNotNil(
+            fetched.completedAt,
+            "completedAt must be set when isCompleted first flips true (invariant: isCompleted ⟹ completedAt)"
+        )
+    }
+
     // MARK: - 4. affectedBoards
 
     /// An ACTIVE board that has a BoardTask placing the source task appears
