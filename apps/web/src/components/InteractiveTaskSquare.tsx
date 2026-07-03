@@ -47,6 +47,12 @@ interface ContextMenuProps {
    * responsible for the center-square exclusion guard.
    */
   onRemoveFromBoard?: () => void;
+  /**
+   * Shared-counter hint shown below the counting controls.
+   * Format: "↔ Shared · also counts on {board}" or "↔ Shared · also counts on {board} + N more".
+   * Only set when the task is a shared counting task with placements on other live boards.
+   */
+  sharedHint?: string;
 }
 
 /**
@@ -79,6 +85,7 @@ export function FloatingContextMenu({
   onOpenInLibrary,
   onSwapTask,
   onRemoveFromBoard,
+  sharedHint,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -174,6 +181,9 @@ export function FloatingContextMenu({
           >
             ↺ Reset
           </button>
+          {sharedHint && (
+            <div className={styles.sharedHint}>{sharedHint}</div>
+          )}
         </>
       )}
 
@@ -444,6 +454,12 @@ interface DetailModalProps {
    * the library detail sheet for that child without leaving the board.
    */
   onOpenInLibrary?: (taskId: string) => void;
+  /**
+   * Shared-counter hint shown in the counting section.
+   * Format: "↔ Shared · also counts on {board}" or "↔ Shared · also counts on {board} + N more".
+   * Only set when the task is a shared counting task with placements on other live boards.
+   */
+  sharedHint?: string;
 }
 
 /**
@@ -472,6 +488,7 @@ export function DetailModal({
   onToggleStep,
   onCompoundChildToggle,
   onOpenInLibrary,
+  sharedHint,
 }: DetailModalProps) {
   // Close on Escape key
   useEffect(() => {
@@ -585,6 +602,9 @@ export function DetailModal({
                     +
                   </button>
                 </div>
+                {sharedHint && (
+                  <div className={styles.sharedHint}>{sharedHint}</div>
+                )}
               </>
             ) : (
               <>
@@ -617,6 +637,9 @@ export function DetailModal({
                     +
                   </button>
                 </div>
+                {sharedHint && (
+                  <div className={styles.sharedHint}>{sharedHint}</div>
+                )}
               </>
             )}
           </>

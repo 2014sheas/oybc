@@ -18,6 +18,12 @@ export interface BoardCellModel {
   isFree: boolean;
   /** Part of a completed bingo line (gold ring). */
   isLine: boolean;
+  /**
+   * When true, renders a two-dot shared-counter marker on the cell corner
+   * (only while not done). Set for COUNTING tasks that are either a shared-
+   * counter source or a linked derived counter.
+   */
+  isShared?: boolean;
 }
 
 export interface RisoBoardCellProps {
@@ -57,6 +63,11 @@ export function RisoBoardCell({ cell, onClick, onContextMenu, badge }: RisoBoard
   ) : (
     <>
       {badge}
+      {cell.type === 'counting' && !cell.done && cell.isShared && (
+        <span className={styles.sharedMarker} aria-hidden="true">
+          <i /><i />
+        </span>
+      )}
       {(cell.type === 'counting' || cell.type === 'compound') && (
         <span className={`${styles.tag} ${cell.type === 'counting' ? styles.counting : styles.compound}`}>
           {cell.type === 'counting' && cell.count ? `×${cell.count.max}` : '≡'}
