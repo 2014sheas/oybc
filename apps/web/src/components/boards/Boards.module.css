@@ -424,3 +424,19 @@
     grid-template-columns: 1fr;
   }
 }
+/* Narrow phones (≤480px): tighten the 2×2 core strip so cards breathe at
+   iPhone SE / narrow-viewport widths. The 2-column layout itself is already
+   established by the ≤860px rule above — this block only refines spacing. */
+@media (max-width: 480px) {
+  .coreStrip {
+    gap: 8px;
+    margin: 20px 0 18px;
+  }
+  .coreCard {
+    padding: 11px 12px;
+  }
+  .coreV {
+    font-size: 14px;
+    gap: 6px;
+  }
+}
