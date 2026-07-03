@@ -1,3 +1,5 @@
+import Foundation
+
 // MARK: - LinkableCounter (Swift port of linkableCounter.ts)
 //
 // When a user creates a new COUNTING task, if its `action + unit` match an
