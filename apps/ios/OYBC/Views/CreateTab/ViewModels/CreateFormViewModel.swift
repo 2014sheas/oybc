@@ -114,6 +114,21 @@ final class CreateFormViewModel {
     /// this task. Only relevant when `taskType == .counting`.
     var countingDeriveFromTask: OYBC.Task? = nil
 
+    // Counter-link suggestion (Shared Counters — counter-link-suggest).
+    // Non-nil when the user confirmed the counter-link suggestion banner in
+    // the counting create panel. Written from `RisoSpecialTaskPanel` before
+    // calling `handleCreateAndAddToPool`.
+    //
+    // When set, the new task is linked to the given counter source:
+    //   sharedCounterId = countingSharedCounterId
+    //   baseline        = countingBaseline
+    //     - "Start fresh": baseline = source.currentCount at link time
+    //       → displayed = source.currentCount − baseline (starts at 0).
+    //     - "Inherit total": baseline = 0
+    //       → displayed = source.currentCount (inherits the running total).
+    var countingSharedCounterId: String? = nil
+    var countingBaseline: Int? = nil
+
     // UI state
     var isSubmitting: Bool = false
     var errorMessage: String?
@@ -424,6 +439,8 @@ final class CreateFormViewModel {
         countingUnit = ""
         countingMaxCount = ""
         countingDeriveFromTask = nil
+        countingSharedCounterId = nil
+        countingBaseline = nil
         achievementMode = .specificBoard
         achievementReferenceId = nil
         achievementTrigger = .greenlog
@@ -802,7 +819,9 @@ final class CreateFormViewModel {
                 type: .counting, action: a, unit: u, maxCount: m,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false,
-                timeframe: timeframe, startDate: startDate, endDate: endDate
+                timeframe: timeframe, startDate: startDate, endDate: endDate,
+                sharedCounterId: countingSharedCounterId,
+                baseline: countingBaseline
             )
         case .compound:
             // Unreachable — compound CreateTaskType returns nil from

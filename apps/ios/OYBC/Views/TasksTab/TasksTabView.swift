@@ -229,7 +229,8 @@ struct TasksTabView: View {
                 onLibraryReloadRequested: {
                     library.loadLibrary(userId: userId)
                     vm.reloadAsync()
-                }
+                },
+                taskLibrary: library.libraryTasks
             )
         }
         .sheet(item: $editingTask) { task in
