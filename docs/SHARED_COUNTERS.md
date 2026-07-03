@@ -56,8 +56,11 @@ Each phase lands **both platforms together**. Shared logic in `packages/shared` 
 - **Credited toast** after the cross-board ripple. Requires `incrementSharedCounter` to **return the affected board names** (a return-value change on both platforms — not a schema change).
 
 ### P3 — Passive completion / arrival banner
-- Gold arrival banner on board-open when a square filled from a log made elsewhere + square pulse (`arriveGlow`) + tap → Counter Detail + dismiss + ~5.2s auto-clear.
-- Detection via a **local last-seen count snapshot** per board (local-only state — `UserDefaults` on iOS / `localStorage` on web — **not** synced schema). MVP covers same-device cross-board (log on Detail / another board → open board → banner). Cross-device via the sync-pull diff is the stretch within P3.
+No engine change: P2's `incrementSharedCounter` already fans the log out to every board's square (marked done, bingo recomputed) in one transaction. P3 is DETECTION + PRESENTATION.
+- **Shared:** `detectCounterArrivals({lastSeen, squares}) → { arrivedTaskIds, arrivedCounters[], totalArrivedSquares }` + `snapshotCounterSquares(...)` (`packages/shared/src/algorithms/counterArrivals.ts`, Jest-tested). Increase-only; first view (no baseline) never arrives. iOS ports it (`CounterArrivals.swift`). **← P3-shared PR.**
+- Gold `.r-arrival` banner on board-open when ≥1 shared square arrived + square pulse (`arriveGlow`, 2 iters) + tap → Counter Detail + ✕ dismiss + ~5.2s auto-clear. Single: "*{name}* filled in here from your {name} counter — logged on another board · See every board it counts on ›". Multiple: "**N squares** filled in from your counters — logged on other boards."
+- **Local last-seen snapshot** per board (`UserDefaults` iOS / `localStorage` web — **not** synced schema): detect on board appear via `detectCounterArrivals`; re-snapshot via `snapshotCounterSquares` on board disappear + after an arrival is shown (so local taps / acknowledged arrivals don't re-fire).
+- **Scope = SAME-DEVICE MVP** (log on Detail / another board → open board → banner). Cross-device (another device logs → sync pulls → banner) is a documented follow-up (same last-seen-diff mechanism, needs the sync-pull path).
 
 ## Deferred (not in this MVP)
 

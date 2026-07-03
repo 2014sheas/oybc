@@ -145,3 +145,13 @@ export type {
   SharedCounterMemberTask,
   BuildSharedCounterGroupsInput,
 } from './sharedCounterGroups';
+
+// ===== Shared Counters — passive-completion arrival detection (P3) =====
+export { detectCounterArrivals, snapshotCounterSquares } from './counterArrivals';
+
+export type {
+  ArrivalSquare,
+  DetectCounterArrivalsInput,
+  ArrivedCounter,
+  CounterArrivalResult,
+} from './counterArrivals';
