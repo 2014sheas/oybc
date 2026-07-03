@@ -149,23 +149,19 @@ struct CounterDetailContent: View {
         }
     }
 
-    // Milestone: next round number above lifetime (100, 250, 500, 1000, 2500, …)
+    // Milestone: next round number above lifetime. Mirrors `cnNextMilestone`
+    // in the prototype (and web `nextMilestone`) exactly — same step list +
+    // the same "next 10k multiple" fallback past the top step.
     private var milestone: Int? {
-        let roundNumbers = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
-        return roundNumbers.first { $0 > group.lifetime }
+        let steps = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
+        if let next = steps.first(where: { $0 > group.lifetime }) { return next }
+        return (group.lifetime / 10000 + 1) * 10000
     }
 
     private var milestoneFraction: Double {
         guard let ms = milestone, ms > 0 else { return 1 }
-        // Progress from the previous milestone toward `ms`.
-        let prevMs = milestone.flatMap { m -> Int? in
-            let roundNumbers = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
-            let idx = roundNumbers.firstIndex(of: m) ?? 0
-            return idx > 0 ? roundNumbers[idx - 1] : 0
-        } ?? 0
-        let range = ms - prevMs
-        guard range > 0 else { return 1 }
-        return min(1.0, Double(group.lifetime - prevMs) / Double(range))
+        // Progress from zero toward the next milestone (prototype: lifetime / nextMs).
+        return min(1.0, Double(group.lifetime) / Double(ms))
     }
 
     // MARK: - Body
