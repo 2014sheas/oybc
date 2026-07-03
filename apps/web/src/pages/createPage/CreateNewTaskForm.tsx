@@ -41,6 +41,13 @@ export interface CreateNewTaskFormProps {
   onCompositeCreated: (task: Task) => void;
   /** Label for the submit button. Defaults to the legacy pool-flow wording. */
   submitLabel?: string;
+  /**
+   * Called when the user confirms the "Link to existing counter" flow inside
+   * `CountingTemplatePicker`. When provided, the Link button in the picker
+   * becomes active; when omitted, it stays disabled (context doesn't support
+   * linked-counter creation yet).
+   */
+  onCreateLinked?: import('../../components/wizard/CountingTemplatePicker').CountingTemplatePickerProps['onCreateLinked'];
 }
 
 export function CreateNewTaskForm({
@@ -48,6 +55,7 @@ export function CreateNewTaskForm({
   userId,
   onCompositeCreated,
   submitLabel = 'Create & Add to Pool',
+  onCreateLinked,
 }: CreateNewTaskFormProps): React.ReactElement {
   // Phase 6.3 — Workspace lookups for the Achievement-task picker.
   // Both hooks return non-deleted rows for `userId` (or `[]` while
@@ -272,6 +280,9 @@ export function CreateNewTaskForm({
                   selectedTemplate={form.deriveFromTask}
                   onSelect={form.applyTemplate}
                   onClear={form.clearTemplate}
+                  onCreateLinked={onCreateLinked}
+                  action={form.action}
+                  unit={form.unit}
                 />
               )}
 

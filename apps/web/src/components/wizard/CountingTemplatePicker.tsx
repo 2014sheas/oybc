@@ -1,5 +1,11 @@
-import { useRef, useState } from 'react';
-import { TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
+import { useRef, useState, useMemo, useEffect } from 'react';
+import {
+  TaskType,
+  generateCounterTaskTitle,
+  findLinkableCounter,
+  type Task,
+  type LinkableCounter,
+} from '@oybc/shared';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { DerivedCounterRow } from '../DerivedCounterRow';
 import { deriveDisplayedCount } from '@oybc/shared';
@@ -46,15 +52,30 @@ export interface CountingTemplatePickerProps {
   /** Called when the user clears the current template selection. */
   onClear: () => void;
   /**
-   * Phase 2 — Called when the user finishes the "Link to existing counter"
-   * flow and presses Create. The parent form should use this to initiate a
-   * `createTask` call with `sharedCounterId` + `baseline` set.
+   * Called when the user finishes the "Link to existing counter" flow and
+   * presses Create (either via the suggestion card → link panel, or by
+   * manually switching to the Link tab). The parent form should use this to
+   * initiate a `createTask` call with `sharedCounterId` + `baseline` set.
    *
-   * When this prop is omitted the "Link" mode tab is still rendered but the
-   * Create button is disabled — useful for contexts where linking is not yet
-   * wired.
+   * When omitted the "Link" mode tab is still rendered but the Create button
+   * is disabled — useful for contexts where linking is not yet wired.
    */
   onCreateLinked?: (input: LinkedCounterInput) => void;
+  /**
+   * The current Action field value from the parent form. When action + unit
+   * together match an existing counter, a one-tap link suggestion is shown.
+   * Pass an empty string (or omit) if the suggestion is not applicable.
+   */
+  action?: string;
+  /**
+   * The current Unit field value from the parent form. See `action`.
+   */
+  unit?: string;
+  /**
+   * Exclude this task id from link suggestions — pass the id of the task
+   * being edited so it can't be suggested as its own source.
+   */
+  excludeTaskId?: string;
 }
 
 /**
@@ -89,6 +110,9 @@ export function CountingTemplatePicker({
   onSelect,
   onClear,
   onCreateLinked,
+  action = '',
+  unit = '',
+  excludeTaskId,
 }: CountingTemplatePickerProps): React.ReactElement {
   // ─── Mode state ────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<PickerMode>('template');
@@ -110,6 +134,22 @@ export function CountingTemplatePicker({
   const countingTasks = library.allTasks.filter(
     (t) => t.type === TaskType.COUNTING && !t.isDeleted,
   );
+
+  // ─── Link suggestion ───────────────────────────────────────────────────────
+  // Match the typed action+unit against the existing counter pool. Returns the
+  // best source task to suggest joining, or null (no suggestion shown).
+  const suggestion = useMemo<LinkableCounter | null>(
+    () => findLinkableCounter({ action, unit, excludeTaskId }, library.allTasks),
+    [action, unit, excludeTaskId, library.allTasks],
+  );
+
+  // Track whether the user has dismissed the suggestion for the current
+  // action+unit pair. Reset whenever action or unit changes so a fresh type
+  // re-surfaces the card automatically.
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+  useEffect(() => {
+    setSuggestionDismissed(false);
+  }, [action, unit]);
 
   // ─── Template-mode handlers ────────────────────────────────────────────────
 
@@ -206,6 +246,21 @@ export function CountingTemplatePicker({
     }
   }
 
+  // ─── Suggestion card handler ───────────────────────────────────────────────
+
+  function handleSuggestionLink(): void {
+    if (!suggestion) return;
+    const sourceTask = library.allTasks.find((t) => t.id === suggestion.counterId);
+    if (!sourceTask) return;
+    // Pre-populate the link panel with the suggested source and the spec's
+    // default baseline (start-at-zero — the new task begins fresh while the
+    // all-time counter keeps climbing).
+    setLinkSource(sourceTask);
+    setBaselineMode('startFromZero');
+    setLinkOpen(false);
+    setMode('link');
+  }
+
   // ─── Link mode preview ─────────────────────────────────────────────────────
 
   const thresholdNum = parseInt(thresholdStr, 10);
@@ -227,8 +282,49 @@ export function CountingTemplatePicker({
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
+  // Show the suggestion card when: there is a match, the user hasn't dismissed
+  // it for this action+unit pair, and we're not already in link mode.
+  const showSuggestion = suggestion !== null && !suggestionDismissed && mode !== 'link';
+
   return (
     <div className={styles.pickerRoot}>
+      {/* Link suggestion card — appears above the mode toggle when action+unit
+          match an existing counter. One tap switches to the link panel with the
+          source pre-selected; "No thanks" hides it for the current action+unit. */}
+      {showSuggestion && (
+        <div className={styles.suggestionCard} role="region" aria-label="Counter link suggestion">
+          <div className={styles.suggestionContent}>
+            <span className={styles.suggestionIcon} aria-hidden="true">↔</span>
+            <div className={styles.suggestionText}>
+              <p className={styles.suggestionTitle}>
+                Counts on your existing <strong>"{suggestion.name}"</strong> counter
+              </p>
+              <p className={styles.suggestionMeta}>
+                {suggestion.lifetime} all-time
+                {' · '}
+                {suggestion.memberCount} task{suggestion.memberCount !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+          <div className={styles.suggestionActions}>
+            <button
+              type="button"
+              className={styles.suggestionLinkBtn}
+              onClick={handleSuggestionLink}
+            >
+              Link
+            </button>
+            <button
+              type="button"
+              className={styles.suggestionDismissBtn}
+              onClick={() => setSuggestionDismissed(true)}
+            >
+              No thanks
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Mode toggle */}
       <div className={styles.modeToggle} role="group" aria-label="Counting task picker mode">
         <button
@@ -467,9 +563,6 @@ export function CountingTemplatePicker({
             Create linked task
           </button>
 
-          <p className={styles.linkStubNote}>
-            Linked counter — increments via source task (wire-up in Phase 3)
-          </p>
         </div>
       )}
     </div>
