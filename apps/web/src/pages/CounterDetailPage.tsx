@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Timeframe } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
-import { incrementSharedCounter } from '../db/operations/tasks';
+import { decrementSharedCounter, incrementSharedCounter } from '../db/operations/tasks';
 import { CounterDetailTaskCard } from '../components/counters';
 import { timeframeDotColor } from '../components/counters/timeframeDotColor';
 import { RisoSectionLabel } from '../components/riso';
@@ -41,9 +41,7 @@ function timeframeLabel(tf: Timeframe | null): string {
  * Sections (MVP / P1):
  *   1. Hero card — "{action} · {unit}" tag · "Shared counter" label ·
  *      big blue lifetime total · milestone progress bar.
- *   2. Log control (blue filled card) — "Log {name}" / "+1" increment.
- *      Decrement is TODO(P2) — no decrementSharedCounter exists in
- *      db/operations/tasks.ts yet; P1 ships increment-only.
+ *   2. Log control (blue filled card) — "Log {name}" / "+1" increment + "−1" decrement.
  *   3. Explainer copy (per design handoff §Counter Detail item 3).
  *   4. "Appears on" — one timeframe chip per distinct active timeframe.
  *   5. "Shared by N tasks" — active member cards (tap → board).
@@ -69,6 +67,17 @@ export function CounterDetailPage(): React.ReactElement {
     setIsLogging(true);
     try {
       await incrementSharedCounter(counterId);
+    } finally {
+      setIsLogging(false);
+    }
+  }, [counterId, isLogging]);
+
+  const handleDecrement = useCallback(async () => {
+    if (!counterId || isLogging) return;
+    setIsLogging(true);
+    try {
+      // decrementSharedCounter clamps to 0 itself — no additional guard needed.
+      await decrementSharedCounter(counterId);
     } finally {
       setIsLogging(false);
     }
@@ -190,16 +199,12 @@ export function CounterDetailPage(): React.ReactElement {
         </div>
 
         <div className={styles.logStepper} role="group" aria-label={`${group.name} log stepper`}>
-          {/* TODO(P2): source decrement — enable once decrementSharedCounter is added to
-              db/operations/tasks.ts. The decrement path must clamp to the acting window's
-              logged value, apply the effective delta to lifetime + all active windows, and
-              be a no-op when all windows are at 0. See docs/SHARED_COUNTERS.md §The engine. */}
           <button
             type="button"
             className={styles.stepperBtn}
-            disabled
-            aria-label={`Decrease (available in a future update)`}
-            aria-disabled="true"
+            disabled={group.lifetime === 0 || isLogging}
+            aria-label={`Remove 1 ${unitStr}`}
+            onClick={() => void handleDecrement()}
           >
             −
           </button>

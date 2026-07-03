@@ -185,6 +185,26 @@
   background: var(--riso-gold);
 }
 
+/* Shared-counter two-dot marker (source or linked, while not done) */
+.sharedMarker {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 2;
+  pointer-events: none;
+}
+.sharedMarker i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--riso-blue);
+  border: 1px solid var(--riso-ink-static);
+}
+
 /* interactive variant (Phase 3b play board) */
 .interactive {
   cursor: pointer;

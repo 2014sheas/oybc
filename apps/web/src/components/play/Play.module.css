@@ -433,3 +433,43 @@
   font-size: 16px;
   line-height: 1;
 }
+
+/* ---- credited toast (shared-counter ripple feedback) ---- */
+@keyframes creditedToastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.creditedToast {
+  position: fixed;
+  right: 40px;
+  bottom: 40px;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-ink-static);
+  color: var(--riso-on-color);
+  padding: 11px 13px;
+  box-shadow: 4px 4px 0 rgba(24, 18, 11, 0.35);
+  max-width: 320px;
+  animation: creditedToastIn 0.28s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .creditedToast {
+    animation: none;
+  }
+}
+.creditedToastDot {
+  font-size: 16px;
+  line-height: 1;
+  flex: 0 0 auto;
+  color: var(--riso-blue);
+}
+.creditedToastTxt {
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+}

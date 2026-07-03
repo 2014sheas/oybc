@@ -20,7 +20,7 @@ import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
 import { addToSyncQueue } from '../db/operations/syncQueue';
-import { incrementSharedCounter } from '../db/operations/tasks';
+import { decrementSharedCounter, incrementSharedCounter } from '../db/operations/tasks';
 import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard, reorderBoardTasks } from '../db/operations/boardTasks';
 import { updateTaskAndCascade, type UpdateTaskPatch } from '../db/operations/tasks';
 import {
@@ -46,6 +46,7 @@ import { RisoIcon } from './riso';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
+import { RisoCreditedToast } from './play/RisoCreditedToast';
 import { ShareBoardSheet } from './share/ShareBoardSheet';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
@@ -184,6 +185,15 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // "Board saved" green toast shown after a successful edit-mode save.
   const [savedToast, setSavedToast] = useState(false);
   const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Phase 2 — Shared Counters: credited toast shown after an increment/decrement
+  // that ripples to OTHER boards. The `key` field forces RisoCreditedToast to
+  // remount (resetting its timer) when consecutive logs fire quickly.
+  const [creditedToast, setCreditedToast] = useState<{
+    name: string;
+    delta: number;
+    boardNames: string[];
+    key: number;
+  } | null>(null);
   // M3 — cell swap: the boardTaskId whose square the user requested a swap for.
   const [swapBoardTaskId, setSwapBoardTaskId] = useState<string | null>(null);
   // M4 — remove from board: the boardTaskId pending removal confirmation.
@@ -390,6 +400,77 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     }
     return sources;
   }, [taskMap]);
+
+  /**
+   * Phase 2 — Shared Counters: for each shared-counter task (source or linked),
+   * map its task id → the hint string listing OTHER active boards the counter
+   * also appears on (excluding the current board being played).
+   *
+   * Format:
+   *   1 other board  → "↔ Shared · also counts on {name}"
+   *   2+ other boards → "↔ Shared · also counts on {name} + {N} more"
+   *
+   * The hint is used by FloatingContextMenu and DetailModal so the user knows
+   * a tap will ripple.
+   */
+  const sharedCounterHintsByTaskId = useMemo<Map<string, string>>(() => {
+    const hints = new Map<string, string>();
+    // Build a lookup from boardId → board for active boards.
+    const activeBoardsById = new Map<string, Board>();
+    for (const b of allBoards) {
+      if (!b.isDeleted && b.status === BoardStatus.ACTIVE) {
+        activeBoardsById.set(b.id, b);
+      }
+    }
+    // Build a lookup from taskId → set of active boardIds (workspace-wide).
+    const activeBoardsByTask = new Map<string, Set<string>>();
+    for (const bt of allBoardTasks) {
+      if (activeBoardsById.has(bt.boardId)) {
+        let set = activeBoardsByTask.get(bt.taskId);
+        if (!set) { set = new Set(); activeBoardsByTask.set(bt.taskId, set); }
+        set.add(bt.boardId);
+      }
+    }
+
+    // For each shared-counter group, collect all member task ids,
+    // resolve their OTHER active board names, and build the hint.
+    for (const sourceId of Object.keys(taskMap)) {
+      // Only process sources (tasks that other tasks point to).
+      if (!sharedCounterSourceIds.has(sourceId)) continue;
+
+      // Find all member task ids: source + every linked task.
+      const memberIds: string[] = [sourceId];
+      for (const t of Object.values(taskMap)) {
+        if (t.sharedCounterId === sourceId) memberIds.push(t.id);
+      }
+
+      // Collect distinct active board names EXCLUDING the current play board.
+      const otherBoardNames = new Set<string>();
+      for (const memberId of memberIds) {
+        const memberBoards = activeBoardsByTask.get(memberId);
+        if (!memberBoards) continue;
+        for (const bId of memberBoards) {
+          if (bId === boardId) continue;
+          const b = activeBoardsById.get(bId);
+          if (b) otherBoardNames.add(b.name);
+        }
+      }
+
+      if (otherBoardNames.size === 0) continue;
+
+      const namesArr = [...otherBoardNames];
+      const hint =
+        namesArr.length === 1
+          ? `↔ Shared · also counts on ${namesArr[0]}`
+          : `↔ Shared · also counts on ${namesArr[0]} + ${namesArr.length - 1} more`;
+
+      // Apply the same hint to every member task in this group.
+      for (const memberId of memberIds) {
+        if (taskMap[memberId]) hints.set(memberId, hint);
+      }
+    }
+    return hints;
+  }, [taskMap, sharedCounterSourceIds, allBoardTasks, allBoards, boardId]);
 
   const sortedBoardTasks = [...boardTasks].sort((a, b) =>
     a.row !== b.row ? a.row - b.row : a.col - b.col
@@ -714,7 +795,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       try {
         // Capture the pre-increment board stats for flash comparison.
         const boardBefore = await db.boards.get(boardId);
-        await incrementSharedCounter(sourceTaskId);
+        const { affectedBoards } = await incrementSharedCounter(sourceTaskId);
         // Re-fetch to get post-increment board state.
         const boardAfter = await db.boards.get(boardId);
         if (!boardBefore || !boardAfter) return;
@@ -739,12 +820,66 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         } else if (newBingos.length > 0) {
           showFlash(`Bingo! ${newBingos.join(', ')}`, 'bingo');
         }
+
+        // Credited toast: show when the increment rippled to OTHER boards.
+        const otherBoards = affectedBoards.filter((b) => b.boardId !== boardId);
+        if (otherBoards.length > 0) {
+          const sourceTask = taskMap[sourceTaskId];
+          const counterName = sourceTask
+            ? (sourceTask.title?.trim() ||
+               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount ?? 0, sourceTask.unit ?? ''))
+            : '';
+          setCreditedToast({
+            name: counterName,
+            delta: 1,
+            boardNames: otherBoards.map((b) => b.boardName),
+            key: Date.now(),
+          });
+        }
       } catch (err) {
         console.error('Shared counter increment failed:', err);
         showFlash('Something went wrong', 'bingo');
       }
     },
-    [boardId, isExpired, showFlash],
+    [boardId, isExpired, showFlash, taskMap],
+  );
+
+  /**
+   * Phase 2 — Shared Counters: decrement the shared-counter accumulator for a
+   * given source task id. Mirrors handleSharedCounterIncrement; the engine
+   * clamps to 0 internally so this is always safe to call.
+   *
+   * @param sourceTaskId - The source task id (same rules as increment).
+   */
+  const handleSharedCounterDecrement = useCallback(
+    async (sourceTaskId: string): Promise<void> => {
+      if (isExpired) return;
+      try {
+        const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId);
+        // No-op: nothing changed (count was already 0).
+        if (effectiveDelta === 0) return;
+
+        // Credited toast: show when the decrement rippled to OTHER boards.
+        const otherBoards = affectedBoards.filter((b) => b.boardId !== boardId);
+        if (otherBoards.length > 0) {
+          const sourceTask = taskMap[sourceTaskId];
+          const counterName = sourceTask
+            ? (sourceTask.title?.trim() ||
+               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount ?? 0, sourceTask.unit ?? ''))
+            : '';
+          setCreditedToast({
+            name: counterName,
+            delta: -effectiveDelta,
+            boardNames: otherBoards.map((b) => b.boardName),
+            key: Date.now(),
+          });
+        }
+      } catch (err) {
+        console.error('Shared counter decrement failed:', err);
+        showFlash('Something went wrong', 'bingo');
+      }
+    },
+    [boardId, isExpired, showFlash, taskMap],
   );
 
   /**
@@ -855,6 +990,17 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       )}
       {/* Bingo toast */}
       {bingoToast && <RisoBingoToast key={bingoToast.key} count={board.linesCompleted} />}
+
+      {/* Credited toast — shared-counter ripple feedback */}
+      {creditedToast && (
+        <RisoCreditedToast
+          key={creditedToast.key}
+          name={creditedToast.name}
+          delta={creditedToast.delta}
+          boardNames={creditedToast.boardNames}
+          onDone={() => setCreditedToast(null)}
+        />
+      )}
 
       {/* Transient flash — lost bingo / reactivated / errors (bingo + greenlog
           route to the toast/overlay above). */}
@@ -1131,6 +1277,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                       ? generateCounterTaskTitle(task.action ?? '', task.maxCount ?? 0, task.unit ?? '')
                       : '');
 
+                // Phase 2 — Shared Counters: mark the cell as shared when
+                // it is a source OR a linked derived counter, so the
+                // two-dot ↔ marker appears on the grid while not done.
+                const isSharedCountingTask =
+                  squareData.type === 'counting' &&
+                  !taskIsCompleted &&
+                  (task.sharedCounterId != null || sharedCounterSourceIds.has(task.id));
+
                 const cellModel: BoardCellModel = {
                   key: boardTaskId,
                   label: displayLabel,
@@ -1147,6 +1301,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                       : undefined,
                   isFree: false,
                   isLine: highlightedSquares.has(row * gridSize + col),
+                  isShared: isSharedCountingTask || undefined,
                 };
 
                 // ── Click handler (play mode) ────────────────────────────
@@ -1370,6 +1525,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         // source task. Decrement and reset must be disabled for them.
         const isLinkedCounter = squareData.sharedCounterId != null;
 
+        // Phase 2 — resolve the shared-counter hint for this task.
+        const modalSharedHint = sharedCounterHintsByTaskId.get(task.id);
+
         return (
           <DetailModal
             sq={squareData}
@@ -1403,13 +1561,17 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               /* eslint-enable react-hooks/refs */
             }}
             onDecrementCount={() => {
-              // Linked derived counters are read-only — decrement must go through
-              // the source. Silently ignore the action here; the UI should hide/
-              // disable the button when isLinkedCounter is true.
               if (isExpired || isLinkedCounter) return;
-              if (modalCurrentCount > 0) {
+              // Phase 2 — Source shared counters route through decrementSharedCounter.
+              // handleSharedCounterDecrement transitively writes flashTimerRef.current from
+              // showFlash — same false-positive as handleComplete/handleSharedCounterIncrement.
+              /* eslint-disable react-hooks/refs */
+              if (sharedCounterSourceIds.has(task.id)) {
+                void handleSharedCounterDecrement(task.id);
+              } else if (modalCurrentCount > 0) {
                 void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
               }
+              /* eslint-enable react-hooks/refs */
             }}
             onToggleStep={(stepId: string) => {
               if (isExpired) return;
@@ -1421,6 +1583,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               squareData.type === 'compound' ? handleCompoundChildToggle : undefined
             }
             onOpenInLibrary={(taskId) => setOpenedTaskInLibrary(taskId)}
+            sharedHint={modalSharedHint}
           />
         );
       })()}
@@ -1461,6 +1624,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           !isExpired &&
           !(bt.isCenter && board.centerSquareType !== CenterSquareType.NONE);
 
+        // Phase 2 — resolve the shared-counter hint for this task.
+        const menuSharedHint = sharedCounterHintsByTaskId.get(task.id);
+
         return (
           <FloatingContextMenu
             sq={squareData}
@@ -1485,7 +1651,10 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             onDecrementCount={() => {
               // Linked derived counters are read-only — no decrement.
               if (isLinkedCounter) { setContextMenu(null); return; }
-              if (menuCurrentCount > 0) {
+              // Phase 2 — Source shared counters route through decrementSharedCounter.
+              if (sharedCounterSourceIds.has(task.id)) {
+                void handleSharedCounterDecrement(task.id);
+              } else if (menuCurrentCount > 0) {
                 void handleComplete(bt.id, { currentCount: menuCurrentCount - 1 });
               }
               setContextMenu(null);
@@ -1512,6 +1681,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               setRemoveBoardTaskId(bt.id);
               setContextMenu(null);
             } : undefined}
+            sharedHint={menuSharedHint}
           />
         );
       })()}
