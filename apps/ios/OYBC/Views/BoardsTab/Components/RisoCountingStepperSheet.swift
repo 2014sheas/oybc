@@ -2,15 +2,17 @@ import SwiftUI
 
 // MARK: - RisoCountingStepperSheet
 
-/// Small sheet (`.presentationDetents([.height(140)])`) that surfaces
+/// Small sheet (`.presentationDetents([.height(160)])`) that surfaces
 /// the counting stepper for a cell tap on a counting-type square.
 ///
 /// Wires directly to the caller's `handleCountingTap` / `handleCountingDecrement`
 /// via the `onIncrement` / `onDecrement` closures. The sheet itself carries no
 /// write logic.
 ///
-/// Per spec: the − button is disabled for linked derived counters
-/// (`isLinkedCounter = true`) and when `currentCount == 0`.
+/// P2: `sharedHint` adds an "↔ Shared · also counts on …" line beneath the
+/// stepper when the task belongs to a shared-counter group and the group spans
+/// other boards. `isLinkedCounter` no longer disables the `−` button — the
+/// new `decrementSharedCounter` engine handles shared decrements.
 struct RisoCountingStepperSheet: View {
 
     // MARK: - Data
@@ -19,7 +21,14 @@ struct RisoCountingStepperSheet: View {
     let currentCount: Int
     let maxCount: Int
     let unitText: String
+    /// True when this task has `sharedCounterId != nil` (a linked derived counter).
+    /// Kept for BoardPlayView routing but no longer disables the `−` button (P2).
     let isLinkedCounter: Bool
+    /// Optional "also counts on …" hint shown beneath the stepper for shared-counter
+    /// squares. Nil when the task is not in a shared group or has no other boards.
+    /// Format (verbatim per spec): "↔ Shared · also counts on {board}" or
+    /// "↔ Shared · also counts on {board} + {N} more"
+    var sharedHint: String? = nil
 
     // MARK: - Actions
 
@@ -32,17 +41,28 @@ struct RisoCountingStepperSheet: View {
         ZStack {
             Color.risoPaper.ignoresSafeArea()
 
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 // ── Label pill ──
                 labelPill
 
                 // ── Stepper row ──
                 stepperRow
+
+                // ── Shared hint (P2) ──
+                if let hint = sharedHint {
+                    Text(hint)
+                        .font(.risoBody(11, .regular))
+                        .foregroundStyle(Color.risoBlue)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .padding(.horizontal, Riso.gutter)
+                }
             }
-            .padding(.top, 20)
+            .padding(.top, 18)
             .padding(.horizontal, Riso.gutter)
         }
-        .presentationDetents([.height(140)])
+        // Taller when hint is shown to avoid content clipping.
+        .presentationDetents(sharedHint != nil ? [.height(180)] : [.height(140)])
         .presentationDragIndicator(.visible)
         .presentationBackground(Color.risoPaper)
     }
@@ -64,7 +84,7 @@ struct RisoCountingStepperSheet: View {
 
     private var stepperRow: some View {
         HStack(spacing: 0) {
-            // − button
+            // − button: disabled only when count is 0 (P2: no longer disabled for isLinkedCounter)
             Button {
                 onDecrement()
             } label: {
@@ -75,7 +95,7 @@ struct RisoCountingStepperSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(StepperButtonStyle())
-            .disabled(currentCount == 0 || isLinkedCounter)
+            .disabled(currentCount == 0)
 
             // Value display
             Text("\(currentCount)/\(maxCount)")
@@ -141,6 +161,34 @@ private struct StepperButtonStyle: ButtonStyle {
                 maxCount: 10,
                 unitText: "k",
                 isLinkedCounter: false
+            )
+        }
+}
+
+#Preview("Counting stepper sheet — shared hint") {
+    Color.risoPaper
+        .sheet(isPresented: .constant(true)) {
+            RisoCountingStepperSheet(
+                taskTitle: "Push-ups",
+                currentCount: 20,
+                maxCount: 30,
+                unitText: "reps",
+                isLinkedCounter: false,
+                sharedHint: "↔ Shared · also counts on February Fitness"
+            )
+        }
+}
+
+#Preview("Counting stepper sheet — shared hint multi-board") {
+    Color.risoPaper
+        .sheet(isPresented: .constant(true)) {
+            RisoCountingStepperSheet(
+                taskTitle: "Push-ups",
+                currentCount: 20,
+                maxCount: 30,
+                unitText: "reps",
+                isLinkedCounter: true,
+                sharedHint: "↔ Shared · also counts on February Fitness + 2 more"
             )
         }
 }

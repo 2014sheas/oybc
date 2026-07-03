@@ -272,6 +272,13 @@ struct BoardPlayView: View {
     /// rapid bingos no longer spawn overlapping dismiss tasks that cut a
     /// fresh toast short.
     @State private var bingoToastGeneration: Int = 0
+    // MARK: P2 — Shared-counter credited toast
+    /// Whether to show the shared-counter credit toast (slides from bottom).
+    @State private var showCreditToast: Bool = false
+    /// Copy shown in the credit toast, e.g. "Push-ups logged — also counted on Board A, Board B."
+    @State private var creditToastText: String = ""
+    /// Monotonic token so only the latest credit toast's auto-dismiss fires.
+    @State private var creditToastGeneration: Int = 0
     /// Board task id of the counting cell whose stepper sheet is open.
     @State private var countingStepperBoardTaskId: String?
     @State private var detailBoardTaskId: String?
@@ -596,6 +603,44 @@ struct BoardPlayView: View {
                     )
                 )
                 .zIndex(10)
+            }
+
+            // ── P2: Shared-counter credit toast (slides from bottom) ──
+            if showCreditToast {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.risoBlue)
+                        Text(creditToastText)
+                            .font(.risoBody(12, .semibold))
+                            .foregroundStyle(Color.risoInk)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.risoPaper2)
+                    .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Riso.cardRadius)
+                            .strokeBorder(Color.risoBlue, lineWidth: Riso.Keyline.dense)
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: Riso.cardRadius)
+                            .fill(Color.risoInk)
+                            .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
+                    )
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 100)
+                }
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .move(edge: .bottom).combined(with: .opacity)
+                    )
+                )
+                .zIndex(9)
             }
 
             // ── GREENLOG overlay (full-bleed) ──
@@ -946,12 +991,16 @@ struct BoardPlayView: View {
                     }
                     return rawCount
                 }()
+                // P2: Compute shared hint — other ACTIVE boards where a member
+                // task lives, excluding the current board.
+                let sharedHint: String? = sharedStepperHint(for: task)
                 RisoCountingStepperSheet(
                     taskTitle: task.title,
                     currentCount: displayed,
                     maxCount: maxVal,
                     unitText: task.unit ?? "",
                     isLinkedCounter: isLinked,
+                    sharedHint: sharedHint,
                     onIncrement: {
                         handleCountingTap(boardTask: bt, task: task)
                     },
@@ -1214,6 +1263,104 @@ struct BoardPlayView: View {
         }
     }
 
+    // MARK: - P2: Shared-counter credit toast helpers
+
+    /// Fires the credit toast for a shared-counter ripple that reached other boards.
+    /// Uses a generation token to prevent stale auto-dismiss from clipping a new toast.
+    ///
+    /// - Parameter text: The full toast copy string.
+    private func triggerCreditToast(text: String) {
+        creditToastText = text
+        creditToastGeneration &+= 1
+        let generation = creditToastGeneration
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+            showCreditToast = true
+        }
+        _Concurrency.Task.detached { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 2_600_000_000)
+            guard generation == creditToastGeneration else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                showCreditToast = false
+            }
+        }
+    }
+
+    /// Builds the credit toast copy for an increment or decrement.
+    ///
+    /// Increment: `"{name} logged — also counted on {A}, {B}."`
+    /// Decrement:  `"{name} removed — also taken off {A}, {B}."`
+    ///
+    /// - Parameters:
+    ///   - counterName: The counter's display name (source task title).
+    ///   - otherBoards: Boards OTHER than the current board that were credited.
+    ///   - isIncrement: `true` for increment, `false` for decrement.
+    private func sharedCreditToastText(
+        counterName: String,
+        otherBoards: [AppDatabase.AffectedBoard],
+        isIncrement: Bool
+    ) -> String {
+        let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", ")
+        if isIncrement {
+            return "\(counterName) logged — also counted on \(boardNames)."
+        } else {
+            return "\(counterName) removed — also taken off \(boardNames)."
+        }
+    }
+
+    /// Computes the "↔ Shared · also counts on …" hint shown in the stepper sheet
+    /// for a shared-counter task. Returns `nil` when the task is not in a shared group
+    /// or has no OTHER active boards to mention.
+    ///
+    /// - Parameter task: The `Task` backing the tapped counting square.
+    private func sharedStepperHint(for task: Task) -> String? {
+        guard task.type == .counting else { return nil }
+
+        // Determine the source task id for this counter.
+        let sourceId: String
+        if let linkedSourceId = task.sharedCounterId {
+            sourceId = linkedSourceId
+        } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted }) {
+            sourceId = task.id
+        } else {
+            return nil  // Not in a shared group.
+        }
+
+        // Collect all member task ids (source + linked).
+        let memberIds: Set<String> = {
+            var ids = Set<String>([sourceId])
+            for t in allTasks where t.sharedCounterId == sourceId && !t.isDeleted {
+                ids.insert(t.id)
+            }
+            return ids
+        }()
+
+        // Find ACTIVE boards (other than the current board) where any member is placed.
+        let currentBid = board?.id
+        var seenBoardIds = Set<String>()
+        if let cid = currentBid { seenBoardIds.insert(cid) }
+        var otherBoardNames: [String] = []
+        for bt in allBoardTasksInWorkspace {
+            guard memberIds.contains(bt.taskId),
+                  !seenBoardIds.contains(bt.boardId)
+            else { continue }
+            if let b = allBoardsInWorkspace.first(where: { $0.id == bt.boardId }),
+               !b.isDeleted, b.status == .active {
+                seenBoardIds.insert(b.id)
+                otherBoardNames.append(b.name)
+            }
+        }
+        guard !otherBoardNames.isEmpty else { return nil }
+        otherBoardNames.sort()  // stable order
+
+        if otherBoardNames.count == 1 {
+            return "↔ Shared · also counts on \(otherBoardNames[0])"
+        } else {
+            let first = otherBoardNames[0]
+            let more = otherBoardNames.count - 1
+            return "↔ Shared · also counts on \(first) + \(more) more"
+        }
+    }
+
     /// Computes the greenlog streak for the current board (core boards only) and
     /// stores a compact label in `greenlogStreakValue` for the overlay + poster.
     /// Non-core boards → nil (the STREAK card hides). Reads boards off-main.
@@ -1342,6 +1489,14 @@ struct BoardPlayView: View {
             return rawCount
         }()
 
+        // P2: Shared-counter marker — true for source tasks that have linked tasks
+        // pointing at them, or for linked tasks with sharedCounterId set.
+        let isSharedCounterCell: Bool = {
+            guard let t = task, t.type == .counting else { return false }
+            if t.sharedCounterId != nil { return true }
+            return allTasks.contains { $0.sharedCounterId == t.id && !$0.isDeleted }
+        }()
+
         // Compound child progress — mirrors original playSquare.
         let compoundLinks = task.map { compoundChildrenByCompound[$0.id] ?? [] } ?? []
         let compoundDoneCount = compoundLinks.filter { link in
@@ -1374,6 +1529,7 @@ struct BoardPlayView: View {
             isLocked: isBoardLocked,
             currentCount: current,
             maxCount: maxVal,
+            isSharedCounter: isSharedCounterCell,
             compoundDoneCount: compoundDoneCount,
             compoundChildCount: compoundLinks.count,
             onTap: {
@@ -1455,7 +1611,8 @@ struct BoardPlayView: View {
                     guard !isBoardLocked else { return }
                     handleCountingDecrement(boardTask: boardTask, task: t)
                 }
-                .disabled(current == 0 || isLinkedCounter || isProcessing || isBoardLocked)
+                // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
+                .disabled(current == 0 || isProcessing || isBoardLocked)
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
                 }
@@ -1704,10 +1861,10 @@ struct BoardPlayView: View {
                     .foregroundStyle(Color.risoMuted)
 
                 HStack(spacing: 16) {
-                    // Linked derived counters are read-only — decrement disabled.
+                    // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
                     detailStepperButton(
                         system: "minus",
-                        enabled: current > 0 && !isLinkedCounter && !isProcessing && !isBoardLocked
+                        enabled: current > 0 && !isProcessing && !isBoardLocked
                     ) {
                         handleCountingDecrement(boardTask: boardTask, task: task)
                     }
@@ -1950,14 +2107,16 @@ struct BoardPlayView: View {
         // Detect whether this task participates in a shared-counter relationship.
         if let sourceId = task.sharedCounterId {
             // (a) Linked derived counter — increment the source.
-            runSharedCounterIncrement(sourceTaskId: sourceId)
+            // Resolve the source task title for the credit toast copy.
+            let sourceName = taskMap[sourceId]?.title ?? task.title
+            runSharedCounterIncrement(sourceTaskId: sourceId, counterName: sourceName)
             return
         }
 
         // (b) Source counter — check if any task in the workspace links to this task.
         let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
         if isSource {
-            runSharedCounterIncrement(sourceTaskId: task.id)
+            runSharedCounterIncrement(sourceTaskId: task.id, counterName: task.title)
             return
         }
 
@@ -1981,14 +2140,17 @@ struct BoardPlayView: View {
         runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
     }
 
-    /// Runs the shared-counter propagation in a background task, then refreshes
-    /// board + task data on the main thread.
+    /// Runs the shared-counter increment in a background task, then refreshes
+    /// board + task data on the main thread and fires a credit toast when
+    /// the ripple reached other boards.
     ///
     /// Mirrors the pattern in `runOrchestration` (uses `_Concurrency.Task.detached`
     /// to avoid shadowing by the GRDB `Task` model).
     ///
-    /// - Parameter sourceTaskId: The source (template) task id to increment.
-    private func runSharedCounterIncrement(sourceTaskId: String) {
+    /// - Parameters:
+    ///   - sourceTaskId: The source (template) task id to increment.
+    ///   - counterName: Display name used in the credit toast copy.
+    private func runSharedCounterIncrement(sourceTaskId: String, counterName: String = "") {
         guard !isProcessing else { return }
         isProcessing = true
         let currentBoardId = board?.id
@@ -2000,7 +2162,7 @@ struct BoardPlayView: View {
                     try? AppDatabase.shared.read { db in try Board.fetchOne(db, key: id) }
                 }
 
-                try AppDatabase.shared.incrementSharedCounter(sourceTaskId: sourceTaskId)
+                let creditResult = try AppDatabase.shared.incrementSharedCounter(sourceTaskId: sourceTaskId)
 
                 // Re-fetch the board after the write to detect bingo/greenlog changes.
                 let boardAfter: Board? = currentBoardId.flatMap { id in
@@ -2027,6 +2189,11 @@ struct BoardPlayView: View {
                     }
                 }
 
+                // P2: Build credit toast for OTHER boards that changed.
+                let otherBoards = creditResult.affectedBoards.filter { $0.boardId != currentBoardId }
+                let creditText: String? = otherBoards.isEmpty ? nil :
+                    sharedCreditToastText(counterName: counterName, otherBoards: otherBoards, isIncrement: true)
+
                 await MainActor.run {
                     isProcessing = false
                     loadBoard()
@@ -2043,6 +2210,9 @@ struct BoardPlayView: View {
                             }
                         }
                     }
+                    if let text = creditText {
+                        triggerCreditToast(text: text)
+                    }
                 }
             } catch {
                 print("⚠️ BoardPlayView shared-counter increment error: \(error)")
@@ -2053,13 +2223,76 @@ struct BoardPlayView: View {
         }
     }
 
-    /// Decrements a counting task's `currentCount` by 1 and un-marks completion.
+    /// Runs the shared-counter decrement in a background task, then refreshes
+    /// board + task data on the main thread and fires a credit toast when the
+    /// ripple reached other boards.
+    ///
+    /// - Parameters:
+    ///   - sourceTaskId: The source (template) task id to decrement.
+    ///   - counterName: Display name used in the credit toast copy.
+    private func runSharedCounterDecrement(sourceTaskId: String, counterName: String = "") {
+        guard !isProcessing else { return }
+        isProcessing = true
+        let currentBoardId = board?.id
+
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                let decrementResult = try AppDatabase.shared.decrementSharedCounter(sourceTaskId: sourceTaskId)
+                guard decrementResult.effectiveDelta > 0 else {
+                    // No-op — source was already at 0; nothing to show.
+                    await MainActor.run { isProcessing = false }
+                    return
+                }
+
+                // Re-fetch the board to detect bingo state changes.
+                let boardBefore: Board? = currentBoardId.flatMap { id in
+                    try? AppDatabase.shared.read { db in try Board.fetchOne(db, key: id) }
+                }
+
+                let otherBoards = decrementResult.affectedBoards.filter { $0.boardId != currentBoardId }
+                let creditText: String? = otherBoards.isEmpty ? nil :
+                    sharedCreditToastText(counterName: counterName, otherBoards: otherBoards, isIncrement: false)
+
+                await MainActor.run {
+                    isProcessing = false
+                    loadBoard()
+                    loadBoardTasks()
+                    loadTaskData()
+                    if let text = creditText {
+                        triggerCreditToast(text: text)
+                    }
+                }
+            } catch {
+                print("⚠️ BoardPlayView shared-counter decrement error: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                }
+            }
+        }
+    }
+
+    /// Decrements a counting task's `currentCount` by 1.
+    /// Routes shared-counter tasks (source or linked) through
+    /// `runSharedCounterDecrement`; standalone tasks use the legacy orchestration.
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
     ///   - task: The `Task` providing current state.
     private func handleCountingDecrement(boardTask: BoardTask, task: Task) {
         guard !isProcessing else { return }
+
+        // Shared-counter path: same detection as handleCountingTap.
+        if let sourceId = task.sharedCounterId {
+            runSharedCounterDecrement(sourceTaskId: sourceId, counterName: task.title)
+            return
+        }
+        let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
+        if isSource {
+            runSharedCounterDecrement(sourceTaskId: task.id, counterName: task.title)
+            return
+        }
+
+        // Standalone counter — legacy path (un-completes, no fan-out).
         let now = AppDatabase.currentTimestamp()
         let newCount = max((task.currentCount ?? 0) - 1, 0)
 
