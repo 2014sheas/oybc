@@ -38,9 +38,15 @@ export interface RisoCreditedToastProps {
  */
 export function RisoCreditedToast({ name, delta, boardNames, onDone }: RisoCreditedToastProps): React.ReactElement {
   useEffect(() => {
+    // Capture onDone once at mount. The parent remounts this component (via a
+    // fresh `key`) for every new toast, so we must NOT re-run on `onDone`
+    // identity changes — otherwise each useLiveQuery re-render after the tap
+    // passes a new inline `onDone` and restarts the 2.6s timer, so the toast
+    // never auto-dismisses on time.
     const id = setTimeout(onDone, TOAST_MS);
     return () => clearTimeout(id);
-  }, [onDone]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isIncrement = delta >= 0;
   const boardsStr = boardNames.join(', ');

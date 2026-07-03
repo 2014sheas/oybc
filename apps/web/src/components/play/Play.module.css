@@ -465,7 +465,9 @@
   font-size: 16px;
   line-height: 1;
   flex: 0 0 auto;
-  color: var(--riso-blue);
+  /* Static cream on the ink-static toast fill. Adaptive --riso-blue is dark
+     navy in light mode → ~2.5:1 on near-black, nearly invisible. */
+  color: var(--riso-on-color);
 }
 .creditedToastTxt {
   font-family: var(--riso-font-body);
