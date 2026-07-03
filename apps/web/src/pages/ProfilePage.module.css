@@ -313,6 +313,18 @@
   outline-offset: 2px;
 }
 
+/* ─── Version footer ────────────────────────────────────────── */
+/* Mirrors iOS ProfileView "OYBC · v{version} ({build})" footer.
+   Web omits the build number (no bundle metadata at runtime). */
+.versionFooter {
+  text-align: center;
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  margin: 8px 0 20px;
+}
+
 /* ─── Sign out ──────────────────────────────────────────────── */
 .signOutButton {
   width: 100%;
