@@ -86,6 +86,8 @@ OYBC web handoff*.zip
 design_handoff_web/
 OYBC Coming Soon*.zip
 design_handoff_coming_soon/
+OYBC Shared Counters*.zip
+design_handoff_shared_counters/
 
 # design-sync (claude.ai/design) — staged scripts, build output, machine state
 .ds-sync/

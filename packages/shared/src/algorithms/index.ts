@@ -136,3 +136,12 @@ export type {
 export { additiveMergeCount, needsAdditiveMerge } from './sharedCounterMerge';
 
 export type { MergeCountResult } from './sharedCounterMerge';
+
+// ===== Shared Counters — Hub / Detail read-model builder (P1) =====
+export { buildSharedCounterGroups } from './sharedCounterGroups';
+
+export type {
+  SharedCounterGroup,
+  SharedCounterMemberTask,
+  BuildSharedCounterGroupsInput,
+} from './sharedCounterGroups';
