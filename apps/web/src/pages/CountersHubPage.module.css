@@ -1,0 +1,65 @@
+/* CountersHubPage — "Shared counters" sub-page under Profile. */
+
+.container {
+  padding: 0;
+}
+
+/* Red kicker label above the h1 — matches the prototype's "PROFILE" kicker. */
+.kicker {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--riso-red);
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+/* Cards list region */
+.cards {
+  margin-top: 4px;
+}
+
+/* Footer note */
+.footerNote {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  padding: 0 2px;
+  margin: 8px 0 24px;
+}
+
+/* ─── Empty state ─── */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 24px 40px;
+  text-align: center;
+}
+
+.emptyIcon {
+  font-size: 36px;
+  color: var(--riso-muted);
+  line-height: 1;
+}
+
+.emptyPrimary {
+  font-family: var(--riso-font-head);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--riso-ink);
+  margin: 0;
+}
+
+.emptySub {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  max-width: 280px;
+  margin: 0;
+}

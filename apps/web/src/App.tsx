@@ -15,6 +15,8 @@ import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
 import { DefaultPoolsListPage } from './pages/DefaultPoolsListPage';
 import { DefaultPoolEditorPage } from './pages/DefaultPoolEditorPage';
+import { CountersHubPage } from './pages/CountersHubPage';
+import { CounterDetailPage } from './pages/CounterDetailPage';
 import { CoreBoardBrowserPage } from './pages/core-board-browser/CoreBoardBrowserPage';
 import { CoreBoardWindowPage } from './pages/core-board-browser/CoreBoardWindowPage';
 import { Playground } from './pages/Playground';
@@ -114,6 +116,8 @@ function AuthenticatedLayout(): React.ReactElement {
         <Route path="/profile/default-pools" element={<DefaultPoolsListPage />} />
         <Route path="/profile/default-pools/:timeframe" element={<DefaultPoolEditorPage />} />
         <Route path="/profile/account-security" element={<AccountSecurityPage />} />
+        <Route path="/profile/counters" element={<CountersHubPage />} />
+        <Route path="/profile/counters/:counterId" element={<CounterDetailPage />} />
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>

@@ -169,7 +169,7 @@ export function ProfilePage(): React.ReactElement {
         </Link>
       </div>
 
-      {/* Streaks */}
+      {/* Activity */}
       <div className={styles.sectionLabel}>Activity</div>
       <div className={styles.card}>
         <Link
@@ -177,6 +177,13 @@ export function ProfilePage(): React.ReactElement {
           className={`${styles.settingsRow} ${styles.rowLink}`}
         >
           <span className={styles.rowLabel}>Streaks</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
+        <Link
+          to="/profile/counters"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Shared counters</span>
           <span className={styles.rowArrow}>&rarr;</span>
         </Link>
       </div>
