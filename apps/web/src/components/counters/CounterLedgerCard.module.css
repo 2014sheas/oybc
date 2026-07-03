@@ -1,0 +1,214 @@
+/* CounterLedgerCard — Ledger layout card for the Counters Hub.
+   Mirrors the `cn-led` styles from the shared-counters design handoff,
+   translated to Riso web tokens. See docs/RISO_WEB.md dark-mode contract. */
+
+.card {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  padding: 15px 16px 13px;
+  margin-bottom: 14px;
+  /* No cursor/active: the "Open ›" link is the tap target */
+}
+
+/* ─── Top row: name (left) + lifetime (right) ─── */
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.name {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--riso-ink);
+}
+
+/* Unit tag: blue filled pill — text must use --riso-on-color (static cream).
+   DARK-MODE CONTRACT: background is colored fill → text/border use static tokens. */
+.unitTag {
+  font-family: var(--riso-font-head);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--riso-ink-static);
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lifetimeBlock {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Blue lifetime number — --riso-blue is adaptive (dims in dark mode) which is
+   intentional: the number sits on paper, not a colored fill. */
+.lifetimeNum {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+  color: var(--riso-blue);
+  font-variant-numeric: tabular-nums;
+}
+
+.lifetimeLabel {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+  margin-top: 3px;
+}
+
+/* ─── Active task rows ─── */
+.rows {
+  margin: 14px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.rowLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.rowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowWindow {
+  color: var(--riso-muted);
+  font-weight: 600;
+}
+
+/* Timeframe accent dot.
+   DARK-MODE CONTRACT: dot has a colored fill — border must be static. */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink-static);
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.rowVal {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--riso-ink);
+}
+
+.rowGoal {
+  color: var(--riso-muted);
+  font-weight: 700;
+}
+
+/* Progress bar spans both grid columns */
+.barWrap {
+  grid-column: 1 / -1;
+  height: 10px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: var(--riso-blue);
+  border-radius: inherit;
+  /* No animation: respects prefers-reduced-motion by default (no motion class) */
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .barFill {
+    transition: width 0.3s ease;
+  }
+}
+
+.barFillMet {
+  background: var(--riso-green);
+}
+
+/* ─── Footer: dashed divider + meta + open link ─── */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1.5px dashed var(--riso-ink);
+}
+
+.footerMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.openLink {
+  color: var(--riso-blue);
+  text-decoration: none;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.openLink:hover {
+  text-decoration: underline;
+}
+
+.openLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
