@@ -15,7 +15,7 @@
     "packages/*"
   ],
   "devDependencies": {
-    "turbo": "^2.10.2"
+    "turbo": "^2.10.3"
   },
   "engines": {
     "node": ">=18.0.0",
