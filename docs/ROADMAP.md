@@ -6,7 +6,9 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 **Sizing legend:** S = single small PR (< ~200 lines), M = one substantial PR or 2–3 small ones, L = a phased mini-project with its own doc.
 
-**Suggested next PRs:** the G-track priority lane (T1 → T2, per the Play demo deadline) interleaved with the small safety PRs A3 → A1 → C3 (no interdependencies; each is an afternoon).
+**Suggested next PRs:** A1 (rules emulator tests) → A2 (functions CI — inherits T6's esbuild build; the gap was demonstrated live when T6's PR #239 ran zero checks) → C2 (port gaps).
+
+**Shipped 2026-07-06/07 (agentic execution):** the ENTIRE Track G transition — T1 #229 · T2 #233 · T3 #234 · T4 #230 · T5 #238 · T6 #239 — plus A3 #232 (closes #231) and C3 #237 (closes #235; review surfaced web twin bug → #236). The Play Phase-0 architecture spike can now build inside `apps/play`.
 
 ---
 
@@ -24,7 +26,7 @@ The review's core CI/CD finding: coverage tracks where the *apps* are, not where
 - **Scope:** (1) `functions.yml` workflow: `npm ci && npm run build` + lint on PRs touching `functions/`; (2) emulator tests for `purgeUserData` (creates nested docs, asserts recursive delete) and `subscribe` (happy path, honeypot rejection, sha256 doc-id, malformed email); (3) add `directory: "/functions"` npm entry to dependabot config; (4) optional: a manual-dispatch deploy job so functions deploys stop being hand-run from a dev machine.
 - **Acceptance:** a PR breaking the functions build goes red; `purgeUserData` and `subscribe` behavior is asserted under the emulator.
 
-### A3 — Gate `/playground` + Profile Developer link behind `import.meta.env.DEV` — `S`
+### A3 — Gate `/playground` behind `import.meta.env.DEV` — SHIPPED [#232](https://github.com/2014sheas/oybc/pull/232)
 - **Why:** confirmed still open: `apps/web/src/App.tsx:144` mounts the playground publicly with no auth (it includes a "Clear Test Data" button that wipes the real Dexie DB), and `ProfilePage.tsx` links to it. Long-standing known follow-up; one-line-ish fix.
 - **Scope:** conditionally register the route and the Profile "Developer" section on `import.meta.env.DEV`. Leave the playground itself un-Riso'd (per existing decision).
 - **Acceptance:** production build serves no `/playground` route and no Developer link; dev build unchanged.
@@ -101,7 +103,7 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 - **Scope:** (1) port `propagateIncrement` to `Helpers/SharedCounter.swift`, delete both inline copies, cover via C1 fixtures; (2) `SharedCounterMergeTests.swift`; (3) `computeLongestStreak` + `compactStreakLabel` Swift cases; (4) extract iOS `TaskExpiry.swift` / `BrowsableTasks.swift` / `TaskTitle.swift` helpers from the ViewModel inlines, matching the TS signatures, covered by C1 fixtures.
 - **Acceptance:** every TS algorithm consumed by iOS-equivalent logic has a named Swift twin with fixture-backed tests; no counter math lives inline in `AppDatabase`.
 
-### C3 — Fix the two live divergences — `S`
+### C3 — Fix the two live divergences — SHIPPED [#237](https://github.com/2014sheas/oybc/pull/237) (web twin bug → [#236](https://github.com/2014sheas/oybc/issues/236))
 - **Why:** confirmed, current bugs-in-waiting: `Streaks.swift:78` guards only `.custom` where `streaks.ts:85` guards `CUSTOM` **and** `INDEFINITE` (Swift survives only because `computeTimeframeBoundaries` happens to return nil); Swift's `DefaultTimeframe` enum omits `indefinite` (`User.swift:29-35`) while TS accepts it — a web-set `defaultTimeframe: indefinite` silently degrades to `.custom` on iOS after sync.
 - **Scope:** add the INDEFINITE guard to `Streaks.swift`; add `.indefinite` to `DefaultTimeframe` + wherever the wizard consumes it; regression tests for both (fold into C1 fixtures if concurrent).
 - **Acceptance:** a synced `indefinite` default round-trips iOS unchanged; streaks INDEFINITE guard tested on both platforms.
@@ -251,7 +253,9 @@ Any refactor in this roadmap must respect the Play/Do boundary:
 - A rework that has Play importing `@oybc/shared`, or Do domain types drifting into bingo-core, is **breaking the design, not evolving it**.
 - Do-only shared machinery (the C4 sync-contract constants, entity types, Zod schemas) stays in `@oybc/shared` — that package is Do-domain by definition.
 
-### G1–G6 — the transition tasks (T1–T6 in PLAY_TRANSITION.md) — `S/M` each
+### G1–G6 — the transition tasks (T1–T6 in PLAY_TRANSITION.md) — **ALL SHIPPED 2026-07-06/07**
+
+T1 [#229](https://github.com/2014sheas/oybc/pull/229) · T2 [#233](https://github.com/2014sheas/oybc/pull/233) (golden-parity: 48-case seeded matrix, identical Jest/XCTest arrays) · T3 [#234](https://github.com/2014sheas/oybc/pull/234) · T4 [#230](https://github.com/2014sheas/oybc/pull/230) · T5 [#238](https://github.com/2014sheas/oybc/pull/238) (boundary lint verified to bite; play.yml lane live) · T6 [#239](https://github.com/2014sheas/oybc/pull/239) (`validateWin` is emulator-only — NOT deployed; A2's CI must adopt its esbuild build).
 
 | Task | One-liner | Interacts with |
 | --- | --- | --- |
