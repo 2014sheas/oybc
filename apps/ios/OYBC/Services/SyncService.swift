@@ -6,7 +6,14 @@ import FirebaseFirestore
 
 /// Entity types that can be synced, mapped to their GRDB table names
 /// and Firestore subcollection paths under `users/{userId}/`.
-private let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
+///
+/// The `firestoreName` half of each tuple (excluding the trailing `users`
+/// entry, which is the parent doc, not a subcollection) must set-match
+/// `@oybc/shared`'s `SYNC_COLLECTIONS` — enforced by
+/// `OYBCTests/SyncContractTests.swift` against the generated
+/// `syncContract.json` fixture (workstream C4 / issue #261). Not
+/// `private` so that test can see it via `@testable import OYBC`.
+let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
     ("boards", "boards"),
     ("tasks", "tasks"),
     ("taskSteps", "task_steps"),                      // legacy — kept so push can drain v7's DELETE sync ops
@@ -29,7 +36,11 @@ private let allowedGRDBTables: Set<String> = Set(syncableCollections.map(\.grdbT
 /// The pull path rejects any document whose `userId` doesn't match the
 /// authenticated user for these collections — defense-in-depth against
 /// a compromised peer that spoofs `userId` in its own writes.
-private let userScopedCollections: Set<String> = [
+///
+/// Must set-match `@oybc/shared`'s `USER_SCOPED_SYNC_COLLECTIONS` —
+/// enforced by `OYBCTests/SyncContractTests.swift`. Not `private` so
+/// that test can see it via `@testable import OYBC`.
+let userScopedCollections: Set<String> = [
     "boards", "tasks", "compositeTasks", "recurringBoardTemplates",
     "defaultPools",
 ]
@@ -38,7 +49,11 @@ private let userScopedCollections: Set<String> = [
 /// They stay in `syncableCollections` so the push path can drain DELETE
 /// sync ops for pre-migration rows (cleaning up Firestore), but the pull
 /// path must skip them — upserting into a dropped table would crash.
-private let legacyPullSkipCollections: Set<String> = [
+///
+/// Must set-match `@oybc/shared`'s `LEGACY_PULL_SKIP_COLLECTIONS` —
+/// enforced by `OYBCTests/SyncContractTests.swift`. Not `private` so
+/// that test can see it via `@testable import OYBC`.
+let legacyPullSkipCollections: Set<String> = [
     "taskSteps", "compositeTasks", "compositeNodes",
 ]
 
@@ -150,7 +165,13 @@ public struct SyncEvent: Identifiable {
 ///   - local: The local document as a `[String: Any]` dictionary.
 ///   - remote: The remote document from Firestore as a `[String: Any]` dictionary.
 /// - Returns: `"local"` or `"remote"` indicating the winner.
-private func resolveConflict(
+///
+/// Not `private` so `OYBCTests/LwwVectorTests.swift` can run the shared
+/// cross-platform vector fixture (`lwwVectors.json`) against it directly
+/// via `@testable import OYBC` (workstream C4 / issue #261) — this is
+/// the same comparison as `@oybc/shared`'s `resolveConflict`, hand-mirrored
+/// here since iOS can't import TypeScript.
+func resolveConflict(
     local: [String: Any],
     remote: [String: Any]
 ) -> String {
