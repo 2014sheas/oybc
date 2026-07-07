@@ -43,9 +43,12 @@ on:
       - '.github/workflows/firestore-rules.yml'
 
 # Cancel any in-flight run when a newer commit lands; only the most
-# recent rules state matters.
+# recent rules state matters. Scoped per event + PR number so a PR run
+# never cancels an in-flight push run's test job (which would silently
+# skip the deploy gate) — push deploys get their own serialized lane,
+# and each PR gets its own lane independent of other PRs.
 concurrency:
-  group: firestore-rules-deploy
+  group: firestore-rules-${{ github.event_name }}-${{ github.event.pull_request.number || 'push' }}
   cancel-in-progress: true
 
 jobs:
@@ -73,8 +76,15 @@ jobs:
         run: npm ci
 
       - name: Run rules test suite against the emulator
-        working-directory: firestore-rules-tests
-        run: npm test
+        # Must run from the repo root: firebase-tools refuses a rules path
+        # (`firestore.rules`, declared in the root firebase.json) that
+        # resolves outside the directory containing the firebase.json it's
+        # using. The root firebase.json is the one with the right rules
+        # path, so the emulator has to be launched from here, not from
+        # firestore-rules-tests/.
+        run: |
+          firebase emulators:exec --only firestore --project demo-oybc-rules-test \
+            "npm --prefix firestore-rules-tests run test:run"
 
   deploy:
     needs: test

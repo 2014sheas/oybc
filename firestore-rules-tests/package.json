@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Emulator-backed test suite for the repo-root firestore.rules file. Deliberately outside the pnpm workspace (like functions/) so root turbo tasks never require a Java runtime.",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore \"npm run test:run\"",
+    "test": "cd .. && firebase emulators:exec --only firestore --project demo-oybc-rules-test \"npm --prefix firestore-rules-tests run test:run\"",
     "test:run": "vitest --run",
     "typecheck": "tsc --noEmit"
   },

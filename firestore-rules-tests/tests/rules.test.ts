@@ -20,7 +20,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -187,11 +187,29 @@ describe("users/{userId}/{collection}/{docId} subcollections (firestore.rules:21
     await assertFails(getDoc(ref));
   });
 
-  it("denies a write missing the id and version fields (hasAll, line 64)", async () => {
+  it("denies a write missing both the id and version fields (hasAll, line 64)", async () => {
     const uid = "alice";
     const db = testEnv.authenticatedContext(uid).firestore();
     const ref = doc(db, `users/${uid}/boards/board1`);
     await assertFails(setDoc(ref, { userId: uid, name: "no id or version" }));
+  });
+
+  it("denies a write with id present but version missing (hasAll, line 64)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/boards/board1`);
+    await assertFails(
+      setDoc(ref, { id: "board1", userId: uid, name: "no version" }),
+    );
+  });
+
+  it("denies a write with version present but id missing (hasAll, line 64)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/boards/board1`);
+    await assertFails(
+      setDoc(ref, { version: 1, userId: uid, name: "no id" }),
+    );
   });
 
   it("denies a write whose version field is not a number (line 65)", async () => {
@@ -219,6 +237,36 @@ describe("users/{userId}/{collection}/{docId} subcollections (firestore.rules:21
         ref,
         boardPayload(uid, "board1", { blob: "x".repeat(10500) }),
       ),
+    );
+  });
+
+  it("allows the owner to update an existing doc with a valid payload (write rule covers update, lines 61-68)", async () => {
+    const uid = "alice";
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), `users/${uid}/boards/board1`),
+        boardPayload(uid, "board1"),
+      );
+    });
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/boards/board1`);
+    await assertSucceeds(
+      updateDoc(ref, boardPayload(uid, "board1", { name: "Updated name" })),
+    );
+  });
+
+  it("denies a cross-user update of an existing doc, even with an otherwise-valid payload", async () => {
+    const uid = "alice";
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), `users/${uid}/boards/board1`),
+        boardPayload(uid, "board1"),
+      );
+    });
+    const mallory = testEnv.authenticatedContext("mallory").firestore();
+    const ref = doc(mallory, `users/${uid}/boards/board1`);
+    await assertFails(
+      updateDoc(ref, boardPayload(uid, "board1", { name: "Hacked name" })),
     );
   });
 });
