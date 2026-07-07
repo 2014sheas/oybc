@@ -35,8 +35,13 @@ initializeApp();
  * Recursively deletes a user's parent doc and every subcollection beneath it
  * (`users/{uid}` + boards/tasks/boardTasks/compoundChildren/... ). Idempotent:
  * deleting already-absent docs is a no-op.
+ *
+ * Exported (in addition to being used by the two entry points below) so the
+ * emulator-backed test suite (`functions/test/purge.test.ts`) can invoke the
+ * purge directly against the Firestore emulator without going through the
+ * Functions emulator's auth/trigger plumbing.
  */
-async function purgeUserData(uid: string): Promise<void> {
+export async function purgeUserData(uid: string): Promise<void> {
   const db = getFirestore();
   const userDoc = db.collection("users").doc(uid);
   await db.recursiveDelete(userDoc);
