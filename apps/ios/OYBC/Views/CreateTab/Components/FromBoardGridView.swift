@@ -386,7 +386,7 @@ struct FromBoardGridView: View {
 
         let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = "\(trimmedAction) \(parsed) \(trimmedUnit)"
+        let title = TaskTitle.generateCounterTaskTitle(action: trimmedAction, maxCount: parsed, unit: trimmedUnit)
         let now = AppDatabase.currentTimestamp()
         let newId = AppDatabase.generateUUID()
 
