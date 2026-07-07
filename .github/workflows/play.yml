@@ -1,0 +1,68 @@
+name: Play
+
+# Build, lint, and typecheck the Play OYBC app + its bingo-core/riso-tokens
+# dependencies on every PR that touches them. Mirrors web.yml's shape.
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'apps/play/**'
+      - 'packages/bingo-core/**'
+      - 'packages/riso-tokens/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'turbo.json'
+      - '.github/workflows/play.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'apps/play/**'
+      - 'packages/bingo-core/**'
+      - 'packages/riso-tokens/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'turbo.json'
+      - '.github/workflows/play.yml'
+
+# Cancel in-flight runs for the same PR when a newer commit is pushed.
+# `github.ref` is a Git ref (sanitised by GitHub), safe to interpolate
+# into the concurrency key — not user-controllable input.
+concurrency:
+  group: play-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-lint-typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        # v6 reads the pnpm version from `package.json#packageManager`
+        # (pinned to 9.15.4 at the repo root) and ignores any `version:`
+        # input here — so we omit it. To change the pnpm major used in
+        # CI, bump the `packageManager` field, not this workflow.
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20  # current LTS, satisfies engines: >=18
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        # `...` pulls in @oybc/play's workspace dependencies (bingo-core,
+        # riso-tokens) so they're built before the app itself.
+        run: pnpm --filter @oybc/play... build
+
+      - name: Lint
+        run: pnpm --filter @oybc/play lint
+
+      - name: Typecheck
+        run: pnpm --filter @oybc/play typecheck
