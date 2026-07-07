@@ -2,7 +2,7 @@
    OYBC · Coming Soon — self-contained stylesheet for oybc.com.
    Riso tokens + base components + page styles in one file so the
    placeholder has zero dependency on the app build. Token values
-   are byte-identical to apps/web/src/styles/riso.css (the app's
+   are byte-identical to packages/riso-tokens/riso.css (the app's
    --riso-* prefixed equivalents). See docs/COMING_SOON.md.
    ============================================================ */
 
