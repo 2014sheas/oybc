@@ -34,6 +34,28 @@ updates:
       prefix: "chore(deps)"
       include: "scope"
 
+  # npm — Cloud Functions (`functions/`). Not covered by the root npm entry
+  # above: `functions/` has its own `package-lock.json` (npm, not pnpm —
+  # Cloud Functions deploy tooling expects an npm-managed function source
+  # dir) and isn't a pnpm workspace member, so Dependabot needs an explicit
+  # directory entry to see it.
+  - package-ecosystem: "npm"
+    directory: "/functions"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
   # GitHub Actions versions (the `uses:` lines in our workflow files).
   # Lower cadence — Actions ecosystem moves slowly and security
   # advisories are rare.
