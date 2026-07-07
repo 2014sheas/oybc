@@ -89,9 +89,7 @@ func buildWizardPlacement(
     library: TaskLibraryViewModel
 ) -> WizardPlacement {
     let size = controller.size
-    let total = size * size
     let isOdd = size % 2 != 0
-    let centerIdx = (size / 2) * size + (size / 2)
 
     // Merge pending tasks with the live library so both appear in the grid.
     // Build a combined id → Task map; pending wins on collision (shouldn't
@@ -111,37 +109,24 @@ func buildWizardPlacement(
         }
         return selected.first(where: { $0.id == id })
     }()
-    let others: [Task] = chosenCenter != nil
-        ? selected.filter { $0.id != chosenCenter!.id }
-        : selected
-    // When isRandomized is false (e.g. snapshot tests pin this to get
-    // deterministic baselines), sort by task id so Set iteration order
-    // — which is non-deterministic across process restarts in Swift —
-    // doesn't produce a different grid on every test run.
-    let ordered = controller.isRandomized
-        ? Shuffle.fisherYatesShuffle(others)
-        : others.sorted { $0.id < $1.id }
+    // When isRandomized is false (e.g. snapshot tests pin this for
+    // deterministic baselines), sort by task id so Swift's non-deterministic
+    // Set iteration order doesn't reshuffle the grid across process restarts.
+    // Pre-sort here and pass `randomize: false` so the shared core preserves
+    // the order verbatim; the randomized path lets the core shuffle. Center
+    // handling + the cell walk are the shared placement math
+    // (BoardPlacement.placeBoard — the Swift mirror of bingo-core `placeBoard`).
+    let ordered: [Task] = controller.isRandomized
+        ? selected
+        : selected.sorted { $0.id < $1.id }
 
-    var grid: WizardPlacement = Array(repeating: nil, count: total)
-    var oi = 0
-    for i in 0..<total {
-        if i == centerIdx && isOdd {
-            if let center = chosenCenter {
-                grid[i] = center
-                continue
-            }
-            if controller.centerType == .free || controller.centerType == .customFree {
-                // Reserved cell — leave nil; BingoBoard renders the FREE label.
-                continue
-            }
-            // NONE on odd: fall through and place a regular task here.
-        }
-        if oi < ordered.count {
-            grid[i] = ordered[oi]
-            oi += 1
-        }
-    }
-    return grid
+    return BoardPlacement.placeBoard(
+        items: ordered,
+        gridSize: size,
+        centerType: isOdd ? controller.centerType : .none,
+        chosenCenterId: chosenCenter?.id,
+        randomize: controller.isRandomized
+    )
 }
 
 /// Resolves local-ISO start/end strings for the wizard's current

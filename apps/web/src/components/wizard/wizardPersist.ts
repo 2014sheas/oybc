@@ -4,8 +4,8 @@ import {
   SyncOperationType,
   Timeframe,
   deriveSpawnedBoardName,
-  fisherYatesShuffle,
   getTimeframeBoundaries,
+  placeBoard,
   toLocalISO,
   type CompoundChild,
   type PendingTemplateSpawn,
@@ -59,9 +59,7 @@ export function buildWizardPlacement(
   pendingTasksArg?: Map<string, PendingTaskPayload>,
 ): WizardPlacement {
   const { size, centerType, centerTaskId, isRandomized, selectedTaskIds } = controller;
-  const totalCells = size * size;
   const isOdd = size % 2 !== 0;
-  const centerIdx = Math.floor(size / 2) * size + Math.floor(size / 2);
 
   // Merge pending (in-memory, not-yet-DB) tasks with the live library.
   // Pending tasks win on id collision (shouldn't happen, but defensive).
@@ -93,34 +91,22 @@ export function buildWizardPlacement(
     isOdd && centerType === CenterSquareType.CHOSEN && centerTaskId !== null
       ? selected.find((t) => t.id === centerTaskId) ?? null
       : null;
-  const others = chosenCenter !== null
-    ? selected.filter((t) => t.id !== chosenCenter.id)
-    : selected;
 
-  const ordered = isRandomized ? fisherYatesShuffle([...others]) : [...others];
-
-  const grid: WizardPlacement = new Array(totalCells).fill(null);
-  let oi = 0;
-  for (let i = 0; i < totalCells; i++) {
-    if (i === centerIdx && isOdd) {
-      if (chosenCenter !== null) {
-        grid[i] = chosenCenter;
-        continue;
-      }
-      if (
-        centerType === CenterSquareType.FREE ||
-        centerType === CenterSquareType.CUSTOM_FREE
-      ) {
-        // Reserved cell — leave null; BingoBoard renders the FREE label.
-        continue;
-      }
-      // NONE on odd: fall through and place a regular task here.
-    }
-    if (oi < ordered.length) {
-      grid[i] = ordered[oi++];
-    }
-  }
-  return grid;
+  // Delegate the cell walk to the shared `placeBoard` core (@oybc/bingo-core,
+  // re-exported through @oybc/shared). The preamble above is wizard UI policy
+  // (pending-task merge, library ordering, chosenCenter lookup); the geometry
+  // + center handling + fill are the shared placement math. Passing NONE for
+  // even grids preserves today's "even grid = no special center" behavior
+  // (placeBoard also derives that internally via getCenterSquareIndex, so this
+  // is belt-and-suspenders). No `rng` → defaults to Math.random, matching the
+  // old `fisherYatesShuffle([...others])`.
+  return placeBoard({
+    items: selected,
+    gridSize: size,
+    centerType: isOdd ? centerType : CenterSquareType.NONE,
+    chosenCenterId: chosenCenter?.id,
+    randomize: isRandomized,
+  });
 }
 
 /** Resolved `startDate` / `endDate` ISO strings, or an error to surface.
