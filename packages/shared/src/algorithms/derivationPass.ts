@@ -1,7 +1,6 @@
 import type { Task, CompoundChild, BoardTask, Board } from '../types';
-import { BoardSize } from '../constants';
-import { AchievementTrigger, BoardStatus, CenterSquareType, TaskType } from '../constants/enums';
-import { detectBingos } from './bingoDetection';
+import { detectBingos, type BoardSize, CenterSquareType } from '@oybc/bingo-core';
+import { AchievementTrigger, BoardStatus, TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
 import { evaluateCompound } from './compoundEvaluation';
 

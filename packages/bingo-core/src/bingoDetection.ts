@@ -1,4 +1,4 @@
-import { BoardSize } from '../constants';
+import { BoardSize } from './constants';
 
 /**
  * Result of bingo detection on a board.

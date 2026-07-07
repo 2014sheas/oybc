@@ -3,7 +3,7 @@ import {
   formatBingoMessage,
   getHighlightedSquares,
   BingoDetectionResult,
-} from '../../src/algorithms/bingoDetection';
+} from '../src/bingoDetection';
 
 describe('detectBingos', () => {
   // ── 5x5 Board Tests ──────────────────────────────────────────────────

@@ -11,7 +11,7 @@ on:
     paths:
       - 'apps/web/**'
       - 'apps/coming-soon/**'
-      - 'packages/shared/**'
+      - 'packages/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'turbo.json'
@@ -21,7 +21,7 @@ on:
     paths:
       - 'apps/web/**'
       - 'apps/coming-soon/**'
-      - 'packages/shared/**'
+      - 'packages/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'turbo.json'

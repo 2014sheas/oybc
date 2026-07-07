@@ -25,10 +25,9 @@
  * Canonical design: docs/ARCHITECTURE.md §Phase 6.2.
  */
 
-import { getCenterSquareIndex, isCenterAutoCompleted } from './centerSquare';
+import { getCenterSquareIndex, isCenterAutoCompleted, fisherYatesShuffle, CenterSquareType } from '@oybc/bingo-core';
 import { getTimeframeBoundaries, formatTimeframeLabel } from './calendarBoundaries';
-import { fisherYatesShuffle } from './shuffle';
-import { Timeframe, CenterSquareType } from '../constants/enums';
+import { Timeframe } from '../constants/enums';
 import type { Board } from '../types/board';
 import type { Task } from '../types/task';
 import type { RecurringBoardTemplate } from '../types/recurringBoardTemplate';

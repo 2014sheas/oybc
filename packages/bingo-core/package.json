@@ -1,29 +1,18 @@
 {
-  "name": "@oybc/shared",
-  "version": "2.0.0",
-  "description": "Shared types, algorithms, and validation for OYBC",
+  "name": "@oybc/bingo-core",
+  "version": "1.0.0",
+  "description": "Pure bingo game math shared by OYBC (Do) and Play OYBC — detection, shuffle, center-square, placement. No domain types, no platform code.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "jest",
-    "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
-  "keywords": [
-    "bingo",
-    "shared",
-    "types"
-  ],
-  "author": "",
   "license": "MIT",
-  "dependencies": {
-    "@oybc/bingo-core": "workspace:*",
-    "zod": "^3.22.4"
-  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^26.1.0",
