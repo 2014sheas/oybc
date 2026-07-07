@@ -151,3 +151,8 @@ export type {
 export { findLinkableCounter } from './linkableCounter';
 
 export type { LinkableCounter, FindLinkableCounterInput } from './linkableCounter';
+
+// ===== Sync contract — LWW conflict resolution (C4 / issue #261) =====
+export { resolveConflict } from './lwwResolve';
+
+export type { SyncableEntity, ConflictResult } from './lwwResolve';
