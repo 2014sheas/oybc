@@ -198,6 +198,16 @@ describe('mergeUserPreferences', () => {
     expect(merged.recurringYearlyEnabled).toBe(true);
   });
 
+  // Timeframe.INDEFINITE is a valid `defaultTimeframe` value even though
+  // neither platform's preferences UI currently exposes it as a picker
+  // option — it can still arrive from a peer / future UI. iOS's
+  // `DefaultTimeframe` enum mirror must accept it too (previously it lacked
+  // an `.indefinite` case and silently degraded to `.custom` on decode).
+  it('accepts and preserves defaultTimeframe INDEFINITE', () => {
+    const merged = mergeUserPreferences({ defaultTimeframe: Timeframe.INDEFINITE });
+    expect(merged.defaultTimeframe).toBe(Timeframe.INDEFINITE);
+  });
+
   it('preserves recurring*Enabled false values (explicit user opt-out wins over default)', () => {
     const merged = mergeUserPreferences({
       recurringDailyEnabled: false,
