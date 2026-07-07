@@ -6,7 +6,7 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 **Sizing legend:** S = single small PR (< ~200 lines), M = one substantial PR or 2–3 small ones, L = a phased mini-project with its own doc.
 
-**Suggested next PRs:** A1 (rules emulator tests) → A2 (functions CI — inherits T6's esbuild build; the gap was demonstrated live when T6's PR #239 ran zero checks) → C2 (port gaps).
+**Suggested next PRs:** A6 (hosting deploy automation) · C4 (sync contract into shared) · C1 (shared JSON test vectors, generalizing T2's golden pattern) · B1 (mechanical splits) — or by directive. **Needing a decision first:** A4 (project split), E6 (dependency majors — incl. Dependabot #249/#251 firebase runtime majors + red #250 vitest 4), A7's repo-settings half, A8 (runner image).
 
 **Shipped 2026-07-06/07 (agentic execution):** the ENTIRE Track G transition — T1 #229 · T2 #233 · T3 #234 · T4 #230 · T5 #238 · T6 #239 — plus A3 #232 (closes #231) and C3 #237 (closes #235; review surfaced web twin bug → #236). The Play Phase-0 architecture spike can now build inside `apps/play`.
 
@@ -16,12 +16,14 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 The review's core CI/CD finding: coverage tracks where the *apps* are, not where the *consequences* are. The client apps have solid workflows; the server-side surface (irreversible deletes, public endpoints, security rules) has none.
 
-### A1 — Firestore rules emulator tests + PR-gated validation — `S/M`
+### A1 — Firestore rules emulator tests + PR-gated validation — SHIPPED [#242](https://github.com/2014sheas/oybc/pull/242)
+> 25 emulator tests now gate the deploy. Bonus finding: the believed "10KB size cap" rule is a **no-op** (`request.resource.size()` without `.data`) — pinned in a test, decision tracked in [#243](https://github.com/2014sheas/oybc/issues/243).
 - **Why:** `firestore.rules` deploys straight to the live project on any push to `dev` touching it, with zero test gating. No `@firebase/rules-unit-testing` tests exist anywhere. One over-permissive edit is an auto-shipped data exposure. Best safety-per-effort investment available.
 - **Scope:** new `firestore-rules-tests/` (or `functions/test/rules/`) package using `@firebase/rules-unit-testing` + the Firestore emulator. Cover: cross-user read/write denial, `userIdMatchesPath` spoof rejection, unknown-collection denial, `signups` client-denial, user-doc delete denial, the id/version/size validation. Add a PR-triggered job to `firestore-rules.yml` (rules currently deploy with **no PR trigger at all**) and make the existing push-deploy job depend on the tests passing.
 - **Acceptance:** a deliberately over-permissive rules edit fails CI on the PR; the deploy job cannot run on a red test.
 
-### A2 — Cloud Functions CI + tests + Dependabot coverage — `M`
+### A2 — Cloud Functions CI + tests + Dependabot coverage — SHIPPED [#245](https://github.com/2014sheas/oybc/pull/245)
+> functions.yml (adopts T6's esbuild build) + 6 emulator tests (purge isolation, subscribe contract) + /functions Dependabot (which immediately opened 5 bumps; the new lane caught vitest-4 breaking → left red deliberately).
 - **Why:** `functions/` (account-deletion purge, public `subscribe` endpoint) has **zero** CI — no build, lint, or test — and no test files. Its npm deps are not in `.github/dependabot.yml` (only `/` is listed). Highest-blast-radius code in the repo, least verified.
 - **Scope:** (1) `functions.yml` workflow: `npm ci && npm run build` + lint on PRs touching `functions/`; (2) emulator tests for `purgeUserData` (creates nested docs, asserts recursive delete) and `subscribe` (happy path, honeypot rejection, sha256 doc-id, malformed email); (3) add `directory: "/functions"` npm entry to dependabot config; (4) optional: a manual-dispatch deploy job so functions deploys stop being hand-run from a dev machine.
 - **Acceptance:** a PR breaking the functions build goes red; `purgeUserData` and `subscribe` behavior is asserted under the emulator.
@@ -36,7 +38,8 @@ The review's core CI/CD finding: coverage tracks where the *apps* are, not where
 - **Scope:** decision first (naming, billing, when). Execution: second Firebase project, `.firebaserc` targets (`dev`/`prod`), per-target `GoogleService-Info.plist` / `.env` files, deploy workflows target dev on push and prod on tag/release/manual approval.
 - **Acceptance:** nothing deploys to the user-facing project without an explicit release action.
 
-### A5 — iOS CI caching (SPM + DerivedData) — `S`
+### A5 — iOS CI caching (SPM + DerivedData) — SHIPPED [#255](https://github.com/2014sheas/oybc/pull/255)
+> Warm-cache validated: 10m02s vs 17–20m baseline. DerivedData build-product caching deliberately deferred (in-file note).
 - **Why:** every run cold-installs xcodegen, resolves all SPM deps, and clean-builds twice (OYBC scheme + snapshot scheme) — already 17–20 min on a 10×-cost macOS runner; timeout was bumped to 30.
 - **Scope:** `actions/cache` keyed on `Package.resolved` for `SourcePackages`; evaluate caching DerivedData keyed on source hash (accept partial wins); cache the xcodegen brew bottle or pin a binary download.
 - **Acceptance:** warm-cache PR runs measurably faster (target: under ~12 min); cache misses degrade gracefully to today's behavior.
@@ -98,7 +101,8 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 - **Scope:** `packages/shared/tests/fixtures/*.json` — golden input/expected vectors for each ported algorithm (start: streaks, sharedCounter, sharedCounterMerge, bingoDetection, compoundEvaluation, cycleDetection, derivationPass, linkableCounter, sharedCounterGroups, calendarBoundaries). Jest suites load and assert them (replacing/augmenting inline cases); a new `SharedFixtureTests.swift` loads the same files (added to the test bundle via `project.yml`) and runs them through the Swift twins. Date-valued fixtures use fixed ISO strings (the suites already share `NOW = Jun 15 2026`).
 - **Acceptance:** changing an expected value in a fixture fails BOTH Jest and XCTest; adding a vector to a fixture requires no test-code change on either platform.
 
-### C2 — Close the port gaps — `M`
+### C2 — Close the port gaps — SHIPPED [#253](https://github.com/2014sheas/oybc/pull/253) + [#257](https://github.com/2014sheas/oybc/pull/257)
+> propagateIncrement ported (2 inline AppDatabase copies deleted, zero-discrepancy check), SharedCounterMerge 21 vectors, longest-streak parity, TaskExpiry/BrowsableTasks/TaskTitle helpers extracted (66 new iOS tests total). Leftover preview-label duplicates noted on #246.
 - **Why:** found drift-shaped holes: `propagateIncrement` (TS) has no Swift twin — the cross-device counter math is reimplemented inline **twice** in `AppDatabase.swift` (~`:1682`, `:1805`) with no unit test; `SharedCounterMerge.swift` (the algorithm that prevents sync data loss) has **no XCTest**; `computeLongestStreak` has 5 TS cases and zero Swift cases; `taskExpiry`/`browsableTasks`/`taskTitle` are shared TS functions that iOS reimplements inline in ViewModels.
 - **Scope:** (1) port `propagateIncrement` to `Helpers/SharedCounter.swift`, delete both inline copies, cover via C1 fixtures; (2) `SharedCounterMergeTests.swift`; (3) `computeLongestStreak` + `compactStreakLabel` Swift cases; (4) extract iOS `TaskExpiry.swift` / `BrowsableTasks.swift` / `TaskTitle.swift` helpers from the ViewModel inlines, matching the TS signatures, covered by C1 fixtures.
 - **Acceptance:** every TS algorithm consumed by iOS-equivalent logic has a named Swift twin with fixture-backed tests; no counter math lives inline in `AppDatabase`.
@@ -144,7 +148,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 - **Scope:** at enqueue, if a PENDING row exists for the same `(entityType, entityId)` with a compatible op, replace its payload/timestamp instead of appending (delete-op supersedes pending create/update; never coalesce across an IN_PROGRESS row). Same logic both platforms; lands cleanly after B4 centralizes enqueueing.
 - **Acceptance:** burst-editing one task yields one pending row; op-precedence cases (create→update, update→delete) unit-tested on both platforms.
 
-### D4 — Watermark safety-net: keep it, document it — `S`
+### D4 — Watermark safety-net: keep it, document it — SHIPPED [#256](https://github.com/2014sheas/oybc/pull/256)
 - **Why:** the pull watermark is a local-clock ISO string vs server `_syncedAt` — a clock-skew window exists by design, recovered by the 5-minute safety-net re-pull. Risk is someone "optimizing away" the safety net later.
 - **Scope:** a do-not-remove comment at both safety-net sites naming the skew window it exists to close + one line in `docs/SYNC_STRATEGY.md`.
 - **Acceptance:** the invariant is written down where it would be deleted.
