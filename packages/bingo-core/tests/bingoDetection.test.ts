@@ -20,12 +20,14 @@ import type { BoardSize } from '../src/constants';
  * + after a square is un-completed) and diff the results, so they exercise
  * caller-side orchestration logic, not a single detectBingos input/output pair.
  *
- * Pre-C1: ~40 `it` blocks (detectBingos 25 + errors 3 + line-format 3 +
- * formatBingoMessage 5 + getHighlightedSquares 8 — some slightly
- * overlapping counts due to multi-assertion blocks) + 4 cascade tests.
- * Post-C1: 31 detectBingos + 3 error + 5 formatBingoMessage + 10
- * getHighlightedSquares = 49 fixture vectors + 4 hand-written cascade tests
- * — net increase in total assertions.
+ * Pre-C1: 61 `it` blocks total — 15 (5x5) + 7 (3x3) + 6 (4x4) detectBingos
+ * cases, 3 error-handling, 3 line-ID-format, 5 formatBingoMessage, 8
+ * getHighlightedSquares, 9 "auto-completed center" detectBingos cases, and
+ * 4 uncomplete-cascade cases (kept). Post-C1: 40 detectBingos vectors
+ * (31 base-grid + 9 center-autofill) + 3 error + 5 formatBingoMessage + 10
+ * getHighlightedSquares = 58 fixture vectors + 4 hand-written cascade tests
+ * + 4 "fixture is non-empty" guards = 66 total `it` blocks — a net increase
+ * over the pre-C1 61.
  */
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures/bingoDetectionVectors.json');
