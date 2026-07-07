@@ -39,9 +39,28 @@ jobs:
     runs-on: macos-15
     # Bumped 20→30: the slow macos-15 runner has crept toward the cap (PRs #193
     # 17m, #194 20m timeout) as the build + snapshot suite grew. 30 gives headroom.
+    # TODO(#254): revisit once warm-cache run times are known — a warm run
+    # (SPM cache hit + no brew install) should land well under 30.
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      # Pinned XcodeGen release (not the macos-15 image default — xcodegen
+      # isn't preinstalled on GitHub's macOS runners, so every run paid for
+      # a cold `brew install xcodegen`, ~1-3 min). We download the prebuilt
+      # release zip instead and verify its checksum. To bump: pick a new
+      # tag from https://github.com/yonaskolb/XcodeGen/releases, download
+      # `xcodegen.zip` for that tag, `shasum -a 256` it, and update both
+      # vars below.
+      XCODEGEN_VERSION: "2.45.4"
+      XCODEGEN_ZIP_SHA256: "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef"
+      # Explicit, repo-relative derivedDataPath (instead of xcodebuild's
+      # default ~/Library/Developer/Xcode/DerivedData/<hash>) so the SPM
+      # checkout location under it is deterministic and cacheable. Both
+      # xcodebuild invocations below pass -derivedDataPath "$DERIVED_DATA_PATH"
+      # so the OYBC and OYBCSnapshotTests schemes share one resolved
+      # SourcePackages checkout. Already covered by apps/ios/.gitignore's
+      # bare `DerivedData` pattern.
+      DERIVED_DATA_PATH: ${{ github.workspace }}/apps/ios/DerivedData
 
     steps:
       - uses: actions/checkout@v7
@@ -53,8 +72,54 @@ jobs:
           swift --version
           xcrun simctl list runtimes | grep -iE "ios" || true
 
+      - name: Cache SPM resolved packages
+        # Caches only the resolved package checkouts/artifacts under
+        # DerivedData/SourcePackages, NOT the built products — build-product
+        # caching is deliberately out of scope for this pass (see #254):
+        # invalidation across Xcode-version bumps and snapshot-determinism
+        # interactions aren't worth the complexity yet. This alone should
+        # remove most of the GRDB / Firebase iOS SDK / GoogleSignIn /
+        # swift-snapshot-testing network-resolution time.
+        #
+        # Keyed on apps/ios/project.yml rather than a committed
+        # Package.resolved: apps/ios/OYBC.xcodeproj/project.xcworkspace is
+        # gitignored and rebuilt fresh by `xcodegen generate` every run, so
+        # there's no committed lockfile for the actual scheme's resolution.
+        # (There IS a tracked apps/ios/Package.resolved, but it's a stale
+        # leftover pinning only GRDB — it predates the Firebase/GoogleSignIn/
+        # SnapshotTesting deps and isn't read by this build.) project.yml's
+        # `packages:` section is the real source of truth for dependency
+        # floors, so hashing it is the closest deterministic proxy — a
+        # version bump there invalidates the cache, matching intent.
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}/SourcePackages
+          key: ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('apps/ios/project.yml') }}
+          restore-keys: |
+            ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-
+            ios-spm-${{ runner.os }}-
+
       - name: Install xcodegen
-        run: brew install xcodegen
+        # Pinned release binary instead of `brew install xcodegen` — brew
+        # has to build/fetch the formula fresh on every run since xcodegen
+        # isn't part of the macos-15 image, costing 1-3 min. Downloads the
+        # prebuilt zip GitHub publishes per release, verifies its sha256
+        # against XCODEGEN_ZIP_SHA256 above, then installs bin+share side
+        # by side (mirrors upstream's own install.sh) and adds bin to PATH.
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          computed_sha256=$(shasum -a 256 /tmp/xcodegen.zip | awk '{print $1}')
+          if [ "$computed_sha256" != "$XCODEGEN_ZIP_SHA256" ]; then
+            echo "::error::xcodegen.zip checksum mismatch: expected $XCODEGEN_ZIP_SHA256, got $computed_sha256"
+            exit 1
+          fi
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-install
+          mkdir -p "$RUNNER_TEMP/xcodegen"
+          cp -r /tmp/xcodegen-install/xcodegen/bin "$RUNNER_TEMP/xcodegen/bin"
+          cp -r /tmp/xcodegen-install/xcodegen/share "$RUNNER_TEMP/xcodegen/share"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
 
       - name: Generate Xcode project
         working-directory: apps/ios
@@ -75,6 +140,7 @@ jobs:
           xcodebuild test \
             -scheme OYBC \
             -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
@@ -115,6 +181,7 @@ jobs:
             -scheme OYBCSnapshotTests \
             -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
             -resultBundlePath /tmp/snapshot-results.xcresult \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
