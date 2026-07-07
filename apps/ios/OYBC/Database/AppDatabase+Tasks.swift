@@ -1,0 +1,543 @@
+import Foundation
+import GRDB
+
+extension AppDatabase {
+    // MARK: - Tasks
+
+    func fetchTasks(userId: String) throws -> [Task] {
+        return try read { db in
+            try Task
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("title"))
+                .fetchAll(db)
+        }
+    }
+
+    func fetchTask(id: String) throws -> Task? {
+        return try read { db in
+            try Task.fetchOne(db, key: id)
+        }
+    }
+
+    func saveTask(_ task: Task) throws {
+        try write { db in
+            try task.save(db)
+        }
+    }
+
+    /// Atomic save + sync-enqueue used by the Task detail view's edit
+    /// flow. Replaces the prior pattern of calling `saveTask` followed
+    /// by `enqueueTaskSyncUpdate` in two separate transactions — a
+    /// crash between the two left the local row updated but no
+    /// Firestore sync, silently dropping the edit on other devices.
+    func saveTaskAndEnqueueUpdate(_ task: Task) throws {
+        try write { db in
+            try task.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .update,
+                payload: task,
+                now: Self.currentTimestamp(),
+            ).save(db)
+        }
+    }
+
+    // MARK: - Task cascade helpers (M1 — live-edit)
+
+    /// Run the cross-board derivation cascade for a task that just changed.
+    ///
+    /// Mirrors `bpvRunCrossBoardCascade` in `BoardPlayView.swift` but lives
+    /// on `AppDatabase` so it can be called from the Tasks-tab edit path
+    /// without importing the Board play surface.
+    ///
+    /// - Parameters:
+    ///   - db: GRDB database handle (must be inside a write transaction).
+    ///   - changedTaskId: The task whose state just changed.
+    ///   - now: ISO8601 timestamp for stamping updated board rows.
+    ///
+    /// Must be called inside an active write transaction covering
+    /// `tasks`, `boardTasks`, `compoundChildren`, `boards`, and `syncQueue`.
+    static func runBoardCascadeForTask(
+        db: Database,
+        changedTaskId: String,
+        now: String
+    ) throws {
+        let allChildren: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allTasks: [Task] = try Task.fetchAll(db)
+        let allBoards: [Board] = try Board.fetchAll(db)
+
+        var taskById: [String: Task] = [:]
+        for t in allTasks { taskById[t.id] = t }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allChildren {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+
+        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: changedTaskId,
+            children: allChildren
+        )
+        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+            changedTaskId: changedTaskId,
+            parentCompounds: parentCompounds,
+            boardTasks: allBoardTasks
+        )
+
+        for boardId in affectedBoardIds {
+            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+            let update = DerivationPass.computeBoardStatsUpdate(
+                board: board,
+                boardTasksOnBoard: boardTasksOnBoard,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoards
+            )
+
+            let totalSquares = board.boardSize * board.boardSize
+            let isGreenlogNow = update.completedTasks >= totalSquares
+
+            board.completedTasks = update.completedTasks
+            board.totalTasks = totalSquares
+            board.linesCompleted = update.linesCompleted
+            board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+            board.updatedAt = now
+            board.version += 1
+
+            if isGreenlogNow, board.status == .active {
+                board.status = .completed
+                board.completedAt = now
+            } else if !isGreenlogNow, board.status == .completed {
+                board.status = .active
+                board.completedAt = nil
+            }
+
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: boardId,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).save(db)
+        }
+    }
+
+    /// Save a task + enqueue sync + run the board derivation cascade.
+    ///
+    /// UI-edit path wrapper (Tasks tab + Task detail sheet). Keeps the
+    /// cascade write in the same transaction as the task save so a crash
+    /// mid-write can't leave boards stale.
+    ///
+    /// - Parameter task: The updated task value (caller has already bumped
+    ///   `updatedAt` and `version`).
+    func saveTaskAndCascade(_ task: Task) throws {
+        try write { db in
+            try task.save(db)
+            let now = Self.currentTimestamp()
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .update,
+                payload: task,
+                now: now
+            ).save(db)
+            try Self.runBoardCascadeForTask(db: db, changedTaskId: task.id, now: now)
+        }
+    }
+
+    // MARK: - Copy-from-source helpers
+    //
+    // The wizard's `From a board…` filter long-press menu exposes
+    // `⎘ Add a copy of this task…`. The Copy modal collects per-type
+    // editable fields, pre-filled from the source. These helpers
+    // construct the new Task value, persist it + its compound children
+    // (when applicable), and enqueue the sync write — all atomically.
+    // iOS twin of web's `copyTask` / `copyCompound` in
+    // `apps/web/src/db/operations/tasks.ts`. See
+    // docs/ARCHITECTURE.md § "Wizard 'From a board' picker" for the
+    // shallow-compound-copy invariant. Achievement copies are NOT
+    // cycle-checked here — the gate runs at wizard-commit time when
+    // the Task is placed on the new board (Phase 6.3 behavior).
+
+    /// Editable fields the Copy sheet may override when copying a
+    /// primitive (normal / counting / achievement) task. Any property
+    /// left `nil` inherits from the source.
+    ///
+    /// For achievement copies: if EITHER `referencedBoardId` or
+    /// `referencedTemplateId` is provided, both override values are
+    /// used as-is (treating the other's `nil` as "clear"). This is
+    /// how the sheet switches between specific-board and
+    /// recurring-template modes. If neither is provided, both
+    /// inherit from the source.
+    struct CopyTaskOverrides {
+        var title: String?
+        var description: String?
+        // Counting
+        var action: String?
+        var unit: String?
+        var maxCount: Int?
+        // Achievement
+        var achievementTrigger: AchievementTrigger?
+        var referencedBoardId: String?
+        var referencedTemplateId: String?
+        var requiredCount: Int?
+
+        init(
+            title: String? = nil,
+            description: String? = nil,
+            action: String? = nil,
+            unit: String? = nil,
+            maxCount: Int? = nil,
+            achievementTrigger: AchievementTrigger? = nil,
+            referencedBoardId: String? = nil,
+            referencedTemplateId: String? = nil,
+            requiredCount: Int? = nil,
+            overrodeReference: Bool = false
+        ) {
+            self.title = title
+            self.description = description
+            self.action = action
+            self.unit = unit
+            self.maxCount = maxCount
+            self.achievementTrigger = achievementTrigger
+            self.referencedBoardId = referencedBoardId
+            self.referencedTemplateId = referencedTemplateId
+            self.requiredCount = requiredCount
+            self.overrodeReference = overrodeReference
+        }
+
+        /// True when the sheet touched the reference fields. Distinguishes
+        /// "inherit from source" (false → use source's pair) from
+        /// "user picked board mode but left template blank" (true → use
+        /// overrides as-is, blanks become clears). Swift can't infer this
+        /// from `nil` alone the way TS infers from `=== undefined`.
+        var overrodeReference: Bool = false
+    }
+
+    /// Copy a primitive task (normal / counting / achievement). Throws
+    /// if the source is a compound — call `copyCompound` instead.
+    @discardableResult
+    func copyTask(
+        userId: String,
+        source: Task,
+        overrides: CopyTaskOverrides = CopyTaskOverrides()
+    ) throws -> Task {
+        if source.type == .compound {
+            throw NSError(
+                domain: "AppDatabase.copyTask",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "copyTask cannot copy a compound source — use copyCompound instead"]
+            )
+        }
+
+        let now = Self.currentTimestamp()
+        let newId = Self.generateUUID()
+
+        // Resolve reference fields: if the sheet touched either field,
+        // both come from overrides (nil-as-clear so a switch from
+        // board → template doesn't leave both set and trip the XOR
+        // refinement). Otherwise inherit from the source.
+        let refBoard: String? = overrides.overrodeReference
+            ? overrides.referencedBoardId
+            : source.referencedBoardId
+        let refTemplate: String? = overrides.overrodeReference
+            ? overrides.referencedTemplateId
+            : source.referencedTemplateId
+
+        let newTask = Task(
+            id: newId,
+            userId: userId,
+            title: overrides.title ?? source.title,
+            description: overrides.description ?? source.description,
+            type: source.type,
+            action: source.type == .counting
+                ? (overrides.action ?? source.action) : nil,
+            unit: source.type == .counting
+                ? (overrides.unit ?? source.unit) : nil,
+            maxCount: source.type == .counting
+                ? (overrides.maxCount ?? source.maxCount) : nil,
+            referencedBoardId: source.type == .achievement ? refBoard : nil,
+            referencedTemplateId: source.type == .achievement ? refTemplate : nil,
+            achievementTrigger: source.type == .achievement
+                ? (overrides.achievementTrigger ?? source.achievementTrigger) : nil,
+            requiredCount: source.type == .achievement
+                ? (overrides.requiredCount ?? source.requiredCount) : nil,
+            totalCompletions: 0,
+            totalInstances: 0,
+            isCompleted: false,
+            currentCount: source.type == .counting ? 0 : nil,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+            timeframe: source.timeframe,
+            startDate: source.startDate,
+            endDate: source.endDate
+        )
+
+        try write { db in
+            try newTask.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: newId,
+                operationType: .create,
+                payload: newTask,
+                now: now
+            ).save(db)
+        }
+        return newTask
+    }
+
+    /// Copy a compound task. Shallow: the new compound parent has a
+    /// fresh id but its `compound_children` rows reference the SAME
+    /// primitive child Tasks the source had. Deep-clone is intentionally
+    /// not provided (see ARCHITECTURE.md doc).
+    @discardableResult
+    func copyCompound(
+        userId: String,
+        source: Task,
+        title: String? = nil,
+        description: String? = nil
+    ) throws -> Task {
+        guard source.type == .compound else {
+            throw NSError(
+                domain: "AppDatabase.copyCompound",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "copyCompound requires a compound source task"]
+            )
+        }
+        guard let op = source.operatorType else {
+            throw NSError(
+                domain: "AppDatabase.copyCompound",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "compound source missing operatorType field"]
+            )
+        }
+        guard let isOrdered = source.isOrdered else {
+            throw NSError(
+                domain: "AppDatabase.copyCompound",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "compound source missing isOrdered field"]
+            )
+        }
+
+        let now = Self.currentTimestamp()
+        let newParentId = Self.generateUUID()
+
+        let newParent = Task(
+            id: newParentId,
+            userId: userId,
+            title: title ?? source.title,
+            description: description ?? source.description,
+            type: .compound,
+            operatorType: op,
+            threshold: source.threshold,
+            isOrdered: isOrdered,
+            totalCompletions: 0,
+            totalInstances: 0,
+            isCompleted: false,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+            timeframe: source.timeframe,
+            startDate: source.startDate,
+            endDate: source.endDate
+        )
+
+        // Read children OUTSIDE the write transaction so we don't hold a
+        // writer lock open across the read. `fetchCompoundChildren`
+        // already filters !isDeleted and orders by childIndex.
+        let sourceChildren = try fetchCompoundChildren(compoundTaskId: source.id)
+
+        try write { db in
+            try newParent.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: newParentId,
+                operationType: .create,
+                payload: newParent,
+                now: now
+            ).save(db)
+
+            for (index, child) in sourceChildren.enumerated() {
+                let linkId = Self.generateUUID()
+                let link = CompoundChild(
+                    id: linkId,
+                    compoundTaskId: newParentId,
+                    childTaskId: child.childTaskId,
+                    childIndex: index,
+                    createdAt: now,
+                    updatedAt: now,
+                    lastSyncedAt: nil,
+                    version: 1,
+                    isDeleted: false,
+                    deletedAt: nil
+                )
+                try link.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren",
+                    entityId: linkId,
+                    operationType: .create,
+                    payload: link,
+                    now: now
+                ).save(db)
+            }
+        }
+
+        return newParent
+    }
+
+    /// Soft-delete a task. See `deleteBoard` for the version-bump rationale.
+    func deleteTask(id: String) throws {
+        try write { db in
+            guard var task = try Task.fetchOne(db, key: id) else { return }
+            let now = Self.currentTimestamp()
+            task.isDeleted = true
+            task.deletedAt = now
+            task.updatedAt = now
+            task.version += 1
+            try task.update(db)
+        }
+    }
+
+    /// Summary of what `deleteTaskWithCascade` would remove. Lets the
+    /// detail view surface affected counts in the confirm dialog before
+    /// the user commits. Mirrors web's `TaskDeletionImpact`.
+    struct TaskDeletionImpact {
+        /// Count of `BoardTask` rows that reference this task as a placement.
+        let boardTaskCount: Int
+        /// Distinct boards the placements span (cells on the same board count once).
+        let affectedBoardIds: [String]
+        /// The live (non-deleted) board records the placements live on. Same
+        /// set as `affectedBoardIds` — included so the confirm sheet can
+        /// surface board name + status without a second fetch.
+        let affectedBoards: [Board]
+        /// `CompoundChild` rows where the task is the CHILD. The parent
+        /// compound loses this child; sibling children remain.
+        let childLinkCount: Int
+        /// `CompoundChild` rows where the task IS the parent compound.
+        /// Each parent link is severed; the child Tasks remain.
+        let parentLinkCount: Int
+    }
+
+    /// Read-only impact calculation; safe to call before showing the
+    /// confirm dialog. Filters BoardTask placements to those on
+    /// non-deleted boards — `BoardTask` has no `isDeleted` column, so
+    /// orphan placements on soft-deleted boards would otherwise inflate
+    /// the user-facing count. The actual cascade still hard-deletes
+    /// every matching placement (storage cleanup); the dialog only
+    /// reports cells the user can still see.
+    func computeTaskDeletionImpact(taskId: String) throws -> TaskDeletionImpact {
+        try read { db in
+            let allPlacements = try BoardTask
+                .filter(Column("taskId") == taskId)
+                .fetchAll(db)
+            let placementBoardIds = Array(Set(allPlacements.map { $0.boardId }))
+            let liveBoards: [Board] = placementBoardIds.isEmpty
+                ? []
+                : try Board
+                    .filter(placementBoardIds.contains(Column("id"))
+                            && Column("isDeleted") == false)
+                    .fetchAll(db)
+            let liveBoardIds = Set(liveBoards.map { $0.id })
+            let visiblePlacements = allPlacements.filter { liveBoardIds.contains($0.boardId) }
+            let childLinks = try CompoundChild
+                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
+                .fetchCount(db)
+            let parentLinks = try CompoundChild
+                .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
+                .fetchCount(db)
+            return TaskDeletionImpact(
+                boardTaskCount: visiblePlacements.count,
+                affectedBoardIds: Array(liveBoardIds),
+                affectedBoards: liveBoards,
+                childLinkCount: childLinks,
+                parentLinkCount: parentLinks,
+            )
+        }
+    }
+
+    /// Cascade-delete a task. Mirrors web's `deleteTaskWithCascade`:
+    ///
+    /// 1. **BoardTask placements** referencing this task — *hard-
+    ///    deleted* (BoardTask has no `isDeleted` field). Each removal
+    ///    queued for sync DELETE so other devices drop the placement.
+    /// 2. **`CompoundChild` rows where the task IS the parent compound**
+    ///    — soft-deleted (version bump + isDeleted + deletedAt). The
+    ///    child Tasks themselves stay alive.
+    /// 3. **`CompoundChild` rows where the task IS a child** — soft-
+    ///    deleted. Sibling links + the parent Task itself are untouched.
+    /// 4. **The Task itself** — soft-deleted with version bump (matches
+    ///    `deleteTask`'s LWW semantics).
+    ///
+    /// All operations run in a single GRDB write transaction so a
+    /// crash mid-cascade leaves a consistent local DB.
+    func deleteTaskWithCascade(taskId: String) throws {
+        try write { db in
+            guard var task = try Task.fetchOne(db, key: taskId) else { return }
+            let now = Self.currentTimestamp()
+
+            // 1. Hard-delete BoardTask placements.
+            let placements = try BoardTask
+                .filter(Column("taskId") == taskId)
+                .fetchAll(db)
+            for bt in placements {
+                _ = try bt.delete(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: bt.id,
+                    operationType: .delete,
+                    payload: bt,
+                    now: now,
+                ).save(db)
+            }
+
+            // 2 + 3. Soft-delete compound-child links — both directions.
+            let parentLinks = try CompoundChild
+                .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
+                .fetchAll(db)
+            let childLinks = try CompoundChild
+                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
+                .fetchAll(db)
+            for var link in parentLinks + childLinks {
+                link.isDeleted = true
+                link.deletedAt = now
+                link.updatedAt = now
+                link.version += 1
+                try link.update(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren",
+                    entityId: link.id,
+                    operationType: .delete,
+                    payload: link,
+                    now: now,
+                ).save(db)
+            }
+
+            // 4. Soft-delete the Task itself.
+            task.isDeleted = true
+            task.deletedAt = now
+            task.updatedAt = now
+            task.version += 1
+            try task.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .delete,
+                payload: task,
+                now: now,
+            ).save(db)
+        }
+    }
+
+}
