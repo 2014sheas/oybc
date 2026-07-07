@@ -1,0 +1,19 @@
+{
+  "name": "firestore-rules-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Emulator-backed test suite for the repo-root firestore.rules file. Deliberately outside the pnpm workspace (like functions/) so root turbo tasks never require a Java runtime.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore \"npm run test:run\"",
+    "test:run": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.1",
+    "@types/node": "20.19.43",
+    "firebase": "12.15.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}
