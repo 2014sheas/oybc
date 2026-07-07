@@ -1674,23 +1674,27 @@ extension AppDatabase {
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
 
-            // 4. Re-derive each linked task.
-            for var linked in linkedTasks {
-                let baseline = linked.baseline ?? 0
-                let derivedMaxCount = linked.maxCount ?? 0
-
-                // deriveDisplayedCount math (mirrors SharedCounter.swift / sharedCounter.ts).
-                // LOW-END CLAMP ONLY — no high-end clamp.
-                let displayed = max(0, newSourceCount - baseline)
-                let derivedCompleted = displayed >= derivedMaxCount
-
-                // ONE-WAY LATCH.
+            // 4. Re-derive each linked task via the shared propagation helper
+            //    (mirrors `propagateIncrement` in sharedCounter.ts). The helper
+            //    owns the derivation math + one-way latch; the DB layer owns the
+            //    writes (completedAt, updatedAt, version, sync-queue).
+            let propagation = propagateIncrement(
+                sourceAfterCurrentCount: newSourceCount,
+                linkedTasks: linkedTasks.map {
+                    PropagateIncrementLinkedTask(
+                        id: $0.id,
+                        baseline: $0.baseline,
+                        maxCount: $0.maxCount,
+                        isCompleted: $0.isCompleted
+                    )
+                }
+            )
+            for (result, var linked) in zip(propagation, linkedTasks) {
                 let linkedWasCompleted = linked.isCompleted
-                let linkedNowCompleted = linkedWasCompleted || derivedCompleted
 
-                linked.currentCount = newSourceCount  // mirror source count for easy reads
-                linked.isCompleted = linkedNowCompleted
-                if !linkedWasCompleted && linkedNowCompleted {
+                linked.currentCount = result.newCurrentCount  // mirror source count for easy reads
+                linked.isCompleted = result.newIsCompleted
+                if !linkedWasCompleted && result.newIsCompleted {
                     linked.completedAt = now
                 }
                 linked.updatedAt = now
@@ -1797,27 +1801,30 @@ extension AppDatabase {
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
 
-            // 4. Re-derive each linked task (same fan-out as increment).
-            for var linked in linkedTasks {
-                let baseline = linked.baseline ?? 0
-                let derivedMaxCount = linked.maxCount ?? 0
-
-                // deriveDisplayedCount math — same low-end clamp, no high-end clamp.
-                let displayed = max(0, newSourceCount - baseline)
-                let derivedCompleted = displayed >= derivedMaxCount
-
-                // ONE-WAY LATCH: latch is ORed in; decrement never un-completes.
-                // Capture the pre-overwrite state so the newly-completing check
-                // below isn't structurally dead (mirrors the increment path).
+            // 4. Re-derive each linked task via the shared propagation helper
+            //    (same fan-out as increment; mirrors `propagateIncrement` in
+            //    sharedCounter.ts). The one-way latch is ORed in, so decrement
+            //    never un-completes a task. DB layer owns the writes.
+            let propagation = propagateIncrement(
+                sourceAfterCurrentCount: newSourceCount,
+                linkedTasks: linkedTasks.map {
+                    PropagateIncrementLinkedTask(
+                        id: $0.id,
+                        baseline: $0.baseline,
+                        maxCount: $0.maxCount,
+                        isCompleted: $0.isCompleted
+                    )
+                }
+            )
+            for (result, var linked) in zip(propagation, linkedTasks) {
                 let linkedWasCompleted = linked.isCompleted
-                let linkedNowCompleted = linkedWasCompleted || derivedCompleted
 
-                linked.currentCount = newSourceCount  // mirror source count
-                linked.isCompleted = linkedNowCompleted
+                linked.currentCount = result.newCurrentCount  // mirror source count
+                linked.isCompleted = result.newIsCompleted
                 // completedAt: only set if newly completing (unusual on decrement,
                 // but consistent with latch semantics). Preserves the invariant
                 // isCompleted set ⟹ completedAt set.
-                if !linkedWasCompleted && linkedNowCompleted {
+                if !linkedWasCompleted && result.newIsCompleted {
                     linked.completedAt = now
                 }
                 linked.updatedAt = now
