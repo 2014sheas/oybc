@@ -11,17 +11,27 @@ import type { PropagateIncrementLinkedTask } from '../../src/algorithms/sharedCo
  * driven by `tests/fixtures/sharedCounterVectors.json`, which
  * `apps/ios/OYBCTests/SharedCounterVectorTests.swift` runs through the SAME
  * vectors against the Swift mirror in `SharedCounter.swift`. This REPLACES
- * every case from the pre-C1 file except "multiple sequential increments
- * accumulate correctly" (kept below) — that test drives a stateful sequence
- * of calls (not a single input/output pair), so it isn't vector-shaped.
+ * every case from the pre-C1 file except:
+ *   - "multiple sequential increments accumulate correctly" — drives a
+ *     stateful SEQUENCE of calls (not a single input/output pair), so it
+ *     isn't vector-shaped.
+ *   - The 3 "undefined field defaults to 0" cases (`undefined baseline`,
+ *     `undefined maxCount`, `undefined currentCount`) — these test TS's own
+ *     `?? 0` defaulting when a field is OMITTED from the input object
+ *     literal (`{}`). Swift's `deriveDisplayedCount` mirror takes
+ *     non-optional `Int` parameters with no "field omitted" concept at this
+ *     layer (the `?? 0` happens one level up, at call sites like
+ *     `SharedCounterGroups.swift`) — there is no Swift twin for "an
+ *     omitted-field JS object literal", so these 3 stay TS-only/hand-written.
  *
  * Pre-C1 assertion count: 11 deriveDisplayedCount cases + 12 propagateIncrement
  * cases (including the multi-step sequence, which contains 3 assertions) = 23
  * `it` blocks / ~26 assertions. Post-C1: 10 fixture vectors (each asserting 2
  * fields) + 9 fixture vectors (each asserting up to 4 fields per linked task)
- * + 1 hand-written sequence test (3 assertions) — net assertion coverage is
- * unchanged or higher (every fixture vector still checks all the fields the
- * original assertions checked).
+ * + 1 hand-written sequence test (3 assertions) + 3 hand-written TS-only
+ * "undefined field" tests — net assertion coverage is unchanged or higher
+ * (every fixture vector still checks all the fields the original assertions
+ * checked).
  */
 
 const FIXTURE_PATH = path.join(__dirname, '../fixtures/sharedCounterVectors.json');
@@ -64,6 +74,26 @@ describe('deriveDisplayedCount (fixture-driven, tests/fixtures/sharedCounterVect
       expect(result.isCompleted).toBe(v.isCompleted);
     });
   }
+
+  // Kept hand-written (TS-only — see file header): these test TS's `?? 0`
+  // defaulting when a field is OMITTED from the input object literal, which
+  // has no Swift equivalent at this layer (Swift's mirror takes
+  // non-optional Int parameters).
+  it('undefined baseline defaults to 0', () => {
+    const result = deriveDisplayedCount({ maxCount: 10 }, { currentCount: 5 });
+    expect(result.displayed).toBe(5);
+  });
+
+  it('undefined maxCount defaults to 0 — isCompleted=true immediately', () => {
+    const result = deriveDisplayedCount({ baseline: 0 }, { currentCount: 5 });
+    expect(result.isCompleted).toBe(true);
+  });
+
+  it('undefined currentCount defaults to 0', () => {
+    const result = deriveDisplayedCount({ baseline: 0, maxCount: 10 }, {});
+    expect(result.displayed).toBe(0);
+    expect(result.isCompleted).toBe(false);
+  });
 });
 
 describe('propagateIncrement (fixture-driven, tests/fixtures/sharedCounterVectors.json)', () => {
