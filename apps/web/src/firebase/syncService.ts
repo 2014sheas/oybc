@@ -883,6 +883,13 @@ export async function fullSync(userId: string): Promise<SyncResult> {
  *   - back-stop missed Firestore snapshot deliveries (rare)
  * 5 minutes is well below typical user dwell time and keeps Firestore
  * read load minimal.
+ *
+ * DO NOT REMOVE this timer as an "optimization": the pull watermark is a
+ * LOCAL-clock ISO string compared against server `_syncedAt`, so a
+ * clock-skew window exists by design — a doc written during the skew can
+ * slip past the watermark, and this periodic re-pull is the only mechanism
+ * that recovers it. iOS twin: `safetyNetInterval` in SyncService.swift.
+ * See docs/SYNC_STRATEGY.md.
  */
 export const SYNC_SAFETY_NET_MS = 5 * 60 * 1000;
 

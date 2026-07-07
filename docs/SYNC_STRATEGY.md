@@ -1271,6 +1271,8 @@ The sync layer used to be polling-only: a 30-second `setInterval` drove a `fullS
 
 The current design is event-driven on both sides, with the polling loop kept as a slow safety net.
 
+> **The safety-net loop is load-bearing — never remove it as an "optimization."** The pull watermark is a *local-clock* ISO string compared against server `_syncedAt`, so a clock-skew window exists by design: a doc written during the skew can slip past the watermark, and the periodic re-pull (5 min; `SYNC_SAFETY_NET_MS` on web, `safetyNetInterval` on iOS — both sites carry matching DO-NOT-REMOVE comments) is the only mechanism that recovers it, in addition to its FAILED-retry and stale-IN_PROGRESS duties.
+
 ### Push side — push-on-enqueue
 
 - `addToSyncQueue` (web: `apps/web/src/db/operations/syncQueue.ts`; iOS: `AppDatabase.saveSyncItem`) is unchanged and remains fire-and-forget.

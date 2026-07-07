@@ -245,6 +245,13 @@ final class SyncService: ObservableObject {
     /// + snapshot listeners doing the real-time work, this only needs to
     /// fire occasionally to retry FAILED items, recover stale IN_PROGRESS
     /// rows from a force-quit, and back-stop missed snapshot deliveries.
+    ///
+    /// DO NOT REMOVE this timer as an "optimization": the pull watermark is
+    /// a LOCAL-clock ISO string compared against server `_syncedAt`, so a
+    /// clock-skew window exists by design — a doc written during the skew
+    /// can slip past the watermark, and this periodic re-pull is the only
+    /// mechanism that recovers it. Web twin: `SYNC_SAFETY_NET_MS` in
+    /// syncService.ts. See docs/SYNC_STRATEGY.md.
     static let safetyNetInterval: TimeInterval = 5 * 60
 
     /// Debounce window before a queue-driven push fires. Coalesces bursts
