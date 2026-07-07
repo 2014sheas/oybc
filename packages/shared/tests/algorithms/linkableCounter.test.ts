@@ -1,101 +1,91 @@
-/**
- * linkableCounter.test.ts — "add a new task to an existing counter" match.
- *
- * Matches a new counting task's action+unit to an existing counter (source /
- * standalone), preferring the most-established one. iOS `LinkableCounter.swift`
- * port mirrors these.
- */
-
+import * as fs from 'fs';
+import * as path from 'path';
 import { findLinkableCounter } from '../../src/algorithms/linkableCounter';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 
-interface Opts {
+/**
+ * linkableCounter.test.ts — "add a new task to an existing counter" match.
+ *
+ * C1 (issue #267): fully fixture-driven from
+ * `tests/fixtures/linkableCounterVectors.json` — the SAME file
+ * `apps/ios/OYBCTests/LinkableCounterVectorTests.swift` runs through the
+ * Swift mirror `findLinkableCounter` in `LinkableCounter.swift`. Pre-C1: 8
+ * `it` blocks (one asserted 2 blank-field sub-cases in one block). Post-C1:
+ * 9 fixture vectors (the blank-action / blank-unit sub-cases became two
+ * vectors instead of one `it` with two `expect`s) — no case dropped.
+ */
+
+const FIXTURE_PATH = path.join(__dirname, '../fixtures/linkableCounterVectors.json');
+const TS = '2026-07-01T12:00:00.000Z';
+
+interface MiniTask {
+  id: string;
   action?: string;
   unit?: string;
   currentCount?: number;
   sharedCounterId?: string | null;
   isDeleted?: boolean;
-  type?: TaskType;
+  type?: string;
 }
 
-function task(id: string, o: Opts = {}): Task {
+interface Vector {
+  name: string;
+  action: string;
+  unit: string;
+  excludeTaskId?: string;
+  tasks: MiniTask[];
+  expected: { counterId: string; name: string; lifetime: number; memberCount: number } | null;
+}
+
+interface Fixture {
+  vectors: Vector[];
+}
+
+const fixture: Fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
+
+function toTask(m: MiniTask): Task {
   return {
-    id,
+    id: m.id,
     userId: 'u1',
-    title: `Task ${id}`,
-    type: o.type ?? TaskType.COUNTING,
-    action: o.action,
-    unit: o.unit,
+    title: `Task ${m.id}`,
+    type: (m.type as TaskType) ?? TaskType.COUNTING,
+    action: m.action,
+    unit: m.unit,
     maxCount: 30,
-    currentCount: o.currentCount,
-    sharedCounterId: o.sharedCounterId ?? null,
+    currentCount: m.currentCount,
+    sharedCounterId: m.sharedCounterId ?? null,
     isCompleted: false,
     totalCompletions: 0,
     totalInstances: 0,
-    createdAt: '2026-07-01T12:00:00.000Z',
-    updatedAt: '2026-07-01T12:00:00.000Z',
+    createdAt: TS,
+    updatedAt: TS,
     version: 1,
-    isDeleted: o.isDeleted ?? false,
+    isDeleted: m.isDeleted ?? false,
   };
 }
 
-describe('findLinkableCounter', () => {
-  it('returns null when action or unit is blank', () => {
-    const tasks = [task('a', { action: 'Push-ups', unit: 'reps' })];
-    expect(findLinkableCounter({ action: '', unit: 'reps' }, tasks)).toBeNull();
-    expect(findLinkableCounter({ action: 'Push-ups', unit: '' }, tasks)).toBeNull();
+describe('findLinkableCounter (fixture-driven, tests/fixtures/linkableCounterVectors.json)', () => {
+  it('fixture is non-empty', () => {
+    expect(fixture.vectors.length).toBeGreaterThan(0);
   });
 
-  it('returns null when nothing matches', () => {
-    const tasks = [task('a', { action: 'Push-ups', unit: 'reps' })];
-    expect(findLinkableCounter({ action: 'Sit-ups', unit: 'reps' }, tasks)).toBeNull();
-  });
-
-  it('matches a standalone counting task by action+unit (case/space-insensitive)', () => {
-    const tasks = [task('src', { action: 'Push-ups', unit: 'reps', currentCount: 512 })];
-    const r = findLinkableCounter({ action: '  push-UPS ', unit: 'REPS' }, tasks);
-    expect(r).not.toBeNull();
-    expect(r!.counterId).toBe('src');
-    expect(r!.name).toBe('Push-ups');
-    expect(r!.lifetime).toBe(512);
-    expect(r!.memberCount).toBe(1);
-  });
-
-  it('does NOT match on unit alone — different action is a different counter', () => {
-    const tasks = [task('pu', { action: 'Push-ups', unit: 'reps' })];
-    expect(findLinkableCounter({ action: 'Sit-ups', unit: 'reps' }, tasks)).toBeNull();
-  });
-
-  it('links to the source (not a derived task) and counts members', () => {
-    const src = task('src', { action: 'Push-ups', unit: 'reps', currentCount: 100 });
-    const d1 = task('d1', { action: 'Push-ups', unit: 'reps', sharedCounterId: 'src' });
-    const d2 = task('d2', { action: 'Push-ups', unit: 'reps', sharedCounterId: 'src' });
-    const r = findLinkableCounter({ action: 'Push-ups', unit: 'reps' }, [src, d1, d2]);
-    expect(r!.counterId).toBe('src'); // never a derived task
-    expect(r!.memberCount).toBe(3); // source + 2 linkers
-  });
-
-  it('prefers the most-established counter when several match', () => {
-    // standalone (0 linkers) vs an established source (2 linkers)
-    const solo = task('solo', { action: 'Run', unit: 'km', currentCount: 999 });
-    const src = task('src', { action: 'Run', unit: 'km', currentCount: 10 });
-    const d1 = task('d1', { action: 'Run', unit: 'km', sharedCounterId: 'src' });
-    const d2 = task('d2', { action: 'Run', unit: 'km', sharedCounterId: 'src' });
-    const r = findLinkableCounter({ action: 'Run', unit: 'km' }, [solo, src, d1, d2]);
-    expect(r!.counterId).toBe('src'); // 3 members beats the higher-count solo
-  });
-
-  it('excludes the task being edited', () => {
-    const self = task('self', { action: 'Push-ups', unit: 'reps' });
-    expect(
-      findLinkableCounter({ action: 'Push-ups', unit: 'reps', excludeTaskId: 'self' }, [self]),
-    ).toBeNull();
-  });
-
-  it('ignores deleted and non-counting tasks', () => {
-    const del = task('del', { action: 'Push-ups', unit: 'reps', isDeleted: true });
-    const normal = task('norm', { action: 'Push-ups', unit: 'reps', type: TaskType.NORMAL });
-    expect(findLinkableCounter({ action: 'Push-ups', unit: 'reps' }, [del, normal])).toBeNull();
-  });
+  for (const v of fixture.vectors) {
+    it(v.name, () => {
+      const tasks = v.tasks.map(toTask);
+      const result = findLinkableCounter(
+        { action: v.action, unit: v.unit, excludeTaskId: v.excludeTaskId },
+        tasks,
+      );
+      if (v.expected === null) {
+        expect(result).toBeNull();
+      } else {
+        expect(result).not.toBeNull();
+        expect(result!.counterId).toBe(v.expected.counterId);
+        expect(result!.name).toBe(v.expected.name);
+        expect(result!.lifetime).toBe(v.expected.lifetime);
+        expect(result!.memberCount).toBe(v.expected.memberCount);
+      }
+    });
+  }
 });
