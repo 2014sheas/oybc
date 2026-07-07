@@ -27,6 +27,8 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createHash } from "crypto";
 
+export { validateWin } from "./validateWin";
+
 initializeApp();
 
 /**
