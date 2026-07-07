@@ -88,6 +88,19 @@ final class StreaksTests: XCTestCase {
         XCTAssertEqual(streak(.custom, .greenlog, [greenlog(.daily, w[0])]), 0)
     }
 
+    func testIndefiniteIsZero() {
+        // `.indefinite` boards have no window cadence — same guard as `.custom`.
+        // (Boards can't actually be core+.indefinite in practice, but the guard
+        // must be explicit rather than incidentally true via a nil boundary.)
+        let w = windowsBack(.daily, now(), 1)
+        XCTAssertEqual(streak(.indefinite, .greenlog, [greenlog(.daily, w[0])]), 0)
+        XCTAssertEqual(streak(.indefinite, .bingo, [greenlog(.daily, w[0])]), 0)
+        XCTAssertEqual(
+            computeLongestStreak(timeframe: .indefinite, boards: [greenlog(.daily, w[0])], weekStartDay: "monday", now: now()),
+            0
+        )
+    }
+
     func testCountsConsecutiveUntilFirstMiss() {
         let w = windowsBack(.daily, now(), 5)
         let boards = [greenlog(.daily, w[0]), greenlog(.daily, w[1]), greenlog(.daily, w[2])]

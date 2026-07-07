@@ -215,10 +215,10 @@ final class BoardWizardViewModel {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
                 // The "Custom" segment defaults to an ongoing board (End date =
                 // None); a dated range is opt-in via the End-date control. So a
-                // CUSTOM default resolves to .indefinite for a fresh board.
-                // Recurring templates can't use CUSTOM/INDEFINITE (no computed
-                // window) → fall back to daily in the recurring CTA.
-                if resolved == .custom {
+                // CUSTOM (or already-INDEFINITE) default resolves to .indefinite
+                // for a fresh board. Recurring templates can't use CUSTOM/INDEFINITE
+                // (no computed window) → fall back to daily in the recurring CTA.
+                if resolved == .custom || resolved == .indefinite {
                     self.timeframe = isRecurringAtEntry ? .daily : .indefinite
                 } else {
                     self.timeframe = resolved
@@ -256,11 +256,12 @@ final class BoardWizardViewModel {
 
     private static func resolveTimeframe(_ value: DefaultTimeframe) -> Timeframe {
         switch value {
-        case .daily:   return .daily
-        case .weekly:  return .weekly
-        case .monthly: return .monthly
-        case .yearly:  return .yearly
-        case .custom:  return .custom
+        case .daily:      return .daily
+        case .weekly:     return .weekly
+        case .monthly:    return .monthly
+        case .yearly:     return .yearly
+        case .custom:     return .custom
+        case .indefinite: return .indefinite
         }
     }
 
