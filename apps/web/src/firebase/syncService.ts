@@ -40,7 +40,11 @@ import {
   mergeUserPreferences,
   additiveMergeCount,
   needsAdditiveMerge,
+  SYNC_COLLECTIONS,
+  USER_SCOPED_SYNC_COLLECTIONS,
+  LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
   type User,
+  type SyncCollection,
 } from '@oybc/shared';
 import { runBoardCascadeForTask } from '../db/operations/orchestration';
 
@@ -49,20 +53,14 @@ import { runBoardCascadeForTask } from '../db/operations/orchestration';
 /**
  * Entity types that can be synced, mapped to their Dexie table names
  * and Firestore subcollection paths under `users/{userId}/`.
+ *
+ * Sourced from `@oybc/shared`'s `SYNC_COLLECTIONS` (workstream C4 / issue
+ * #261) — this used to be a hand-maintained literal array here, mirrored
+ * by hand in iOS's `SyncService.swift`. It's now the single source of
+ * truth; see that constant's doc comment for the full contract (legacy
+ * push-drain entries, iOS mirroring story, etc.).
  */
-const SYNCABLE_COLLECTIONS = [
-  'boards',
-  'tasks',
-  'taskSteps',                // legacy — kept so push can drain DELETE ops from migration v4
-  'boardTasks',
-  'compositeTasks',           // legacy — kept so push can drain DELETE ops from migration v4
-  'compositeNodes',           // legacy — kept so push can drain DELETE ops from migration v4
-  'compoundChildren',
-  'recurringBoardTemplates',  // Phase 6.2
-  'defaultPools',             // Phase 6.X — Default Pools
-] as const;
-
-type SyncCollection = (typeof SYNCABLE_COLLECTIONS)[number];
+const SYNCABLE_COLLECTIONS = SYNC_COLLECTIONS;
 
 /**
  * Zod schema per syncable subcollection. Remote documents pulled from
@@ -103,26 +101,24 @@ const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
  * against a compromised peer that writes into its own path with a
  * spoofed `userId` and hopes that a future cross-user share path
  * surfaces it.
+ *
+ * Sourced from `@oybc/shared`'s `USER_SCOPED_SYNC_COLLECTIONS`.
  */
-const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
-  'boards',
-  'tasks',
-  'compositeTasks',
-  'recurringBoardTemplates',
-  'defaultPools',
-]);
+const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set(
+  USER_SCOPED_SYNC_COLLECTIONS,
+);
 
 /**
  * Legacy collections kept in SYNCABLE_COLLECTIONS so the push path can drain
  * DELETE ops produced by the migration-v4 cleanup. The pull path skips them
  * because their Firestore subcollections are either empty or being actively
  * retired — pulling their docs would resurrect legacy rows in local Dexie.
+ *
+ * Sourced from `@oybc/shared`'s `LEGACY_PULL_SKIP_COLLECTIONS`.
  */
-const LEGACY_PULL_SKIP_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
-  'taskSteps',
-  'compositeTasks',
-  'compositeNodes',
-]);
+const LEGACY_PULL_SKIP_COLLECTIONS: ReadonlySet<SyncCollection> = new Set(
+  SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
+);
 
 export interface PushResult {
   pushed: number;

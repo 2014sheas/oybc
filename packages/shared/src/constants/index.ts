@@ -1,5 +1,6 @@
 export * from './enums';
 export * from './syncRetry';
+export * from './syncContract';
 
 export { BOARD_SIZES, type BoardSize } from '@oybc/bingo-core';
 

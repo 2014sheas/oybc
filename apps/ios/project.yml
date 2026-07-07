@@ -127,6 +127,19 @@ targets:
     platform: iOS
     sources:
       - OYBCTests
+    resources:
+      # Sync-contract cross-platform enforcement fixtures (workstream C4 /
+      # issue #261). Canonical source of truth is
+      # packages/shared/tests/fixtures/{syncContract,lwwVectors}.json —
+      # xcodegen can't add resources from outside the project root
+      # (apps/ios), so these are checked-in copies. Jest tests in
+      # packages/shared/tests/ assert byte-for-byte equality against the
+      # canonical files, so an un-synced copy fails `pnpm --filter
+      # @oybc/shared test` — regenerate syncContract.json's copy via
+      # `pnpm --filter @oybc/shared run gen:sync-contract` (writes both
+      # locations); lwwVectors.json is hand-authored, copy both when
+      # editing. See SyncContractTests.swift / LwwVectorTests.swift.
+      - path: OYBCTests/Fixtures
     dependencies:
       - target: OYBC
     settings:
