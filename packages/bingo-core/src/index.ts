@@ -10,4 +10,5 @@
 export * from './bingoDetection';
 export * from './shuffle';
 export * from './centerSquare';
+export * from './placement';
 export * from './constants';

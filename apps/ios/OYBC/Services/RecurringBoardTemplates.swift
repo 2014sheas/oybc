@@ -201,10 +201,16 @@ func validateSpawnPool(
 /// or `nil` for the auto-completed FREE / CUSTOM_FREE center on odd-sized
 /// boards.
 ///
-/// Mirrors the TS-side `buildSpawnPlacement`. Optional `rng` parameter
-/// (default uses Foundation's `Int.random`) for deterministic test
-/// placement; passing a closure that returns the same value each call
-/// produces a stable order.
+/// Thin wrapper over the shared `BoardPlacement.placeBoard` core — mirrors
+/// the TS-side `buildSpawnPlacement` (which now delegates to bingo-core's
+/// `placeBoard`). Resolves the template's geometry / randomization / pool,
+/// then delegates the cell walk. The spawn path never pins a CHOSEN center
+/// (`validateSpawnPool` rejects CHOSEN templates), so no `chosenCenterId`
+/// is passed — a CHOSEN center that slipped through is treated as ordinary,
+/// exactly as the old hand-rolled loop did.
+///
+/// Optional `rng` parameter for deterministic test placement; passing a
+/// seeded closure produces a stable order.
 ///
 /// `validateSpawnPool` MUST be called first — this function's behavior is
 /// undefined for a pool that fails validation.
@@ -213,47 +219,11 @@ func buildSpawnPlacement(
     poolTasks: [Task],
     rng: @escaping () -> Double = { Double.random(in: 0..<1) }
 ) -> [Task?] {
-    let total = template.boardSize * template.boardSize
-    let centerIdx = template.boardSize % 2 == 1
-        ? (template.boardSize * template.boardSize) / 2
-        : -1
-    let hasCenter = centerIdx >= 0
-    let centerOmitsTask = hasCenter &&
-        (template.centerSquareType == .free || template.centerSquareType == .customFree)
-
-    let fillCount = recurringTemplateFillableCellCount(
-        boardSize: template.boardSize,
-        centerSquareType: template.centerSquareType
+    BoardPlacement.placeBoard(
+        items: poolTasks,
+        gridSize: template.boardSize,
+        centerType: template.centerSquareType,
+        randomize: template.isRandomized,
+        rng: rng
     )
-
-    let ordered = template.isRandomized
-        ? fisherYatesShuffle(poolTasks, rng: rng)
-        : poolTasks
-    let placed = Array(ordered.prefix(fillCount))
-
-    var placement: [Task?] = Array(repeating: nil, count: total)
-    var nextTaskIdx = 0
-    for cell in 0..<total {
-        if cell == centerIdx && centerOmitsTask { continue }
-        if nextTaskIdx < placed.count {
-            placement[cell] = placed[nextTaskIdx]
-        }
-        nextTaskIdx += 1
-    }
-    return placement
-}
-
-/// Fisher-Yates shuffle with injectable RNG. Mirrors the TS-side
-/// `fisherYatesShuffle(arr, rng?)`. Local helper because Swift's
-/// `.shuffled()` doesn't expose an RNG hook.
-func fisherYatesShuffle<T>(_ array: [T], rng: () -> Double = { Double.random(in: 0..<1) }) -> [T] {
-    var result = array
-    var i = result.count - 1
-    while i > 0 {
-        let j = Int(rng() * Double(i + 1))
-        let clamped = min(j, i)
-        result.swapAt(i, clamped)
-        i -= 1
-    }
-    return result
 }

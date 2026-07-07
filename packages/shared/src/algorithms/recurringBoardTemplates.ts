@@ -25,7 +25,7 @@
  * Canonical design: docs/ARCHITECTURE.md §Phase 6.2.
  */
 
-import { getCenterSquareIndex, isCenterAutoCompleted, fisherYatesShuffle, CenterSquareType } from '@oybc/bingo-core';
+import { placeBoard, fillableCellCount, CenterSquareType } from '@oybc/bingo-core';
 import { getTimeframeBoundaries, formatTimeframeLabel } from './calendarBoundaries';
 import { Timeframe } from '../constants/enums';
 import type { Board } from '../types/board';
@@ -67,22 +67,10 @@ export type SpawnPoolFailureReason =
   | 'unsupported_timeframe'  // template.timeframe === CUSTOM (form should prevent this)
   | 'unsupported_center';    // centerSquareType === CHOSEN (MVP excludes this)
 
-/**
- * Counts the cells that need a Task placement for a given board configuration.
- * Even-sized boards have no center; odd-sized boards with FREE/CUSTOM_FREE
- * centers reserve one cell for the auto-completed free space; otherwise the
- * center cell gets a regular task.
- */
-function fillableCellCount(
-  boardSize: number,
-  centerSquareType: CenterSquareType,
-): number {
-  const total = boardSize * boardSize;
-  const centerIdx = getCenterSquareIndex(boardSize);
-  const hasCenter = centerIdx >= 0;
-  const centerOmitsTask = hasCenter && isCenterAutoCompleted(centerSquareType);
-  return total - (centerOmitsTask ? 1 : 0);
-}
+// `fillableCellCount` now lives in @oybc/bingo-core (imported above) — the
+// same primitive drives the wizard, the spawn path, and Play's server-side
+// board fan-out. Kept as a plain re-import here (not re-exported) so existing
+// `recurringBoardTemplates` callers see no change.
 
 /**
  * Detects templates pending a spawn for the current window.
@@ -243,40 +231,22 @@ export interface BuildSpawnPlacementArgs {
  * cell, or `null` for the auto-completed FREE / CUSTOM_FREE center on
  * odd-sized boards.
  *
- * Placement order:
- *   1. If `template.isRandomized`, shuffle the pool via
- *      `fisherYatesShuffle(rng)`. Otherwise preserve `seedTaskIds` order.
- *   2. Slice to the fillable cell count (ignoring extras — that's the
- *      whole point of the loose-fit pool).
- *   3. Walk cells 0..boardSize²-1 left-to-right, top-to-bottom. At the
- *      center cell (odd boards only), if FREE/CUSTOM_FREE, leave `null`;
- *      otherwise place the next pool task.
+ * Thin wrapper over the shared `placeBoard` core (@oybc/bingo-core):
+ * resolves the template's geometry / randomization / pool ordering, then
+ * delegates the cell walk. The spawn path never pins a CHOSEN center
+ * (`validateSpawnPool` rejects CHOSEN templates), so no `chosenCenterId`
+ * is passed — a CHOSEN center that slipped through is treated as ordinary,
+ * exactly as the old hand-rolled loop did.
  */
 export function buildSpawnPlacement(
   args: BuildSpawnPlacementArgs,
 ): (Task | null)[] {
   const { template, poolTasks, rng } = args;
-  const total = template.boardSize * template.boardSize;
-  const centerIdx = getCenterSquareIndex(template.boardSize);
-  const hasCenter = centerIdx >= 0;
-  const centerOmitsTask =
-    hasCenter && isCenterAutoCompleted(template.centerSquareType);
-
-  const fillCount = fillableCellCount(
-    template.boardSize,
-    template.centerSquareType,
-  );
-  const ordered = template.isRandomized
-    ? fisherYatesShuffle(poolTasks, rng)
-    : poolTasks;
-  const placed = ordered.slice(0, fillCount);
-
-  const placement: (Task | null)[] = new Array(total).fill(null);
-  let nextTaskIdx = 0;
-  for (let cell = 0; cell < total; cell++) {
-    if (cell === centerIdx && centerOmitsTask) continue;
-    placement[cell] = placed[nextTaskIdx] ?? null;
-    nextTaskIdx++;
-  }
-  return placement;
+  return placeBoard({
+    items: poolTasks,
+    gridSize: template.boardSize,
+    centerType: template.centerSquareType,
+    randomize: template.isRandomized,
+    rng,
+  });
 }
