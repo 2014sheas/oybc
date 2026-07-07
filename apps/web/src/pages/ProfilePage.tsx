@@ -214,14 +214,20 @@ export function ProfilePage(): React.ReactElement {
         </Link>
       </div>
 
-      {/* Developer tools */}
-      <div className={styles.sectionLabel}>Developer</div>
-      <div className={styles.card}>
-        <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
-          <span className={styles.rowLabel}>Playground</span>
-          <span className={styles.rowArrow}>&rarr;</span>
-        </Link>
-      </div>
+      {/* Developer tools — dev builds only. The Playground can wipe the real
+          local database, so this section (and the route it links to) must
+          not be reachable in production. */}
+      {import.meta.env.DEV && (
+        <>
+          <div className={styles.sectionLabel}>Developer</div>
+          <div className={styles.card}>
+            <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
+              <span className={styles.rowLabel}>Playground</span>
+              <span className={styles.rowArrow}>&rarr;</span>
+            </Link>
+          </div>
+        </>
+      )}
 
       {/* Sign out */}
       <button
