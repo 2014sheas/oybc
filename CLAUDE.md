@@ -481,6 +481,7 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 
 ## Documentation
 
+- `docs/ROADMAP.md` — **Master roadmap & hardening plan** (2026-07 full project review output): seven tracks — CI/CD hardening, architecture refactors, cross-platform drift closure, sync hardening, docs/test debt, product features, and Play OYBC enablement (Track G, which integrates `docs/PLAY_TRANSITION.md` and records the Play/Do package-graph boundary guardrail) — each as a defined workstream with scope + acceptance criteria. Pick workstreams from here by directive; record PR numbers there as they ship.
 - `docs/ARCHITECTURE.md` — Technical plan, development phases (now includes **Phase 6: Recurring Boards** design)
 - `docs/OFFLINE_FIRST.md` — Offline-first design and data flow
 - `docs/SYNC_STRATEGY.md` — Conflict resolution patterns
@@ -539,7 +540,7 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 - CAPTCHA / rate-limit hardening on auth flows — pre-public-launch only.
 - **iOS snapshot tests are advisory in CI** (`continue-on-error: true` on the snapshot step in `ios.yml`). The macos-15 runner ships Xcode 26.3 with iOS 26.0/26.1/26.2 simulators (no 26.3), while local dev uses iOS 26.3.x — pixel kerning differs across the iOS minor, so baselines recorded locally don't match CI byte-for-byte. The xcresult artifact still uploads on every snapshot diff, so a developer can pull it and re-record when convenient. To re-enable strict mode: either (a) wait for a macos-15 runner image refresh that ships iOS 26.3, then drop `continue-on-error`; or (b) install iOS 26.2 simulator runtime locally (~5 GB, requires freeing space on `/Library/Developer/CoreSimulator/Volumes/`), re-record on `OS=26.2`, commit baselines, drop `continue-on-error`.
 
-**Next phase**: Phases 1–7 are shipped. Pick the next item from Known follow-ups (web notifications, web Account & security, web draft-board containment, web Vitest harness, CI snapshot strict-mode, pre-web-launch hardening, tutorial rework #157) by directive, not inferred roadmap.
+**Next phase**: Phases 1–7 are shipped. The 2026-07 full project review produced [`docs/ROADMAP.md`](docs/ROADMAP.md) — the canonical workstream list (it absorbs the Known follow-ups above plus CI/CD hardening, architecture refactors, drift closure, sync hardening, and the feature roadmap). Pick workstreams from there by directive, not inferred roadmap.
 
 ## Branching Strategy
 
