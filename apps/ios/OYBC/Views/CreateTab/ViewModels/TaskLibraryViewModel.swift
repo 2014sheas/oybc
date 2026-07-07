@@ -231,55 +231,23 @@ final class TaskLibraryViewModel {
         }
     }
 
-    /// Pure visibility filter for library-browse surfaces (Tasks tab + wizard
-    /// "add from library"). Hides a wizard-born task (`createdInWizard`) that
-    /// has NO placement on a live non-draft board — i.e. it lives only on
-    /// drafts, or has no live placement at all (an orphan: removed from the
-    /// pool, so its Task row lingers after persist drops the board_task; or its
-    /// board was deleted). Standalone/copied tasks (`createdInWizard == false`)
-    /// are always visible.
-    ///
-    /// Compound children inherit their parent compound's placements — a
-    /// wizard-born inline subtask is never *directly* placed (it lives under
-    /// its parent), so without inheritance it would look like a placement-less
-    /// orphan and hide forever. With inheritance it's visible exactly when its
-    /// parent compound is (keeping wizard-created subtasks pool-addable).
-    ///
-    /// Visible iff: `!createdInWizard` OR ≥1 effective (own ∪ inherited)
-    /// non-draft placement.
-    ///
-    /// - Parameters:
-    ///   - tasks: The full library task set.
-    ///   - boardTasks: Every BoardTask row (any board).
-    ///   - boardStatusById: Non-deleted boardId → status (placements on
-    ///     missing/deleted boards are ignored).
-    ///   - childToParents: child taskId → parent compound taskId(s); a child's
-    ///     effective placements are its own ∪ its parents'.
+    /// Forwards to `BrowsableTasks.computeBrowsableTasks` (issue #246 part 2
+    /// — extracted out of this ViewModel to a named helper mirroring
+    /// `packages/shared/src/algorithms/browsableTasks.ts`). Kept as a thin
+    /// static wrapper so existing call sites (this file's `reload`,
+    /// `DraftTaskVisibilityTests`) don't need to change. See
+    /// `BrowsableTasks.computeBrowsableTasks` for the full rule doc.
     static func computeBrowsableTasks(
         tasks: [Task],
         boardTasks: [BoardTask],
         boardStatusById: [String: BoardStatus],
         childToParents: [String: [String]] = [:]
     ) -> [Task] {
-        // taskId → set of non-deleted board ids it's placed on.
-        var placementsByTask: [String: Set<String>] = [:]
-        for bt in boardTasks {
-            guard boardStatusById[bt.boardId] != nil else { continue }
-            placementsByTask[bt.taskId, default: []].insert(bt.boardId)
-        }
-        return tasks.filter { task in
-            guard task.createdInWizard else { return true }
-            // Effective placements: own + inherited from parent compound(s).
-            var boardIds = placementsByTask[task.id] ?? []
-            for parentId in childToParents[task.id] ?? [] {
-                boardIds.formUnion(placementsByTask[parentId] ?? [])
-            }
-            // No live placement (direct or inherited) → orphan → hidden.
-            // (Was `return true`, which leaked deleted-in-wizard tasks into the
-            // library; hiding an orphan is safe — it reappears if it later
-            // lands on a live board.)
-            if boardIds.isEmpty { return false }
-            return boardIds.contains { boardStatusById[$0] != .draft }
-        }
+        BrowsableTasks.computeBrowsableTasks(
+            tasks: tasks,
+            boardTasks: boardTasks,
+            boardStatusById: boardStatusById,
+            childToParents: childToParents
+        )
     }
 }

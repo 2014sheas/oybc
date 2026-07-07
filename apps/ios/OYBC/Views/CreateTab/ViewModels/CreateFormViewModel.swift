@@ -297,11 +297,13 @@ final class CreateFormViewModel {
         let taskId = AppDatabase.generateUUID()
 
         let resolvedTitle: String
-        if resolvedType == .counting && trimmedTitle.isEmpty {
+        if resolvedType == .counting {
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
             let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-            resolvedTitle = "\(a) \(m) \(u)"
+            resolvedTitle = TaskTitle.generateCounterTaskTitle(
+                action: a, maxCount: m, unit: u, providedTitle: trimmedTitle
+            )
         } else {
             resolvedTitle = trimmedTitle
         }
@@ -496,7 +498,8 @@ final class CreateFormViewModel {
             switch self {
             case .existing(_, let t, _): return t
             case .newNormal(let t): return t
-            case .newCounting(let a, let g, let u): return "\(a) \(g) \(u)"
+            case .newCounting(let a, let g, let u):
+                return TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u)
             }
         }
 
@@ -654,7 +657,7 @@ final class CreateFormViewModel {
 
             case .newCounting(let action, let goal, let unit):
                 let newId = AppDatabase.generateUUID()
-                let autoTitle = "\(action.trimmingCharacters(in: .whitespacesAndNewlines)) \(goal) \(unit.trimmingCharacters(in: .whitespacesAndNewlines))"
+                let autoTitle = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit)
                 let newTask = OYBC.Task(
                     id: newId,
                     userId: userId,
