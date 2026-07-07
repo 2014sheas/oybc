@@ -12,7 +12,8 @@
     "test:coverage": "jest --coverage",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "gen:sync-contract": "node scripts/generate-sync-contract.js"
+    "gen:sync-contract": "node scripts/generate-sync-contract.js",
+    "gen:sync-fixtures": "node scripts/sync-fixtures-to-ios.js"
   },
   "keywords": [
     "bingo",
