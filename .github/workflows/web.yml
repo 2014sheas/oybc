@@ -12,6 +12,7 @@ on:
       - 'apps/web/**'
       - 'apps/coming-soon/**'
       - 'packages/**'
+      - 'scripts/check-coming-soon-tokens.mjs'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'turbo.json'
@@ -22,6 +23,7 @@ on:
       - 'apps/web/**'
       - 'apps/coming-soon/**'
       - 'packages/**'
+      - 'scripts/check-coming-soon-tokens.mjs'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'turbo.json'
@@ -72,3 +74,9 @@ jobs:
       - name: Lint
         # ESLint on web + shared via Turbo's `lint` task.
         run: pnpm -w lint
+
+      - name: Riso token drift-check
+        # apps/coming-soon hand-copies packages/riso-tokens/riso.css's token
+        # VALUES under unprefixed names (by design — zero build dependency).
+        # Fails if the two ever diverge in value. See docs/COMING_SOON.md.
+        run: node scripts/check-coming-soon-tokens.mjs

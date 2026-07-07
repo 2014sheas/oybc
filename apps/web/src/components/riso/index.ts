@@ -1,7 +1,7 @@
 /**
  * Riso primitive kit — the reusable web components for the Riso design
  * pass. Mirrors the iOS `Views/Riso/RisoControls.swift` kit; token values
- * live in `src/styles/riso.css`. See docs/RISO_WEB.md.
+ * live in `@oybc/riso-tokens` (packages/riso-tokens/riso.css). See docs/RISO_WEB.md.
  *
  * Import from here (`../components/riso`) rather than per-file so the kit's
  * surface stays discoverable as it grows (board cell, badge, toast … land
