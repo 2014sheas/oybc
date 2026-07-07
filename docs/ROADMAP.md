@@ -6,7 +6,7 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 **Sizing legend:** S = single small PR (< ~200 lines), M = one substantial PR or 2–3 small ones, L = a phased mini-project with its own doc.
 
-**Suggested next PRs:** A6 (hosting deploy automation) · C4 (sync contract into shared) · C1 (shared JSON test vectors, generalizing T2's golden pattern) · B1 (mechanical splits) — or by directive. **Needing a decision first:** A4 (project split), E6 (dependency majors — incl. Dependabot #249/#251 firebase runtime majors + red #250 vitest 4), A7's repo-settings half, A8 (runner image).
+**Directive-ready queue: EMPTY as of 2026-07-07** — A6/C4/C1/B1 all shipped (see below). **Everything remaining needs a decision or user action first:** #262 (missing FIREBASE_SERVICE_ACCOUNT secret — blocks rules+hosting auto-deploy), #263 (LWW edge canon — one-vector fix once decided), A4 (project split), E6 (dependency majors — Dependabot #249/#251 firebase runtime + red #250 vitest 4), B2 (play-surface extraction — sequenced after B1 settles; L-sized, worth a Gate-1 plan), A7's repo-settings half, A8 (runner image), D1–D3 (sync hardening — D1 has UX copy decisions), E-track items, F-track features.
 
 **Shipped 2026-07-06/07 (agentic execution):** the ENTIRE Track G transition — T1 #229 · T2 #233 · T3 #234 · T4 #230 · T5 #238 · T6 #239 — plus A3 #232 (closes #231) and C3 #237 (closes #235; review surfaced web twin bug → #236). The Play Phase-0 architecture spike can now build inside `apps/play`.
 
@@ -44,7 +44,7 @@ The review's core CI/CD finding: coverage tracks where the *apps* are, not where
 - **Scope:** `actions/cache` keyed on `Package.resolved` for `SourcePackages`; evaluate caching DerivedData keyed on source hash (accept partial wins); cache the xcodegen brew bottle or pin a binary download.
 - **Acceptance:** warm-cache PR runs measurably faster (target: under ~12 min); cache misses degrade gracefully to today's behavior.
 
-### A6 — Hosting deploy automation (coming-soon page) — `S`
+### A6 — Hosting deploy automation (coming-soon page) — SHIPPED [#260](https://github.com/2014sheas/oybc/pull/260) (deploy blocked on [#262](https://github.com/2014sheas/oybc/issues/262) — missing secret)
 - **Why:** the only live public surface (oybc.com email capture) deploys by hand via `firebase deploy --only hosting` — easy to forget, easy to ship a stale/broken build.
 - **Scope:** workflow on push to `dev` touching `apps/coming-soon/**`: build, then deploy hosting using the existing `FIREBASE_SERVICE_ACCOUNT` secret pattern from `firestore-rules.yml`. Sequence after/with A4 if the project split lands first.
 - **Acceptance:** merging a coming-soon change publishes it without manual steps.
@@ -65,7 +65,8 @@ The review's core CI/CD finding: coverage tracks where the *apps* are, not where
 
 The deep-dive's core finding: both platforms systematically bypass their own layering (iOS: 136 direct `AppDatabase.shared` calls from Views/ViewModels; web: hooks and 18 component files read raw Dexie around `db/operations`), and the two play surfaces are god-files precisely where the layering broke down. **Order matters: B1 → B2 → B3** (they touch the same files; split mechanically first, then extract logic, then inject).
 
-### B1 — Mechanical file splits along existing seams — `M`
+### B1 — Mechanical file splits along existing seams — SHIPPED [#266](https://github.com/2014sheas/oybc/pull/266)
+> AppDatabase 3,118→626-line core + 9 extensions (zero visibility widenings); tasks.ts → 5 modules + barrel; code-motion proven by sorted-line diff. B2 unblocked.
 - **Why:** `AppDatabase.swift` is 3,118 lines (schema + 18 migrations + every query domain + the shared-counter engine); `db/operations/tasks.ts` is 1,304. Both are the hottest data-layer files; every schema change and counter bug touches them; 3,000-line files are merge-conflict and context-window poison.
 - **Scope:** zero-behavior-change splits. iOS: `AppDatabase+Migrations`, `+Boards`, `+Tasks`, `+BoardTasks`, `+SharedCounters`, `+CompoundChildren`, `+RecurringTemplates`, `+DefaultPools`, `+Users`, `+Sync` extensions — the existing `MARK:` sections already draw exactly these boundaries. Web: `tasks.ts` → `tasks.crud.ts`, `tasks.sharedCounter.ts`, `tasks.deletion.ts`, `tasks.steps.ts`, `tasks.copy.ts` with `tasks.ts` (or the barrel) re-exporting so no import site changes. Run `xcodegen generate` after adding Swift files.
 - **Acceptance:** builds + full test suites green on both platforms with an empty behavioral diff; no file in the data layer over ~800 lines.
@@ -96,7 +97,8 @@ The deep-dive's core finding: both platforms systematically bypass their own lay
 
 The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful where it exists but protected purely by convention. These make it mechanical, and fix the drift already found.
 
-### C1 — Shared JSON test vectors for ported algorithms — `M`
+### C1 — Shared JSON test vectors for ported algorithms — SHIPPED [#268](https://github.com/2014sheas/oybc/pull/268)
+> 10 algorithm pairs fixture-driven; flip-test proven; byte-identity guard auto-covers future fixtures.
 - **Why:** the single best improvement available for the port pattern. Test parity today means hand-transcribed cases ("same 6+ cases" comments). No mechanism catches a missing or diverged port. Would have mechanically caught every gap in C2/C3.
 - **Scope:** `packages/shared/tests/fixtures/*.json` — golden input/expected vectors for each ported algorithm (start: streaks, sharedCounter, sharedCounterMerge, bingoDetection, compoundEvaluation, cycleDetection, derivationPass, linkableCounter, sharedCounterGroups, calendarBoundaries). Jest suites load and assert them (replacing/augmenting inline cases); a new `SharedFixtureTests.swift` loads the same files (added to the test bundle via `project.yml`) and runs them through the Swift twins. Date-valued fixtures use fixed ISO strings (the suites already share `NOW = Jun 15 2026`).
 - **Acceptance:** changing an expected value in a fixture fails BOTH Jest and XCTest; adding a vector to a fixture requires no test-code change on either platform.
@@ -112,7 +114,8 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 - **Scope:** add the INDEFINITE guard to `Streaks.swift`; add `.indefinite` to `DefaultTimeframe` + wherever the wizard consumes it; regression tests for both (fold into C1 fixtures if concurrent).
 - **Acceptance:** a synced `indefinite` default round-trips iOS unchanged; streaks INDEFINITE guard tested on both platforms.
 
-### C4 — Sync contract into `packages/shared` — `S/M`
+### C4 — Sync contract into `packages/shared` — SHIPPED [#264](https://github.com/2014sheas/oybc/pull/264)
+> Found latent LWW edge divergence → [#263](https://github.com/2014sheas/oybc/issues/263).
 - **Why:** collection lists, user-scoped sets, legacy pull-skip sets, and LWW rules are duplicated literals in `syncService.ts` and `SyncService.swift`. They agree today; the half-finished `progress_counters` retirement (C5) proves this duplication style does drift. You can't share the Swift implementation, but you can share the contract.
 - **Scope:** export `SYNC_COLLECTIONS`, `USER_SCOPED_COLLECTIONS`, `LEGACY_PULL_SKIP` as constants from `packages/shared`; web consumes them directly; a Swift test asserts `SyncService`'s lists match a checked-in JSON copy of them (generated into the fixture dir by the shared build or hand-synced with a Jest guard). LWW tie-break rules become C1 fixture vectors run against both `resolveConflict` implementations.
 - **Acceptance:** adding a collection on one platform without the other fails a test somewhere.
