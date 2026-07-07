@@ -8,6 +8,26 @@ OYBC (On Your Bingo Card) — An offline-first, gamified task management app tha
 
 **Core Architecture**: Local-first design where local databases (GRDB on iOS, Dexie on web) are the source of truth, with Firestore providing background sync for multi-device support only.
 
+## Two products, one repo — invariant scoping
+
+This repo hosts two products: **OYBC (Do)** (the solo, offline-first tracker —
+everything this file describes) and **Play OYBC** (`apps/play` — a real-time,
+server-authoritative multiplayer party game; design doc: `docs/play/PLAY_OYBC.md`,
+transition plan: `docs/PLAY_TRANSITION.md`).
+
+**Every architecture invariant in this file is scoped to Do unless it says
+otherwise** — in particular: local-DB-as-source-of-truth, offline-first, LWW
+sync, no server push, lazy detection, and the web↔iOS parity rule 6 (which
+pairs Do-web with Do-iOS; Play is a separate product, not a parity target).
+`apps/play/CLAUDE.md` states Play's own (largely inverted) invariants and
+takes precedence inside that directory.
+
+Shared-boundary rule: Play consumes ONLY `@oybc/bingo-core` and
+`@oybc/riso-tokens`. `@oybc/shared` is Do's domain layer — importing it from
+`apps/play` is a defect (ESLint-enforced there). Conversely, never add a
+Do-domain type (Task/Board/BoardTask) or a Play-domain type (session, lobby,
+player) to `bingo-core`; it stays primitives-only.
+
 ## Task model — Compound Tasks Unification (shipped)
 
 The core task model is the unified one — **Normal / Counting / Compound** (Progress and Composite were collapsed onto Compound in the unification refactor: PR #43, PR #42, Phase 8 cleanup). Phase 6.3 later added **Achievement**, a cross-board watcher type. Canonical doc: [`docs/TASK_SYSTEM.md`](docs/TASK_SYSTEM.md).
@@ -482,6 +502,8 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 ## Documentation
 
 - `docs/ROADMAP.md` — **Master roadmap & hardening plan** (2026-07 full project review output): seven tracks — CI/CD hardening, architecture refactors, cross-platform drift closure, sync hardening, docs/test debt, product features, and Play OYBC enablement (Track G, which integrates `docs/PLAY_TRANSITION.md` and records the Play/Do package-graph boundary guardrail) — each as a defined workstream with scope + acceptance criteria. Pick workstreams from here by directive; record PR numbers there as they ship.
+- `docs/PLAY_TRANSITION.md` — Play OYBC transition plan: `@oybc/bingo-core` extraction, `apps/play` scaffold, governance, sequencing (Tasks T1–T6).
+- `docs/play/PLAY_OYBC.md` — Play OYBC design doc: product goals, game modes, session lifecycle, architecture options, decisions log.
 - `docs/ARCHITECTURE.md` — Technical plan, development phases (now includes **Phase 6: Recurring Boards** design)
 - `docs/OFFLINE_FIRST.md` — Offline-first design and data flow
 - `docs/SYNC_STRATEGY.md` — Conflict resolution patterns
