@@ -1,4 +1,4 @@
-import { fisherYatesShuffle } from '../../src/algorithms/shuffle';
+import { fisherYatesShuffle } from '../src/shuffle';
 
 describe('fisherYatesShuffle', () => {
   it('returns an empty array when given an empty array', () => {

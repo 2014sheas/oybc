@@ -1,18 +1,9 @@
-export {
-  detectBingos,
-  formatBingoMessage,
-  getHighlightedSquares,
-} from './bingoDetection';
-
-export type { BingoDetectionResult } from './bingoDetection';
-
-export { fisherYatesShuffle } from './shuffle';
-
-export {
-  getCenterSquareIndex,
-  isCenterAutoCompleted,
-  getCenterDisplayText,
-} from './centerSquare';
+// Compat shim (PLAY_TRANSITION.md T1): bingo-core's symbols intentionally
+// re-export through BOTH this barrel and constants/index.ts — identical
+// bindings, so TS tolerates the overlap. Don't "dedupe" one path away:
+// consumers import the functions from algorithms and the enums/constants
+// from constants.
+export * from '@oybc/bingo-core';
 
 export { generateCounterTaskTitle } from './taskTitle';
 

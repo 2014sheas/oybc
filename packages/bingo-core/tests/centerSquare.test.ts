@@ -2,8 +2,8 @@ import {
   getCenterSquareIndex,
   isCenterAutoCompleted,
   getCenterDisplayText,
-} from '../../src/algorithms/centerSquare';
-import { CenterSquareType } from '../../src/constants/enums';
+} from '../src/centerSquare';
+import { CenterSquareType } from '../src/constants';
 
 describe('getCenterSquareIndex', () => {
   it('returns 4 for a 3x3 board', () => {

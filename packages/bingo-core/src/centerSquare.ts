@@ -1,4 +1,4 @@
-import { CenterSquareType } from '../constants/enums';
+import { CenterSquareType } from './constants';
 
 /**
  * Get center square index for a board size.

@@ -3,7 +3,7 @@ import {
   calculateProgressRollup,
 } from '../../src/algorithms/rollup';
 import { evaluateCompositeTree } from '../../src/algorithms/compositeEvaluation';
-import { detectBingos } from '../../src/algorithms/bingoDetection';
+import { detectBingos } from '@oybc/bingo-core';
 import { OperatorType } from '../../src/constants/enums';
 import { CompositeNode } from '../../src/types/compositeTask';
 

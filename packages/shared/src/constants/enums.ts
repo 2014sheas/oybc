@@ -45,15 +45,7 @@ export enum Timeframe {
   INDEFINITE = 'indefinite'  // No end date — ongoing board that never expires
 }
 
-/**
- * Center square behavior
- */
-export enum CenterSquareType {
-  FREE = 'free',                  // Auto-completed (traditional bingo), shows "FREE SPACE"
-  CUSTOM_FREE = 'custom_free',    // Auto-completed with custom name, locked
-  CHOSEN = 'chosen',              // User-chosen center task, NOT auto-completed, toggleable
-  NONE = 'none'                   // No center square (even-sized boards or no special treatment)
-}
+export { CenterSquareType } from '@oybc/bingo-core';
 
 /**
  * Bingo line types (for detection)
