@@ -228,11 +228,33 @@ describe("users/{userId}/{collection}/{docId} subcollections (firestore.rules:21
     await assertFails(setDoc(ref, boardPayload(uid, "not-board1")));
   });
 
-  it("denies a write at or above the 10000-byte size cap (line 68)", async () => {
+  it("denies a write with ≥10000 fields (request.resource.size() is a field count — firestore.rules:68)", async () => {
     const uid = "alice";
     const db = testEnv.authenticatedContext(uid).firestore();
     const ref = doc(db, `users/${uid}/boards/board1`);
+    // request.resource.size() counts TOP-LEVEL map entries, not bytes — so
+    // the cap is only reachable by piling on enough fields, not by a large
+    // string value. 10000 tiny numeric filler fields stays well under
+    // Firestore's 1MB document limit (it's ~KBs of field names).
+    const filler = Object.fromEntries(
+      Array.from({ length: 10000 }, (_, i) => [`filler${i}`, 1]),
+    );
     await assertFails(
+      setDoc(ref, boardPayload(uid, "board1", filler)),
+    );
+  });
+
+  // Pins CURRENT production behavior deliberately: firestore.rules has no
+  // byte-size cap, only the field-count cap above. If this test ever starts
+  // failing, it means the rules changed to add real byte-size enforcement —
+  // that's a deliberate, desirable change, not a regression, and this test
+  // (plus its sibling above) should be updated accordingly. See issue #243
+  // for the tracked question of whether a byte-size cap should be added.
+  it("documents that a large single-field payload passes (no byte-size cap exists — see issue #243)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/boards/board1`);
+    await assertSucceeds(
       setDoc(
         ref,
         boardPayload(uid, "board1", { blob: "x".repeat(10500) }),
