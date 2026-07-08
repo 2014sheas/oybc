@@ -18,3 +18,4 @@ export * from './useRecurringBoardTemplates';
 export * from './useRecurringBoardSpawn';
 export * from './useDefaultPools';
 export * from './useSharedCounterGroups';
+export * from './useBoardPlayData';
