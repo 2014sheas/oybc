@@ -1,4 +1,4 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type { Board, Task, CompoundChild, CreateBoardInput } from '@oybc/shared';
 import {
   BoardStatus,
@@ -259,6 +259,67 @@ export async function fetchBoards(userId: string): Promise<Board[]> {
  */
 export async function fetchBoard(id: string): Promise<Board | undefined> {
   return db.boards.get(id);
+}
+
+/**
+ * Fetch every non-deleted board across all users in the workspace.
+ *
+ * Reactive callers (task-library / filter surfaces) that don't scope to a
+ * single userId use this. Order is Dexie's insertion/primary-key order —
+ * callers that need a display order sort in memory.
+ *
+ * @returns All non-deleted Board rows (unsorted).
+ */
+export async function fetchAllBoards(): Promise<Board[]> {
+  return db.boards.filter((b) => !b.isDeleted).toArray();
+}
+
+/**
+ * Fetch every non-deleted board across all users, sorted by name.
+ *
+ * Used by pickers (e.g. the Achievement board picker) that render a
+ * name-ordered list.
+ *
+ * @returns All non-deleted Board rows, sorted ascending by `name`.
+ */
+export async function fetchAllBoardsSortedByName(): Promise<Board[]> {
+  return db.boards.filter((b) => !b.isDeleted).sortBy('name');
+}
+
+/**
+ * Fetch non-deleted boards by an explicit set of ids.
+ *
+ * @param ids - Board ids to fetch.
+ * @returns The matching non-deleted Board rows.
+ */
+export async function fetchBoardsByIds(ids: string[]): Promise<Board[]> {
+  return db.boards.where('id').anyOf(ids).filter((b) => !b.isDeleted).toArray();
+}
+
+/**
+ * Fetch the user's CORE boards for a timeframe.
+ *
+ * Uses the `[userId+timeframe+status]` compound index to scan only the
+ * user's boards in that timeframe, then narrows in memory on
+ * `!isDeleted && isCore` (IndexedDB boolean keys are unreliable, so those
+ * predicates are JS-filtered — see `useCoreBoardBrowser` for the rationale).
+ *
+ * @param userId    - Owning user.
+ * @param timeframe - The core timeframe (daily / weekly / monthly / yearly).
+ * @returns The user's non-deleted core Board rows for that timeframe.
+ */
+export async function fetchCoreBoardsForTimeframe(
+  userId: string,
+  timeframe: Timeframe,
+): Promise<Board[]> {
+  return db.boards
+    .where('[userId+timeframe+status]')
+    .between(
+      [userId, timeframe, ''] as readonly unknown[],
+      [userId, timeframe, '￿'] as readonly unknown[],
+    )
+    .and((b) => !b.isDeleted && b.isCore === true)
+    .toArray();
 }
 
 /**

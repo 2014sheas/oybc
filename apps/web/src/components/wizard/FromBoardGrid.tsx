@@ -8,8 +8,12 @@ import {
   type Board,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../db/database';
-import { createTask } from '../../db/operations/tasks';
+import {
+  createTask,
+  fetchBoard,
+  fetchCompoundChildrenByCompoundIds,
+  fetchTasksByIds,
+} from '../../db/operations';
 import { useSourceBoardPlacements, type SourceBoardPlacement } from '../../hooks/useSourceBoardPlacements';
 import { RowContextMenu, type RowContextMenuItem } from './RowContextMenu';
 import { DeriveCounterModal } from './DeriveCounterModal';
@@ -74,7 +78,7 @@ export function FromBoardGrid({
   // the user back to the picker.
   const board: Board | undefined | null = useLiveQuery(
     async () => {
-      const row = await db.boards.get(boardId);
+      const row = await fetchBoard(boardId);
       if (!row) return null;
       if (row.isDeleted) return null;
       return row;
@@ -109,14 +113,9 @@ export function FromBoardGrid({
     async () => {
       if (compoundIdKey.length === 0) return [];
       const compoundIds = compoundIdKey.split(',');
-      // Use the `compoundTaskId` index (declared in db/database.ts) so
-      // Dexie hits only matching rows rather than scanning the whole
-      // compoundChildren table. Filter !isDeleted in-process after.
-      const matching = await db.compoundChildren
-        .where('compoundTaskId')
-        .anyOf(compoundIds)
-        .toArray();
-      return matching.filter((c) => !c.isDeleted);
+      // `fetchCompoundChildrenByCompoundIds` uses the `compoundTaskId` index
+      // (so Dexie hits only matching rows) then filters !isDeleted.
+      return fetchCompoundChildrenByCompoundIds(compoundIds);
     },
     [compoundIdKey],
     [],
@@ -138,11 +137,7 @@ export function FromBoardGrid({
       const childIds = Array.from(
         new Set(compoundChildLinks.map((c) => c.childTaskId)),
       );
-      const tasks = await db.tasks
-        .where('id')
-        .anyOf(childIds)
-        .filter((t) => !t.isDeleted)
-        .toArray();
+      const tasks = await fetchTasksByIds(childIds);
       const tasksById = new Map<string, Task>();
       for (const t of tasks) tasksById.set(t.id, t);
       const byParent = new Map<string, Task[]>();

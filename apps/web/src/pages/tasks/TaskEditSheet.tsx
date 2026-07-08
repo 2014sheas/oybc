@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AchievementTrigger, TaskType, Timeframe, toLocalISO, type Task } from '@oybc/shared';
 import type { Board, RecurringBoardTemplate } from '@oybc/shared';
-import { db } from '../../db/database';
+import { fetchAllBoardsSortedByName } from '../../db/operations';
+import { fetchAllTemplatesSortedByName } from '../../db/operations/recurringBoardTemplates';
 import {
   checkAchievementRetargetCycle,
   type UpdateTaskPatch,
@@ -74,12 +75,8 @@ export function TaskEditSheet({
     if (task.type !== TaskType.ACHIEVEMENT) return;
     // Load boards and templates for the picker.
     const load = async () => {
-      const boards = await db.boards
-        .filter((b) => !b.isDeleted)
-        .sortBy('name');
-      const templates = await db.recurringBoardTemplates
-        .filter((t) => !t.isDeleted)
-        .sortBy('name');
+      const boards = await fetchAllBoardsSortedByName();
+      const templates = await fetchAllTemplatesSortedByName();
       setAvailableBoards(boards);
       setAvailableTemplates(templates);
     };

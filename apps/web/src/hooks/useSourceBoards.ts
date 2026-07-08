@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { BoardStatus, type Board } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /** Boards completed more recently than this stay eligible as a source. */
 const COMPLETED_LOOKBACK_DAYS = 30;

@@ -6,7 +6,7 @@ import {
   type CoreBoardSlot,
   type PendingRecurringBoard,
 } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * React hook returning the set of recurring board windows the user should

@@ -1,4 +1,4 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type {
   Task,
   CreateTaskInput,
@@ -29,6 +29,30 @@ export async function fetchTasks(userId: string): Promise<Task[]> {
  */
 export async function fetchTask(id: string): Promise<Task | undefined> {
   return db.tasks.get(id);
+}
+
+/**
+ * Fetch every non-deleted task for a user, unsorted.
+ *
+ * Distinct from `fetchTasks`, which sorts by title. Library surfaces that
+ * partition the result by type in memory (and don't rely on title order)
+ * use this so the DB read stays a plain scan.
+ *
+ * @param userId - Owning user.
+ * @returns The user's non-deleted Task rows (unsorted).
+ */
+export async function fetchTasksForUser(userId: string): Promise<Task[]> {
+  return db.tasks.filter((t) => t.userId === userId && !t.isDeleted).toArray();
+}
+
+/**
+ * Fetch non-deleted tasks by an explicit set of ids.
+ *
+ * @param ids - Task ids to fetch.
+ * @returns The matching non-deleted Task rows.
+ */
+export async function fetchTasksByIds(ids: string[]): Promise<Task[]> {
+  return db.tasks.where('id').anyOf(ids).filter((t) => !t.isDeleted).toArray();
 }
 /**
  * Create a new task.

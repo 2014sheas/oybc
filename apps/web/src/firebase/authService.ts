@@ -11,7 +11,7 @@ import {
   type Unsubscribe,
 } from 'firebase/auth';
 import { auth } from './config';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 import { updateUserDisplayName } from '../db/operations/users';
 import { DEFAULT_USER_PREFERENCES, mergeUserPreferences, type User } from '@oybc/shared';
 

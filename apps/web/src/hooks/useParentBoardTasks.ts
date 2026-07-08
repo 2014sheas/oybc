@@ -5,7 +5,7 @@ import {
   type Task,
   type Timeframe,
 } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * React hook returning the unique tasks placed on currently-active "parent"

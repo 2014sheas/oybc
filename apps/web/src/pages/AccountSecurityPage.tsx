@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../firebase/useAuth';
-import { db } from '../db/database';
+import { fetchUser } from '../db/operations';
 import {
   APPLE_PROVIDER_ID,
   EMPTY_PROVIDER_STATE,
@@ -41,7 +41,7 @@ type SheetMode = 'changeEmail' | 'changePassword' | 'addPassword' | 'deleteAccou
 export function AccountSecurityPage(): React.ReactElement {
   const { user } = useAuth();
   const localUser = useLiveQuery(
-    () => (user?.id ? db.users.get(user.id) : undefined),
+    () => (user?.id ? fetchUser(user.id) : undefined),
     [user?.id],
   );
   const email = localUser?.email ?? user?.email ?? '';

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/database';
+import { fetchTask } from '../db/operations';
 import { TaskDetailContent } from './tasks/TaskDetailContent';
 import pageStyles from './TaskDetailPage.module.css';
 
@@ -25,7 +25,7 @@ export function TaskDetailPage(): React.ReactElement {
   const navigate = useNavigate();
 
   const task = useLiveQuery(
-    async () => (id ? db.tasks.get(id) : undefined),
+    async () => (id ? fetchTask(id) : undefined),
     [id],
   );
 
@@ -44,7 +44,7 @@ export function TaskDetailPage(): React.ReactElement {
     setResolved('pending');
     let cancelled = false;
     void (async () => {
-      const row = await db.tasks.get(id);
+      const row = await fetchTask(id);
       if (cancelled) return;
       setResolved(row === undefined ? 'missing' : 'present');
     })();

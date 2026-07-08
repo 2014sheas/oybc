@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { buildSharedCounterGroups } from '@oybc/shared';
 import type { SharedCounterGroup } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * Live query hook: builds the SharedCounterGroup read-model for the

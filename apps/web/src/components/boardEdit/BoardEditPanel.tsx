@@ -15,7 +15,7 @@ import {
   archiveBoard,
   type UpdateActiveBoardPatch,
 } from '../../db/operations/boards';
-import { db } from '../../db/database';
+import { countBoardTasksForBoard } from '../../db/operations';
 import styles from './BoardEditPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -174,11 +174,9 @@ export function BoardEditPanel({
     setSaving(false);
     setConfirm(null);
 
-    void db.boardTasks
-      .where('boardId')
-      .equals(board.id)
-      .count()
-      .then((count) => setHasCandidateTasks(count > 0));
+    void countBoardTasksForBoard(board.id).then((count) =>
+      setHasCandidateTasks(count > 0),
+    );
   // Re-seed only when the board's id changes, not on every reactive update
   // (mirrors EditBoardSheet's seeding strategy to avoid disrupting edits).
   // eslint-disable-next-line react-hooks/exhaustive-deps
