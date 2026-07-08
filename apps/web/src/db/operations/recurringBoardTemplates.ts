@@ -1,4 +1,4 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type {
   RecurringBoardTemplate,
   CreateRecurringBoardTemplateInput,
@@ -27,6 +27,20 @@ export async function fetchRecurringBoardTemplates(
     .filter((t) => t.userId === userId && !t.isDeleted)
     .reverse()
     .sortBy('updatedAt');
+}
+
+/**
+ * Fetch every non-deleted template across all users, sorted by name.
+ *
+ * Used by the Achievement template picker, which lists all templates (not
+ * user-scoped) in name order.
+ *
+ * @returns All non-deleted RecurringBoardTemplate rows, sorted by `name`.
+ */
+export async function fetchAllTemplatesSortedByName(): Promise<
+  RecurringBoardTemplate[]
+> {
+  return db.recurringBoardTemplates.filter((t) => !t.isDeleted).sortBy('name');
 }
 
 /**

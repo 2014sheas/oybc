@@ -9,7 +9,11 @@ import {
   type Board,
   type BoardTask,
 } from '@oybc/shared';
-import { db } from '../../db/database';
+import {
+  fetchAllBoards,
+  fetchAllBoardTasks,
+  fetchAllCompoundChildren,
+} from '../../db/operations';
 import { useTasks } from '../../hooks';
 
 export type ExistingFilter = 'all' | 'normal' | 'counting' | 'compound';
@@ -70,10 +74,7 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     return ids;
   }, [allTasks]);
   const allCompoundChildrenWorkspace =
-    useLiveQuery(
-      () => db.compoundChildren.filter((c: CompoundChild) => !c.isDeleted).toArray(),
-      [],
-    ) ?? EMPTY_COMPOUND_CHILDREN;
+    useLiveQuery(() => fetchAllCompoundChildren(), []) ?? EMPTY_COMPOUND_CHILDREN;
   const allCompoundChildren = useMemo(
     () => allCompoundChildrenWorkspace.filter((c) => userCompoundIds.has(c.compoundTaskId)),
     [allCompoundChildrenWorkspace, userCompoundIds],
@@ -138,12 +139,9 @@ export function useBrowsableTasks(
   childToParents: Record<string, string[]> = {},
 ): Task[] {
   const allBoardTasks =
-    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+    useLiveQuery(() => fetchAllBoardTasks(), []) ?? EMPTY_BOARD_TASKS;
   const allBoards =
-    useLiveQuery(
-      () => db.boards.filter((b: Board) => !b.isDeleted).toArray(),
-      [],
-    ) ?? EMPTY_BOARDS;
+    useLiveQuery(() => fetchAllBoards(), []) ?? EMPTY_BOARDS;
   const boardStatusById = useMemo(() => {
     const m: Record<string, BoardStatus> = {};
     for (const b of allBoards) m[b.id] = b.status;

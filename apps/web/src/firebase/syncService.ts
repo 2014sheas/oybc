@@ -16,7 +16,7 @@ import { liveQuery } from 'dexie';
 import { firestore, auth } from './config';
 import { resolveConflict, type SyncableEntity } from './conflictResolver';
 import { recordSyncEvent, recordSyncError, resetSyncStatus } from './syncStatus';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 import {
   fetchPendingSyncItems,
   markSyncItemInProgress,

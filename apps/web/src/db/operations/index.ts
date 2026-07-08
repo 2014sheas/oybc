@@ -8,3 +8,5 @@ export * from './tasks';
 export * from './boardTasks';
 export * from './syncQueue';
 export * from './users';
+export * from './wizardBoard';
+export * from './maintenance';

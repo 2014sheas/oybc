@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { BoardTask, Task } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * One placement on the source board's grid — a `BoardTask` paired

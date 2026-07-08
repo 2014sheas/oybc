@@ -9,7 +9,7 @@ import {
   type CompoundChild,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../db/database';
+import { fetchAllBoardTasks } from '../../db/operations';
 import { createTask } from '../../db/operations/tasks';
 import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
@@ -272,7 +272,7 @@ export function BoardWizardTasksStep({
   // Matches the composite wizard's library row hints so the two
   // surfaces agree at a glance. Board counts require a live query
   // since `useTaskLibrary` doesn't expose boardTasks.
-  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? [];
+  const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []) ?? [];
 
   const taskBoardCounts = useMemo(() => {
     const buckets = new Map<string, Set<string>>();

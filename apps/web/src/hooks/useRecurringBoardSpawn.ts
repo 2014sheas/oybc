@@ -4,7 +4,7 @@ import {
   mergeUserPreferences,
   type SpawnPoolFailureReason,
 } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 import {
   spawnTemplateBoard,
   type SpawnResult,

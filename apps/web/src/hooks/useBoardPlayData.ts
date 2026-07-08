@@ -12,7 +12,7 @@ import {
   type RecurringBoardTemplate,
   type Task,
 } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 import { useBoardTasks } from './useBoardTasks';
 import { useBoards } from './useBoards';
 import { useRecurringBoardTemplates } from './useRecurringBoardTemplates';

@@ -23,7 +23,7 @@ import {
   type AuthError,
 } from 'firebase/auth';
 import { auth } from './config';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 import { updateUserEmail } from '../db/operations/users';
 
 // ─── Provider state ─────────────────────────────────────────────────────────

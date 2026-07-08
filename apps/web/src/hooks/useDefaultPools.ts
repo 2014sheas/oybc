@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { DefaultPool, Timeframe } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * Live snapshot of the user's non-deleted DefaultPools. Used by the

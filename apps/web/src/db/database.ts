@@ -324,25 +324,10 @@ export class AppDatabase extends Dexie {
   }
 }
 
-// Singleton instance
-export const db = new AppDatabase();
-
-// Enable debug logging in development
-if (import.meta.env.DEV) {
-  db.on('ready', () => {
-    console.log('✅ Dexie database initialized');
-  });
-
-  // Log all database operations
-  db.on('populate', () => {
-    console.log('📊 Database populated with initial data');
-  });
-
-  // Uncomment to log all transactions (verbose)
-  // db.on('changes', (changes) => {
-  //   console.log('Database changes:', changes);
-  // });
-}
+// NOTE: The `db` singleton instance lives in `db/internal.ts` (B3, issue
+// #284). This module only defines the `AppDatabase` class + schema so the
+// raw Dexie instance has a single, boundary-enforced import site. See
+// `db/internal.ts`.
 
 // Export types for convenience
 export type {

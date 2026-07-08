@@ -5,7 +5,7 @@
  * entry so the background SyncService can propagate changes to Firestore.
  */
 
-import { db } from '../database';
+import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
 import { SyncOperationType } from '@oybc/shared';
 import type { CompoundChild, CreateCompoundChildInput } from '@oybc/shared';
@@ -41,6 +41,26 @@ export async function fetchCompoundChildren(compoundTaskId: string): Promise<Com
  */
 export async function fetchAllCompoundChildren(): Promise<CompoundChild[]> {
   return db.compoundChildren.filter((c) => !c.isDeleted).toArray();
+}
+
+/**
+ * Fetch non-deleted compound_children links for a set of parent compound ids.
+ *
+ * Uses the `compoundTaskId` index (so Dexie hits only matching rows) then
+ * filters `!isDeleted` in memory. Used by the wizard's "From a board" grid
+ * to preview compound leaves for the boards it renders.
+ *
+ * @param compoundIds - Parent compound task ids to look up.
+ * @returns Non-deleted CompoundChild rows for those compounds (unsorted).
+ */
+export async function fetchCompoundChildrenByCompoundIds(
+  compoundIds: string[],
+): Promise<CompoundChild[]> {
+  const matching = await db.compoundChildren
+    .where('compoundTaskId')
+    .anyOf(compoundIds)
+    .toArray();
+  return matching.filter((c) => !c.isDeleted);
 }
 
 /**

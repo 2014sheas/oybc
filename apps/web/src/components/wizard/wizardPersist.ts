@@ -1,31 +1,21 @@
 import {
-  BoardStatus,
   CenterSquareType,
-  SyncOperationType,
   Timeframe,
   deriveSpawnedBoardName,
   getTimeframeBoundaries,
   placeBoard,
   toLocalISO,
-  type CompoundChild,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../db/database';
-import {
-  activateBoard,
-  createBoard,
-  updateBoard,
-} from '../../db/operations/boards';
-import {
-  createBoardTask,
-  deleteBoardTasksForBoard,
-} from '../../db/operations/boardTasks';
 import {
   createRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
-import { addToSyncQueue } from '../../db/operations/syncQueue';
+import {
+  persistWizardBoardRows,
+  type WizardPendingTaskWrite,
+} from '../../db/operations/wizardBoard';
 import {
   spawnTemplateBoard,
   type SpawnResult,
@@ -235,124 +225,31 @@ export async function persistWizardBoard({
     isRandomized: controller.isRandomized,
   };
 
-  const size = controller.size;
-  const isOddBoard = size % 2 !== 0;
-  const centerRow = Math.floor(size / 2);
-  const centerCol = Math.floor(size / 2);
-
   // Resolve the pending-tasks map. Prefer the explicit arg (snapshot
   // taken by the caller before any state mutation); fall back to the
   // controller property for callers that don't thread it separately.
   const pendingMap: Map<string, PendingTaskPayload> =
     pendingTasksArg ?? controller.pendingTasks;
+  const pendingTasks: WizardPendingTaskWrite[] = Array.from(pendingMap.values());
 
-  // Wrap the whole write path in a single Dexie transaction so the
-  // board record + its BoardTask rows commit or roll back together.
-  // Splitting across sequential awaits would leave partially-updated
-  // boards on disk (and in the sync queue) if one step failed mid-flight.
-  // `syncQueue` is included in the scope because the inner helpers fire
-  // sync entries inline after their row writes.
-  // Bug #85 — tasks + compoundChildren tables are added to the scope so
-  // pending tasks can be written atomically before board_tasks that
-  // reference them.
-  let boardId: string = '';
-  await db.transaction(
-    'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
-    async () => {
-      // ── Bug #85: Write pending tasks first ────────────────────────────
-      // Pending tasks (created inside the wizard's New Task sheet) have
-      // never been written to the DB. Write them now — parent task first,
-      // then child tasks, then compound_children links — before any
-      // board_tasks rows that would reference them. All inside the same
-      // Dexie transaction so a board-write failure rolls everything back.
-      //
-      // Route every enqueue through `addToSyncQueue` (not a direct
-      // `db.syncQueue.add`) so the DEV playground-user-1 guard fires
-      // here too — otherwise playground sessions can leak pending
-      // tasks into the real sync queue.
-      // Bug #85 — only persist pending tasks that are actually placed on the
-      // board. Deselecting a task purges it from pendingMap (toggleTaskSelection),
-      // but guard here too: a stray pending payload must never be written as an
-      // orphan Task row — it would show in the library (web has no
-      // createdInWizard filter yet) and reappear on draft resume.
-      const placedTaskIds = new Set(
-        placement.map((t) => t?.id).filter((id): id is string => id != null),
-      );
-      for (const payload of pendingMap.values()) {
-        if (!placedTaskIds.has(payload.task.id)) continue;
-        await db.tasks.add(payload.task);
-        await addToSyncQueue(
-          'tasks',
-          payload.task.id,
-          SyncOperationType.CREATE,
-          payload.task,
-        );
-        for (const childTask of payload.childTasks) {
-          await db.tasks.add(childTask);
-          await addToSyncQueue(
-            'tasks',
-            childTask.id,
-            SyncOperationType.CREATE,
-            childTask,
-          );
-        }
-        for (const link of payload.childLinks) {
-          await db.compoundChildren.add(link as CompoundChild);
-          await addToSyncQueue(
-            'compoundChildren',
-            link.id,
-            SyncOperationType.CREATE,
-            link,
-          );
-        }
-      }
-
-      // ── Board + BoardTask rows ─────────────────────────────────────────
-      if (controller.draftBoardId !== null) {
-        boardId = controller.draftBoardId;
-        // Preserve the original draft's isCore (set at first wizard
-        // launch); resume + activate of a banner-launched draft stays
-        // core. updateBoard merges Partial<Board> so omitting isCore
-        // here is a no-op when it was already correct on the draft.
-        await updateBoard(boardId, {
-          ...sharedFields,
-          status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
-        });
-        await deleteBoardTasksForBoard(boardId);
-      } else {
-        const board = await createBoard(userId, sharedFields, { isCore: controller.isCore });
-        boardId = board.id;
-      }
-
-      for (let i = 0; i < placement.length; i++) {
-        const task = placement[i];
-        if (task === null) continue;
-        const row = Math.floor(i / size);
-        const col = i % size;
-        const isCenterPos = isOddBoard && row === centerRow && col === centerCol;
-        await createBoardTask({
-          boardId,
-          taskId: task.id,
-          row,
-          col,
-          // Mark centre only for CHOSEN (a real task pinned at centre). NONE
-          // holds an ordinary task (isCenter false); FREE/CUSTOM_FREE have a
-          // null centre slot (no row). Marking NONE was a bug — it renders a
-          // gold "FREE" cell over the task on iOS (which reads isCenter) and
-          // syncs there via board_tasks.
-          isCenter:
-            isCenterPos && controller.centerType === CenterSquareType.CHOSEN,
-        });
-      }
-
-      if (controller.draftBoardId === null && status === 'active') {
-        await activateBoard(boardId);
-      }
-    },
-  );
-
-  return boardId;
+  // The atomic write (board + BoardTask rows + Bug-#85 pending tasks, all in
+  // one Dexie transaction) lives in the `persistWizardBoardRows` operation.
+  // Everything above is wizard UI policy (name/center/date resolution,
+  // pending-task snapshotting); the operation owns the DB write so this
+  // component-tree helper no longer reaches the raw Dexie instance (B3).
+  return persistWizardBoardRows({
+    userId,
+    // Preserve the original draft's isCore (set at first wizard launch);
+    // resume + activate of a banner-launched draft stays core.
+    draftBoardId: controller.draftBoardId,
+    isCore: controller.isCore,
+    status,
+    boardFields: sharedFields,
+    placement,
+    size: controller.size,
+    centerType: controller.centerType,
+    pendingTasks,
+  });
 }
 
 /** Outcome of a recurring-template persist. */

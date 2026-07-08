@@ -9,7 +9,7 @@ import {
   type BoardTask,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../db/database';
+import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
 import type { TaskLibrary } from '../createPage/useTaskLibrary';
 
 /** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
@@ -104,12 +104,9 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   // active users have well under a few thousand placements. We need
   // the `boardId` join to filter by `Board.status` below.
   const allBoardTasks =
-    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+    useLiveQuery(() => fetchAllBoardTasks(), []) ?? EMPTY_BOARD_TASKS;
   const allBoards =
-    useLiveQuery(
-      () => db.boards.filter((b: Board) => !b.isDeleted).toArray(),
-      [],
-    ) ?? EMPTY_BOARDS;
+    useLiveQuery(() => fetchAllBoards(), []) ?? EMPTY_BOARDS;
 
   // Index boards by id so the join below stays O(N) total.
   const boardStatusById = useMemo(() => {

@@ -1,4 +1,4 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type { BoardTask, CreateBoardTaskInput } from '@oybc/shared';
 import {
   SyncOperationType,
@@ -32,6 +32,32 @@ export async function fetchBoardTasks(boardId: string): Promise<BoardTask[]> {
  */
 export async function fetchBoardTask(id: string): Promise<BoardTask | undefined> {
   return db.boardTasks.get(id);
+}
+
+/**
+ * Fetch every BoardTask placement row referencing a given Task.
+ *
+ * Distinct from `fetchBoardsUsingTask` (which returns just the boardIds) —
+ * this returns the full placement rows for per-placement UI (task detail).
+ *
+ * @param taskId - The placed Task's id.
+ * @returns All BoardTask rows whose `taskId` matches.
+ */
+export async function fetchBoardTasksForTask(taskId: string): Promise<BoardTask[]> {
+  return db.boardTasks.where('taskId').equals(taskId).toArray();
+}
+
+/**
+ * Count the BoardTask rows placed on a board.
+ *
+ * Used by the board-edit panel to know whether a board has any candidate
+ * tasks without loading every row.
+ *
+ * @param boardId - The board id.
+ * @returns The number of BoardTask rows for that board.
+ */
+export async function countBoardTasksForBoard(boardId: string): Promise<number> {
+  return db.boardTasks.where('boardId').equals(boardId).count();
 }
 
 /**

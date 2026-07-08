@@ -8,7 +8,7 @@ import {
   type BoardTask,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../database';
+import { db } from '../../internal';
 import { handleTaskCompletion } from '../orchestration';
 
 /**

@@ -11,7 +11,7 @@ import {
   type Task,
   type TaskStep,
 } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import { handleTaskCompletion } from '../db/operations/orchestration';
 import { decrementSharedCounter, incrementSharedCounter } from '../db/operations/tasks';
