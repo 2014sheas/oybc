@@ -637,7 +637,7 @@ final class BoardPlayViewModel: ObservableObject {
                             newBingoMsg = "Board reactivated — no longer complete"
                         } else if !lost.isEmpty {
                             newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                        } else if result.isGreenlogNow {
+                        } else if result.didAutoComplete {
                             newBingoMsg = "GREENLOG!"
                         } else if !gained.isEmpty {
                             newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
@@ -857,7 +857,7 @@ final class BoardPlayViewModel: ObservableObject {
                             newBingoMsg = "Board reactivated — no longer complete"
                         } else if !lost.isEmpty {
                             newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                        } else if result.isGreenlogNow {
+                        } else if result.didAutoComplete {
                             newBingoMsg = "GREENLOG!"
                         } else if !gained.isEmpty {
                             newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
