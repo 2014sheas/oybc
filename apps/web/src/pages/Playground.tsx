@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { db } from '../db';
+import { clearAllTables } from '../db';
 import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTaskCreatorPlayground';
 import { BoardGeneratorPlayground } from '../components/playground/BoardGeneratorPlayground';
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
@@ -121,9 +121,7 @@ export function Playground() {
       setClearStatus({ type: null, message: '' });
 
       // Clear all tables in the database
-      await db.transaction('rw', db.tables, async () => {
-        await Promise.all(db.tables.map((table) => table.clear()));
-      });
+      await clearAllTables();
 
       setClearStatus({
         type: 'success',

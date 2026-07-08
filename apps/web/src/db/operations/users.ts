@@ -5,13 +5,23 @@ import {
   type User,
   type UserPreferences,
 } from '@oybc/shared';
-import { db } from '../database';
+import { db } from '../internal';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
 /**
  * User Operations
  */
+
+/**
+ * Fetch a single user by id.
+ *
+ * @param id - The user id.
+ * @returns The User row, or undefined if not present locally.
+ */
+export async function fetchUser(id: string): Promise<User | undefined> {
+  return db.users.get(id);
+}
 
 /**
  * Atomically update the authenticated user's synced preferences.

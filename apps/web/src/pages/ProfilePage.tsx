@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { updateDisplayName } from '../firebase/authService';
-import { db } from '../db/database';
+import { fetchUser } from '../db/operations';
 import { usePreferences } from '../hooks';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { RisoSegmented } from '../components/riso';
@@ -56,7 +56,7 @@ export function ProfilePage(): React.ReactElement {
   // undefined = cleared). Only fall back to the auth-context user while
   // the live query is still loading.
   const liveUser = useLiveQuery(
-    () => (user?.id ? db.users.get(user.id) : undefined),
+    () => (user?.id ? fetchUser(user.id) : undefined),
     [user?.id]
   );
   // Treat empty string as "no name" — we store '' in Dexie/Firestore

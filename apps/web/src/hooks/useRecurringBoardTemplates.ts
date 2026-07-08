@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { RecurringBoardTemplate } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * React hook returning the user's non-deleted recurring board templates,

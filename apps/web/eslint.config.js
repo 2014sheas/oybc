@@ -64,6 +64,41 @@ export default [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      // ─── DB layering boundary (B3, issue #284) ────────────────────────────
+      // The raw Dexie singleton lives in `db/internal.ts` and is INTERNAL to
+      // the data layer. Only `db/**`, `hooks/**`, `firebase/**`, and tests may
+      // import it (those dirs re-enable this rule to `off` below). Every other
+      // module (components, pages) must go through an operations function
+      // (`db/operations/*`) or a hook. `db/database.ts` no longer exports the
+      // instance, so `db/internal` is the single import site to gate.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/db/internal', '**/db/internal.*'],
+              message:
+                'The raw Dexie `db` instance is internal to the data layer. Import an operations function from `db/operations` or a hook instead (B3, issue #284).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ─── DB layering boundary: allowed importers of `db/internal` ─────────────
+  // These dirs ARE the data layer (operations / reactive hooks / sync) and
+  // tests, so they may import the raw Dexie singleton directly.
+  {
+    files: [
+      'src/db/**/*.{ts,tsx}',
+      'src/hooks/**/*.{ts,tsx}',
+      'src/firebase/**/*.{ts,tsx}',
+      '**/__tests__/**/*.{ts,tsx}',
+      '**/*.test.{ts,tsx}',
+    ],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
 

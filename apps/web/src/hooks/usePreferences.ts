@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { mergeUserPreferences, type UserPreferences } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 import { updateUserPreferences } from '../db/operations/users';
 import { useAuth } from '../firebase/useAuth';
 

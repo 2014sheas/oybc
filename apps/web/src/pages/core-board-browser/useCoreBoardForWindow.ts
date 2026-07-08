@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Timeframe, type Board } from '@oybc/shared';
-import { db } from '../../db/database';
+import { fetchCoreBoardsForTimeframe } from '../../db/operations';
 
 /**
  * useCoreBoardForWindow — reactive lookup of the user's core board for a
@@ -17,15 +17,8 @@ export function useCoreBoardForWindow(
   return useLiveQuery(
     async (): Promise<Board | null> => {
       if (!userId) return null;
-      const boards = await db.boards
-        .where('[userId+timeframe+status]')
-        .between(
-          [userId, timeframe, ''] as readonly unknown[],
-          [userId, timeframe, '￿'] as readonly unknown[],
-        )
-        .and((b) => !b.isDeleted && b.isCore === true && b.startDate === windowStart)
-        .toArray();
-      return boards[0] ?? null;
+      const boards = await fetchCoreBoardsForTimeframe(userId, timeframe);
+      return boards.find((b) => b.startDate === windowStart) ?? null;
     },
     [userId, timeframe, windowStart],
   );

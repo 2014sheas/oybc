@@ -1,5 +1,5 @@
 import type { Transaction } from 'dexie';
-import { db } from '../database';
+import { db } from '../internal';
 import type {
   Task,
   TaskStep,

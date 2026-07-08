@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * React hook to fetch board tasks for a board (reactive)

@@ -2,8 +2,10 @@ import { useState, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../../firebase/useAuth';
 import { fullSync } from '../../firebase/syncService';
-import { clearCompletedSyncItems } from '../../db/operations/syncQueue';
-import { db } from '../../db/database';
+import {
+  clearCompletedSyncItems,
+  fetchAllSyncQueueItems,
+} from '../../db/operations/syncQueue';
 import { SyncStatus, type SyncQueueItem } from '@oybc/shared';
 import { AuthGate } from '../AuthGate';
 import { useSyncStatus } from '../../hooks/useSyncStatus';
@@ -46,7 +48,7 @@ function SyncDashboard(): React.ReactElement {
   // ── Reactive sync queue data ──────────────────────────────────────────
 
   const allQueueItems: SyncQueueItem[] =
-    useLiveQuery(() => db.syncQueue.toArray(), [], []) ?? [];
+    useLiveQuery(() => fetchAllSyncQueueItems(), [], []) ?? [];
 
   const pendingCount = allQueueItems.filter(
     (i) => i.status === SyncStatus.PENDING || i.status === SyncStatus.IN_PROGRESS

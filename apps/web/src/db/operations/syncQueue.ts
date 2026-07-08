@@ -1,4 +1,4 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type { SyncQueueItem } from '@oybc/shared';
 import {
   MAX_SYNC_RETRIES,
@@ -48,6 +48,18 @@ export async function addToSyncQueue(
 /**
  * Fetch pending sync items (ordered by priority and creation time)
  */
+/**
+ * Fetch every sync-queue item regardless of status.
+ *
+ * Used by the dev sync-simulation playground to render the raw queue. The
+ * production sync loop uses `fetchPendingSyncItems` (status-filtered).
+ *
+ * @returns All SyncQueueItem rows.
+ */
+export async function fetchAllSyncQueueItems(): Promise<SyncQueueItem[]> {
+  return db.syncQueue.toArray();
+}
+
 export async function fetchPendingSyncItems(): Promise<SyncQueueItem[]> {
   return db.syncQueue
     .where('[status+priority+createdAt]')
