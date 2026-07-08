@@ -184,9 +184,14 @@ final class BoardPlayViewModelTests: XCTestCase {
     /// Pump the main run loop until `predicate` holds or `timeout` elapses.
     /// Lets the `DispatchQueue.main.async` apply blocks run. Returns whether
     /// the predicate held.
+    ///
+    /// 30s, not 2s: a green run returns on the first poll after the async
+    /// apply (~ms), so the generous budget costs nothing when healthy — but
+    /// the 2s default flaked twice on loaded CI runners (issue #283,
+    /// `test_handleAddTaskToCell_createsPlacement` on PRs #282/#285).
     @discardableResult
     private func waitUntil(
-        timeout: TimeInterval = 2,
+        timeout: TimeInterval = 30,
         _ predicate: () -> Bool
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
