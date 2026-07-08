@@ -3,7 +3,6 @@ import {
   AchievementTrigger,
   BoardStatus,
   CenterSquareType,
-  SyncOperationType,
   TaskType,
   generateCounterTaskTitle,
   type Board,
@@ -13,11 +12,11 @@ import {
 import { useBoardPlayData } from '../hooks';
 import { db } from '../db/database';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
-import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
-import { addToSyncQueue } from '../db/operations/syncQueue';
+import { handleTaskCompletion } from '../db/operations/orchestration';
 import { decrementSharedCounter, incrementSharedCounter } from '../db/operations/tasks';
 import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard, reorderBoardTasks } from '../db/operations/boardTasks';
-import { updateTaskAndCascade, type UpdateTaskPatch } from '../db/operations/tasks';
+import { updateTaskAndCascade, toggleTaskCompletionAndCascade, type UpdateTaskPatch } from '../db/operations/tasks';
+import { deriveFlashOutcome } from './boardPlayFlash';
 import {
   DetailModal,
   FloatingContextMenu,
@@ -571,16 +570,15 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       if (!boardId) return;
       try {
         const result = await handleTaskCompletion(boardId, boardTaskId, updates);
-        // Priority: reactivated > lostBingos > greenlog > newBingos
-        if (result.boardReactivated) {
-          showFlash('Board reactivated — no longer complete', 'bingo');
-        } else if (result.lostBingos.length > 0) {
-          showFlash(`Bingo lost: ${result.lostBingos.join(', ')}`, 'bingo');
-        } else if (result.isGreenlog) {
-          showFlash('GREENLOG! Board complete!', 'greenlog');
-        } else if (result.newBingos.length > 0) {
-          showFlash(`Bingo! ${result.newBingos.join(', ')}`, 'bingo');
-        }
+        // Priority: reactivated > lostBingos > greenlog > newBingos — shared
+        // ladder lives in `deriveFlashOutcome` (issue #270, B2-W2 dedup).
+        const outcome = deriveFlashOutcome({
+          boardReactivated: result.boardReactivated,
+          lostBingos: result.lostBingos,
+          isGreenlog: result.isGreenlog,
+          newBingos: result.newBingos,
+        });
+        if (outcome) showFlash(outcome.text, outcome.variant);
       } catch (err) {
         console.error('Task completion failed:', err);
         showFlash('Something went wrong', 'bingo');
@@ -626,21 +624,22 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         const newBingos = [...nextBingos].filter((id) => !prevBingos.has(id));
         const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
         const totalSquares = boardAfter.boardSize * boardAfter.boardSize;
-        const isGreenlog = boardAfter.completedTasks >= totalSquares;
+        const isGreenlogRaw = boardAfter.completedTasks >= totalSquares;
         const wasActive = boardBefore.status === BoardStatus.ACTIVE;
         const isNowCompleted = boardAfter.status === BoardStatus.COMPLETED;
         const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
         const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
 
-        if (wasCompleted && isNowActive) {
-          showFlash('Board reactivated — no longer complete', 'bingo');
-        } else if (lostBingos.length > 0) {
-          showFlash(`Bingo lost: ${lostBingos.join(', ')}`, 'bingo');
-        } else if (wasActive && isNowCompleted && isGreenlog) {
-          showFlash('GREENLOG! Board complete!', 'greenlog');
-        } else if (newBingos.length > 0) {
-          showFlash(`Bingo! ${newBingos.join(', ')}`, 'bingo');
-        }
+        // Same shared ladder as handleComplete (`deriveFlashOutcome`), fed
+        // from a before/after snapshot diff instead of a TaskCompletionResult
+        // — see boardPlayFlash.ts for why the two derivations differ here.
+        const outcome = deriveFlashOutcome({
+          boardReactivated: wasCompleted && isNowActive,
+          lostBingos,
+          isGreenlog: wasActive && isNowCompleted && isGreenlogRaw,
+          newBingos,
+        });
+        if (outcome) showFlash(outcome.text, outcome.variant);
 
         // Credited toast: show when the increment rippled to OTHER boards.
         const otherBoards = affectedBoards.filter((b) => b.boardId !== boardId);
@@ -730,30 +729,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         // Child is not placed on any board, but the parent compound (on THIS
         // board, since the user is opening its detail sheet) still derives
         // through this child — so we must run the board cascade to recompute
-        // bingo state + denormalised board stats. Wrap the Task update + sync
-        // enqueue + cascade in a single Dexie transaction so a downstream
-        // failure rolls back the partial writes; previously a crash between
-        // the task update and the cascade would leave the Task flipped but
-        // board stats stale forever.
+        // bingo state + denormalised board stats. `toggleTaskCompletionAndCascade`
+        // (issue #270, B2-W2 — relocated from an inline `db.transaction` here)
+        // wraps the Task update + sync enqueue + cascade in a single Dexie
+        // transaction so a downstream failure rolls back the partial writes;
+        // previously a crash between the task update and the cascade would
+        // leave the Task flipped but board stats stale forever.
         try {
-          const now = new Date().toISOString();
-          await db.transaction(
-            'rw',
-            [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
-            async () => {
-              await db.tasks.update(childTaskId, {
-                isCompleted: !childTask.isCompleted,
-                completedAt: !childTask.isCompleted ? now : undefined,
-                updatedAt: now,
-                version: childTask.version + 1,
-              });
-              const updated = await db.tasks.get(childTaskId);
-              if (updated) {
-                await addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
-              }
-              await runBoardCascadeForTask(childTaskId);
-            },
-          );
+          await toggleTaskCompletionAndCascade(childTaskId);
         } catch (err) {
           console.error('Compound child toggle failed:', err);
           showFlash('Something went wrong', 'bingo');
