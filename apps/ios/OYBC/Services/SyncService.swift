@@ -570,10 +570,10 @@ final class SyncService: ObservableObject {
             if !remoteSnap.exists {
                 // No remote document — push directly.
                 try await writeFirestoreDoc(docRef: docRef, data: payload)
-                try markCompleted(item)
-                // Phase 4: After a successful push of a counting task, advance
-                // lastSyncedCount so subsequent conflicts can compute the local delta.
-                updateLastSyncedCountAfterPush(entityType: item.entityType, entityId: item.entityId, payload: payload)
+                // Phase 4 / D2: mark completed AND advance lastSyncedCount for a
+                // counting task in one atomic transaction, so the advance can't
+                // half-fail and silently downgrade the next conflict to LWW.
+                try completePushedItemLoud(item, entityType: item.entityType, payload: payload)
                 result.pushed += 1
                 recordEvent(.pushed)
                 let msg = "Pushed \(item.entityType)/\(item.entityId) (new)"
@@ -591,11 +591,9 @@ final class SyncService: ObservableObject {
 
             if winner == "local" {
                 try await writeFirestoreDoc(docRef: docRef, data: payload)
-                try markCompleted(item)
-                // Phase 4: After a successful local-wins push of a counting task,
-                // advance lastSyncedCount so subsequent conflicts can compute the
-                // local delta correctly.
-                updateLastSyncedCountAfterPush(entityType: item.entityType, entityId: item.entityId, payload: payload)
+                // Phase 4 / D2: mark completed AND advance lastSyncedCount for a
+                // counting task in one atomic transaction (see the no-remote branch).
+                try completePushedItemLoud(item, entityType: item.entityType, payload: payload)
                 result.pushed += 1
                 recordEvent(.pushed)
                 let localV = payload["version"] as? Int ?? 0
@@ -1672,36 +1670,53 @@ extension SyncService {
         return merged
     }
 
-    /// After a successful local-wins push of a COUNTING task to Firestore,
-    /// advance `lastSyncedCount` to the pushed `currentCount` value so the
-    /// next conflict can compute the local delta correctly.
-    ///
-    /// This is a fire-and-forget bookkeeping write: non-fatal on failure
-    /// (the next conflict simply falls back to LWW).
+    /// Derive the shared-counter ancestor advance for a just-pushed payload:
+    /// `(taskId, pushedCount)` for a COUNTING task, or `nil` for anything else.
+    /// Only counting tasks carry `lastSyncedCount`.
     ///
     /// - Parameters:
     ///   - entityType: The sync queue item's `entityType`.
     ///   - entityId: The task id.
     ///   - payload: The sync payload that was just pushed to Firestore.
-    private func updateLastSyncedCountAfterPush(
+    /// - Returns: The count advance, or `nil` when the push isn't a counting task.
+    private func countAdvanceForPush(
         entityType: String,
         entityId: String,
         payload: [String: Any]
-    ) {
-        guard entityType == "tasks" else { return }
-        guard let taskType = payload["type"] as? String, taskType == "counting" else { return }
+    ) -> (taskId: String, pushedCount: Int)? {
+        guard entityType == "tasks" else { return nil }
+        guard let taskType = payload["type"] as? String, taskType == "counting" else { return nil }
         let pushed64 = payload["currentCount"] as? Int64
         let pushedInt = payload["currentCount"] as? Int
-        guard let pushedCount = pushed64.map(Int.init) ?? pushedInt else { return }
+        guard let pushedCount = pushed64.map(Int.init) ?? pushedInt else { return nil }
+        return (taskId: entityId, pushedCount: pushedCount)
+    }
 
+    /// Atomically completes a just-pushed sync-queue item and advances its
+    /// `lastSyncedCount` (D2, issue #294). Completion + ancestor advance land in
+    /// one GRDB transaction, so the advance can no longer half-fail and silently
+    /// downgrade the next conflict to LWW. On failure the error is re-thrown so
+    /// the push loop marks the item FAILED and retries it (the advance is
+    /// idempotent) — first logging the semantic consequence loudly instead of
+    /// swallowing it.
+    ///
+    /// - Parameters:
+    ///   - item: The pending sync-queue item that was just pushed.
+    ///   - entityType: Its entity type.
+    ///   - payload: The payload written to Firestore.
+    private func completePushedItemLoud(
+        _ item: SyncQueueItem,
+        entityType: String,
+        payload: [String: Any]
+    ) throws {
+        let advance = countAdvanceForPush(entityType: entityType, entityId: item.entityId, payload: payload)
         do {
-            try AppDatabase.shared.write { db in
-                try db.execute(sql: """
-                    UPDATE tasks SET lastSyncedCount = ? WHERE id = ?
-                    """, arguments: [pushedCount, entityId])
-            }
+            try AppDatabase.shared.completePushedItem(item, countAdvance: advance)
         } catch {
-            log("Warning: could not advance lastSyncedCount for tasks/\(entityId): \(error.localizedDescription)")
+            if advance != nil {
+                log("lastSyncedCount advance failed for tasks/\(item.entityId); push will retry — until it lands, a concurrent conflict for this counter falls back to increment-losing LWW: \(error.localizedDescription)")
+            }
+            throw error
         }
     }
 

@@ -30,6 +30,8 @@ import {
   promoteEligibleFailedItems,
   countExhaustedSyncItems,
   retryExhaustedSyncItems,
+  completePushedItem,
+  type CountAdvance,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
@@ -145,40 +147,58 @@ export interface SyncResult {
   pull: PullResult;
 }
 
-// ─── Phase 4: lastSyncedCount bookkeeping after push ─────────────────────────
+// ─── Phase 4 / D2: lastSyncedCount bookkeeping after push ────────────────────
 
 /**
- * After a successful push of a COUNTING task to Firestore, advance the local
- * `lastSyncedCount` to the pushed `currentCount` value. This records
- * "Firestore now knows about this count" so the next conflict resolution can
- * compute the local delta correctly.
- *
- * This is a targeted write (no version bump, no sync queue entry) — it is sync
- * bookkeeping, not a user edit. Only counting tasks carry `lastSyncedCount`.
+ * Derive the shared-counter ancestor advance for a just-pushed payload:
+ * `{ taskId, pushedCount }` for a COUNTING task, or `null` for anything else.
+ * `lastSyncedCount` is sync bookkeeping only counting tasks carry.
  *
  * @param entityType - The entity type from the sync queue item.
  * @param entityId - The task ID.
  * @param payload - The sync payload that was just pushed to Firestore.
+ * @returns The count advance, or `null` when the push isn't a counting task.
  */
-async function updateLastSyncedCountAfterPush(
+function countAdvanceForPush(
   entityType: string,
   entityId: string,
   payload: SyncableEntity,
-): Promise<void> {
-  if (entityType !== 'tasks') return;
+): CountAdvance | null {
+  if (entityType !== 'tasks') return null;
   const payloadAsTask = payload as { type?: string; currentCount?: number };
-  if (payloadAsTask.type !== 'counting') return;
-  const pushedCount = payloadAsTask.currentCount;
-  if (typeof pushedCount !== 'number') return;
+  if (payloadAsTask.type !== 'counting') return null;
+  if (typeof payloadAsTask.currentCount !== 'number') return null;
+  return { taskId: entityId, pushedCount: payloadAsTask.currentCount };
+}
 
+/**
+ * Atomically complete a just-pushed sync-queue item and advance its
+ * `lastSyncedCount` (D2, issue #294). The completion + ancestor advance land in
+ * one Dexie transaction, so the advance can no longer half-fail and silently
+ * downgrade the next conflict to LWW. On failure we re-throw so the push loop
+ * marks the item FAILED and retries it (the advance is idempotent) — first
+ * logging the semantic consequence loudly instead of swallowing it.
+ *
+ * @param item - The pending sync-queue item that was just pushed.
+ * @param entityType - Its entity type.
+ * @param payload - The payload written to Firestore.
+ */
+async function completePushedItemLoud(
+  item: { id: string; entityId: string },
+  entityType: string,
+  payload: SyncableEntity,
+): Promise<void> {
+  const countAdvance = countAdvanceForPush(entityType, item.entityId, payload);
   try {
-    // Targeted update — does NOT bump version or write a new sync queue entry.
-    // lastSyncedCount is sync bookkeeping only.
-    await db.tasks.update(entityId, { lastSyncedCount: pushedCount });
+    await completePushedItem(item.id, countAdvance);
   } catch (err) {
-    // Non-fatal: if this write fails, the next conflict will fall back to LWW
-    // (null lastSyncedCount → LWW). Log but do not propagate.
-    console.warn(`[sync] Could not advance lastSyncedCount for tasks/${entityId}:`, err);
+    if (countAdvance) {
+      console.error(
+        `[sync] lastSyncedCount advance failed for tasks/${item.entityId}; push will retry — until it lands, a concurrent conflict for this counter falls back to increment-losing LWW`,
+        err,
+      );
+    }
+    throw err;
   }
 }
 
@@ -300,10 +320,10 @@ export async function pushSync(userId: string): Promise<PushResult> {
       if (!remoteSnap.exists()) {
         // No remote — push directly
         await writeSingleDoc(docRef, payload);
-        await markSyncItemCompleted(item.id);
-        // Phase 4: After a successful push of a counting task, advance
-        // lastSyncedCount so subsequent conflicts can compute the local delta.
-        await updateLastSyncedCountAfterPush(entityType, item.entityId, payload);
+        // Phase 4 / D2: mark completed AND advance lastSyncedCount for a
+        // counting task in one atomic transaction, so the advance can't
+        // half-fail and silently downgrade the next conflict to LWW.
+        await completePushedItemLoud(item, entityType, payload);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(`Pushed ${entityType}/${item.entityId} (new)`);
@@ -317,11 +337,9 @@ export async function pushSync(userId: string): Promise<PushResult> {
       if (resolution.winner === 'local') {
         // Local wins — push to Firestore
         await writeSingleDoc(docRef, payload);
-        await markSyncItemCompleted(item.id);
-        // Phase 4: After a successful local-wins push of a counting task,
-        // advance lastSyncedCount so subsequent conflicts can compute the
-        // local delta correctly.
-        await updateLastSyncedCountAfterPush(entityType, item.entityId, payload);
+        // Phase 4 / D2: mark completed AND advance lastSyncedCount for a
+        // counting task in one atomic transaction (see the no-remote branch).
+        await completePushedItemLoud(item, entityType, payload);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(
