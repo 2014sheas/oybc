@@ -518,10 +518,18 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         const result = await handleTaskCompletion(boardId, boardTaskId, updates);
         // Priority: reactivated > lostBingos > greenlog > newBingos — shared
         // ladder lives in `deriveFlashOutcome` (issue #270, B2-W2 dedup).
+        //
+        // Feed `boardCompleted` (the not-complete→complete TRANSITION signal),
+        // NOT the ungated `result.isGreenlog` (issue #272) — `isGreenlog` stays
+        // true on every subsequent write to an already-COMPLETED board (e.g.
+        // overshooting a counting task past its goal), which would re-fire the
+        // GREENLOG celebration with no actual transition. Matches
+        // `handleSharedCounterIncrement`'s `wasActive && isNowCompleted &&
+        // isGreenlogRaw` gate below, and iOS's `didAutoComplete` semantics.
         const outcome = deriveFlashOutcome({
           boardReactivated: result.boardReactivated,
           lostBingos: result.lostBingos,
-          isGreenlog: result.isGreenlog,
+          isGreenlog: result.boardCompleted,
           newBingos: result.newBingos,
         });
         if (outcome) onFlash(outcome.text, outcome.variant);
