@@ -12,6 +12,7 @@ import {
   type WeekStartDay,
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
+import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
 /** A wizard step. 1 = Setup, 2 = Tasks, 3 = Preview & Activate. */
 export type WizardStep = 1 | 2 | 3;
@@ -34,38 +35,6 @@ export function tasksNeededFor(size: 3 | 4 | 5, centerType: CenterSquareType): n
   return size * size - (hasReservedCenter ? 1 : 0);
 }
 
-/**
- * Resolves the wizard's initial `timeframe` state from the seed sources
- * (draft / template / prefill / user default), applying the recurring-seed
- * coercion rules. Pure so it's independently unit-testable without
- * rendering the hook.
- *
- * - Recurring entry (`initialIsRecurring`) can't seed `CUSTOM` or
- *   `INDEFINITE` (neither has a computed window/cadence) — falls back to
- *   `DAILY`, mirroring the `setTimeframe` setter's guard further down this
- *   file (`isRecurring && (t === CUSTOM || t === INDEFINITE)`).
- * - Non-recurring entry whose timeframe comes ONLY from the CUSTOM default
- *   (no explicit source) opens as ongoing (`INDEFINITE`) rather than
- *   `CUSTOM` with empty dates. An explicitly-CUSTOM draft/template/prefill
- *   keeps its dates.
- */
-export function resolveInitialWizardTimeframe(
-  explicitSource: Timeframe | null,
-  defaultTimeframe: Timeframe,
-  initialIsRecurring: boolean,
-): Timeframe {
-  const seed = explicitSource ?? defaultTimeframe;
-  if (
-    initialIsRecurring &&
-    (seed === Timeframe.CUSTOM || seed === Timeframe.INDEFINITE)
-  ) {
-    return Timeframe.DAILY;
-  }
-  if (!initialIsRecurring && seed === Timeframe.CUSTOM && explicitSource === null) {
-    return Timeframe.INDEFINITE;
-  }
-  return seed;
-}
 
 /**
  * Returns a `centerType` that is internally consistent with `size`.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Timeframe } from '@oybc/shared';
-import { resolveInitialWizardTimeframe } from '../useBoardWizard';
+import { resolveInitialWizardTimeframe } from '../wizardTimeframeSeed';
 
 /**
  * Covers `resolveInitialWizardTimeframe` — the pure seed-resolution helper
