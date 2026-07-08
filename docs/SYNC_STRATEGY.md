@@ -1444,6 +1444,7 @@ This section documents what was actually implemented for the sync layer (Phase 3
 1. Higher `version` wins
 2. Same `version`: newer `updatedAt` wins
 3. Tie on both: remote wins
+4. Same `version` with an empty/unparseable `updatedAt` on either side: remote wins (canon pinned in `lwwVectors.json`, issue #263 — production never emits such timestamps; defensive)
 
 ### Push Sync
 

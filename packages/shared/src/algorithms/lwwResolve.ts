@@ -53,6 +53,13 @@ export interface ConflictResult {
  * 1. Higher `version` wins
  * 2. Same version → newer `updatedAt` wins
  * 3. Exact tie → remote wins (server authority)
+ * 4. Same version + either side's `updatedAt` is empty/unparseable →
+ *    remote wins (issue #263). Production never emits unparseable
+ *    timestamps; this is defensive canon-pinning, made explicit below
+ *    rather than left to rely on `NaN` comparison fallthrough (`NaN > x`
+ *    and `x > NaN` are both always `false`, which happens to already
+ *    route every unparseable combination to "remote" here — but an
+ *    explicit guard doesn't depend on that implicit float semantics).
  *
  * @param local - The local entity from Dexie
  * @param remote - The remote entity from Firestore
@@ -73,6 +80,13 @@ export function resolveConflict(
   // Same version — newer updatedAt wins
   const localTime = new Date(local.updatedAt).getTime();
   const remoteTime = new Date(remote.updatedAt).getTime();
+  const localValid = !Number.isNaN(localTime);
+  const remoteValid = !Number.isNaN(remoteTime);
+
+  // Canon (issue #263): either side unparseable at equal version → remote.
+  if (!localValid || !remoteValid) {
+    return { winner: 'remote', data: remote };
+  }
 
   if (localTime > remoteTime) {
     return { winner: 'local', data: local };

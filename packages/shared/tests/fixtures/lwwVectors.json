@@ -80,6 +80,46 @@
       "remoteVersion": 5,
       "remoteUpdatedAt": "",
       "winner": "remote"
+    },
+    {
+      "name": "same-version-local-timestamp-empty-remote-wins",
+      "localVersion": 5,
+      "localUpdatedAt": "",
+      "remoteVersion": 5,
+      "remoteUpdatedAt": "2026-03-15T12:00:00.000Z",
+      "winner": "remote"
+    },
+    {
+      "name": "same-version-local-timestamp-garbage-remote-wins",
+      "localVersion": 5,
+      "localUpdatedAt": "not-a-real-timestamp",
+      "remoteVersion": 5,
+      "remoteUpdatedAt": "2026-03-15T12:00:00.000Z",
+      "winner": "remote"
+    },
+    {
+      "name": "same-version-remote-timestamp-empty-remote-wins",
+      "localVersion": 5,
+      "localUpdatedAt": "2026-03-15T12:00:00.000Z",
+      "remoteVersion": 5,
+      "remoteUpdatedAt": "",
+      "winner": "remote"
+    },
+    {
+      "name": "same-version-remote-timestamp-garbage-remote-wins",
+      "localVersion": 5,
+      "localUpdatedAt": "2026-03-15T12:00:00.000Z",
+      "remoteVersion": 5,
+      "remoteUpdatedAt": "not-a-real-timestamp",
+      "winner": "remote"
+    },
+    {
+      "name": "same-version-both-timestamps-garbage-remote-wins",
+      "localVersion": 5,
+      "localUpdatedAt": "not-a-real-timestamp",
+      "remoteVersion": 5,
+      "remoteUpdatedAt": "also-garbage",
+      "winner": "remote"
     }
   ]
 }
