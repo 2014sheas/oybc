@@ -281,6 +281,15 @@ export function BoardWizardPreviewStep({
       }
       return 'Custom (no dates set)';
     }
+    // Ongoing boards have no computed window either — getTimeframeBoundaries
+    // throws for INDEFINITE just like it does for CUSTOM, so this must be
+    // special-cased before the boundaries call below (sibling of the
+    // recurring-seed INDEFINITE guard elsewhere in the wizard).
+    if (controller.timeframe === Timeframe.INDEFINITE) {
+      return controller.customStartDate
+        ? `Ongoing · starting ${controller.customStartDate}`
+        : 'Ongoing (no start date set)';
+    }
     const b = getTimeframeBoundaries(
       controller.timeframe,
       controller.targetWindowDate ?? new Date(),
