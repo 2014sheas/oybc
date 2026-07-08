@@ -171,6 +171,9 @@ public struct SyncEvent: Identifiable {
 /// via `@testable import OYBC` (workstream C4 / issue #261) — this is
 /// the same comparison as `@oybc/shared`'s `resolveConflict`, hand-mirrored
 /// here since iOS can't import TypeScript.
+///
+/// Canon (issue #263): at equal version, if EITHER `updatedAt` is empty or
+/// unparseable, remote wins — the extension of the exact-tie→remote rule.
 func resolveConflict(
     local: [String: Any],
     remote: [String: Any]
@@ -186,13 +189,21 @@ func resolveConflict(
     // String comparison is unsafe across timezone formats (Z vs no Z).
     let localUpdatedAt = local["updatedAt"] as? String ?? ""
     let remoteUpdatedAt = remote["updatedAt"] as? String ?? ""
-    if let localDate = parseISO8601Date(localUpdatedAt),
-       let remoteDate = parseISO8601Date(remoteUpdatedAt) {
-        if localDate > remoteDate { return "local" }
-    } else if localUpdatedAt > remoteUpdatedAt {
-        // Fallback to string comparison if parsing fails
-        return "local"
+    let localDate = parseISO8601Date(localUpdatedAt)
+    let remoteDate = parseISO8601Date(remoteUpdatedAt)
+
+    // Canon (issue #263): at equal version, if EITHER side's updatedAt is
+    // unparseable/empty, remote wins (server authority) — an explicit guard,
+    // not a string-comparison fallback. The old fallback compared the raw
+    // strings when parsing failed, which could return "local" when only the
+    // remote timestamp failed to parse (e.g. a real local ISO string sorts
+    // lexicographically greater than ""). Production never emits unparseable
+    // timestamps; this only pins defensive behavior.
+    guard let localDate, let remoteDate else {
+        return "remote"
     }
+
+    if localDate > remoteDate { return "local" }
 
     // Tie or remote is newer — remote wins (server authority).
     return "remote"
