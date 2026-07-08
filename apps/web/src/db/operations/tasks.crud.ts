@@ -474,6 +474,64 @@ export async function updateTaskAndCascade(
   );
 }
 /**
+ * Toggle a Task's `isCompleted` flag and run the board derivation cascade,
+ * writing the Task update + sync-queue enqueue + cascade in a SINGLE Dexie
+ * transaction.
+ *
+ * Relocated verbatim (issue #270, B2-W2) from the inline `db.transaction`
+ * fallback that used to live in `BoardPlaySurface.handleCompoundChildToggle`
+ * — reached when a compound child Task isn't placed as a `BoardTask` on any
+ * board, so there's no `boardTaskId` to route through `handleTaskCompletion`.
+ * The parent compound (on the board whose detail sheet is open) still
+ * derives through this child, so the board cascade must still run to
+ * recompute bingo state and denormalised board stats even though the child
+ * itself has no square to update.
+ *
+ * DELIBERATELY DIFFERENT from `updateTaskAndCascade` above — this is not a
+ * redundant duplicate of it:
+ *   - `updateTaskAndCascade` is a general task-field-patch op split across
+ *     TWO transactions (`updateTask`'s write, then a separate cascade
+ *     transaction) and only touches `completedAt` when the caller's patch
+ *     explicitly sets it.
+ *   - This op is completion-toggle-only: it always derives `completedAt` as
+ *     a latch — set to `now` when completing, cleared to `undefined` when
+ *     un-completing — and does the Task write + sync enqueue + cascade in
+ *     ONE transaction, so a crash between the Task write and the cascade
+ *     can't leave the Task flipped with stale board stats forever (the
+ *     failure mode the original inline fallback was written to close off).
+ *   - It also skips `updateTask`'s ACHIEVEMENT-reference validation rules,
+ *     which don't apply to a plain completion toggle.
+ * A future unification of the two is possible but out of scope here — this
+ * is a code-motion refactor (issue #270), not a behavior change.
+ *
+ * No-op (no writes at all) if the Task doesn't exist.
+ *
+ * @param taskId - The Task whose `isCompleted` flag should be toggled.
+ */
+export async function toggleTaskCompletionAndCascade(taskId: string): Promise<void> {
+  const task = await db.tasks.get(taskId);
+  if (!task) return;
+
+  const now = currentTimestamp();
+  await db.transaction(
+    'rw',
+    [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      await db.tasks.update(taskId, {
+        isCompleted: !task.isCompleted,
+        completedAt: !task.isCompleted ? now : undefined,
+        updatedAt: now,
+        version: task.version + 1,
+      });
+      const updated = await db.tasks.get(taskId);
+      if (updated) {
+        await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, updated);
+      }
+      await runBoardCascadeForTask(taskId);
+    },
+  );
+}
+/**
  * For Achievement re-target: build the cycle-check context from current
  * workspace state and run `hasCycle` from @oybc/shared. Returns `null` if
  * no cycle, or an error string the caller can surface in the UI.
