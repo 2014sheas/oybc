@@ -317,6 +317,33 @@ final class BoardPlayViewModelTests: XCTestCase {
         return t
     }
 
+    /// A 1×1 board with a non-FREE center (`.none`), so a single placed task
+    /// is both the only square AND the whole board — the minimal fixture for
+    /// driving a board to full GREENLOG with one write.
+    private func makeOneCellBoard(id: String, userId: String = "u1") -> Board {
+        let dict: [String: Any] = [
+            "id": id,
+            "userId": userId,
+            "name": "Board \(id)",
+            "status": BoardStatus.active.rawValue,
+            "boardSize": 1,
+            "timeframe": Timeframe.monthly.rawValue,
+            "startDate": "2026-06-21T00:00:00.000",
+            "endDate": "2026-06-30T23:59:59.999",
+            "centerSquareType": CenterSquareType.none.rawValue,
+            "isRandomized": false,
+            "totalTasks": 1,
+            "completedTasks": 0,
+            "linesCompleted": 0,
+            "createdAt": "2026-06-21T00:00:00.000",
+            "updatedAt": "2026-06-21T00:00:00.000",
+            "version": 1,
+            "isDeleted": false,
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
     private func makeCompoundTask(_ id: String, userId: String = "u1") -> Task {
         var t = makeTask(id, userId: userId)
         t.type = .compound
@@ -464,6 +491,55 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.flashEvent?.creditToast != nil },
                       "credit toast flash event never published for the OTHER board")
         XCTAssertTrue(try XCTUnwrap(vm.flashEvent?.creditToast).contains("Board b2"))
+    }
+
+    // MARK: - 8b. GREENLOG flash gating on the completion transition (issue #272)
+
+    /// Reachable bug this guards: tapping "+" on an overshoot counting square
+    /// while the board is already fully GREENLOG must NOT re-fire the
+    /// celebration. `runOrchestration` must derive the flash from the
+    /// transition-gated `BPVCascadeBoardResult.didAutoComplete`, not the
+    /// ungated `isGreenlogNow` (which stays `true` on every subsequent write
+    /// once the board is complete, per the standing overshoot invariant —
+    /// see `feedback_counter_overshoot_is_valid` — counting squares keep
+    /// incrementing past `maxCount` without clamping).
+    func test_handleCountingTap_overshootOnAlreadyGreenlogBoard_doesNotRefireGreenlogFlash() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeOneCellBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("c1", maxCount: 1, currentCount: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c1" })
+
+        // First tap: 0 -> 1 reaches maxCount, completing the task AND the
+        // only square on the board => a real not-complete -> complete
+        // transition. This is the legitimate GREENLOG fire.
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.currentCount == 1 && !vm.isProcessing })
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).status, .completed,
+                       "the single square completing should auto-complete the 1x1 board")
+        XCTAssertEqual(vm.flashEvent?.risoNotification, "GREENLOG!",
+                       "the real completion transition should fire the celebration")
+        let firstFlashId = try XCTUnwrap(vm.flashEvent?.id)
+
+        // Second tap: overshoot 1 -> 2. task.isCompleted stays true (already
+        // true), board.status is already .completed (not .active), so
+        // BPVCascadeBoardResult.didAutoComplete is false even though
+        // isGreenlogNow recomputes to true again. The flash must NOT re-fire.
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.currentCount == 2 && !vm.isProcessing },
+                      "overshoot increment should still persist past maxCount (no clamp)")
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).status, .completed,
+                       "board remains completed across the overshoot write")
+
+        // No new flash event was published: emitFlash's guard requires a
+        // non-nil risoNotification or creditToast, and the gated derivation
+        // yields nil for this no-transition write, so the event stays the
+        // *same* one-shot instance from the first tap (same id).
+        XCTAssertEqual(vm.flashEvent?.id, firstFlashId,
+                       "GREENLOG flash must not re-fire on a no-transition overshoot write")
     }
 
     // MARK: - 9. compound child toggle (fallback cascade path)
