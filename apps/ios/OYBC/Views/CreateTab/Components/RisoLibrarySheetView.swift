@@ -592,16 +592,7 @@ struct RisoLibrarySheetView: View {
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                try AppDatabase.shared.write { db in
-                    try newTask.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: newId,
-                        operationType: .create,
-                        payload: newTask,
-                        now: now
-                    ).save(db)
-                }
+                try AppDatabase.shared.createTaskAndEnqueue(newTask, now: now)
                 DispatchQueue.main.async {
                     onTaskCreated(newId, title, "counting")
                     onLibraryReloadRequested()

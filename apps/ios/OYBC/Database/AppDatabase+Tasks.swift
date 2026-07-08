@@ -47,9 +47,9 @@ extension AppDatabase {
 
     /// Run the cross-board derivation cascade for a task that just changed.
     ///
-    /// Mirrors `bpvRunCrossBoardCascade` in `BoardPlayView.swift` but lives
-    /// on `AppDatabase` so it can be called from the Tasks-tab edit path
-    /// without importing the Board play surface.
+    /// Void-returning cascade for the Tasks-tab edit path. Sibling of
+    /// `runBoardCascadeForTaskWithResults` (below), which additionally returns
+    /// per-board results for the board-play flash messages.
     ///
     /// - Parameters:
     ///   - db: GRDB database handle (must be inside a write transaction).
@@ -147,6 +147,365 @@ extension AppDatabase {
                 now: now
             ).save(db)
             try Self.runBoardCascadeForTask(db: db, changedTaskId: task.id, now: now)
+        }
+    }
+
+    // MARK: - Local board-interaction orchestration (B4)
+    //
+    // These OWN the complete write transactions the board-play surface used
+    // to author inline (task completion + compound-child fallback toggle).
+    // Moved VERBATIM from `BoardPlayViewModel`'s file-private `bpv*` free
+    // functions + write blocks so the sync-enqueue lives in the data layer,
+    // not the view model. The `bpvEncodeSyncPayload` / `bpvMakeSyncItem`
+    // duplicates were dropped — they were byte-identical to
+    // `SyncQueueBuilder.encodePayload` / `SyncQueueBuilder.makeItem`, which
+    // this code now calls directly. The VM methods are thin callers that
+    // consume the returned per-board results to derive their flash messages.
+
+    /// Per-board outcome of the local-interaction cascade. The caller uses
+    /// this to surface a flash message for the currently-visible board.
+    /// (Renamed from `BPVCascadeBoardResult`, moved here from the view model.)
+    struct CascadeBoardResult {
+        let update: DerivationPass.BoardStatsUpdate
+        /// True if this board transitioned COMPLETED → ACTIVE because it is no
+        /// longer GREENLOG.
+        let wasReactivated: Bool
+        /// True if every cell on this board is now complete.
+        let isGreenlogNow: Bool
+        /// True if `board.status` was bumped to `.completed` by this cascade pass.
+        let didAutoComplete: Bool
+    }
+
+    /// Cross-board derivation cascade that additionally returns per-board
+    /// results and applies the GREENLOG status transitions local interactions
+    /// own. Sibling of `runBoardCascadeForTask` (which returns Void for the
+    /// Tasks-tab edit path); this variant powers the board-play flash messages
+    /// by reporting reactivation / auto-complete / bingo diffs per affected
+    /// board.
+    ///
+    /// Mirrors `SyncService.runPullCascade` but additionally applies the
+    /// GREENLOG status transitions. Must be called inside a write transaction
+    /// covering `boards` and `syncQueue`.
+    ///
+    /// - Parameters:
+    ///   - db: GRDB database handle (must be inside a write transaction).
+    ///   - changedTaskId: The id of the Task whose state just changed.
+    ///   - now: ISO8601 timestamp to stamp on every updated board row.
+    /// - Returns: A `[boardId: CascadeBoardResult]` map. Boards excluded by
+    ///   `isDeleted` are omitted.
+    static func runBoardCascadeForTaskWithResults(
+        db: Database,
+        changedTaskId: String,
+        now: String
+    ) throws -> [String: CascadeBoardResult] {
+        let allChildren: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allTasks: [Task] = try Task.fetchAll(db)
+        // Phase 6.3 — DerivationPass.computeBoardStatsUpdate needs the
+        // workspace's boards to evaluate the specific-board / recurring-
+        // template achievement branches. Pre-6.3 calls omitted this and
+        // the algorithm defaults to []; on this cascade path we already
+        // have the data fetched, so use it.
+        let allBoards: [Board] = try Board.fetchAll(db)
+
+        var taskById: [String: Task] = [:]
+        for t in allTasks { taskById[t.id] = t }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allChildren {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+
+        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: changedTaskId,
+            children: allChildren
+        )
+        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
+            changedTaskId: changedTaskId,
+            parentCompounds: parentCompounds,
+            boardTasks: allBoardTasks
+        )
+
+        var results: [String: CascadeBoardResult] = [:]
+        for boardId in affectedBoardIds {
+            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+            let update = DerivationPass.computeBoardStatsUpdate(
+                board: board,
+                boardTasksOnBoard: boardTasksOnBoard,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoards
+            )
+
+            let totalSquares = board.boardSize * board.boardSize
+            let isGreenlogNow = update.completedTasks >= totalSquares
+            var wasReactivated = false
+            var didAutoComplete = false
+
+            board.completedTasks = update.completedTasks
+            board.totalTasks = totalSquares
+            board.linesCompleted = update.linesCompleted
+            board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+            board.updatedAt = now
+            board.version += 1
+
+            if isGreenlogNow, board.status == .active {
+                board.status = .completed
+                board.completedAt = now
+                didAutoComplete = true
+            } else if !isGreenlogNow, board.status == .completed {
+                board.status = .active
+                board.completedAt = nil
+                wasReactivated = true
+            }
+
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: boardId,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).save(db)
+
+            results[boardId] = CascadeBoardResult(
+                update: update,
+                wasReactivated: wasReactivated,
+                isGreenlogNow: isGreenlogNow,
+                didAutoComplete: didAutoComplete
+            )
+        }
+        return results
+    }
+
+    /// Runs the full task-completion orchestration in a single DB write
+    /// transaction: draft auto-activate + Task save (global completion) +
+    /// BoardTask placement bump + cross-board cascade — all sync-enqueued.
+    ///
+    /// Moved verbatim from `BoardPlayViewModel.runOrchestration`'s write
+    /// block. The caller passes the already-mutated `Task` and the current
+    /// board + placement record, and receives the per-board cascade results
+    /// to derive its flash message.
+    ///
+    /// - Parameters:
+    ///   - board: The current board (its `.draft` → `.active` flip happens here).
+    ///   - updatedTask: The already-mutated `Task` carrying new completion state.
+    ///   - boardTask: The `BoardTask` placement record on the current board
+    ///     (its `updatedAt`/`version` are bumped + sync-queued).
+    ///   - now: ISO8601 timestamp stamped on every row written here.
+    /// - Returns: A `[boardId: CascadeBoardResult]` map for flash derivation.
+    func completeTaskOrchestrated(
+        board: Board,
+        updatedTask: Task,
+        boardTask: BoardTask,
+        now: String
+    ) throws -> [String: CascadeBoardResult] {
+        try write { db in
+            // 1. Auto-activate DRAFT boards on first interaction. Cascade
+            //    will re-save the board with stats; this leg only flips
+            //    .draft → .active so cascade doesn't promote a draft to
+            //    .completed (which would be wrong for first-tap).
+            if board.status == .draft {
+                var activated = board
+                activated.status = .active
+                activated.updatedAt = now
+                activated.version += 1
+                try activated.save(db)
+            }
+
+            // 2a. Persist the updated Task (carries completion state).
+            try updatedTask.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: updatedTask.id,
+                operationType: .update,
+                payload: updatedTask,
+                now: now
+            ).save(db)
+
+            // 2b. Bump the BoardTask placement record's updatedAt/version.
+            var updatedBoardTask = boardTask
+            updatedBoardTask.updatedAt = now
+            updatedBoardTask.version += 1
+            try updatedBoardTask.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boardTasks",
+                entityId: updatedBoardTask.id,
+                operationType: .update,
+                payload: updatedBoardTask,
+                now: now
+            ).save(db)
+
+            // 3. Cross-board cascade: rebuilds bingo state, applies GREENLOG
+            //    transitions, persists every affected board, and returns the
+            //    per-board results for the caller's flash message.
+            return try Self.runBoardCascadeForTaskWithResults(
+                db: db,
+                changedTaskId: updatedTask.id,
+                now: now
+            )
+        }
+    }
+
+    /// Fallback compound-child toggle write: the child isn't placed on the
+    /// current board, but a parent compound (or the child via another board)
+    /// may be — so we persist the child Task + enqueue, then run the
+    /// cross-board cascade to recompute every affected board.
+    ///
+    /// Moved verbatim from `BoardPlayViewModel.handleCompoundChildToggle`'s
+    /// fallback write block.
+    ///
+    /// - Parameters:
+    ///   - updatedChild: The already-mutated child `Task`.
+    ///   - now: ISO8601 timestamp stamped on every row written here.
+    /// - Returns: A `[boardId: CascadeBoardResult]` map for flash derivation.
+    func toggleCompoundChildFallback(
+        updatedChild: Task,
+        now: String
+    ) throws -> [String: CascadeBoardResult] {
+        try write { db in
+            try updatedChild.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: updatedChild.id,
+                operationType: .update,
+                payload: updatedChild,
+                now: now
+            ).save(db)
+
+            return try Self.runBoardCascadeForTaskWithResults(
+                db: db,
+                changedTaskId: updatedChild.id,
+                now: now
+            )
+        }
+    }
+
+    /// Create a single Task + enqueue its `.create` sync op atomically.
+    /// Used by the standalone quick-add / derive-counter paths (Tasks tab
+    /// create form, Riso library sheet, From-a-board grid) that previously
+    /// authored the write + enqueue inline in view code.
+    ///
+    /// - Parameters:
+    ///   - task: The new Task to insert.
+    ///   - now: ISO8601 timestamp for the sync-queue row.
+    func createTaskAndEnqueue(_ task: Task, now: String) throws {
+        try write { db in
+            try task.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .create,
+                payload: task,
+                now: now
+            ).save(db)
+        }
+    }
+
+    /// Create a Task plus a set of paired child Task + CompoundChild link
+    /// rows, all `.create`-enqueued in one transaction. Preserves the
+    /// `zip(childTasks, childLinks)` write shape moved verbatim from the
+    /// create form's immediate-persist path.
+    ///
+    /// - Parameters:
+    ///   - task: The parent Task to insert.
+    ///   - childTasks: New child Task rows, paired positionally with `childLinks`.
+    ///   - childLinks: The CompoundChild link rows, paired with `childTasks`.
+    ///   - now: ISO8601 timestamp for the sync-queue rows.
+    func createTaskWithPairedChildrenAndEnqueue(
+        task: Task,
+        childTasks: [Task],
+        childLinks: [CompoundChild],
+        now: String
+    ) throws {
+        try write { db in
+            try task.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .create,
+                payload: task,
+                now: now
+            ).save(db)
+
+            for (childTask, link) in zip(childTasks, childLinks) {
+                try childTask.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: childTask.id,
+                    operationType: .create,
+                    payload: childTask,
+                    now: now
+                ).save(db)
+                try link.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren",
+                    entityId: link.id,
+                    operationType: .create,
+                    payload: link,
+                    now: now
+                ).save(db)
+            }
+        }
+    }
+
+    /// Create a compound parent Task + its CompoundChild links, inserting a
+    /// child Task row only for NEW inline children (existing-library children
+    /// are referenced by id and already live in GRDB). All rows are
+    /// `.create`-enqueued in one transaction. Moved verbatim from the create
+    /// form's `handleCreateCompoundAndAddToPool` immediate path.
+    ///
+    /// - Parameters:
+    ///   - parent: The compound parent Task to insert.
+    ///   - newChildTasks: The NEW inline child Task rows to insert.
+    ///   - childLinks: The CompoundChild link rows (both new-inline and
+    ///     existing-library children).
+    ///   - now: ISO8601 timestamp for the sync-queue rows.
+    func createCompoundAndEnqueue(
+        parent: Task,
+        newChildTasks: [Task],
+        childLinks: [CompoundChild],
+        now: String
+    ) throws {
+        let newChildIds = Set(newChildTasks.map { $0.id })
+        try write { db in
+            // 1. Parent compound task + sync entry.
+            try parent.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: parent.id,
+                operationType: .create,
+                payload: parent,
+                now: now
+            ).save(db)
+
+            // 2. For each link: if the child is a NEW inline task, insert the
+            //    child Task row + its sync entry first. Then insert the
+            //    CompoundChild link + its sync entry. Existing-sub links skip
+            //    the Task insert — the Task already lives in GRDB.
+            for link in childLinks {
+                if newChildIds.contains(link.childTaskId),
+                   let childTask = newChildTasks.first(where: { $0.id == link.childTaskId }) {
+                    try childTask.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "tasks",
+                        entityId: childTask.id,
+                        operationType: .create,
+                        payload: childTask,
+                        now: now
+                    ).save(db)
+                }
+                try link.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren",
+                    entityId: link.id,
+                    operationType: .create,
+                    payload: link,
+                    now: now
+                ).save(db)
+            }
         }
     }
 

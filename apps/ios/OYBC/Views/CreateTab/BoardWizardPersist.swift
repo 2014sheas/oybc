@@ -277,93 +277,20 @@ func persistWizardBoard(
                 placedTaskIds: placedTaskIds
             )
 
-            // Single atomic transaction: writing pending new tasks, then
-            // the board record + its BoardTask rows — plus all matching
-            // SyncQueueItem records — must commit or roll back together.
-            // Without the sync items the board stays local-only
-            // (SyncService.pushSync reads exclusively from sync_queue),
-            // so every write path below enqueues one.
-            //
-            // Bug #85: pending tasks are written FIRST (before board_tasks)
-            // so the referential integrity of task → board_task is never
-            // violated even during a crash mid-write (the txn rolls back).
-            try AppDatabase.shared.write { db in
-                // ── Bug #85: pending tasks (placed-only) ───────────────
-                for payload in pendingToPersist {
-                    try payload.task.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: payload.task.id,
-                        operationType: .create,
-                        payload: payload.task,
-                        now: now
-                    ).save(db)
-                    for childTask in payload.childTasks {
-                        try childTask.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "tasks",
-                            entityId: childTask.id,
-                            operationType: .create,
-                            payload: childTask,
-                            now: now
-                        ).save(db)
-                    }
-                    for link in payload.childLinks {
-                        try link.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "compoundChildren",
-                            entityId: link.id,
-                            operationType: .create,
-                            payload: link,
-                            now: now
-                        ).save(db)
-                    }
-                }
-
-                // ── Board + BoardTask rows ─────────────────────────────
-                try board.save(db)
-
-                let boardSyncOp: SyncOperationType = isUpdate ? .update : .create
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: boardId,
-                    operationType: boardSyncOp,
-                    payload: board,
-                    now: now
-                ).save(db)
-
-                if isUpdate {
-                    // Snapshot the existing BoardTasks before deleting
-                    // so each gets a matching DELETE sync item whose
-                    // payload reflects the row that actually existed.
-                    let oldBoardTasks = try BoardTask
-                        .filter(Column("boardId") == boardId)
-                        .fetchAll(db)
-                    _ = try BoardTask
-                        .filter(Column("boardId") == boardId)
-                        .deleteAll(db)
-                    for old in oldBoardTasks {
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "boardTasks",
-                            entityId: old.id,
-                            operationType: .delete,
-                            payload: old,
-                            now: now
-                        ).save(db)
-                    }
-                }
-
-                for bt in boardTasks {
-                    try bt.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "boardTasks",
-                        entityId: bt.id,
-                        operationType: .create,
-                        payload: bt,
-                        now: now
-                    ).save(db)
-                }
-            }
+            // The single atomic transaction (deferred pending tasks, then the
+            // board record + its BoardTask rows, plus every matching
+            // SyncQueueItem) is owned by `AppDatabase.saveWizardBoard`. Without
+            // the sync items the board stays local-only (SyncService.pushSync
+            // reads exclusively from sync_queue), so that method enqueues one
+            // per write. Pending tasks are written FIRST so task → board_task
+            // referential integrity holds even on a crash mid-write.
+            try AppDatabase.shared.saveWizardBoard(
+                board: board,
+                boardTasks: boardTasks,
+                pendingTasks: pendingToPersist,
+                isUpdate: isUpdate,
+                now: now
+            )
 
             DispatchQueue.main.async { onSuccess(boardId) }
         } catch {
@@ -455,16 +382,11 @@ func persistRecurringTemplate(
                     isDeleted: false,
                     deletedAt: nil
                 )
-                try AppDatabase.shared.saveRecurringBoardTemplate(updated)
-                try AppDatabase.shared.write { db in
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "recurringBoardTemplates",
-                        entityId: updated.id,
-                        operationType: .update,
-                        payload: updated,
-                        now: now
-                    ).save(db)
-                }
+                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                    updated,
+                    operation: .update,
+                    now: now
+                )
                 DispatchQueue.main.async { onSuccess(.updated(templateId: updated.id)) }
                 return
             }
@@ -489,16 +411,11 @@ func persistRecurringTemplate(
                 isDeleted: false,
                 deletedAt: nil
             )
-            try AppDatabase.shared.saveRecurringBoardTemplate(template)
-            try AppDatabase.shared.write { db in
-                try SyncQueueBuilder.makeItem(
-                    entityType: "recurringBoardTemplates",
-                    entityId: template.id,
-                    operationType: .create,
-                    payload: template,
-                    now: now
-                ).save(db)
-            }
+            try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                template,
+                operation: .create,
+                now: now
+            )
 
             // Compute spawn window + spawn. Mirrors web's
             // `persistRecurringTemplate` second-step. Reference date

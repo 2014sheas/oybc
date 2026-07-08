@@ -378,46 +378,14 @@ final class CreateFormViewModel {
             guard let self else { return }
             do {
                 if progressChildLinks.isEmpty {
-                    try self.database.saveTask(newTask)
-                    try self.database.write { db in
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "tasks",
-                            entityId: newTask.id,
-                            operationType: .create,
-                            payload: newTask,
-                            now: now
-                        ).save(db)
-                    }
+                    try self.database.createTaskAndEnqueue(newTask, now: now)
                 } else {
-                    try self.database.write { db in
-                        try newTask.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "tasks",
-                            entityId: newTask.id,
-                            operationType: .create,
-                            payload: newTask,
-                            now: now
-                        ).save(db)
-
-                        for (childTask, link) in zip(progressChildTasks, progressChildLinks) {
-                            try childTask.save(db)
-                            try SyncQueueBuilder.makeItem(
-                                entityType: "tasks",
-                                entityId: childTask.id,
-                                operationType: .create,
-                                payload: childTask,
-                                now: now
-                            ).save(db)
-                            try link.save(db)
-                            try SyncQueueBuilder.makeItem(
-                                entityType: "compoundChildren",
-                                entityId: link.id,
-                                operationType: .create,
-                                payload: link,
-                                now: now
-                            ).save(db)
-                        }
-                    }
+                    try self.database.createTaskWithPairedChildrenAndEnqueue(
+                        task: newTask,
+                        childTasks: progressChildTasks,
+                        childLinks: progressChildLinks,
+                        now: now
+                    )
                 }
                 DispatchQueue.main.async {
                     self.isSubmitting = false
@@ -732,8 +700,6 @@ final class CreateFormViewModel {
         }
 
         // ── Immediate-persist path ───────────────────────────────────────────
-        // Build a set of new child task IDs for efficient membership check.
-        let newChildIds = Set(childTasks.map { $0.id })
         let capturedChildTasks = childTasks
         let capturedChildLinks = childLinks
         let capturedParent = parentTask
@@ -741,44 +707,16 @@ final class CreateFormViewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                try self.database.write { db in
-                    // 1. Parent compound task + sync entry.
-                    try capturedParent.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: capturedParent.id,
-                        operationType: .create,
-                        payload: capturedParent,
-                        now: now
-                    ).save(db)
-
-                    // 2. For each link: if the child is a NEW inline task,
-                    //    insert the child Task row + its sync entry first.
-                    //    Then insert the CompoundChild link + its sync entry.
-                    //    Existing-sub links skip the Task insert — the Task
-                    //    already lives in GRDB.
-                    for link in capturedChildLinks {
-                        if newChildIds.contains(link.childTaskId),
-                           let childTask = capturedChildTasks.first(where: { $0.id == link.childTaskId }) {
-                            try childTask.save(db)
-                            try SyncQueueBuilder.makeItem(
-                                entityType: "tasks",
-                                entityId: childTask.id,
-                                operationType: .create,
-                                payload: childTask,
-                                now: now
-                            ).save(db)
-                        }
-                        try link.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "compoundChildren",
-                            entityId: link.id,
-                            operationType: .create,
-                            payload: link,
-                            now: now
-                        ).save(db)
-                    }
-                }
+                // Parent compound + its children/links are written +
+                // sync-enqueued atomically by the data layer. A child Task row
+                // is inserted only for NEW inline children; existing-library
+                // children are referenced by id (already in GRDB).
+                try self.database.createCompoundAndEnqueue(
+                    parent: capturedParent,
+                    newChildTasks: capturedChildTasks,
+                    childLinks: capturedChildLinks,
+                    now: now
+                )
 
                 DispatchQueue.main.async {
                     self.isSubmitting = false

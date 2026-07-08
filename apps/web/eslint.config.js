@@ -80,6 +80,20 @@ export default [
               message:
                 'The raw Dexie `db` instance is internal to the data layer. Import an operations function from `db/operations` or a hook instead (B3, issue #284).',
             },
+            {
+              // ─── Sync-enqueue chokepoint (B4, issue #289) ─────────────────
+              // `addToSyncQueue` is the sole enqueue primitive. Every local
+              // write must route through a `db/operations/*` function that OWNS
+              // its enqueue — view/component/page code must never enqueue sync
+              // directly. Only the data layer (whitelisted below) may import it.
+              // Scoped to the `addToSyncQueue` name so the module's read /
+              // maintenance exports (fetchAllSyncQueueItems, clearCompleted…)
+              // stay importable by the dev sync playground.
+              group: ['**/db/operations/syncQueue', '**/db/operations/syncQueue.*'],
+              importNames: ['addToSyncQueue'],
+              message:
+                'The sync-enqueue primitive `addToSyncQueue` is internal to the data layer. Call a `db/operations/*` function that owns its own enqueue instead (B4, issue #289).',
+            },
           ],
         },
       ],
