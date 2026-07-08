@@ -82,11 +82,21 @@ final class TasksTabViewModel {
     /// Most recent reload error, surfaced to the user as a caption.
     var loadError: String?
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Lifecycle
 
     func reload() async {
+        let database = self.database
         do {
-            let boards = try await Self.loadBoards()
+            let boards = try await Self.loadBoards(database: database)
             await MainActor.run {
                 var m: [String: BoardStatus] = [:]
                 for b in boards {
@@ -328,8 +338,8 @@ final class TasksTabViewModel {
 
     // MARK: - Data loaders
 
-    private static func loadBoards() async throws -> [Board] {
-        try await AppDatabase.shared.read { db in
+    private static func loadBoards(database: AppDatabase) async throws -> [Board] {
+        try await database.read { db in
             try Board
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)

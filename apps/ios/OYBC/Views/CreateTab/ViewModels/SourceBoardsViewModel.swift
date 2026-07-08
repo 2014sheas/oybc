@@ -62,6 +62,15 @@ final class SourceBoardsViewModel {
     @ObservationIgnored private var latestBoardsSeq: UInt64 = 0
     @ObservationIgnored private var latestPlacementsSeq: UInt64 = 0
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Loading — eligible boards
 
     /// Loads the source-picker list.
@@ -72,7 +81,7 @@ final class SourceBoardsViewModel {
         }
 
         do {
-            let result = try await AppDatabase.shared.read { db -> (
+            let result = try await database.read { db -> (
                 boards: [Board],
                 completion: [String: (Int, Int)]
             ) in
@@ -172,7 +181,7 @@ final class SourceBoardsViewModel {
         }
 
         do {
-            let result = try await AppDatabase.shared.read { db -> (
+            let result = try await database.read { db -> (
                 placements: [SourceBoardPlacement],
                 compoundLeaves: [String: [String]]
             ) in

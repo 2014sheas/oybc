@@ -53,6 +53,9 @@ final class CoreBoardWindowViewModel: ObservableObject {
     /// identical pattern in `CoreBoardBrowserViewModel`.
     private var reloadToken: Int = 0
 
+    /// Injected for tests; defaults to the production singleton.
+    private let database: AppDatabase
+
     // MARK: - Init
 
     /// Normalises `seedWindowStart` to the canonical window boundaries
@@ -63,11 +66,13 @@ final class CoreBoardWindowViewModel: ObservableObject {
         timeframe: Timeframe,
         seedWindowStart: String,
         userId: String,
-        weekStartDay: String
+        weekStartDay: String,
+        database: AppDatabase = .shared
     ) {
         self.timeframe = timeframe
         self.userId = userId
         self.weekStartDay = weekStartDay
+        self.database = database
 
         // Normalise the seed to its window's canonical boundaries.
         // Mirror of how `CoreBoardBrowserViewModel.reload` anchors to
@@ -134,7 +139,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
                 // One read for both the window's board and all boards (for the
                 // per-timeframe greenlog streak). `computeStreak` re-filters to
                 // isCore/!isDeleted/timeframe internally.
-                let (result, streak) = try AppDatabase.shared.read { db -> (Board?, Int) in
+                let (result, streak) = try self.database.read { db -> (Board?, Int) in
                     let match = try Board
                         .filter(
                             Column("userId") == userId

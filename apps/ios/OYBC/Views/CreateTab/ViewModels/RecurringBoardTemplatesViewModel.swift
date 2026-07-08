@@ -21,6 +21,15 @@ final class RecurringBoardTemplatesViewModel {
     // commits only if no newer reload has started in the meantime.
     @ObservationIgnored private var latestSeq: UInt64 = 0
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Loading
 
     func reload(userId: String) async {
@@ -30,7 +39,7 @@ final class RecurringBoardTemplatesViewModel {
         }
 
         do {
-            let result = try AppDatabase.shared.fetchRecurringBoardTemplates(userId: userId)
+            let result = try database.fetchRecurringBoardTemplates(userId: userId)
             await MainActor.run {
                 guard mySeq == latestSeq else { return }
                 self.templates = result

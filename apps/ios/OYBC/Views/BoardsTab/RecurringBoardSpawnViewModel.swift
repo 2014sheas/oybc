@@ -38,6 +38,15 @@ final class RecurringBoardSpawnViewModel {
     @ObservationIgnored private var latestSeq: UInt64 = 0
     @ObservationIgnored private var inFlight: Bool = false
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Pass
 
     /// Runs one spawn pass. Reads the user's templates + boards + prefs,
@@ -61,8 +70,8 @@ final class RecurringBoardSpawnViewModel {
         }
 
         do {
-            let templates = try AppDatabase.shared.fetchRecurringBoardTemplates(userId: userId)
-            let boards = try AppDatabase.shared.fetchBoards(userId: userId)
+            let templates = try database.fetchRecurringBoardTemplates(userId: userId)
+            let boards = try database.fetchBoards(userId: userId)
 
             let pending = findTemplatesPendingSpawn(
                 templates: templates,
