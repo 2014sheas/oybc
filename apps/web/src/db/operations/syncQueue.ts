@@ -172,3 +172,65 @@ export async function promoteEligibleFailedItems(): Promise<number> {
 
   return promoted;
 }
+
+/**
+ * Count FAILED sync-queue items that have exhausted their retry budget
+ * (`retryCount >= MAX_SYNC_RETRIES`). These are exactly the items
+ * `promoteEligibleFailedItems` refuses to re-promote — they sit FAILED
+ * until a manual or network-regain retry recovers them.
+ *
+ * Cheap: a single full-table scan + in-memory count. The sync queue only
+ * holds unsynced/failed rows (COMPLETED items are cleared), so it stays
+ * small. Scans rather than `where('status')` because `status` has no
+ * standalone Dexie index (only the `[status+priority+createdAt]` compound),
+ * so an equality query on it would need compound-index emulation. Refreshed
+ * onto the sync status after every push cycle so the UI can surface
+ * "N changes couldn't sync".
+ *
+ * @returns The number of exhausted FAILED items.
+ */
+export async function countExhaustedSyncItems(): Promise<number> {
+  const all = await db.syncQueue.toArray();
+  return all.reduce(
+    (n, item) =>
+      item.status === SyncStatus.FAILED && item.retryCount >= MAX_SYNC_RETRIES
+        ? n + 1
+        : n,
+    0
+  );
+}
+
+/**
+ * Reset every exhausted FAILED item back to a fresh PENDING state:
+ * `retryCount → 0`, `lastError` cleared, `status → PENDING`. This gives
+ * the regular backoff/promote machinery a clean slate to retry them.
+ *
+ * Setting items to PENDING re-fires the Dexie `liveQuery` on the PENDING
+ * count (see `startSyncLoop`), which schedules a debounced push — so this
+ * implicitly nudges a push cycle without importing the firebase-coupled
+ * sync loop here (keeping this module firebase-free and unit-testable).
+ * Callers wanting an immediate push (the manual Retry button, the
+ * network-regain kick) additionally invoke `fullSync`.
+ *
+ * @returns The number of items reset.
+ */
+export async function retryExhaustedSyncItems(): Promise<number> {
+  // One transaction so a reload mid-reset can't leave a partial batch
+  // (mirrors the iOS twin's single write block). Idempotent either way,
+  // but atomic beats self-healing.
+  return db.transaction('rw', [db.syncQueue], async () => {
+    const all = await db.syncQueue.toArray();
+    const exhausted = all.filter(
+      (item) =>
+        item.status === SyncStatus.FAILED && item.retryCount >= MAX_SYNC_RETRIES
+    );
+    for (const item of exhausted) {
+      await db.syncQueue.update(item.id, {
+        status: SyncStatus.PENDING,
+        retryCount: 0,
+        lastError: undefined,
+      });
+    }
+    return exhausted.length;
+  });
+}

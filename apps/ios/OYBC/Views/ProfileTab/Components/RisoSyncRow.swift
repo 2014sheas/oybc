@@ -54,17 +54,26 @@ struct RisoSyncRow: View {
     // MARK: - Derived
 
     private var statusDotColor: Color {
-        // Orange only when attention may be warranted (offline or a sync error);
-        // routine in-flight syncing stays green/calm.
-        if !networkMonitor.isConnected || syncService.lastError != nil { return Color.orange }
+        // Orange only when attention may be warranted (offline, stuck items,
+        // or a sync error); routine in-flight syncing stays green/calm.
+        if !networkMonitor.isConnected
+            || syncService.exhaustedCount > 0
+            || syncService.lastError != nil { return Color.orange }
         return .risoGreen
     }
 
     private var statusText: String {
-        // Only a real network outage is "Offline". An online sync error is being
-        // retried by the background loop, so it reads as "Syncing…" — never
-        // "Offline" while connected, and never the raw error.
+        // Only a real network outage is "Offline". Items stuck past the retry
+        // cap surface as a plain count so the user has a reason to open the
+        // sync sheet (where the Retry button lives) — never the raw error. An
+        // online sync error is being retried by the background loop, so it
+        // reads as "Syncing…" — never "Offline" while connected.
         if !networkMonitor.isConnected { return "Offline" }
+        if syncService.exhaustedCount > 0 {
+            return syncService.exhaustedCount == 1
+                ? "1 couldn\u{2019}t sync"
+                : "\(syncService.exhaustedCount) couldn\u{2019}t sync"
+        }
         if syncService.lastError != nil || syncService.isSyncing { return "Syncing…" }
         return "Up to date"
     }
