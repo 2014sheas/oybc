@@ -406,4 +406,116 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - Wizard board persist (B4 — absorbed from BoardWizardPersist)
+
+    /// Persist a wizard-built board in a single atomic transaction: any
+    /// deferred (Bug #85) pending tasks that are actually placed, then the
+    /// `Board` row + its `BoardTask` rows — plus all matching `SyncQueueItem`
+    /// records — commit or roll back together. Without the sync items the
+    /// board stays local-only (`SyncService.pushSync` reads exclusively from
+    /// `sync_queue`), so every write path below enqueues one.
+    ///
+    /// Moved VERBATIM from `BoardWizardPersist.persistWizardBoard`'s write
+    /// block so the sync-enqueue lives in the data layer, not the view-layer
+    /// helper. The caller resolves the board dict, placement rows, and the
+    /// placed-only pending payloads before invoking.
+    ///
+    /// Bug #85: pending tasks are written FIRST (before board_tasks) so the
+    /// referential integrity of task → board_task is never violated even
+    /// during a crash mid-write (the txn rolls back).
+    ///
+    /// - Parameters:
+    ///   - board: The resolved `Board` row to insert/update.
+    ///   - boardTasks: The per-cell `BoardTask` placement rows to insert.
+    ///   - pendingTasks: Placed-only deferred payloads (parent + inline
+    ///     children + links) to write first.
+    ///   - isUpdate: `true` when updating an existing draft (old placements
+    ///     are hard-deleted + DELETE-enqueued first); `false` for fresh create.
+    ///   - now: ISO8601 timestamp for the sync-queue rows.
+    func saveWizardBoard(
+        board: Board,
+        boardTasks: [BoardTask],
+        pendingTasks: [PendingTaskPayload],
+        isUpdate: Bool,
+        now: String
+    ) throws {
+        try write { db in
+            // ── Bug #85: pending tasks (placed-only) ───────────────
+            for payload in pendingTasks {
+                try payload.task.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: payload.task.id,
+                    operationType: .create,
+                    payload: payload.task,
+                    now: now
+                ).save(db)
+                for childTask in payload.childTasks {
+                    try childTask.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "tasks",
+                        entityId: childTask.id,
+                        operationType: .create,
+                        payload: childTask,
+                        now: now
+                    ).save(db)
+                }
+                for link in payload.childLinks {
+                    try link.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "compoundChildren",
+                        entityId: link.id,
+                        operationType: .create,
+                        payload: link,
+                        now: now
+                    ).save(db)
+                }
+            }
+
+            // ── Board + BoardTask rows ─────────────────────────────
+            try board.save(db)
+
+            let boardSyncOp: SyncOperationType = isUpdate ? .update : .create
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: board.id,
+                operationType: boardSyncOp,
+                payload: board,
+                now: now
+            ).save(db)
+
+            if isUpdate {
+                // Snapshot the existing BoardTasks before deleting
+                // so each gets a matching DELETE sync item whose
+                // payload reflects the row that actually existed.
+                let oldBoardTasks = try BoardTask
+                    .filter(Column("boardId") == board.id)
+                    .fetchAll(db)
+                _ = try BoardTask
+                    .filter(Column("boardId") == board.id)
+                    .deleteAll(db)
+                for old in oldBoardTasks {
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "boardTasks",
+                        entityId: old.id,
+                        operationType: .delete,
+                        payload: old,
+                        now: now
+                    ).save(db)
+                }
+            }
+
+            for bt in boardTasks {
+                try bt.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: bt.id,
+                    operationType: .create,
+                    payload: bt,
+                    now: now
+                ).save(db)
+            }
+        }
+    }
+
 }

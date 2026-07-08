@@ -2,12 +2,15 @@ import SwiftUI
 import UIKit
 import GRDB
 
-// NOTE (B2-I2): the play-interaction WRITE layer + its file-private sync/cascade
-// helpers (`bpvEncodeSyncPayload` / `bpvMakeSyncItem` / `bpvRunCrossBoardCascade`
-// + `BPVCascadeBoardResult`) moved to `ViewModels/BoardPlayViewModel.swift`
-// alongside the handlers that call them. This view now delegates every write
-// (tap / stepper / swap / add / remove) to the view model and observes its
-// one-shot `flashEvent` to fire the residual view-side toast/overlay animations.
+// NOTE (B2-I2 → B4): the play-interaction WRITE layer moved to
+// `ViewModels/BoardPlayViewModel.swift`, then in B4 the write transactions
+// themselves (task completion + compound-child fallback + their sync/cascade
+// enqueue) were absorbed into `AppDatabase` (`completeTaskOrchestrated` /
+// `toggleCompoundChildFallback` / `runBoardCascadeForTaskWithResults` +
+// `CascadeBoardResult` in `Database/AppDatabase+Tasks.swift`). This view
+// delegates every write (tap / stepper / swap / add / remove) to the view
+// model and observes its one-shot `flashEvent` to fire the residual view-side
+// toast/overlay animations.
 
 /// Applies BoardPlayView's navigation title only when not embedded.
 /// SwiftUI can't conditionally apply a modifier inline without a branch,

@@ -615,33 +615,25 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
-                try database.write { db in
-                    try updatedChild.save(db)
-                    try bpvMakeSyncItem(
-                        entityType: "tasks",
-                        entityId: updatedChild.id,
-                        operationType: .update,
-                        payload: updatedChild,
-                        now: now
-                    ).save(db)
-
-                    let cascadeResults = try bpvRunCrossBoardCascade(
-                        db: db,
-                        changedTaskId: updatedChild.id,
-                        now: now
-                    )
-                    if let cid = currentBoardId, let result = cascadeResults[cid] {
-                        let lost = result.update.lostBingos.sorted()
-                        let gained = result.update.newBingos.sorted()
-                        if result.wasReactivated {
-                            newBingoMsg = "Board reactivated — no longer complete"
-                        } else if !lost.isEmpty {
-                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                        } else if result.didAutoComplete {
-                            newBingoMsg = "GREENLOG!"
-                        } else if !gained.isEmpty {
-                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                        }
+                // Child isn't on this board — the fallback write (child Task
+                // save + enqueue + cross-board cascade) is owned by
+                // `AppDatabase.toggleCompoundChildFallback`. This VM derives
+                // the current board's flash message from the returned results.
+                let cascadeResults = try database.toggleCompoundChildFallback(
+                    updatedChild: updatedChild,
+                    now: now
+                )
+                if let cid = currentBoardId, let result = cascadeResults[cid] {
+                    let lost = result.update.lostBingos.sorted()
+                    let gained = result.update.newBingos.sorted()
+                    if result.wasReactivated {
+                        newBingoMsg = "Board reactivated — no longer complete"
+                    } else if !lost.isEmpty {
+                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                    } else if result.didAutoComplete {
+                        newBingoMsg = "GREENLOG!"
+                    } else if !gained.isEmpty {
+                        newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
                     }
                 }
                 await MainActor.run {
@@ -766,22 +758,19 @@ final class BoardPlayViewModel: ObservableObject {
         }
     }
 
-    /// Runs the full task-completion orchestration in a single DB write transaction.
+    /// Runs the full task-completion orchestration and surfaces the flash.
     ///
-    /// Steps:
-    /// 1. Auto-activates a DRAFT board on first interaction.
-    /// 2. Persists the updated `Task` (global completion state) and bumps the
-    ///    `BoardTask` placement record's `updatedAt`/`version`. Both are queued
-    ///    for sync.
-    /// 3. Delegates to `bpvRunCrossBoardCascade` — which uses
-    ///    `DerivationPass.computeBoardStatsUpdate` to rebuild bingo state for
-    ///    every affected board (current board plus any other board placing this
-    ///    task or a compound containing it). Cascade respects compound
-    ///    evaluation + achievement-square overrides, applies GREENLOG → COMPLETED
-    ///    auto-completion + COMPLETED → ACTIVE reactivation, persists each
-    ///    affected board, and queues board sync entries.
-    /// 4. Surfaces a flash message for the *current* board only (other affected
-    ///    boards update silently — the user isn't looking at them).
+    /// The write transaction itself (draft auto-activate, `Task` save,
+    /// `BoardTask` bump, cross-board cascade + sync-enqueue) is owned by
+    /// `AppDatabase.completeTaskOrchestrated`. That method delegates to
+    /// `runBoardCascadeForTaskWithResults` — which uses
+    /// `DerivationPass.computeBoardStatsUpdate` to rebuild bingo state for
+    /// every affected board (current board plus any other board placing this
+    /// task or a compound containing it), applies GREENLOG → COMPLETED
+    /// auto-completion + COMPLETED → ACTIVE reactivation, persists each
+    /// affected board, queues board sync entries, and returns per-board
+    /// results. This VM surfaces a flash message for the *current* board only
+    /// (other affected boards update silently — the user isn't looking at them).
     ///
     /// Uses `_Concurrency.Task` to avoid shadowing by the GRDB `Task` model.
     ///
@@ -801,67 +790,32 @@ final class BoardPlayViewModel: ObservableObject {
             do {
                 var newBingoMsg: String? = nil
 
-                try database.write { db in
-                    // 1. Auto-activate DRAFT boards on first interaction. Cascade
-                    //    will re-save the board with stats; this leg only flips
-                    //    .draft → .active so cascade doesn't promote a draft to
-                    //    .completed (which would be wrong for first-tap).
-                    if board.status == .draft {
-                        var activated = board
-                        activated.status = .active
-                        activated.updatedAt = now
-                        activated.version += 1
-                        try activated.save(db)
-                    }
+                // The complete write transaction (draft auto-activate, Task
+                // save, BoardTask bump, cross-board cascade + sync-enqueue)
+                // now lives in `AppDatabase.completeTaskOrchestrated`. This VM
+                // only derives the flash message for the *current* board from
+                // the returned per-board results.
+                let cascadeResults = try database.completeTaskOrchestrated(
+                    board: board,
+                    updatedTask: updatedTask,
+                    boardTask: boardTask,
+                    now: now
+                )
 
-                    // 2a. Persist the updated Task (carries completion state).
-                    try updatedTask.save(db)
-                    try bpvMakeSyncItem(
-                        entityType: "tasks",
-                        entityId: updatedTask.id,
-                        operationType: .update,
-                        payload: updatedTask,
-                        now: now
-                    ).save(db)
-
-                    // 2b. Bump the BoardTask placement record's updatedAt/version.
-                    var updatedBoardTask = boardTask
-                    updatedBoardTask.updatedAt = now
-                    updatedBoardTask.version += 1
-                    try updatedBoardTask.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "boardTasks",
-                        entityId: updatedBoardTask.id,
-                        operationType: .update,
-                        payload: updatedBoardTask,
-                        now: now
-                    ).save(db)
-
-                    // 3. Cross-board cascade: rebuilds bingo state via
-                    //    DerivationPass.computeBoardStatsUpdate (which honours
-                    //    compound evaluation + achievement squares), applies
-                    //    GREENLOG transitions, and persists every affected board.
-                    let cascadeResults = try bpvRunCrossBoardCascade(
-                        db: db,
-                        changedTaskId: updatedTask.id,
-                        now: now
-                    )
-
-                    // 4. Surface a flash message for the *current* board only.
-                    //    Other affected boards still updated stats — they just
-                    //    don't get a transient banner since the user isn't on them.
-                    if let result = cascadeResults[currentBoardId] {
-                        let lost = result.update.lostBingos.sorted()
-                        let gained = result.update.newBingos.sorted()
-                        if result.wasReactivated {
-                            newBingoMsg = "Board reactivated — no longer complete"
-                        } else if !lost.isEmpty {
-                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                        } else if result.didAutoComplete {
-                            newBingoMsg = "GREENLOG!"
-                        } else if !gained.isEmpty {
-                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                        }
+                // Surface a flash message for the *current* board only.
+                // Other affected boards still updated stats — they just
+                // don't get a transient banner since the user isn't on them.
+                if let result = cascadeResults[currentBoardId] {
+                    let lost = result.update.lostBingos.sorted()
+                    let gained = result.update.newBingos.sorted()
+                    if result.wasReactivated {
+                        newBingoMsg = "Board reactivated — no longer complete"
+                    } else if !lost.isEmpty {
+                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                    } else if result.didAutoComplete {
+                        newBingoMsg = "GREENLOG!"
+                    } else if !gained.isEmpty {
+                        newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
                     }
                 }
 
@@ -1399,176 +1353,4 @@ struct BoardPlayEditEvent: Identifiable, Equatable {
         /// `dismiss()`es back to the Boards list.
         case archived
     }
-}
-
-// MARK: - Sync Queue + cascade helpers (moved from BoardPlayView.swift in B2-I2)
-//
-// These file-private free functions + `BPVCascadeBoardResult` moved verbatim
-// from `BoardPlayView.swift` alongside the interaction handlers that call them
-// inside their write transactions. Folding them into `AppDatabase` is a
-// later slice (B4); for now they travel with their only callers.
-
-/// Encodes a `Codable` value to a JSON string for storage in the sync queue payload.
-///
-/// - Parameter value: The value to encode.
-/// - Returns: A JSON string, or an empty JSON object string `"{}"` on failure.
-private func bpvEncodeSyncPayload<T: Codable>(_ value: T) -> String {
-    guard
-        let data = try? JSONEncoder().encode(value),
-        let string = String(data: data, encoding: .utf8)
-    else { return "{}" }
-    return string
-}
-
-/// Builds a `SyncQueueItem` for a local write that should be synced to Firestore.
-///
-/// - Parameters:
-///   - entityType: The Firestore collection name (e.g. `"boards"`, `"boardTasks"`).
-///   - entityId: The primary key of the entity.
-///   - operationType: `.create`, `.update`, or `.delete`.
-///   - payload: A `Codable` value whose JSON representation is stored as the payload.
-///   - now: The current ISO8601 timestamp.
-/// - Returns: A new `SyncQueueItem` with `status = .pending`.
-private func bpvMakeSyncItem<T: Codable>(
-    entityType: String,
-    entityId: String,
-    operationType: SyncOperationType,
-    payload: T,
-    now: String
-) -> SyncQueueItem {
-    SyncQueueItem(
-        id: AppDatabase.generateUUID(),
-        entityType: entityType,
-        entityId: entityId,
-        operationType: operationType,
-        payload: bpvEncodeSyncPayload(payload),
-        status: .pending,
-        retryCount: 0,
-        lastError: nil,
-        createdAt: now,
-        lastAttemptAt: nil,
-        completedAt: nil,
-        priority: 1
-    )
-}
-
-/// Per-board outcome of `bpvRunCrossBoardCascade`. Caller uses this to surface
-/// flash messages for the currently-visible board.
-struct BPVCascadeBoardResult {
-    let update: DerivationPass.BoardStatsUpdate
-    /// True if this board transitioned COMPLETED → ACTIVE because it is no
-    /// longer GREENLOG.
-    let wasReactivated: Bool
-    /// True if every cell on this board is now complete.
-    let isGreenlogNow: Bool
-    /// True if `board.status` was bumped to `.completed` by this cascade pass.
-    let didAutoComplete: Bool
-}
-
-/// Run the cross-board derivation cascade for a Task that just changed locally.
-///
-/// For every board affected by `changedTaskId` (directly or via a compound
-/// containing it transitively), this:
-///   1. Rebuilds bingo state via `DerivationPass.computeBoardStatsUpdate`
-///      — which respects compound evaluation + achievement-square overrides.
-///   2. Auto-completes the board on GREENLOG; reverts COMPLETED → ACTIVE when
-///      no longer GREENLOG.
-///   3. Persists the updated `Board` row (bumping `updatedAt` + `version`).
-///   4. Enqueues a `boards` sync entry for Firestore.
-///
-/// Mirrors `SyncService.runPullCascade` but additionally applies the GREENLOG
-/// status transitions that local interactions own. Caller controls the
-/// transaction via the passed `db` handle.
-///
-/// - Parameters:
-///   - db: GRDB database handle (must be inside a write transaction).
-///   - changedTaskId: The id of the Task whose state just changed.
-///   - now: ISO8601 timestamp to stamp on every updated board row.
-/// - Returns: A `[boardId: BPVCascadeBoardResult]` map. Boards excluded by
-///   `isDeleted` are omitted.
-private func bpvRunCrossBoardCascade(
-    db: Database,
-    changedTaskId: String,
-    now: String
-) throws -> [String: BPVCascadeBoardResult] {
-    let allChildren: [CompoundChild] = try CompoundChild
-        .filter(Column("isDeleted") == false)
-        .fetchAll(db)
-    let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
-    let allTasks: [Task] = try Task.fetchAll(db)
-    // Phase 6.3 — DerivationPass.computeBoardStatsUpdate needs the
-    // workspace's boards to evaluate the specific-board / recurring-
-    // template achievement branches. Pre-6.3 calls omitted this and
-    // the algorithm defaults to []; on this cascade path we already
-    // have the data fetched, so use it.
-    let allBoards: [Board] = try Board.fetchAll(db)
-
-    var taskById: [String: Task] = [:]
-    for t in allTasks { taskById[t.id] = t }
-    var childrenByCompound: [String: [CompoundChild]] = [:]
-    for c in allChildren {
-        childrenByCompound[c.compoundTaskId, default: []].append(c)
-    }
-
-    let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-        changedTaskId: changedTaskId,
-        children: allChildren
-    )
-    let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-        changedTaskId: changedTaskId,
-        parentCompounds: parentCompounds,
-        boardTasks: allBoardTasks
-    )
-
-    var results: [String: BPVCascadeBoardResult] = [:]
-    for boardId in affectedBoardIds {
-        guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
-        let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
-        let update = DerivationPass.computeBoardStatsUpdate(
-            board: board,
-            boardTasksOnBoard: boardTasksOnBoard,
-            childrenByCompound: childrenByCompound,
-            taskById: taskById,
-            allBoards: allBoards
-        )
-
-        let totalSquares = board.boardSize * board.boardSize
-        let isGreenlogNow = update.completedTasks >= totalSquares
-        var wasReactivated = false
-        var didAutoComplete = false
-
-        board.completedTasks = update.completedTasks
-        board.totalTasks = totalSquares
-        board.linesCompleted = update.linesCompleted
-        board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-        board.updatedAt = now
-        board.version += 1
-
-        if isGreenlogNow, board.status == .active {
-            board.status = .completed
-            board.completedAt = now
-            didAutoComplete = true
-        } else if !isGreenlogNow, board.status == .completed {
-            board.status = .active
-            board.completedAt = nil
-            wasReactivated = true
-        }
-
-        try board.save(db)
-        try bpvMakeSyncItem(
-            entityType: "boards",
-            entityId: boardId,
-            operationType: .update,
-            payload: board,
-            now: now
-        ).save(db)
-
-        results[boardId] = BPVCascadeBoardResult(
-            update: update,
-            wasReactivated: wasReactivated,
-            isGreenlogNow: isGreenlogNow,
-            didAutoComplete: didAutoComplete
-        )
-    }
-    return results
 }
