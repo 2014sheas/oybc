@@ -241,17 +241,24 @@ struct BoardPlayView: View {
 
     // MARK: - State
 
-    @State private var board: Board?
-    @State private var boardTasks: [BoardTask] = []
-    @State private var allTasks: [Task] = []
-    @State private var allCompoundChildren: [CompoundChild] = []
+    /// Owns the data-loading layer (B2-I1). The seven data arrays the play
+    /// surface reads are now `@Published private(set)` on the view model and
+    /// exposed here as read-only computed shims so every existing read site
+    /// (`board`, `boardTasks`, …) is untouched. Constructed in `init` with
+    /// the board id + user id.
+    @StateObject private var viewModel: BoardPlayViewModel
+
+    private var board: Board? { viewModel.board }
+    private var boardTasks: [BoardTask] { viewModel.boardTasks }
+    private var allTasks: [Task] { viewModel.allTasks }
+    private var allCompoundChildren: [CompoundChild] { viewModel.allCompoundChildren }
     // Phase 6.3 — workspace-wide boards + templates feed both the
     // achievement-square config sheet (for the pickers) and the per-
-    // cell badge data computation. Refreshed alongside `loadTaskData`
+    // cell badge data computation. Refreshed alongside the task data
     // so the sheet always sees up-to-date data when opened.
-    @State private var allBoardsInWorkspace: [Board] = []
-    @State private var allTemplatesInWorkspace: [RecurringBoardTemplate] = []
-    @State private var allBoardTasksInWorkspace: [BoardTask] = []
+    private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
+    private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
+    private var allBoardTasksInWorkspace: [BoardTask] { viewModel.allBoardTasksInWorkspace }
 
     @State private var isProcessing = false
     @State private var bingoMessage: String?
@@ -361,6 +368,31 @@ struct BoardPlayView: View {
     /// (see `.onChange` below) sequences dismiss-then-navigate
     /// correctly.
     @State private var pendingOpenBoardId: String?
+
+    // MARK: - Init
+
+    /// Constructs the view and its data-loading `BoardPlayViewModel`.
+    ///
+    /// The view model is created with a nil userId here because the
+    /// `@EnvironmentObject` `AuthService` is not available in a SwiftUI
+    /// `init`. The view supplies the authenticated user's id to the view
+    /// model in `.onAppear` (via `setUserId`), where the env IS available —
+    /// faithfully reproducing the pre-refactor behavior, where the loaders
+    /// read `authService.currentUser?.id` at reload time.
+    init(
+        boardId: String,
+        onOpenBoard: @escaping (String) -> Void = { _ in },
+        embedded: Bool = false,
+        onResumeDraft: ((String) -> Void)? = nil
+    ) {
+        self.boardId = boardId
+        self.onOpenBoard = onOpenBoard
+        self.embedded = embedded
+        self.onResumeDraft = onResumeDraft
+        _viewModel = StateObject(
+            wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil)
+        )
+    }
 
     // MARK: - Computed
 
@@ -867,9 +899,9 @@ struct BoardPlayView: View {
         .sheet(
             item: $swapTarget,
             onDismiss: {
-                // Reload so the grid reflects any completed swap.
-                loadBoardTasks()
-                loadTaskData()
+                // Reload so the grid reflects any completed swap. The board
+                // record itself is unchanged, so this skips the board fetch.
+                viewModel.reloadBoardTasksAndTaskData()
             }
         ) { target in
             CellSwapSheet(
@@ -934,8 +966,7 @@ struct BoardPlayView: View {
                 if addTaskConfirmed {
                     addTaskConfirmed = false
                 } else {
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reloadBoardTasksAndTaskData()
                 }
             }
         ) {
@@ -954,18 +985,20 @@ struct BoardPlayView: View {
             }
         }
         .onAppear {
-            loadBoard()
-            loadBoardTasks()
-            loadTaskData()
+            // Supply the authenticated user id from the env (unavailable in
+            // `init`) before the first load. userId is stable for the
+            // session, so later reloads (post-write tails, sheet dismisses,
+            // pager board-changes) reuse it.
+            viewModel.setUserId(authService.currentUser?.id)
+            viewModel.reload()
         }
         // Defensive: also reload on boardId prop change. With `.id(boardId)`
-        // on the destination, SwiftUI re-creates the view (and .onAppear
-        // fires) — but if any future refactor strips the .id, this keeps
-        // data fresh per boardId.
-        .onChange(of: boardId) { _, _ in
-            loadBoard()
-            loadBoardTasks()
-            loadTaskData()
+        // on the standalone destination, SwiftUI re-creates the view (and the
+        // view model) so .onAppear fires — but the embedded core-board pager
+        // reuses the SAME BoardPlayView instance (no `.id()`), so this points
+        // the existing view model at the new board and reloads.
+        .onChange(of: boardId) { _, newBoardId in
+            viewModel.boardChanged(to: newBoardId)
         }
         // Counting stepper sheet — Riso pill stepper for counting cells.
         // Wires to handleCountingTap / handleCountingDecrement; dismiss clears state.
@@ -2196,9 +2229,7 @@ struct BoardPlayView: View {
 
                 await MainActor.run {
                     isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reload()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
                         triggerRisoNotification(from: msg)
@@ -2253,9 +2284,7 @@ struct BoardPlayView: View {
 
                 await MainActor.run {
                     isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reload()
                     if let text = creditText {
                         triggerCreditToast(text: text)
                     }
@@ -2368,9 +2397,7 @@ struct BoardPlayView: View {
                 }
                 await MainActor.run {
                     isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reload()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
                         triggerRisoNotification(from: msg)
@@ -2402,8 +2429,8 @@ struct BoardPlayView: View {
     ///   3. Re-derives stats + GREENLOG transitions for each affected board.
     ///
     /// The swap runs on a detached `_Concurrency.Task` to avoid blocking the main thread.
-    /// UI is refreshed via `loadBoardTasks()` + `loadTaskData()` on completion (the
-    /// sheet's `onDismiss` also triggers a reload as a defensive belt-and-suspenders).
+    /// UI is refreshed via `viewModel.reload()` on completion (the sheet's
+    /// `onDismiss` also triggers a reload as a defensive belt-and-suspenders).
     ///
     /// - Parameters:
     ///   - boardTaskId: The `BoardTask.id` whose cell is being swapped.
@@ -2418,9 +2445,7 @@ struct BoardPlayView: View {
                 )
                 await MainActor.run {
                     isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reload()
                 }
             } catch {
                 print("⚠️ BoardPlayView cell swap error: \(error)")
@@ -2448,9 +2473,7 @@ struct BoardPlayView: View {
                 try AppDatabase.shared.removeBoardTaskFromBoard(boardTaskId)
                 await MainActor.run {
                     isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reload()
                 }
             } catch {
                 print("⚠️ BoardPlayView remove-from-board error: \(error)")
@@ -2485,9 +2508,7 @@ struct BoardPlayView: View {
                 )
                 await MainActor.run {
                     isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reload()
                 }
             } catch {
                 print("⚠️ BoardPlayView add-to-cell error: \(error)")
@@ -2601,13 +2622,11 @@ struct BoardPlayView: View {
                 // Refresh UI on main thread.
                 await MainActor.run {
                     isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    // Also refresh allTasks + allCompoundChildren so the compound
-                    // detail sheet (which renders from taskMap + compoundChildrenByCompound)
-                    // reflects the latest child-toggle state immediately without needing a
-                    // dismiss-and-reopen. Mirrors the Path-B (child-not-on-board) pattern.
-                    loadTaskData()
+                    // Full reload: board + placements + workspace task data. The
+                    // task-data refresh keeps the compound detail sheet (rendered
+                    // from taskMap + compoundChildrenByCompound) in sync with the
+                    // latest child-toggle state without a dismiss-and-reopen.
+                    viewModel.reload()
                     if let msg = newBingoMsg {
                         bingoMessage = msg
                         triggerRisoNotification(from: msg)
@@ -2662,7 +2681,7 @@ struct BoardPlayView: View {
         editHasCandidateTasks = false
 
         // Phase 2 — seed the squares draft from the current live placement rows.
-        // `boardTasks` is already loaded by `loadBoardTasks()` on appear.
+        // `boardTasks` is already loaded by `viewModel.reload()` on appear.
         editSquaresDraft = [:]
         for bt in boardTasks {
             let key = "\(bt.row)-\(bt.col)"
@@ -2934,9 +2953,7 @@ struct BoardPlayView: View {
                 await MainActor.run {
                     editSaving = false
                     withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reload()
                     triggerBoardSavedToast()
                 }
             } catch {
@@ -2984,54 +3001,11 @@ struct BoardPlayView: View {
     }
 
     // MARK: - Data Loading
-
-    /// Reloads the board record from GRDB and updates `board` on the main thread.
-    private func loadBoard() {
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let fetched = try? AppDatabase.shared.fetchBoard(id: boardId)
-            await MainActor.run { board = fetched }
-        }
-    }
-
-    /// Reloads all board tasks for the current board from GRDB.
-    private func loadBoardTasks() {
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let fetched = (try? AppDatabase.shared.fetchBoardTasks(boardId: boardId)) ?? []
-            await MainActor.run { boardTasks = fetched }
-        }
-    }
-
-    /// Loads all tasks and compound children for the authenticated user
-    /// into memory. CompoundChildren are fetched globally (not user-scoped)
-    /// since the AppDatabase helper doesn't filter by userId for that table.
-    private func loadTaskData() {
-        let userId = authService.currentUser?.id
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let tasks = userId.flatMap { id in
-                try? AppDatabase.shared.fetchTasks(userId: id)
-            } ?? []
-            let children = (try? AppDatabase.shared.fetchAllCompoundChildren()) ?? []
-            // Phase 6.3 — workspace-wide boards + templates + board_tasks
-            // for the achievement-square config sheet (pickers) and the
-            // per-cell badge data computation. Same fetch pattern as
-            // tasks above — runs once per onAppear, refreshed alongside
-            // the spawn-driver pass.
-            let workspaceBoards = userId.flatMap { id in
-                try? AppDatabase.shared.fetchBoards(userId: id)
-            } ?? []
-            let workspaceTemplates = userId.flatMap { id in
-                try? AppDatabase.shared.fetchRecurringBoardTemplates(userId: id)
-            } ?? []
-            let workspaceBoardTasks = (try? AppDatabase.shared.fetchAllBoardTasks()) ?? []
-            await MainActor.run {
-                allTasks = tasks
-                allCompoundChildren = children
-                allBoardsInWorkspace = workspaceBoards
-                allTemplatesInWorkspace = workspaceTemplates
-                allBoardTasksInWorkspace = workspaceBoardTasks
-            }
-        }
-    }
+    //
+    // The board / placements / workspace-task loaders moved to
+    // `BoardPlayViewModel` (B2-I1). Call sites now use `viewModel.reload()`
+    // (full) or `viewModel.reloadBoardTasksAndTaskData()` (placements + task
+    // data, board unchanged).
 }
 
 // MARK: - BackButton
