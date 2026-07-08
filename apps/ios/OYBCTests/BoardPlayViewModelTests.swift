@@ -548,4 +548,140 @@ final class BoardPlayViewModelTests: XCTestCase {
         }, "placement was never created")
         XCTAssertTrue(vm.boardTasks.contains { $0.taskId == "t1" && $0.row == 1 && $0.col == 2 })
     }
+
+    // MARK: - 11. B2-I3 edit-mode draft layer
+
+    func test_seedEditDraft_populatesDraftFieldsFromBoard() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)   // b1: t1@(0,0), t2@(0,1); monthly, FREE center
+        let vm = loadedVM(db, boardId: "b1")
+        let board = try XCTUnwrap(vm.board)
+
+        vm.seedEditDraft(from: board)
+
+        XCTAssertEqual(vm.editName, "Board b1")
+        XCTAssertEqual(vm.editTimeframe, .monthly)
+        XCTAssertEqual(vm.editCenterType, .free)
+        XCTAssertEqual(vm.editSubMode, .editTasks)
+        // One squares-draft entry per live placement, seeded staged == original.
+        XCTAssertEqual(vm.editSquaresDraft.count, 2)
+        let d00 = try XCTUnwrap(vm.editSquaresDraft["0-0"])
+        XCTAssertEqual(d00.originalTaskId, "t1")
+        XCTAssertEqual(d00.stagedTaskId, "t1")
+        XCTAssertTrue(vm.editTaskOverrides.isEmpty)
+        XCTAssertNil(vm.editRearrangeCells)
+        // No staged edits yet → dirty count is zero (Save pill stays disabled).
+        XCTAssertEqual(vm.editSquaresEditCount, 0)
+    }
+
+    func test_editDraftMutation_bumpsEditSquaresEditCount() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertEqual(vm.editSquaresEditCount, 0, "fresh draft is clean")
+
+        // Replace the task in cell (0,0): t1 → t2. Dirty count reflects it.
+        vm.handleEditCellReplace(cellKey: "0-0", newTaskId: "t2")
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+        XCTAssertEqual(vm.editDraftBoardTasks.first { $0.row == 0 && $0.col == 0 }?.taskId, "t2",
+                       "draft board tasks overlay the staged replacement")
+
+        // A task-field override is a second, independent staged edit.
+        vm.handleEditTaskOverride(
+            taskId: "t2",
+            patch: .init(title: "Renamed t2", type: .normal, action: "", unit: "", maxCount: nil)
+        )
+        XCTAssertEqual(vm.editSquaresEditCount, 2)
+        XCTAssertEqual(vm.editDraftTaskMap["t2"]?.title, "Renamed t2",
+                       "draft task map overlays the staged override")
+    }
+
+    func test_seedEditDraft_reseedDiscardsPriorDraftEdits() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+        let board = try XCTUnwrap(vm.board)
+
+        vm.seedEditDraft(from: board)
+        vm.handleEditCellReplace(cellKey: "0-0", newTaskId: "t2")
+        vm.handleEditTaskOverride(
+            taskId: "t2",
+            patch: .init(title: "X", type: .normal, action: "", unit: "", maxCount: nil)
+        )
+        XCTAssertEqual(vm.editSquaresEditCount, 2)
+
+        // Re-entering edit mode re-seeds from the live board, discarding drafts.
+        vm.seedEditDraft(from: board)
+        XCTAssertEqual(vm.editSquaresEditCount, 0)
+        XCTAssertTrue(vm.editTaskOverrides.isEmpty)
+        XCTAssertNil(vm.editRearrangeCells)
+    }
+
+    func test_handleEditSave_commitsRename_replacement_andPosition_thenEmitsSaved() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))     // 3×3, FREE center, monthly, "Board b1"
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        // t1 at (0,0); (0,1) empty so a position move to (0,1) is unambiguous.
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let board = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: board)
+
+        // 1. Rename.
+        vm.editName = "Renamed b1"
+        // 2. Replace t1 → t2 in cell (0,0).
+        vm.handleEditCellReplace(cellKey: "0-0", newTaskId: "t2")
+        // 3. Position move: seed rearrange cells, then move bt1 (slot 0) into the
+        //    empty slot 1 = (0,1) by swapping the two array entries.
+        vm.seedRearrangeCells(for: board)
+        var cells = try XCTUnwrap(vm.editRearrangeCells)
+        cells.swapAt(0, 1)
+        vm.handleRearrange(newCells: cells)
+
+        XCTAssertEqual(vm.editSquaresEditCount, 2, "one replacement + one position move")
+
+        let started = vm.handleEditSave(weekStartDay: "monday")
+        XCTAssertTrue(started, "save should dispatch when validation passes")
+
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
+                      "handleEditSave never emitted .saved")
+
+        // Board renamed.
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(saved.name, "Renamed b1")
+        // Placement repointed t1 → t2 AND moved to (0,1).
+        let bt = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
+        XCTAssertEqual(bt.taskId, "t2", "cell replacement committed")
+        XCTAssertEqual(bt.row, 0)
+        XCTAssertEqual(bt.col, 1, "position move committed")
+    }
+
+    func test_handleEditSave_blankName_doesNotStart() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        vm.editName = "   "   // whitespace-only ⇒ invalid
+
+        XCTAssertFalse(vm.handleEditSave(weekStartDay: "monday"),
+                       "a blank name must not dispatch a commit")
+    }
+
+    func test_handleEditArchive_setsBoardArchived_thenEmitsArchived() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        let vm = loadedVM(db, boardId: "b1")
+
+        vm.handleEditArchive()
+
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .archived },
+                      "handleEditArchive never emitted .archived")
+        let b = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(b.status, .archived)
+    }
 }

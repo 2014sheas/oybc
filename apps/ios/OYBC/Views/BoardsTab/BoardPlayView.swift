@@ -134,32 +134,17 @@ struct BoardPlayView: View {
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
     // MARK: Edit-mode draft state (Phase 1 board-edit chrome)
+    // NOTE (B2-I3): the edit-draft *data* layer moved to `BoardPlayViewModel`.
+    // The `BoardEditPanel`'s seven two-way bindings are now `$viewModel.editName`
+    // … projections, and the staged-square dictionaries + draft-derived helpers
+    // + the seed/save/archive commit live on the view model. The view keeps only
+    // the render-level edit chrome below (`editMode` overlay gate, the Save
+    // spinner mirror, the alert/toast flags, and the cell-menu routing state).
     /// True while the in-place `BoardEditPanel` is overlaid on `BoardPlayView`.
     @State private var editMode: Bool = false
-    /// Draft board name input.
-    @State private var editName: String = ""
-    /// Draft timeframe segmented picker value.
-    @State private var editTimeframe: Timeframe = .monthly
-    /// Draft custom start-date picker value.
-    @State private var editCustomStartDate: Date = Date()
-    /// Draft custom end-date picker value.
-    @State private var editCustomEndDate: Date = Date()
-    /// Original parsed start date seeded from `board.startDate` — used by the
-    /// `BoardEditPanel` dirty-check comparison.
-    @State private var editOriginalCustomStartDate: Date = Date()
-    /// Original parsed end date seeded from `board.endDate` — used by the
-    /// `BoardEditPanel` dirty-check comparison.
-    @State private var editOriginalCustomEndDate: Date = Date()
-    /// Draft center-square type selector value.
-    @State private var editCenterType: CenterSquareType = .free
-    /// Draft custom center name input (only relevant when `editCenterType == .customFree`).
-    @State private var editCenterCustomName: String = ""
-    /// True when the board already has a center-task placement (gates CHOSEN option).
-    /// Loaded asynchronously by `seedEditDraft(from:)`.
-    @State private var editHasCandidateTasks: Bool = false
-    /// Which squares sub-mode (Edit tasks / Rearrange) is active.
-    @State private var editSubMode: BoardEditSubMode = .editTasks
-    /// True while `updateBoardAndCascade` is in flight — disables the Save pill.
+    /// True while a `handleEditSave` commit is in flight — disables the Save
+    /// pill. UI mirror driven by `viewModel.handleEditSave`'s return value +
+    /// `viewModel.editEvent`; the authoritative re-entry guard is VM-side.
     @State private var editSaving: Bool = false
     /// Surfaces a board-edit Save failure (the edit panel overlays the inline
     /// flash, so a system alert is used — it pierces the overlay).
@@ -167,14 +152,8 @@ struct BoardPlayView: View {
     /// Controls the "Board saved" success toast (auto-dismissed after 2.4 s).
     @State private var showEditSavedToast: Bool = false
     // MARK: Edit-mode squares draft (Phase 2 — Edit tasks)
-    /// Per-cell staged state keyed by "row-col". Seeded from live `BoardTask`
-    /// rows when the user enters edit mode; modified by Replace / Edit-task actions.
-    /// Nothing is written to the DB until `handleEditSave` commits.
-    @State private var editSquaresDraft: [String: SquaresDraftCell] = [:]
-    /// Staged task-field overrides keyed by taskId (global — shared by all squares
-    /// that reference the same task). Applied to `editDraftTaskMap` for rendering and
-    /// committed via `saveTaskAndCascade` in `handleEditSave`.
-    @State private var editTaskOverrides: [String: StagedTaskOverride] = [:]
+    // NOTE (B2-I3): `editSquaresDraft` / `editTaskOverrides` moved to the view
+    // model (read via `viewModel.editSquaresDraft` / `.editTaskOverrides`).
     /// Target for the "Replace task" sheet triggered from a cell tap in edit mode.
     @State private var editModeReplaceTarget: EditModeSwapTarget? = nil
     /// Target for the "Edit task" sheet triggered from a cell tap in edit mode.
@@ -197,10 +176,8 @@ struct BoardPlayView: View {
     /// M4 — tracks whether the add-cell sheet was dismissed via a confirmed selection.
     /// `onDismiss` skips the reload when true because `handleAddTaskToCell` already reloads.
     @State private var addTaskConfirmed: Bool = false
-    /// Phase 3 — Rearrange sub-mode staged state.
-    /// Ordered `[RearrangeCellData]` array shown by `RearrangeGrid`. nil until
-    /// the user first enters Rearrange sub-mode (built lazily by `seedRearrangeCells`).
-    @State private var editRearrangeCells: [RearrangeCellData]? = nil
+    // NOTE (B2-I3): `editRearrangeCells` moved to the view model (read via
+    // `viewModel.editRearrangeCells`).
 
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
@@ -243,77 +220,12 @@ struct BoardPlayView: View {
     private var taskMap: [String: Task] { viewModel.taskMap }
 
     // MARK: - Edit-mode squares draft (Phase 2)
-
-    /// Live `BoardTask` rows with staged task-ID replacements applied.
-    /// Used as `boardTasks:` in `BoardEditPanel` so the draft grid shows
-    /// the staged tasks without touching the database.
-    private var editDraftBoardTasks: [BoardTask] {
-        guard editMode, !editSquaresDraft.isEmpty else { return boardTasks }
-        return boardTasks.map { bt in
-            let key = "\(bt.row)-\(bt.col)"
-            guard let draft = editSquaresDraft[key],
-                  draft.stagedTaskId != bt.taskId else { return bt }
-            var copy = bt
-            copy.taskId = draft.stagedTaskId
-            return copy
-        }
-    }
-
-    /// `taskMap` with staged task-field overrides applied.
-    /// Used as `taskMap:` in `BoardEditPanel` so cell labels show the
-    /// staged title/type without a database write.
-    private var editDraftTaskMap: [String: Task] {
-        guard editMode, !editTaskOverrides.isEmpty else { return taskMap }
-        var map = taskMap
-        for (taskId, override) in editTaskOverrides {
-            guard var t = map[taskId] else { continue }
-            t.title = override.title
-            t.type  = override.type
-            if override.type == .counting {
-                t.action   = override.action
-                t.unit     = override.unit
-                t.maxCount = override.maxCount
-            }
-            map[taskId] = t
-        }
-        return map
-    }
-
-    /// Number of staged square edits: cell replacements + task-field overrides +
-    /// position moves (from Rearrange sub-mode).
-    ///
-    /// Position moves are DERIVED: a drag that returns a cell to its original slot
-    /// is net-zero and does not inflate the counter. Each `RearrangeCellData` carries
-    /// its `originalRow`/`originalCol` so we can compare the current slot index to
-    /// the original position. The staged positions are inferred from the order of
-    /// `editRearrangeCells` (index → row-major row/col).
-    ///
-    /// Forwarded to `BoardEditPanel.squareEditCount` so the counter and Save pill
-    /// react to square-level changes, not just metadata changes.
-    private var editSquaresEditCount: Int {
-        guard editMode else { return 0 }
-        let replacements = editSquaresDraft.values
-            .filter { $0.stagedTaskId != $0.originalTaskId }.count
-        let overrides = editTaskOverrides.count
-        let positionMoves = countPositionMoves(in: editRearrangeCells, gridSize: gridSize)
-        return replacements + overrides + positionMoves
-    }
-
-    /// Returns the number of task cells that are in a different grid slot from
-    /// their `originalRow`/`originalCol`. Center and empty slots are excluded.
-    private func countPositionMoves(in cells: [RearrangeCellData]?, gridSize: Int) -> Int {
-        guard let cells, gridSize > 0 else { return 0 }
-        var count = 0
-        for (slotIdx, cell) in cells.enumerated() {
-            guard !cell.isCenter, !cell.isEmpty else { continue }
-            let stagedRow = slotIdx / gridSize
-            let stagedCol = slotIdx % gridSize
-            if stagedRow != cell.originalRow || stagedCol != cell.originalCol {
-                count += 1
-            }
-        }
-        return count
-    }
+    //
+    // NOTE (B2-I3): `editDraftBoardTasks` / `editDraftTaskMap` /
+    // `editSquaresEditCount` / `countPositionMoves` moved to `BoardPlayViewModel`
+    // (read via `viewModel.editDraftBoardTasks` etc.). `editCellMenuTitle` +
+    // `isPinnedCenter` stay here — they read view-owned state (the cell-menu
+    // routing / `editMode`) alongside the VM draft state.
 
     /// Display title for the tap-menu confirmationDialog.
     ///
@@ -322,12 +234,12 @@ struct BoardPlayView: View {
     private var editCellMenuTitle: String {
         // Free center tap has no squaresDraft entry — give it a clear title.
         if editCellMenuIsCenter
-            && (editCenterType == .free || editCenterType == .customFree) {
+            && (viewModel.editCenterType == .free || viewModel.editCenterType == .customFree) {
             return "Center square"
         }
         let key = "\(editCellMenuRow)-\(editCellMenuCol)"
-        guard let draft = editSquaresDraft[key] else { return "Square" }
-        let map = editDraftTaskMap
+        guard let draft = viewModel.editSquaresDraft[key] else { return "Square" }
+        let map = viewModel.editDraftTaskMap
         return map[draft.stagedTaskId]?.title ?? "Square"
     }
 
@@ -339,7 +251,7 @@ struct BoardPlayView: View {
     /// is NOT pinned — Swap and Remove are enabled for it.
     private func isPinnedCenter(boardTask: BoardTask) -> Bool {
         guard boardTask.isCenter else { return false }
-        let effectiveCenterType = editMode ? editCenterType : (board?.centerSquareType ?? .none)
+        let effectiveCenterType = editMode ? viewModel.editCenterType : (board?.centerSquareType ?? .none)
         return effectiveCenterType != .none
     }
 
@@ -581,50 +493,69 @@ struct BoardPlayView: View {
             if editMode, let b = board {
                 BoardEditPanel(
                     board: b,
-                    boardTasks: editDraftBoardTasks,
-                    taskMap: editDraftTaskMap,
+                    boardTasks: viewModel.editDraftBoardTasks,
+                    taskMap: viewModel.editDraftTaskMap,
                     weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
-                    originalCustomStartDate: editOriginalCustomStartDate,
-                    originalCustomEndDate: editOriginalCustomEndDate,
-                    name: $editName,
-                    timeframe: $editTimeframe,
-                    customStartDate: $editCustomStartDate,
-                    customEndDate: $editCustomEndDate,
-                    centerType: $editCenterType,
-                    centerCustomName: $editCenterCustomName,
-                    hasCandidateTasks: editHasCandidateTasks,
-                    subMode: $editSubMode,
-                    squareEditCount: editSquaresEditCount,
+                    originalCustomStartDate: viewModel.editOriginalCustomStartDate,
+                    originalCustomEndDate: viewModel.editOriginalCustomEndDate,
+                    // B2-I3: the seven two-way bindings are now `$viewModel.…`
+                    // projections (`@StateObject` projections are two-way, so
+                    // these behave exactly like the pre-move `@State` bindings).
+                    name: $viewModel.editName,
+                    timeframe: $viewModel.editTimeframe,
+                    customStartDate: $viewModel.editCustomStartDate,
+                    customEndDate: $viewModel.editCustomEndDate,
+                    centerType: $viewModel.editCenterType,
+                    centerCustomName: $viewModel.editCenterCustomName,
+                    hasCandidateTasks: viewModel.editHasCandidateTasks,
+                    subMode: $viewModel.editSubMode,
+                    squareEditCount: viewModel.editSquaresEditCount,
                     onCellTap: { row, col in handleEditCellTap(row: row, col: col) },
                     // Phase 2b — center toggle (free center → task square).
                     onCenterTap: handleFreeCenterTap,
                     // Phase 3 — Rearrange
-                    rearrangeCells: editRearrangeCells,
-                    onReorder: handleRearrange,
+                    rearrangeCells: viewModel.editRearrangeCells,
+                    onReorder: viewModel.handleRearrange,
                     isSaving: editSaving,
-                    onSave: handleEditSave,
+                    onSave: {
+                        let weekStart = authService.currentUser?.decodedPreferences
+                            .weekStartDay.rawValue ?? "monday"
+                        // The VM validates + dispatches the commit; it returns
+                        // true iff the save actually started, so `editSaving`
+                        // (view-owned) flips synchronously in the same tick the
+                        // pre-move code did — the reset runs on `.editEvent`.
+                        if viewModel.handleEditSave(weekStartDay: weekStart) {
+                            editSaving = true
+                        }
+                    },
                     onCancelConfirmed: {
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
                     },
-                    onArchiveConfirmed: handleEditArchive
+                    onArchiveConfirmed: viewModel.handleEditArchive
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.risoPaper.ignoresSafeArea())
                 .transition(.opacity)
                 .zIndex(30)
-                // Phase 3 — seed rearrange cells lazily on sub-mode switch to Rearrange.
-                .onChange(of: editSubMode) { _, newMode in
+                // Phase 3 — seed rearrange cells lazily on sub-mode switch to
+                // Rearrange. Kept as a view `.onChange` (observing the VM's
+                // published `editSubMode`) rather than a VM `didSet`: SwiftUI's
+                // onChange fires AFTER the view update, a `didSet` fires
+                // synchronously before it — preserving the post-update timing
+                // matters here (see the B2-I3 report), so this stays an observer.
+                .onChange(of: viewModel.editSubMode) { _, newMode in
                     if newMode == .rearrange {
-                        seedRearrangeCells(for: b)
+                        viewModel.seedRearrangeCells(for: b)
                     }
                 }
                 // Phase 2b — when center type changes (via the toggle or the
                 // BoardSetupFormView picker), rebuild the staged rearrange cells
                 // so the Rearrange sub-mode immediately reflects the new pinning.
                 // If no rearrange cells exist yet, seedRearrangeCells will build
-                // them with the correct type on the next sub-mode switch.
-                .onChange(of: editCenterType) { _, newType in
-                    guard let current = editRearrangeCells else { return }
+                // them with the correct type on the next sub-mode switch. Same
+                // onChange-vs-didSet rationale as above.
+                .onChange(of: viewModel.editCenterType) { _, newType in
+                    guard let current = viewModel.editRearrangeCells else { return }
                     // Preserve any staged rearrange order: map each non-center,
                     // non-empty cell's CURRENT slot index back to (row, col) and pass
                     // it as the positionDraft, so changing the center type doesn't
@@ -634,8 +565,8 @@ struct BoardPlayView: View {
                     for (i, cell) in current.enumerated() where !cell.isCenter && !cell.isEmpty {
                         positions[cell.id] = (row: i / size, col: i % size)
                     }
-                    editRearrangeCells = buildRearrangeCells(
-                        squaresDraft: editSquaresDraft,
+                    viewModel.editRearrangeCells = buildRearrangeCells(
+                        squaresDraft: viewModel.editSquaresDraft,
                         gridSize: size,
                         centerSquareType: newType,
                         positionDraft: positions
@@ -656,7 +587,10 @@ struct BoardPlayView: View {
             if let b = board, b.status == .active, !embedded, !editMode {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Edit") {
-                        seedEditDraft(from: b)
+                        viewModel.seedEditDraft(from: b)
+                        // The pre-move `seedEditDraft` reset `editSaving = false`
+                        // inline; `editSaving` stays view-side, so reset it here.
+                        editSaving = false
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
                     }
                 }
@@ -675,9 +609,9 @@ struct BoardPlayView: View {
             // Replace / Edit task: shown for any occupied cell (including a .none
             // center with a task). Not shown for a free center (no task draft entry).
             let cellKey = "\(editCellMenuRow)-\(editCellMenuCol)"
-            if editSquaresDraft[cellKey] != nil {
+            if viewModel.editSquaresDraft[cellKey] != nil {
                 Button("Replace task") {
-                    if let draft = editSquaresDraft[cellKey] {
+                    if let draft = viewModel.editSquaresDraft[cellKey] {
                         editModeReplaceTarget = EditModeSwapTarget(
                             id: cellKey,
                             currentTaskId: draft.stagedTaskId
@@ -685,8 +619,8 @@ struct BoardPlayView: View {
                     }
                 }
                 Button("Edit task") {
-                    if let draft = editSquaresDraft[cellKey] {
-                        let map = editDraftTaskMap
+                    if let draft = viewModel.editSquaresDraft[cellKey] {
+                        let map = viewModel.editDraftTaskMap
                         if let task = map[draft.stagedTaskId] {
                             editModeTaskTarget = EditModeTaskTarget(id: cellKey, task: task)
                         }
@@ -698,14 +632,14 @@ struct BoardPlayView: View {
             // is the positional center. .chosen is intentionally excluded — the
             // BoardSetupFormView chrome is the way out of CHOSEN.
             if editCellMenuIsCenter {
-                if editCenterType == .free || editCenterType == .customFree {
+                if viewModel.editCenterType == .free || viewModel.editCenterType == .customFree {
                     // Free center → task square (empty; fill via the live "+" flow).
                     // The .onChange(of: editCenterType) handler rebuilds the rearrange
                     // cells (preserving any staged order) — no inline rebuild here.
-                    Button("Make it a task square") { editCenterType = .none }
-                } else if editCenterType == .none {
+                    Button("Make it a task square") { viewModel.editCenterType = .none }
+                } else if viewModel.editCenterType == .none {
                     // Task square (or empty slot) → free space.
-                    Button("Make it a free space") { editCenterType = .free }
+                    Button("Make it a free space") { viewModel.editCenterType = .free }
                 }
             }
 
@@ -720,7 +654,7 @@ struct BoardPlayView: View {
                 onDismiss: { editModeReplaceTarget = nil },
                 onConfirm: { newTaskId in
                     editModeReplaceTarget = nil
-                    handleEditCellReplace(cellKey: target.id, newTaskId: newTaskId)
+                    viewModel.handleEditCellReplace(cellKey: target.id, newTaskId: newTaskId)
                 }
             )
         }
@@ -730,7 +664,7 @@ struct BoardPlayView: View {
                 task: target.task,
                 onDone: { patch in
                     editModeTaskTarget = nil
-                    handleEditTaskOverride(taskId: target.task.id, patch: patch)
+                    viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
                 },
                 onCancel: { editModeTaskTarget = nil }
             )
@@ -853,6 +787,26 @@ struct BoardPlayView: View {
             }
             if let text = event.creditToast {
                 triggerCreditToast(text: text)
+            }
+        }
+        // B2-I3 — edit-commit outcome observer. The VM's `handleEditSave` /
+        // `handleEditArchive` DB commits (+ the domain `reload()`) run VM-side;
+        // this runs the residual view-owned UI mutations they still trigger
+        // (which read view `@State` / the `dismiss` environment), reproducing
+        // the pre-move MainActor tails exactly.
+        .onChange(of: viewModel.editEvent) { _, event in
+            guard let event else { return }
+            switch event.outcome {
+            case .saved:
+                editSaving = false
+                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                triggerBoardSavedToast()
+            case .saveFailed(let message):
+                editSaving = false
+                editSaveError = message
+            case .archived:
+                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                dismiss()
             }
         }
         // Counting stepper sheet — Riso pill stepper for counting cells.
@@ -1943,81 +1897,14 @@ struct BoardPlayView: View {
     // animations (see the `.onChange(of: viewModel.flashEvent)` observer).
 
     // MARK: - Edit Mode
-
-    /// Seeds all edit-draft @State vars from the live board record before
-    /// entering edit mode. Called synchronously on the main actor immediately
-    /// before `editMode = true` so the form shows the current board values on
-    /// first render.
-    ///
-    /// - Parameter b: The current active `Board` from `self.board`.
-    private func seedEditDraft(from b: Board) {
-        editName = b.name
-        editTimeframe = b.timeframe
-
-        let cal = Calendar.current
-        let fallbackStart = cal.startOfDay(for: Date())
-        let fallbackEnd = cal.date(byAdding: .day, value: 30, to: fallbackStart) ?? Date()
-        let seedStart = parseWizardCalendarDate(b.startDate) ?? fallbackStart
-        let seedEnd: Date = {
-            if let endStr = b.endDate, let parsed = parseWizardCalendarDate(endStr) { return parsed }
-            return fallbackEnd
-        }()
-        editCustomStartDate = seedStart
-        editOriginalCustomStartDate = seedStart
-        editCustomEndDate = seedEnd
-        editOriginalCustomEndDate = seedEnd
-        editCenterType = b.centerSquareType
-        editCenterCustomName = b.centerSquareCustomName ?? ""
-        editSubMode = .editTasks
-        editSaving = false
-        editHasCandidateTasks = false
-
-        // Phase 2 — seed the squares draft from the current live placement rows.
-        // `boardTasks` is already loaded by `viewModel.reload()` on appear.
-        editSquaresDraft = [:]
-        for bt in boardTasks {
-            let key = "\(bt.row)-\(bt.col)"
-            editSquaresDraft[key] = SquaresDraftCell(
-                boardTaskId: bt.id,
-                row: bt.row,
-                col: bt.col,
-                isCenter: bt.isCenter,
-                originalTaskId: bt.taskId,
-                stagedTaskId: bt.taskId
-            )
-        }
-        editTaskOverrides = [:]
-        // Phase 3 — reset rearrange cells so they're rebuilt fresh on next sub-mode entry.
-        editRearrangeCells = nil
-
-        // Async: check whether the board has any center-task placement so
-        // BoardEditPanel can gate the CHOSEN option in BoardSetupFormView.
-        let bid = b.id
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let count = (try? AppDatabase.shared.fetchBoardTasks(boardId: bid).count) ?? 0
-            await MainActor.run { editHasCandidateTasks = count > 0 }
-        }
-    }
-
-    // MARK: - Phase 3 rearrange handlers
-
-    /// Lazily builds `editRearrangeCells` the first time the user switches to
-    /// Rearrange sub-mode. Subsequent sub-mode switches preserve the staged order.
-    private func seedRearrangeCells(for b: Board) {
-        guard editRearrangeCells == nil else { return }
-        editRearrangeCells = buildRearrangeCells(
-            squaresDraft: editSquaresDraft,
-            gridSize: b.boardSize,
-            centerSquareType: editCenterType
-        )
-    }
-
-    /// Called by `RearrangeGrid.onReorder` when a drag-to-insert or tap-to-swap
-    /// is committed. Updates the staged rearrange cells and leaves everything else
-    /// in place — no DB write until Save.
-    private func handleRearrange(newCells: [RearrangeCellData]) {
-        editRearrangeCells = newCells
-    }
+    //
+    // NOTE (B2-I3): the edit-draft data layer moved to `BoardPlayViewModel` —
+    // `seedEditDraft`, the Phase-3 rearrange seed/handle (`seedRearrangeCells` /
+    // `handleRearrange`), the staged mutators (`handleEditCellReplace` /
+    // `handleEditTaskOverride`), and the DB commits (`handleEditSave` /
+    // `handleEditArchive`). The view keeps only the cell-menu routing handlers
+    // below (they mutate view-owned `editCellMenu*` `@State`) and
+    // `triggerBoardSavedToast` (a pure view animation).
 
     // MARK: - Phase 2 edit-mode tap-menu handlers
 
@@ -2041,245 +1928,6 @@ struct BoardPlayView: View {
         editCellMenuCol = mid
         editCellMenuIsCenter = true
         editCellMenuVisible = true
-    }
-
-    /// Stages a task-ID replacement on one cell (no DB write).
-    ///
-    /// Called when the user picks a task from the Replace-task sheet in
-    /// board-edit mode. Increments the squares draft so the panel counter
-    /// and Save pill reflect this staged change.
-    ///
-    /// - Parameters:
-    ///   - cellKey: The "row-col" key into `editSquaresDraft`.
-    ///   - newTaskId: The task the user selected from `CellSwapSheet`.
-    private func handleEditCellReplace(cellKey: String, newTaskId: String) {
-        guard let draft = editSquaresDraft[cellKey] else { return }
-        editSquaresDraft[cellKey]?.stagedTaskId = newTaskId
-        // Keep an already-seeded rearrange grid in sync so a Replace made after
-        // switching to Rearrange (which doesn't re-seed) shows the new task label.
-        if let idx = editRearrangeCells?.firstIndex(where: { $0.id == draft.boardTaskId }) {
-            let old = editRearrangeCells![idx]
-            editRearrangeCells![idx] = RearrangeCellData(
-                id: old.id,
-                taskId: newTaskId,
-                isCenter: old.isCenter,
-                isEmpty: old.isEmpty,
-                originalRow: old.originalRow,
-                originalCol: old.originalCol
-            )
-        }
-    }
-
-    /// Stages task-field overrides for a global Task (no DB write).
-    ///
-    /// Called when the user taps Done in `SquareEditTaskSheet`. Stores the
-    /// patch as a `StagedTaskOverride` keyed by `taskId`. The edit-mode draft
-    /// task map picks this up immediately so the grid label updates.
-    ///
-    /// - Parameters:
-    ///   - taskId: The global Task being edited.
-    ///   - patch: Name / type / counting fields from `SquareEditTaskSheet`.
-    private func handleEditTaskOverride(taskId: String, patch: SquareEditTaskSheet.Patch) {
-        editTaskOverrides[taskId] = StagedTaskOverride(
-            title: patch.title,
-            type: patch.type,
-            action: patch.action.isEmpty ? nil : patch.action,
-            unit: patch.unit.isEmpty ? nil : patch.unit,
-            maxCount: patch.maxCount
-        )
-    }
-
-    /// Builds the metadata patch from current draft state and writes it via
-    /// `updateBoardAndCascade`. On success: exits edit mode, reloads the
-    /// board from GRDB, and shows a 2.4-second "Board saved" toast.
-    private func handleEditSave() {
-        guard !editSaving else { return }
-        let trimmedName = editName.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty else { return }
-
-        let cal = Calendar.current
-        let weekStart = authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday"
-
-        func snapStart(_ d: Date) -> String {
-            wizardLocalISOString(cal.startOfDay(for: d))
-        }
-        func snapEnd(_ d: Date) -> String {
-            let nextDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: d))!
-            return wizardLocalISOString(nextDay.addingTimeInterval(-0.001))
-        }
-
-        let startISO: String
-        let endISO: String?
-        var clearEnd = false
-
-        if editTimeframe == .indefinite {
-            startISO = wizardLocalISOString(cal.startOfDay(for: Date()))
-            endISO = nil
-            clearEnd = true
-        } else if editTimeframe == .custom {
-            startISO = snapStart(editCustomStartDate)
-            let snappedEnd = snapEnd(editCustomEndDate)
-            // Carry over EditBoardSheet's guard: the end-date picker's min can lag a
-            // start-date change, so re-validate end >= start before persisting.
-            guard snappedEnd >= startISO else { return }
-            endISO = snappedEnd
-        } else if let boundaries = computeTimeframeBoundaries(
-            timeframe: editTimeframe,
-            referenceDate: Date(),
-            weekStartDay: weekStart
-        ) {
-            startISO = wizardLocalISOString(boundaries.start)
-            endISO = wizardLocalISOString(boundaries.end)
-        } else {
-            return
-        }
-
-        let patch = AppDatabase.UpdateActiveBoardPatch(
-            name: trimmedName,
-            timeframe: editTimeframe,
-            startDate: startISO,
-            endDate: endISO,
-            clearEndDate: clearEnd,
-            centerSquareType: editCenterType,
-            centerSquareCustomName: editCenterType == .customFree
-                ? (editCenterCustomName.trimmingCharacters(in: .whitespaces).isEmpty
-                    ? nil
-                    : editCenterCustomName.trimmingCharacters(in: .whitespaces))
-                : nil
-        )
-
-        // Phase 2 — snapshot squares draft before entering the detached task.
-        // `@State` vars are only safe on the MainActor; capture copies as
-        // value types so the detached task has stable, sendable data.
-        let cellReplacements: [(boardTaskId: String, newTaskId: String)] =
-            editSquaresDraft.values
-                .filter { $0.stagedTaskId != $0.originalTaskId }
-                .map { (boardTaskId: $0.boardTaskId, newTaskId: $0.stagedTaskId) }
-
-        // Build (task, override) pairs from the live taskMap + staged overrides.
-        // De-duplicated by taskId so each global Task is saved at most once.
-        var taskOverridePairs: [(task: Task, override: StagedTaskOverride)] = []
-        for (taskId, override) in editTaskOverrides {
-            if let task = taskMap[taskId] {
-                taskOverridePairs.append((task: task, override: override))
-            }
-        }
-
-        // Phase 3 — snapshot staged position moves.
-        // Compare each cell's slot in `editRearrangeCells` to its originalRow/Col.
-        // Center and empty slots are excluded (they don't correspond to BoardTask rows).
-        let positionMoves: [(boardTaskId: String, row: Int, col: Int)] = {
-            guard let rearranged = editRearrangeCells, gridSize > 0 else { return [] }
-            var moves: [(boardTaskId: String, row: Int, col: Int)] = []
-            for (slotIdx, cell) in rearranged.enumerated() {
-                guard !cell.isCenter, !cell.isEmpty else { continue }
-                let stagedRow = slotIdx / gridSize
-                let stagedCol = slotIdx % gridSize
-                if stagedRow != cell.originalRow || stagedCol != cell.originalCol {
-                    moves.append((boardTaskId: cell.id, row: stagedRow, col: stagedCol))
-                }
-            }
-            return moves
-        }()
-
-        editSaving = true
-        let bid = boardId
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                // 1. Metadata patch (name / timeframe / center).
-                try AppDatabase.shared.updateBoardAndCascade(boardId: bid, patch: patch)
-
-                // 2. Staged cell replacements — each repoints one BoardTask row
-                //    and re-derives board stats for the old + new task contexts.
-                for replacement in cellReplacements {
-                    try AppDatabase.shared.updateBoardTaskAndCascade(
-                        boardTaskId: replacement.boardTaskId,
-                        newTaskId: replacement.newTaskId
-                    )
-                }
-
-                // 3. Staged task-field overrides — each writes the global Task
-                //    and re-derives board stats for all boards the task is on.
-                let now = AppDatabase.currentTimestamp()
-                for (task, override) in taskOverridePairs {
-                    var updated = task
-                    updated.title = override.title
-                    updated.type  = override.type
-                    switch override.type {
-                    case .counting:
-                        // action can be cleared (nil) — assign unconditionally so the
-                        // commit matches the draft grid (which clears it on blank).
-                        updated.action = override.action
-                        if let u = override.unit   { updated.unit   = u }
-                        if let m = override.maxCount { updated.maxCount = m }
-                    case .normal:
-                        // Switching from Counting → Simple: clear counting fields.
-                        if task.type == .counting {
-                            updated.action   = nil
-                            updated.unit     = nil
-                            updated.maxCount = nil
-                        }
-                    default:
-                        break
-                    }
-                    updated.updatedAt = now
-                    updated.version  += 1
-                    try AppDatabase.shared.saveTaskAndCascade(updated)
-                }
-
-                // 4. Phase 3 — Staged position moves: rewrite row/col on moved BoardTask rows
-                //    in a single atomic transaction, then re-derive bingo lines for this board.
-                if !positionMoves.isEmpty {
-                    try AppDatabase.shared.updateBoardTaskPositions(
-                        boardId: bid,
-                        moves: positionMoves.map {
-                            AppDatabase.BoardTaskPositionMove(
-                                boardTaskId: $0.boardTaskId,
-                                row: $0.row,
-                                col: $0.col
-                            )
-                        }
-                    )
-                }
-
-                await MainActor.run {
-                    editSaving = false
-                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                    viewModel.reload()
-                    triggerBoardSavedToast()
-                }
-            } catch {
-                print("⚠️ BoardPlayView.handleEditSave: \(error)")
-                await MainActor.run {
-                    editSaving = false
-                    editSaveError = "Couldn’t save your changes — please try again."
-                }
-            }
-        }
-    }
-
-    /// Archives the board by setting `status = .archived` in GRDB, then
-    /// dismisses `BoardPlayView` back to the Boards list.
-    ///
-    /// The archive confirm alert in `BoardEditPanel` calls this callback only
-    /// after the user confirms — no further confirmation required here.
-    private func handleEditArchive() {
-        let bid = boardId
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                try AppDatabase.shared.archiveBoard(id: bid)
-                // Only leave the board if the archive actually committed.
-                await MainActor.run {
-                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                    dismiss()
-                }
-            } catch {
-                print("⚠️ BoardPlayView.handleEditArchive: \(error)")
-                await MainActor.run {
-                    viewModel.bingoMessage = "Archive failed — please try again."
-                }
-            }
-        }
     }
 
     /// Flashes the "Board saved" success toast for 2.4 s, then hides it.
