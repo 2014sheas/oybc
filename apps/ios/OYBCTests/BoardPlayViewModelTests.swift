@@ -297,4 +297,255 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(vm.board?.id, "b2", "a stale earlier reload clobbered the newer result")
         XCTAssertEqual(vm.boardTasks.count, 1)
     }
+
+    // MARK: - B2-I2 interaction-write fixtures
+
+    private func makeCountingTask(
+        _ id: String,
+        userId: String = "u1",
+        maxCount: Int = 3,
+        currentCount: Int? = nil,
+        sharedCounterId: String? = nil
+    ) -> Task {
+        var t = makeTask(id, userId: userId)
+        t.type = .counting
+        t.action = "Do"
+        t.unit = "reps"
+        t.maxCount = maxCount
+        t.currentCount = currentCount
+        t.sharedCounterId = sharedCounterId
+        return t
+    }
+
+    private func makeCompoundTask(_ id: String, userId: String = "u1") -> Task {
+        var t = makeTask(id, userId: userId)
+        t.type = .compound
+        t.operatorType = .and
+        return t
+    }
+
+    /// Reads a single Task straight from the DB (post-write committed state).
+    /// Non-throwing so it flattens cleanly into `waitUntil` predicates.
+    private func dbTask(_ db: AppDatabase, _ id: String) -> Task? {
+        (try? db.fetchTasks(userId: "u1"))?.first { $0.id == id }
+    }
+
+    /// Loads the view model and blocks until its published arrays are populated,
+    /// so the handlers (which read `taskMap` / `board` / `boardTasks`) have data.
+    private func loadedVM(_ db: AppDatabase, boardId: String) -> BoardPlayViewModel {
+        let vm = BoardPlayViewModel(boardId: boardId, userId: "u1", database: db)
+        vm.reload()
+        _ = waitUntil { vm.board?.id == boardId && !vm.allTasks.isEmpty }
+        return vm
+    }
+
+    // MARK: - 6. normal complete-toggle
+
+    func test_handleNormalTap_completesTask_updatesBoardStats_writesSync() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "t1" })
+        vm.handleNormalTap(boardTask: bt)
+
+        // DB outcome (committed by the background write).
+        XCTAssertTrue(waitUntil { self.dbTask(db, "t1")?.isCompleted == true },
+                      "normal tap never persisted completion")
+        let t1 = try XCTUnwrap(dbTask(db, "t1"))
+        XCTAssertTrue(t1.isCompleted)
+        XCTAssertNotNil(t1.completedAt)
+        XCTAssertEqual(t1.version, 2, "version should bump on completion write")
+
+        // Board stats recomputed by the cascade. b1 is 3×3 with a FREE center,
+        // which counts as a completed square, so completing t1 yields 2
+        // (t1 + free center).
+        let b1 = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(b1.completedTasks, 2)
+
+        // Sync rows: task update + boardTask bump + board cascade update.
+        let sync = try db.fetchPendingSyncItems()
+        XCTAssertTrue(sync.contains { $0.entityType == "tasks" && $0.entityId == "t1" })
+        XCTAssertTrue(sync.contains { $0.entityType == "boardTasks" && $0.entityId == bt.id })
+        XCTAssertTrue(sync.contains { $0.entityType == "boards" && $0.entityId == "b1" })
+
+        // Published-array refresh: the reload tail re-fetched the completed task.
+        XCTAssertTrue(waitUntil { vm.taskMap["t1"]?.isCompleted == true })
+        XCTAssertFalse(vm.isProcessing, "isProcessing should reset after the write tail")
+    }
+
+    func test_handleNormalTap_secondTap_uncompletes() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "t1" })
+        vm.handleNormalTap(boardTask: bt)
+        XCTAssertTrue(waitUntil { vm.taskMap["t1"]?.isCompleted == true && !vm.isProcessing })
+
+        vm.handleNormalTap(boardTask: bt)
+        XCTAssertTrue(waitUntil { self.dbTask(db, "t1")?.isCompleted == false && !vm.isProcessing })
+        let t1 = try XCTUnwrap(dbTask(db, "t1"))
+        XCTAssertFalse(t1.isCompleted)
+        XCTAssertNil(t1.completedAt)
+    }
+
+    // MARK: - 7. standalone counting increment / decrement
+
+    func test_handleCountingTap_standalone_incrementsCount() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("c1", maxCount: 3, currentCount: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c1" })
+        let task = try XCTUnwrap(vm.taskMap["c1"])
+
+        vm.handleCountingTap(boardTask: bt, task: task)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.currentCount == 1 })
+        let c1 = try XCTUnwrap(dbTask(db, "c1"))
+        XCTAssertEqual(c1.currentCount, 1)
+        XCTAssertFalse(c1.isCompleted, "1 of 3 is not complete")
+    }
+
+    func test_handleCountingTap_standalone_completesAtGoal_thenDecrementUncompletes() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("c1", maxCount: 2, currentCount: 1))
+        try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c1" })
+
+        // Increment 1 -> 2 reaches goal => completed.
+        vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.isCompleted == true && !vm.isProcessing })
+        XCTAssertEqual(try XCTUnwrap(dbTask(db, "c1")).currentCount, 2)
+
+        // Decrement 2 -> 1 un-completes (standalone legacy path).
+        vm.handleCountingDecrement(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.currentCount == 1 && !vm.isProcessing })
+        let c1 = try XCTUnwrap(dbTask(db, "c1"))
+        XCTAssertEqual(c1.currentCount, 1)
+        XCTAssertFalse(c1.isCompleted)
+    }
+
+    // MARK: - 8. shared-counter increment (source + linked fan-out)
+
+    func test_sharedCounterIncrement_incrementsSource_andEmitsCreditToast() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        // Two active boards; source counter on b1, linked derived counter on b2.
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveBoard(makeBoard(id: "b2"))
+        try db.saveTask(makeCountingTask("c-src", maxCount: 5, currentCount: 0))
+        try db.saveTask(makeCountingTask("c-lnk", maxCount: 5, currentCount: 0, sharedCounterId: "c-src"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt-lnk", boardId: "b2", taskId: "c-lnk", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
+        let task = try XCTUnwrap(vm.taskMap["c-src"])
+
+        // Source task (has a linked task pointing at it) routes through the
+        // shared-counter increment path.
+        vm.handleCountingTap(boardTask: bt, task: task)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 1 },
+                      "shared increment never bumped the source count")
+        XCTAssertEqual(try XCTUnwrap(dbTask(db, "c-src")).currentCount, 1)
+
+        // b2 (holding the linked member, active, != current board) was credited,
+        // so the view model publishes a one-shot credit-toast flash event.
+        XCTAssertTrue(waitUntil { vm.flashEvent?.creditToast != nil },
+                      "credit toast flash event never published for the OTHER board")
+        XCTAssertTrue(try XCTUnwrap(vm.flashEvent?.creditToast).contains("Board b2"))
+    }
+
+    // MARK: - 9. compound child toggle (fallback cascade path)
+
+    func test_handleCompoundChildToggle_notPlaced_persistsChild_andCascades() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        // Compound parent placed on b1; its child is NOT placed on any board, so
+        // the toggle takes the fallback cascade branch (the one that calls the
+        // moved bpvRunCrossBoardCascade / bpvMakeSyncItem helpers).
+        try db.saveTask(makeCompoundTask("cmp"))
+        try db.saveTask(makeTask("child1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-cmp", boardId: "b1", taskId: "cmp", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            try makeCompoundChild(parent: "cmp", child: "child1", idx: 0).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let child = try XCTUnwrap(vm.taskMap["child1"])
+        XCTAssertNil(vm.boardTasks.first { $0.taskId == "child1" }, "child must not be placed on this board")
+
+        vm.handleCompoundChildToggle(childTask: child)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "child1")?.isCompleted == true && !vm.isProcessing })
+        let c = try XCTUnwrap(dbTask(db, "child1"))
+        XCTAssertTrue(c.isCompleted)
+
+        let sync = try db.fetchPendingSyncItems()
+        XCTAssertTrue(sync.contains { $0.entityType == "tasks" && $0.entityId == "child1" })
+        XCTAssertTrue(sync.contains { $0.entityType == "boards" && $0.entityId == "b1" },
+                      "cascade should have re-saved the board holding the compound")
+    }
+
+    // MARK: - 10. cell swap / remove / add
+
+    func test_handleCellSwap_repointsPlacementToNewTask() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "t1" })
+        vm.handleCellSwap(boardTaskId: bt.id, newTaskId: "t2")
+
+        XCTAssertTrue(waitUntil {
+            (try? db.fetchBoardTasks(boardId: "b1"))?.first { $0.id == bt.id }?.taskId == "t2"
+                && !vm.isProcessing
+        }, "swap never repointed the placement")
+        let swapped = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == bt.id })
+        XCTAssertEqual(swapped.taskId, "t2")
+    }
+
+    func test_handleRemoveFromBoard_deletesPlacement() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "t2" })
+        vm.handleRemoveFromBoard(boardTaskId: bt.id)
+
+        XCTAssertTrue(waitUntil {
+            (try? db.fetchBoardTasks(boardId: "b1"))?.contains { $0.id == bt.id } == false
+                && !vm.isProcessing
+        }, "placement was never removed")
+        XCTAssertEqual(vm.boardTasks.count, 1, "published placements reflect the removal")
+    }
+
+    func test_handleAddTaskToCell_createsPlacement() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("t1"))
+        // No placements yet — add t1 into an empty cell.
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.handleAddTaskToCell(taskId: "t1", row: 1, col: 2)
+
+        XCTAssertTrue(waitUntil {
+            (try? db.fetchBoardTasks(boardId: "b1"))?.contains {
+                $0.taskId == "t1" && $0.row == 1 && $0.col == 2
+            } == true && !vm.isProcessing
+        }, "placement was never created")
+        XCTAssertTrue(vm.boardTasks.contains { $0.taskId == "t1" && $0.row == 1 && $0.col == 2 })
+    }
 }
