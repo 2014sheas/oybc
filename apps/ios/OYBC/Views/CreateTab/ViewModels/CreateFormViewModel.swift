@@ -166,6 +166,15 @@ final class CreateFormViewModel {
     /// input field can be empty (no auto-zero); parsed at submit time.
     var achievementRequiredCountStr: String = ""
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Actions
 
     /// Validates the form and either persists the task immediately (default)
@@ -369,8 +378,8 @@ final class CreateFormViewModel {
             guard let self else { return }
             do {
                 if progressChildLinks.isEmpty {
-                    try AppDatabase.shared.saveTask(newTask)
-                    try AppDatabase.shared.write { db in
+                    try self.database.saveTask(newTask)
+                    try self.database.write { db in
                         try SyncQueueBuilder.makeItem(
                             entityType: "tasks",
                             entityId: newTask.id,
@@ -380,7 +389,7 @@ final class CreateFormViewModel {
                         ).save(db)
                     }
                 } else {
-                    try AppDatabase.shared.write { db in
+                    try self.database.write { db in
                         try newTask.save(db)
                         try SyncQueueBuilder.makeItem(
                             entityType: "tasks",
@@ -732,7 +741,7 @@ final class CreateFormViewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                try AppDatabase.shared.write { db in
+                try self.database.write { db in
                     // 1. Parent compound task + sync entry.
                     try capturedParent.save(db)
                     try SyncQueueBuilder.makeItem(

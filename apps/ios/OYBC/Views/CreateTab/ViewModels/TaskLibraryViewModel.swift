@@ -101,6 +101,15 @@ final class TaskLibraryViewModel {
     /// Cleared on successful reload.
     var loadError: String?
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Filtered queries (computed)
 
     /// Filtered task list for the active library tab. Browses
@@ -144,11 +153,12 @@ final class TaskLibraryViewModel {
     /// from the local database. Called on .onAppear of the consuming views
     /// and after each task creation/edit so the library stays consistent.
     func reload(userId: String) async {
+        let database = self.database
         do {
-            let tasks = try await Self.loadTasks(userId: userId)
-            let children = try await Self.loadCompoundChildren()
-            let boardTasks = try await Self.loadAllBoardTasks()
-            let boardStatusById = try await Self.loadBoardStatuses(userId: userId)
+            let tasks = try await Self.loadTasks(userId: userId, database: database)
+            let children = try await Self.loadCompoundChildren(database: database)
+            let boardTasks = try await Self.loadAllBoardTasks(database: database)
+            let boardStatusById = try await Self.loadBoardStatuses(userId: userId, database: database)
             // #73 — child-id set + reverse (child → parents) map, derived up
             // front because the browsable filter needs it (compound children
             // inherit their parent compound's placements).
@@ -196,8 +206,8 @@ final class TaskLibraryViewModel {
         _Concurrency.Task { await reload(userId: userId) }
     }
 
-    private static func loadTasks(userId: String) async throws -> [Task] {
-        try await AppDatabase.shared.read { db in
+    private static func loadTasks(userId: String, database: AppDatabase) async throws -> [Task] {
+        try await database.read { db in
             try Task
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .order(Column("title"))
@@ -205,16 +215,16 @@ final class TaskLibraryViewModel {
         }
     }
 
-    private static func loadCompoundChildren() async throws -> [CompoundChild] {
-        try await AppDatabase.shared.read { db in
+    private static func loadCompoundChildren(database: AppDatabase) async throws -> [CompoundChild] {
+        try await database.read { db in
             try CompoundChild
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
         }
     }
 
-    private static func loadAllBoardTasks() async throws -> [BoardTask] {
-        try await AppDatabase.shared.read { db in
+    private static func loadAllBoardTasks(database: AppDatabase) async throws -> [BoardTask] {
+        try await database.read { db in
             try BoardTask.fetchAll(db)
         }
     }
@@ -222,8 +232,8 @@ final class TaskLibraryViewModel {
     /// Map of non-deleted boardId → status for the user. Drives the
     /// draft-only-visibility filter (a placement on a deleted board is
     /// absent from this map and therefore ignored).
-    private static func loadBoardStatuses(userId: String) async throws -> [String: BoardStatus] {
-        try await AppDatabase.shared.read { db in
+    private static func loadBoardStatuses(userId: String, database: AppDatabase) async throws -> [String: BoardStatus] {
+        try await database.read { db in
             let boards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .fetchAll(db)

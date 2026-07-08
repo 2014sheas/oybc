@@ -46,6 +46,15 @@ final class ParentBoardTasksViewModel {
     // re-render on each bump.
     @ObservationIgnored private var latestSeq: UInt64 = 0
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Loading
 
     /// Loads parents + their board_tasks + resolves to deduped Task[].
@@ -69,7 +78,7 @@ final class ParentBoardTasksViewModel {
         }
 
         do {
-            let result = try await AppDatabase.shared.read { db -> [Task] in
+            let result = try await database.read { db -> [Task] in
                 let userBoards = try Board
                     .filter(Column("userId") == userId && Column("isDeleted") == false)
                     .fetchAll(db)

@@ -37,9 +37,13 @@ final class CoreBoardBrowserViewModel {
     private let initialRadius: Int
     private let pageSize: Int
 
-    init(initialRadius: Int = 10, pageSize: Int = 10) {
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(initialRadius: Int = 10, pageSize: Int = 10, database: AppDatabase = .shared) {
         self.initialRadius = initialRadius
         self.pageSize = pageSize
+        self.database = database
     }
 
     // MARK: - Public state
@@ -188,7 +192,7 @@ final class CoreBoardBrowserViewModel {
     // MARK: - Data loader
 
     private func fetchCoreBoards(userId: String, timeframe: Timeframe) throws -> [Board] {
-        try AppDatabase.shared.read { db in
+        try database.read { db in
             try Board
                 .filter(
                     Column("userId") == userId

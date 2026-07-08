@@ -114,6 +114,9 @@ final class BoardWizardViewModel {
 
     private let initialPreferences: UserPreferences
 
+    /// Injected for tests; defaults to the production singleton.
+    private let database: AppDatabase
+
     init(
         preferences: UserPreferences,
         initialStep: WizardStep = 1,
@@ -122,8 +125,10 @@ final class BoardWizardViewModel {
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
         startRecurring: Bool = false,
-        userId: String? = nil
+        userId: String? = nil,
+        database: AppDatabase = .shared
     ) {
+        self.database = database
         self.initialPreferences = preferences
         self.weekStartDay = preferences.weekStartDay.rawValue
         self.currentStep = initialStep
@@ -207,7 +212,7 @@ final class BoardWizardViewModel {
                 // Silent on DB error — the wizard still opens with an
                 // empty selection so the user can build a board manually.
                 if let userId = userId,
-                   let pool = try? AppDatabase.shared.fetchDefaultPool(userId: userId, timeframe: timeframe),
+                   let pool = try? database.fetchDefaultPool(userId: userId, timeframe: timeframe),
                    !pool.taskIds.isEmpty {
                     self.selectedTaskIds = Set(pool.taskIds)
                 }

@@ -42,6 +42,15 @@ final class CoreBoardSlotsViewModel {
     /// should never block the Boards tab from rendering board rows.
     var loadError: String?
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Loading
 
     /// Loads the user's preferences + non-deleted boards, runs the shared
@@ -51,7 +60,7 @@ final class CoreBoardSlotsViewModel {
     func reload(userId: String) async {
         let now = Date()
         do {
-            let result = try await AppDatabase.shared.read { db -> (slots: [CoreBoardSlot], streaks: [Timeframe: StreakPair]) in
+            let result = try await database.read { db -> (slots: [CoreBoardSlot], streaks: [Timeframe: StreakPair]) in
                 let user = try User
                     .filter(Column("id") == userId)
                     .fetchOne(db)
