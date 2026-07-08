@@ -15,7 +15,12 @@ import {
 import { liveQuery } from 'dexie';
 import { firestore, auth } from './config';
 import { resolveConflict, type SyncableEntity } from './conflictResolver';
-import { recordSyncEvent, recordSyncError, resetSyncStatus } from './syncStatus';
+import {
+  recordSyncEvent,
+  recordSyncError,
+  resetSyncStatus,
+  setExhaustedCount,
+} from './syncStatus';
 import { db } from '../db/internal';
 import {
   fetchPendingSyncItems,
@@ -23,6 +28,8 @@ import {
   markSyncItemCompleted,
   markSyncItemFailed,
   promoteEligibleFailedItems,
+  countExhaustedSyncItems,
+  retryExhaustedSyncItems,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
@@ -225,7 +232,19 @@ export async function pushSync(userId: string): Promise<PushResult> {
   await promoteEligibleFailedItems();
 
   const pendingItems = await fetchPendingSyncItems();
-  if (pendingItems.length === 0) return result;
+  if (pendingItems.length === 0) {
+    // Nothing pending, but exhausted FAILED items may still be stranded
+    // (e.g. pre-existing stuck items on a fresh page load after
+    // `resetSyncStatus` zeroed the count). Refresh so the count reflects
+    // reality even on a no-op push. Mirrors the iOS empty-branch
+    // `refreshExhaustedCount()` in `pushSyncCore`.
+    try {
+      setExhaustedCount(await countExhaustedSyncItems());
+    } catch (err) {
+      console.error('[sync] Failed to refresh exhausted-item count:', err);
+    }
+    return result;
+  }
 
   for (const item of pendingItems) {
     try {
@@ -328,6 +347,16 @@ export async function pushSync(userId: string): Promise<PushResult> {
       recordSyncError(errorMsg);
       result.details.push(`Failed ${item.entityType}/${item.entityId}: ${errorMsg}`);
     }
+  }
+
+  // Refresh the exhausted-item count on the sync status. pushSync is the
+  // single choke point where items transition to (and out of) the FAILED
+  // state, so recomputing here covers every caller (fullSync, the debounced
+  // pushTick, the manual retry) without a separate poll loop.
+  try {
+    setExhaustedCount(await countExhaustedSyncItems());
+  } catch (err) {
+    console.error('[sync] Failed to refresh exhausted-item count:', err);
   }
 
   return result;
@@ -1005,8 +1034,22 @@ export function startSyncLoop(
   // that piled up during the offline window. Firestore SDK auto-resumes
   // listener subscriptions on reconnect, but a kick to fullTick covers
   // any race + advances the safety-net watermark.
+  //
+  // The `online` event is inherently edge-triggered (the browser fires it
+  // only on the offline→online transition, never on a steady-state cycle),
+  // so exhausted items get exactly ONE free re-promote per reconnect —
+  // no loop guard needed. This is the cheap first recovery layer: a
+  // transient outage that pushed items past the retry cap clears itself
+  // the moment connectivity returns, without the user tapping Retry.
   function handleOnline(): void {
-    void fullTick();
+    void (async () => {
+      try {
+        await retryExhaustedSyncItems();
+      } catch (err) {
+        console.error('[sync] online re-promote failed:', err);
+      }
+      await fullTick();
+    })();
   }
   window.addEventListener('online', handleOnline);
 

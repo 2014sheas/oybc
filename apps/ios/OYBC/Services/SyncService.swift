@@ -261,6 +261,12 @@ final class SyncService: ObservableObject {
     @Published var lastEventAt: Date?
     /// Most recent error, if any. Cleared on the next successful event.
     @Published var lastError: SyncErrorRecord?
+    /// FAILED items that exhausted their retry budget (`retryCount >=
+    /// SyncRetry.maxRetries`). Refreshed after each push cycle via
+    /// `refreshExhaustedCount()`; surfaced to the user as "N changes couldn't
+    /// sync" with a Retry affordance. `0` means nothing is stuck. Mirrors web
+    /// `SyncStatus.exhaustedCount`.
+    @Published var exhaustedCount: Int = 0
 
     /// `lastError` payload — message + timestamp as a value type so it
     /// stays SwiftUI-friendly.
@@ -415,11 +421,23 @@ final class SyncService: ObservableObject {
             return result
         }
 
-        guard !pendingItems.isEmpty else { return result }
+        guard !pendingItems.isEmpty else {
+            // Nothing pending, but exhausted FAILED items may still be
+            // stranded — refresh so the count reflects reality even on a
+            // no-op push.
+            refreshExhaustedCount()
+            return result
+        }
 
         for item in pendingItems {
             await processPushItem(item, userId: userId, result: &result)
         }
+
+        // pushSyncCore is the single choke point where items transition to
+        // (and out of) the FAILED state, so recomputing the exhausted count
+        // here covers every caller (fullSync, the debounced push, the manual
+        // retry) without a separate poll loop.
+        refreshExhaustedCount()
 
         return result
     }
@@ -1240,6 +1258,7 @@ extension SyncService {
         totalFailed = 0
         lastEventAt = nil
         lastError = nil
+        exhaustedCount = 0
     }
 
     // MARK: - Observability helpers
@@ -1265,6 +1284,40 @@ extension SyncService {
     /// counter. Mirrors web `recordSyncError`.
     fileprivate func recordError(_ message: String, at: Date = Date()) {
         lastError = SyncErrorRecord(message: message, at: at)
+    }
+
+    /// Recompute `exhaustedCount` from the local DB. Called at the end of
+    /// every push cycle (the choke point) so the UI stays fresh without a
+    /// separate poll loop. Non-fatal on read failure — leaves the last
+    /// known value rather than crashing the push. Mirrors web
+    /// `setExhaustedCount(await countExhaustedSyncItems())`.
+    fileprivate func refreshExhaustedCount() {
+        do {
+            exhaustedCount = try AppDatabase.shared.countExhaustedSyncItems()
+        } catch {
+            log("Warning: could not count exhausted sync items: \(error.localizedDescription)")
+        }
+    }
+
+    /// Manually recover items stuck past the retry cap: reset them to a
+    /// fresh PENDING state, refresh the count for immediate UI feedback,
+    /// then run a full sync for an immediate push. Backs the sync sheet's
+    /// "Retry" button AND the network-regain auto-recovery. Mirrors the web
+    /// SyncStatusIndicator retry handler (`retryExhaustedSyncItems` +
+    /// `fullSync`) and `handleOnline`.
+    ///
+    /// - Parameter userId: The authenticated user's Firestore UID.
+    func retryExhaustedItems(userId: String) async {
+        do {
+            _ = try AppDatabase.shared.retryExhaustedSyncItems()
+        } catch {
+            log("Retry exhausted failed: \(error.localizedDescription)")
+            return
+        }
+        // Immediate feedback: the reset cleared the exhausted rows.
+        refreshExhaustedCount()
+        // Push them now rather than waiting for the debounce/safety-net.
+        _ = await fullSync(userId: userId)
     }
 }
 

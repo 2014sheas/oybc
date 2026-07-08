@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../firebase/useAuth';
 import { fullSync } from '../firebase/syncService';
+import { retryExhaustedSyncItems } from '../db/operations/syncQueue';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import styles from './SyncStatusIndicator.module.css';
 
@@ -14,10 +15,11 @@ import styles from './SyncStatusIndicator.module.css';
  * not actionable. Reads from the shared `useSyncStatus()` hook + `navigator.onLine`.
  */
 export function SyncStatusIndicator(): React.ReactElement {
-  const { lastEventAt } = useSyncStatus();
+  const { lastEventAt, exhaustedCount } = useSyncStatus();
   const { user } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -37,6 +39,19 @@ export function SyncStatusIndicator(): React.ReactElement {
       await fullSync(user.id);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // Manual recovery for items stuck past the retry cap: reset them to a
+  // fresh PENDING state, then kick a full sync for immediate feedback.
+  const handleRetryExhausted = async () => {
+    if (!user?.id || isRetrying) return;
+    setIsRetrying(true);
+    try {
+      await retryExhaustedSyncItems();
+      await fullSync(user.id);
+    } finally {
+      setIsRetrying(false);
     }
   };
 
@@ -60,6 +75,28 @@ export function SyncStatusIndicator(): React.ReactElement {
           {lastEventAt ? lastEventAt.toLocaleTimeString() : 'Syncing\u2026'}
         </span>
       </div>
+
+      {/* Exhausted-item recovery \u2014 only rendered when something is stuck
+          past the retry cap. Keeps the three-state row above minimal: no
+          count, no error text unless N > 0. Copy is a plain count, never
+          the raw error (mirrors iOS SyncSheet / the #151 convention). */}
+      {exhaustedCount > 0 && (
+        <div className={styles.row}>
+          <span className={styles.exhaustedLabel}>
+            {exhaustedCount === 1
+              ? "1 change couldn\u2019t sync"
+              : `${exhaustedCount} changes couldn\u2019t sync`}
+          </span>
+          <button
+            type="button"
+            className={styles.retryButton}
+            onClick={() => void handleRetryExhausted()}
+            disabled={isRetrying || !isOnline}
+          >
+            {isRetrying ? 'Retrying\u2026' : 'Retry'}
+          </button>
+        </div>
+      )}
 
       <div className={styles.row}>
         <button

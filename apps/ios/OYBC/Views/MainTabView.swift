@@ -20,6 +20,8 @@ struct MainTabView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var notificationService: NotificationService
     @EnvironmentObject var notificationDelegate: NotificationDelegate
+    @EnvironmentObject var syncService: SyncService
+    @EnvironmentObject var networkMonitor: NetworkMonitor
     @Environment(\.scenePhase) private var scenePhase
 
     @EnvironmentObject var tutorialStore: TutorialProgressStore
@@ -420,6 +422,17 @@ struct MainTabView: View {
         .onChange(of: notificationDelegate.pendingDeepLink) { _, _ in
             routePendingDeepLink()
         }
+        .onChange(of: networkMonitor.isConnected) { _, isConnected in
+            // Network-regain auto-recovery (D1): on the offline→online EDGE,
+            // give exhausted sync items ONE free re-promote + push. `.onChange`
+            // fires only on a real transition and we gate on the new value
+            // being `true`, so this fires once per reconnect — no loop. Mirrors
+            // web `handleOnline` (which is edge-triggered by the browser's
+            // `online` event). No-op when nothing is stuck (retry resets zero
+            // rows, fullSync is the same kick the loop already makes).
+            guard isConnected, let userId = authService.currentUser?.id else { return }
+            _Concurrency.Task { await syncService.retryExhaustedItems(userId: userId) }
+        }
     }
 
     /// Re-syncs scheduled local notifications with current local state.
@@ -448,4 +461,6 @@ struct MainTabView: View {
         .environmentObject(NotificationService())
         .environmentObject(NotificationDelegate.shared)
         .environmentObject(TutorialProgressStore())
+        .environmentObject(SyncService())
+        .environmentObject(NetworkMonitor())
 }

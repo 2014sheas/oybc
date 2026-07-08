@@ -108,6 +108,27 @@ final class SyncSheetSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Exhausted items (D1)
+
+    func testSyncedWithExhaustedItemsLight() {
+        assertSnapshot(
+            of: SyncSheet(state: .synced(lastSyncedAt: fixedDate), exhaustedCount: 3),
+            as: .image(layout: .fixed(width: 393, height: 560)),
+            record: recordMode
+        )
+    }
+
+    func testSyncedWithExhaustedItemsDark() {
+        assertSnapshot(
+            of: SyncSheet(state: .synced(lastSyncedAt: fixedDate), exhaustedCount: 3),
+            as: .image(
+                layout: .fixed(width: 393, height: 560),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - Helpers
 
     private func syncSheetView(state: SyncSheetState) -> some View {

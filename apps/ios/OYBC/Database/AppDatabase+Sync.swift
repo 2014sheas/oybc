@@ -109,6 +109,56 @@ extension AppDatabase {
             return promoted
         }
     }
+
+    /// Count FAILED sync queue items that have exhausted their retry budget
+    /// (`retryCount >= SyncRetry.maxRetries`). These are exactly the items
+    /// `promoteEligibleFailedSyncItems` refuses to re-promote — they sit
+    /// FAILED until a manual or network-regain retry recovers them.
+    ///
+    /// Cheap indexed `fetchCount`. Refreshed onto `SyncService.exhaustedCount`
+    /// after every push cycle so the sync sheet / Profile row can surface
+    /// "N changes couldn't sync". Mirrors web `countExhaustedSyncItems`.
+    ///
+    /// - Returns: The number of exhausted FAILED items.
+    func countExhaustedSyncItems() throws -> Int {
+        return try read { db in
+            try SyncQueueItem
+                .filter(Column("status") == SyncStatus.failed.rawValue)
+                .filter(Column("retryCount") >= SyncRetry.maxRetries)
+                .fetchCount(db)
+        }
+    }
+
+    /// Reset every exhausted FAILED item back to a fresh `pending` state:
+    /// `retryCount → 0`, `lastError` cleared, `status → pending`. This gives
+    /// the regular backoff/promote machinery a clean slate to retry them.
+    ///
+    /// Setting items to `pending` re-fires the GRDB `ValueObservation` on the
+    /// PENDING count (see `SyncService.startQueueObservation`), which
+    /// schedules a debounced push — so this implicitly nudges a push cycle.
+    /// Callers wanting an immediate push (the manual Retry button, the
+    /// network-regain kick) additionally `await fullSync`. Mirrors web
+    /// `retryExhaustedSyncItems`. This is B4's choke-point home for the
+    /// recovery write.
+    ///
+    /// - Returns: The number of items reset.
+    @discardableResult
+    func retryExhaustedSyncItems() throws -> Int {
+        return try write { db in
+            let exhausted = try SyncQueueItem
+                .filter(Column("status") == SyncStatus.failed.rawValue)
+                .filter(Column("retryCount") >= SyncRetry.maxRetries)
+                .fetchAll(db)
+
+            for var item in exhausted {
+                item.status = .pending
+                item.retryCount = 0
+                item.lastError = nil
+                try item.save(db)
+            }
+            return exhausted.count
+        }
+    }
 }
 
 // MARK: - Sync Queries
