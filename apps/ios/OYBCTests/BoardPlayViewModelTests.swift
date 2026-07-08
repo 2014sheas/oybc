@@ -455,10 +455,18 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         // Increment 1 -> 2 reaches goal => completed.
         vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
-        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.isCompleted == true && !vm.isProcessing })
+        XCTAssertTrue(waitUntil {
+            self.dbTask(db, "c1")?.isCompleted == true
+                && vm.taskMap["c1"]?.isCompleted == true
+                && vm.taskMap["c1"]?.currentCount == 2
+                && !vm.isProcessing
+        }, "completion never landed in the published task map")
         XCTAssertEqual(try XCTUnwrap(dbTask(db, "c1")).currentCount, 2)
 
-        // Decrement 2 -> 1 un-completes (standalone legacy path).
+        // Decrement 2 -> 1 un-completes (standalone legacy path). This reads
+        // vm.taskMap["c1"] below, so the wait above must guarantee the
+        // PUBLISHED state — not just the DB + isProcessing — reflects the
+        // increment, or the decrement could act on a stale currentCount.
         vm.handleCountingDecrement(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
         XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.currentCount == 1 && !vm.isProcessing })
         let c1 = try XCTUnwrap(dbTask(db, "c1"))
@@ -522,7 +530,11 @@ final class BoardPlayViewModelTests: XCTestCase {
         // only square on the board => a real not-complete -> complete
         // transition. This is the legitimate GREENLOG fire.
         vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
-        XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.currentCount == 1 && !vm.isProcessing })
+        XCTAssertTrue(waitUntil {
+            self.dbTask(db, "c1")?.currentCount == 1
+                && vm.taskMap["c1"]?.currentCount == 1
+                && !vm.isProcessing
+        }, "completion never landed in the published task map")
         XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).status, .completed,
                        "the single square completing should auto-complete the 1x1 board")
         XCTAssertEqual(vm.flashEvent?.risoNotification, "GREENLOG!",
@@ -533,6 +545,8 @@ final class BoardPlayViewModelTests: XCTestCase {
         // true), board.status is already .completed (not .active), so
         // BPVCascadeBoardResult.didAutoComplete is false even though
         // isGreenlogNow recomputes to true again. The flash must NOT re-fire.
+        // This reads vm.taskMap["c1"] below, so the wait above must guarantee
+        // the PUBLISHED state reflects the first tap, not just DB + isProcessing.
         vm.handleCountingTap(boardTask: bt, task: try XCTUnwrap(vm.taskMap["c1"]))
         XCTAssertTrue(waitUntil { self.dbTask(db, "c1")?.currentCount == 2 && !vm.isProcessing },
                       "overshoot increment should still persist past maxCount (no clamp)")
@@ -607,8 +621,9 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         XCTAssertTrue(waitUntil {
             (try? db.fetchBoardTasks(boardId: "b1"))?.contains { $0.id == bt.id } == false
+                && !vm.boardTasks.contains { $0.id == bt.id }
                 && !vm.isProcessing
-        }, "placement was never removed")
+        }, "placement was never removed and published")
         XCTAssertEqual(vm.boardTasks.count, 1, "published placements reflect the removal")
     }
 
@@ -625,8 +640,10 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil {
             (try? db.fetchBoardTasks(boardId: "b1"))?.contains {
                 $0.taskId == "t1" && $0.row == 1 && $0.col == 2
-            } == true && !vm.isProcessing
-        }, "placement was never created")
+            } == true
+                && vm.boardTasks.contains { $0.taskId == "t1" && $0.row == 1 && $0.col == 2 }
+                && !vm.isProcessing
+        }, "placement was never created and published")
         XCTAssertTrue(vm.boardTasks.contains { $0.taskId == "t1" && $0.row == 1 && $0.col == 2 })
     }
 
