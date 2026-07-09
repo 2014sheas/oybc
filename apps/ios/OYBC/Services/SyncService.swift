@@ -277,7 +277,32 @@ final class SyncService: ObservableObject {
 
     // MARK: - Private
 
-    private let db = Firestore.firestore()
+    /// Firestore handle. `lazy` so merely *constructing* a `SyncService`
+    /// doesn't touch Firebase — this lets the logic-test bundle (no
+    /// `FirebaseApp.configure()` host) instantiate the service to exercise
+    /// the GRDB-only pull-apply seam (`applyRemoteSubdoc`). Access stays
+    /// serialized on `@MainActor`, so the non-thread-safe `lazy` is safe;
+    /// production behaviour is unchanged (the handle is still created on
+    /// first network use, before any real sync).
+    private lazy var db = Firestore.firestore()
+
+    /// Local database the pull-apply path writes into. Injected (defaulting
+    /// to `.shared`) so tests can point the seam at an in-memory
+    /// `AppDatabase.makeTestInstance()`. Mirrors the B3 ViewModel injection
+    /// precedent; both `SyncService()` call sites keep working via the default.
+    private let database: AppDatabase
+
+    /// - Parameter database: Local DB the pull path writes into. Defaults to
+    ///   `.shared`; overridden only in tests.
+    ///
+    /// SCOPE CAVEAT (E3): only `applyRemoteSubdoc` (and everything inside
+    /// its transaction) reads this handle — push/fullSync/safety-net still
+    /// use `AppDatabase.shared` directly. A test injecting
+    /// `makeTestInstance()` may exercise the pull-apply seam ONLY; widening
+    /// the injection is a deliberate future step, not an oversight.
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
 
     /// Safety-net interval for the periodic full sync. With push-on-enqueue
     /// + snapshot listeners doing the real-time work, this only needs to
@@ -1457,7 +1482,10 @@ extension SyncService {
         }
     }
 
-    private func applyRemoteSubdoc(
+    /// Not `private` so `OYBCTests/SyncPullApplyTests.swift` can drive the
+    /// pull-apply seam directly with crafted remote dicts (C4 widening
+    /// precedent). Writes into the injected `database`.
+    func applyRemoteSubdoc(
         collection: (firestoreName: String, grdbTable: String),
         remoteData: [String: Any],
         authenticatedUserId: String
@@ -1481,7 +1509,7 @@ extension SyncService {
             // separate write tx and its catch swallowed errors — leaving the
             // task applied locally but board stats stale forever, with no
             // safety net to reconcile.
-            try AppDatabase.shared.write { db in
+            try database.write { db in
                 // CompoundChild has no userId column — children scope through
                 // their parent compound's userId. A crafted Firestore doc with
                 // a compoundTaskId pointing at another user's compound would
