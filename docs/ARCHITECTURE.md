@@ -107,7 +107,7 @@ progress_counters       -- Vestigial dead (superseded by the Task.sharedCounterI
 sync_queue              -- Pending Firestore operations.
 ```
 
-There is no `bingo_lines` table on either platform. Bingo state is denormalized directly onto `boards` (`linesCompleted` count + `completedLineIds` JSON array of line ids) and is always recomputed from the task-completion grid via `detectBingos` (`packages/shared/src/algorithms/bingoDetection.ts`, Swift twin) — never trusted as authoritative during a sync conflict. See `docs/TASK_SYSTEM.md` §Global completion semantics / derivation pass.
+There is no `bingo_lines` table on either platform. Bingo state is denormalized directly onto `boards` (`linesCompleted` count + `completedLineIds` JSON array of line ids) and is always recomputed from the task-completion grid via `detectBingos` (`packages/bingo-core/src/bingoDetection.ts`, re-exported through `@oybc/shared`; Swift twin `Services/BingoDetection.swift`) — never trusted as authoritative during a sync conflict. See `docs/TASK_SYSTEM.md` §Global completion semantics / derivation pass.
 
 The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_composite_tasks` tables are still present in old migration scripts so first-launch backfill works on dev/test devices, but they receive no live writes and no UI reads. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the canonical schema.
 
