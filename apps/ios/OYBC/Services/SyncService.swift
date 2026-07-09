@@ -294,6 +294,12 @@ final class SyncService: ObservableObject {
 
     /// - Parameter database: Local DB the pull path writes into. Defaults to
     ///   `.shared`; overridden only in tests.
+    ///
+    /// SCOPE CAVEAT (E3): only `applyRemoteSubdoc` (and everything inside
+    /// its transaction) reads this handle — push/fullSync/safety-net still
+    /// use `AppDatabase.shared` directly. A test injecting
+    /// `makeTestInstance()` may exercise the pull-apply seam ONLY; widening
+    /// the injection is a deliberate future step, not an oversight.
     init(database: AppDatabase = .shared) {
         self.database = database
     }
