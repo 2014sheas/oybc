@@ -1,98 +1,75 @@
-/**
- * counterArrivals.test.ts — passive-completion arrival detection (P3).
- *
- * A shared-counting square "arrives" when its displayed count increased since
- * the board's last-seen snapshot. First views seed a baseline (never arrive);
- * decrements never arrive. The iOS `CounterArrivals.swift` port mirrors these.
- */
-
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   detectCounterArrivals,
   snapshotCounterSquares,
   type ArrivalSquare,
 } from '../../src/algorithms/counterArrivals';
 
-function sq(taskId: string, counterId: string, counterName: string, displayed: number): ArrivalSquare {
-  return { taskId, counterId, counterName, displayed };
+/**
+ * counterArrivals.test.ts — passive-completion arrival detection (P3).
+ *
+ * SHARED_COUNTERS P3 PR A (issue #303): `detectCounterArrivals` is now
+ * fixture-driven from `tests/fixtures/counterArrivalsVectors.json` — the
+ * SAME file `apps/ios/OYBCTests/CounterArrivalsVectorTests.swift` runs
+ * through the Swift mirror `CounterArrivals.swift`. Pre-PR-A: 8
+ * `detectCounterArrivals` `it` blocks. Post-PR-A: 8 fixture vectors — a 1:1
+ * mapping, no case dropped.
+ *
+ * `snapshotCounterSquares` has a different input/output shape (not a
+ * lastSeen+squares -> result match) and its 2 tests — including a round-trip
+ * case that calls BOTH functions in sequence — don't fit the single-function
+ * vector schema, so they stay hand-written here (kept, not converted).
+ */
+
+const FIXTURE_PATH = path.join(__dirname, '../fixtures/counterArrivalsVectors.json');
+
+interface VectorSquare {
+  taskId: string;
+  counterId: string;
+  counterName: string;
+  displayed: number;
 }
 
-describe('detectCounterArrivals', () => {
-  it('reports no arrivals on a first view (no last-seen baseline)', () => {
-    const r = detectCounterArrivals({
-      lastSeen: {},
-      squares: [sq('t1', 'c1', 'Push-ups', 20)],
-    });
-    expect(r.arrivedTaskIds).toEqual([]);
-    expect(r.arrivedCounters).toEqual([]);
-    expect(r.totalArrivedSquares).toBe(0);
+interface ExpectedResult {
+  arrivedTaskIds: string[];
+  arrivedCounters: { counterId: string; counterName: string; squareCount: number }[];
+  totalArrivedSquares: number;
+}
+
+interface Vector {
+  name: string;
+  lastSeen: Record<string, number>;
+  squares: VectorSquare[];
+  expected: ExpectedResult;
+}
+
+interface Fixture {
+  vectors: Vector[];
+}
+
+const fixture: Fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
+
+function toSquare(s: VectorSquare): ArrivalSquare {
+  return { taskId: s.taskId, counterId: s.counterId, counterName: s.counterName, displayed: s.displayed };
+}
+
+describe('detectCounterArrivals (fixture-driven, tests/fixtures/counterArrivalsVectors.json)', () => {
+  it('fixture is non-empty', () => {
+    expect(fixture.vectors.length).toBeGreaterThan(0);
   });
 
-  it('detects a square whose displayed increased since last view', () => {
-    const r = detectCounterArrivals({
-      lastSeen: { t1: 20 },
-      squares: [sq('t1', 'c1', 'Push-ups', 25)],
+  for (const v of fixture.vectors) {
+    it(v.name, () => {
+      const result = detectCounterArrivals({
+        lastSeen: v.lastSeen,
+        squares: v.squares.map(toSquare),
+      });
+      expect(result.arrivedTaskIds).toEqual(v.expected.arrivedTaskIds);
+      expect(result.arrivedCounters).toEqual(v.expected.arrivedCounters);
+      expect(result.totalArrivedSquares).toBe(v.expected.totalArrivedSquares);
     });
-    expect(r.arrivedTaskIds).toEqual(['t1']);
-    expect(r.arrivedCounters).toEqual([{ counterId: 'c1', counterName: 'Push-ups', squareCount: 1 }]);
-    expect(r.totalArrivedSquares).toBe(1);
-  });
-
-  it('does not arrive when displayed is unchanged', () => {
-    const r = detectCounterArrivals({
-      lastSeen: { t1: 20 },
-      squares: [sq('t1', 'c1', 'Push-ups', 20)],
-    });
-    expect(r.totalArrivedSquares).toBe(0);
-  });
-
-  it('does not arrive on a decrement (increase-only)', () => {
-    const r = detectCounterArrivals({
-      lastSeen: { t1: 20 },
-      squares: [sq('t1', 'c1', 'Push-ups', 12)],
-    });
-    expect(r.totalArrivedSquares).toBe(0);
-  });
-
-  it('aggregates multiple arrived squares of the same counter', () => {
-    const r = detectCounterArrivals({
-      lastSeen: { t1: 5, t2: 5 },
-      squares: [sq('t1', 'c1', 'Push-ups', 8), sq('t2', 'c1', 'Push-ups', 9)],
-    });
-    expect(r.arrivedTaskIds.sort()).toEqual(['t1', 't2']);
-    expect(r.arrivedCounters).toEqual([{ counterId: 'c1', counterName: 'Push-ups', squareCount: 2 }]);
-    expect(r.totalArrivedSquares).toBe(2);
-  });
-
-  it('lists multiple arrived counters sorted by name', () => {
-    const r = detectCounterArrivals({
-      lastSeen: { t1: 1, t2: 1 },
-      squares: [sq('t1', 'cz', 'Water', 3), sq('t2', 'ca', 'Push-ups', 3)],
-    });
-    expect(r.arrivedCounters.map((c) => c.counterName)).toEqual(['Push-ups', 'Water']);
-  });
-
-  it('mixes arrived and unchanged squares correctly', () => {
-    const r = detectCounterArrivals({
-      lastSeen: { t1: 10, t2: 10, t3: 10 },
-      squares: [
-        sq('t1', 'c1', 'Push-ups', 15), // arrived
-        sq('t2', 'c1', 'Push-ups', 10), // unchanged
-        sq('t3', 'c2', 'Steps', 4), // decreased
-      ],
-    });
-    expect(r.arrivedTaskIds).toEqual(['t1']);
-    expect(r.arrivedCounters).toEqual([{ counterId: 'c1', counterName: 'Push-ups', squareCount: 1 }]);
-  });
-
-  it('ignores a square with no last-seen entry even when others arrived', () => {
-    const r = detectCounterArrivals({
-      lastSeen: { t1: 5 },
-      squares: [sq('t1', 'c1', 'Push-ups', 9), sq('t2', 'c2', 'Steps', 100)],
-    });
-    // t2 has no baseline → not an arrival; t1 arrived.
-    expect(r.arrivedTaskIds).toEqual(['t1']);
-    expect(r.totalArrivedSquares).toBe(1);
-  });
+  }
 });
 
 describe('snapshotCounterSquares', () => {
@@ -105,7 +82,10 @@ describe('snapshotCounterSquares', () => {
   });
 
   it('round-trips: a fresh snapshot yields no arrivals on the next detect', () => {
-    const squares = [sq('t1', 'c1', 'Push-ups', 20), sq('t2', 'c1', 'Push-ups', 8)];
+    const squares = [
+      { taskId: 't1', counterId: 'c1', counterName: 'Push-ups', displayed: 20 },
+      { taskId: 't2', counterId: 'c1', counterName: 'Push-ups', displayed: 8 },
+    ];
     const snap = snapshotCounterSquares(squares);
     const r = detectCounterArrivals({ lastSeen: snap, squares });
     expect(r.totalArrivedSquares).toBe(0);
