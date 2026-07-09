@@ -2,7 +2,6 @@ import { db } from '../internal';
 import type { BoardTask, CreateBoardTaskInput } from '@oybc/shared';
 import {
   SyncOperationType,
-  SyncStatus,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
@@ -192,17 +191,7 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
       await db.boardTasks.delete(boardTaskId);
 
       // Enqueue DELETE tombstone for sync.
-      await db.syncQueue.add({
-        id: generateUUID(),
-        entityType: 'boardTasks',
-        entityId: boardTaskId,
-        operationType: SyncOperationType.DELETE,
-        payload: JSON.stringify(existing),
-        status: SyncStatus.PENDING,
-        retryCount: 0,
-        createdAt: now,
-        priority: 0,
-      });
+      await addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.DELETE, existing, 0);
 
       // 2. Fetch post-delete state for cascade pass.
       const allBoardTasksPost = await db.boardTasks.toArray();
@@ -260,17 +249,7 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
 
         const updatedBoard = await db.boards.get(affectedBoardId);
         if (updatedBoard) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'boards',
-            entityId: affectedBoardId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(updatedBoard),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
         }
       }
     },
@@ -337,17 +316,7 @@ export async function addBoardTaskToBoard(
     async () => {
       // 1. Write the new BoardTask placement.
       await db.boardTasks.add(newBoardTask);
-      await db.syncQueue.add({
-        id: generateUUID(),
-        entityType: 'boardTasks',
-        entityId: newBoardTask.id,
-        operationType: SyncOperationType.CREATE,
-        payload: JSON.stringify(newBoardTask),
-        status: SyncStatus.PENDING,
-        retryCount: 0,
-        createdAt: now,
-        priority: 0,
-      });
+      await addToSyncQueue('boardTasks', newBoardTask.id, SyncOperationType.CREATE, newBoardTask, 0);
 
       // 2. Fetch post-insert state for cascade pass.
       const allBoardTasksPost = await db.boardTasks.toArray();
@@ -405,17 +374,7 @@ export async function addBoardTaskToBoard(
 
         const updatedBoard = await db.boards.get(affectedBoardId);
         if (updatedBoard) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'boards',
-            entityId: affectedBoardId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(updatedBoard),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
         }
       }
     },
@@ -504,17 +463,7 @@ export async function reorderBoardTasks(
           version: (existing.version ?? 0) + 1,
         };
         await db.boardTasks.put(patched);
-        await db.syncQueue.add({
-          id: generateUUID(),
-          entityType: 'boardTasks',
-          entityId: move.boardTaskId,
-          operationType: SyncOperationType.UPDATE,
-          payload: JSON.stringify(patched),
-          status: SyncStatus.PENDING,
-          retryCount: 0,
-          createdAt: now,
-          priority: 0,
-        });
+        await addToSyncQueue('boardTasks', move.boardTaskId, SyncOperationType.UPDATE, patched, 0);
       }
 
       // 2. Re-derive bingo lines for this board from the post-move snapshot.
@@ -556,17 +505,7 @@ export async function reorderBoardTasks(
 
       const updatedBoard = await db.boards.get(boardId);
       if (updatedBoard) {
-        await db.syncQueue.add({
-          id: generateUUID(),
-          entityType: 'boards',
-          entityId: boardId,
-          operationType: SyncOperationType.UPDATE,
-          payload: JSON.stringify(updatedBoard),
-          status: SyncStatus.PENDING,
-          retryCount: 0,
-          createdAt: now,
-          priority: 0,
-        });
+        await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard, 0);
       }
     },
   );
@@ -654,17 +593,7 @@ export async function updateBoardTaskAndCascade(
         version: (existing.version ?? 0) + 1,
       };
       await db.boardTasks.put(patched);
-      await db.syncQueue.add({
-        id: generateUUID(),
-        entityType: 'boardTasks',
-        entityId: boardTaskId,
-        operationType: SyncOperationType.UPDATE,
-        payload: JSON.stringify(patched),
-        status: SyncStatus.PENDING,
-        retryCount: 0,
-        createdAt: now,
-        priority: 0,
-      });
+      await addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.UPDATE, patched, 0);
 
       // 3b. Fetch fresh workspace data inside the transaction for the cascade pass.
       //     We need the post-patch boardTask list and the full task / child sets.
@@ -723,17 +652,7 @@ export async function updateBoardTaskAndCascade(
 
         const updatedBoard = await db.boards.get(affectedBoardId);
         if (updatedBoard) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'boards',
-            entityId: affectedBoardId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(updatedBoard),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
         }
       }
     },

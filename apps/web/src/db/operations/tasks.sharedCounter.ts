@@ -2,8 +2,9 @@ import { db } from '../internal';
 import type {
   Task,
 } from '@oybc/shared';
-import { BoardStatus, SyncOperationType, SyncStatus, TaskType, propagateIncrement } from '@oybc/shared';
-import { generateUUID, currentTimestamp } from '../utils';
+import { BoardStatus, SyncOperationType, TaskType, propagateIncrement } from '@oybc/shared';
+import { currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
 
 /**
@@ -88,17 +89,7 @@ export async function incrementSharedCounter(
       // Enqueue sync for the source task.
       const savedSource = await db.tasks.get(sourceTaskId);
       if (savedSource) {
-        await db.syncQueue.add({
-          id: generateUUID(),
-          entityType: 'tasks',
-          entityId: sourceTaskId,
-          operationType: SyncOperationType.UPDATE,
-          payload: JSON.stringify(savedSource),
-          status: SyncStatus.PENDING,
-          retryCount: 0,
-          createdAt: now,
-          priority: 0,
-        });
+        await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
       }
 
       // 3. Find all linked (derived) tasks for this source.
@@ -135,17 +126,7 @@ export async function incrementSharedCounter(
         await db.tasks.update(result.taskId, linkedPatch);
         const savedLinked = await db.tasks.get(result.taskId);
         if (savedLinked) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'tasks',
-            entityId: result.taskId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(savedLinked),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
         }
       }
 
@@ -248,17 +229,7 @@ export async function decrementSharedCounter(
       await db.tasks.update(sourceTaskId, updatedSource);
       const savedSource = await db.tasks.get(sourceTaskId);
       if (savedSource) {
-        await db.syncQueue.add({
-          id: generateUUID(),
-          entityType: 'tasks',
-          entityId: sourceTaskId,
-          operationType: SyncOperationType.UPDATE,
-          payload: JSON.stringify(savedSource),
-          status: SyncStatus.PENDING,
-          retryCount: 0,
-          createdAt: now,
-          priority: 0,
-        });
+        await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
       }
 
       // 4. Find all linked (derived) tasks for this source.
@@ -297,17 +268,7 @@ export async function decrementSharedCounter(
         await db.tasks.update(result.taskId, linkedPatch);
         const savedLinked = await db.tasks.get(result.taskId);
         if (savedLinked) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'tasks',
-            entityId: result.taskId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(savedLinked),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
         }
       }
 

@@ -116,7 +116,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
 
         // Build the credit-toast result: ACTIVE boards that hold any member task.
@@ -228,7 +228,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: source,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             // 3. Fetch all linked (derived) tasks for this source.
             let linkedTasks = try Task
@@ -268,7 +268,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: linked,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
 
             // 5. Board cascade + credit result.
@@ -355,7 +355,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: source,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             // 3. Fetch all linked (derived) tasks for this source.
             let linkedTasks = try Task
@@ -398,7 +398,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: linked,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
 
             // 5. Board cascade + credit result.

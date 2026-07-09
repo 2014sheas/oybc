@@ -128,7 +128,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 
@@ -173,7 +173,7 @@ extension AppDatabase {
                     operationType: .delete,
                     payload: bt,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
 
             board.isDeleted = true
@@ -187,7 +187,7 @@ extension AppDatabase {
                 operationType: .delete,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 
@@ -319,7 +319,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             // 3. Batch cascade: load shared tables ONCE, find the union of
             //    affected board IDs across all placed tasks, then write one
@@ -401,7 +401,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: affectedBoard,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
     }
@@ -449,7 +449,7 @@ extension AppDatabase {
                     operationType: .create,
                     payload: payload.task,
                     now: now
-                ).save(db)
+                ).enqueue(db)
                 for childTask in payload.childTasks {
                     try childTask.save(db)
                     try SyncQueueBuilder.makeItem(
@@ -458,7 +458,7 @@ extension AppDatabase {
                         operationType: .create,
                         payload: childTask,
                         now: now
-                    ).save(db)
+                    ).enqueue(db)
                 }
                 for link in payload.childLinks {
                     try link.save(db)
@@ -468,7 +468,7 @@ extension AppDatabase {
                         operationType: .create,
                         payload: link,
                         now: now
-                    ).save(db)
+                    ).enqueue(db)
                 }
             }
 
@@ -482,7 +482,7 @@ extension AppDatabase {
                 operationType: boardSyncOp,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             if isUpdate {
                 // Snapshot the existing BoardTasks before deleting
@@ -501,7 +501,7 @@ extension AppDatabase {
                         operationType: .delete,
                         payload: old,
                         now: now
-                    ).save(db)
+                    ).enqueue(db)
                 }
             }
 
@@ -513,7 +513,7 @@ extension AppDatabase {
                     operationType: .create,
                     payload: bt,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
     }

@@ -3,7 +3,6 @@ import {
   BoardStatus,
   TaskType,
   SyncOperationType,
-  SyncStatus,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
@@ -12,7 +11,8 @@ import {
   type CompoundChild,
   type BoardStatsUpdate,
 } from '@oybc/shared';
-import { currentTimestamp, generateUUID } from '../utils';
+import { currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
 
@@ -147,17 +147,7 @@ export async function runBoardCascadeForTask(
     // Enqueue sync for this board (inside the transaction for all-or-nothing semantics).
     const updatedBoard = await db.boards.get(affectedBoardId);
     if (updatedBoard) {
-      await db.syncQueue.add({
-        id: generateUUID(),
-        entityType: 'boards',
-        entityId: affectedBoardId,
-        operationType: SyncOperationType.UPDATE,
-        payload: JSON.stringify(updatedBoard),
-        status: SyncStatus.PENDING,
-        retryCount: 0,
-        createdAt: currentTimestamp(),
-        priority: 0,
-      });
+      await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
     }
 
     resultMap.set(affectedBoardId, {
@@ -304,17 +294,7 @@ export async function handleTaskCompletion(
       // 6. Enqueue sync for the target Task (inside the transaction).
       const updatedTask = await db.tasks.get(targetTask.id);
       if (updatedTask) {
-        await db.syncQueue.add({
-          id: generateUUID(),
-          entityType: 'tasks',
-          entityId: targetTask.id,
-          operationType: SyncOperationType.UPDATE,
-          payload: JSON.stringify(updatedTask),
-          status: SyncStatus.PENDING,
-          retryCount: 0,
-          createdAt: currentTimestamp(),
-          priority: 0,
-        });
+        await addToSyncQueue('tasks', targetTask.id, SyncOperationType.UPDATE, updatedTask, 0);
       }
 
       // Populate collateralBingosByBoard on the result now that the loop is done.
