@@ -102,10 +102,12 @@ compound_children       -- Parent-child links for compound tasks. One row per
                            composite_nodes tables.
 board_tasks             -- Junction: board ↔ task placement (no completion state —
                            that lives on the Task itself post-unification).
-progress_counters       -- Counting-task progress state (per user × counter).
-bingo_lines             -- Completed lines (denormalized for performance).
+progress_counters       -- Vestigial dead (superseded by the Task.sharedCounterId
+                           model — see docs/SHARED_COUNTERS.md); no live reads/writes.
 sync_queue              -- Pending Firestore operations.
 ```
+
+There is no `bingo_lines` table on either platform. Bingo state is denormalized directly onto `boards` (`linesCompleted` count + `completedLineIds` JSON array of line ids) and is always recomputed from the task-completion grid via `detectBingos` (`packages/shared/src/algorithms/bingoDetection.ts`, Swift twin) — never trusted as authoritative during a sync conflict. See `docs/TASK_SYSTEM.md` §Global completion semantics / derivation pass.
 
 The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_composite_tasks` tables are still present in old migration scripts so first-launch backfill works on dev/test devices, but they receive no live writes and no UI reads. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the canonical schema.
 
@@ -603,7 +605,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - [x] Display name edit (Firebase Auth + local DB + sync)
 - [x] Sync status indicator + iOS `NetworkMonitor`
 
-**Achievement squares** shipped subsequently in Phase 6.3 (PR #54) as the `TaskType.ACHIEVEMENT` first-class type. `ProgressCounter` schema exists but has no UI consumer — open question whether to surface it later or drop the entity.
+**Achievement squares** shipped subsequently in Phase 6.3 (PR #54) as the `TaskType.ACHIEVEMENT` first-class type. The `ProgressCounter` open question below was resolved by Decision 1 (§Shared Counters) — the entity was **not** surfaced; counter-sharing instead ships as the per-Task `sharedCounterId` FK model, with `ProgressCounter`/`TaskProgressCounter`/`calculateCountingRollup` left vestigial-dead (web dropped the Dexie store at v11; iOS still declares the inert `progress_counters` table — tracked in `docs/ROADMAP.md` Track C5).
 
 ### Launch readiness (separate gate, not a Phase 5 sub-task)
 
@@ -965,7 +967,7 @@ The Boards-tab **Core boards** rows previously opened the per-timeframe browser 
 - **Empty windows are lazy**: when no core board exists for a window, the pager shows a setup prompt ("No board for <label> yet" → "Set up"/"Backfill"), which launches the wizard prefilled for that window. **No board row is written until the user acts** — the same no-auto-spawn invariant that governs the rest of Phase 6 (navigating to a window never creates a board).
 - **Prev/next is an in-place state change, not a navigation push**: the pager owns the current-window state and re-resolves the board for the stepped window (via the shared `stepWindow` / iOS `stepCoreBoardWindow`). This avoids the iOS NavigationStack destination-reuse trap (a pushed destination is reused when the path's only element swaps) and avoids polluting web history. Paging is unbounded in both directions (past = backfill/review, future = pre-build). iOS guards rapid stepping with a `reloadToken` stale-result check.
 - **Timezone**: the web route's date-only `:date` param is parsed as **local noon** (`new Date(\`${date}T12:00:00\`)`), not `new Date(date)` — a date-only ISO string parses as UTC midnight, which lands the daily pager on *yesterday's* window for users west of UTC.
-- **Platform divergence (intentional)**: web extracts a presentational `BoardPlaySurface` from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; iOS embeds the existing `BoardPlayView` whole behind a new `embedded` flag (it is 1350 lines and already self-loads by `boardId`, so embedding is lower-risk than extraction). Same behavior on both platforms.
+- **Platform divergence (intentional)**: web extracts a presentational `BoardPlaySurface` from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; iOS embeds the existing `BoardPlayView` whole behind a new `embedded` flag (it self-loads by `boardId`, so embedding is lower-risk than extraction). Same behavior on both platforms. (Post-B2: both play surfaces have since had their write logic extracted — web into `useBoardPlayData`/`useBoardPlay` hooks + `toggleTaskCompletionAndCascade` operation (`BoardPlaySurface.tsx` now ~1,088 lines), iOS into `BoardPlayViewModel` (DB-injected, unit-tested; `BoardPlayView.swift` now ~2,000 lines of rendering). The `embedded`-flag structure itself is unchanged.)
 
 ## Wizard "From a board" picker
 
