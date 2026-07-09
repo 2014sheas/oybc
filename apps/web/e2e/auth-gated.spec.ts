@@ -1,4 +1,4 @@
-import { test, expect } from './_fixtures/bypass';
+import { test, expect, openTab, openCreateHub } from './_fixtures/bypass';
 
 /**
  * E2E coverage for auth-gated routes via the dev-only auth bypass
@@ -21,17 +21,21 @@ import { test, expect } from './_fixtures/bypass';
  */
 
 test.describe('auth-gated routes via bypass', () => {
-  test('lands on Boards tab — h1 heading + tab nav both render', async ({ page }) => {
-    // The bypass fixture already navigated us to `/`; the Boards tab
-    // is the default route per `App.tsx`'s `<Navigate to="/boards">`.
-    await expect(page.getByRole('heading', { name: 'Boards', exact: true })).toBeVisible();
-    // The tab nav has aria-label="Main navigation" (TabBar.tsx).
-    await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
+  test('Boards tab renders the h1 heading + the Primary tab nav', async ({ page }) => {
+    // Post-Riso the app boots to `/home` (App.tsx `<Navigate to="/home">`),
+    // not `/boards`; the primary tabs are BUTTONS in `<nav aria-label="Primary">`
+    // (the old bottom `TabBar` with aria-label="Main navigation" is gone).
+    await openTab(page, 'Boards');
+    await expect(page).toHaveURL(/\/boards/);
+    // The Boards screen's h1 is "All boards" (the Riso billboard header).
+    await expect(page.getByRole('heading', { name: 'All boards', level: 1 })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
   });
 
-  test('Create tab opens the wizard via Start a new board', async ({ page }) => {
-    // Navigate to Create via the tab bar.
-    await page.getByRole('link', { name: /create/i }).click();
+  test('New board opens the wizard via Start a new board', async ({ page }) => {
+    // "Create" is no longer a tab; the header "New board" button opens the
+    // Create hub, which offers the one-off "Start a new board" CTA.
+    await openCreateHub(page);
     await expect(page).toHaveURL(/\/create/);
 
     // CreateHubBoardCTA renders one of two visual variants — primary
@@ -51,13 +55,11 @@ test.describe('auth-gated routes via bypass', () => {
     await expect(page.getByRole('heading', { name: 'New board', exact: true })).toBeVisible();
   });
 
-  test('Profile tab renders the bypass user identity', async ({ page }) => {
-    // The Profile link in TabBar is a `react-router-dom <NavLink>`,
-    // which renders as <a>. `getByRole('link', { name: /profile/i })`
-    // matches both that link AND any other "profile"-named link on
-    // the page (none today, but stay specific). Use the link's
-    // `to="/profile"` href for reliability.
-    await page.getByRole('link', { name: 'Profile' }).click();
+  test('You tab renders the bypass user identity', async ({ page }) => {
+    // "Profile" is now the "You" primary tab (mapped to `/profile`). Scope
+    // to the Primary nav so we hit the tab, not the sibling "You" avatar
+    // button in the header.
+    await openTab(page, 'You');
     await expect(page).toHaveURL(/\/profile/);
     // The bypass fixture seeded `email: 'bypass@oybc.local'`. That's
     // a stable primary-key-shaped string distinct from any production

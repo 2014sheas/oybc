@@ -3,6 +3,7 @@ import {
   expect,
   seedTemplate,
   clearTemplates,
+  openCreateHub,
 } from './_fixtures/bypass';
 
 /**
@@ -23,42 +24,31 @@ import {
  */
 
 test.describe('Phase 6.2 rework', () => {
-  test('Setup-step toggle hides Custom timeframe', async ({ page }) => {
-    // Open the wizard via the Create-tab CTA. Same matcher as the
-    // baseline auth-gated test (handles both primary and secondary
-    // CTA copy depending on whether pending recurring boards exist).
-    await page.getByRole('link', { name: /create/i }).click();
+  // The "Make recurring" Setup-step toggle was retired: one-off vs recurring
+  // board creation are now two distinct Create-hub entry points ("Start a new
+  // board" vs "Create a recurring board"), each opening its own wizard. The
+  // load-bearing invariant survives — recurring boards can't use the CUSTOM
+  // timeframe — so these two tests now assert it via the two entry points
+  // instead of a toggle.
+
+  test('one-off board wizard offers the Custom timeframe', async ({ page }) => {
+    await openCreateHub(page);
     await page.getByRole('button', { name: /start a new board/i }).click();
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
-    // Initial state: Custom is in the timeframe segmented selector.
-    const timeframeCustom = page.getByRole('button', { name: 'Custom', exact: true });
-    await expect(timeframeCustom).toBeVisible();
-
-    // Flip the "Make recurring" toggle. The label is rendered inside a
-    // <label> wrapping the checkbox, so we click the checkbox by name.
-    const toggle = page.getByRole('checkbox', { name: /make recurring/i });
-    await toggle.check();
-    await expect(toggle).toBeChecked();
-
-    // Custom timeframe option disappears from the segmented selector
-    // (the recurring schema rejects it — vanishing is the affordance,
-    // no explanatory hint).
-    await expect(timeframeCustom).not.toBeVisible();
+    // The one-off wizard includes Custom in the timeframe segmented selector.
+    await expect(page.getByRole('button', { name: 'Custom', exact: true })).toBeVisible();
   });
 
-  test('Setup-step toggle off restores Custom timeframe', async ({ page }) => {
-    await page.getByRole('link', { name: /create/i }).click();
-    await page.getByRole('button', { name: /start a new board/i }).click();
+  test('recurring board wizard omits the Custom timeframe', async ({ page }) => {
+    await openCreateHub(page);
+    await page.getByRole('button', { name: /create a recurring board/i }).click();
+    await expect(page.getByLabel(/board name/i)).toBeVisible();
 
-    const toggle = page.getByRole('checkbox', { name: /make recurring/i });
-    await toggle.check();
-    await expect(page.getByRole('button', { name: 'Custom', exact: true })).not.toBeVisible();
-
-    // Toggle off — Custom returns.
-    await toggle.uncheck();
-    await expect(toggle).not.toBeChecked();
-    await expect(page.getByRole('button', { name: 'Custom', exact: true })).toBeVisible();
+    // The recurring wizard exposes Daily/Weekly/Monthly/Yearly but NOT Custom
+    // (the recurring schema rejects it — its absence is the affordance).
+    await expect(page.getByRole('button', { name: 'Weekly', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Custom', exact: true })).toHaveCount(0);
   });
 
   test('Profile templates page renders empty state when no templates exist', async ({ page }) => {
@@ -73,8 +63,9 @@ test.describe('Phase 6.2 rework', () => {
     ).toBeVisible();
     // Empty-state copy from RecurringTemplatesPage.
     await expect(page.getByText(/no recurring templates yet/i)).toBeVisible();
-    // The empty-state body explains the wizard-toggle entry-point.
-    await expect(page.getByText(/toggle.*make recurring.*in setup/i)).toBeVisible();
+    // The empty-state body now points at the "Create a recurring board"
+    // Create-hub entry point (the retired "Make recurring in setup" toggle).
+    await expect(page.getByText(/create a recurring board/i)).toBeVisible();
   });
 
   test('Profile templates page lists a seeded template + Edit deep-links into the wizard', async ({ page }) => {
@@ -118,7 +109,10 @@ test.describe('Phase 6.2 rework', () => {
     const nameInput = page.getByLabel(/board name/i);
     await expect(nameInput).toHaveValue('Daily Workout');
 
-    // The Recurring toggle is forced ON because we're editing a template.
-    await expect(page.getByRole('checkbox', { name: /make recurring/i })).toBeChecked();
+    // Editing a template forces the RECURRING wizard (the retired "Make
+    // recurring" toggle is now implied by the entry point): the header reads
+    // "Edit recurring board" and Custom is absent from the timeframe selector.
+    await expect(page.getByRole('heading', { name: /edit recurring board/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Custom', exact: true })).toHaveCount(0);
   });
 });

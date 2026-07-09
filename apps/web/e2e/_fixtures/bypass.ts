@@ -48,6 +48,29 @@ export const test = base.extend<Record<string, never>>({
     // the param to sessionStorage immediately, so any in-app
     // navigation the test does keeps the bypass live.
     await page.goto('/?__oybc_test_bypass=1');
+
+    // ── Deterministic app-ready gate (the root fix for the seed race). ──
+    //
+    // The raw-IDB `seed*` helpers below call `indexedDB.open('oybc')` with
+    // NO version arg. That only returns the migrated v11 schema (with all
+    // object stores) once Dexie has actually opened the database. If a seed
+    // runs BEFORE Dexie's first open, `indexedDB.open('oybc')` instead
+    // *creates* an empty v1 database with no object stores — so the seed's
+    // `db.transaction([...])` throws "object store not found", or (worse)
+    // leaves a half-created DB that races Dexie's own open. The old fixture
+    // yielded immediately after `goto`, so every seed-in-`beforeEach` spec
+    // was a coin-flip on this ordering.
+    //
+    // AuthContext's bypass branch awaits `db.users.get(...)` + `.put(...)`
+    // (which forces Dexie to open at v11, creating every store) and only
+    // then calls `setUser`, which renders the signed-in shell. So the app
+    // shell's "Primary" nav becoming visible is a precise happens-after
+    // signal that the full v11 schema exists on disk. Waiting on it here
+    // guarantees every subsequent raw-IDB seed hits a real schema.
+    await page
+      .getByRole('navigation', { name: 'Primary' })
+      .waitFor({ state: 'visible' });
+
     // `use` here is Playwright's fixture-yield callback
     // (https://playwright.dev/docs/test-fixtures), not a React hook.
     // The naming collision with React's `use` API is unavoidable
@@ -56,6 +79,39 @@ export const test = base.extend<Record<string, never>>({
     await use(page);
   },
 });
+
+// ─── Navigation helpers (Riso app shell) ────────────────────────────────────
+//
+// The Riso redesign replaced the old bottom `TabBar` (react-router links) with
+// an `AppShell` whose primary tabs are BUTTONS inside `<nav aria-label="Primary">`
+// (desktop top nav; the mobile bottom nav is `display:none` at desktop widths
+// so it's absent from the accessibility tree). "Create" is no longer a tab —
+// board creation opens from the header "New board" button. These helpers
+// centralise the nav vocabulary so specs don't re-derive it.
+
+/** Primary-tab labels. "Boards" carries a live count badge, so match by prefix. */
+export type PrimaryTab = 'Home' | 'Boards' | 'Tasks' | 'You';
+
+/**
+ * Click a primary nav tab (Home / Boards / Tasks / You) in the app shell's
+ * top nav. Scoped to the "Primary" navigation so it never collides with the
+ * "You" avatar button (a sibling of the nav) or in-wizard step buttons.
+ */
+export async function openTab(page: Page, tab: PrimaryTab): Promise<void> {
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('button', { name: new RegExp(`^${tab}`) })
+    .click();
+}
+
+/**
+ * Open the Create hub via the header "New board" action button (scoped to the
+ * banner so it never matches the Home screen's own "New board" card). Replaces
+ * the retired "Create" tab link.
+ */
+export async function openCreateHub(page: Page): Promise<void> {
+  await page.getByRole('banner').getByRole('button', { name: 'New board' }).click();
+}
 
 /** The bypass user's id — exported so tests that seed user-scoped
  *  rows (templates, boards, tasks) can reference it without
@@ -248,6 +304,13 @@ export interface SeedTask {
   /** Phase 6.3 — required count of in-window spawns hitting the
    *  trigger. Positive integer; required for template mode. */
   requiredCount?: number;
+  /** Shared Counters — FK linking a DERIVED counting task to its source
+   *  counting task. Presence makes this task a linked member of the
+   *  source's shared-counter group. */
+  sharedCounterId?: string;
+  /** Shared Counters — the derived task's baseline at link time. The
+   *  displayed count is `max(0, currentCount − baseline)`. Defaults to 0. */
+  baseline?: number;
 }
 
 export async function seedTask(page: Page, task: SeedTask): Promise<void> {

@@ -6,6 +6,8 @@ import {
   seedBoardTask,
   seedCompoundChild,
   readCompoundChild,
+  openTab,
+  openCreateHub,
 } from './_fixtures/bypass';
 
 /**
@@ -76,8 +78,8 @@ test.describe('Tasks tab', () => {
   });
 
   test('Tasks tab lists seeded tasks and renders the right empty/filter affordances', async ({ page }) => {
-    await page.getByRole('link', { name: /tasks/i }).click();
-    await expect(page.getByRole('heading', { name: 'Tasks', level: 1 })).toBeVisible();
+    await openTab(page, 'Tasks');
+    await expect(page.getByRole('heading', { name: 'Task library', level: 1 })).toBeVisible();
     await expect(page.getByText('Read for 30 minutes')).toBeVisible();
     await expect(page.getByText('Run miles')).toBeVisible();
     await expect(page.getByText('Stretch')).toBeVisible();
@@ -95,7 +97,7 @@ test.describe('Tasks tab', () => {
   });
 
   test('Edit flow: tapping a task opens detail, saving a title change reflects on the list', async ({ page }) => {
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
 
     // Tap the Read row to navigate to detail. The list rows have aria-labels
     // like 'Open Read for 30 minutes details'.
@@ -106,7 +108,7 @@ test.describe('Tasks tab', () => {
     await expect(page.getByRole('heading', { name: 'Read for 30 minutes' })).toBeVisible();
 
     // Edit. Title field is in the edit sheet; rename and save.
-    await page.getByRole('button', { name: 'Edit' }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const titleInput = page.getByRole('dialog', { name: 'Edit task' }).getByLabel(/title/i);
     await titleInput.fill('Read for 45 minutes');
     await page.getByRole('button', { name: /save changes/i }).click();
@@ -120,12 +122,15 @@ test.describe('Tasks tab', () => {
   });
 
   test('Delete flow: cascade dialog surfaces placement count and removes the row on confirm', async ({ page }) => {
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
     await page
       .getByRole('button', { name: /open stretch details/i })
       .click();
 
-    await page.getByRole('button', { name: 'Delete' }).click();
+    // Detail-page action button is exactly "Delete" — `exact: true` avoids
+    // the transient strict-mode clash with the list's per-row "Delete {name}"
+    // buttons while the list is still unmounting behind the detail route.
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
 
     // Confirm dialog shows the cascade impact. "Stretch" sits on 1 board.
     const dialog = page.getByRole('alertdialog', { name: 'Confirm delete' });
@@ -143,11 +148,11 @@ test.describe('Tasks tab', () => {
     // Tasks tab. The refactor moves it behind a sheet so the library
     // is the primary surface. This locks the open/submit/close cycle
     // + the live-query refresh path that gets the row into the list.
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
 
     // The form should NOT be rendered inline anymore — only the trigger.
     await expect(page.getByPlaceholder(/enter task title/i)).not.toBeVisible();
-    await page.getByRole('button', { name: /\+ Create task/i }).click();
+    await page.getByRole('button', { name: 'New task', exact: true }).click();
 
     const sheet = page.getByRole('dialog', { name: 'New task' });
     await expect(sheet).toBeVisible();
@@ -165,7 +170,7 @@ test.describe('Tasks tab', () => {
     // Verifies the Phase D relocation: CreateHub used to render a
     // "Your task library" section + quick-add form. Both should now be
     // missing.
-    await page.getByRole('link', { name: /create/i }).click();
+    await openCreateHub(page);
     await expect(page.getByRole('heading', { name: 'Create', level: 1 })).toBeVisible();
     await expect(page.getByText(/your task library/i)).not.toBeVisible();
     // The quick-add form's submit was titled "Add to library" on the
@@ -185,7 +190,7 @@ test.describe('Tasks tab', () => {
       type: 'normal',
     });
 
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
     await page.getByPlaceholder(/search tasks/i).fill('goldfinch');
 
     // Only the description-matched task should remain.
@@ -195,7 +200,7 @@ test.describe('Tasks tab', () => {
   });
 
   test('sort: Title A→Z reorders the list alphabetically', async ({ page }) => {
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
 
     // Sort lives behind the Filters disclosure now — open it first.
     await page.getByRole('button', { name: /^Filters/ }).click();
@@ -206,9 +211,11 @@ test.describe('Tasks tab', () => {
     // the rows appear in alphabetic order regardless.
     await page.getByLabel('Sort').selectOption('title-asc');
 
-    // Read the rendered task names in DOM order via aria-labels.
+    // Read the rendered task names in DOM order via aria-labels. Scope to the
+    // row "Open …" buttons — each row now also has "Edit {name}"/"Delete {name}"
+    // buttons that would otherwise pollute the order comparison.
     const rowNames = await page
-      .locator('ul[aria-label="Task list"] button')
+      .locator('ul[aria-label="Task list"] button[aria-label^="Open "]')
       .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('aria-label') ?? ''));
     // Strip the aria-label scaffolding to just the title.
     const titles = rowNames.map((s) =>
@@ -219,7 +226,7 @@ test.describe('Tasks tab', () => {
   });
 
   test('usage filter "Unused" hides tasks placed on any board', async ({ page }) => {
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
     // Usage lives behind the Filters disclosure now — open it first.
     await page.getByRole('button', { name: /^Filters/ }).click();
     // Stretch is the placed task; the others (Read, Run miles) are unplaced.
@@ -231,9 +238,9 @@ test.describe('Tasks tab', () => {
   });
 
   test('edit cancel leaves the task untouched', async ({ page }) => {
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
     await page.getByRole('button', { name: /open read for 30 minutes details/i }).click();
-    await page.getByRole('button', { name: 'Edit' }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
 
     // Change the title but cancel — list should still show the original.
     const dialog = page.getByRole('dialog', { name: 'Edit task' });
@@ -258,11 +265,11 @@ test.describe('Tasks tab', () => {
     // distinguish loading from missing.
     await page.goto('/tasks/bogus-id-that-does-not-exist?__oybc_test_bypass=1');
     await expect(page).toHaveURL(/\/tasks$/);
-    await expect(page.getByRole('heading', { name: 'Tasks', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Task library', level: 1 })).toBeVisible();
   });
 
   test('Filters disclosure: hides Sort/Status/Usage by default, badge + Clear all', async ({ page }) => {
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
 
     // Defaults: secondary controls collapsed, no badge.
     await expect(page.getByLabel('Sort')).not.toBeVisible();
@@ -385,7 +392,11 @@ test.describe('Tasks tab', () => {
       childIndex: 0,
     });
 
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
+    // With "Group subtasks" ON (the default), an unplaced compound child is
+    // collapsed under its parent and has no top-level row. Toggle grouping OFF
+    // so "Pushups" surfaces as a flat, tappable row.
+    await page.getByRole('button', { name: /group subtasks/i }).click();
     await page.getByRole('button', { name: /open pushups details/i }).click();
 
     // The "Subtask of" section renders a chip linking back to the parent.
@@ -402,7 +413,7 @@ test.describe('Tasks tab', () => {
     await page.getByRole('button', { name: 'Stretch' }).first().click();
 
     // Navigate back to the Tasks tab and find the Stretch row.
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
     const stretchRow = page.getByRole('button', { name: /open stretch details/i });
     await expect(stretchRow).toBeVisible();
     // The meta line is rendered inside the row button. "Last completed"
@@ -437,9 +448,11 @@ test.describe('Tasks tab', () => {
       childIndex: 1,
     });
 
-    await page.getByRole('link', { name: /tasks/i }).click();
+    await openTab(page, 'Tasks');
     await page.getByRole('button', { name: /open workout routine details/i }).click();
-    await page.getByRole('button', { name: 'Delete' }).click();
+    // Detail-page "Delete" is exact — avoids the transient strict-mode clash
+    // with the list's per-row "Delete {name}" buttons while the list unmounts.
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
 
     const dialog = page.getByRole('alertdialog', { name: 'Confirm delete' });
     await expect(dialog).toBeVisible();
