@@ -3,7 +3,6 @@ import type { Board, Task, CompoundChild, CreateBoardInput } from '@oybc/shared'
 import {
   BoardStatus,
   SyncOperationType,
-  SyncStatus,
   Timeframe,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
@@ -227,17 +226,7 @@ export async function updateBoardAndCascade(
 
         const updatedBoard = await db.boards.get(affectedBoardId);
         if (updatedBoard) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'boards',
-            entityId: affectedBoardId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(updatedBoard),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
         }
       }
     },

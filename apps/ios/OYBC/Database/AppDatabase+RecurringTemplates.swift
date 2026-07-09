@@ -74,7 +74,7 @@ extension AppDatabase {
                 operationType: operation,
                 payload: template,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 
@@ -194,7 +194,7 @@ extension AppDatabase {
                     operationType: .create,
                     payload: board,
                     now: now
-                ).insert(db)
+                ).enqueue(db)
 
                 for bt in boardTasks {
                     try SyncQueueBuilder.makeItem(
@@ -203,7 +203,7 @@ extension AppDatabase {
                         operationType: .create,
                         payload: bt,
                         now: now
-                    ).insert(db)
+                    ).enqueue(db)
                 }
 
                 try SyncQueueBuilder.makeItem(
@@ -212,7 +212,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: updatedTemplate,
                     now: now
-                ).insert(db)
+                ).enqueue(db)
 
                 outcome = .spawned(
                     boardId: boardId,
@@ -244,7 +244,7 @@ extension AppDatabase {
                 operationType: .delete,
                 payload: t,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 

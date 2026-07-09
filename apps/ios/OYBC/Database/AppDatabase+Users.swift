@@ -87,7 +87,7 @@ extension AppDatabase {
                 completedAt: nil,
                 priority: 1
             )
-            try syncItem.save(db)
+            try syncItem.enqueue(db)
 
             return user
         }

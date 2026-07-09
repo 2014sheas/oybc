@@ -7,7 +7,7 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, SyncStatus, TaskType, OperatorType, hasCycle } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, hasCycle } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
@@ -439,17 +439,7 @@ export async function updateTask(
       const playgroundUser = (updated as unknown as { userId?: string }).userId;
       if (playgroundUser === 'playground-user-1') return;
     }
-    await db.syncQueue.add({
-      id: generateUUID(),
-      entityType: 'tasks',
-      entityId: id,
-      operationType: SyncOperationType.UPDATE,
-      payload: JSON.stringify(updated),
-      status: SyncStatus.PENDING,
-      retryCount: 0,
-      createdAt: currentTimestamp(),
-      priority: 0,
-    });
+    await addToSyncQueue('tasks', id, SyncOperationType.UPDATE, updated, 0);
   });
 }
 /**

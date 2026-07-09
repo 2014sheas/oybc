@@ -146,7 +146,7 @@ extension AppDatabase {
                 operationType: op,
                 payload: pool,
                 now: now
-            ).save(db)
+            ).enqueue(db)
             return pool
         }
     }
@@ -166,7 +166,7 @@ extension AppDatabase {
                 operationType: .delete,
                 payload: pool,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 

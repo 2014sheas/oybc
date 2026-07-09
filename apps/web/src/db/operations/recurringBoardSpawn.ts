@@ -3,7 +3,6 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
-  SyncStatus,
   buildSpawnPlacement,
   validateSpawnPool,
   type Board,
@@ -12,9 +11,9 @@ import {
   type Task,
   type PendingTemplateSpawn,
   type SpawnPoolFailureReason,
-  type SyncQueueItem,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 
 /**
  * Recurring-board spawn (Phase 6.2).
@@ -181,53 +180,26 @@ export async function spawnTemplateBoard(
         version: (template.version ?? 0) + 1,
       };
 
-      const queueItems: SyncQueueItem[] = [
-        buildSyncItem('boards', board.id, SyncOperationType.CREATE, board),
-        ...boardTasks.map((bt) =>
-          buildSyncItem('boardTasks', bt.id, SyncOperationType.CREATE, bt),
-        ),
-        buildSyncItem(
-          'recurringBoardTemplates',
-          updatedTemplate.id,
-          SyncOperationType.UPDATE,
-          updatedTemplate,
-        ),
-      ];
-
       await db.boards.add(board);
       if (boardTasks.length > 0) await db.boardTasks.bulkAdd(boardTasks);
       await db.recurringBoardTemplates.put(updatedTemplate);
-      await db.syncQueue.bulkAdd(queueItems);
+
+      // Enqueue through the D3 choke point (per-entity coalescing). The
+      // board + boardTasks are freshly-minted UUIDs so their lookups are
+      // no-op appends; the template UPDATE coalesces with any pending
+      // template edit.
+      await addToSyncQueue('boards', board.id, SyncOperationType.CREATE, board);
+      for (const bt of boardTasks) {
+        await addToSyncQueue('boardTasks', bt.id, SyncOperationType.CREATE, bt);
+      }
+      await addToSyncQueue(
+        'recurringBoardTemplates',
+        updatedTemplate.id,
+        SyncOperationType.UPDATE,
+        updatedTemplate,
+      );
 
       return { ok: true, boardId, templateId: template.id, windowStart };
     },
   );
 }
-
-function buildSyncItem(
-  entityType: string,
-  entityId: string,
-  operationType: SyncOperationType,
-  payload: unknown,
-): SyncQueueItem {
-  return {
-    id: generateUUID(),
-    entityType,
-    entityId,
-    operationType,
-    payload: JSON.stringify(payload),
-    status: SyncStatus.PENDING,
-    retryCount: 0,
-    createdAt: currentTimestamp(),
-    priority: 0,
-  };
-}
-
-// Note: Dexie `bulkAdd` with the manually-shaped queue items above
-// bypasses `addToSyncQueue`'s playground-user short-circuit. There is
-// no runtime assertion here that `template.userId !== 'playground-user-1'`
-// — this is a documented assumption, NOT an enforced invariant. The
-// spawn path is only invoked by signed-in users from the real Boards
-// tab, so the assumption holds today. If a future refactor extends the
-// playground to host the recurring-template surface, replicate the
-// guard or convert this comment into an explicit dev-only check.

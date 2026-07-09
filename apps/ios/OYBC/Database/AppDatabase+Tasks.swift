@@ -39,7 +39,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: task,
                 now: Self.currentTimestamp(),
-            ).save(db)
+            ).enqueue(db)
         }
     }
 
@@ -123,7 +123,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 
@@ -145,7 +145,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: task,
                 now: now
-            ).save(db)
+            ).enqueue(db)
             try Self.runBoardCascadeForTask(db: db, changedTaskId: task.id, now: now)
         }
     }
@@ -268,7 +268,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             results[boardId] = CascadeBoardResult(
                 update: update,
@@ -323,7 +323,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: updatedTask,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             // 2b. Bump the BoardTask placement record's updatedAt/version.
             var updatedBoardTask = boardTask
@@ -336,7 +336,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: updatedBoardTask,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             // 3. Cross-board cascade: rebuilds bingo state, applies GREENLOG
             //    transitions, persists every affected board, and returns the
@@ -373,7 +373,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: updatedChild,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             return try Self.runBoardCascadeForTaskWithResults(
                 db: db,
@@ -400,7 +400,7 @@ extension AppDatabase {
                 operationType: .create,
                 payload: task,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 
@@ -428,7 +428,7 @@ extension AppDatabase {
                 operationType: .create,
                 payload: task,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             for (childTask, link) in zip(childTasks, childLinks) {
                 try childTask.save(db)
@@ -438,7 +438,7 @@ extension AppDatabase {
                     operationType: .create,
                     payload: childTask,
                     now: now
-                ).save(db)
+                ).enqueue(db)
                 try link.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "compoundChildren",
@@ -446,7 +446,7 @@ extension AppDatabase {
                     operationType: .create,
                     payload: link,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
     }
@@ -479,7 +479,7 @@ extension AppDatabase {
                 operationType: .create,
                 payload: parent,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             // 2. For each link: if the child is a NEW inline task, insert the
             //    child Task row + its sync entry first. Then insert the
@@ -495,7 +495,7 @@ extension AppDatabase {
                         operationType: .create,
                         payload: childTask,
                         now: now
-                    ).save(db)
+                    ).enqueue(db)
                 }
                 try link.save(db)
                 try SyncQueueBuilder.makeItem(
@@ -504,7 +504,7 @@ extension AppDatabase {
                     operationType: .create,
                     payload: link,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
     }
@@ -648,7 +648,7 @@ extension AppDatabase {
                 operationType: .create,
                 payload: newTask,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
         return newTask
     }
@@ -726,7 +726,7 @@ extension AppDatabase {
                 operationType: .create,
                 payload: newParent,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             for (index, child) in sourceChildren.enumerated() {
                 let linkId = Self.generateUUID()
@@ -749,7 +749,7 @@ extension AppDatabase {
                     operationType: .create,
                     payload: link,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
 
@@ -858,7 +858,7 @@ extension AppDatabase {
                     operationType: .delete,
                     payload: bt,
                     now: now,
-                ).save(db)
+                ).enqueue(db)
             }
 
             // 2 + 3. Soft-delete compound-child links — both directions.
@@ -880,7 +880,7 @@ extension AppDatabase {
                     operationType: .delete,
                     payload: link,
                     now: now,
-                ).save(db)
+                ).enqueue(db)
             }
 
             // 4. Soft-delete the Task itself.
@@ -895,7 +895,7 @@ extension AppDatabase {
                 operationType: .delete,
                 payload: task,
                 now: now,
-            ).save(db)
+            ).enqueue(db)
         }
     }
 

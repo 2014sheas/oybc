@@ -100,7 +100,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: boardTask,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             // ── Post-patch workspace snapshot (for new-task cascade side) ──
 
@@ -177,7 +177,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: affectedBoard,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
     }
@@ -253,7 +253,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: boardTask,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
 
             // ── 2. Re-derive bingo lines for this board ──
@@ -302,7 +302,7 @@ extension AppDatabase {
                 operationType: .update,
                 payload: board,
                 now: now
-            ).save(db)
+            ).enqueue(db)
         }
     }
 
@@ -348,7 +348,7 @@ extension AppDatabase {
                 operationType: .delete,
                 payload: existing,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
@@ -400,7 +400,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: board,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
     }
@@ -457,7 +457,7 @@ extension AppDatabase {
                 operationType: .create,
                 payload: newBoardTask,
                 now: now
-            ).save(db)
+            ).enqueue(db)
 
             let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
@@ -509,7 +509,7 @@ extension AppDatabase {
                     operationType: .update,
                     payload: board,
                     now: now
-                ).save(db)
+                ).enqueue(db)
             }
         }
 
