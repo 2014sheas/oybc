@@ -205,6 +205,22 @@
   border: 1px solid var(--riso-ink-static);
 }
 
+/* Arrival pulse (Shared Counters P3) — a square that filled in from a log made
+   elsewhere pulses a gold glow twice on board-open, then settles. */
+@keyframes arriveGlow {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 194, 31, 0); }
+  35%  { box-shadow: 0 0 0 4px rgba(255, 194, 31, 0.85); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 194, 31, 0); }
+}
+.arrived {
+  animation: arriveGlow 0.9s ease-in-out 2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrived {
+    animation: none;
+  }
+}
+
 /* interactive variant (Phase 3b play board) */
 .interactive {
   cursor: pointer;

@@ -45,6 +45,36 @@ private struct SwapTarget: Identifiable {
     let currentTaskId: String
 }
 
+// MARK: - ArrivalBannerData / ArrivalNavTarget (Shared Counters P3)
+
+/// The showing arrival-banner's copy inputs, derived from a `CounterArrivalEvent`.
+private struct ArrivalBannerData {
+    /// Total arrived squares — selects the single-vs-multiple copy.
+    let squareCount: Int
+    /// The arrived square's task name (single-square variant only).
+    let taskName: String?
+    /// The arrived counter's display name (single-square variant only).
+    let counterName: String?
+    /// The distinct arrived counters — resolves the tap target.
+    let arrivedCounters: [ArrivedCounter]
+}
+
+/// Sheet-presented navigation target when the arrival banner is tapped.
+/// A single distinct arrived counter opens its Counter Detail; multiple
+/// counters (the "N squares … your counters" copy names none in particular)
+/// open the Counters Hub.
+private enum ArrivalNavTarget: Identifiable {
+    case counter(String)
+    case hub
+
+    var id: String {
+        switch self {
+        case .counter(let counterId): return "counter-\(counterId)"
+        case .hub: return "hub"
+        }
+    }
+}
+
 // MARK: - BoardPlayView
 
 /// Full interactive bingo board play screen.
@@ -133,6 +163,15 @@ struct BoardPlayView: View {
     @State private var creditToastGeneration: Int = 0
     /// Board task id of the counting cell whose stepper sheet is open.
     @State private var countingStepperBoardTaskId: String?
+    // MARK: P3 — Shared-counter arrival banner (passive completion)
+    /// The showing arrival banner's data, or nil when no banner is up.
+    @State private var arrivalBanner: ArrivalBannerData? = nil
+    /// Arrived square task ids — drives the per-cell gold pulse.
+    @State private var arrivedTaskIds: Set<String> = []
+    /// Monotonic token so only the latest arrival's ~5.2s auto-clear fires.
+    @State private var arrivalBannerGeneration: Int = 0
+    /// Sheet-presented nav target for the banner tap (Counter Detail / Hub).
+    @State private var arrivalNavTarget: ArrivalNavTarget? = nil
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
@@ -391,6 +430,26 @@ struct BoardPlayView: View {
                     )
                 )
                 .zIndex(10)
+            }
+
+            // ── P3: Shared-counter arrival banner (drops from top) ──
+            if let banner = arrivalBanner {
+                RisoArrivalBanner(
+                    squareCount: banner.squareCount,
+                    taskName: banner.taskName,
+                    counterName: banner.counterName,
+                    onOpen: { openArrivalTarget(banner) },
+                    onDismiss: dismissArrivalBanner
+                )
+                .padding(.horizontal, Riso.gutter)
+                .padding(.top, 54)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    )
+                )
+                .zIndex(12)
             }
 
             // ── P2: Shared-counter credit toast (slides from bottom) ──
@@ -768,7 +827,16 @@ struct BoardPlayView: View {
             // session, so later reloads (post-write tails, sheet dismisses,
             // pager board-changes) reuse it.
             viewModel.setUserId(authService.currentUser?.id)
+            // P3 — this board-open should run arrival detection on the reload
+            // that follows (the reused pager instance uses boardChanged instead).
+            viewModel.markArrivalDetectionPending()
             viewModel.reload()
+        }
+        .onDisappear {
+            // P3 — re-snapshot the last-seen baseline on leaving so local taps
+            // don't re-fire on the next open (belt-and-suspenders; the once-
+            // per-open detect + local-tap reloads already keep it current).
+            viewModel.snapshotArrivalsOnDisappear()
         }
         // Defensive: also reload on boardId prop change. With `.id(boardId)`
         // on the standalone destination, SwiftUI re-creates the view (and the
@@ -791,6 +859,14 @@ struct BoardPlayView: View {
             if let text = event.creditToast {
                 triggerCreditToast(text: text)
             }
+        }
+        // P3 — passive-completion arrival. The VM detects + seeds the baseline
+        // on a board-open reload and publishes this one-shot; the view drives
+        // the gold banner + per-square pulse + the ~5.2s auto-clear (all
+        // view-owned `@State`). Suppressed in edit mode.
+        .onChange(of: viewModel.arrivalEvent) { _, event in
+            guard let event, !editMode else { return }
+            triggerArrivalBanner(from: event)
         }
         // B2-I3 — edit-commit outcome observer. The VM's `handleEditSave` /
         // `handleEditArchive` DB commits (+ the domain `reload()`) run VM-side;
@@ -902,6 +978,21 @@ struct BoardPlayView: View {
                     onDismiss: { showShareBoardSheet = false }
                 )
                 .presentationDetents([.medium, .large])
+            }
+        }
+        // P3 — arrival banner tap → Counter Detail (single counter) / Counters
+        // Hub (multiple). Presented as a sheet (wrapped in its own
+        // NavigationStack so the destinations' member→board NavigationLinks work)
+        // to match how this view presents every other secondary surface — and to
+        // avoid a nav-push conflicting with the embedded pager's own chrome.
+        .sheet(item: $arrivalNavTarget) { target in
+            NavigationStack {
+                switch target {
+                case .counter(let counterId):
+                    CounterDetailView(counterId: counterId)
+                case .hub:
+                    CountersHubView()
+                }
             }
         }
     }
@@ -1133,6 +1224,54 @@ struct BoardPlayView: View {
     // `sharedCreditToastText(counterName:otherBoards:isIncrement:)` moved to
     // `BoardPlayViewModel` (B2-I2) — its only callers are the shared-counter
     // handlers that now live there.
+
+    // MARK: - P3: Shared-counter arrival banner helpers
+
+    /// Shows the gold arrival banner + starts the per-square pulse from a
+    /// one-shot `CounterArrivalEvent`, then schedules a ~5.2s auto-clear guarded
+    /// by a generation token (a newer arrival supersedes the stale timer).
+    ///
+    /// - Parameter event: The VM's published arrival payload.
+    private func triggerArrivalBanner(from event: CounterArrivalEvent) {
+        let counterName = event.arrivedCounters.first?.counterName
+        arrivalBanner = ArrivalBannerData(
+            squareCount: event.totalArrivedSquares,
+            taskName: event.singleTaskName,
+            counterName: event.totalArrivedSquares == 1 ? counterName : nil,
+            arrivedCounters: event.arrivedCounters
+        )
+        arrivedTaskIds = event.arrivedTaskIds
+        arrivalBannerGeneration &+= 1
+        let generation = arrivalBannerGeneration
+        _Concurrency.Task.detached { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 5_200_000_000)
+            guard generation == arrivalBannerGeneration else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                arrivalBanner = nil
+            }
+            arrivedTaskIds = []
+        }
+    }
+
+    /// Dismiss the arrival banner immediately (the ✕ tap). Invalidates the
+    /// pending auto-clear via the generation bump.
+    private func dismissArrivalBanner() {
+        arrivalBannerGeneration &+= 1
+        withAnimation(.easeOut(duration: 0.2)) { arrivalBanner = nil }
+        arrivedTaskIds = []
+    }
+
+    /// Resolve + present the banner's tap target: the single distinct arrived
+    /// counter's Detail, or the Counters Hub when squares arrived from more than
+    /// one counter.
+    private func openArrivalTarget(_ data: ArrivalBannerData) {
+        if data.arrivedCounters.count == 1 {
+            arrivalNavTarget = .counter(data.arrivedCounters[0].counterId)
+        } else {
+            arrivalNavTarget = .hub
+        }
+        dismissArrivalBanner()
+    }
 
     /// Computes the "↔ Shared · also counts on …" hint shown in the stepper sheet
     /// for a shared-counter task. Returns `nil` when the task is not in a shared group
@@ -1383,6 +1522,10 @@ struct BoardPlayView: View {
         .contextMenu {
             risoContextMenu(boardTask: boardTask, task: task, isCompleted: isCompleted, taskType: taskType, current: current, maxVal: maxVal, isLinkedCounter: isLinkedCounter)
         }
+        // P3 — pulse the square when it just arrived from an elsewhere log.
+        // Applied at the call site (not inside RisoBoardPlayCell) so the
+        // snapshot-covered cell internals stay untouched.
+        .arrivePulse(active: task.map { arrivedTaskIds.contains($0.id) } ?? false)
     }
 
     /// Context menu items — preserved exactly from original `playSquare`, now

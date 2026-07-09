@@ -9,7 +9,7 @@ import {
   type Task,
   type TaskStep,
 } from '@oybc/shared';
-import { useBoardPlayData, useBoardPlay, type FlashVariant } from '../hooks';
+import { useBoardPlayData, useBoardPlay, useCounterArrivals, type FlashVariant } from '../hooks';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
 import {
   DetailModal,
@@ -33,6 +33,7 @@ import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
 import { RisoCreditedToast } from './play/RisoCreditedToast';
+import { RisoArrivalBanner } from './play/RisoArrivalBanner';
 import { ShareBoardSheet } from './share/ShareBoardSheet';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
@@ -258,6 +259,49 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     setContextMenu,
   });
 
+  // ── Passive completion (Shared Counters P3) ─────────────────────────────
+  // Detects shared-counter squares that filled in from a log made elsewhere
+  // (Counter Detail / another board) and drives the gold arrival banner + the
+  // per-cell pulse. Latched to fire once per board-open; a local tap here never
+  // masquerades as an arrival. Edit mode has no shared-counter play, so the
+  // banner is suppressed while editing.
+  const { arrival, arrivedTaskIds, dismiss: dismissArrival } = useCounterArrivals({
+    boardId: board.id,
+    boardTasks,
+    taskMap,
+    sharedCounterSourceIds,
+  });
+
+  // The banner's tap target: the single distinct arrived counter's Detail page,
+  // or the Counters Hub when squares arrived from more than one counter (the
+  // doc's "N squares … your counters" copy names no single counter). Its copy
+  // strings (single-square variant) resolve from the one arrived square's task.
+  const arrivalNav = useCallback(() => {
+    if (!arrival) return;
+    dismissArrival();
+    if (arrival.arrivedCounters.length === 1) {
+      navigate(`/profile/counters/${arrival.arrivedCounters[0].counterId}`);
+    } else {
+      navigate('/profile/counters');
+    }
+  }, [arrival, dismissArrival, navigate]);
+
+  // Single-square copy needs the arrived square's task name + its counter name.
+  // Resolve the display label (title, or the auto-generated "Action N unit" for
+  // a titleless counting task) so a blank-titled counter still reads as "single".
+  const arrivalSingle = (() => {
+    if (!arrival || arrival.totalArrivedSquares !== 1) return null;
+    const taskId = [...arrival.arrivedTaskIds][0];
+    const t = taskId ? taskMap[taskId] : undefined;
+    const taskName = t
+      ? t.title && t.title.trim()
+        ? t.title
+        : generateCounterTaskTitle(t.action ?? '', t.maxCount ?? 0, t.unit ?? '')
+      : '';
+    const counterName = arrival.arrivedCounters[0]?.counterName ?? '';
+    return { taskName, counterName };
+  })();
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   // Compute streak once so both RisoGreenlog and ShareBoardSheet use the same value.
@@ -306,6 +350,19 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
       )}
       {/* Bingo toast */}
       {bingoToast && <RisoBingoToast key={bingoToast.key} count={board.linesCompleted} />}
+
+      {/* Arrival banner — passive-completion (Shared Counters P3). Suppressed in
+          edit mode (no shared-counter play while editing). */}
+      {arrival && !editMode && (
+        <RisoArrivalBanner
+          key={arrival.key}
+          squareCount={arrival.totalArrivedSquares}
+          taskName={arrivalSingle?.taskName}
+          counterName={arrivalSingle?.counterName}
+          onOpen={arrivalNav}
+          onDismiss={dismissArrival}
+        />
+      )}
 
       {/* Credited toast — shared-counter ripple feedback */}
       {creditedToast && (
@@ -618,6 +675,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   isFree: false,
                   isLine: highlightedSquares.has(row * gridSize + col),
                   isShared: isSharedCountingTask || undefined,
+                  // Phase 3 — pulse squares that just filled in from an
+                  // elsewhere log (play mode only; suppressed while editing).
+                  isArrived: (!editMode && resolvedTaskId != null && arrivedTaskIds.has(resolvedTaskId)) || undefined,
                 };
 
                 // ── Click handler (play mode) ────────────────────────────

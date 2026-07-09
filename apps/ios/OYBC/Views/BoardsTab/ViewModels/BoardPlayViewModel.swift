@@ -72,6 +72,34 @@ final class BoardPlayViewModel: ObservableObject {
     /// bingos each still trigger the view's `.onChange`).
     private var flashEventCounter = 0
 
+    // MARK: - Passive completion (Shared Counters P3)
+
+    /// One-shot arrival signal (see `CounterArrivalEvent`). Published exactly
+    /// once per board-open when ≥1 shared-counter square filled in from a log
+    /// made elsewhere. The view observes it via `.onChange` and drives the gold
+    /// `RisoArrivalBanner` + the per-square pulse (both view-owned `@State`).
+    /// `private(set)` — only `detectArrivalsAndSeed()` publishes it. Follows the
+    /// `flashEvent` one-shot pattern (monotonic id + `Equatable`).
+    @Published private(set) var arrivalEvent: CounterArrivalEvent?
+
+    /// Monotonic counter backing `arrivalEvent.id` so consecutive emissions are
+    /// distinct `Equatable` values for the view's `.onChange`.
+    private var arrivalEventCounter = 0
+
+    /// Set on board-open (appear / pager board-change) so the NEXT `apply()`
+    /// runs arrival detection exactly once. Cleared after the detect pass, so a
+    /// LOCAL tap (whose reload also lands in `apply`) never masquerades as an
+    /// arrival.
+    private var shouldDetectArrivals = false
+
+    /// The board id the arrival baseline was last (re)seeded for. After the
+    /// once-per-open detect, subsequent reloads on the SAME board re-snapshot
+    /// the baseline through local taps so leaving + returning stays quiet.
+    private var arrivalDetectedBoardId: String?
+
+    /// Device-local last-seen snapshot store. Injected for tests.
+    private let arrivalStore: CounterArrivalStore
+
     // MARK: - Edit-mode draft state (B2-I3)
     //
     // The in-place `BoardEditPanel` draft layer, moved verbatim out of
@@ -261,10 +289,16 @@ final class BoardPlayViewModel: ObservableObject {
     ///     workspace boards / templates) resolve to empty arrays, matching
     ///     the pre-refactor `loadTaskData` behavior.
     ///   - database: Injected for tests; defaults to the production singleton.
-    init(boardId: String, userId: String?, database: AppDatabase = .shared) {
+    init(
+        boardId: String,
+        userId: String?,
+        database: AppDatabase = .shared,
+        arrivalStore: CounterArrivalStore = CounterArrivalStore()
+    ) {
         self.boardId = boardId
         self.userId = userId
         self.database = database
+        self.arrivalStore = arrivalStore
     }
 
     /// Supply the authenticated user's id. Called by the view in `.onAppear`
@@ -334,7 +368,30 @@ final class BoardPlayViewModel: ObservableObject {
     /// board, so this path is the defensive one for the reuse case.
     func boardChanged(to newBoardId: String) {
         boardId = newBoardId
+        // The embedded pager reuses this VM/view for a new board — that counts
+        // as a board-open, so detect arrivals on the reload that follows.
+        shouldDetectArrivals = true
         reload()
+    }
+
+    /// Mark that the next `reload()` should run arrival detection. Called by the
+    /// view in `.onAppear` (the first board-open on this instance). The standalone
+    /// route recreates the VM per board via `.id(boardId)`, so `.onAppear` +
+    /// this flag drive detection there; the pager uses `boardChanged(to:)`.
+    func markArrivalDetectionPending() {
+        shouldDetectArrivals = true
+    }
+
+    /// Re-snapshot the current board's shared-counting squares (board disappear).
+    /// The once-per-open detect + local-tap reloads already keep the baseline
+    /// current, so this is a belt-and-suspenders write on leaving. No-op when the
+    /// board has no shared-counting squares.
+    func snapshotArrivalsOnDisappear() {
+        guard let board = board else { return }
+        arrivalStore.save(
+            boardId: board.id,
+            snapshot: snapshotCounterSquares(squares: sharedCounterArrivalSquares())
+        )
     }
 
     // MARK: - Interaction handlers (B2-I2)
@@ -1288,6 +1345,113 @@ final class BoardPlayViewModel: ObservableObject {
         allBoardsInWorkspace = payload.allBoardsInWorkspace
         allTemplatesInWorkspace = payload.allTemplatesInWorkspace
         allBoardTasksInWorkspace = payload.allBoardTasksInWorkspace
+
+        // Shared Counters P3 — passive-completion detection. On a board-open
+        // reload (flagged), diff the freshly-applied shared-counting squares
+        // against the device-local last-seen snapshot and emit an arrival if
+        // any increased. Otherwise (a local-tap reload on the already-detected
+        // board) keep the baseline current so leaving + returning stays quiet.
+        if shouldDetectArrivals {
+            shouldDetectArrivals = false
+            detectArrivalsAndSeed()
+        } else if let detected = arrivalDetectedBoardId, detected == boardId {
+            arrivalStore.save(
+                boardId: boardId,
+                snapshot: snapshotCounterSquares(squares: sharedCounterArrivalSquares())
+            )
+        }
+    }
+
+    // MARK: - Passive completion (Shared Counters P3)
+
+    /// Build the board's current shared-counting `ArrivalSquare`s from the
+    /// loaded placements + task graph. One entry per COUNTING square that is a
+    /// linked derived counter or a source with ≥1 linked task. `displayed` is
+    /// baseline-adjusted for linked members (via `deriveDisplayedCount`) and the
+    /// raw `currentCount` for sources — matching what the grid cell shows.
+    ///
+    /// Mirrors the web `buildArrivalSquares` pure adapter.
+    func sharedCounterArrivalSquares() -> [ArrivalSquare] {
+        let map = taskMap
+        var out: [ArrivalSquare] = []
+        for bt in boardTasks {
+            guard let task = map[bt.taskId], task.type == .counting else { continue }
+
+            let counterId: String
+            if let source = task.sharedCounterId {
+                counterId = source
+            } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted }) {
+                counterId = task.id
+            } else {
+                continue  // Not part of a shared-counter group.
+            }
+
+            let displayed: Int
+            if task.sharedCounterId != nil {
+                displayed = deriveDisplayedCount(
+                    derivedBaseline: task.baseline ?? 0,
+                    derivedMaxCount: task.maxCount ?? 0,
+                    sourceCurrentCount: task.currentCount ?? 0
+                ).displayed
+            } else {
+                displayed = task.currentCount ?? 0
+            }
+
+            out.append(ArrivalSquare(
+                taskId: task.id,
+                counterId: counterId,
+                counterName: Self.counterDisplayName(map[counterId]),
+                displayed: displayed
+            ))
+        }
+        return out
+    }
+
+    /// The counter's display name — the source task's title, or the
+    /// auto-generated "Action N unit" for a titleless counting task. Matches
+    /// the label the grid + Counter Detail show.
+    private static func counterDisplayName(_ source: Task?) -> String {
+        guard let source = source else { return "" }
+        if !source.title.trimmingCharacters(in: .whitespaces).isEmpty { return source.title }
+        return TaskTitle.generateCounterTaskTitle(
+            action: source.action ?? "",
+            maxCount: source.maxCount ?? 0,
+            unit: source.unit ?? ""
+        )
+    }
+
+    /// Run the once-per-open detect: diff current squares vs the stored last-seen,
+    /// seed/refresh the baseline (so an acknowledged arrival or fresh first view
+    /// won't re-fire), and emit `arrivalEvent` when anything arrived.
+    private func detectArrivalsAndSeed() {
+        let squares = sharedCounterArrivalSquares()
+        let lastSeen = arrivalStore.lastSeen(boardId: boardId)
+        let result = detectCounterArrivals(lastSeen: lastSeen, squares: squares)
+
+        // Seed / refresh the baseline immediately (after-shown + first-view
+        // baseline). Establishing it on a fresh first view is what lets the
+        // NEXT cross-surface log be caught.
+        arrivalStore.save(boardId: boardId, snapshot: snapshotCounterSquares(squares: squares))
+        arrivalDetectedBoardId = boardId
+
+        guard result.totalArrivedSquares > 0 else { return }
+
+        // Resolve the single-square copy's task name (the display label, so a
+        // titleless counting task still reads as "single") from the one arrived
+        // square.
+        let map = taskMap
+        let singleTaskName: String? = result.totalArrivedSquares == 1
+            ? result.arrivedTaskIds.first.flatMap { id in map[id].map { Self.counterDisplayName($0) } }
+            : nil
+
+        arrivalEventCounter += 1
+        arrivalEvent = CounterArrivalEvent(
+            id: arrivalEventCounter,
+            arrivedTaskIds: Set(result.arrivedTaskIds),
+            arrivedCounters: result.arrivedCounters,
+            totalArrivedSquares: result.totalArrivedSquares,
+            singleTaskName: singleTaskName
+        )
     }
 
     /// Snapshot of the task-data fetch bundle, passed from the background
@@ -1353,4 +1517,29 @@ struct BoardPlayEditEvent: Identifiable, Equatable {
         /// `dismiss()`es back to the Boards list.
         case archived
     }
+}
+
+// MARK: - CounterArrivalEvent
+
+/// One-shot passive-completion signal published by `BoardPlayViewModel` on a
+/// board-open when ≥1 shared-counter square filled in from a log made elsewhere
+/// (Shared Counters P3). The detection + baseline-seeding happen in the view
+/// model; this carries only what the view needs to drive the gold
+/// `RisoArrivalBanner` + the per-square pulse (both view-owned `@State`).
+///
+/// Mirrors `BoardPlayFlashEvent`'s one-shot pattern — a monotonic `id` keeps
+/// consecutive emissions distinct for the view's `.onChange`, even if the same
+/// squares arrive again.
+struct CounterArrivalEvent: Identifiable, Equatable {
+    let id: Int
+    /// Arrived square task ids — drives the per-cell gold pulse.
+    let arrivedTaskIds: Set<String>
+    /// Distinct arrived counters (sorted by name) — drives the tap target
+    /// (single counter → its Detail; multiple → the Counters Hub).
+    let arrivedCounters: [ArrivedCounter]
+    /// Total arrived squares — selects the single-vs-multiple banner copy.
+    let totalArrivedSquares: Int
+    /// The arrived square's task name for the single-square copy (nil for the
+    /// multiple-squares variant).
+    let singleTaskName: String?
 }

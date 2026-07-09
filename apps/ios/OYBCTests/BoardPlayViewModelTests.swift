@@ -782,4 +782,102 @@ final class BoardPlayViewModelTests: XCTestCase {
         let b = try XCTUnwrap(db.fetchBoard(id: "b1"))
         XCTAssertEqual(b.status, .archived)
     }
+
+    // MARK: - 12. Shared Counters P3 — passive-completion arrival detection
+
+    /// An isolated `UserDefaults` suite so the arrival store never pollutes
+    /// `.standard` and each test starts from a clean baseline.
+    private func makeIsolatedStore() -> CounterArrivalStore {
+        let suite = "arrival-test-\(UUID().uuidString)"
+        return CounterArrivalStore(defaults: UserDefaults(suiteName: suite)!)
+    }
+
+    /// Seed: user u1, b1 (holds the SOURCE counter c-src) + b2 (holds a linked
+    /// derived counter c-lnk → c-src), so c-src is a shared-counter source whose
+    /// square on b1 participates in arrival detection.
+    private func seedSharedCounterBoard(_ db: AppDatabase) throws {
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveBoard(makeBoard(id: "b2"))
+        try db.saveTask(makeCountingTask("c-src", maxCount: 5, currentCount: 0))
+        try db.saveTask(makeCountingTask("c-lnk", maxCount: 5, currentCount: 0, sharedCounterId: "c-src"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt-lnk", boardId: "b2", taskId: "c-lnk", row: 0, col: 0))
+    }
+
+    /// Simulate a log made ELSEWHERE (Counter Detail / another board): bump the
+    /// source counter's `currentCount` straight in the DB while the board is not
+    /// being observed.
+    private func bumpSourceCount(_ db: AppDatabase, to value: Int) throws {
+        var src = try XCTUnwrap(dbTask(db, "c-src"))
+        src.currentCount = value
+        src.version += 1
+        try db.saveTask(src)
+    }
+
+    func test_arrivalDetection_afterElsewhereLog_emitsArrivalEventWithPayload() throws {
+        let db = try makeDb()
+        try seedSharedCounterBoard(db)
+        let store = makeIsolatedStore()
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db, arrivalStore: store)
+
+        // First open: seeds the baseline (c-src displayed 0) — first view never arrives.
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && !vm.allTasks.isEmpty })
+        XCTAssertNil(vm.arrivalEvent, "first view must not arrive")
+
+        // A log lands elsewhere while the board is closed.
+        try bumpSourceCount(db, to: 3)
+
+        // Reopen → detect against the seeded baseline → c-src arrived (3 > 0).
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.arrivalEvent != nil },
+                      "arrival never published after an elsewhere log")
+        let ev = try XCTUnwrap(vm.arrivalEvent)
+        XCTAssertEqual(ev.totalArrivedSquares, 1)
+        XCTAssertTrue(ev.arrivedTaskIds.contains("c-src"))
+        XCTAssertEqual(ev.singleTaskName, "Task c-src")
+        XCTAssertEqual(ev.arrivedCounters.first?.counterId, "c-src")
+    }
+
+    func test_arrivalDetection_reSnapshotAfterShown_suppressesSecondEvent() throws {
+        let db = try makeDb()
+        try seedSharedCounterBoard(db)
+        let store = makeIsolatedStore()
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db, arrivalStore: store)
+
+        // Seed baseline, log elsewhere, reopen → arrival fires (id captured).
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && !vm.allTasks.isEmpty })
+        try bumpSourceCount(db, to: 3)
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.arrivalEvent != nil })
+        let firstId = try XCTUnwrap(vm.arrivalEvent?.id)
+
+        // Reopen again with NO further change. The after-shown re-snapshot moved
+        // the baseline up to 3, so the acknowledged arrival must NOT re-fire.
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        // Spin the run loop so the reopen's apply + detect pass runs, then assert
+        // the one-shot event is still the same instance (no new emission).
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(vm.arrivalEvent?.id, firstId,
+                       "re-snapshot after shown must suppress a second arrival event")
+    }
+
+    func test_arrivalStore_roundTripsPerBoard() {
+        let store = makeIsolatedStore()
+        XCTAssertEqual(store.lastSeen(boardId: "b1"), [:], "absent board is a first view")
+        store.save(boardId: "b1", snapshot: ["t1": 3, "t2": 7])
+        store.save(boardId: "b2", snapshot: ["t3": 1])
+        XCTAssertEqual(store.lastSeen(boardId: "b1"), ["t1": 3, "t2": 7])
+        XCTAssertEqual(store.lastSeen(boardId: "b2"), ["t3": 1])
+        // Overwrite replaces the prior snapshot.
+        store.save(boardId: "b1", snapshot: ["t1": 9])
+        XCTAssertEqual(store.lastSeen(boardId: "b1"), ["t1": 9])
+    }
 }
