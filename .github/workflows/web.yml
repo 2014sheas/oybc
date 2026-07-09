@@ -122,6 +122,21 @@ jobs:
         # Vite aliases `@oybc/shared` + `@oybc/bingo-core` to their `src/`, so the
         # config's `webServer` (`pnpm dev`) needs no prior package build. CI mode
         # (`process.env.CI`) runs serial + retry-once + boots its own dev server.
+        #
+        # Dummy Firebase env: the runner has no `.env.local` (gitignored), and
+        # without these the app throws at Firebase init before React mounts —
+        # every spec then hangs to its timeout and the job dies on
+        # `timeout-minutes` (the maiden run's failure mode). The auth-bypass
+        # fixture never makes Firebase network calls, so garbage values are
+        # safe and deterministic here.
+        env:
+          VITE_FIREBASE_API_KEY: e2e-dummy-key
+          VITE_FIREBASE_AUTH_DOMAIN: e2e-dummy.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: e2e-dummy
+          VITE_FIREBASE_STORAGE_BUCKET: e2e-dummy.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:e2edummy'
+          VITE_FIREBASE_MEASUREMENT_ID: G-E2EDUMMY
         run: pnpm --filter @oybc/web test:e2e
 
       - name: Upload Playwright report on failure
