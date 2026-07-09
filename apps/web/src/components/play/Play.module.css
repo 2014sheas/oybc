@@ -484,7 +484,13 @@
 .arrival {
   position: fixed;
   left: 50%;
-  top: 20px;
+  /* Clear the sticky app-shell header (`AppShell .main` sets `z-index: 1`,
+     which traps this fixed banner's `z-index: 130` INSIDE main's stacking
+     context — so it can never paint above the header's `z-index: 40`). At
+     `top: 20px` the banner rendered entirely behind the ~73px header, hiding
+     the P3 "signature moment" and making its ✕ unclickable. Sitting below the
+     header sidesteps the stacking trap without restructuring the shell. */
+  top: 84px;
   transform: translateX(-50%);
   z-index: 130;
   display: flex;

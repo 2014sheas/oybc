@@ -2,6 +2,7 @@ import {
   test,
   expect,
   seedBoard,
+  openCreateHub,
 } from './_fixtures/bypass';
 
 /**
@@ -41,11 +42,11 @@ test.describe('Create hub', () => {
       isRandomized: false,
     });
 
-    // Navigate to the Create tab so `useDrafts`'s live-query observer
-    // picks up the seeded row. The bypass fixture already promoted the
-    // session-storage flag during the root visit, so the in-app
+    // Open the Create hub (header "New board") so `useDrafts`'s live-query
+    // observer picks up the seeded row. The bypass fixture already promoted
+    // the session-storage flag during the root visit, so the in-app
     // navigation keeps the bypass live.
-    await page.getByRole('link', { name: /create/i }).click();
+    await openCreateHub(page);
 
     // The Drafts section is rendered conditionally (`drafts.length > 0`).
     // Assert it shows up, then locate the specific draft's row via its

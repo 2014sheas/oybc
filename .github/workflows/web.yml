@@ -80,3 +80,73 @@ jobs:
         # VALUES under unprefixed names (by design — zero build dependency).
         # Fails if the two ever diverge in value. See docs/COMING_SOON.md.
         run: node scripts/check-coming-soon-tokens.mjs
+
+  e2e:
+    # Playwright end-to-end suite (Chromium) — drives the real UI via the
+    # dev-only auth bypass (apps/web/e2e/_fixtures/bypass.ts). Kept in a SEPARATE
+    # job so the fast build/test/lint signal above isn't blocked on the browser
+    # download + a full UI run. Shares the workflow-level `concurrency` group, so
+    # a newer push cancels this too.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        # `--with-deps` pulls the OS libraries Chromium needs on the runner.
+        # Only Chromium is installed — the Playwright config's single project.
+        run: pnpm --filter @oybc/web exec playwright install --with-deps chromium
+
+      - name: Run Playwright e2e
+        id: e2e
+        # Non-blocking for now (issue #309): the suite was just repaired, so we
+        # let it soak for a few PRs of green history before it can fail a PR.
+        # `continue-on-error` sits on THIS step (not the job) so a red run still
+        # records `outcome == 'failure'` for the upload step below while keeping
+        # the workflow green — the same graduation path the iOS snapshot suite
+        # took. To flip it strict once stable: delete this `continue-on-error`.
+        continue-on-error: true
+        # Vite aliases `@oybc/shared` + `@oybc/bingo-core` to their `src/`, so the
+        # config's `webServer` (`pnpm dev`) needs no prior package build. CI mode
+        # (`process.env.CI`) runs serial + retry-once + boots its own dev server.
+        #
+        # Dummy Firebase env: the runner has no `.env.local` (gitignored), and
+        # without these the app throws at Firebase init before React mounts —
+        # every spec then hangs to its timeout and the job dies on
+        # `timeout-minutes` (the maiden run's failure mode). The auth-bypass
+        # fixture never makes Firebase network calls, so garbage values are
+        # safe and deterministic here.
+        env:
+          VITE_FIREBASE_API_KEY: e2e-dummy-key
+          VITE_FIREBASE_AUTH_DOMAIN: e2e-dummy.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: e2e-dummy
+          VITE_FIREBASE_STORAGE_BUCKET: e2e-dummy.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:e2edummy'
+          VITE_FIREBASE_MEASUREMENT_ID: G-E2EDUMMY
+        run: pnpm --filter @oybc/web test:e2e
+
+      - name: Upload Playwright report on failure
+        # Gated on the e2e step's outcome (not job-level `failure()`) because the
+        # step is `continue-on-error` — that keeps the job green, so `success()`
+        # stays true here and the explicit outcome check is what fires the upload.
+        # Mirrors ios.yml's xcresult-on-failure artifact (7-day retention).
+        if: steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
