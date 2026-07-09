@@ -6,7 +6,7 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 **Sizing legend:** S = single small PR (< ~200 lines), M = one substantial PR or 2–3 small ones, L = a phased mini-project with its own doc.
 
-**As of 2026-07-08: B-track (B1–B4) COMPLETE; drift fixes #263/#236/#272 shipped; flaky-test race fixed (#283).** Directive-ready remainder: D1–D3 (sync hardening — D1 copy follows the #151 minimalism), E1 (docs pass), E3 (seam tests). **Decision/user-gated:** — A6/C4/C1/B1 all shipped (see below). **Everything remaining needs a decision or user action first:** #262 (missing FIREBASE_SERVICE_ACCOUNT secret — blocks rules+hosting auto-deploy), #263 (LWW edge canon — one-vector fix once decided), A4 (project split), E6 (dependency majors — Dependabot #249/#251 firebase runtime + red #250 vitest 4), B2 (play-surface extraction — sequenced after B1 settles; L-sized, worth a Gate-1 plan), A7's repo-settings half, A8 (runner image), D1–D3 (sync hardening — D1 has UX copy decisions), E-track items, F-track features.
+**As of 2026-07-08: B-track (B1–B4) COMPLETE; drift fixes #263/#236/#272 shipped; flaky-test race fixed (#283).** **D-track COMPLETE (D1 #293 · D2 #295 · D3 #297); E1 shipped.** Directive-ready remainder: E3 (seam tests). **Decision/user-gated:** — A6/C4/C1/B1 all shipped (see below). **Everything remaining needs a decision or user action first:** #262 (missing FIREBASE_SERVICE_ACCOUNT secret — blocks rules+hosting auto-deploy), #263 (LWW edge canon — one-vector fix once decided), A4 (project split), E6 (dependency majors — Dependabot #249/#251 firebase runtime + red #250 vitest 4), B2 (play-surface extraction — sequenced after B1 settles; L-sized, worth a Gate-1 plan), A7's repo-settings half, A8 (runner image), D1–D3 (sync hardening — D1 has UX copy decisions), E-track items, F-track features.
 
 **Shipped 2026-07-06/07 (agentic execution):** the ENTIRE Track G transition — T1 #229 · T2 #233 · T3 #234 · T4 #230 · T5 #238 · T6 #239 — plus A3 #232 (closes #231) and C3 #237 (closes #235; review surfaced web twin bug → #236). The Play Phase-0 architecture spike can now build inside `apps/play`.
 
@@ -139,17 +139,19 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 
 Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade with rollback, watermark-after-clean-pull). The gaps are recovery and observability — what happens after things go wrong.
 
-### D1 — Dead-letter surfacing for exhausted retries — `M`
+### D1 — Dead-letter surfacing for exhausted retries — SHIPPED [#293](https://github.com/2014sheas/oybc/pull/293) (issue #292)
 - **Why:** after `MAX_SYNC_RETRIES` (5), a queue item is abandoned in FAILED forever with only a `console.warn`. The local row stays correct; Firestore silently never learns of it; the user has no signal. On multi-device accounts that is slow, invisible divergence.
 - **Scope:** count permanently-FAILED items into the sync status on both platforms; the iOS sync row and web `SyncStatusIndicator` show a "N changes couldn't sync — Retry" affordance that resets `retryCount` and re-promotes (keep copy minimal per the #151 three-state convention — no raw error text). Consider auto-re-promoting exhausted items on network-regain as the cheap first step.
 - **Acceptance:** an item exhausting retries becomes user-visible and user-recoverable on both platforms; test covers promote-after-reset.
 
-### D2 — Make `lastSyncedCount` advancement reliable — `S/M`
+### D2 — Make `lastSyncedCount` advancement reliable — SHIPPED [#295](https://github.com/2014sheas/oybc/pull/295) (issue #294)
+> Folded atomically into push completion; advances to the PUSHED value (concurrent increments survive).
 - **Why:** the post-push bookkeeping write that maintains the additive-merge ancestor is best-effort — it swallows its own failure (`syncService.ts:175-179`, mirrored iOS). If it fails, the next counter conflict silently degrades from additive merge to LWW, which is exactly the increment-losing behavior the merge exists to prevent.
 - **Scope:** retry the advancement (it's idempotent — it sets ancestor to the pushed value) or fold it into the push-completion transaction; log loudly on final failure; unit-test the degradation path on both platforms (pairs naturally with C2's `SharedCounterMergeTests`).
 - **Acceptance:** a transiently-failing ancestor write no longer silently changes merge semantics; the failure path is tested.
 
-### D3 — Coalesce queue rows per entity — `S/M`
+### D3 — Coalesce queue rows per entity — SHIPPED [#297](https://github.com/2014sheas/oybc/pull/297) (issue #296)
+> Attempt-gated CREATE+DELETE drop; found+converted 16 web bypass sites; iOS 53 sites → one enqueue choke point. **D-track (D1–D4) COMPLETE.**
 - **Why:** N edits to one task enqueue N full-snapshot rows → N Firestore writes. Correct under LWW (full snapshots), but wasteful and it widens any per-item failure's blast radius.
 - **Scope:** at enqueue, if a PENDING row exists for the same `(entityType, entityId)` with a compatible op, replace its payload/timestamp instead of appending (delete-op supersedes pending create/update; never coalesce across an IN_PROGRESS row). Same logic both platforms; lands cleanly after B4 centralizes enqueueing.
 - **Acceptance:** burst-editing one task yields one pending row; op-precedence cases (create→update, update→delete) unit-tested on both platforms.
@@ -163,7 +165,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 
 ## Track E — Docs, tests & workflow debt
 
-### E1 — Docs accuracy pass — `S`
+### E1 — Docs accuracy pass — SHIPPED (this PR)
 - **Why:** confirmed staleness: `ARCHITECTURE.md` documents a `bingo_lines` table that exists on **neither** platform (state actually lives on `board.linesCompleted` + recompute); CLAUDE.md calls `BoardPlayView` "~1350-line" (it's 3,076); `ARCHITECTURE.md`/`TASK_SYSTEM.md`/`SYNC_STRATEGY.md` (Jun 23) predate the shared-counters work (Jul 2–3).
 - **Scope:** delete/correct the `bingo_lines` claim; fix the BoardPlayView figure (or better, land B1/B2 first and write the new truth); add shared-counter model coverage to TASK_SYSTEM/SYNC_STRATEGY (much of it can lift from `SHARED_COUNTERS.md`); add this ROADMAP.md to CLAUDE.md's Documentation list.
 - **Acceptance:** no doc describes a table, size, or model the code contradicts.
