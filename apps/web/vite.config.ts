@@ -14,6 +14,14 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@oybc/shared': path.resolve(__dirname, '../../packages/shared/src'),
+      // Same source-alias treatment for bingo-core: shared's src re-exports
+      // from it, and without this the dev server resolves the package to its
+      // CJS dist — which the browser can't named-import (T1 latent gap; only
+      // dev/e2e ever hit it, all CI build lanes bundle via rollup).
+      '@oybc/bingo-core': path.resolve(
+        __dirname,
+        '../../packages/bingo-core/src'
+      ),
     },
   },
   define: {
