@@ -1,0 +1,143 @@
+{
+  "_note": "Hand-authored cross-platform vectors for packages/shared/src/algorithms/taskEvents.ts's resolveTaskWindowState (Windowed Completion PR A, docs/WINDOWED_COMPLETION.md §Semantics per task type). packages/shared/tests/algorithms/taskEvents.test.ts runs these through the shared TS function; the deferred apps/ios/OYBCTests/TaskWindowStateVectorTests.swift (PR B) will run the SAME vectors through the Swift mirror. Minimal shapes: task={type,maxCount(nullable)}; event={kind,delta(nullable),occurredAt,isDeleted}; windowStart is nullable (null = lifetime). expected={isCompleted,count}. Covers normal/counting x in-window / pre-window / tombstoned / negative-sum clamp / overshoot-preserved / boundary-inclusive / lifetime.",
+  "vectors": [
+    {
+      "name": "normal-in-window-complete",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-05T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 1 }
+    },
+    {
+      "name": "normal-pre-window-incomplete",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-06-20T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 0 }
+    },
+    {
+      "name": "normal-tombstoned-incomplete",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-05T12:00:00.000Z", "isDeleted": true }
+      ],
+      "expected": { "isCompleted": false, "count": 0 }
+    },
+    {
+      "name": "normal-boundary-occurredAt-equals-windowStart-included",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-01T00:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 1 }
+    },
+    {
+      "name": "normal-multiple-completions-count",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false },
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-06T09:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 2 }
+    },
+    {
+      "name": "normal-lifetime-counts-pre-window-event",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": null,
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-06-20T12:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 1 }
+    },
+    {
+      "name": "counting-in-window-complete",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-03T08:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 5 }
+    },
+    {
+      "name": "counting-in-window-partial-incomplete",
+      "task": { "type": "counting", "maxCount": 10 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 3 }
+    },
+    {
+      "name": "counting-pre-window-increment-excluded",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 4, "occurredAt": "2026-06-25T08:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 1, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 1 }
+    },
+    {
+      "name": "counting-tombstoned-increment-excluded",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 5, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": true }
+      ],
+      "expected": { "isCompleted": false, "count": 0 }
+    },
+    {
+      "name": "counting-negative-sum-clamped-to-zero",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": -5, "occurredAt": "2026-07-03T08:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 0 }
+    },
+    {
+      "name": "counting-overshoot-preserved-not-high-clamped",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "increment", "delta": 8, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 8 }
+    },
+    {
+      "name": "counting-lifetime-counts-all-increments",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": null,
+      "events": [
+        { "kind": "increment", "delta": 4, "occurredAt": "2026-06-25T08:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 7 }
+    },
+    {
+      "name": "counting-completion-events-ignored-by-counting-branch",
+      "task": { "type": "counting", "maxCount": 1 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-02T08:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 0 }
+    },
+    {
+      "name": "normal-no-events-incomplete",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "events": [],
+      "expected": { "isCompleted": false, "count": 0 }
+    }
+  ]
+}

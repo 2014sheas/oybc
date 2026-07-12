@@ -1,5 +1,10 @@
 import type { Task, CompoundChild } from '../types';
 import { OperatorType, TaskType } from '../constants/enums';
+import {
+  resolveTaskWindowState,
+  isEventOwningTask,
+  type CompoundWindowContext,
+} from './taskEvents';
 
 /**
  * Evaluate whether a compound Task is complete.
@@ -20,20 +25,48 @@ import { OperatorType, TaskType } from '../constants/enums';
  * deterministic, bounded, and never throws — preferred to a stack overflow
  * that would brick board derivation across the entire workspace.
  *
+ * **Windowed evaluation (Windowed Completion, PR A).** When `windowContext`
+ * is supplied, primitive children resolve against the host board's window via
+ * `resolveTaskWindowState` instead of reading the lifetime `isCompleted` cache;
+ * derived (shared-counter-linked) counting children fall back to their cache
+ * (the carve-out); nested compounds inherit the SAME window (host-window
+ * inheritance). When `windowContext` is omitted the behavior is byte-identical
+ * to before — the lifetime default that keeps every existing caller unchanged.
+ *
  * @param compound          The Task to evaluate. If `type !== 'compound'`,
  *                          returns `compound.isCompleted` directly.
  * @param childrenByCompound Map of `compoundTaskId` → list of CompoundChild rows.
  * @param taskById           Map of `taskId` → Task. Used to resolve child state.
  *                           Children whose taskId is missing from this map
  *                           evaluate as `false`.
+ * @param windowContext      Optional. When present, switches primitive-child
+ *                           resolution to windowed events (see above).
  * @returns `true` if the compound's operator condition is satisfied.
  */
 export function evaluateCompound(
   compound: Task,
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
+  windowContext?: CompoundWindowContext,
 ): boolean {
-  return evaluateCompoundInner(compound, childrenByCompound, taskById, new Set());
+  return evaluateCompoundInner(compound, childrenByCompound, taskById, new Set(), windowContext);
+}
+
+/**
+ * Resolve a single primitive (non-compound) child's completion, honoring the
+ * window context when present. Derived-counting children are carved out (read
+ * their lifetime cache); every other event-owning primitive resolves windowed.
+ */
+function resolvePrimitiveChildState(
+  child: Task,
+  windowContext: CompoundWindowContext | undefined,
+): boolean {
+  if (!windowContext) return child.isCompleted;
+  // Derived-task carve-out: shared-counter-linked counting children keep their
+  // propagation-stamped lifetime cache — they don't own events.
+  if (!isEventOwningTask(child)) return child.isCompleted;
+  const events = windowContext.eventsByTaskId[child.id] ?? [];
+  return resolveTaskWindowState(child, events, windowContext.windowStart).isCompleted;
 }
 
 function evaluateCompoundInner(
@@ -41,6 +74,7 @@ function evaluateCompoundInner(
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
   visiting: Set<string>,
+  windowContext: CompoundWindowContext | undefined,
 ): boolean {
   if (compound.type !== TaskType.COMPOUND) {
     return compound.isCompleted;
@@ -56,9 +90,10 @@ function evaluateCompoundInner(
     const child = taskById[link.childTaskId];
     if (!child || child.isDeleted) return false;
     if (child.type === TaskType.COMPOUND) {
-      return evaluateCompoundInner(child, childrenByCompound, taskById, visiting);
+      // Nested compounds inherit the same host window.
+      return evaluateCompoundInner(child, childrenByCompound, taskById, visiting, windowContext);
     }
-    return child.isCompleted;
+    return resolvePrimitiveChildState(child, windowContext);
   });
 
   visiting.delete(compound.id);
