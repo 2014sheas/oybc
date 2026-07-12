@@ -7,9 +7,33 @@ import {
   type Board,
   type BoardTask,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { handleTaskCompletion } from '../orchestration';
+
+/**
+ * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): a board square
+ * is green iff a non-deleted completion event exists with
+ * `occurredAt >= board.startDate`. Pre-completed fixture squares must therefore
+ * seed a completion event, not just the lifetime `isCompleted` cache — the grid
+ * + derivation now read events, not the cache. `occurredAt` sits at the board's
+ * `startDate` so it lands inside the window.
+ */
+async function seedCompletionEvent(taskId: string, occurredAt: string): Promise<void> {
+  const event: TaskEvent = {
+    id: `evt-${taskId}`,
+    userId: 'user-1',
+    taskId,
+    kind: 'completion',
+    occurredAt,
+    createdAt: occurredAt,
+    updatedAt: occurredAt,
+    version: 1,
+    isDeleted: false,
+  };
+  await db.taskEvents.add(event);
+}
 
 /**
  * Covers `handleTaskCompletion`'s `TaskCompletionResult.boardCompleted` vs
@@ -125,6 +149,9 @@ async function seedRemainingCompletedSquares(): Promise<void> {
         updatedAt: '2026-01-01T00:00:00.000Z',
         version: 1,
       });
+      // Windowed Completion: seed the completion event so the square is
+      // windowed-green (the lifetime `isCompleted` cache is no longer read).
+      await seedCompletionEvent(taskId, '2026-01-01T00:00:00.000Z');
     }
   }
 }
@@ -134,6 +161,7 @@ afterEach(async () => {
   await db.boards.clear();
   await db.boardTasks.clear();
   await db.compoundChildren.clear();
+  await db.taskEvents.clear();
   await db.syncQueue.clear();
 });
 
@@ -158,6 +186,9 @@ describe('handleTaskCompletion — boardCompleted vs isGreenlog gating (issue #2
     // that's already fully GREENLOG — the task's completion state doesn't
     // change, but handleTaskCompletion still runs the full cascade.
     await seedTask({ isCompleted: true, completedAt: '2026-01-01T00:00:00.000Z' });
+    // Windowed Completion: the target square is already windowed-complete via
+    // its own in-window completion event (mirrors an already-COMPLETED board).
+    await seedCompletionEvent('task-1', '2026-01-01T00:00:00.000Z');
     await seedBoard({ status: BoardStatus.COMPLETED, completedTasks: 9, completedAt: '2026-01-01T00:00:00.000Z' });
     await seedBoardTask();
     await seedRemainingCompletedSquares();

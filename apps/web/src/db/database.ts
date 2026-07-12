@@ -344,6 +344,21 @@ export class AppDatabase extends Dexie {
         [userId+occurredAt]
       `,
     });
+
+    // v13: Windowed Completion — event BACKFILL (docs/WINDOWED_COMPLETION.md
+    // §Migration & backfill, step 2). v12 created the `taskEvents` store empty
+    // (sub-slice 1); this bump runs the backfill upgrade that synthesizes the
+    // deterministic completion/increment events from existing lifetime task
+    // state. Separated from v12 so the upgrade fires even on a dev machine that
+    // already opened the DB at v12-empty (Dexie only runs an upgrade when
+    // moving to a HIGHER stored version — attaching it to v12 would silently
+    // skip those machines). No schema shape change (`.stores({})` no-op); the
+    // version bump is the vehicle for the `.upgrade()` callback. Expired-board
+    // SEALING (doc step 3) is PR C, NOT here.
+    this.version(13).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV13 imports `db`).
+      return import('./operations/migrationV13').then((mod) => mod.runMigrationV13(tx));
+    });
   }
 }
 

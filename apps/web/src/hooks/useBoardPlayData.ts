@@ -11,8 +11,10 @@ import {
   type CompoundChild,
   type RecurringBoardTemplate,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../db/internal';
+import type { SquareWindowContext } from '../db/adapters';
 import { useBoardTasks } from './useBoardTasks';
 import { useBoards } from './useBoards';
 import { useRecurringBoardTemplates } from './useRecurringBoardTemplates';
@@ -32,6 +34,7 @@ const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
 // React Compiler memoization of downstream deps).
 const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
 const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[];
+const EMPTY_TASK_EVENTS = Object.freeze([]) as unknown as TaskEvent[];
 
 /**
  * The reactive-read + derived-data read-model for playing a board.
@@ -51,6 +54,14 @@ export interface BoardPlayData {
   gridSize: BoardSize;
   btByPosition: Record<string, BoardTask>;
   isExpired: boolean;
+  /**
+   * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the window
+   * context to thread into `taskToSquareState` so each square resolves against
+   * THIS board's window (`[startDate, ∞)`) via events instead of the lifetime
+   * cache. This is what stops a task completed in a previous window bleeding
+   * green onto a freshly-spawned board.
+   */
+  squareWindowContext: SquareWindowContext;
 }
 
 /**
@@ -251,6 +262,20 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
 
   const isExpired = isBoardExpired(board);
 
+  // Windowed Completion — all non-deleted TaskEvents grouped by taskId, plus
+  // the board's window start. `taskToSquareState` uses this to resolve each
+  // primitive square windowed (derived / compound carve-outs handled inside).
+  const allTaskEvents: TaskEvent[] =
+    useLiveQuery(() => db.taskEvents.toArray(), []) ?? EMPTY_TASK_EVENTS;
+  const squareWindowContext = useMemo<SquareWindowContext>(() => {
+    const eventsByTaskId: Record<string, TaskEvent[]> = {};
+    for (const e of allTaskEvents) {
+      if (e.isDeleted) continue;
+      (eventsByTaskId[e.taskId] ??= []).push(e);
+    }
+    return { windowStart: board.startDate, eventsByTaskId };
+  }, [allTaskEvents, board.startDate]);
+
   return {
     boardTasks,
     taskMap,
@@ -264,5 +289,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     gridSize,
     btByPosition,
     isExpired,
+    squareWindowContext,
   };
 }

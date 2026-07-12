@@ -8,6 +8,7 @@ import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
 import { RecurringWindowBanner } from '../components/boards/RecurringWindowBanner';
+import { WindowedCompletionNote } from '../components/boards/WindowedCompletionNote';
 import { BoardStatus, type PendingRecurringBoard } from '@oybc/shared';
 import styles from '../components/boards/Boards.module.css';
 
@@ -100,6 +101,8 @@ export function BoardsPage(): React.ReactElement {
           }
         }}
       />
+
+      <WindowedCompletionNote />
 
       <RecurringWindowBanner
         pending={pendingRecurring}
