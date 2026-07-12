@@ -655,6 +655,51 @@ final class AppDatabase {
             try db.execute(sql: "CREATE INDEX idx_task_events_user_deleted ON task_events(userId, isDeleted)")
         }
 
+        // v20: Windowed Completion — TaskEvent backfill (PR B, sub-slice 3;
+        // docs/WINDOWED_COMPLETION.md §Migration & backfill, step 2). Twin of
+        // web's Dexie v13 `runMigrationV13`. v19 created `task_events` empty;
+        // this pass synthesizes the DETERMINISTIC backfill events from existing
+        // lifetime task state so a task placed on a live board whose window
+        // contains its `completedAt` keeps its green (bleed preserved once),
+        // while later windows start empty.
+        //
+        // Only step 2 (event backfill) is B's responsibility. Step 3 (sealing
+        // expired boards) is assigned to PR C by the phasing table; this
+        // migration seals nothing. Step 4 (cache restamp) is a no-op — the events
+        // are DERIVED FROM the caches, so they're already consistent.
+        //
+        // Carve-out (doc §Derived-task carve-out rule 2): `buildBackfillTaskEvent`
+        // returns nil for derived / compound / achievement tasks, so they're
+        // skipped — minting an event from a derived counter's mirrored
+        // currentCount would double-count the source's history.
+        //
+        // Determinism: `buildBackfillTaskEvent` assigns a kind-qualified uuidv5
+        // id and takes timestamps from the task snapshot (not migration
+        // wall-clock), so two devices mint the same-id row and LWW picks the one
+        // derived from the fresher task state. Backfilled events are enqueued for
+        // sync CREATE (they MUST reach Firestore or another device's pull
+        // recompute would zero the caches).
+        migrator.registerMigration("v20") { db in
+            let allTasks: [Task] = try Task.fetchAll(db)
+            for task in allTasks {
+                guard let event = buildBackfillTaskEvent(task: task) else { continue }
+                // Idempotency belt: the deterministic id means a re-run (or a
+                // peer's already-synced row) would collide. Skip if present.
+                if try TaskEvent.fetchOne(db, key: event.id) != nil { continue }
+                try event.save(db)
+                // Enqueue sync CREATE directly (raw SQL — the migration owns its
+                // own transaction; SyncQueueBuilder is not migration-tx-aware in
+                // the same way, mirroring how v7/v14 write sync rows inline).
+                let payloadData = try JSONEncoder().encode(event)
+                let payloadStr = String(data: payloadData, encoding: .utf8) ?? "{}"
+                try db.execute(sql: """
+                    INSERT INTO sync_queue
+                        (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                    VALUES (?, 'taskEvents', ?, 'create', ?, 'pending', 0, ?, 0)
+                    """, arguments: [UUID().uuidString, event.id, payloadStr, Self.currentTimestamp()])
+            }
+        }
+
         return migrator
     }
 

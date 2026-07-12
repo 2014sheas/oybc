@@ -261,6 +261,42 @@ struct BoardPlayView: View {
     /// owns the same lookup for its interaction handlers.
     private var taskMap: [String: Task] { viewModel.taskMap }
 
+    // MARK: - Windowed reads (Windowed Completion)
+
+    /// The current board's window lower bound (`board.startDate`). Every
+    /// event-owning square resolves against `[windowStart, ∞)`.
+    private var windowStart: String? { viewModel.windowStart }
+
+    /// The workspace's non-deleted TaskEvents grouped by taskId (from the VM).
+    private var windowEventsByTaskId: [String: [TaskEvent]] { viewModel.windowEventsByTaskId }
+
+    /// The compound window context for the current board — passed into
+    /// `CompoundEvaluation.evaluate` so compound squares resolve their primitive
+    /// children windowed (docs §Semantics). Derived-counting children are carved
+    /// out inside the kernel.
+    private var boardWindowContext: CompoundWindowContext {
+        CompoundWindowContext(windowStart: windowStart, eventsByTaskId: windowEventsByTaskId)
+    }
+
+    /// Windowed completed state of an event-owning primitive square. Callers must
+    /// branch derived / compound / achievement before calling.
+    private func windowedIsCompleted(_ task: Task) -> Bool {
+        resolveTaskWindowState(
+            task: task,
+            events: windowEventsByTaskId[task.id] ?? [],
+            windowStart: windowStart
+        ).isCompleted
+    }
+
+    /// Windowed count of an event-owning counting square (source / plain).
+    private func windowedCount(_ task: Task) -> Int {
+        resolveTaskWindowState(
+            task: task,
+            events: windowEventsByTaskId[task.id] ?? [],
+            windowStart: windowStart
+        ).count
+    }
+
     // MARK: - Edit-mode squares draft (Phase 2)
     //
     // NOTE (B2-I3): `editDraftBoardTasks` / `editDraftTaskMap` /
@@ -902,15 +938,18 @@ struct BoardPlayView: View {
                 let rawCount = task.currentCount ?? 0
                 let maxVal = task.maxCount ?? 0
                 let isLinked = task.sharedCounterId != nil
+                // Windowed Completion — the stepper shows the WINDOWED count for
+                // event-owning source/plain counters; derived members stay on the
+                // baseline-derived display (carve-out).
                 let displayed: Int = {
-                    if let _ = task.sharedCounterId {
+                    if task.sharedCounterId != nil {
                         return deriveDisplayedCount(
                             derivedBaseline: task.baseline ?? 0,
                             derivedMaxCount: maxVal,
                             sourceCurrentCount: rawCount
                         ).displayed
                     }
-                    return rawCount
+                    return windowedCount(task)
                 }()
                 // P2: Compute shared hint — other ACTIVE boards where a member
                 // task lives, excluding the current board.
@@ -1431,27 +1470,35 @@ struct BoardPlayView: View {
                 return CompoundEvaluation.evaluate(
                     compound: task,
                     childrenByCompound: compoundChildrenByCompound,
-                    taskById: taskMap
+                    taskById: taskMap,
+                    windowContext: boardWindowContext
                 )
             }
             if task.type == .achievement {
                 return achievementCellIsCompleted(for: task)
             }
-            return task.isCompleted
+            // Windowed Completion — derived counters (sharedCounterId set) stay
+            // on their propagation-stamped lifetime cache (carve-out); every
+            // other primitive resolves windowed via events.
+            if task.sharedCounterId != nil { return task.isCompleted }
+            return windowedIsCompleted(task)
         }()
 
-        // Counting display values — mirrors original playSquare.
+        // Counting display values — windowed for event-owning source/plain
+        // counters; baseline-derived for linked members (carve-out).
         let rawCount = task?.currentCount ?? 0
         let maxVal = task?.maxCount ?? 0
         let isLinkedCounter = task?.sharedCounterId != nil
         let current: Int = {
-            if let t = task, let _ = t.sharedCounterId {
+            guard let t = task else { return 0 }
+            if t.sharedCounterId != nil {
                 return deriveDisplayedCount(
                     derivedBaseline: t.baseline ?? 0,
                     derivedMaxCount: t.maxCount ?? 0,
                     sourceCurrentCount: rawCount
                 ).displayed
             }
+            if t.type == .counting { return windowedCount(t) }
             return rawCount
         }()
 
@@ -1471,10 +1518,13 @@ struct BoardPlayView: View {
                 return CompoundEvaluation.evaluate(
                     compound: childTask,
                     childrenByCompound: compoundChildrenByCompound,
-                    taskById: taskMap
+                    taskById: taskMap,
+                    windowContext: boardWindowContext
                 )
             }
-            return childTask.isCompleted
+            // Windowed child progress — carve out derived counters.
+            if childTask.sharedCounterId != nil { return childTask.isCompleted }
+            return windowedIsCompleted(childTask)
         }.count
 
         let cellKind: CellTaskType = {
@@ -1777,7 +1827,8 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private func normalDetailContent(boardTask: BoardTask) -> some View {
-        let isCompleted = taskMap[boardTask.taskId]?.isCompleted ?? false
+        // Windowed Completion — reflect the WINDOWED completed state.
+        let isCompleted = taskMap[boardTask.taskId].map { windowedIsCompleted($0) } ?? false
         detailSection("Completion") {
             Button {
                 viewModel.handleNormalTap(boardTask: boardTask)
@@ -1809,14 +1860,16 @@ struct BoardPlayView: View {
         let unitText = task.unit ?? ""
         let isLinkedCounter = task.sharedCounterId != nil
         let current: Int = {
-            if let _ = task.sharedCounterId {
+            if task.sharedCounterId != nil {
                 return deriveDisplayedCount(
                     derivedBaseline: task.baseline ?? 0,
                     derivedMaxCount: maxVal,
                     sourceCurrentCount: rawCount
                 ).displayed
             }
-            return rawCount
+            // Windowed Completion — event-owning source/plain counter shows the
+            // windowed count.
+            return windowedCount(task)
         }()
 
         detailSection("Progress") {
@@ -1886,10 +1939,13 @@ struct BoardPlayView: View {
                                 return CompoundEvaluation.evaluate(
                                     compound: ct,
                                     childrenByCompound: compoundChildrenByCompound,
-                                    taskById: taskMap
+                                    taskById: taskMap,
+                                    windowContext: boardWindowContext
                                 )
                             }
-                            return ct.isCompleted
+                            // Windowed child state — carve out derived counters.
+                            if ct.sharedCounterId != nil { return ct.isCompleted }
+                            return windowedIsCompleted(ct)
                         }()
 
                         HStack(spacing: 10) {

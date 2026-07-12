@@ -768,6 +768,19 @@ final class SyncService: ObservableObject {
             let snapshot = try await query.getDocuments()
             guard !snapshot.isEmpty else { return }
 
+            // Windowed Completion (docs §Sync): task events pull in a BATCH —
+            // apply all rows, then one recompute per task + one cascade per board.
+            if collection.firestoreName == "taskEvents" {
+                let batch = applyTaskEventsBatch(
+                    userId: userId,
+                    rawDocs: snapshot.documents.map { $0.data() }
+                )
+                result.pulled += batch.pulled
+                result.details.append(contentsOf: batch.details)
+                for msg in batch.details { log(msg) }
+                return
+            }
+
             for docSnap in snapshot.documents {
                 let remoteData = docSnap.data()
 
@@ -852,19 +865,10 @@ final class SyncService: ObservableObject {
                             let winner = resolveConflict(local: localData!, remote: remoteData)
                             if winner == "remote" {
                                 try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                                // Issue #7 (safety-net pull): advance lastSyncedCount on
-                                // remote-wins LWW of a counting task so the next conflict
-                                // can compute the local delta correctly. The remote doc
-                                // carries whatever the remote device wrote; the per-device
-                                // lastSyncedCount is local bookkeeping, so we set it here.
-                                if collection.firestoreName == "tasks",
-                                   let remoteType = remoteData["type"] as? String, remoteType == "counting",
-                                   let remoteCount = (remoteData["currentCount"] as? Int64).map(Int.init) ?? (remoteData["currentCount"] as? Int) {
-                                    try db.execute(
-                                        sql: "UPDATE tasks SET lastSyncedCount = ? WHERE id = ?",
-                                        arguments: [remoteCount, remoteId]
-                                    )
-                                }
+                                // Windowed Completion — `lastSyncedCount` stamping
+                                // on remote-wins pull is RETIRED (docs §Shared
+                                // counters interaction). Counting conflicts resolve
+                                // by union-of-events now; the field is inert.
                                 didWrite = true
                                 let remoteV = remoteData["version"] as? Int ?? 0
                                 let localV = localData!["version"] as? Int ?? 0
@@ -1438,6 +1442,22 @@ extension SyncService {
                     return
                 }
                 guard let snapshot else { return }
+                // Windowed Completion (docs §Sync): batch task-event deliveries
+                // so the recompute + cascade runs once per snapshot, not once per
+                // event row (and out-of-order events-before-task are skipped +
+                // deferred to the safety-net pull).
+                if collection.firestoreName == "taskEvents" {
+                    let rows = snapshot.documentChanges
+                        .filter { $0.type != .removed }
+                        .map { $0.document.data() }
+                    if !rows.isEmpty {
+                        _Concurrency.Task { @MainActor in
+                            let batch = self.applyTaskEventsBatch(userId: userId, rawDocs: rows)
+                            for msg in batch.details { self.log(msg) }
+                        }
+                    }
+                    return
+                }
                 for change in snapshot.documentChanges {
                     if change.type == .removed { continue }
                     let data = change.document.data()
@@ -1578,18 +1598,9 @@ extension SyncService {
                         let winner = resolveConflict(local: localData!, remote: remoteData)
                         if winner == "remote" {
                             try upsertLocalRecord(db: db, grdbTable: collection.grdbTable, data: remoteData)
-                            // Issue #8 (listener-path pull): advance lastSyncedCount on
-                            // remote-wins LWW of a counting task so the next conflict
-                            // can compute the local delta correctly. Mirrors the
-                            // safety-net pull fix above.
-                            if collection.firestoreName == "tasks",
-                               let remoteType = remoteData["type"] as? String, remoteType == "counting",
-                               let remoteCount = (remoteData["currentCount"] as? Int64).map(Int.init) ?? (remoteData["currentCount"] as? Int) {
-                                try db.execute(
-                                    sql: "UPDATE tasks SET lastSyncedCount = ? WHERE id = ?",
-                                    arguments: [remoteCount, remoteId]
-                                )
-                            }
+                            // Windowed Completion — `lastSyncedCount` stamping on
+                            // remote-wins pull is RETIRED (docs §Shared counters
+                            // interaction). Union-of-events is the conflict model.
                             didWrite = true
                             let remoteV = remoteData["version"] as? Int ?? 0
                             let localV = localData!["version"] as? Int ?? 0
@@ -1644,61 +1655,20 @@ extension SyncService {
         localData: [String: Any],
         remoteData: [String: Any]
     ) throws -> Int? {
-        // Guard: skip merge when either side is a tombstone. A deleted task
-        // must fall through to standard LWW; additive merge on a delete would
-        // resurrect the record. Mirror of web syncService tombstone guard.
-        let remoteIsDeleted = (remoteData["isDeleted"] as? Bool) ?? ((remoteData["isDeleted"] as? Int64) == 1)
-        let localIsDeleted = (localData["isDeleted"] as? Bool) ?? ((localData["isDeleted"] as? Int64) == 1)
-        guard !remoteIsDeleted && !localIsDeleted else { return nil }
-
-        // Only applies to COUNTING tasks.
-        guard let remoteType = remoteData["type"] as? String, remoteType == "counting" else { return nil }
-        guard let localType = localData["type"] as? String, localType == "counting" else { return nil }
-
-        let localCount = (localData["currentCount"] as? Int64).map(Int.init) ?? (localData["currentCount"] as? Int) ?? 0
-        let remoteCount = (remoteData["currentCount"] as? Int64).map(Int.init) ?? (remoteData["currentCount"] as? Int) ?? 0
-        let lastSyncedCount: Int? = (localData["lastSyncedCount"] as? Int64).map(Int.init) ?? (localData["lastSyncedCount"] as? Int)
-
-        guard needsAdditiveMerge(localCount: localCount, remoteCount: remoteCount, lastSyncedCount: lastSyncedCount) else {
-            return nil
-        }
-
-        // Check if this task is a shared-counter source (any task references it).
-        let linkedCount = try Int.fetchOne(
-            db,
-            sql: "SELECT COUNT(*) FROM tasks WHERE sharedCounterId = ? AND isDeleted = 0",
-            arguments: [remoteId]
-        ) ?? 0
-        guard linkedCount > 0 else { return nil }
-
-        let mergeResult = additiveMergeCount(
-            localCount: localCount,
-            remoteCount: remoteCount,
-            lastSyncedCount: lastSyncedCount
-        )
-        let merged = mergeResult.merged
-        let localVersion = (localData["version"] as? Int64).map(Int.init) ?? (localData["version"] as? Int) ?? 0
-        let remoteVersion = (remoteData["version"] as? Int64).map(Int.init) ?? (remoteData["version"] as? Int) ?? 0
-        // version = max(local, remote) + 1 so LWW on the next pull doesn't
-        // discard the merge when the remote version is ahead by more than 1.
-        let newVersion = max(localVersion, remoteVersion) + 1
-        let now = AppDatabase.currentTimestamp()
-
-        // 1. Apply the full remote record first (preserves all remote-changed
-        //    fields: title, description, isDeleted, maxCount, etc.).
-        try upsertLocalRecord(db: db, grdbTable: "tasks", data: remoteData)
-
-        // 2. Layer the additively-merged count fields on top.
-        try db.execute(sql: """
-            UPDATE tasks
-            SET currentCount = ?,
-                lastSyncedCount = ?,
-                version = ?,
-                updatedAt = ?
-            WHERE id = ?
-            """, arguments: [merged, remoteCount, newVersion, now, remoteId])
-
-        return merged
+        // Windowed Completion (docs/WINDOWED_COMPLETION.md §Shared counters
+        // interaction — "Retired: sharedCounterMerge + lastSyncedCount stamping —
+        // in PR B, not later"). The additive-merge conflict resolver is NEUTERED:
+        // with per-row event union replacing it, an event-writing client racing a
+        // still-active merge branch would author a merged `currentCount` with no
+        // backing TaskEvent, fighting the event-driven cache recompute. Counting
+        // conflicts now resolve by union-of-events (the batched taskEvents pull
+        // recompute). Hard-bypass here; PR D deletes the dead body below. The
+        // `lastSyncedCount` field stays inert in the schema for decode compat.
+        // Args intentionally unread (the dead merge body was deleted in this PR;
+        // PR D removes this shim + the `needsAdditiveMerge`/`additiveMergeCount`
+        // shared helpers).
+        _ = db; _ = remoteId; _ = localData; _ = remoteData
+        return nil
     }
 
     /// Derive the shared-counter ancestor advance for a just-pushed payload:
@@ -1715,12 +1685,14 @@ extension SyncService {
         entityId: String,
         payload: [String: Any]
     ) -> (taskId: String, pushedCount: Int)? {
-        guard entityType == "tasks" else { return nil }
-        guard let taskType = payload["type"] as? String, taskType == "counting" else { return nil }
-        let pushed64 = payload["currentCount"] as? Int64
-        let pushedInt = payload["currentCount"] as? Int
-        guard let pushedCount = pushed64.map(Int.init) ?? pushedInt else { return nil }
-        return (taskId: entityId, pushedCount: pushedCount)
+        // Windowed Completion (docs §Shared counters interaction — "Retired:
+        // sharedCounterMerge + lastSyncedCount stamping — in PR B"). The
+        // ancestor advance is NEUTERED: with the additive-merge branch bypassed,
+        // stamping `lastSyncedCount` on push would only feed a merge branch that
+        // no longer runs. Always nil so nothing stamps the inert field. Mirrors
+        // web `countAdvanceForPush`. PR D deletes this plumbing.
+        _ = entityType; _ = entityId; _ = payload
+        return nil
     }
 
     /// Atomically completes a just-pushed sync-queue item and advances its
@@ -1781,6 +1753,9 @@ extension SyncService {
         // achievement branches evaluate against real cross-board state
         // rather than degrading to "incomplete".
         let allBoards: [Board] = try Board.fetchAll(db)
+        // Windowed Completion — group events once so every board evaluates
+        // windowed on the pull path too (docs §Sync).
+        let windowContext = try AppDatabase.buildWindowContext(db: db)
 
         var taskById: [String: Task] = [:]
         for t in allTasks { taskById[t.id] = t }
@@ -1807,7 +1782,8 @@ extension SyncService {
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoards
+                allBoards: allBoards,
+                windowContext: windowContext
             )
 
             // Write board stats. Bump board.version (local write), NOT Task.version.
@@ -1837,6 +1813,145 @@ extension SyncService {
                     """, arguments: [UUID().uuidString, boardId, payloadStr, now])
             }
         }
+    }
+
+    /// Batched multi-task pull cascade (Windowed Completion, docs §Sync —
+    /// "recompute each affected task's caches once, then run ONE derivation pass
+    /// per affected live board"). Unions the boards affected across every changed
+    /// task and recomputes each exactly once, with the windowed event context
+    /// built once. Same transaction contract + write shape as `runPullCascade`.
+    ///
+    /// - Parameters:
+    ///   - db: GRDB write transaction.
+    ///   - changedTaskIds: The tasks whose state changed (deduped internally).
+    private func runPullCascadeForTasks(db: Database, changedTaskIds: Set<String>) throws {
+        let allChildren: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allTasks: [Task] = try Task.fetchAll(db)
+        let allBoards: [Board] = try Board.fetchAll(db)
+        let windowContext = try AppDatabase.buildWindowContext(db: db)
+
+        var taskById: [String: Task] = [:]
+        for t in allTasks { taskById[t.id] = t }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
+
+        // Union of affected boards across every changed task.
+        var affectedBoardIds = Set<String>()
+        for changedTaskId in changedTaskIds {
+            let parentCompounds = DerivationPass.findTransitiveParentCompounds(
+                changedTaskId: changedTaskId, children: allChildren
+            )
+            affectedBoardIds.formUnion(DerivationPass.findAffectedBoardIds(
+                changedTaskId: changedTaskId, parentCompounds: parentCompounds, boardTasks: allBoardTasks
+            ))
+        }
+
+        let now = AppDatabase.currentTimestamp()
+        for boardId in affectedBoardIds {
+            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+            let update = DerivationPass.computeBoardStatsUpdate(
+                board: board,
+                boardTasksOnBoard: boardTasksOnBoard,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoards,
+                windowContext: windowContext
+            )
+            let completedLineIdsJson = encodePullCascadeJSONArray(update.completedLineIds)
+            try db.execute(sql: """
+                UPDATE boards
+                SET completedTasks = ?, linesCompleted = ?, completedLineIds = ?,
+                    updatedAt = ?, version = version + 1
+                WHERE id = ?
+                """, arguments: [update.completedTasks, update.linesCompleted, completedLineIdsJson, now, boardId])
+            if let updatedBoard = try Board.fetchOne(db, key: boardId) {
+                let payload = try JSONEncoder().encode(updatedBoard)
+                let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
+                try db.execute(sql: """
+                    INSERT INTO sync_queue
+                        (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                    VALUES (?, 'boards', ?, 'update', ?, 'pending', 0, ?, 0)
+                    """, arguments: [UUID().uuidString, boardId, payloadStr, now])
+            }
+        }
+    }
+
+    /// Batched pull-path handler for the `taskEvents` collection (Windowed
+    /// Completion, docs §Sync — "Batched pull-path recompute"). Twin of web's
+    /// `applyTaskEventsBatch`: apply ALL pulled event rows first, then recompute
+    /// each affected event-owning task's caches ONCE and run ONE derivation pass
+    /// per affected board — all inside a single transaction (the atomic pull-path
+    /// invariant).
+    ///
+    /// Pull ordering (docs §Sync): a `taskEvent` can arrive before its `Task`
+    /// row. Such events are still upserted as rows but SKIPPED by the recompute
+    /// (events-before-task) — the safety-net pull picks them up once the Task
+    /// lands.
+    ///
+    /// - Parameters:
+    ///   - userId: The authenticated user's uid (for the userId scope check).
+    ///   - rawDocs: The untrusted raw event documents from Firestore.
+    /// - Returns: Pulled-row count + per-row skip/status details.
+    @discardableResult
+    func applyTaskEventsBatch(userId: String, rawDocs: [[String: Any]]) -> (pulled: Int, details: [String]) {
+        var details: [String] = []
+
+        // 1. Validate + userId-scope every incoming row (no DB access yet).
+        var valid: [[String: Any]] = []
+        for raw in rawDocs {
+            if let reason = validateRemotePullDocument(
+                collection: "taskEvents", data: raw, authenticatedUserId: userId
+            ) {
+                let id = (raw["id"] as? String) ?? "?"
+                details.append("Skipped taskEvents/\(id): \(reason)")
+                continue
+            }
+            valid.append(raw)
+        }
+        if valid.isEmpty { return (0, details) }
+
+        var pulled = 0
+        do {
+            try database.write { db in
+                // 2. LWW-upsert each event row (union by id; tombstone = undo).
+                var affectedTaskIds = Set<String>()
+                for raw in valid {
+                    guard let id = raw["id"] as? String else { continue }
+                    let local = try fetchLocalRecord(db: db, grdbTable: "task_events", id: id)
+                    let remoteWins = local == nil || resolveConflict(local: local!, remote: raw) == "remote"
+                    if !remoteWins { continue }
+                    try upsertLocalRecord(db: db, grdbTable: "task_events", data: raw)
+                    if let taskId = raw["taskId"] as? String { affectedTaskIds.insert(taskId) }
+                    pulled += 1
+                }
+
+                // 3. Recompute caches ONCE per affected event-owning task that
+                //    exists locally (non-authored write — no version bump, no
+                //    enqueue). Events whose task isn't local yet are skipped-and-
+                //    deferred (safety-net retry).
+                var cascadeTaskIds = Set<String>()
+                for taskId in affectedTaskIds {
+                    guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { continue }
+                    try AppDatabase.recomputeTaskCachesFromPull(db: db, taskId: taskId)
+                    cascadeTaskIds.insert(taskId)
+                }
+
+                // 4. ONE batched derivation pass per affected board.
+                if !cascadeTaskIds.isEmpty {
+                    try runPullCascadeForTasks(db: db, changedTaskIds: cascadeTaskIds)
+                }
+            }
+        } catch {
+            details.append("Pull failed for taskEvents: \(error.localizedDescription)")
+            return (0, details)
+        }
+
+        for _ in 0..<pulled { recordEvent(.pulled) }
+        return (pulled, details)
     }
 
     /// JSON-encode a `[String]` array to a compact JSON string.

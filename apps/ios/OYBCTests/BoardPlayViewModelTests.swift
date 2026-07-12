@@ -448,6 +448,17 @@ final class BoardPlayViewModelTests: XCTestCase {
         try seedUser(db)
         try db.saveBoard(makeBoard(id: "b1"))
         try db.saveTask(makeCountingTask("c1", maxCount: 2, currentCount: 1))
+        // Windowed Completion — the windowed count derives from events, so seed a
+        // backing +1 increment event in the board window (as the migration would
+        // have backfilled) so the square starts at a windowed 1.
+        try db.write { db in
+            try TaskEvent(
+                id: "seed-c1", userId: "u1", taskId: "c1", kind: .increment, delta: 1,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(db)
+        }
         try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
 
         let vm = loadedVM(db, boardId: "b1")

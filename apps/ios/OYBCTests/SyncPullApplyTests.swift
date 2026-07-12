@@ -129,14 +129,17 @@ final class SyncPullApplyTests: XCTestCase {
         ]
         sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
 
-        // Upsert landed.
+        // Upsert landed (the lifetime cache flips complete via LWW).
         let t = try XCTUnwrap(try db.fetchTask(id: tid))
         XCTAssertTrue(t.isCompleted)
 
-        // Cascade recomputed board stats in the SAME write (version bumped by the
-        // cascade UPDATE; 1 completed task + FREE center = 2 on a 3×3).
+        // Windowed Completion — the cascade evaluates the task WINDOWED (no
+        // backing TaskEvent arrived), so a bare `tasks`-doc isCompleted flip does
+        // NOT green the windowed board; only the FREE center counts (= 1 on a
+        // 3×3). The completion greens the board once its taskEvent pulls in via
+        // `applyTaskEventsBatch`. The cascade still runs + bumps board.version.
         let b = try XCTUnwrap(try db.fetchBoard(id: "b1"))
-        XCTAssertEqual(b.completedTasks, 2)
+        XCTAssertEqual(b.completedTasks, 1)
         XCTAssertEqual(b.version, 2)
 
         // A pull event fired and the cascade enqueued a board push.
@@ -210,22 +213,27 @@ final class SyncPullApplyTests: XCTestCase {
         XCTAssertEqual(sut.totalPulled, 0)
     }
 
-    // MARK: - 4. Additive-merge integration gate
+    // MARK: - 4. Additive-merge is NEUTERED (Windowed Completion, docs §Shared
+    //            counters interaction — "Retired: sharedCounterMerge +
+    //            lastSyncedCount stamping — in PR B"). Counting conflicts resolve
+    //            by union-of-events now; the merge branch is hard-bypassed and
+    //            `lastSyncedCount` is no longer stamped on the pull path.
 
-    func test_additiveMerge_appliedWhenSharedCounterSourceAndBothMoved() throws {
+    func test_additiveMerge_neutered_evenForSharedCounterSource_fallsToPlainLWW() throws {
         let db = try makeDb()
         try seedUser(db)
         let sourceId = newId()
         // Local source counting task: currentCount advanced 5 → 8 since sync.
         try db.saveTask(makeTask(sourceId, type: .counting, version: 1,
                                  currentCount: 8, lastSyncedCount: 5))
-        // A second task LINKS to the source (makes it a shared-counter source →
-        // linkedCount > 0, the 5th merge condition).
+        // A second task LINKS to the source (pre-neuter this made it a merge
+        // candidate). With the merge retired it no longer matters.
         try db.saveTask(makeTask(newId(), type: .counting, currentCount: 8,
                                  sharedCounterId: sourceId))
         let sut = makeSut(db)
 
-        // Remote independently advanced 5 → 6. Both sides moved → additive merge.
+        // Remote independently advanced 5 → 6 at a higher version → plain LWW
+        // remote-wins (NOT additive merge's 9).
         let remote: [String: Any] = [
             "id": sourceId, "userId": userId, "title": "Task", "type": "counting",
             "currentCount": 6, "version": 2, "isDeleted": false,
@@ -234,22 +242,19 @@ final class SyncPullApplyTests: XCTestCase {
         ]
         sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
 
-        // merged = remote + (local - base) = 6 + (8 - 5) = 9 (NOT plain LWW's 6).
         let t = try XCTUnwrap(try db.fetchTask(id: sourceId))
-        XCTAssertEqual(t.currentCount, 9)
-        XCTAssertEqual(t.lastSyncedCount, 6)          // advanced to remote's value
-        XCTAssertEqual(t.version, 3)                  // max(1,2)+1
-        // Merged result enqueued for push back to Firestore.
+        XCTAssertEqual(t.currentCount, 6, "plain LWW remote value, not the merged 9")
+        XCTAssertEqual(t.version, 2, "remote's version — no merge version bump")
+        XCTAssertEqual(t.lastSyncedCount, 5, "lastSyncedCount stamping is retired — stays put")
+        // No merge push enqueued (a plain remote-wins pull authors no task write).
         let rows = try syncRows(db)
-        XCTAssertTrue(rows.contains { $0.entityType == "tasks" && $0.entityId == sourceId && $0.operationType == .update })
+        XCTAssertFalse(rows.contains { $0.entityType == "tasks" && $0.entityId == sourceId && $0.operationType == .update })
     }
 
-    func test_additiveMerge_notApplied_fallsToPlainLWW_whenNotSharedSource() throws {
+    func test_countingPull_plainLWW_doesNotStampLastSyncedCount() throws {
         let db = try makeDb()
         try seedUser(db)
         let tid = newId()
-        // Same count divergence, but NO task references this one → not a
-        // shared-counter source → merge gate fails → plain LWW.
         try db.saveTask(makeTask(tid, type: .counting, version: 1,
                                  currentCount: 8, lastSyncedCount: 5))
         let sut = makeSut(db)
@@ -262,11 +267,11 @@ final class SyncPullApplyTests: XCTestCase {
         ]
         sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
 
-        // Plain LWW remote-wins: currentCount is the remote value (6, NOT 9),
-        // lastSyncedCount advances to remote's count (Issue #8 branch).
+        // Plain LWW remote-wins: currentCount is the remote value; lastSyncedCount
+        // is NO LONGER advanced (retired in PR B).
         let t = try XCTUnwrap(try db.fetchTask(id: tid))
         XCTAssertEqual(t.currentCount, 6)
         XCTAssertEqual(t.version, 2)
-        XCTAssertEqual(t.lastSyncedCount, 6)
+        XCTAssertEqual(t.lastSyncedCount, 5)
     }
 }

@@ -69,6 +69,9 @@ extension AppDatabase {
         let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
         let allTasks: [Task] = try Task.fetchAll(db)
         let allBoards: [Board] = try Board.fetchAll(db)
+        // Windowed Completion — group events once so every board evaluates
+        // windowed (docs §Sync). Mirrors orchestration.ts's `buildWindowContext`.
+        let windowContext = try Self.buildWindowContext(db: db)
 
         var taskById: [String: Task] = [:]
         for t in allTasks { taskById[t.id] = t }
@@ -95,7 +98,8 @@ extension AppDatabase {
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoards
+                allBoards: allBoards,
+                windowContext: windowContext
             )
 
             let totalSquares = board.boardSize * board.boardSize
@@ -209,6 +213,9 @@ extension AppDatabase {
         // the algorithm defaults to []; on this cascade path we already
         // have the data fetched, so use it.
         let allBoards: [Board] = try Board.fetchAll(db)
+        // Windowed Completion — group events once so every board evaluates
+        // windowed (docs §Sync). Mirrors orchestration.ts's `buildWindowContext`.
+        let windowContext = try Self.buildWindowContext(db: db)
 
         var taskById: [String: Task] = [:]
         for t in allTasks { taskById[t.id] = t }
@@ -236,7 +243,8 @@ extension AppDatabase {
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoards
+                allBoards: allBoards,
+                windowContext: windowContext
             )
 
             let totalSquares = board.boardSize * board.boardSize
@@ -280,33 +288,49 @@ extension AppDatabase {
         return results
     }
 
+    /// The completion intent a board-context tap expresses (Windowed Completion,
+    /// docs §Write paths). Mirrors web `handleTaskCompletion`'s
+    /// `{ isCompleted?, currentCount? }` shape: the tap describes the DESIRED
+    /// windowed state, and `completeTaskOrchestrated` turns it into a TaskEvent
+    /// append (never a direct cache mutation).
+    enum CompletionIntent {
+        /// Normal square toggle — desired windowed completed state.
+        case setCompleted(Bool)
+        /// Counting square — desired NEW windowed count (the grid derives the
+        /// current windowed count from `resolveTaskWindowState`, so the DB layer
+        /// appends `desired − currentWindowedCount` as the event delta).
+        case setWindowedCount(Int)
+    }
+
     /// Runs the full task-completion orchestration in a single DB write
-    /// transaction: draft auto-activate + Task save (global completion) +
-    /// BoardTask placement bump + cross-board cascade — all sync-enqueued.
+    /// transaction: draft auto-activate + TaskEvent append + cache stamp +
+    /// BoardTask placement bump + windowed cross-board cascade — all sync-enqueued.
     ///
-    /// Moved verbatim from `BoardPlayViewModel.runOrchestration`'s write
-    /// block. The caller passes the already-mutated `Task` and the current
-    /// board + placement record, and receives the per-board cascade results
-    /// to derive its flash message.
+    /// Windowed Completion (docs §Write paths): a board-context tap writes a
+    /// TaskEvent (not the lifetime cache). The event choke points append the
+    /// row, restamp the lifetime caches (authored — bump `Task.version`, enqueue
+    /// the Task sync entry), all inside THIS transaction. The event's window is
+    /// `board.startDate`, so completing/incrementing counts only for boards
+    /// whose window contains `now`.
     ///
     /// - Parameters:
     ///   - board: The current board (its `.draft` → `.active` flip happens here).
-    ///   - updatedTask: The already-mutated `Task` carrying new completion state.
+    ///   - taskId: The event-owning Task the user tapped (normal or plain/source
+    ///     counting).
+    ///   - intent: The desired windowed state (see `CompletionIntent`).
     ///   - boardTask: The `BoardTask` placement record on the current board
     ///     (its `updatedAt`/`version` are bumped + sync-queued).
     ///   - now: ISO8601 timestamp stamped on every row written here.
     /// - Returns: A `[boardId: CascadeBoardResult]` map for flash derivation.
     func completeTaskOrchestrated(
         board: Board,
-        updatedTask: Task,
+        taskId: String,
+        intent: CompletionIntent,
         boardTask: BoardTask,
         now: String
     ) throws -> [String: CascadeBoardResult] {
         try write { db in
-            // 1. Auto-activate DRAFT boards on first interaction. Cascade
-            //    will re-save the board with stats; this leg only flips
-            //    .draft → .active so cascade doesn't promote a draft to
-            //    .completed (which would be wrong for first-tap).
+            // 1. Auto-activate DRAFT boards on first interaction.
             if board.status == .draft {
                 var activated = board
                 activated.status = .active
@@ -315,15 +339,27 @@ extension AppDatabase {
                 try activated.save(db)
             }
 
-            // 2a. Persist the updated Task (carries completion state).
-            try updatedTask.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: updatedTask.id,
-                operationType: .update,
-                payload: updatedTask,
-                now: now
-            ).enqueue(db)
+            // 2a. Apply the intent via the event choke points. They append the
+            //     TaskEvent, restamp lifetime caches (bump Task.version, enqueue
+            //     the Task UPDATE), all in THIS transaction.
+            let windowStart = board.startDate
+            switch intent {
+            case .setCompleted(let desired):
+                if desired {
+                    try Self.appendCompletionEvent(db: db, taskId: taskId, boardId: board.id, now: now)
+                } else {
+                    try Self.tombstoneWindowCompletions(db: db, taskId: taskId, windowStart: windowStart, now: now)
+                }
+            case .setWindowedCount(let desired):
+                let windowedCount = try Self.windowedState(db: db, taskId: taskId, windowStart: windowStart).count
+                var delta = desired - windowedCount
+                // Gate a decrement so the window sum stays ≥ 0 (belt against a
+                // local gesture poisoning the window with a dangling negative).
+                if delta < 0 { delta = max(delta, -windowedCount) }
+                if delta != 0 {
+                    try Self.appendIncrementEvent(db: db, taskId: taskId, delta: delta, boardId: board.id, now: now)
+                }
+            }
 
             // 2b. Bump the BoardTask placement record's updatedAt/version.
             var updatedBoardTask = boardTask
@@ -338,12 +374,12 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
-            // 3. Cross-board cascade: rebuilds bingo state, applies GREENLOG
-            //    transitions, persists every affected board, and returns the
-            //    per-board results for the caller's flash message.
+            // 3. Windowed cross-board cascade: rebuilds bingo state, applies
+            //    GREENLOG transitions, persists every affected board, and returns
+            //    the per-board results for the caller's flash message.
             return try Self.runBoardCascadeForTaskWithResults(
                 db: db,
-                changedTaskId: updatedTask.id,
+                changedTaskId: taskId,
                 now: now
             )
         }
@@ -351,33 +387,38 @@ extension AppDatabase {
 
     /// Fallback compound-child toggle write: the child isn't placed on the
     /// current board, but a parent compound (or the child via another board)
-    /// may be — so we persist the child Task + enqueue, then run the
-    /// cross-board cascade to recompute every affected board.
+    /// may be — so we append the child's TaskEvent (window-scoped to the host
+    /// board), then run the windowed cross-board cascade.
     ///
-    /// Moved verbatim from `BoardPlayViewModel.handleCompoundChildToggle`'s
-    /// fallback write block.
+    /// Windowed Completion (docs §Write paths): the child's completion is scoped
+    /// to the host board's window (`windowStart`). Complete → append a completion
+    /// event; un-complete → window-scoped tombstone of the host window's
+    /// completions.
     ///
     /// - Parameters:
-    ///   - updatedChild: The already-mutated child `Task`.
+    ///   - childTaskId: The event-owning child Task being toggled.
+    ///   - desiredCompleted: The desired windowed completed state.
+    ///   - windowStart: The host board's `startDate` (window lower bound).
+    ///   - boardId: The host board id (event provenance).
     ///   - now: ISO8601 timestamp stamped on every row written here.
     /// - Returns: A `[boardId: CascadeBoardResult]` map for flash derivation.
     func toggleCompoundChildFallback(
-        updatedChild: Task,
+        childTaskId: String,
+        desiredCompleted: Bool,
+        windowStart: String,
+        boardId: String?,
         now: String
     ) throws -> [String: CascadeBoardResult] {
         try write { db in
-            try updatedChild.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: updatedChild.id,
-                operationType: .update,
-                payload: updatedChild,
-                now: now
-            ).enqueue(db)
+            if desiredCompleted {
+                try Self.appendCompletionEvent(db: db, taskId: childTaskId, boardId: boardId, now: now)
+            } else {
+                try Self.tombstoneWindowCompletions(db: db, taskId: childTaskId, windowStart: windowStart, now: now)
+            }
 
             return try Self.runBoardCascadeForTaskWithResults(
                 db: db,
-                changedTaskId: updatedChild.id,
+                changedTaskId: childTaskId,
                 now: now
             )
         }

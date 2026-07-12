@@ -55,6 +55,11 @@ extension AppDatabase {
             .fetchAll(db)
         let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
         let allBoards: [Board] = try Board.fetchAll(db)
+        // Windowed Completion — the source counting square is event-owning, so
+        // its board reads are windowed; the cascade must evaluate with the event
+        // context (docs §Sync). Derived (linked) squares stay on their
+        // propagation-stamped cache via the carve-out inside the kernel.
+        let windowContext = try Self.buildWindowContext(db: db)
 
         var taskById: [String: Task] = [:]
         for t in allTasksWS { taskById[t.id] = t }
@@ -88,7 +93,8 @@ extension AppDatabase {
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoards
+                allBoards: allBoards,
+                windowContext: windowContext
             )
 
             let totalSquares = board.boardSize * board.boardSize
@@ -230,6 +236,15 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
+            // Windowed Completion — append a +by increment event on the SOURCE
+            // only (derived tasks are carved out; their state mirrors the source
+            // via propagation). RAW: no cache restamp — the engine already wrote
+            // `source.currentCount` authoritatively above (provably == lifetime
+            // event sum), so a restamp would double-bump the version. The event
+            // is what makes windowed board reads of the source square correct.
+            // Mirrors `insertIncrementEventRaw(sourceTaskId, by, undefined, now)`.
+            try Self.insertIncrementEventRaw(db: db, taskId: sourceTaskId, delta: by, boardId: nil, now: now)
+
             // 3. Fetch all linked (derived) tasks for this source.
             let linkedTasks = try Task
                 .filter(Column("sharedCounterId") == sourceTaskId)
@@ -356,6 +371,14 @@ extension AppDatabase {
                 payload: source,
                 now: now
             ).enqueue(db)
+
+            // Windowed Completion — append a -eff increment event on the SOURCE
+            // only (board-context decrement: a signed negative delta, gated by
+            // the `eff = min(by, currentCount)` clamp above so the lifetime sum
+            // can't go negative). RAW: no cache restamp — the engine wrote
+            // `source.currentCount` authoritatively. Mirrors
+            // `insertIncrementEventRaw(sourceTaskId, -eff, undefined, now)`.
+            try Self.insertIncrementEventRaw(db: db, taskId: sourceTaskId, delta: -eff, boardId: nil, now: now)
 
             // 3. Fetch all linked (derived) tasks for this source.
             let linkedTasks = try Task
