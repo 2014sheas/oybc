@@ -128,7 +128,7 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 - **Scope:** iOS migration dropping the table (or, if kept inert for old-device compatibility like the other legacy tables, an explicit comment saying so and why); remove the wipe call; delete the orphaned shared type file; confirm the sync known-collections list treatment matches the other legacy tables.
 - **Acceptance:** `progress_counters`/`ProgressCounter` references are either gone or carry an explicit legacy-inert comment matching the `task_steps` convention; grep is clean otherwise.
 
-### C6 — Web draft-board containment parity — `M` (pre-existing follow-up, absorbed here)
+### C6 — Web draft-board containment parity — SHIPPED (part 1 PR #203; part 2 PR #211; e2e coverage #313's PR)
 - **Why:** already tracked in CLAUDE.md: iOS shipped draft-task library hiding (`createdInWizard`) and drafts-never-playable; web still browses wizard-born draft tasks and opens draft boards as playable.
 - **Scope:** per the existing CLAUDE.md follow-up note (set + filter `createdInWizard` in web wizard/library; route draft opens to wizard-resume). Part of the broader parity-audit effort (see memory `project_web_ios_parity_audit`).
 - **Acceptance:** behavior matches iOS PR #202/#203 semantics.
