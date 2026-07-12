@@ -26,18 +26,23 @@ service cloud.firestore {
           'boardTasks', 'compositeTasks', 'compositeNodes',
           'compoundChildren',
           'recurringBoardTemplates',
-          'defaultPools'
+          'defaultPools',
+          // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync) — per-row
+          // LWW + soft-delete tombstones like compoundChildren; carries a
+          // `userId` field so it is also user-scoped below.
+          'taskEvents'
         ];
       }
 
       // Top-level entities (Board, Task, CompositeTask, RecurringBoardTemplate,
-      // DefaultPool) carry a `userId` field in their payload. Child entities
-      // (TaskStep, BoardTask, CompositeNode) are scoped via their parent and
-      // do not.
+      // DefaultPool, TaskEvent) carry a `userId` field in their payload. Child
+      // entities (TaskStep, BoardTask, CompositeNode) are scoped via their
+      // parent and do not.
       function requiresUserIdField() {
         return collection in [
           'boards', 'tasks', 'compositeTasks', 'recurringBoardTemplates',
-          'defaultPools'
+          'defaultPools',
+          'taskEvents'
         ];
       }
 

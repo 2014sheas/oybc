@@ -23,6 +23,7 @@ let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
     ("compoundChildren", "compound_children"),
     ("recurringBoardTemplates", "recurring_board_templates"), // Phase 6.2
     ("defaultPools", "default_pools"),                       // Phase 6.X
+    ("taskEvents", "task_events"),                           // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync)
     // `users` is handled as the parent doc at `users/{userId}` (not a
     // subcollection child), but the GRDB table it writes back into is still
     // `users`, so it participates in the allowedGRDBTables whitelist.
@@ -43,6 +44,8 @@ private let allowedGRDBTables: Set<String> = Set(syncableCollections.map(\.grdbT
 let userScopedCollections: Set<String> = [
     "boards", "tasks", "compositeTasks", "recurringBoardTemplates",
     "defaultPools",
+    // TaskEvent rows carry a top-level `userId` (Windowed Completion).
+    "taskEvents",
 ]
 
 /// Collections whose GRDB tables were dropped in the v7 data migration.

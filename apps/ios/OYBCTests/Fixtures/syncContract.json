@@ -9,14 +9,16 @@
     "compositeNodes",
     "compoundChildren",
     "recurringBoardTemplates",
-    "defaultPools"
+    "defaultPools",
+    "taskEvents"
   ],
   "userScopedSyncCollections": [
     "boards",
     "tasks",
     "compositeTasks",
     "recurringBoardTemplates",
-    "defaultPools"
+    "defaultPools",
+    "taskEvents"
   ],
   "legacyPullSkipCollections": [
     "taskSteps",

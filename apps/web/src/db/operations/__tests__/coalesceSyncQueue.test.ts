@@ -38,16 +38,18 @@ async function pendingFor(
 
 describe('coalesceSyncOperation — pure precedence', () => {
   const { CREATE, UPDATE, DELETE } = SyncOperationType;
+  // A standard (non-append-only) entity type for the generic precedence table.
+  const E = 'tasks';
 
   it('create + update stays create (not yet on server)', () => {
-    expect(coalesceSyncOperation(CREATE, UPDATE, true)).toEqual({
+    expect(coalesceSyncOperation(CREATE, UPDATE, true, E)).toEqual({
       kind: 'replace',
       operationType: CREATE,
     });
   });
 
   it('create + delete drops the row entirely when never attempted', () => {
-    expect(coalesceSyncOperation(CREATE, DELETE, true)).toEqual({
+    expect(coalesceSyncOperation(CREATE, DELETE, true, E)).toEqual({
       kind: 'drop',
     });
   });
@@ -56,37 +58,77 @@ describe('coalesceSyncOperation — pure precedence', () => {
     // An attempted push may have landed its setDoc before the completion
     // write failed — the server may hold a live doc, so the tombstone must
     // push rather than be dropped.
-    expect(coalesceSyncOperation(CREATE, DELETE, false)).toEqual({
+    expect(coalesceSyncOperation(CREATE, DELETE, false, E)).toEqual({
       kind: 'replace',
       operationType: DELETE,
     });
   });
 
   it('update + update stays update', () => {
-    expect(coalesceSyncOperation(UPDATE, UPDATE, true)).toEqual({
+    expect(coalesceSyncOperation(UPDATE, UPDATE, true, E)).toEqual({
       kind: 'replace',
       operationType: UPDATE,
     });
   });
 
   it('update + delete becomes delete (tombstone must push)', () => {
-    expect(coalesceSyncOperation(UPDATE, DELETE, true)).toEqual({
+    expect(coalesceSyncOperation(UPDATE, DELETE, true, E)).toEqual({
       kind: 'replace',
       operationType: DELETE,
     });
   });
 
   it('delete + create resurrects as create', () => {
-    expect(coalesceSyncOperation(DELETE, CREATE, true)).toEqual({
+    expect(coalesceSyncOperation(DELETE, CREATE, true, E)).toEqual({
       kind: 'replace',
       operationType: CREATE,
     });
   });
 
   it('delete + update resurrects as update', () => {
-    expect(coalesceSyncOperation(DELETE, UPDATE, true)).toEqual({
+    expect(coalesceSyncOperation(DELETE, UPDATE, true, E)).toEqual({
       kind: 'replace',
       operationType: UPDATE,
+    });
+  });
+});
+
+describe('coalesceSyncOperation — task_events append-only precedence', () => {
+  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync): each event is a
+  // distinct id, so the coalescer only fires for the SAME event id. A tombstone
+  // supersedes a pending create but is NEVER dropped (deterministic backfill
+  // ids may live on a peer → the undo must reach the server); undo is final,
+  // so a tombstone is never resurrected.
+  const { CREATE, DELETE } = SyncOperationType;
+  const EV = 'taskEvents';
+
+  it('create + delete keeps a DELETE tombstone even when never attempted (never drops)', () => {
+    // The generic path would DROP here; append-only events must NOT — a peer
+    // may hold the same deterministic id live, so the undo has to push.
+    expect(coalesceSyncOperation(CREATE, DELETE, true, EV)).toEqual({
+      kind: 'replace',
+      operationType: DELETE,
+    });
+  });
+
+  it('create + delete keeps a DELETE tombstone when attempted too', () => {
+    expect(coalesceSyncOperation(CREATE, DELETE, false, EV)).toEqual({
+      kind: 'replace',
+      operationType: DELETE,
+    });
+  });
+
+  it('delete + create does NOT resurrect — undo is final for an event id', () => {
+    expect(coalesceSyncOperation(DELETE, CREATE, true, EV)).toEqual({
+      kind: 'replace',
+      operationType: DELETE,
+    });
+  });
+
+  it('create + create stays a create (event not yet on server)', () => {
+    expect(coalesceSyncOperation(CREATE, CREATE, true, EV)).toEqual({
+      kind: 'replace',
+      operationType: CREATE,
     });
   });
 });

@@ -55,6 +55,10 @@ export const SYNC_COLLECTIONS = [
   'compoundChildren',
   'recurringBoardTemplates',
   'defaultPools',
+  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync). Per-row LWW +
+  // soft-delete tombstones like compoundChildren. Carries a `userId` field, so
+  // it also joins USER_SCOPED_SYNC_COLLECTIONS below.
+  'taskEvents',
 ] as const;
 
 /** Union of the literal collection-name strings in `SYNC_COLLECTIONS`. */
@@ -77,6 +81,9 @@ export const USER_SCOPED_SYNC_COLLECTIONS = [
   'compositeTasks',
   'recurringBoardTemplates',
   'defaultPools',
+  // TaskEvent rows carry a top-level `userId` (docs/WINDOWED_COMPLETION.md
+  // §New entity) → the pull path enforces the owner-match check.
+  'taskEvents',
 ] as const satisfies readonly SyncCollection[];
 
 /**

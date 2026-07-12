@@ -111,8 +111,32 @@ enum SyncQueueBuilder {
     static func coalesce(
         existing: SyncOperationType,
         incoming: SyncOperationType,
-        existingNeverAttempted: Bool
+        existingNeverAttempted: Bool,
+        entityType: String
     ) -> CoalesceResult {
+        // Windowed Completion task events are append-only occurrence rows
+        // (docs/WINDOWED_COMPLETION.md §Sync). Two DISTINCT events have distinct
+        // ids, so they never meet in the coalescer (it keys on entityId) — that
+        // distinctness IS the append-only guarantee: no event is ever collapsed
+        // away by another. The coalescer only fires for the SAME event id, whose
+        // only real sequence is create → tombstone (undo). Precedence:
+        //
+        //   - A tombstone SUPERSEDES a pending create — but is NEVER dropped.
+        //     Backfill event ids are deterministic (uuidv5), so a peer may
+        //     already hold the same id as a live row; only a pushed tombstone
+        //     converges the undo. Dropping (as the generic create+delete path
+        //     does) would strand the undo locally while the peer's copy stays
+        //     live → silent divergence.
+        //   - Undo is final for an id (a redo is a NEW id), so a tombstone is
+        //     never resurrected by a later create/update.
+        //   - Any other same-id op stays a create (not yet on the server).
+        if entityType == Self.taskEventsEntityType {
+            if incoming == .delete || existing == .delete {
+                return .replace(.delete)
+            }
+            return .replace(.create)
+        }
+
         if incoming == .delete {
             return existing == .create && existingNeverAttempted
                 ? .drop
@@ -125,6 +149,12 @@ enum SyncQueueBuilder {
         }
         return .replace(existing == .create ? .create : incoming)
     }
+
+    /// The queue `entityType` for Windowed Completion task events
+    /// (docs/WINDOWED_COMPLETION.md §Sync) — the Firestore subcollection name,
+    /// same value the push path uses. Its coalescing precedence is append-only
+    /// (see `coalesce`). Mirrors the web `TASK_EVENTS_ENTITY_TYPE`.
+    static let taskEventsEntityType = "taskEvents"
 }
 
 extension SyncQueueItem {
@@ -171,7 +201,8 @@ extension SyncQueueItem {
         switch SyncQueueBuilder.coalesce(
             existing: existing.operationType,
             incoming: operationType,
-            existingNeverAttempted: existing.lastAttemptAt == nil
+            existingNeverAttempted: existing.lastAttemptAt == nil,
+            entityType: entityType
         ) {
         case .drop:
             try SyncQueueItem.deleteOne(db, key: existing.id)

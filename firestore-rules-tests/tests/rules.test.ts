@@ -296,6 +296,83 @@ describe("users/{userId}/{collection}/{docId} subcollections (firestore.rules:21
   });
 });
 
+describe("taskEvents subcollection — Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync)", () => {
+  /** A valid TaskEvent payload. taskEvents is user-scoped
+   * (requiresUserIdField), so it carries a `userId` field like boards/tasks
+   * and satisfies hasAll(['id','version']) + version-is-number + id===docId. */
+  function taskEventPayload(
+    userId: string,
+    id: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return {
+      id,
+      version: 1,
+      userId,
+      taskId: "task1",
+      kind: "completion",
+      occurredAt: "2026-07-05T12:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("allows the owner to create, read, update, and delete their own taskEvent", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/taskEvents/ev1`);
+    await assertSucceeds(setDoc(ref, taskEventPayload(uid, "ev1")));
+    await assertSucceeds(getDoc(ref));
+    await assertSucceeds(
+      updateDoc(ref, taskEventPayload(uid, "ev1", { isDeleted: true })),
+    );
+    await assertSucceeds(deleteDoc(ref));
+  });
+
+  it("denies a different authenticated user from reading another user's taskEvent", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), "users/alice/taskEvents/ev1"),
+        taskEventPayload("alice", "ev1"),
+      );
+    });
+    const mallory = testEnv.authenticatedContext("mallory").firestore();
+    await assertFails(getDoc(doc(mallory, "users/alice/taskEvents/ev1")));
+  });
+
+  it("denies a different authenticated user from writing into another user's taskEvents path", async () => {
+    const mallory = testEnv.authenticatedContext("mallory").firestore();
+    await assertFails(
+      setDoc(
+        doc(mallory, "users/alice/taskEvents/ev1"),
+        taskEventPayload("alice", "ev1"),
+      ),
+    );
+  });
+
+  it("denies a taskEvent write whose payload userId spoofs a different uid (userIdMatchesPath)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/taskEvents/ev1`);
+    await assertFails(setDoc(ref, taskEventPayload("mallory", "ev1")));
+  });
+
+  it("denies a taskEvent write missing the version field (hasAll)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/taskEvents/ev1`);
+    await assertFails(
+      setDoc(ref, { id: "ev1", userId: uid, kind: "completion" }),
+    );
+  });
+
+  it("denies a taskEvent write whose payload id does not match the document id", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/taskEvents/ev1`);
+    await assertFails(setDoc(ref, taskEventPayload(uid, "not-ev1")));
+  });
+});
+
 describe("signups collection — fully client-denied (falls through to the catch-all, lines 76-79)", () => {
   it("denies an authenticated user from reading or writing signups", async () => {
     const uid = "alice";

@@ -611,6 +611,50 @@ final class AppDatabase {
             try db.execute(sql: "CREATE INDEX idx_boards_status ON boards(status)")
         }
 
+        // v19: Windowed Completion (docs/WINDOWED_COMPLETION.md §New entity +
+        // §Migration & backfill). New `task_events` table — one soft-deletable
+        // occurrence row per completion/increment on an event-owning task,
+        // synced per-row LWW like compound_children. PR B sub-slice 1 is
+        // FOUNDATIONS ONLY: the table is created empty; no backfill and no
+        // write/read paths yet (those land in later sub-slices), so it syncs
+        // harmlessly empty. `delta` is nullable (present only on increments);
+        // `boardId` is provenance-only. Indexes mirror the Dexie v12 store:
+        // `[taskId+occurredAt]` is the windowed-evaluation hot path,
+        // `[userId+occurredAt]` backs lifetime/library reads, and
+        // `[userId+isDeleted]` scopes the sync pull like every other table.
+        migrator.registerMigration("v19") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS task_events (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    taskId TEXT NOT NULL,
+                    kind TEXT NOT NULL, -- completion, increment
+                    delta INTEGER,      -- increment only; signed non-zero
+                    occurredAt TEXT NOT NULL, -- ISO8601; windows key on this
+                    boardId TEXT,       -- provenance only; never read in evaluation
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+                    FOREIGN KEY (userId) REFERENCES users(id)
+                    -- Deliberately NO `FOREIGN KEY (taskId) REFERENCES tasks(id)`:
+                    -- per-collection sync listeners have no cross-collection
+                    -- ordering, so a taskEvent can legitimately arrive before its
+                    -- Task row (docs §Sync → Pull ordering). Unlike
+                    -- compound_children (which defers the upsert until its parent
+                    -- exists), task_events are applied as rows immediately and
+                    -- skipped by recompute until the Task lands — a tasks FK
+                    -- would reject that insert. Matches the Dexie store, which
+                    -- has no FK constraints at all.
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_task_events_task_occurred ON task_events(taskId, occurredAt)")
+            try db.execute(sql: "CREATE INDEX idx_task_events_user_occurred ON task_events(userId, occurredAt)")
+            try db.execute(sql: "CREATE INDEX idx_task_events_user_deleted ON task_events(userId, isDeleted)")
+        }
+
         return migrator
     }
 

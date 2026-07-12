@@ -22,6 +22,15 @@ enum CompoundEvaluation {
 
     /// Evaluate whether a compound Task is complete.
     ///
+    /// **Windowed evaluation (Windowed Completion, PR A/B).** When
+    /// `windowContext` is supplied, primitive children resolve against the host
+    /// board's window via `resolveTaskWindowState` instead of reading the
+    /// lifetime `isCompleted` cache; derived (shared-counter-linked) counting
+    /// children fall back to their cache (the carve-out); nested compounds
+    /// inherit the SAME window (host-window inheritance). When `windowContext`
+    /// is omitted the behavior is byte-identical to before — the lifetime
+    /// default that keeps every existing caller unchanged.
+    ///
     /// - Parameters:
     ///   - compound: The Task to evaluate. If `type != .compound`, returns
     ///     `compound.isCompleted` directly.
@@ -30,26 +39,51 @@ enum CompoundEvaluation {
     ///     function filters `isDeleted` links itself.
     ///   - taskById: Map of `taskId` → Task. Missing keys evaluate the child as
     ///     incomplete.
+    ///   - windowContext: Optional. When present, switches primitive-child
+    ///     resolution to windowed events (see above).
     /// - Returns: `true` if the compound's operator condition is satisfied.
     static func evaluate(
         compound: Task,
         childrenByCompound: [String: [CompoundChild]],
-        taskById: [String: Task]
+        taskById: [String: Task],
+        windowContext: CompoundWindowContext? = nil
     ) -> Bool {
         var visiting: Set<String> = []
         return evaluateInner(
             compound: compound,
             childrenByCompound: childrenByCompound,
             taskById: taskById,
-            visiting: &visiting
+            visiting: &visiting,
+            windowContext: windowContext
         )
+    }
+
+    /// Resolve a single primitive (non-compound) child's completion, honoring
+    /// the window context when present. Derived-counting children are carved
+    /// out (read their lifetime cache); every other event-owning primitive
+    /// resolves windowed. Mirrors the TS `resolvePrimitiveChildState`.
+    private static func resolvePrimitiveChildState(
+        _ child: Task,
+        _ windowContext: CompoundWindowContext?
+    ) -> Bool {
+        guard let windowContext else { return child.isCompleted }
+        // Derived-task carve-out: shared-counter-linked counting children keep
+        // their propagation-stamped lifetime cache — they don't own events.
+        if !isEventOwningTask(child) { return child.isCompleted }
+        let events = windowContext.eventsByTaskId[child.id] ?? []
+        return resolveTaskWindowState(
+            task: child,
+            events: events,
+            windowStart: windowContext.windowStart
+        ).isCompleted
     }
 
     private static func evaluateInner(
         compound: Task,
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
-        visiting: inout Set<String>
+        visiting: inout Set<String>,
+        windowContext: CompoundWindowContext?
     ) -> Bool {
         guard compound.type == .compound else {
             return compound.isCompleted
@@ -67,14 +101,16 @@ enum CompoundEvaluation {
                 return false
             }
             if child.type == .compound {
+                // Nested compounds inherit the same host window.
                 return evaluateInner(
                     compound: child,
                     childrenByCompound: childrenByCompound,
                     taskById: taskById,
-                    visiting: &visiting
+                    visiting: &visiting,
+                    windowContext: windowContext
                 )
             }
-            return child.isCompleted
+            return resolvePrimitiveChildState(child, windowContext)
         }
 
         switch compound.operatorType {

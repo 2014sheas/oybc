@@ -46,6 +46,7 @@ import {
   CompoundChildSchema,
   RecurringBoardTemplateSchema,
   DefaultPoolSchema,
+  TaskEventSchema,
   mergeUserPreferences,
   additiveMergeCount,
   needsAdditiveMerge,
@@ -101,6 +102,12 @@ const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   compoundChildren: CompoundChildSchema,
   recurringBoardTemplates: RecurringBoardTemplateSchema,
   defaultPools: DefaultPoolSchema,
+  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync). Row-shape Zod
+  // (delta ⇄ kind, occurredAt required); the "event-owning tasks only" rule is
+  // a Task-type check the row alone can't carry, so it lives at the write
+  // choke points, not here. PR B sub-slice 1 wires the pull validator only —
+  // no event write/read paths yet, so events sync harmlessly empty.
+  taskEvents: TaskEventSchema,
 };
 
 /**
@@ -559,7 +566,7 @@ async function applyRemoteSubdoc(
   let mergeLog: string | null = null;
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       // Phase 4 — Additive merge for shared-counter sources on pull.
       //
