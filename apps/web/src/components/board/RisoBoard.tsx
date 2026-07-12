@@ -11,6 +11,7 @@ import {
 } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
 import { useBoardTasks } from '../../hooks/useBoardTasks';
+import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { taskToSquareState } from '../../db/adapters';
 import { RisoBoardCell, type BoardCellModel, type CellType } from './RisoBoardCell';
@@ -44,6 +45,11 @@ export function RisoBoard({ board, cellSize, gap = 8 }: RisoBoardProps): React.R
   const { user } = useAuth();
   const boardTasks = useBoardTasks(board.id) ?? EMPTY_BOARD_TASKS;
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(user?.id);
+  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Task caches): this poster
+  // must resolve squares against THIS board's window, not tasks' lifetime
+  // completion caches — otherwise a spawned/reused board shows lifetime-complete
+  // tasks green (+ phantom bingo rings) even though the real grid is grey.
+  const squareWindowContext = useSquareWindowContext(board);
 
   // Use the canonical boardSize — NOT sqrt(totalTasks), which can diverge from
   // the true grid under a sync race and would mis-place cells.
@@ -74,7 +80,7 @@ export function RisoBoard({ board, cellSize, gap = 8 }: RisoBoardProps): React.R
       if (!bt || !task) {
         return { key: bt?.id ?? `empty-${i}`, label: '', type: 'normal', done: false, isFree: false, isLine: false, _done: false };
       }
-      const ss = taskToSquareState(task, undefined, taskMap, compoundChildrenByCompound);
+      const ss = taskToSquareState(task, undefined, taskMap, compoundChildrenByCompound, squareWindowContext);
       const type = cellType(task.type);
       return {
         key: bt.id,
@@ -94,7 +100,15 @@ export function RisoBoard({ board, cellSize, gap = 8 }: RisoBoardProps): React.R
     const highlighted = getHighlightedSquares(lines, size);
 
     return draft.map(({ _done, ...cell }, i) => ({ ...cell, isLine: highlighted.has(i) }));
-  }, [boardTasks, taskMap, compoundChildrenByCompound, size, board.centerSquareType, board.centerSquareCustomName]);
+  }, [
+    boardTasks,
+    taskMap,
+    compoundChildrenByCompound,
+    size,
+    board.centerSquareType,
+    board.centerSquareCustomName,
+    squareWindowContext,
+  ]);
 
   return (
     <div

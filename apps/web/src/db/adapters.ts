@@ -28,6 +28,31 @@ export interface SquareWindowContext {
 }
 
 /**
+ * Builds a {@link SquareWindowContext} from a flat TaskEvent list + a board's
+ * window start. Pure grouping/filter logic factored out of the read-model
+ * hooks so every board-square surface (BoardPlaySurface's `useBoardPlayData`,
+ * `RisoBoard`'s mini-poster, the edit-mode rearrange preview) derives the
+ * SAME context from the SAME live-query result via `useSquareWindowContext`
+ * (`hooks/useSquareWindowContext.ts`) instead of re-deriving it — or, worse,
+ * omitting it — ad hoc per surface (docs/WINDOWED_COMPLETION.md §Task caches:
+ * "Board grids ... stop reading them for anything windowed").
+ *
+ * @param events - All TaskEvents in scope (a live-query snapshot is fine; deleted rows are filtered here).
+ * @param windowStart - The board's window lower bound (`board.startDate`).
+ */
+export function buildSquareWindowContext(
+  events: TaskEvent[],
+  windowStart: string,
+): SquareWindowContext {
+  const eventsByTaskId: Record<string, TaskEvent[]> = {};
+  for (const e of events) {
+    if (e.isDeleted) continue;
+    (eventsByTaskId[e.taskId] ??= []).push(e);
+  }
+  return { windowStart, eventsByTaskId };
+}
+
+/**
  * Converts a Task record (and its associated TaskStep records) to the
  * TaskSquareData shape expected by InteractiveTaskSquare.
  *

@@ -255,6 +255,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     allBoardTasks,
     gridSize,
     isExpired,
+    squareWindowContext,
     onFlash: showFlash,
     onCreditedToast: setCreditedToast,
     setContextMenu,

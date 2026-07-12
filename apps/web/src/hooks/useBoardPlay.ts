@@ -12,7 +12,7 @@ import {
   type TaskStep,
 } from '@oybc/shared';
 import { db } from '../db/internal';
-import { taskToSquareData, taskToSquareState } from '../db/adapters';
+import { taskToSquareData, taskToSquareState, type SquareWindowContext } from '../db/adapters';
 import { handleTaskCompletion } from '../db/operations/orchestration';
 import { decrementSharedCounter, incrementSharedCounter } from '../db/operations/tasks';
 import {
@@ -89,6 +89,14 @@ export interface UseBoardPlayParams {
   allBoardTasks: BoardTask[];
   gridSize: BoardSize;
   isExpired: boolean;
+  /**
+   * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the board's
+   * window context (from `useBoardPlayData`/`useSquareWindowContext`), threaded
+   * into the rearrange-preview's `taskToSquareState`/`taskToSquareData` calls so
+   * a lifetime-complete task on a fresh window's board previews grey, matching
+   * the real grid (BoardPlaySurface's own render already does this).
+   */
+  squareWindowContext: SquareWindowContext;
   /** Show a transient flash / bingo toast / greenlog overlay (component's `showFlash`). */
   onFlash: (text: string, variant: FlashVariant) => void;
   /** Show the shared-counter credited toast (component's `setCreditedToast`). */
@@ -171,6 +179,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     allBoardTasks,
     gridSize,
     isExpired,
+    squareWindowContext,
     onFlash,
     onCreditedToast,
     setContextMenu,
@@ -410,10 +419,10 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
                 : baseTask;
             const taskChildren = compoundChildrenByCompound[task.id] ?? [];
             const squareData = taskToSquareData(
-              task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+              task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
             );
             const squareState = taskToSquareState(
-              task, taskChildren, taskMap, compoundChildrenByCompound,
+              task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
             );
             const displayLabel =
               task.title && task.title.trim()
@@ -470,6 +479,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     taskOverrides,
     compoundChildrenByCompound,
     draftCenterType, // Phase 2b: NONE center is not pinned
+    squareWindowContext,
   ]);
 
   const commitSquareEdits = useCallback(async (): Promise<void> => {
