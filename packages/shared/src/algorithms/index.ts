@@ -20,9 +20,29 @@ export {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  computeSealedCompletedCells,
 } from './derivationPass';
 
 export type { BoardStatsUpdate } from './derivationPass';
+
+// ===== Windowed Completion — task events + windowed evaluation (PR A) =====
+export {
+  isEventOwningTask,
+  resolveTaskWindowState,
+  backstopWindowMs,
+  computeBackstopDeadlineMs,
+  BACKSTOP_MAX_MS,
+} from './taskEvents';
+
+export type {
+  TaskWindowState,
+  CompoundWindowContext,
+  WindowEvaluationContext,
+} from './taskEvents';
+
+export { uuidv5, OYBC_NAMESPACE } from './uuidv5';
+
+export { backfillTaskEventId, buildBackfillTaskEvent } from './migrationHelpers';
 
 export { hasCycle } from './cycleDetection';
 

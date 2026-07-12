@@ -3,6 +3,12 @@ import { detectBingos, type BoardSize, CenterSquareType } from '@oybc/bingo-core
 import { AchievementTrigger, BoardStatus, TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
 import { evaluateCompound } from './compoundEvaluation';
+import {
+  resolveTaskWindowState,
+  isEventOwningTask,
+  type CompoundWindowContext,
+  type WindowEvaluationContext,
+} from './taskEvents';
 
 /**
  * Walk `compound_children` upward from `changedTaskId` and return the set of
@@ -112,11 +118,113 @@ export function computeBoardStatsUpdate(
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
   allBoards: Board[] = [],
+  windowContext?: WindowEvaluationContext,
 ): BoardStatsUpdate {
+  const { grid, completedTasks } = computeBoardGrid(
+    board,
+    boardTasksOnBoard,
+    childrenByCompound,
+    taskById,
+    allBoards,
+    windowContext,
+  );
+
+  const detection = detectBingos(grid, board.boardSize as BoardSize);
+  const previous = new Set(board.completedLineIds ?? []);
+  const current = new Set(detection.completedLines);
+  const newBingos = detection.completedLines.filter((l) => !previous.has(l));
+  const lostBingos = (board.completedLineIds ?? []).filter((l) => !current.has(l));
+
+  return {
+    boardId: board.id,
+    completedTasks,
+    linesCompleted: detection.completedLines.length,
+    completedLineIds: detection.completedLines,
+    newBingos,
+    lostBingos,
+  };
+}
+
+/**
+ * Re-derive the set of green cell indexes (`row * size + col`) for a board from
+ * the (windowed or lifetime) task state — the pure input to a sealed board's
+ * `sealedCompletedCells` snapshot (docs §Seal snapshots re-derive from the
+ * event union). Deterministic: the same converged event union yields the same
+ * cells on any device, so sealing never LWW-races.
+ *
+ * Sealing itself (Board schema fields, the seal transaction, the pull-path
+ * re-derivation hook) lands in PR C; this builder is the shared kernel it and
+ * the migration's expired-board sealing call.
+ *
+ * @param board              The board to snapshot.
+ * @param boardTasksOnBoard  All BoardTask rows for this board.
+ * @param childrenByCompound Map of compoundTaskId → CompoundChild rows.
+ * @param taskById           Map of taskId → Task.
+ * @param allBoards          Cross-board context (achievement watchers).
+ * @param windowContext      Optional windowed-event context; omitted = lifetime.
+ * @returns Ascending cell indexes that are green.
+ */
+export function computeSealedCompletedCells(
+  board: Board,
+  boardTasksOnBoard: BoardTask[],
+  childrenByCompound: Record<string, CompoundChild[]>,
+  taskById: Record<string, Task>,
+  allBoards: Board[] = [],
+  windowContext?: WindowEvaluationContext,
+): number[] {
+  const { grid } = computeBoardGrid(
+    board,
+    boardTasksOnBoard,
+    childrenByCompound,
+    taskById,
+    allBoards,
+    windowContext,
+  );
+  const cells: number[] = [];
+  for (let i = 0; i < grid.length; i += 1) {
+    if (grid[i]) cells.push(i);
+  }
+  return cells;
+}
+
+/**
+ * Shared grid builder for `computeBoardStatsUpdate` + `computeSealedCompletedCells`.
+ *
+ * Returns the completion grid plus the `completedTasks` tally computed with the
+ * exact same increment logic both callers historically used. When
+ * `windowContext` is absent the resolution is byte-identical to the pre-Windowed
+ * -Completion behavior (lifetime `isCompleted` cache); when present, primitive
+ * squares resolve against the board's window via events and derived-counting
+ * squares stay on their cache (the carve-out).
+ */
+function computeBoardGrid(
+  board: Board,
+  boardTasksOnBoard: BoardTask[],
+  childrenByCompound: Record<string, CompoundChild[]>,
+  taskById: Record<string, Task>,
+  allBoards: Board[],
+  windowContext: WindowEvaluationContext | undefined,
+): { grid: boolean[]; completedTasks: number } {
   const size = board.boardSize as BoardSize;
   const totalSquares = size * size;
   const grid: boolean[] = new Array(totalSquares).fill(false);
   let completedTasks = 0;
+
+  // Window context for compound + primitive resolution. `board.startDate` is
+  // the window lower bound `[startDate, ∞)`; indefinite boards use it too.
+  const compoundCtx: CompoundWindowContext | undefined = windowContext
+    ? { windowStart: board.startDate, eventsByTaskId: windowContext.eventsByTaskId }
+    : undefined;
+
+  /** Resolve a primitive (normal / counting) square, windowed or lifetime. */
+  const resolvePrimitive = (t: Task): boolean => {
+    if (!windowContext) return t.isCompleted;
+    // Derived-task carve-out: shared-counter-linked counting squares keep their
+    // propagation-stamped lifetime cache (docs §Derived-task carve-out rule 4).
+    if (!isEventOwningTask(t)) return t.isCompleted;
+    const events = windowContext.eventsByTaskId[t.id] ?? [];
+    return resolveTaskWindowState(t, events, board.startDate).isCompleted;
+  };
 
   // Phase 6.3: index all non-deleted boards by id (specific-board mode)
   // and by spawnedFromTemplateId (recurring-template mode). Built lazily —
@@ -221,8 +329,8 @@ export function computeBoardStatsUpdate(
 
     const isDone =
       t.type === TaskType.COMPOUND
-        ? evaluateCompound(t, childrenByCompound, taskById)
-        : t.isCompleted;
+        ? evaluateCompound(t, childrenByCompound, taskById, compoundCtx)
+        : resolvePrimitive(t);
     if (isDone) {
       grid[idx] = true;
       completedTasks += 1;
@@ -248,18 +356,5 @@ export function computeBoardStatsUpdate(
     }
   }
 
-  const detection = detectBingos(grid, size);
-  const previous = new Set(board.completedLineIds ?? []);
-  const current = new Set(detection.completedLines);
-  const newBingos = detection.completedLines.filter((l) => !previous.has(l));
-  const lostBingos = (board.completedLineIds ?? []).filter((l) => !current.has(l));
-
-  return {
-    boardId: board.id,
-    completedTasks,
-    linesCompleted: detection.completedLines.length,
-    completedLineIds: detection.completedLines,
-    newBingos,
-    lostBingos,
-  };
+  return { grid, completedTasks };
 }

@@ -497,6 +497,50 @@ export const TaskSchema = z.object({
   { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
 );
 
+// ===== TaskEvent Schema (Windowed Completion) =====
+//
+// docs/WINDOWED_COMPLETION.md §New entity. A synced, soft-deletable
+// occurrence row for an event-owning task. Per-row LWW like compoundChildren.
+//
+// NOTE: the "events only for event-owning tasks" rule (reject compound /
+// achievement / derived-counting task ids) CANNOT be enforced here — a
+// TaskEvent row carries only `taskId`, not the task's type. That rule lives in
+// the shared `isEventOwningTask(task)` predicate, which the write choke points
+// call with the Task in hand. This schema enforces the row-shape invariants
+// (delta ⇄ kind, occurredAt required, sync-metadata shape) that the pull path
+// can validate from the row alone.
+export const TaskEventSchema = z
+  .object({
+    id: z.string().uuid(),
+    userId: z.string(),
+    taskId: z.string().uuid(),
+    kind: z.enum(['completion', 'increment']),
+    // Present + non-zero integer on increments; forbidden on completions
+    // (enforced by the refinement below).
+    delta: z.number().int().optional(),
+    occurredAt: z.string().datetime(),
+    boardId: z.string().uuid().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    lastSyncedAt: z.string().datetime().optional(),
+    version: z.number().int().min(1),
+    isDeleted: z.boolean(),
+    deletedAt: z.string().datetime().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.kind === 'increment') {
+        return data.delta !== undefined && Number.isInteger(data.delta) && data.delta !== 0;
+      }
+      // completion
+      return data.delta === undefined;
+    },
+    {
+      message:
+        "TaskEvent.delta must be a non-zero integer when kind='increment', and must be absent when kind='completion'",
+    },
+  );
+
 export const TaskStepSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
