@@ -614,6 +614,10 @@ struct BoardPlayView: View {
                     // Phase 3 — Rearrange
                     rearrangeCells: viewModel.editRearrangeCells,
                     onReorder: viewModel.handleRearrange,
+                    // Windowed Completion parity (d16ff21, sub-slice 3 review
+                    // finding): the edit/rearrange preview must show the
+                    // WINDOWED state, not the lifetime cache.
+                    windowedIsCompleted: viewModel.windowedIsCompleted,
                     isSaving: editSaving,
                     onSave: {
                         let weekStart = authService.currentUser?.decodedPreferences

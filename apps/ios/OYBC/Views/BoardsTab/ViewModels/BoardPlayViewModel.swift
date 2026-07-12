@@ -198,6 +198,31 @@ final class BoardPlayViewModel: ObservableObject {
         return resolveTaskWindowState(task: task, events: events, windowStart: windowStart)
     }
 
+    /// Windowed-Completion-aware "is this square complete" read for the
+    /// Board-Edit draft preview surfaces (`RearrangeGrid` + the edit-tasks
+    /// static grid). iOS parity fix for the same class of bug the web fix in
+    /// d16ff21 patched: these preview surfaces used to read the lifetime
+    /// `Task.isCompleted` cache directly, so a lifetime-complete task bled
+    /// green into a freshly-spawned/reused board's window even though the
+    /// live play grid correctly reads windowed
+    /// (docs/WINDOWED_COMPLETION.md §Task caches).
+    ///
+    /// Only event-owning primitives (normal / plain-source counting) resolve
+    /// against the board's window via `windowedState(forTaskId:)`. Compound,
+    /// achievement, and derived (shared-counter-linked) counting tasks keep
+    /// reading the lifetime `Task.isCompleted` cache, unchanged — only
+    /// event-owning primitives can go stale across a window rollover, and
+    /// these preview surfaces have no compound/achievement evaluation context
+    /// of their own (out of scope for this fix).
+    ///
+    /// - Parameter task: The task to resolve. Title/type may carry staged
+    ///   `editTaskOverrides`, but `id`/`isCompleted` always reflect the real
+    ///   database values, so the windowed lookup is always against the true task.
+    func windowedIsCompleted(for task: Task) -> Bool {
+        guard isEventOwningTask(task) else { return task.isCompleted }
+        return windowedState(forTaskId: task.id).isCompleted
+    }
+
     /// Grid column count from the board's `boardSize`, defaulting to 3. Mirrors
     /// the view's `gridSize`; used by the moved edit-draft computed helpers.
     private var gridSize: Int { board?.boardSize ?? 3 }
