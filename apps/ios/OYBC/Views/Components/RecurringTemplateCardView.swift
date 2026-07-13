@@ -7,9 +7,14 @@ import SwiftUI
 /// Header row: name + timeframe tag + active toggle. Meta row: board
 /// size · pool size · renew cadence (or "paused"), with a trailing
 /// Delete affordance (confirm-guarded), matching web's visible Delete
-/// button + confirm copy. An optional "needs attention" badge surfaces
-/// an empty / invalid pool (see `attentionReason`), mirroring web's
-/// `attentionBadge` semantics + copy.
+/// button + confirm copy. Below that: an optional pool-preview chip row
+/// (first 3 resolved task titles + "+{k} more" overflow) and a trailing
+/// "Add tasks" link that deep-links into the wizard's Tasks step — both
+/// issue #321. "Add tasks" is its own row rather than packed into
+/// `metaRow`, which already runs tight against the meta label group
+/// (e.g. "renews Mondays") and would truncate it. An optional "needs
+/// attention" badge surfaces an empty / invalid pool (see
+/// `attentionReason`), mirroring web's `attentionBadge` semantics + copy.
 ///
 /// Tapping the card opens the board wizard hydrated from this template
 /// (edit mode) — the same cross-tab route web's row Edit button used.
@@ -22,9 +27,18 @@ struct RecurringTemplateCard: View {
     /// Non-nil when this template's pool can't spawn — surfaces a badge.
     /// Strict mirror of web's `attentionReason` (see `RecurringTemplateRow`).
     let attentionReason: SpawnPoolFailureReason?
+    /// First-3 resolved task titles from the pool, in `seedTaskIds` order
+    /// (issue #321). Empty ⇒ no chip row (e.g. zero resolvable titles).
+    var poolPreview: [String] = []
+    /// Count of additional resolved titles beyond `poolPreview`'s first 3.
+    /// 0 ⇒ no "+{k} more" overflow chip.
+    var poolPreviewOverflow: Int = 0
     let onEdit: () -> Void
     let onToggleActive: (Bool) -> Void
     let onDelete: () -> Void
+    /// Deep-links into the wizard hydrated from this template, landing on
+    /// the Tasks step (step 2) instead of Setup (step 1) — issue #321.
+    var onAddTasks: () -> Void = {}
 
     @State private var showDeleteConfirm = false
 
@@ -34,6 +48,8 @@ struct RecurringTemplateCard: View {
         VStack(alignment: .leading, spacing: 8) {
             headerRow
             metaRow
+            poolPreviewRow
+            addTasksRow
             if let reason = attentionReason {
                 attentionBadge(reason)
             }
@@ -82,6 +98,50 @@ struct RecurringTemplateCard: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    /// "Add tasks" deep-link (issue #321) — its own row rather than crowding
+    /// into `metaRow`, which already runs tight against the meta label
+    /// group (e.g. "renews Mondays"); packing a second button in there
+    /// truncated it.
+    private var addTasksRow: some View {
+        HStack {
+            Spacer()
+            Button(action: onAddTasks) {
+                Text("Add tasks")
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoBlue)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Compact pool-preview chip row (issue #321) — up to 3 resolved task
+    /// titles, plus a "+{k} more" overflow chip. Empty `poolPreview` ⇒ no
+    /// row at all (e.g. every seed id is unresolvable).
+    @ViewBuilder
+    private var poolPreviewRow: some View {
+        if !poolPreview.isEmpty {
+            FlowLayout(spacing: 6) {
+                ForEach(poolPreview, id: \.self) { title in
+                    poolPreviewChip(title.isEmpty ? "(untitled)" : title)
+                }
+                if poolPreviewOverflow > 0 {
+                    poolPreviewChip("+\(poolPreviewOverflow) more")
+                }
+            }
+        }
+    }
+
+    private func poolPreviewChip(_ text: String) -> some View {
+        Text(text)
+            .font(.risoBody(11, .regular))
+            .foregroundStyle(Color.risoInk)
+            .lineLimit(1)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 9)
+            .background(Capsule().fill(Color.risoPaper2))
+            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 
     private var metaLabelGroup: some View {

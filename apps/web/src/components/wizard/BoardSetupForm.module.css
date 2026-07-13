@@ -135,6 +135,16 @@
   font-weight: 800;
 }
 
+/* Upfront task-count requirement line, sits under the Board-size selector. */
+.requirementNote {
+  margin: 8px 0 0;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.4;
+}
+
 .checkboxRow {
   display: inline-flex;
   align-items: flex-start;

@@ -25,6 +25,15 @@
   font: inherit;
   color: inherit;
 }
+
+/* Trailing badge column: Recurring provenance tag stacked above status. */
+.badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+}
 .mainButton:hover {
   background: var(--riso-paper);
 }

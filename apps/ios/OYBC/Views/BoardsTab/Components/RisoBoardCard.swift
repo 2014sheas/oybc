@@ -49,9 +49,15 @@ struct RisoBoardCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
 
-                // Right column: badge stacked above mini-grid
+                // Right column: badge(s) stacked above mini-grid
                 VStack(alignment: .trailing, spacing: 9) {
-                    RisoBoardStatusBadge(kind: badgeKind)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        RisoBoardStatusBadge(kind: badgeKind)
+                        // Issue #321 — provenance tag for recurring-spawned boards.
+                        if RisoRecurringBadge.shouldShow(for: board) {
+                            RisoRecurringBadge()
+                        }
+                    }
                     RisoMiniGrid(
                         boardId: board.id,
                         completedCount: board.completedTasks,

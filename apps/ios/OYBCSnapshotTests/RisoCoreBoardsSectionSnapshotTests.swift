@@ -18,20 +18,27 @@ final class RisoCoreBoardsSectionSnapshotTests: XCTestCase {
         ]
     }
 
+    /// Issue #321 — the Create-hub subtitle passed here exercises the new
+    /// `subtitle` prop at the component level; height bumped from 320 to
+    /// fit the extra caption line.
     private func view() -> some View {
-        CoreBoardsSectionView(slots: slots(), onSelect: { _ in })
+        CoreBoardsSectionView(
+            slots: slots(),
+            onSelect: { _ in },
+            subtitle: "Your standard board for each time period."
+        )
             .padding(16)
             .background(Color.risoPaper)
     }
 
     func testCoreBoardsSectionLight() {
-        assertSnapshot(of: view(), as: .image(layout: .fixed(width: 393, height: 320)), record: recordMode)
+        assertSnapshot(of: view(), as: .image(layout: .fixed(width: 393, height: 340)), record: recordMode)
     }
 
     func testCoreBoardsSectionDark() {
         assertSnapshot(
             of: view(),
-            as: .image(layout: .fixed(width: 393, height: 320), traits: .init(userInterfaceStyle: .dark)),
+            as: .image(layout: .fixed(width: 393, height: 340), traits: .init(userInterfaceStyle: .dark)),
             record: recordMode
         )
     }

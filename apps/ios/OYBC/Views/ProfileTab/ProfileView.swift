@@ -30,6 +30,11 @@ struct ProfileView: View {
     /// sub-page — opens the wizard's recurring flow on the Create tab.
     var onNewRecurringTemplate: (() -> Void)? = nil
 
+    /// Cross-tab "Add tasks" route (issue #321) from a template card's
+    /// Add-tasks button — same wizard deep-link as edit, but lands on the
+    /// Tasks step instead of Setup.
+    var onAddTasksRecurringTemplate: ((String) -> Void)? = nil
+
     /// Opens the Getting Started tutorial board (cross-tab to Boards).
     /// Optional so #Preview / tests can mount ProfileView standalone.
     var onOpenTutorial: (() -> Void)? = nil
@@ -291,7 +296,8 @@ struct ProfileView: View {
             NavigationLink {
                 RecurringTemplatesView(
                     onEditTemplate: onEditRecurringTemplate,
-                    onNewTemplate: onNewRecurringTemplate
+                    onNewTemplate: onNewRecurringTemplate,
+                    onAddTasksTemplate: onAddTasksRecurringTemplate
                 )
             } label: {
                 RisoProfileRow(

@@ -1,6 +1,7 @@
 import {
   CenterSquareType,
   Timeframe,
+  fillableCellCount,
   formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
@@ -253,6 +254,16 @@ export function BoardSetupForm({
           </button>
         ))}
       </div>
+      {/* Upfront requirement line — surfaces the task-count cost live with
+          the size + center selection so the user isn't blindsided by a
+          disabled Next later. Count is the shared `fillableCellCount`
+          (odd + FREE/CUSTOM_FREE center reserves one cell). Recurring
+          mode says "at least" — its pool can overfill (spawn draws a
+          random subset each window). */}
+      <p className={styles.requirementNote}>
+        A {size}×{size} board needs {isRecurring ? "at least " : ""}
+        {fillableCellCount(size, centerType)} tasks.
+      </p>
     </div>
   ) : null;
 

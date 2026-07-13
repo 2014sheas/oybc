@@ -1,0 +1,19 @@
+/* Recurring provenance badge — outline pill (paper fill, ink keyline +
+   text) so it reads as a tag and never collides with the filled status
+   colors. --riso-ink is used as TEXT + BORDER only (never a fill behind
+   cream content) so it stays legible in dark mode (ink flips to cream). */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--riso-font-head);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 6px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}

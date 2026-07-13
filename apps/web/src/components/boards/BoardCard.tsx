@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BoardStatus, formatTimeframeLabel, type Board } from '@oybc/shared';
 import { isBoardExpired, isBoardExpiringSoon, statusLabel } from '../../utils/boardDisplayUtils';
 import { RisoBadge, RisoIcon, type RisoBadgeKind } from '../riso';
+import { RecurringBadge } from '../RecurringBadge';
 import { BoardMiniGrid } from '../home/BoardMiniGrid';
 import styles from './Boards.module.css';
 
@@ -78,7 +79,10 @@ export function BoardCard({ board, onOpen, onDelete }: BoardCardProps): React.Re
             <div className={styles.bcardName}>{board.name}</div>
             <div className={styles.bcardTf}>{formatTimeframeLabel(board.timeframe, board.startDate)}</div>
           </div>
-          <RisoBadge kind={badge.kind}>{badge.text}</RisoBadge>
+          <div className={styles.bcardBadges}>
+            {board.spawnedFromTemplateId != null && <RecurringBadge />}
+            <RisoBadge kind={badge.kind}>{badge.text}</RisoBadge>
+          </div>
         </div>
         <div className={styles.bcardBody}>
           <div className={styles.bcardL}>

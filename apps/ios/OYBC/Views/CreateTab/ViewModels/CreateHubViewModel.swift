@@ -42,7 +42,11 @@ final class CreateHubViewModel {
         /// Wizard launched in template-edit mode (Profile → Recurring
         /// templates → Edit). The wizard hydrates from the template
         /// and Save updates the template instead of creating a board.
-        case wizardEditTemplate(templateId: String)
+        /// `initialStep` (issue #321) lets the "Add tasks" card
+        /// affordance land the user on the Tasks step (2) directly
+        /// instead of Setup (1); the whole-card tap keeps the default of
+        /// step 1.
+        case wizardEditTemplate(templateId: String, initialStep: WizardStep)
     }
 
     // MARK: - State
@@ -191,8 +195,13 @@ final class CreateHubViewModel {
     /// immediately (so the view can show a loading state) and then
     /// fetches the template. A concurrently-deleted template falls
     /// back to fresh-create with a log.
-    func loadTemplateAndEnterWizard(templateId: String) {
-        mode = .wizardEditTemplate(templateId: templateId)
+    ///
+    /// - Parameter initialStep: which wizard step to land on once
+    ///   hydrated. Defaults to 1 (Setup) for the whole-card tap; the
+    ///   card's "Add tasks" affordance (issue #321) passes 2 (Tasks) so
+    ///   the user lands directly on the pool picker.
+    func loadTemplateAndEnterWizard(templateId: String, initialStep: WizardStep = 1) {
+        mode = .wizardEditTemplate(templateId: templateId, initialStep: initialStep)
         editingTemplate = nil
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }

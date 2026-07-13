@@ -1119,10 +1119,15 @@ struct BoardPlayView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Status badge
+            // Status badge (+ recurring-provenance tag, issue #321)
             if let b = board {
-                risoStatusBadge(status: b.status)
-                    .padding(.top, 4)
+                VStack(alignment: .trailing, spacing: 4) {
+                    risoStatusBadge(status: b.status)
+                    if RisoRecurringBadge.shouldShow(for: b) {
+                        RisoRecurringBadge()
+                    }
+                }
+                .padding(.top, 4)
             }
         }
     }

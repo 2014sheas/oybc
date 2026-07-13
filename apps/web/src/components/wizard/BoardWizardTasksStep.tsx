@@ -723,6 +723,18 @@ export function BoardWizardTasksStep({
 
       {/* Footer — actions */}
       <div className={styles.footer}>
+        {/* Visible dead-Next reason — the tooltip alone is invisible on
+            touch, and a quietly greyed-out Next reads as "broken". */}
+        {!canAdvance && (
+          <span className={styles.footerMessage}>
+            {!isCountSatisfied
+              ? (() => {
+                  const n = tasksRequired - selectedCount;
+                  return `Pick ${n} more task${n === 1 ? '' : 's'} to continue (${tasksRequired}${isRecurring ? ' minimum' : ''} needed).`;
+                })()
+              : 'Mark one selected task as the center.'}
+          </span>
+        )}
         <button type="button" className={styles.backButton} onClick={onBack}>
           ‹ Back
         </button>

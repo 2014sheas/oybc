@@ -9,6 +9,14 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--riso-muted);
+  margin: 0 0 4px;
+  padding: 0 2px;
+}
+.subtitle {
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
   margin: 0 0 10px;
   padding: 0 2px;
 }

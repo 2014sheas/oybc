@@ -327,6 +327,61 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         XCTAssertEqual(out["small"], .poolTooSmall)
     }
 
+    // MARK: - computePoolPreview (issue #321 — card chip row)
+    //
+    // Mirrors `computeAttention`'s test shape: pure, static, no database.
+
+    private func makeTitledTask(_ id: String, title: String) -> Task {
+        Task(
+            id: id, userId: "u1", title: title, type: .normal,
+            operatorType: nil, threshold: nil, totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, createdAt: "2026-05-01T00:00:00.000Z",
+            updatedAt: "2026-05-01T00:00:00.000Z", version: 1, isDeleted: false
+        )
+    }
+
+    func testComputePoolPreview_FirstThreeInSeedOrder_NoOverflow() {
+        let tpl = makeTemplate(seedTaskIds: ["a", "b", "c"])
+        let live = [
+            makeTitledTask("a", title: "Drink water"),
+            makeTitledTask("b", title: "Read 30 min"),
+            makeTitledTask("c", title: "Run 5 km"),
+        ]
+        let (preview, overflow) = RecurringBoardTemplatesViewModel.computePoolPreview(templates: [tpl], liveTasks: live)
+        XCTAssertEqual(preview[tpl.id], ["Drink water", "Read 30 min", "Run 5 km"])
+        XCTAssertNil(overflow[tpl.id])
+    }
+
+    func testComputePoolPreview_MoreThanThree_CapsAtThreeWithOverflowCount() {
+        let tpl = makeTemplate(seedTaskIds: ["a", "b", "c", "d", "e"])
+        let live = ["a", "b", "c", "d", "e"].map { makeTitledTask($0, title: "Task \($0)") }
+        let (preview, overflow) = RecurringBoardTemplatesViewModel.computePoolPreview(templates: [tpl], liveTasks: live)
+        XCTAssertEqual(preview[tpl.id], ["Task a", "Task b", "Task c"])
+        XCTAssertEqual(overflow[tpl.id], 2)
+    }
+
+    func testComputePoolPreview_UnresolvedIdsAreSkipped_NotBlank() {
+        // "b" has no matching live task (soft-deleted) — it should be
+        // skipped entirely, not rendered as an empty-string chip, and the
+        // remaining resolved ids still fill out the first-3 window.
+        let tpl = makeTemplate(seedTaskIds: ["a", "b", "c", "d"])
+        let live = [
+            makeTitledTask("a", title: "First"),
+            makeTitledTask("c", title: "Third"),
+            makeTitledTask("d", title: "Fourth"),
+        ]
+        let (preview, overflow) = RecurringBoardTemplatesViewModel.computePoolPreview(templates: [tpl], liveTasks: live)
+        XCTAssertEqual(preview[tpl.id], ["First", "Third", "Fourth"])
+        XCTAssertNil(overflow[tpl.id])
+    }
+
+    func testComputePoolPreview_ZeroResolvable_NoEntry() {
+        let tpl = makeTemplate(seedTaskIds: ["a", "b"])
+        let (preview, overflow) = RecurringBoardTemplatesViewModel.computePoolPreview(templates: [tpl], liveTasks: [])
+        XCTAssertNil(preview[tpl.id])
+        XCTAssertNil(overflow[tpl.id])
+    }
+
     // MARK: - buildSpawnPlacement
 
     func testBuildSpawnPlacement_NonRandomized_OrderPreserved_FreeCenterIsNil() {
