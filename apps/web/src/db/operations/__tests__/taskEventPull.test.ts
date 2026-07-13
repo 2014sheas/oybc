@@ -10,7 +10,7 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { applyTaskEventsBatch } from '../../../firebase/syncService';
+import { applyTaskEventsBatch } from '../taskEventPull';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync + §Testing matrix web

@@ -48,16 +48,14 @@ import {
   DefaultPoolSchema,
   TaskEventSchema,
   mergeUserPreferences,
-  isEventOwningTask,
   SYNC_COLLECTIONS,
   USER_SCOPED_SYNC_COLLECTIONS,
   LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
   type User,
   type SyncCollection,
-  type TaskEvent,
 } from '@oybc/shared';
-import { runBoardCascadeForTask, runBoardCascadeForTasks } from '../db/operations/orchestration';
-import { recomputeTaskCachesFromPull } from '../db/operations/taskEvents';
+import { runBoardCascadeForTask } from '../db/operations/orchestration';
+import { applyTaskEventsBatch } from '../db/operations/taskEventPull';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -611,89 +609,13 @@ async function applyRemoteSubdoc(
   return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
 }
 
-/**
- * Batched pull-path handler for the `taskEvents` collection
- * (docs/WINDOWED_COMPLETION.md §Sync — "Batched pull-path recompute"). Per-row
- * recompute × the full-workspace cascade would make a fresh device's initial
- * sync of 10–20k events quadratic-ish; instead we apply ALL pulled event rows
- * first, then recompute each affected event-owning task's caches ONCE and run
- * ONE derivation pass per affected board — all inside a single transaction (the
- * atomic pull-path invariant).
- *
- * Pull ordering (docs §Sync): a `taskEvent` can arrive before its `Task` row.
- * Such events are still upserted as rows but SKIPPED by the recompute — the
- * safety-net pull picks them up once the Task lands.
- *
- * @param userId   The authenticated user's uid (for the userId scope check).
- * @param rawDocs  The untrusted raw event documents from Firestore.
- * @returns Pulled-row count + per-row skip/status details.
- */
-export async function applyTaskEventsBatch(
-  userId: string,
-  rawDocs: unknown[],
-): Promise<{ pulled: number; details: string[] }> {
-  const details: string[] = [];
-
-  // 1. Validate + userId-scope every incoming row (no DB access yet).
-  const valid: TaskEvent[] = [];
-  for (const raw of rawDocs) {
-    const parsed = TaskEventSchema.safeParse(raw);
-    if (!parsed.success) {
-      const reason = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
-      const id =
-        typeof (raw as { id?: unknown })?.id === 'string' ? (raw as { id: string }).id : '?';
-      details.push(`Skipped malformed taskEvents/${id}: ${reason}`);
-      continue;
-    }
-    const ev = parsed.data as TaskEvent;
-    if (ev.userId !== userId) {
-      details.push(`Skipped taskEvents/${ev.id}: userId mismatch`);
-      continue;
-    }
-    valid.push(ev);
-  }
-  if (valid.length === 0) return { pulled: 0, details };
-
-  let pulled = 0;
-  await db.transaction(
-    'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
-    async () => {
-      // 2. LWW-upsert each event row (union by id; tombstone = undo). Collect
-      //    the affected task ids.
-      const affectedTaskIds = new Set<string>();
-      for (const ev of valid) {
-        const local = (await db.taskEvents.get(ev.id)) as SyncableEntity | undefined;
-        const remoteWins =
-          !local || resolveConflict(local, ev as unknown as SyncableEntity).winner === 'remote';
-        if (!remoteWins) continue;
-        await db.taskEvents.put(ev);
-        affectedTaskIds.add(ev.taskId);
-        pulled += 1;
-      }
-
-      // 3. Recompute caches ONCE per affected event-owning task that exists
-      //    locally (recompute is a non-authored write — no version bump, no
-      //    sync enqueue). Events whose task isn't local yet are skipped-and-
-      //    deferred (safety-net retry).
-      const cascadeTaskIds = new Set<string>();
-      for (const taskId of affectedTaskIds) {
-        const task = await db.tasks.get(taskId);
-        if (!task || !isEventOwningTask(task)) continue;
-        await recomputeTaskCachesFromPull(taskId);
-        cascadeTaskIds.add(taskId);
-      }
-
-      // 4. ONE derivation pass per affected board (batched over the task set).
-      if (cascadeTaskIds.size > 0) {
-        await runBoardCascadeForTasks(cascadeTaskIds);
-      }
-    },
-  );
-
-  for (let i = 0; i < pulled; i += 1) recordSyncEvent('pulled');
-  return { pulled, details };
-}
+// Batched pull-path handler for the `taskEvents` collection
+// (docs/WINDOWED_COMPLETION.md §Sync — "Batched pull-path recompute") now
+// lives in `db/operations/taskEventPull.ts` — a firebase-free home so its
+// unit test's import graph never reaches `firebase/config` (the #280/#281
+// CI-only failure: `firebase/config` initializes Firebase Auth at import
+// time, which throws `auth/invalid-api-key` on a CI runner with no
+// `.env.local`). This module keeps a thin caller via the import above.
 
 export async function pullSync(
   userId: string,
