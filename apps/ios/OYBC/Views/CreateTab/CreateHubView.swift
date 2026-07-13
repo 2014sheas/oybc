@@ -41,6 +41,12 @@ struct CreateHubView: View {
     /// Set by `MainTabView` from `RecurringTemplatesView`'s row Edit
     /// callback.
     var pendingEditTemplateId: Binding<String?> = .constant(nil)
+    /// New-template cross-tab deep-link. When true on appear, the hub
+    /// opens the wizard's fresh recurring-template flow (same as the
+    /// hub's own "Create a recurring board" CTA) and clears the flag.
+    /// Set by `MainTabView` from `RecurringTemplatesView`'s
+    /// "+ New template" button — mirrors `pendingEditTemplateId`.
+    var pendingNewRecurringTemplate: Binding<Bool> = .constant(false)
     /// Draft-resume cross-tab deep-link. When non-nil on appear, the hub
     /// hydrates the wizard from that draft board id (via the same resume
     /// path as the drafts list) and clears the binding. Set by
@@ -94,6 +100,13 @@ struct CreateHubView: View {
                     if let templateId = pendingEditTemplateId.wrappedValue {
                         pendingEditTemplateId.wrappedValue = nil
                         vm.loadTemplateAndEnterWizard(templateId: templateId)
+                        return
+                    }
+                    // Consume the new-recurring-template deep link, if any.
+                    // Same wizard flow as the hub's own recurring CTA.
+                    if pendingNewRecurringTemplate.wrappedValue {
+                        pendingNewRecurringTemplate.wrappedValue = false
+                        vm.enterRecurringTemplateWizard()
                         return
                     }
                     // Consume the draft-resume deep link, if any. Fetch the

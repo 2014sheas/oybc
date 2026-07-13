@@ -58,6 +58,13 @@ struct MainTabView: View {
     /// the binding. Same pattern as `pendingRecurringTimeframe`.
     @State private var pendingEditTemplateId: String? = nil
 
+    /// Cross-tab new-recurring-template deep-link. Set when the user taps
+    /// "+ New template" on the Profile → Recurring templates page; we flip
+    /// this and switch `selectedTab` to Create, where `CreateHubView`
+    /// opens the wizard's recurring flow and clears it. Mirrors
+    /// `pendingEditTemplateId`.
+    @State private var pendingNewRecurringTemplate: Bool = false
+
     /// Draft-resume cross-tab deep-link. Set when the user taps a DRAFT
     /// board on the Boards tab (list card or core-grid slot); we stash the
     /// board id and switch to the Create tab. `CreateHubView` consumes it on
@@ -319,6 +326,7 @@ struct MainTabView: View {
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
                             pendingTargetWindowDate: $pendingTargetWindowDate,
                             pendingEditTemplateId: $pendingEditTemplateId,
+                            pendingNewRecurringTemplate: $pendingNewRecurringTemplate,
                             pendingDraftId: $pendingDraftId,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
@@ -350,10 +358,16 @@ struct MainTabView: View {
                     onEditRecurringTemplate: { templateId in
                         // Phase 6.2 UX rework: cross-tab edit. The
                         // Profile tab's RecurringTemplatesView wires
-                        // its row Edit buttons here; we stash the id
+                        // its card taps here; we stash the id
                         // and switch to Create. CreateHubView consumes
                         // the binding and opens the wizard hydrated.
                         pendingEditTemplateId = templateId
+                        selectedTab = 2
+                    },
+                    onNewRecurringTemplate: {
+                        // "+ New template" cross-tab route: open the
+                        // wizard's fresh recurring flow on the Create tab.
+                        pendingNewRecurringTemplate = true
                         selectedTab = 2
                     },
                     onOpenTutorial: { openTutorial() }
@@ -363,10 +377,16 @@ struct MainTabView: View {
                 .navigationDestination(for: ProfileRoute.self) { route in
                     switch route {
                     case .recurringTemplates:
-                        RecurringTemplatesView(onEditTemplate: { templateId in
-                            pendingEditTemplateId = templateId
-                            selectedTab = 2
-                        })
+                        RecurringTemplatesView(
+                            onEditTemplate: { templateId in
+                                pendingEditTemplateId = templateId
+                                selectedTab = 2
+                            },
+                            onNewTemplate: {
+                                pendingNewRecurringTemplate = true
+                                selectedTab = 2
+                            }
+                        )
                     case .defaultPools:
                         DefaultPoolsListView()
                     case .streaks:

@@ -20,25 +20,38 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
                     createdAt: ts, updatedAt: ts, lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil)
     }
 
-    // MARK: - Template editor
+    // MARK: - Recurring template card
+    //
+    // The inline TemplateEditSheet was retired (pool-only sheet could
+    // underfill); creation/edit now route to the wizard. These guard the
+    // list card component (`RecurringTemplateCard`) — the net-new surface
+    // — in its healthy and "needs attention" states.
 
-    private func templateEdit(existing: Bool) -> some View {
-        let pools = [pool("p-w", .weekly, taskIds: Array(repeating: "t", count: 9)),
-                     pool("p-m", .monthly, taskIds: Array(repeating: "t", count: 14))]
-        let tpl = existing
-            ? SnapshotFixtures.makeRecurringTemplate(id: "tpl1", name: "Morning Routine", timeframe: .weekly, boardSize: 5, seedTaskCount: 9)
-            : nil
-        return TemplateEditSheet(template: tpl, pools: pools, onSave: { _ in }, onDelete: { _ in }, userId: SnapshotFixtures.userId)
+    private func templateCard(
+        attention: SpawnPoolFailureReason?,
+        isActive: Bool = true
+    ) -> some View {
+        let tpl = SnapshotFixtures.makeRecurringTemplate(
+            id: "tpl1", name: "Morning Routine", timeframe: .weekly,
+            boardSize: 5, seedTaskCount: 9, isActive: isActive
+        )
+        return RecurringTemplateCard(
+            template: tpl,
+            attentionReason: attention,
+            onEdit: {}, onToggleActive: { _ in }, onDelete: {}
+        )
+        .padding(Riso.gutter)
+        .background(Color.risoPaper)
     }
 
-    func testTemplateEditCreateLight() {
-        assertSnapshot(of: templateEdit(existing: false), as: .image(layout: .fixed(width: 393, height: 720)), record: recordMode)
+    func testTemplateCardHealthyLight() {
+        assertSnapshot(of: templateCard(attention: nil), as: .image(layout: .fixed(width: 393, height: 130)), record: recordMode)
     }
-    func testTemplateEditExistingLight() {
-        assertSnapshot(of: templateEdit(existing: true), as: .image(layout: .fixed(width: 393, height: 760)), record: recordMode)
+    func testTemplateCardAttentionLight() {
+        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 180)), record: recordMode)
     }
-    func testTemplateEditCreateDark() {
-        assertSnapshot(of: templateEdit(existing: false), as: .image(layout: .fixed(width: 393, height: 720), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+    func testTemplateCardAttentionDark() {
+        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 180), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
     }
 
     // MARK: - Pool editor
