@@ -26,6 +26,10 @@ struct ProfileView: View {
     /// that mount ProfileView in isolation don't need cross-tab plumbing.
     var onEditRecurringTemplate: ((String) -> Void)? = nil
 
+    /// Cross-tab "+ New template" route from the Recurring templates
+    /// sub-page — opens the wizard's recurring flow on the Create tab.
+    var onNewRecurringTemplate: (() -> Void)? = nil
+
     /// Opens the Getting Started tutorial board (cross-tab to Boards).
     /// Optional so #Preview / tests can mount ProfileView standalone.
     var onOpenTutorial: (() -> Void)? = nil
@@ -285,7 +289,10 @@ struct ProfileView: View {
 
             // Recurring templates (with async count)
             NavigationLink {
-                RecurringTemplatesView(onEditTemplate: onEditRecurringTemplate)
+                RecurringTemplatesView(
+                    onEditTemplate: onEditRecurringTemplate,
+                    onNewTemplate: onNewRecurringTemplate
+                )
             } label: {
                 RisoProfileRow(
                     icon: "calendar.badge.clock",
