@@ -168,6 +168,65 @@
   white-space: nowrap;
 }
 
+/* ---- windowed-completion upgrade note (one-time, dismissible) ---- */
+.wcNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  padding: 14px 16px;
+  margin: 0 0 20px;
+}
+.wcNoteBody {
+  flex: 1;
+}
+.wcNoteHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--riso-blue);
+  margin-bottom: 6px;
+}
+.wcNoteText {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--riso-ink);
+}
+.wcNoteDismiss {
+  flex-shrink: 0;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.wcNoteDismiss:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.wcNoteDismiss:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.wcNoteDismiss:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
 /* ---- board-card grid ---- */
 .grid {
   display: grid;

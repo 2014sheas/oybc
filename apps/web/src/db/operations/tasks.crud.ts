@@ -7,10 +7,11 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, hasCycle } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, hasCycle, isEventOwningTask } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
+import { appendCompletionEvent, tombstoneLatestCompletion } from './taskEvents';
 
 /**
  * Task CRUD Operations
@@ -529,17 +530,32 @@ export async function toggleTaskCompletionAndCascade(taskId: string): Promise<vo
   const now = currentTimestamp();
   await db.transaction(
     'rw',
-    [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
     async () => {
-      await db.tasks.update(taskId, {
-        isCompleted: !task.isCompleted,
-        completedAt: !task.isCompleted ? now : undefined,
-        updatedAt: now,
-        version: task.version + 1,
-      });
-      const updated = await db.tasks.get(taskId);
-      if (updated) {
-        await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, updated);
+      // Windowed Completion (docs §Write paths). This is the library-context
+      // completion toggle for an unplaced compound child (no board window):
+      // toggling off the lifetime state tombstones the latest completion
+      // event; toggling on appends a fresh one. Both restamp the lifetime
+      // caches + enqueue the Task sync entry inside this transaction. A
+      // non-event-owning task (defensive — an unplaced child should be a plain
+      // normal task) falls back to the legacy direct toggle.
+      if (isEventOwningTask(task)) {
+        if (task.isCompleted) {
+          await tombstoneLatestCompletion(taskId, now);
+        } else {
+          await appendCompletionEvent(taskId, undefined, now);
+        }
+      } else {
+        await db.tasks.update(taskId, {
+          isCompleted: !task.isCompleted,
+          completedAt: !task.isCompleted ? now : undefined,
+          updatedAt: now,
+          version: task.version + 1,
+        });
+        const updated = await db.tasks.get(taskId);
+        if (updated) {
+          await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, updated);
+        }
       }
       await runBoardCascadeForTask(taskId);
     },

@@ -448,6 +448,17 @@ final class BoardPlayViewModelTests: XCTestCase {
         try seedUser(db)
         try db.saveBoard(makeBoard(id: "b1"))
         try db.saveTask(makeCountingTask("c1", maxCount: 2, currentCount: 1))
+        // Windowed Completion — the windowed count derives from events, so seed a
+        // backing +1 increment event in the board window (as the migration would
+        // have backfilled) so the square starts at a windowed 1.
+        try db.write { db in
+            try TaskEvent(
+                id: "seed-c1", userId: "u1", taskId: "c1", kind: .increment, delta: 1,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(db)
+        }
         try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
 
         let vm = loadedVM(db, boardId: "b1")
@@ -879,5 +890,101 @@ final class BoardPlayViewModelTests: XCTestCase {
         // Overwrite replaces the prior snapshot.
         store.save(boardId: "b1", snapshot: ["t1": 9])
         XCTAssertEqual(store.lastSeen(boardId: "b1"), ["t1": 9])
+    }
+
+    // MARK: - 13. Windowed Completion — edit/rearrange preview reads windowed,
+    // not lifetime (review finding, sub-slice 3 follow-up; d16ff21 iOS parity)
+
+    /// The exact regression `windowedIsCompleted(for:)` fixes: `BoardEditPanel`'s
+    /// static grid + `RearrangeGrid` used to read `task.isCompleted` (the
+    /// lifetime cache) directly, so a task completed in a PRIOR window bled
+    /// green into the edit/rearrange preview of a board on a FRESH window —
+    /// even though the live play grid (which already routes through
+    /// `windowedState(forTaskId:)`) correctly showed it incomplete.
+    func test_windowedIsCompleted_lifetimeCompleteTaskOnFreshWindow_reportsWindowedGrey() throws {
+        let db = try makeDb()
+        try seedUser(db)
+
+        // A task lifetime-completed back in June (event + cache both stamped).
+        var task = makeTask("t1")
+        task.isCompleted = true
+        task.completedAt = "2026-06-10T00:00:00.000"
+        try db.saveTask(task)
+        try db.dbQueue.write { database in
+            try TaskEvent(
+                id: "evt-june", userId: "u1", taskId: "t1", kind: .completion, delta: nil,
+                occurredAt: "2026-06-10T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-10T00:00:00.000", updatedAt: "2026-06-10T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).insert(database)
+        }
+
+        // ...placed on a board whose window starts in JULY — a fresh spawn/reuse
+        // with no completion event of its own.
+        let julyDict: [String: Any] = [
+            "id": "b-july", "userId": "u1", "name": "July", "status": BoardStatus.active.rawValue,
+            "boardSize": 1, "timeframe": Timeframe.monthly.rawValue,
+            "startDate": "2026-07-01T00:00:00.000", "endDate": "2026-07-31T23:59:59.999",
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 1, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": "2026-07-01T00:00:00.000", "updatedAt": "2026-07-01T00:00:00.000",
+            "version": 1, "isDeleted": false,
+        ]
+        let julyData = try JSONSerialization.data(withJSONObject: julyDict)
+        let julyBoard = try JSONDecoder().decode(Board.self, from: julyData)
+        try db.saveBoard(julyBoard)
+        try db.saveBoardTask(makeBoardTask(id: "bt-july-1", boardId: "b-july", taskId: "t1", row: 0, col: 0))
+
+        let vm = BoardPlayViewModel(boardId: "b-july", userId: "u1", database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b-july" && vm.allTasks.contains { $0.id == "t1" } })
+
+        let liveTask = try XCTUnwrap(vm.taskMap["t1"])
+
+        // Sanity: the lifetime cache itself is (correctly) still complete —
+        // library/Tasks-tab surfaces should keep showing this task green.
+        XCTAssertTrue(liveTask.isCompleted, "lifetime cache stays complete")
+
+        // The fix: the edit-preview data path must report windowed-grey for
+        // this fresh board window, not the stale lifetime-complete state.
+        XCTAssertFalse(
+            vm.windowedIsCompleted(for: liveTask),
+            "edit/rearrange preview must report windowed-grey, not lifetime-complete"
+        )
+
+        // Cross-check against the same mechanism the live play grid uses —
+        // both surfaces must agree.
+        XCTAssertEqual(
+            vm.windowedIsCompleted(for: liveTask),
+            vm.windowedState(forTaskId: "t1").isCompleted,
+            "edit-preview read and live-grid read must resolve identically"
+        )
+    }
+
+    /// Derived (shared-counter-linked) counting tasks are carved out of
+    /// windowed evaluation — they stay on their propagation-stamped lifetime
+    /// cache in both the live grid and the edit preview.
+    func test_windowedIsCompleted_derivedCountingTask_staysOnLifetimeCache() throws {
+        let db = try makeDb()
+        try seedUser(db)
+
+        var derived = makeTask("d1")
+        derived.type = .counting
+        derived.maxCount = 5
+        derived.sharedCounterId = "src"
+        derived.isCompleted = true
+        try db.saveTask(derived)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-d1", boardId: "b1", taskId: "d1", row: 0, col: 0))
+
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && vm.allTasks.contains { $0.id == "d1" } })
+
+        let liveTask = try XCTUnwrap(vm.taskMap["d1"])
+        XCTAssertTrue(
+            vm.windowedIsCompleted(for: liveTask),
+            "derived counting tasks are carved out — the preview reads the lifetime cache, unchanged"
+        )
     }
 }

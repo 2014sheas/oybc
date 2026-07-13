@@ -48,6 +48,14 @@ final class BoardPlayViewModel: ObservableObject {
     @Published private(set) var allTemplatesInWorkspace: [RecurringBoardTemplate] = []
     @Published private(set) var allBoardTasksInWorkspace: [BoardTask] = []
 
+    /// Windowed Completion (docs/WINDOWED_COMPLETION.md §The model): the
+    /// workspace's non-deleted TaskEvents grouped by `taskId`. The board grid +
+    /// tap handlers resolve each event-owning primitive square against the
+    /// board's window (`board.startDate`) via `resolveTaskWindowState` instead of
+    /// reading the lifetime `Task.isCompleted` / `currentCount` caches. iOS twin
+    /// of web's `SquareWindowContext`.
+    @Published private(set) var windowEventsByTaskId: [String: [TaskEvent]] = [:]
+
     // MARK: - Interaction state (B2-I2)
 
     /// True while an interaction write (tap / stepper / swap / add / remove) is
@@ -171,6 +179,48 @@ final class BoardPlayViewModel: ObservableObject {
     /// tap handlers; the view delegates its own `taskMap` here.
     var taskMap: [String: Task] {
         Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+    }
+
+    // MARK: - Windowed read helpers (Windowed Completion)
+
+    /// The current board's window lower bound (`board.startDate`), or nil when
+    /// no board is loaded. Every event-owning square resolves against
+    /// `[windowStart, ∞)`.
+    var windowStart: String? { board?.startDate }
+
+    /// Resolve an event-owning primitive task's windowed state for the current
+    /// board window (docs §Semantics). Callers must branch derived / compound /
+    /// achievement BEFORE calling — this delegates to the shared
+    /// `resolveTaskWindowState`.
+    func windowedState(forTaskId taskId: String) -> TaskWindowState {
+        guard let task = taskMap[taskId] else { return TaskWindowState(isCompleted: false, count: 0) }
+        let events = windowEventsByTaskId[taskId] ?? []
+        return resolveTaskWindowState(task: task, events: events, windowStart: windowStart)
+    }
+
+    /// Windowed-Completion-aware "is this square complete" read for the
+    /// Board-Edit draft preview surfaces (`RearrangeGrid` + the edit-tasks
+    /// static grid). iOS parity fix for the same class of bug the web fix in
+    /// d16ff21 patched: these preview surfaces used to read the lifetime
+    /// `Task.isCompleted` cache directly, so a lifetime-complete task bled
+    /// green into a freshly-spawned/reused board's window even though the
+    /// live play grid correctly reads windowed
+    /// (docs/WINDOWED_COMPLETION.md §Task caches).
+    ///
+    /// Only event-owning primitives (normal / plain-source counting) resolve
+    /// against the board's window via `windowedState(forTaskId:)`. Compound,
+    /// achievement, and derived (shared-counter-linked) counting tasks keep
+    /// reading the lifetime `Task.isCompleted` cache, unchanged — only
+    /// event-owning primitives can go stale across a window rollover, and
+    /// these preview surfaces have no compound/achievement evaluation context
+    /// of their own (out of scope for this fix).
+    ///
+    /// - Parameter task: The task to resolve. Title/type may carry staged
+    ///   `editTaskOverrides`, but `id`/`isCompleted` always reflect the real
+    ///   database values, so the windowed lookup is always against the true task.
+    func windowedIsCompleted(for task: Task) -> Bool {
+        guard isEventOwningTask(task) else { return task.isCompleted }
+        return windowedState(forTaskId: task.id).isCompleted
     }
 
     /// Grid column count from the board's `boardSize`, defaulting to 3. Mirrors
@@ -416,16 +466,16 @@ final class BoardPlayViewModel: ObservableObject {
     ///
     /// - Parameter boardTask: The tapped `BoardTask`.
     func handleNormalTap(boardTask: BoardTask) {
-        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
-        let now = AppDatabase.currentTimestamp()
-        let newCompleted = !task.isCompleted
-
-        task.isCompleted = newCompleted
-        task.completedAt = newCompleted ? now : nil
-        task.updatedAt = now
-        task.version += 1
-
-        runOrchestration(updatedTask: task, boardTask: boardTask)
+        guard !isProcessing, taskMap[boardTask.taskId] != nil else { return }
+        // Windowed Completion — toggle the WINDOWED completed state (what the
+        // grid shows), not the lifetime cache. The DB layer appends a completion
+        // event (complete) or window-scoped tombstones (un-complete).
+        let windowed = windowedState(forTaskId: boardTask.taskId)
+        runOrchestration(
+            taskId: boardTask.taskId,
+            intent: .setCompleted(!windowed.isCompleted),
+            boardTask: boardTask
+        )
     }
 
     /// Increments a counting task's `currentCount` by 1.
@@ -464,24 +514,18 @@ final class BoardPlayViewModel: ObservableObject {
             return
         }
 
-        // (c) Standalone counter — legacy path. NO high-end clamp per the
-        //     feedback_counter_overshoot_is_valid invariant: overshoot is
-        //     intentional and the count must be allowed to exceed maxCount.
-        guard let maxCount = task.maxCount else { return }
-        let now = AppDatabase.currentTimestamp()
-        // NO min(...) clamp: let the count go past maxCount.
-        let newCount = (task.currentCount ?? 0) + 1
-        let wasCompleted = task.isCompleted
-        let nowCompleted = wasCompleted || newCount >= maxCount
-
-        var updatedTask = task
-        updatedTask.currentCount = newCount
-        updatedTask.isCompleted = nowCompleted
-        updatedTask.completedAt = !wasCompleted && nowCompleted ? now : task.completedAt
-        updatedTask.updatedAt = now
-        updatedTask.version += 1
-
-        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
+        // (c) Standalone counter — Windowed Completion. The grid shows the
+        //     WINDOWED count; +1 targets `windowedCount + 1`. NO high-end clamp
+        //     per feedback_counter_overshoot_is_valid: overshoot is intentional.
+        //     The DB layer appends a +1 increment event scoped to the board's
+        //     window.
+        guard task.maxCount != nil else { return }
+        let windowed = windowedState(forTaskId: boardTask.taskId)
+        runOrchestration(
+            taskId: boardTask.taskId,
+            intent: .setWindowedCount(windowed.count + 1),
+            boardTask: boardTask
+        )
     }
 
     /// Runs the shared-counter increment in a background task, then refreshes
@@ -623,18 +667,18 @@ final class BoardPlayViewModel: ObservableObject {
             return
         }
 
-        // Standalone counter — legacy path (un-completes, no fan-out).
-        let now = AppDatabase.currentTimestamp()
-        let newCount = max((task.currentCount ?? 0) - 1, 0)
-
-        var updatedTask = task
-        updatedTask.currentCount = newCount
-        updatedTask.isCompleted = false
-        updatedTask.completedAt = nil
-        updatedTask.updatedAt = now
-        updatedTask.version += 1
-
-        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
+        // Standalone counter — Windowed Completion. Target `windowedCount - 1`
+        // (floored at 0); the DB layer appends a gated negative-delta increment
+        // event scoped to the board's window. isCompleted re-derives from the
+        // windowed sum (a windowed count below maxCount is no longer complete for
+        // this window — the lifetime latch no longer applies to standalone
+        // windowed counters, matching web).
+        let windowed = windowedState(forTaskId: boardTask.taskId)
+        runOrchestration(
+            taskId: boardTask.taskId,
+            intent: .setWindowedCount(max(windowed.count - 1, 0)),
+            boardTask: boardTask
+        )
     }
 
     /// Toggles a compound child's `Task.isCompleted` state.
@@ -646,25 +690,29 @@ final class BoardPlayViewModel: ObservableObject {
     func handleCompoundChildToggle(childTask: Task) {
         guard !isProcessing else { return }
         let now = AppDatabase.currentTimestamp()
-        var updatedChild = childTask
-        let newCompleted = !childTask.isCompleted
-        updatedChild.isCompleted = newCompleted
-        updatedChild.completedAt = newCompleted ? now : nil
-        updatedChild.updatedAt = now
-        updatedChild.version += 1
+        // Windowed Completion — the child's completion is scoped to the host
+        // board's window. Toggle the WINDOWED state (a child completed in a
+        // prior window reads incomplete this window).
+        let childWindowed = windowedState(forTaskId: childTask.id)
+        let desiredCompleted = !childWindowed.isCompleted
 
-        // If the child has a BoardTask on the current board, use the full orchestration
-        // pipeline so bingo detection stays consistent.
+        // If the child has a BoardTask on the current board, use the full
+        // orchestration pipeline so bingo detection stays consistent.
         if let childBt = boardTasks.first(where: { $0.taskId == childTask.id }) {
-            runOrchestration(updatedTask: updatedChild, boardTask: childBt)
+            runOrchestration(
+                taskId: childTask.id,
+                intent: .setCompleted(desiredCompleted),
+                boardTask: childBt
+            )
             return
         }
 
         // Fallback: child is not placed on this board, but a parent compound
         // (or the child via another board) may be — so we still need the
-        // cross-board cascade to recompute every affected board's bingo state
-        // and propagate the change to UI on this board (its compound square
-        // derives via CompoundEvaluation, not Task.isCompleted).
+        // windowed cross-board cascade to recompute every affected board's bingo
+        // state and propagate the change to UI on this board (its compound square
+        // derives via CompoundEvaluation against the host window).
+        let windowStart = board?.startDate ?? childTask.startDate ?? now
         isProcessing = true
         let currentBoardId = board?.id
         let database = self.database
@@ -672,12 +720,15 @@ final class BoardPlayViewModel: ObservableObject {
             guard let self = self else { return }
             do {
                 var newBingoMsg: String? = nil
-                // Child isn't on this board — the fallback write (child Task
-                // save + enqueue + cross-board cascade) is owned by
-                // `AppDatabase.toggleCompoundChildFallback`. This VM derives
+                // Child isn't on this board — the fallback write (child event
+                // append + cache stamp + windowed cross-board cascade) is owned
+                // by `AppDatabase.toggleCompoundChildFallback`. This VM derives
                 // the current board's flash message from the returned results.
                 let cascadeResults = try database.toggleCompoundChildFallback(
-                    updatedChild: updatedChild,
+                    childTaskId: childTask.id,
+                    desiredCompleted: desiredCompleted,
+                    windowStart: windowStart,
+                    boardId: currentBoardId,
                     now: now
                 )
                 if let cid = currentBoardId, let result = cascadeResults[cid] {
@@ -835,7 +886,11 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - updatedTask: The already-mutated `Task` carrying new completion state.
     ///   - boardTask: The `BoardTask` placement record on the current board
     ///     (updatedAt/version will be bumped + sync-queued).
-    private func runOrchestration(updatedTask: Task, boardTask: BoardTask) {
+    private func runOrchestration(
+        taskId: String,
+        intent: AppDatabase.CompletionIntent,
+        boardTask: BoardTask
+    ) {
         guard let board = board else { return }
         isProcessing = true
         let now = AppDatabase.currentTimestamp()
@@ -847,14 +902,16 @@ final class BoardPlayViewModel: ObservableObject {
             do {
                 var newBingoMsg: String? = nil
 
-                // The complete write transaction (draft auto-activate, Task
-                // save, BoardTask bump, cross-board cascade + sync-enqueue)
-                // now lives in `AppDatabase.completeTaskOrchestrated`. This VM
-                // only derives the flash message for the *current* board from
-                // the returned per-board results.
+                // The complete write transaction (draft auto-activate, TaskEvent
+                // append, cache stamp, BoardTask bump, windowed cross-board
+                // cascade + sync-enqueue) lives in
+                // `AppDatabase.completeTaskOrchestrated`. This VM only derives
+                // the flash message for the *current* board from the returned
+                // per-board results.
                 let cascadeResults = try database.completeTaskOrchestrated(
                     board: board,
-                    updatedTask: updatedTask,
+                    taskId: taskId,
+                    intent: intent,
                     boardTask: boardTask,
                     now: now
                 )
@@ -1328,13 +1385,19 @@ final class BoardPlayViewModel: ObservableObject {
             try? database.fetchRecurringBoardTemplates(userId: id)
         } ?? []
         let workspaceBoardTasks = (try? database.fetchAllBoardTasks()) ?? []
+        // Windowed Completion — group non-deleted events by taskId so the grid
+        // + tap handlers resolve each event-owning square windowed.
+        let events = userId.flatMap { id in try? database.fetchNonDeletedTaskEvents(userId: id) } ?? []
+        var eventsByTaskId: [String: [TaskEvent]] = [:]
+        for e in events { eventsByTaskId[e.taskId, default: []].append(e) }
         return TaskDataPayload(
             boardTasks: boardTasks,
             allTasks: tasks,
             allCompoundChildren: children,
             allBoardsInWorkspace: workspaceBoards,
             allTemplatesInWorkspace: workspaceTemplates,
-            allBoardTasksInWorkspace: workspaceBoardTasks
+            allBoardTasksInWorkspace: workspaceBoardTasks,
+            windowEventsByTaskId: eventsByTaskId
         )
     }
 
@@ -1345,6 +1408,7 @@ final class BoardPlayViewModel: ObservableObject {
         allBoardsInWorkspace = payload.allBoardsInWorkspace
         allTemplatesInWorkspace = payload.allTemplatesInWorkspace
         allBoardTasksInWorkspace = payload.allBoardTasksInWorkspace
+        windowEventsByTaskId = payload.windowEventsByTaskId
 
         // Shared Counters P3 — passive-completion detection. On a board-open
         // reload (flagged), diff the freshly-applied shared-counting squares
@@ -1463,6 +1527,8 @@ final class BoardPlayViewModel: ObservableObject {
         let allBoardsInWorkspace: [Board]
         let allTemplatesInWorkspace: [RecurringBoardTemplate]
         let allBoardTasksInWorkspace: [BoardTask]
+        /// Windowed Completion — non-deleted TaskEvents grouped by taskId.
+        let windowEventsByTaskId: [String: [TaskEvent]]
     }
 }
 

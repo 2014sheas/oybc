@@ -117,12 +117,114 @@ enum DerivationPass {
         boardTasksOnBoard: [BoardTask],
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
-        allBoards: [Board] = []
+        allBoards: [Board] = [],
+        windowContext: WindowEvaluationContext? = nil
     ) -> BoardStatsUpdate {
+        let built = computeBoardGrid(
+            board: board,
+            boardTasksOnBoard: boardTasksOnBoard,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            allBoards: allBoards,
+            windowContext: windowContext
+        )
+
+        let detection = BingoDetection.detectBingos(completionGrid: built.grid, gridSize: board.boardSize)
+        let previous = Set(board.completedLineIds ?? [])
+        let current = Set(detection.completedLines)
+        let newBingos = detection.completedLines.filter { !previous.contains($0) }
+        let lostBingos = (board.completedLineIds ?? []).filter { !current.contains($0) }
+
+        return BoardStatsUpdate(
+            boardId: board.id,
+            completedTasks: built.completedTasks,
+            linesCompleted: detection.completedLines.count,
+            completedLineIds: detection.completedLines,
+            newBingos: newBingos,
+            lostBingos: lostBingos
+        )
+    }
+
+    /// Re-derive the set of green cell indexes (`row * size + col`) for a board
+    /// from the (windowed or lifetime) task state — the pure input to a sealed
+    /// board's `sealedCompletedCells` snapshot (docs §Seal snapshots re-derive
+    /// from the event union). Deterministic: the same converged event union
+    /// yields the same cells on any device, so sealing never LWW-races.
+    ///
+    /// Swift twin of `computeSealedCompletedCells` in derivationPass.ts. Sealing
+    /// itself (Board schema fields, the seal transaction, the pull-path
+    /// re-derivation hook) lands in PR C; this builder is the shared kernel it
+    /// and the migration's expired-board sealing call.
+    ///
+    /// - Parameters:
+    ///   - board: The board to snapshot.
+    ///   - boardTasksOnBoard: All BoardTask rows for this board.
+    ///   - childrenByCompound: Map of compoundTaskId → CompoundChild rows.
+    ///   - taskById: Map of taskId → Task.
+    ///   - allBoards: Cross-board context (achievement watchers).
+    ///   - windowContext: Optional windowed-event context; omitted = lifetime.
+    /// - Returns: Ascending cell indexes that are green.
+    static func computeSealedCompletedCells(
+        board: Board,
+        boardTasksOnBoard: [BoardTask],
+        childrenByCompound: [String: [CompoundChild]],
+        taskById: [String: Task],
+        allBoards: [Board] = [],
+        windowContext: WindowEvaluationContext? = nil
+    ) -> [Int] {
+        let built = computeBoardGrid(
+            board: board,
+            boardTasksOnBoard: boardTasksOnBoard,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            allBoards: allBoards,
+            windowContext: windowContext
+        )
+        var cells: [Int] = []
+        for i in 0..<built.grid.count where built.grid[i] { cells.append(i) }
+        return cells
+    }
+
+    /// Shared grid builder for `computeBoardStatsUpdate` +
+    /// `computeSealedCompletedCells`.
+    ///
+    /// Returns the completion grid plus the `completedTasks` tally computed with
+    /// the exact same increment logic both callers historically used. When
+    /// `windowContext` is `nil` the resolution is byte-identical to the
+    /// pre-Windowed-Completion behavior (lifetime `isCompleted` cache); when
+    /// present, primitive squares resolve against the board's window via events
+    /// and derived-counting squares stay on their cache (the carve-out).
+    /// Mirrors the TS `computeBoardGrid`.
+    private static func computeBoardGrid(
+        board: Board,
+        boardTasksOnBoard: [BoardTask],
+        childrenByCompound: [String: [CompoundChild]],
+        taskById: [String: Task],
+        allBoards: [Board],
+        windowContext: WindowEvaluationContext?
+    ) -> (grid: [Bool], completedTasks: Int) {
         let size = board.boardSize
         let totalSquares = size * size
         var grid = Array(repeating: false, count: totalSquares)
         var completedTasks = 0
+
+        // Window context for compound + primitive resolution. `board.startDate`
+        // is the window lower bound `[startDate, ∞)`; indefinite boards use it
+        // too. Nil when no windowContext (lifetime = today's behavior).
+        let compoundCtx: CompoundWindowContext? = windowContext.map {
+            CompoundWindowContext(windowStart: board.startDate, eventsByTaskId: $0.eventsByTaskId)
+        }
+
+        /// Resolve a primitive (normal / counting) square, windowed or lifetime.
+        func resolvePrimitive(_ t: Task) -> Bool {
+            guard let windowContext else { return t.isCompleted }
+            // Derived-task carve-out: shared-counter-linked counting squares
+            // keep their propagation-stamped lifetime cache (docs §Derived-task
+            // carve-out rule 4).
+            if !isEventOwningTask(t) { return t.isCompleted }
+            let events = windowContext.eventsByTaskId[t.id] ?? []
+            return resolveTaskWindowState(task: t, events: events, windowStart: board.startDate).isCompleted
+        }
 
         // Phase 6.3: index all non-deleted boards by id (specific-board
         // mode) and by spawnedFromTemplateId (recurring-template mode).
@@ -230,10 +332,11 @@ enum DerivationPass {
                 isDone = CompoundEvaluation.evaluate(
                     compound: task,
                     childrenByCompound: childrenByCompound,
-                    taskById: taskById
+                    taskById: taskById,
+                    windowContext: compoundCtx
                 )
             } else {
-                isDone = task.isCompleted
+                isDone = resolvePrimitive(task)
             }
             if isDone {
                 grid[idx] = true
@@ -257,19 +360,6 @@ enum DerivationPass {
             }
         }
 
-        let detection = BingoDetection.detectBingos(completionGrid: grid, gridSize: size)
-        let previous = Set(board.completedLineIds ?? [])
-        let current = Set(detection.completedLines)
-        let newBingos = detection.completedLines.filter { !previous.contains($0) }
-        let lostBingos = (board.completedLineIds ?? []).filter { !current.contains($0) }
-
-        return BoardStatsUpdate(
-            boardId: board.id,
-            completedTasks: completedTasks,
-            linesCompleted: detection.completedLines.count,
-            completedLineIds: detection.completedLines,
-            newBingos: newBingos,
-            lostBingos: lostBingos
-        )
+        return (grid, completedTasks)
     }
 }

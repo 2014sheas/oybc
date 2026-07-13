@@ -13,9 +13,11 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../db/internal';
+import type { SquareWindowContext } from '../db/adapters';
 import { useBoardTasks } from './useBoardTasks';
 import { useBoards } from './useBoards';
 import { useRecurringBoardTemplates } from './useRecurringBoardTemplates';
+import { useSquareWindowContext } from './useSquareWindowContext';
 import { useTaskLibrary } from '../pages/createPage/useTaskLibrary';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import type { AchievementSquareBadgeData } from '../components/InteractiveTaskSquare';
@@ -51,6 +53,14 @@ export interface BoardPlayData {
   gridSize: BoardSize;
   btByPosition: Record<string, BoardTask>;
   isExpired: boolean;
+  /**
+   * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the window
+   * context to thread into `taskToSquareState` so each square resolves against
+   * THIS board's window (`[startDate, ∞)`) via events instead of the lifetime
+   * cache. This is what stops a task completed in a previous window bleeding
+   * green onto a freshly-spawned board.
+   */
+  squareWindowContext: SquareWindowContext;
 }
 
 /**
@@ -251,6 +261,13 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
 
   const isExpired = isBoardExpired(board);
 
+  // Windowed Completion — all non-deleted TaskEvents grouped by taskId, plus
+  // the board's window start. `taskToSquareState` uses this to resolve each
+  // primitive square windowed (derived / compound carve-outs handled inside).
+  // Shared with RisoBoard + useBoardPlay's rearrange preview via
+  // `useSquareWindowContext` so every board-square surface reads windowed.
+  const squareWindowContext: SquareWindowContext = useSquareWindowContext(board);
+
   return {
     boardTasks,
     taskMap,
@@ -264,5 +281,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     gridSize,
     btByPosition,
     isExpired,
+    squareWindowContext,
   };
 }

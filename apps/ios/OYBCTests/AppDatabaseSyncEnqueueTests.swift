@@ -228,22 +228,19 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         try db.saveBoardTask(bt)
         let now = AppDatabase.currentTimestamp()
 
-        // Caller pre-mutates the Task to completed (as the VM does).
-        var updated = makeTask("t1")
-        updated.isCompleted = true
-        updated.completedAt = now
-        updated.updatedAt = now
-        updated.version = 2
-
+        // Windowed Completion — the VM now passes a completion INTENT; the DB
+        // layer appends a TaskEvent + stamps the lifetime cache.
         let board = try XCTUnwrap(try db.fetchBoard(id: "b1"))
         let results = try db.completeTaskOrchestrated(
-            board: board, updatedTask: updated, boardTask: bt, now: now
+            board: board, taskId: "t1", intent: .setCompleted(true), boardTask: bt, now: now
         )
 
-        // Task committed as completed.
+        // Task cache stamped complete; the authored stamp bumps version 1 → 2.
         let t1 = try XCTUnwrap(try db.fetchTask(id: "t1"))
         XCTAssertTrue(t1.isCompleted)
         XCTAssertEqual(t1.version, 2)
+        // A completion TaskEvent was appended + enqueued.
+        XCTAssertTrue(try syncRows(db).contains { $0.entityType == "taskEvents" && $0.operationType == .create })
 
         // BoardTask version bumped.
         let btAfter = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
@@ -272,14 +269,10 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         try db.saveBoardTask(bt)
         let now = AppDatabase.currentTimestamp()
 
-        var updated = makeTask("t1")
-        updated.isCompleted = true
-        updated.completedAt = now
-        updated.updatedAt = now
-        updated.version = 2
-
         let board = try XCTUnwrap(try db.fetchBoard(id: "bd"))
-        _ = try db.completeTaskOrchestrated(board: board, updatedTask: updated, boardTask: bt, now: now)
+        _ = try db.completeTaskOrchestrated(
+            board: board, taskId: "t1", intent: .setCompleted(true), boardTask: bt, now: now
+        )
 
         // Draft flipped to active (2/9 completed is not GREENLOG, so it stays active).
         let after = try XCTUnwrap(try db.fetchBoard(id: "bd"))
@@ -301,13 +294,11 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         try db.saveBoardTask(makeBoardTask(id: "btp", boardId: "b1", taskId: "cp"))
         let now = AppDatabase.currentTimestamp()
 
-        var updatedChild = child
-        updatedChild.isCompleted = true
-        updatedChild.completedAt = now
-        updatedChild.updatedAt = now
-        updatedChild.version = 2
-
-        let results = try db.toggleCompoundChildFallback(updatedChild: updatedChild, now: now)
+        let board = try XCTUnwrap(try db.fetchBoard(id: "b1"))
+        let results = try db.toggleCompoundChildFallback(
+            childTaskId: "ch", desiredCompleted: true,
+            windowStart: board.startDate, boardId: "b1", now: now
+        )
 
         let chAfter = try XCTUnwrap(try db.fetchTask(id: "ch"))
         XCTAssertTrue(chAfter.isCompleted)

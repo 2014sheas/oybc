@@ -114,6 +114,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     gridSize,
     btByPosition,
     isExpired,
+    squareWindowContext,
   } = useBoardPlayData(board, userId);
 
   // ── UI state ───────────────────────────────────────────────────────────
@@ -254,6 +255,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     allBoardTasks,
     gridSize,
     isExpired,
+    squareWindowContext,
     onFlash: showFlash,
     onCreditedToast: setCreditedToast,
     setContextMenu,
@@ -631,10 +633,10 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
 
                 const taskChildren = compoundChildrenByCompound[task.id] ?? [];
                 const squareData = taskToSquareData(
-                  task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+                  task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
                 );
                 const squareState = taskToSquareState(
-                  task, taskChildren, taskMap, compoundChildrenByCompound,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
                 );
                 const taskIsCompleted = squareState.isCompleted;
                 // Use squareState.currentCount (baseline-adjusted for linked
@@ -887,10 +889,10 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         const squareState = taskToSquareState(
-          task, taskChildren, taskMap, compoundChildrenByCompound,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters)
         // rather than the raw task.currentCount accumulator. For standalone
@@ -969,10 +971,10 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         const squareState = taskToSquareState(
-          task, taskChildren, taskMap, compoundChildrenByCompound,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters).
         const menuCurrentCount = squareState.currentCount;

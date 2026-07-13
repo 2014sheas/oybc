@@ -26,6 +26,14 @@ export type CoalesceResult =
   | { kind: 'drop' };
 
 /**
+ * The queue `entityType` for Windowed Completion task events
+ * (docs/WINDOWED_COMPLETION.md §Sync) — the Firestore subcollection name, same
+ * value the push path uses for `doc(firestore, 'users', uid, entityType, id)`.
+ * Its coalescing precedence is append-only (see {@link coalesceSyncOperation}).
+ */
+export const TASK_EVENTS_ENTITY_TYPE = 'taskEvents';
+
+/**
  * D3 (issue #296) precedence — decide how an incoming sync op coalesces with
  * an existing PENDING op for the *same entity*. Pure, so both the enqueue
  * path and the unit tests can call it.
@@ -72,8 +80,31 @@ export type CoalesceResult =
 export function coalesceSyncOperation(
   existing: SyncOperationType,
   incoming: SyncOperationType,
-  existingNeverAttempted: boolean
+  existingNeverAttempted: boolean,
+  entityType: string
 ): CoalesceResult {
+  // Windowed Completion task events are append-only occurrence rows
+  // (docs/WINDOWED_COMPLETION.md §Sync). Two DISTINCT events have distinct ids,
+  // so they never meet in the coalescer (it keys on entityId) — that
+  // distinctness IS the append-only guarantee: no event is ever collapsed away
+  // by another. The coalescer only fires for the SAME event id, whose only real
+  // sequence is create → tombstone (undo). Precedence:
+  //
+  //   - A tombstone SUPERSEDES a pending create — but is NEVER dropped. Backfill
+  //     event ids are deterministic (uuidv5), so a peer may already hold the
+  //     same id as a live row; only a pushed tombstone converges the undo.
+  //     Dropping (as the generic create+delete path does) would strand the undo
+  //     locally while the peer's copy stays live → silent divergence.
+  //   - Undo is final for an id (a redo is a NEW id), so a tombstone is never
+  //     resurrected by a later create/update.
+  //   - Any other same-id op stays a create (the event is not yet on the server).
+  if (entityType === TASK_EVENTS_ENTITY_TYPE) {
+    if (incoming === SyncOperationType.DELETE || existing === SyncOperationType.DELETE) {
+      return { kind: 'replace', operationType: SyncOperationType.DELETE };
+    }
+    return { kind: 'replace', operationType: SyncOperationType.CREATE };
+  }
+
   if (incoming === SyncOperationType.DELETE) {
     return existing === SyncOperationType.CREATE && existingNeverAttempted
       ? { kind: 'drop' }
@@ -156,7 +187,8 @@ export async function addToSyncQueue(
       const result = coalesceSyncOperation(
         existingPending.operationType,
         operationType,
-        existingPending.lastAttemptAt == null
+        existingPending.lastAttemptAt == null,
+        entityType
       );
       if (result.kind === 'drop') {
         await db.syncQueue.delete(existingPending.id);

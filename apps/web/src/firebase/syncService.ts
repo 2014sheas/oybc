@@ -46,9 +46,8 @@ import {
   CompoundChildSchema,
   RecurringBoardTemplateSchema,
   DefaultPoolSchema,
+  TaskEventSchema,
   mergeUserPreferences,
-  additiveMergeCount,
-  needsAdditiveMerge,
   SYNC_COLLECTIONS,
   USER_SCOPED_SYNC_COLLECTIONS,
   LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
@@ -56,6 +55,7 @@ import {
   type SyncCollection,
 } from '@oybc/shared';
 import { runBoardCascadeForTask } from '../db/operations/orchestration';
+import { applyTaskEventsBatch } from '../db/operations/taskEventPull';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,6 +101,12 @@ const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   compoundChildren: CompoundChildSchema,
   recurringBoardTemplates: RecurringBoardTemplateSchema,
   defaultPools: DefaultPoolSchema,
+  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync). Row-shape Zod
+  // (delta ⇄ kind, occurredAt required); the "event-owning tasks only" rule is
+  // a Task-type check the row alone can't carry, so it lives at the write
+  // choke points, not here. PR B sub-slice 1 wires the pull validator only —
+  // no event write/read paths yet, so events sync harmlessly empty.
+  taskEvents: TaskEventSchema,
 };
 
 /**
@@ -164,11 +170,18 @@ function countAdvanceForPush(
   entityId: string,
   payload: SyncableEntity,
 ): CountAdvance | null {
-  if (entityType !== 'tasks') return null;
-  const payloadAsTask = payload as { type?: string; currentCount?: number };
-  if (payloadAsTask.type !== 'counting') return null;
-  if (typeof payloadAsTask.currentCount !== 'number') return null;
-  return { taskId: entityId, pushedCount: payloadAsTask.currentCount };
+  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Shared counters
+  // interaction — "Retired: sharedCounterMerge + lastSyncedCount stamping — in
+  // PR B, not later"). The counting-task ancestor advance is NEUTERED: with
+  // per-row event union replacing the additive-merge conflict resolver, an
+  // advancing `lastSyncedCount` on push would only feed a merge branch that no
+  // longer runs. Always return null so nothing stamps the (now inert) field on
+  // the push path. PR D deletes the dead `CountAdvance` plumbing; the field
+  // stays in the schema for decode compatibility.
+  void entityType;
+  void entityId;
+  void payload;
+  return null;
 }
 
 /**
@@ -538,125 +551,25 @@ async function applyRemoteSubdoc(
     return null; // local-wins → silent no-op
   }
 
-  // Apply the remote row to local Dexie, with additive-merge for counting
-  // source tasks (Phase 4). The cascade runs in the same transaction so a
-  // cascade failure rolls back the upsert — pulled value is authoritative
-  // except when additive merge overrides currentCount.
+  // Apply the remote row to local Dexie under standard LWW. The cascade runs
+  // in the same transaction so a cascade failure rolls back the upsert — the
+  // pulled value is authoritative.
   //
-  // Additive merge fires when ALL of:
-  //   1. collectionName === 'tasks' (not other entity types)
-  //   2. The remote task is a COUNTING task
-  //   3. The local task exists and has a known lastSyncedCount
-  //   4. Both local and remote currentCount deviate from lastSyncedCount
-  //      (concurrent increments — needsAdditiveMerge returns true)
-  //   5. At least one linked task references this task as a source
-  //      (sharedCounterId === this task's id) — additive merge only pays
-  //      off for sources (the accumulator that multiple views read).
-  //
-  // When merge fires, the merged count replaces the remote count, version
-  // is bumped, and a push entry is enqueued so the merged value reaches
-  // Firestore. The cascade then re-derives all linked tasks + board stats.
-  let mergeLog: string | null = null;
+  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Shared counters
+  // interaction): the Phase-4 additive-merge branch for shared-counter sources
+  // is RETIRED here. Between an event-writing client and a still-active merge
+  // branch, the pull path would author a merged `currentCount` with no backing
+  // TaskEvent, fighting the event-driven cache recompute. Union-of-events (the
+  // batched `taskEvents` pull recompute — see §Sync) is the new conflict model
+  // for counting tasks, so a pulled counting Task now just LWW-upserts like any
+  // other row. PR D deletes the dead `additiveMergeCount` / `needsAdditiveMerge`
+  // / `lastSyncedCount`-stamping code; B hard-bypasses it.
+  const mergeLog: string | null = null;
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
-      // Phase 4 — Additive merge for shared-counter sources on pull.
-      //
-      // Guard: skip merge when either side is a tombstone. A deleted task
-      // must fall through to standard LWW which handles isDeleted correctly;
-      // running additive merge on a delete would resurrect the record.
-      const remoteIsDeleted = !!(validated as { isDeleted?: boolean }).isDeleted;
-      const localIsDeleted = !!(localData as { isDeleted?: boolean } | undefined)?.isDeleted;
-
-      if (
-        collectionName === 'tasks' &&
-        !isNew &&
-        localData &&
-        !remoteIsDeleted &&
-        !localIsDeleted
-      ) {
-        const remoteTask = validated as { type?: string; currentCount?: number };
-        const localTask = localData as { type?: string; currentCount?: number; lastSyncedCount?: number | null; version?: number };
-
-        if (remoteTask.type === 'counting') {
-          const localCount = typeof localTask.currentCount === 'number' ? localTask.currentCount : 0;
-          const remoteCount = typeof remoteTask.currentCount === 'number' ? remoteTask.currentCount : 0;
-          const lastSynced = typeof localTask.lastSyncedCount === 'number' ? localTask.lastSyncedCount : null;
-
-          if (needsAdditiveMerge(localCount, remoteCount, lastSynced)) {
-            // Check if this task is a shared-counter source (any task references it).
-            const linkedCount = await db.tasks
-              .where('sharedCounterId')
-              .equals(validated.id)
-              .and((t) => !t.isDeleted)
-              .count();
-
-            if (linkedCount > 0) {
-              // Additive merge applies: sum local delta on top of remote count.
-              const { merged } = additiveMergeCount(localCount, remoteCount, lastSynced);
-
-              // version = max(local, remote) + 1 so LWW on next pull doesn't
-              // silently discard the merge if the remote has version > local + 1.
-              const localVersion = typeof localTask.version === 'number' ? localTask.version : 0;
-              const remoteVersion = typeof (validated as { version?: number }).version === 'number'
-                ? (validated as { version?: number }).version!
-                : 0;
-              const newVersion = Math.max(localVersion, remoteVersion) + 1;
-              const now = new Date().toISOString();
-
-              // 1. Apply the full remote record (preserves all remote-changed
-              //    fields: title, description, isDeleted, maxCount, etc.)
-              await table.put(validated);
-
-              // 2. Layer the additively-merged count fields on top of the
-              //    remote upsert so the merged count wins.
-              await db.tasks.update(validated.id, {
-                currentCount: merged,
-                lastSyncedCount: remoteCount, // common ancestor advances to remote
-                version: newVersion,
-                updatedAt: now,
-              });
-
-              // Enqueue push so the merged value reaches Firestore.
-              const mergedTask = await db.tasks.get(validated.id);
-              if (mergedTask) {
-                await db.syncQueue.add({
-                  id: crypto.randomUUID(),
-                  entityType: 'tasks',
-                  entityId: validated.id,
-                  operationType: SyncOperationType.UPDATE,
-                  payload: JSON.stringify(mergedTask),
-                  status: SyncStatus.PENDING,
-                  retryCount: 0,
-                  createdAt: now,
-                  priority: 0,
-                });
-              }
-
-              mergeLog = `additive-merge currentCount ${localCount}+${remoteCount}-${lastSynced}=${merged}`;
-              // Run cascade on the merged task (re-derives linked tasks + board stats).
-              await runBoardCascadeForTask(validated.id);
-              return; // Merge path complete — skip the standard table.put below.
-            }
-          }
-        }
-      }
-
       await table.put(validated);
-
-      // Issue #5 (remote-wins LWW on counting task): advance lastSyncedCount
-      // so the next conflict can compute the local delta correctly.
-      // The remote doc is not guaranteed to carry the correct per-device
-      // lastSyncedCount (it's local bookkeeping), so we write it explicitly.
-      if (collectionName === 'tasks' && !isNew) {
-        const remoteTask = validated as { type?: string; currentCount?: number };
-        if (remoteTask.type === 'counting' && typeof remoteTask.currentCount === 'number') {
-          await db.tasks.update(validated.id, {
-            lastSyncedCount: remoteTask.currentCount,
-          });
-        }
-      }
 
       // After pulling a Task or CompoundChild, cascade the board derivation
       // pass so that any board containing the changed task recomputes its
@@ -695,6 +608,14 @@ async function applyRemoteSubdoc(
   }
   return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
 }
+
+// Batched pull-path handler for the `taskEvents` collection
+// (docs/WINDOWED_COMPLETION.md §Sync — "Batched pull-path recompute") now
+// lives in `db/operations/taskEventPull.ts` — a firebase-free home so its
+// unit test's import graph never reaches `firebase/config` (the #280/#281
+// CI-only failure: `firebase/config` initializes Firebase Auth at import
+// time, which throws `auth/invalid-api-key` on a CI runner with no
+// `.env.local`). This module keeps a thin caller via the import above.
 
 export async function pullSync(
   userId: string,
@@ -746,6 +667,18 @@ export async function pullSync(
 
       const snapshot = await getDocs(q);
       if (snapshot.empty) continue;
+
+      // Windowed Completion (docs §Sync): task events pull in a BATCH — apply
+      // all rows, then one recompute per task + one cascade per board.
+      if (collectionName === 'taskEvents') {
+        const batch = await applyTaskEventsBatch(
+          userId,
+          snapshot.docs.map((d) => d.data()),
+        );
+        result.pulled += batch.pulled;
+        result.details.push(...batch.details);
+        continue;
+      }
 
       for (const docSnap of snapshot.docs) {
         const remoteData = docSnap.data();
@@ -860,6 +793,23 @@ export function attachPullListeners(
     const unsub = onSnapshot(
       q,
       async (snapshot) => {
+        // Windowed Completion (docs §Sync): batch task-event deliveries so the
+        // recompute + cascade runs once per snapshot, not once per event row.
+        if (collectionName === 'taskEvents') {
+          try {
+            const rows = snapshot
+              .docChanges()
+              .filter((c) => c.type !== 'removed')
+              .map((c) => c.doc.data());
+            if (rows.length > 0) {
+              const batch = await applyTaskEventsBatch(userId, rows);
+              for (const d of batch.details) console.debug('[sync]', d);
+            }
+          } catch (err) {
+            console.error('[sync] taskEvents listener apply failed:', err);
+          }
+          return;
+        }
         for (const change of snapshot.docChanges()) {
           if (change.type === 'removed') continue; // soft-deletes only; no real removes
           try {

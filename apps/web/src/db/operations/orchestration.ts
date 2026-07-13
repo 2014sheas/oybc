@@ -6,15 +6,41 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  resolveTaskWindowState,
   type Board,
   type Task,
   type CompoundChild,
+  type TaskEvent,
   type BoardStatsUpdate,
+  type WindowEvaluationContext,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
+import {
+  appendCompletionEvent,
+  appendIncrementEvent,
+  tombstoneWindowCompletions,
+} from './taskEvents';
+
+/**
+ * Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync). Load every
+ * non-deleted TaskEvent grouped by `taskId` so the derivation pass evaluates
+ * each board against its own window (`computeBoardStatsUpdate` keys the window
+ * on `board.startDate`). Derived / compound / achievement squares are carved
+ * out INSIDE the shared kernel (they read their lifetime caches), so passing
+ * the full event map is always safe.
+ */
+async function buildWindowContext(): Promise<WindowEvaluationContext> {
+  const events = await db.taskEvents.toArray();
+  const eventsByTaskId: Record<string, TaskEvent[]> = {};
+  for (const e of events) {
+    if (e.isDeleted) continue;
+    (eventsByTaskId[e.taskId] ??= []).push(e);
+  }
+  return { eventsByTaskId };
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +96,28 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
 export async function runBoardCascadeForTask(
   changedTaskId: string,
 ): Promise<Map<string, BoardCascadeEntry>> {
+  return runBoardCascadeForTasks([changedTaskId]);
+}
+
+/**
+ * Batched multi-task variant of {@link runBoardCascadeForTask}
+ * (docs/WINDOWED_COMPLETION.md §Sync — "recompute each affected task's caches
+ * once, then run ONE derivation pass per affected live board"). Builds the
+ * derivation lookups + the windowed-event map ONCE, resolves the UNION of
+ * affected boards across every changed task, and recomputes each affected board
+ * exactly once. The single-task path delegates here so both share the windowed
+ * evaluation and per-board dedupe.
+ *
+ * Same transaction contract as `runBoardCascadeForTask` — must run inside an
+ * active Dexie `rw` transaction covering `boards`, `boardTasks`, `tasks`,
+ * `compoundChildren`, `taskEvents`, and `syncQueue`.
+ *
+ * @param changedTaskIds The tasks whose state changed (deduped internally).
+ * @returns A map of boardId → BoardCascadeEntry for every recomputed board.
+ */
+export async function runBoardCascadeForTasks(
+  changedTaskIds: Iterable<string>,
+): Promise<Map<string, BoardCascadeEntry>> {
   const now = currentTimestamp();
 
   // Build the lookups for the derivation pass.
@@ -77,11 +125,10 @@ export async function runBoardCascadeForTask(
   const allBoardTasks = await fetchAllBoardTasks();
   const allTasks = await db.tasks.toArray();
   // Phase 6.3 — `computeBoardStatsUpdate` needs the workspace's boards
-  // to evaluate the specific-board / recurring-template achievement
-  // branches. Pre-6.3 callers passed nothing here and the algorithm
-  // defaults to `[]`, but on this cascade path we have the full set
-  // available, so use it.
+  // to evaluate the specific-board / recurring-template achievement branches.
   const allBoards = await db.boards.toArray();
+  // Windowed Completion — group events once so every board evaluates windowed.
+  const windowContext = await buildWindowContext();
 
   const taskById: Record<string, Task> = {};
   for (const t of allTasks) taskById[t.id] = t;
@@ -91,9 +138,14 @@ export async function runBoardCascadeForTask(
     (childrenByCompound[c.compoundTaskId] ??= []).push(c);
   }
 
-  // Resolve affected boards via the shared derivation helpers.
-  const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
-  const affectedBoardIds = findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks);
+  // Resolve the UNION of affected boards across every changed task.
+  const affectedBoardIds = new Set<string>();
+  for (const changedTaskId of changedTaskIds) {
+    const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
+    for (const id of findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks)) {
+      affectedBoardIds.add(id);
+    }
+  }
 
   const resultMap = new Map<string, BoardCascadeEntry>();
 
@@ -108,6 +160,7 @@ export async function runBoardCascadeForTask(
       childrenByCompound,
       taskById,
       allBoards,
+      windowContext,
     );
 
     const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
@@ -210,7 +263,7 @@ export async function handleTaskCompletion(
 
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       const now = currentTimestamp();
 
@@ -247,28 +300,40 @@ export async function handleTaskCompletion(
         );
       }
 
-      // 3. Compute the new global Task state and write it (bumps version — write-path only).
-      const taskUpdate: Partial<Task> = {
-        updatedAt: now,
-        version: (targetTask.version ?? 1) + 1,
-      };
-
+      // 3. Windowed Completion (docs §Write paths): board-context taps write
+      //    TaskEvents (not the lifetime cache). The event choke points append
+      //    the row, restamp the lifetime caches, bump `Task.version`, and
+      //    enqueue the Task sync entry — all inside THIS transaction.
+      //
+      //    `updates.currentCount` is the UI's desired NEW windowed count (the
+      //    grid derives it from `resolveTaskWindowState`), so the event delta
+      //    is `desired - currentWindowedCount`. Increment → positive delta;
+      //    decrement/reset → negative delta, gated so the window sum can't go
+      //    below zero from a local gesture. `updates.isCompleted` toggles a
+      //    normal square: complete → append a completion event; un-complete →
+      //    window-scoped tombstone of this board's in-window completions.
+      const windowStart = primaryBoard.startDate;
       if (updates.currentCount !== undefined) {
-        taskUpdate.currentCount = updates.currentCount;
-        if (targetTask.maxCount !== undefined) {
-          const reached = updates.currentCount >= targetTask.maxCount;
-          taskUpdate.isCompleted = reached;
-          taskUpdate.completedAt = reached ? now : undefined;
+        const events = await db.taskEvents.where('taskId').equals(targetTask.id).toArray();
+        const { count: windowedCount } = resolveTaskWindowState(
+          targetTask,
+          events.filter((e) => !e.isDeleted),
+          windowStart,
+        );
+        let delta = updates.currentCount - windowedCount;
+        // Gate a decrement so the window sum stays ≥ 0 (belt against a local
+        // gesture poisoning the window with a dangling negative).
+        if (delta < 0) delta = Math.max(delta, -windowedCount);
+        if (delta !== 0) {
+          await appendIncrementEvent(targetTask.id, delta, boardId, now);
+        }
+      } else if (updates.isCompleted !== undefined) {
+        if (updates.isCompleted) {
+          await appendCompletionEvent(targetTask.id, boardId, now);
+        } else {
+          await tombstoneWindowCompletions(targetTask.id, windowStart, now);
         }
       }
-
-      // Only apply isCompleted directly when currentCount hasn't already determined it.
-      if (updates.isCompleted !== undefined && updates.currentCount === undefined) {
-        taskUpdate.isCompleted = updates.isCompleted;
-        taskUpdate.completedAt = updates.isCompleted ? now : undefined;
-      }
-
-      await db.tasks.update(targetTask.id, taskUpdate);
 
       // 4. Run the shared derivation pass — cascade to every affected board.
       const cascadeMap = await runBoardCascadeForTask(targetTask.id);
@@ -291,11 +356,9 @@ export async function handleTaskCompletion(
         }
       }
 
-      // 6. Enqueue sync for the target Task (inside the transaction).
-      const updatedTask = await db.tasks.get(targetTask.id);
-      if (updatedTask) {
-        await addToSyncQueue('tasks', targetTask.id, SyncOperationType.UPDATE, updatedTask, 0);
-      }
+      // 6. The Task sync entry is already enqueued by the event choke points
+      //    (they restamp the lifetime caches as an authored write, bump
+      //    `Task.version`, and enqueue the Task UPDATE — docs §Task caches).
 
       // Populate collateralBingosByBoard on the result now that the loop is done.
       result.collateralBingosByBoard = collateralBingosByBoard;

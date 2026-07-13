@@ -84,6 +84,15 @@ struct RearrangeGrid: View {
     let sideLength: CGFloat
     var onReorder: ([RearrangeCellData]) -> Void
 
+    /// Windowed-Completion-aware completion read for a cell's task (Windowed
+    /// Completion — docs/WINDOWED_COMPLETION.md §Task caches). Defaults to the
+    /// lifetime `Task.isCompleted` cache — the pre-fix behavior — so callers
+    /// that don't have a board window in scope (e.g. the Phase 4 create-arrange
+    /// wizard preview, which has no completed tasks yet) are unaffected.
+    /// `BoardEditPanel` passes `BoardPlayViewModel.windowedIsCompleted(for:)` so
+    /// the Board-Edit rearrange preview matches the live grid's windowed reads.
+    var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
+
     // MARK: - Internal state
 
     /// Current display order — optimistically updated during drag preview;
@@ -244,6 +253,11 @@ struct RearrangeGrid: View {
         jiggleActive: Bool
     ) -> some View {
         let task = cell.taskId.flatMap { taskMap[$0] }
+        // Windowed Completion parity (docs/WINDOWED_COMPLETION.md §Task caches):
+        // resolve via the injected closure rather than the raw lifetime cache,
+        // so a lifetime-complete task on a fresh board window previews grey
+        // like the live grid, not stale green.
+        let isTaskCompleted = task.map(windowedIsCompleted) ?? false
 
         // ── Label ──
         let label: String = {
@@ -264,13 +278,13 @@ struct RearrangeGrid: View {
             if isHole     { return .clear }
             if cell.isCenter || isSelected { return .risoGold }
             if isDimmed   { return .risoPaper }
-            return (task?.isCompleted == true) ? .risoGreen : .risoPaper2
+            return isTaskCompleted ? .risoGreen : .risoPaper2
         }()
 
         // ── Text color ──
         let textColor: Color = {
             if cell.isCenter || isSelected { return .risoInkStatic }
-            if task?.isCompleted == true   { return .risoPaper }
+            if isTaskCompleted             { return .risoPaper }
             return isDimmed ? .risoMuted : .risoInk
         }()
 

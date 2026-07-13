@@ -146,6 +146,14 @@ struct BoardListView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
+
+                // Windowed Completion — one-time dismissible upgrade note
+                // (docs §What changes visibly at upgrade). Self-hides via
+                // @AppStorage once dismissed.
+                WindowedCompletionNoteView()
+                    .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
 
             // ---- Board cards ----

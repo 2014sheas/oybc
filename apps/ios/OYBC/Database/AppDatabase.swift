@@ -611,6 +611,95 @@ final class AppDatabase {
             try db.execute(sql: "CREATE INDEX idx_boards_status ON boards(status)")
         }
 
+        // v19: Windowed Completion (docs/WINDOWED_COMPLETION.md §New entity +
+        // §Migration & backfill). New `task_events` table — one soft-deletable
+        // occurrence row per completion/increment on an event-owning task,
+        // synced per-row LWW like compound_children. PR B sub-slice 1 is
+        // FOUNDATIONS ONLY: the table is created empty; no backfill and no
+        // write/read paths yet (those land in later sub-slices), so it syncs
+        // harmlessly empty. `delta` is nullable (present only on increments);
+        // `boardId` is provenance-only. Indexes mirror the Dexie v12 store:
+        // `[taskId+occurredAt]` is the windowed-evaluation hot path,
+        // `[userId+occurredAt]` backs lifetime/library reads, and
+        // `[userId+isDeleted]` scopes the sync pull like every other table.
+        migrator.registerMigration("v19") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS task_events (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    taskId TEXT NOT NULL,
+                    kind TEXT NOT NULL, -- completion, increment
+                    delta INTEGER,      -- increment only; signed non-zero
+                    occurredAt TEXT NOT NULL, -- ISO8601; windows key on this
+                    boardId TEXT,       -- provenance only; never read in evaluation
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+                    FOREIGN KEY (userId) REFERENCES users(id)
+                    -- Deliberately NO `FOREIGN KEY (taskId) REFERENCES tasks(id)`:
+                    -- per-collection sync listeners have no cross-collection
+                    -- ordering, so a taskEvent can legitimately arrive before its
+                    -- Task row (docs §Sync → Pull ordering). Unlike
+                    -- compound_children (which defers the upsert until its parent
+                    -- exists), task_events are applied as rows immediately and
+                    -- skipped by recompute until the Task lands — a tasks FK
+                    -- would reject that insert. Matches the Dexie store, which
+                    -- has no FK constraints at all.
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_task_events_task_occurred ON task_events(taskId, occurredAt)")
+            try db.execute(sql: "CREATE INDEX idx_task_events_user_occurred ON task_events(userId, occurredAt)")
+            try db.execute(sql: "CREATE INDEX idx_task_events_user_deleted ON task_events(userId, isDeleted)")
+        }
+
+        // v20: Windowed Completion — TaskEvent backfill (PR B, sub-slice 3;
+        // docs/WINDOWED_COMPLETION.md §Migration & backfill, step 2). Twin of
+        // web's Dexie v13 `runMigrationV13`. v19 created `task_events` empty;
+        // this pass synthesizes the DETERMINISTIC backfill events from existing
+        // lifetime task state so a task placed on a live board whose window
+        // contains its `completedAt` keeps its green (bleed preserved once),
+        // while later windows start empty.
+        //
+        // Only step 2 (event backfill) is B's responsibility. Step 3 (sealing
+        // expired boards) is assigned to PR C by the phasing table; this
+        // migration seals nothing. Step 4 (cache restamp) is a no-op — the events
+        // are DERIVED FROM the caches, so they're already consistent.
+        //
+        // Carve-out (doc §Derived-task carve-out rule 2): `buildBackfillTaskEvent`
+        // returns nil for derived / compound / achievement tasks, so they're
+        // skipped — minting an event from a derived counter's mirrored
+        // currentCount would double-count the source's history.
+        //
+        // Determinism: `buildBackfillTaskEvent` assigns a kind-qualified uuidv5
+        // id and takes timestamps from the task snapshot (not migration
+        // wall-clock), so two devices mint the same-id row and LWW picks the one
+        // derived from the fresher task state. Backfilled events are enqueued for
+        // sync CREATE (they MUST reach Firestore or another device's pull
+        // recompute would zero the caches).
+        migrator.registerMigration("v20") { db in
+            let allTasks: [Task] = try Task.fetchAll(db)
+            for task in allTasks {
+                guard let event = buildBackfillTaskEvent(task: task) else { continue }
+                // Idempotency belt: the deterministic id means a re-run (or a
+                // peer's already-synced row) would collide. Skip if present.
+                if try TaskEvent.fetchOne(db, key: event.id) != nil { continue }
+                try event.save(db)
+                // Enqueue sync CREATE directly (raw SQL — the migration owns its
+                // own transaction; SyncQueueBuilder is not migration-tx-aware in
+                // the same way, mirroring how v7/v14 write sync rows inline).
+                let payloadData = try JSONEncoder().encode(event)
+                let payloadStr = String(data: payloadData, encoding: .utf8) ?? "{}"
+                try db.execute(sql: """
+                    INSERT INTO sync_queue
+                        (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                    VALUES (?, 'taskEvents', ?, 'create', ?, 'pending', 0, ?, 0)
+                    """, arguments: [UUID().uuidString, event.id, payloadStr, Self.currentTimestamp()])
+            }
+        }
+
         return migrator
     }
 

@@ -20,4 +20,5 @@ export * from './useDefaultPools';
 export * from './useSharedCounterGroups';
 export * from './useBoardPlayData';
 export * from './useBoardPlay';
+export * from './useSquareWindowContext';
 export * from './useCounterArrivals';

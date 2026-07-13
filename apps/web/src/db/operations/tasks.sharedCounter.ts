@@ -6,6 +6,7 @@ import { BoardStatus, SyncOperationType, TaskType, propagateIncrement } from '@o
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
+import { insertIncrementEventRaw } from './taskEvents';
 
 /**
  * Phase 3 — Shared Counters increment hot-path.
@@ -45,7 +46,7 @@ export async function incrementSharedCounter(
 
   return db.transaction(
     'rw',
-    [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
     async () => {
       const now = currentTimestamp();
 
@@ -91,6 +92,14 @@ export async function incrementSharedCounter(
       if (savedSource) {
         await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
       }
+
+      // Windowed Completion (docs §Write paths — "incrementSharedCounter …
+      // becomes append-event-on-source + propagation-stamp of derived tasks").
+      // Append a +by increment event on the SOURCE only (derived tasks are
+      // carved out — they never own events). Raw append, no cache restamp: the
+      // source's lifetime `currentCount` is already written authoritatively
+      // above and equals the lifetime event sum.
+      await insertIncrementEventRaw(sourceTaskId, by, undefined, now);
 
       // 3. Find all linked (derived) tasks for this source.
       const linkedTasks = await db.tasks
@@ -184,7 +193,7 @@ export async function decrementSharedCounter(
 
   return db.transaction(
     'rw',
-    [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
     async () => {
       const now = currentTimestamp();
 
@@ -231,6 +240,14 @@ export async function decrementSharedCounter(
       if (savedSource) {
         await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
       }
+
+      // Windowed Completion (docs §Write paths — board-context decrement
+      // "append a negative-delta event … gated by windowed count > 0"). `eff`
+      // is already clamped to the source's lifetime count above, so the
+      // lifetime event sum can't go negative. Raw append on the SOURCE only
+      // (derived tasks are carved out); the source cache is written
+      // authoritatively above.
+      await insertIncrementEventRaw(sourceTaskId, -eff, undefined, now);
 
       // 4. Find all linked (derived) tasks for this source.
       const linkedTasks = await db.tasks

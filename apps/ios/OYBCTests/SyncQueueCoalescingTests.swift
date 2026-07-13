@@ -80,12 +80,14 @@ final class SyncQueueCoalescingTests: XCTestCase {
         func c(
             _ existing: SyncOperationType,
             _ incoming: SyncOperationType,
-            neverAttempted: Bool = true
+            neverAttempted: Bool = true,
+            entityType: String = "tasks"
         ) -> R {
             SyncQueueBuilder.coalesce(
                 existing: existing,
                 incoming: incoming,
-                existingNeverAttempted: neverAttempted
+                existingNeverAttempted: neverAttempted,
+                entityType: entityType
             )
         }
 
@@ -104,6 +106,51 @@ final class SyncQueueCoalescingTests: XCTestCase {
         XCTAssertEqual(c(.delete, .create), R.replace(.create))
         XCTAssertEqual(c(.delete, .update), R.replace(.update))
         XCTAssertEqual(c(.delete, .delete), R.replace(.delete))
+    }
+
+    // MARK: - task_events append-only precedence
+
+    /// Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync): each event is a
+    /// distinct id, so the coalescer only fires for the SAME event id. A
+    /// tombstone supersedes a pending create but is NEVER dropped (deterministic
+    /// backfill ids may live on a peer → the undo must reach the server); undo
+    /// is final, so a tombstone is never resurrected.
+    func test_coalesce_taskEvents_appendOnlyPrecedence() {
+        typealias R = SyncQueueBuilder.CoalesceResult
+        func c(
+            _ existing: SyncOperationType,
+            _ incoming: SyncOperationType,
+            neverAttempted: Bool = true
+        ) -> R {
+            SyncQueueBuilder.coalesce(
+                existing: existing,
+                incoming: incoming,
+                existingNeverAttempted: neverAttempted,
+                entityType: "taskEvents"
+            )
+        }
+
+        // create + delete keeps a DELETE tombstone even when never attempted —
+        // the generic path would DROP here; append-only events must NOT.
+        XCTAssertEqual(c(.create, .delete), R.replace(.delete))
+        XCTAssertEqual(c(.create, .delete, neverAttempted: false), R.replace(.delete))
+        // Undo is final — a tombstone is never resurrected by a later create.
+        XCTAssertEqual(c(.delete, .create), R.replace(.delete))
+        // Same-id create stays a create (event not yet on server).
+        XCTAssertEqual(c(.create, .create), R.replace(.create))
+    }
+
+    /// End-to-end at the DB layer: a create then a tombstone (undo) for the
+    /// SAME event id keeps ONE pending DELETE row (never dropped), so the undo
+    /// reaches Firestore.
+    func test_taskEvents_createThenDelete_keepsTombstone() throws {
+        let db = try makeDb()
+        try enqueue(db, entityType: "taskEvents", entityId: "ev1", op: .create, marker: "logged")
+        try enqueue(db, entityType: "taskEvents", entityId: "ev1", op: .delete, marker: "undone")
+
+        let rows = try pending(db, entityType: "taskEvents", entityId: "ev1")
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].operationType, .delete)
     }
 
     // MARK: - Burst coalescing

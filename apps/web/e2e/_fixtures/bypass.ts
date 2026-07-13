@@ -480,4 +480,59 @@ export async function readBoard(
   }, id);
 }
 
+// ─── Windowed Completion — TaskEvent seed helper ────────────────────────────
+//
+// Same raw-IDB pattern as the other seeders. `docs/WINDOWED_COMPLETION.md`'s
+// event log lives in the `taskEvents` Dexie table (v12/v13 migrations); no
+// e2e coverage existed for it yet, so this is the first browser-level seed
+// helper for the collection.
+
+export interface SeedTaskEvent {
+  id: string;
+  taskId: string;
+  kind: 'completion' | 'increment';
+  /** Increment only; signed non-zero integer. Omit for `kind: 'completion'`. */
+  delta?: number;
+  /** ISO8601 — the semantic timestamp evaluation windows key on. */
+  occurredAt: string;
+  /** Provenance only (never read during evaluation). */
+  boardId?: string;
+  isDeleted?: boolean;
+}
+
+/**
+ * Inserts a `TaskEvent` row directly into Dexie's `taskEvents` store via raw
+ * IndexedDB (bypasses the Zod boundary — match `isEventOwningTask` at the
+ * call site). Used to seed pre-window completion/increment events so a test
+ * can assert the windowed board grid ignores them while the lifetime task
+ * cache (`SeedTask.isCompleted` / `currentCount`) still reflects them.
+ */
+export async function seedTaskEvent(page: Page, event: SeedTaskEvent): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    userId: BYPASS_USER_ID,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+    ...event,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['taskEvents'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('taskEvents').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
 export { expect } from '@playwright/test';

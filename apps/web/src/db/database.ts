@@ -2,6 +2,7 @@ import Dexie, { Table } from 'dexie';
 import type {
   Board,
   Task,
+  TaskEvent,
   TaskStep,
   BoardTask,
   User,
@@ -31,6 +32,7 @@ export class AppDatabase extends Dexie {
   compoundChildren!: Table<CompoundChild, string>;
   recurringBoardTemplates!: Table<RecurringBoardTemplate, string>;
   defaultPools!: Table<DefaultPool, string>;
+  taskEvents!: Table<TaskEvent, string>;
 
   constructor() {
     super('oybc');
@@ -321,6 +323,42 @@ export class AppDatabase extends Dexie {
       `,
       progressCounters: null, // Drop the inert ProgressCounter object store.
     });
+
+    // v12: Windowed Completion (docs/WINDOWED_COMPLETION.md §New entity +
+    // §Sync). New `taskEvents` store — one soft-deletable occurrence row per
+    // completion/increment on an event-owning task, synced per-row LWW like
+    // compoundChildren. PR B sub-slice 1 is FOUNDATIONS ONLY: the store is
+    // created empty; no backfill and no write/read paths yet (those land in
+    // later sub-slices), so the table syncs harmlessly empty.
+    //
+    // Indexes: `[taskId+occurredAt]` is the windowed-evaluation hot path
+    // (all of a task's events since a board's startDate). `[userId+occurredAt]`
+    // backs lifetime/library reads. `[userId+isDeleted]` scopes the sync pull
+    // like every other collection; `taskId` supports parent-scoped lookups.
+    this.version(12).stores({
+      taskEvents: `
+        id,
+        [userId+isDeleted],
+        taskId,
+        [taskId+occurredAt],
+        [userId+occurredAt]
+      `,
+    });
+
+    // v13: Windowed Completion — event BACKFILL (docs/WINDOWED_COMPLETION.md
+    // §Migration & backfill, step 2). v12 created the `taskEvents` store empty
+    // (sub-slice 1); this bump runs the backfill upgrade that synthesizes the
+    // deterministic completion/increment events from existing lifetime task
+    // state. Separated from v12 so the upgrade fires even on a dev machine that
+    // already opened the DB at v12-empty (Dexie only runs an upgrade when
+    // moving to a HIGHER stored version — attaching it to v12 would silently
+    // skip those machines). No schema shape change (`.stores({})` no-op); the
+    // version bump is the vehicle for the `.upgrade()` callback. Expired-board
+    // SEALING (doc step 3) is PR C, NOT here.
+    this.version(13).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV13 imports `db`).
+      return import('./operations/migrationV13').then((mod) => mod.runMigrationV13(tx));
+    });
   }
 }
 
@@ -333,6 +371,7 @@ export class AppDatabase extends Dexie {
 export type {
   Board,
   Task,
+  TaskEvent,
   TaskStep,
   BoardTask,
   User,

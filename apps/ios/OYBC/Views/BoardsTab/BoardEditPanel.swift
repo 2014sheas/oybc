@@ -123,6 +123,15 @@ struct BoardEditPanel: View {
     /// tap-to-swap). Parent (`BoardPlayView`) updates `editRearrangeCells`.
     var onReorder: (([RearrangeCellData]) -> Void)? = nil
 
+    /// Windowed-Completion-aware completion read (Windowed Completion —
+    /// docs/WINDOWED_COMPLETION.md §Task caches). `BoardPlayView` passes
+    /// `viewModel.windowedIsCompleted(for:)` so this panel's Edit-tasks static
+    /// grid and Rearrange preview match the live grid's windowed reads instead
+    /// of bleeding a stale lifetime-complete state into a fresh board window.
+    /// Defaults to the lifetime `Task.isCompleted` cache — the pre-fix
+    /// behavior — so existing previews/snapshot call sites are unaffected.
+    var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
+
     // MARK: - Saving indicator
 
     /// True while the parent is writing to GRDB. Disables the Save pill.
@@ -351,7 +360,8 @@ struct BoardEditPanel: View {
                         : centerCustomName,
                     rearrange: true,
                     sideLength: UIScreen.main.bounds.width - 2 * Riso.gutter,
-                    onReorder: { onReorder?($0) }
+                    onReorder: { onReorder?($0) },
+                    windowedIsCompleted: windowedIsCompleted
                 )
             } else {
                 // Edit-tasks sub-mode (Phase 2) or rearrange cells not yet seeded —
@@ -365,7 +375,8 @@ struct BoardEditPanel: View {
                         ? board.centerSquareCustomName
                         : centerCustomName,
                     onCellTap: subMode == .editTasks ? onCellTap : nil,
-                    onCenterTap: subMode == .editTasks ? onCenterTap : nil
+                    onCenterTap: subMode == .editTasks ? onCenterTap : nil,
+                    windowedIsCompleted: windowedIsCompleted
                 )
             }
         }
@@ -455,6 +466,9 @@ private struct BoardEditStaticGrid: View {
     /// Phase 2b: callback for tapping the FREE/CUSTOM_FREE center cell.
     /// nil = center inert. Set only in edit-tasks sub-mode.
     var onCenterTap: (() -> Void)? = nil
+    /// Windowed-Completion-aware completion read, forwarded from
+    /// `BoardEditPanel`. Defaults to the lifetime `Task.isCompleted` cache.
+    var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
 
     private var btByPosition: [String: BoardTask] {
         var map: [String: BoardTask] = [:]
@@ -497,7 +511,8 @@ private struct BoardEditStaticGrid: View {
                     isInteractive: taskTapEnabled || centerTapEnabled,
                     onTap: centerTapEnabled
                         ? { onCenterTap?() }
-                        : (taskTapEnabled ? { onCellTap?(row, col) } : nil)
+                        : (taskTapEnabled ? { onCellTap?(row, col) } : nil),
+                    windowedIsCompleted: windowedIsCompleted
                 )
             }
         }
@@ -520,6 +535,14 @@ private struct BoardEditStaticCell: View {
     /// Phase 2: when true the cell shows an edit-affordance and fires `onTap`.
     var isInteractive: Bool = false
     var onTap: (() -> Void)? = nil
+    /// Windowed-Completion-aware completion read, forwarded from
+    /// `BoardEditPanel`/`BoardEditStaticGrid`. Defaults to the lifetime
+    /// `Task.isCompleted` cache (docs/WINDOWED_COMPLETION.md §Task caches).
+    var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
+
+    private var isTaskCompleted: Bool {
+        task.map(windowedIsCompleted) ?? false
+    }
 
     private var label: String {
         if isCenter {
@@ -540,13 +563,13 @@ private struct BoardEditStaticCell: View {
 
     private var fill: Color {
         if isCenter { return .risoGold }
-        if task?.isCompleted == true { return .risoGreen }
+        if isTaskCompleted { return .risoGreen }
         return task != nil ? .risoPaper2 : .risoPaper
     }
 
     private var textColor: Color {
         if isCenter { return .risoInkStatic }
-        if task?.isCompleted == true { return .risoPaper }
+        if isTaskCompleted { return .risoPaper }
         return .risoInk
     }
 
