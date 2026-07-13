@@ -58,6 +58,12 @@ struct MainTabView: View {
     /// the binding. Same pattern as `pendingRecurringTimeframe`.
     @State private var pendingEditTemplateId: String? = nil
 
+    /// "Add tasks" cross-tab deep-link (issue #321) — mirrors
+    /// `pendingEditTemplateId` exactly, except `CreateHubView` lands the
+    /// wizard on the Tasks step (2) instead of Setup (1). Set by the
+    /// Profile → Recurring templates page's per-card "Add tasks" button.
+    @State private var pendingAddTasksTemplateId: String? = nil
+
     /// Cross-tab new-recurring-template deep-link. Set when the user taps
     /// "+ New template" on the Profile → Recurring templates page; we flip
     /// this and switch `selectedTab` to Create, where `CreateHubView`
@@ -326,6 +332,7 @@ struct MainTabView: View {
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
                             pendingTargetWindowDate: $pendingTargetWindowDate,
                             pendingEditTemplateId: $pendingEditTemplateId,
+                            pendingAddTasksTemplateId: $pendingAddTasksTemplateId,
                             pendingNewRecurringTemplate: $pendingNewRecurringTemplate,
                             pendingDraftId: $pendingDraftId,
                             onBoardCompleted: { boardId, _ in
@@ -370,6 +377,12 @@ struct MainTabView: View {
                         pendingNewRecurringTemplate = true
                         selectedTab = 2
                     },
+                    onAddTasksRecurringTemplate: { templateId in
+                        // Issue #321 — same cross-tab route as edit, but
+                        // CreateHubView lands the wizard on the Tasks step.
+                        pendingAddTasksTemplateId = templateId
+                        selectedTab = 2
+                    },
                     onOpenTutorial: { openTutorial() }
                 )
                 // Tutorial deep-links (and any future direct nav) push these
@@ -384,6 +397,10 @@ struct MainTabView: View {
                             },
                             onNewTemplate: {
                                 pendingNewRecurringTemplate = true
+                                selectedTab = 2
+                            },
+                            onAddTasksTemplate: { templateId in
+                                pendingAddTasksTemplateId = templateId
                                 selectedTab = 2
                             }
                         )

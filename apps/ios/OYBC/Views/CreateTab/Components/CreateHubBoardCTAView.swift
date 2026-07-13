@@ -41,8 +41,11 @@ struct CreateHubBoardCTAView: View {
         kind == .recurring ? "Create a recurring board" : "Start a new board"
     }
     private var subtitle: String {
+        // Issue #321 — sharpens the distinction from Core Boards (6.1), which
+        // shares near-identical "recurring" language today. Verbatim string
+        // is a cross-platform contract (web mirrors it exactly).
         kind == .recurring
-            ? "Auto-spawns a fresh board each window from a pool."
+            ? "A saved task pool that auto-creates a board each period."
             : "Set it up, pick your tasks, and activate."
     }
     private var systemImageName: String {

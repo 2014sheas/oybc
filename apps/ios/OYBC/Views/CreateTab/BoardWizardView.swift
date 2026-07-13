@@ -23,6 +23,11 @@ struct BoardWizardView: View {
     let targetWindowDate: Date?
     let editingTemplate: RecurringBoardTemplate?
     let startRecurring: Bool
+    /// Which step the wizard opens on (issue #321). Defaults to 1 (Setup)
+    /// for every existing entry point; the Recurring-templates card's
+    /// "Add tasks" affordance passes 2 (Tasks) so the user lands directly
+    /// on the pool picker instead of re-walking Setup.
+    var initialStep: WizardStep = 1
     let onCancel: () -> Void
     let onComplete: (_ boardId: String, _ status: String) -> Void
     var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
@@ -42,6 +47,7 @@ struct BoardWizardView: View {
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
         startRecurring: Bool = false,
+        initialStep: WizardStep = 1,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void,
         onTemplateComplete: ((_ templateId: String) -> Void)? = nil,
@@ -54,12 +60,14 @@ struct BoardWizardView: View {
         self.targetWindowDate = targetWindowDate
         self.editingTemplate = editingTemplate
         self.startRecurring = startRecurring
+        self.initialStep = initialStep
         self.onCancel = onCancel
         self.onComplete = onComplete
         self.onTemplateComplete = onTemplateComplete
         self.onDeleteDraft = onDeleteDraft
         _wizard = State(initialValue: BoardWizardViewModel(
             preferences: preferences,
+            initialStep: initialStep,
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,

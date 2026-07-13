@@ -44,6 +44,9 @@ export interface BoardWizardPageProps {
    *  `isRecurring` is forced ON, and Save updates the template
    *  instead of creating a new board. Phase 6.2 UX rework. */
   editingTemplate?: RecurringBoardTemplate;
+  /** Optional starting step (defaults to 1). The template row's "Add
+   *  tasks" affordance passes 2 so the wizard opens on the Tasks step. */
+  initialStep?: 1 | 2;
   /** Issue #71 — when set, the wizard was opened from the Create hub's
    *  "Create a recurring board" CTA. Forces `isRecurring` ON at entry
    *  (no in-form toggle). The user picks the timeframe/size/center +
@@ -88,6 +91,7 @@ export function BoardWizardPage({
   prefilledRecurringTimeframe,
   targetWindowDate,
   editingTemplate,
+  initialStep,
   startRecurring,
   onCancel,
   onComplete,
@@ -101,6 +105,7 @@ export function BoardWizardPage({
     prefilledRecurringTimeframe,
     targetWindowDate,
     editingTemplate,
+    initialStep,
     startRecurring,
   });
   const library = useTaskLibrary(userId);

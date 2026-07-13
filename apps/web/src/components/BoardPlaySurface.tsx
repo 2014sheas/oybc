@@ -18,6 +18,7 @@ import {
 import type { ContextMenuState } from './interactiveTaskSquareUtils';
 import { CellSwapModal } from './CellSwapModal';
 import { BoardStatusBadge } from './BoardStatusBadge';
+import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { formatDisplayDate } from '../utils/dateFormat';
 import { BoardEditPanel } from './boardEdit/BoardEditPanel';
@@ -441,8 +442,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           <div>
             <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
             <h2 className={play.title}>{board.name}</h2>
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <BoardStatusBadge status={board.status} />
+              {board.spawnedFromTemplateId != null && <RecurringBadge />}
             </div>
           </div>
 

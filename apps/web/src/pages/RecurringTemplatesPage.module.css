@@ -98,6 +98,33 @@
   font-weight: 500;
   color: var(--riso-muted);
 }
+/* Compact pool preview — first few task-title chips + a "+k more" tail. */
+.poolPreview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.poolChip {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  background: var(--riso-paper-2);
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  font-family: var(--riso-font-body);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-ink);
+}
+.poolChipMore {
+  border-style: dashed;
+  color: var(--riso-muted);
+}
+
 .attentionBadge {
   margin-top: 6px;
   padding: 7px 10px;
@@ -161,6 +188,29 @@
 }
 .editButton:focus-visible,
 .deleteButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* "+ New template" — dashed entry point, iOS twin: RisoDashedButton. */
+.newTemplateButton {
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--riso-paper-2);
+  border: 1.5px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.newTemplateButton:hover {
+  background: var(--riso-paper);
+}
+.newTemplateButton:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }

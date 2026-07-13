@@ -454,7 +454,11 @@ struct PoolEditSheet: View {
 // MARK: - FlowLayout
 
 /// Simple left-to-right wrapping layout for tag/chip rows.
-private struct FlowLayout: Layout {
+/// Wrapping row layout — places subviews left-to-right, wrapping to a new
+/// row when the current one would overflow the proposed width. Shared by
+/// any card-style chip row (task chips here; `RecurringTemplateCard`'s
+/// pool-preview chips reuse it — issue #321).
+struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

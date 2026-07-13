@@ -20,6 +20,11 @@ struct RecurringTemplatesView: View {
     /// Cross-tab create route: hop to the Create tab and open the
     /// wizard's fresh recurring-template flow. Wired by the tab shell.
     var onNewTemplate: (() -> Void)? = nil
+    /// Cross-tab "Add tasks" route (issue #321): hop to the Create tab and
+    /// open the wizard hydrated from this template id, landing on the
+    /// Tasks step (2) rather than Setup (1). Wired by the tab shell,
+    /// mirroring `onEditTemplate`.
+    var onAddTasksTemplate: ((String) -> Void)? = nil
 
     @EnvironmentObject var authService: AuthService
 
@@ -46,9 +51,12 @@ struct RecurringTemplatesView: View {
                                 RecurringTemplateCard(
                                     template: tpl,
                                     attentionReason: templatesVM.attentionByTemplateId[tpl.id],
+                                    poolPreview: templatesVM.poolPreviewByTemplateId[tpl.id] ?? [],
+                                    poolPreviewOverflow: templatesVM.poolPreviewOverflowByTemplateId[tpl.id] ?? 0,
                                     onEdit: { onEditTemplate?(tpl.id) },
                                     onToggleActive: { newValue in setActive(tpl, newValue) },
-                                    onDelete: { deleteTemplate(id: tpl.id) }
+                                    onDelete: { deleteTemplate(id: tpl.id) },
+                                    onAddTasks: { onAddTasksTemplate?(tpl.id) }
                                 )
                                 .padding(.horizontal, Riso.gutter)
                             }

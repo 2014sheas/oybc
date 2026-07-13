@@ -27,9 +27,15 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
     // list card component (`RecurringTemplateCard`) — the net-new surface
     // — in its healthy and "needs attention" states.
 
+    /// Issue #321 — pool-preview chip row (first 3 resolved titles + "+{k}
+    /// more" overflow) and the "Add tasks" affordance in `metaRow`. Both
+    /// grow the card's height, so the fixed heights below are bumped from
+    /// the pre-#321 130/180 baselines to avoid clipping.
     private func templateCard(
         attention: SpawnPoolFailureReason?,
-        isActive: Bool = true
+        isActive: Bool = true,
+        poolPreview: [String] = ["Drink water", "Read 30 min", "Run 5 km"],
+        poolPreviewOverflow: Int = 6
     ) -> some View {
         let tpl = SnapshotFixtures.makeRecurringTemplate(
             id: "tpl1", name: "Morning Routine", timeframe: .weekly,
@@ -38,20 +44,22 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
         return RecurringTemplateCard(
             template: tpl,
             attentionReason: attention,
-            onEdit: {}, onToggleActive: { _ in }, onDelete: {}
+            poolPreview: poolPreview,
+            poolPreviewOverflow: poolPreviewOverflow,
+            onEdit: {}, onToggleActive: { _ in }, onDelete: {}, onAddTasks: {}
         )
         .padding(Riso.gutter)
         .background(Color.risoPaper)
     }
 
     func testTemplateCardHealthyLight() {
-        assertSnapshot(of: templateCard(attention: nil), as: .image(layout: .fixed(width: 393, height: 130)), record: recordMode)
+        assertSnapshot(of: templateCard(attention: nil), as: .image(layout: .fixed(width: 393, height: 180)), record: recordMode)
     }
     func testTemplateCardAttentionLight() {
-        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 180)), record: recordMode)
+        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 230)), record: recordMode)
     }
     func testTemplateCardAttentionDark() {
-        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 180), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 230), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
     }
 
     // MARK: - Pool editor

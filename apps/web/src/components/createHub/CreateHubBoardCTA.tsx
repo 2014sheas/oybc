@@ -36,7 +36,7 @@ const COPY: Record<
     icon: '🔁',
     secondaryIcon: '🔁',
     title: 'Create a recurring board',
-    subtitle: 'Auto-spawns a fresh board each window from a pool.',
+    subtitle: 'A saved task pool that auto-creates a board each period.',
   },
 };
 

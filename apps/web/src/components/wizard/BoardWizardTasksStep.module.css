@@ -350,6 +350,13 @@
   border-top: 1.5px solid var(--riso-hair);
   flex-wrap: wrap;
 }
+/* Visible dead-Next reason (mirrors the Setup step's .footerMessage). */
+.footerMessage {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--riso-muted);
+  margin-right: auto;
+}
 .backButton,
 .nextButton {
   font-family: var(--riso-font-head);

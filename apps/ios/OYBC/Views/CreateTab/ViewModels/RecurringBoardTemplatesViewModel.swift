@@ -26,6 +26,16 @@ final class RecurringBoardTemplatesViewModel {
     /// healthy, no badge.
     var attentionByTemplateId: [String: SpawnPoolFailureReason] = [:]
 
+    /// First-3 resolved task titles (in `seedTaskIds` order) per template,
+    /// for the card's pool-preview chip row (issue #321). Unresolved ids
+    /// (e.g. a soft-deleted task) are skipped rather than rendered as blank
+    /// chips. A template with zero resolvable titles has no entry here.
+    var poolPreviewByTemplateId: [String: [String]] = [:]
+
+    /// Count of additional resolved titles beyond the first 3, for the
+    /// card's "+{k} more" overflow chip. Absent (or 0) ⇒ no overflow chip.
+    var poolPreviewOverflowByTemplateId: [String: Int] = [:]
+
     // MARK: - Race-condition guard
     //
     // Mirrors `ParentBoardTasksViewModel`: increments on every reload,
@@ -56,10 +66,13 @@ final class RecurringBoardTemplatesViewModel {
             // `attentionByTemplateId` doc.
             let liveTasks = try database.fetchTasks(userId: userId)
             let attention = Self.computeAttention(templates: result, liveTasks: liveTasks)
+            let (preview, overflow) = Self.computePoolPreview(templates: result, liveTasks: liveTasks)
             await MainActor.run {
                 guard mySeq == latestSeq else { return }
                 self.templates = result
                 self.attentionByTemplateId = attention
+                self.poolPreviewByTemplateId = preview
+                self.poolPreviewOverflowByTemplateId = overflow
                 self.loadError = nil
             }
         } catch {
@@ -68,6 +81,8 @@ final class RecurringBoardTemplatesViewModel {
                 self.loadError = "Failed to load recurring templates: \(error.localizedDescription)"
                 self.templates = []
                 self.attentionByTemplateId = [:]
+                self.poolPreviewByTemplateId = [:]
+                self.poolPreviewOverflowByTemplateId = [:]
             }
         }
     }
@@ -105,5 +120,34 @@ final class RecurringBoardTemplatesViewModel {
 
     func reloadAsync(userId: String) {
         _Concurrency.Task { await reload(userId: userId) }
+    }
+
+    /// Pure pool-preview computation (issue #321) — resolves each
+    /// template's `seedTaskIds` against the live library (in order),
+    /// skipping ids that don't resolve (soft-deleted / not-yet-synced),
+    /// and caps the first result at 3 titles for the card's chip row.
+    /// `static` (like `computeAttention`) so unit tests can exercise it
+    /// directly without a database.
+    ///
+    /// - Returns: `(preview, overflow)` — `preview[id]` is the first-3
+    ///   resolved titles in `seedTaskIds` order (absent if 0 resolve);
+    ///   `overflow[id]` is the count of additional resolved titles beyond
+    ///   those 3 (absent/0 ⇒ no overflow chip).
+    static func computePoolPreview(
+        templates: [RecurringBoardTemplate],
+        liveTasks: [Task]
+    ) -> (preview: [String: [String]], overflow: [String: Int]) {
+        let taskMap = Dictionary(liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var preview: [String: [String]] = [:]
+        var overflow: [String: Int] = [:]
+        for template in templates {
+            let resolvedTitles = template.seedTaskIds.compactMap { taskMap[$0]?.title }
+            guard !resolvedTitles.isEmpty else { continue }
+            preview[template.id] = Array(resolvedTitles.prefix(3))
+            if resolvedTitles.count > 3 {
+                overflow[template.id] = resolvedTitles.count - 3
+            }
+        }
+        return (preview, overflow)
     }
 }
