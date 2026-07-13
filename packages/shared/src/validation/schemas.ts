@@ -94,6 +94,14 @@ export const BoardSchema = z.object({
   // Phase 6.1 core-board marker. Defaulted so sync-pulled rows from
   // older clients (without the field) decode as ad-hoc / non-core.
   isCore: z.boolean().default(false),
+  // Windowed Completion — board sealing (docs §Sealing → Board schema delta).
+  // All additive + optional so pre-sealing peers' rows decode unchanged.
+  // `sealedCompletedCells` is bounded by boardSize² in practice; we don't
+  // enforce an upper length here (a stale/oversized array self-heals via the
+  // pull-path re-derivation).
+  sealedAt: FlexibleDateTime.optional(),
+  sealedCompletedCells: z.array(z.number().int().min(0)).optional(),
+  activatedAt: FlexibleDateTime.optional(),
 });
 
 // ===== Task Schemas =====

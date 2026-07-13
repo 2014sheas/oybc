@@ -700,6 +700,33 @@ final class AppDatabase {
             }
         }
 
+        // v21: Windowed Completion — board SEALING schema (docs §Sealing →
+        // Board schema delta). Three additive nullable columns on `boards`.
+        // `sealedCompletedCells` is TEXT (JSON string, same encoding as
+        // `completedLineIds`). All decode forward-compatibly (missing → nil).
+        migrator.registerMigration("v21") { db in
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN sealedAt TEXT")
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN sealedCompletedCells TEXT")
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN activatedAt TEXT")
+        }
+
+        // v22: Windowed Completion — expired-board SEALING (docs §Migration &
+        // backfill step 3). Twin of web's Dexie v14 `runMigrationV14`. Runs
+        // AFTER v20's event backfill. Every non-deleted, non-draft,
+        // non-indefinite board ALREADY past its auto-seal backstop deadline at
+        // upgrade time is sealed silently; boards still inside their backstop
+        // window are left for the normal close-out prompt (slice 2).
+        //
+        // The frozen snapshot is computed from the PRE-MIGRATION rendered state
+        // (lifetime Task caches + compound evaluation — NO window context), so
+        // it reproduces exactly what the user currently sees and is
+        // deterministic across devices (the caches were made consistent by v20).
+        // The backstop deadline keys off `endDate` here (boards have no
+        // `activatedAt` pre-v22), which is deterministic and endDate-based.
+        migrator.registerMigration("v22") { db in
+            try AppDatabase.sealExpiredBoardsAtMigration(db: db, now: Self.currentTimestamp())
+        }
+
         return migrator
     }
 

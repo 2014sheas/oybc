@@ -10,6 +10,7 @@ import { db } from '../internal';
 import { activateBoard, createBoard, updateBoard } from './boards';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { addToSyncQueue } from './syncQueue';
+import { currentTimestamp } from '../utils';
 
 /**
  * One not-yet-persisted task created inside the wizard's New Task sheet
@@ -120,9 +121,16 @@ export async function persistWizardBoardRows({
       // ── Board + BoardTask rows ──────────────────────────────────────────
       if (draftBoardId !== null) {
         boardId = draftBoardId;
+        // Windowed Completion — when a resumed draft is saved active, stamp the
+        // activation instant (only if not already set) so the auto-seal
+        // backstop keys off max(endDate, activatedAt) (docs §Sealing → backstop).
+        const existingDraft = await db.boards.get(boardId);
         await updateBoard(boardId, {
           ...boardFields,
           status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
+          ...(status === 'active' && !existingDraft?.activatedAt
+            ? { activatedAt: currentTimestamp() }
+            : {}),
         });
         await deleteBoardTasksForBoard(boardId);
       } else {

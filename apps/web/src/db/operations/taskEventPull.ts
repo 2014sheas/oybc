@@ -8,6 +8,7 @@ import {
 import { db } from '../internal';
 import { runBoardCascadeForTasks } from './orchestration';
 import { recomputeTaskCachesFromPull } from './taskEvents';
+import { reDeriveSealedBoardsForTasks } from './sealing';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 
 /**
@@ -94,9 +95,21 @@ export async function applyTaskEventsBatch(
         cascadeTaskIds.add(taskId);
       }
 
-      // 4. ONE derivation pass per affected board (batched over the task set).
+      // 4. ONE derivation pass per affected LIVE board (batched over the task
+      //    set). Sealed boards are excluded here (fan-out exclusion).
       if (cascadeTaskIds.size > 0) {
         await runBoardCascadeForTasks(cascadeTaskIds);
+      }
+
+      // 5. Seal re-derivation (docs §Seal snapshots re-derive from the event
+      //    union): late pre-seal events for a placed task deterministically
+      //    re-derive any affected SEALED board's frozen snapshot — the only
+      //    sanctioned mutation of a sealed record. Uses `affectedTaskIds`
+      //    (not `cascadeTaskIds`), because a sealed board can be affected by
+      //    an event whose Task isn't locally present yet for cache recompute
+      //    but IS placed on the sealed board. Local-only, inside this txn.
+      if (affectedTaskIds.size > 0) {
+        await reDeriveSealedBoardsForTasks(affectedTaskIds);
       }
     },
   );

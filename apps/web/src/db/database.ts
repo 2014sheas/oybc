@@ -359,6 +359,22 @@ export class AppDatabase extends Dexie {
       // Dynamic import avoids a top-of-file cycle (migrationV13 imports `db`).
       return import('./operations/migrationV13').then((mod) => mod.runMigrationV13(tx));
     });
+
+    // v14: Windowed Completion — board SEALING (docs/WINDOWED_COMPLETION.md
+    // §Sealing → Board schema delta + §Migration step 3). Three new optional
+    // Board fields (`sealedAt`, `sealedCompletedCells`, `activatedAt`) ride
+    // along automatically — Dexie stores the full Board object verbatim, so no
+    // index change is needed and none are indexed. The version bump is the
+    // vehicle for the `.upgrade()` callback, which seals every already-expired
+    // board (past its backstop deadline at upgrade time) from the pre-migration
+    // rendered state. Boards still inside their backstop window are left for the
+    // normal close-out prompt (slice 2). Runs AFTER v13's event backfill so the
+    // event log exists, but seals from the lifetime task caches (pre-migration
+    // semantics) to reproduce exactly what the user currently sees.
+    this.version(14).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV14 imports `db`).
+      return import('./operations/migrationV14').then((mod) => mod.runMigrationV14(tx));
+    });
   }
 }
 

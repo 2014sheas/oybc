@@ -475,6 +475,13 @@ struct BoardListView: View {
                 let weekStartDay = user?.decodedPreferences.weekStartDay ?? .monday
                 await MainActor.run { weekStartDayPref = weekStartDay.rawValue }
                 await spawnVM.runSpawnPass(userId: userId, weekStartDay: weekStartDay)
+                // Windowed Completion — lazy auto-seal backstop (docs §Sealing).
+                // Same lazy-detection posture as recurring spawn: boards past
+                // their backstop deadline seal on Boards-tab open, never
+                // background-scheduled. Off-main DB write, then reload.
+                await _Concurrency.Task.detached(priority: .utility) {
+                    _ = try? AppDatabase.shared.runBackstopAutoSeal(userId: userId)
+                }.value
                 await MainActor.run { loadBoards() }
             }
         }

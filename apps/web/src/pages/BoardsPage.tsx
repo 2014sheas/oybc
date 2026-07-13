@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
-import { useBoards, useCoreBoardSlots, usePendingRecurringBoards, useRecurringBoardSpawn } from '../hooks';
+import {
+  useBoards,
+  useCoreBoardSlots,
+  usePendingRecurringBoards,
+  useRecurringBoardSpawn,
+  useBackstopAutoSeal,
+} from '../hooks';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
@@ -34,6 +40,11 @@ export function BoardsPage(): React.ReactElement {
   const pendingRecurring = usePendingRecurringBoards(user?.id);
   // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
   useRecurringBoardSpawn(user?.id);
+
+  // Windowed Completion — lazy auto-seal backstop (docs §Sealing). Same
+  // lazy-detection posture as recurring spawn: boards past their backstop
+  // deadline seal on Boards-tab open, never background-scheduled.
+  useBackstopAutoSeal(user?.id);
   const [activeFilter, setActiveFilter] = useState<string>('active');
 
   /** Delete a board from the boards list. Draft boards route through

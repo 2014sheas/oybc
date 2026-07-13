@@ -1775,7 +1775,7 @@ extension SyncService {
         )
 
         for boardId in affectedBoardIds {
-            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
             let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
@@ -1851,7 +1851,7 @@ extension SyncService {
 
         let now = AppDatabase.currentTimestamp()
         for boardId in affectedBoardIds {
-            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
             let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
@@ -1940,9 +1940,21 @@ extension SyncService {
                     cascadeTaskIds.insert(taskId)
                 }
 
-                // 4. ONE batched derivation pass per affected board.
+                // 4. ONE batched derivation pass per affected LIVE board.
+                //    Sealed boards are excluded here (fan-out exclusion).
                 if !cascadeTaskIds.isEmpty {
                     try runPullCascadeForTasks(db: db, changedTaskIds: cascadeTaskIds)
+                }
+
+                // 5. Seal re-derivation (docs §Seal snapshots re-derive from the
+                //    event union): late pre-seal events for a placed task
+                //    deterministically re-derive any affected SEALED board's
+                //    frozen snapshot — the only sanctioned mutation of a sealed
+                //    record. Uses `affectedTaskIds` (not `cascadeTaskIds`) so a
+                //    sealed board placing a task whose row isn't local yet still
+                //    re-derives. Local-only, inside this txn.
+                if !affectedTaskIds.isEmpty {
+                    try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: affectedTaskIds)
                 }
             }
         } catch {

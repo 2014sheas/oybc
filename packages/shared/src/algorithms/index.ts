@@ -40,6 +40,15 @@ export type {
   WindowEvaluationContext,
 } from './taskEvents';
 
+// ===== Windowed Completion — board sealing detection (PR C) =====
+export {
+  isBoardSealable,
+  isBoardClosingOut,
+  isBoardPastBackstop,
+} from './sealing';
+
+export type { SealableBoardFields } from './sealing';
+
 export { uuidv5, OYBC_NAMESPACE } from './uuidv5';
 
 export { backfillTaskEventId, buildBackfillTaskEvent } from './migrationHelpers';

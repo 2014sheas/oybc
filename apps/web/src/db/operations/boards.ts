@@ -192,7 +192,7 @@ export async function updateBoardAndCascade(
 
         // Re-fetch so we see the just-written metadata update (updateBoard ran above).
         const freshBoard = await db.boards.get(affectedBoardId);
-        if (!freshBoard || freshBoard.isDeleted) continue;
+        if (!freshBoard || freshBoard.isDeleted || freshBoard.sealedAt) continue;
 
         const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
         const stats = computeBoardStatsUpdate(
@@ -504,6 +504,10 @@ export async function activateBoard(boardId: string): Promise<void> {
   if (!board || board.status !== BoardStatus.DRAFT) return;
   await db.boards.update(boardId, {
     status: BoardStatus.ACTIVE,
+    // Windowed Completion — stamp the activation instant (only if not already
+    // set) so the auto-seal backstop keys off max(endDate, activatedAt) and a
+    // draft activated after its window expired still gets a prompt cycle.
+    activatedAt: board.activatedAt ?? currentTimestamp(),
     updatedAt: currentTimestamp(),
     version: (board.version ?? 0) + 1,
   });

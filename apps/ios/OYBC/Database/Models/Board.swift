@@ -59,6 +59,30 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     // `decodeIfPresent ?? false`).
     var isCore: Bool = false
 
+    // ── Windowed Completion — board sealing (docs §Sealing → Board schema
+    //    delta). Swift twin of the three additive TS Board fields ──────────
+    //
+    // `sealedAt` — set ONCE when the window is closed out (user Seal / auto-seal
+    // backstop / migration of an already-expired board). Never cleared; no
+    // unseal gesture. A non-nil `sealedAt` makes the board a permanent record:
+    // it drops out of the live derivation fan-out, renders read-only from
+    // `sealedCompletedCells`, and is Board-Edit-ineligible. `status` is
+    // untouched — sealing is orthogonal to draft/active/completed/archived.
+    var sealedAt: String? // ISO8601
+
+    // `sealedCompletedCells` — the green cell indexes (row*size+col) frozen at
+    // seal time by `computeSealedCompletedCells` from the converged in-window
+    // event union. A pure function of that union, so it re-derives
+    // deterministically when late pre-seal events arrive. Stored as a JSON
+    // string in SQLite (same pattern as `completedLineIds`).
+    var sealedCompletedCells: [Int]?
+
+    // `activatedAt` — when the board transitioned out of DRAFT (or, for a board
+    // created active, its creation). The auto-seal backstop keys its deadline
+    // off `max(endDate, activatedAt)` so a DRAFT activated AFTER its window
+    // already expired gets one full prompt cycle before any silent seal.
+    var activatedAt: String? // ISO8601
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "boards"
@@ -75,6 +99,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         case lastSyncedAt, version, isDeleted, deletedAt
         case spawnedFromTemplateId
         case isCore
+        case sealedAt, sealedCompletedCells, activatedAt
     }
 
     // Custom decoding for completedLineIds (stored as JSON string)
@@ -119,6 +144,17 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         // Forward-compatible: missing column / missing key (pre-migration
         // local rows or pre-Phase-6.1 sync docs) decode as false.
         isCore = try container.decodeIfPresent(Bool.self, forKey: .isCore) ?? false
+
+        // Windowed Completion sealing — all optional/forward-compatible.
+        sealedAt = try container.decodeIfPresent(String.self, forKey: .sealedAt)
+        activatedAt = try container.decodeIfPresent(String.self, forKey: .activatedAt)
+        // sealedCompletedCells stored as a JSON string (like completedLineIds).
+        if let jsonString = try container.decodeIfPresent(String.self, forKey: .sealedCompletedCells),
+           let data = jsonString.data(using: .utf8) {
+            sealedCompletedCells = try? JSONDecoder().decode([Int].self, from: data)
+        } else {
+            sealedCompletedCells = nil
+        }
     }
 
     // Custom encoding for completedLineIds (store as JSON string)
@@ -160,6 +196,16 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
         try container.encodeIfPresent(spawnedFromTemplateId, forKey: .spawnedFromTemplateId)
         try container.encode(isCore, forKey: .isCore)
+
+        // Windowed Completion sealing.
+        try container.encodeIfPresent(sealedAt, forKey: .sealedAt)
+        try container.encodeIfPresent(activatedAt, forKey: .activatedAt)
+        // Encode sealedCompletedCells as a JSON string (like completedLineIds).
+        if let sealedCompletedCells = sealedCompletedCells,
+           let data = try? JSONEncoder().encode(sealedCompletedCells),
+           let jsonString = String(data: data, encoding: .utf8) {
+            try container.encode(jsonString, forKey: .sealedCompletedCells)
+        }
     }
 }
 

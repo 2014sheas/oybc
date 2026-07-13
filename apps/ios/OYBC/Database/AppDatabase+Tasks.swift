@@ -91,7 +91,7 @@ extension AppDatabase {
         )
 
         for boardId in affectedBoardIds {
-            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
             let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
@@ -236,7 +236,7 @@ extension AppDatabase {
 
         var results: [String: CascadeBoardResult] = [:]
         for boardId in affectedBoardIds {
-            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
             let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
@@ -334,6 +334,11 @@ extension AppDatabase {
             if board.status == .draft {
                 var activated = board
                 activated.status = .active
+                // Windowed Completion — stamp the activation instant (only if
+                // not already set) so the auto-seal backstop keys off
+                // max(endDate, activatedAt): a draft activated after its window
+                // expired gets a full prompt cycle (docs §Sealing → backstop).
+                if activated.activatedAt == nil { activated.activatedAt = now }
                 activated.updatedAt = now
                 activated.version += 1
                 try activated.save(db)

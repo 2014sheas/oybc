@@ -366,7 +366,7 @@ extension AppDatabase {
             for affectedBoardId in affectedBoardIds {
                 // Re-fetch to see the just-written metadata update above.
                 guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
-                      !affectedBoard.isDeleted else { continue }
+                      !affectedBoard.isDeleted, affectedBoard.sealedAt == nil else { continue }
                 let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == affectedBoardId }
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: affectedBoard,
@@ -473,14 +473,22 @@ extension AppDatabase {
             }
 
             // ── Board + BoardTask rows ─────────────────────────────
-            try board.save(db)
+            // Windowed Completion — stamp the activation instant on an active
+            // wizard board (fresh-active OR a resumed draft saved active) if not
+            // already set, so the auto-seal backstop keys off max(endDate,
+            // activatedAt) (docs §Sealing → backstop).
+            var boardToSave = board
+            if boardToSave.status == .active, boardToSave.activatedAt == nil {
+                boardToSave.activatedAt = now
+            }
+            try boardToSave.save(db)
 
             let boardSyncOp: SyncOperationType = isUpdate ? .update : .create
             try SyncQueueBuilder.makeItem(
                 entityType: "boards",
                 entityId: board.id,
                 operationType: boardSyncOp,
-                payload: board,
+                payload: boardToSave,
                 now: now
             ).enqueue(db)
 

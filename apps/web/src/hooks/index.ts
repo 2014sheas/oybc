@@ -16,6 +16,7 @@ export * from './useSourceBoards';
 export * from './useSourceBoardPlacements';
 export * from './useRecurringBoardTemplates';
 export * from './useRecurringBoardSpawn';
+export * from './useBackstopAutoSeal';
 export * from './useDefaultPools';
 export * from './useSharedCounterGroups';
 export * from './useBoardPlayData';
