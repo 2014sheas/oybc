@@ -84,7 +84,7 @@ One real-world activity can feed **many** Counting tasks from a single running t
 
 - `sharedCounterId?: string | null` — FK to the source Task. Only valid on `type === 'counting'`.
 - `baseline?: number | null` — the source's `currentCount` at link time. Required (≥ 0) iff `sharedCounterId` is set. "Inherit" mode links with `baseline = 0` (displayed = full source count); "start from zero" mode sets `baseline = source.currentCount` at that moment (displayed = source count so far *since linking*).
-- `lastSyncedCount?: number | null` — sync-only bookkeeping (only counting tasks carry it): the common-ancestor `currentCount` as of the last successful push, used for additive-merge conflict resolution (see below). Not part of the user-facing model.
+- `lastSyncedCount?: number | null` — **inert legacy field** (only counting tasks carry it): formerly the common-ancestor `currentCount` for the retired additive-merge conflict resolution. Kept in the schema so pre-Windowed-Completion rows still decode; never written or read by live code. Not part of the user-facing model.
 
 **Derived tasks never carry their own count.** A derived task's displayed count and completion are computed, never stored:
 
@@ -101,7 +101,7 @@ deriveDisplayedCount({ baseline, maxCount }, { currentCount }): { displayed, isC
 
 **A "counter"** (the UX-facing concept) = one source counting task + all tasks linking to it via `sharedCounterId`. `buildSharedCounterGroups({tasks, boardTasks, boards})` (`packages/shared/src/algorithms/sharedCounterGroups.ts`, Swift port `SharedCounterGroups.swift`) is the pure read-model that assembles counter groups for the Counters Hub / Counter Detail UI. `findLinkableCounter({action, unit}, tasks)` (`packages/shared/src/algorithms/linkableCounter.ts`) powers the create-form "counts on your existing **{name}** counter" link suggestion. See [`docs/SHARED_COUNTERS.md`](SHARED_COUNTERS.md) for the full UX design and phasing; [`docs/ARCHITECTURE.md` §"Shared counters (Issue #84 — Phase 0 design)"](./ARCHITECTURE.md#shared-counters-issue-84--phase-0-design) (Decisions 1–7) is the canonical schema/design-decision record.
 
-**Sync**: additive-merge via `sharedCounterMerge` (three-way merge keyed on `lastSyncedCount` as the common ancestor) prevents lost offline increments — see [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md#shared-counter-sync--current-state-shipped) for the current sync design (supersedes that doc's older ProgressCounter-era LWW/additive strategy discussion). `progress_counters` / `ProgressCounter` / `calculateCountingRollup` are vestigial dead — rejected in favor of this per-Task model; do not build against them.
+**Sync**: counts are event-sourced — offline increments on multiple devices survive as separate `task_events` rows (union-by-id, per-row LWW) and the source's `currentCount` cache is recomputed from the event union on pull, so no increments are lost. The earlier `sharedCounterMerge` additive three-way merge (keyed on `lastSyncedCount`) was retired by Windowed Completion (design: [`WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md); neutered in PR B, deleted in PR D) — see [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md) for the current sync design. `progress_counters` / `ProgressCounter` / `calculateCountingRollup` are vestigial dead — rejected in favor of this per-Task model; do not build against them.
 
 ### 3. Compound tasks
 

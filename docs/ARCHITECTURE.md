@@ -1152,6 +1152,8 @@ The recursive call into `runBoardCascadeForTask(dt.id)` already exists as the ri
 
 #### Decision 5 — Sync / conflict: additive merge on `Task.currentCount` for shared-counter sources
 
+> **Superseded by Windowed Completion** ([`WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md)): counts are now event-sourced (`task_events`, union-by-id, per-row LWW) and `currentCount` is a cache recomputed from the event union on pull — offline increments survive as separate event rows, so no merge is needed. `sharedCounterMerge` was neutered in PR B and deleted in PR D; `lastSyncedCount` remains in the schema as an inert legacy field. The section below is preserved as the historical design record.
+
 **Locked**: A counting Task with at least one derived Task (i.e., another Task references it via `sharedCounterId`) becomes an **additive-merge source**. On sync conflict (local version + remote version both incremented since `lastSyncedAt`), instead of plain LWW on `currentCount`, the resolver computes:
 
 ```
@@ -1263,6 +1265,8 @@ The three open questions below were unresolvable without user input and blocked 
 - **Performance benchmarks for the additive-merge pull path** — Phase 4 should validate correctness; performance benchmarking against multi-thousand-Task workspaces is a future tooling sweep.
 
 ### Phase 4 — Conflict resolution for shared counters (this section)
+
+> **Superseded by Windowed Completion** — same disposition as Decision 5 above: the additive-merge machinery this section specifies shipped, ran, and was then retired (neutered PR B, deleted PR D) in favor of event-sourced counts. `lastSyncedCount` survives only as an inert schema field. Historical record.
 
 > Design locked 2026-06-06 before any Phase 4 code. Decisions below supplement Decision 5 from the Phase 0 doc above, adding the implementation specifics that are safe to resolve without user input.
 
