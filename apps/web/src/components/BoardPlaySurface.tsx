@@ -465,7 +465,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             </div>
           </div>
 
-          {isExpired && (
+          {isExpired && !isSealed && (
             <div className={styles.expiredBanner}>
               Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
             </div>
