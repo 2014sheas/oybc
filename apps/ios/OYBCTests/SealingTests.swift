@@ -46,6 +46,33 @@ final class SealingTests: XCTestCase {
         )
     }
 
+    /// A plain (non-shared) COUNTING task — M-3: slice 1's SealingTests only
+    /// covered NORMAL; these tests cover the delta/increment-event path.
+    private func makeCountingTask(_ id: String, maxCount: Int, currentCount: Int? = nil) -> Task {
+        let now = AppDatabase.currentTimestamp()
+        return Task(
+            id: id, userId: userId, title: "C", description: nil, type: .counting,
+            action: "Pushups", unit: "reps", maxCount: maxCount, operatorType: nil, threshold: nil, isOrdered: nil,
+            referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
+            parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil,
+            currentCount: currentCount, createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 3, isDeleted: false, deletedAt: nil,
+            timeframe: nil, startDate: nil, endDate: nil,
+            sharedCounterId: nil, baseline: nil, lastSyncedCount: nil, createdInWizard: false
+        )
+    }
+
+    private func makeIncrementEvent(_ id: String, taskId: String, occurredAt: String, delta: Int, isDeleted: Bool = false) -> TaskEvent {
+        let now = AppDatabase.currentTimestamp()
+        return TaskEvent(
+            id: id, userId: userId, taskId: taskId, kind: .increment, delta: delta,
+            occurredAt: occurredAt, boardId: nil, createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 1, isDeleted: isDeleted, deletedAt: nil
+        )
+    }
+
     /// Build a 1×1 daily board, optionally sealed / with activatedAt.
     private func makeBoard(
         id: String, startDate: String? = nil, endDate: String? = nil,
@@ -290,5 +317,102 @@ final class SealingTests: XCTestCase {
 
         XCTAssertEqual(once, [0, 1])
         XCTAssertEqual(twice, once)
+    }
+
+    // MARK: - COUNTING seal-snapshot + re-derivation (M-3 — slice 1 covered only NORMAL)
+
+    func test_sealBoard_countingSnapshotsGreenWhenInWindowSumMeetsGoal() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("t-count", maxCount: 3))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t-count"))
+        try db.write { db in
+            try self.makeIncrementEvent("e1", taskId: "t-count", occurredAt: self.inWindow, delta: 2).save(db)
+            try self.makeIncrementEvent("e2", taskId: "t-count", occurredAt: self.inWindow, delta: 1).save(db)
+        }
+
+        let sealed = try db.sealBoard(boardId: "b1", now: pastBackstop)
+        XCTAssertTrue(sealed)
+        let board = try fetchBoard(db, "b1")
+        XCTAssertEqual(board.sealedCompletedCells, [0]) // 3/3 in-window → green
+        XCTAssertEqual(board.completedTasks, 1)
+    }
+
+    func test_sealBoard_countingSnapshotsGreyWhenBelowGoal() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("t-count", maxCount: 3))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t-count"))
+        try db.write { try self.makeIncrementEvent("e1", taskId: "t-count", occurredAt: self.inWindow, delta: 2).save($0) }
+
+        try db.sealBoard(boardId: "b1", now: pastBackstop)
+        let board = try fetchBoard(db, "b1")
+        XCTAssertEqual(board.sealedCompletedCells, []) // 2/3 in-window → not met
+        XCTAssertEqual(board.completedTasks, 0)
+    }
+
+    func test_sealBoard_countingExcludesPostSealIncrements() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("t-count", maxCount: 3))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t-count"))
+        try db.write { db in
+            try self.makeIncrementEvent("e1", taskId: "t-count", occurredAt: self.inWindow, delta: 2).save(db)
+            // After the seal instant → belongs to a later window, must not count.
+            try self.makeIncrementEvent("e-late", taskId: "t-count", occurredAt: "2026-07-05T00:00:00.000Z", delta: 5).save(db)
+        }
+
+        try db.sealBoard(boardId: "b1", now: pastBackstop)
+        let board = try fetchBoard(db, "b1")
+        XCTAssertEqual(board.sealedCompletedCells, [])
+        XCTAssertEqual(board.completedTasks, 0)
+    }
+
+    /// I-1 — migration bleed-greens converge to windowed truth (docs
+    /// §Migration → "Migration bleed-greens converge to windowed truth"),
+    /// COUNTING flavor. The migration path seals from the pre-migration
+    /// LIFETIME `currentCount` cache (no window context) — a counting task
+    /// whose lifetime count met the goal BEFORE this board's window opened
+    /// freezes green (the bleed). The first post-migration re-derivation
+    /// (pull-path `reDeriveSealedBoards`) recomputes from the WINDOWED event
+    /// union bounded at `sealedAt` — the bleed flips grey once the in-window
+    /// sum no longer meets the goal.
+    func test_reDerivation_countingBleedFlipsGreyUnderWindowedReDerivation() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeCountingTask("t-count", maxCount: 3))
+        // Migration-style seal: lifetime bleed green, no events yet.
+        try db.saveBoard(makeBoard(id: "b-sealed", sealedAt: pastBackstop, sealedCompletedCells: [0]))
+        try db.saveBoardTask(makeBoardTask(id: "bt-s", boardId: "b-sealed", taskId: "t-count"))
+
+        // The only increments pre-date the window entirely (windowed sum = 0 < goal).
+        try db.write { db in
+            try self.makeIncrementEvent("e-a", taskId: "t-count", occurredAt: "2026-06-30T09:00:00.000Z", delta: 2).save(db)
+            try self.makeIncrementEvent("e-b", taskId: "t-count", occurredAt: "2026-06-30T10:00:00.000Z", delta: 1).save(db)
+            try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: ["t-count"])
+        }
+
+        let board = try fetchBoard(db, "b-sealed")
+        XCTAssertEqual(board.sealedCompletedCells, []) // bleed converged to windowed truth
+        XCTAssertEqual(board.completedTasks, 0)
+        // Local-only: version NOT bumped.
+        XCTAssertEqual(board.version, 1)
+    }
+
+    func test_reDerivation_countingInWindowIncrementsPaintGreen() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeCountingTask("t-count", maxCount: 3))
+        try db.saveBoard(makeBoard(id: "b-sealed", sealedAt: pastBackstop, sealedCompletedCells: []))
+        try db.saveBoardTask(makeBoardTask(id: "bt-s", boardId: "b-sealed", taskId: "t-count"))
+
+        // Late pre-seal increments arrive that DO sum to the goal in-window.
+        try db.write { db in
+            try self.makeIncrementEvent("e-a", taskId: "t-count", occurredAt: self.inWindow, delta: 2).save(db)
+            try self.makeIncrementEvent("e-b", taskId: "t-count", occurredAt: self.inWindow, delta: 1).save(db)
+            try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: ["t-count"])
+        }
+
+        let board = try fetchBoard(db, "b-sealed")
+        XCTAssertEqual(board.sealedCompletedCells, [0])
+        XCTAssertEqual(board.completedTasks, 1)
     }
 }

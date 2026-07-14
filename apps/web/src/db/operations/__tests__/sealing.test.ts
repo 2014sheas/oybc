@@ -74,6 +74,42 @@ async function seedNormalTask(id: string, isCompleted = false, completedAt?: str
   await db.tasks.add(task);
 }
 
+async function seedCountingTask(id: string, maxCount: number): Promise<void> {
+  const task: Task = {
+    id,
+    userId: USER,
+    title: 'C',
+    type: TaskType.COUNTING,
+    maxCount,
+    action: 'Do',
+    unit: 'reps',
+    isCompleted: false,
+    currentCount: 0,
+    totalCompletions: 0,
+    totalInstances: 1,
+    createdAt: START,
+    updatedAt: START,
+    version: 3,
+    isDeleted: false,
+  };
+  await db.tasks.add(task);
+}
+
+function incrementEvent(id: string, taskId: string, delta: number, occurredAt: string, isDeleted = false): TaskEvent {
+  return {
+    id,
+    userId: USER,
+    taskId,
+    kind: 'increment',
+    delta,
+    occurredAt,
+    createdAt: occurredAt,
+    updatedAt: occurredAt,
+    version: 1,
+    isDeleted,
+  };
+}
+
 async function seedBoard(id: string, over: Partial<Board> = {}): Promise<Board> {
   const board: Board = {
     id,
@@ -180,6 +216,54 @@ describe('sealBoard', () => {
     const board = await db.boards.get(BOARD_SEALED);
     expect(board?.sealedCompletedCells).toEqual([]);
     expect(board?.completedTasks).toBe(0);
+  });
+
+  // ── M-3: counting (delta) seal-snapshot cases (slice 1 covered only NORMAL) ──
+  it('counting: freezes green when in-window increments reach the goal', async () => {
+    await seedCountingTask(TASK_A, 3);
+    await seedBoard(BOARD_SEALED);
+    await placeTask(BOARD_SEALED, TASK_A, 0);
+    await db.taskEvents.add(incrementEvent('ec1', TASK_A, 2, IN_WINDOW));
+    await db.taskEvents.add(incrementEvent('ec2', TASK_A, 1, '2026-07-01T13:00:00.000Z'));
+
+    await sealBoard(BOARD_SEALED, PAST_BACKSTOP);
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.sealedCompletedCells).toEqual([0]);
+    expect(board?.completedTasks).toBe(1);
+  });
+
+  it('counting: freezes grey when in-window sum falls short of the goal', async () => {
+    await seedCountingTask(TASK_A, 3);
+    await seedBoard(BOARD_SEALED);
+    await placeTask(BOARD_SEALED, TASK_A, 0);
+    await db.taskEvents.add(incrementEvent('ec1', TASK_A, 2, IN_WINDOW)); // 2 < 3
+    // A pre-window increment must not carry over into the sealed snapshot.
+    await db.taskEvents.add(incrementEvent('ec-pre', TASK_A, 5, '2026-06-28T00:00:00.000Z'));
+
+    await sealBoard(BOARD_SEALED, PAST_BACKSTOP);
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.sealedCompletedCells).toEqual([]);
+    expect(board?.completedTasks).toBe(0);
+  });
+
+  it('counting: re-derivation flips a sealed counting square green when a late pre-seal increment arrives', async () => {
+    await seedCountingTask(TASK_A, 3);
+    await seedBoard(BOARD_SEALED);
+    await placeTask(BOARD_SEALED, TASK_A, 0);
+    await db.taskEvents.add(incrementEvent('ec1', TASK_A, 2, IN_WINDOW));
+    await sealBoard(BOARD_SEALED, PAST_BACKSTOP);
+    expect((await db.boards.get(BOARD_SEALED))?.sealedCompletedCells).toEqual([]); // 2 < 3
+
+    // A late-arriving pre-seal increment (occurredAt inside the sealed window)
+    // lands and pushes the window sum to the goal → re-derivation paints green.
+    await db.taskEvents.add(incrementEvent('ec-late', TASK_A, 1, '2026-07-01T14:00:00.000Z'));
+    await reDeriveSealedBoardsForTasks([TASK_A]);
+
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.sealedCompletedCells).toEqual([0]);
+    expect(board?.completedTasks).toBe(1);
+    // Local-only re-derivation — no version bump vs the seal write (still 2).
+    expect(board?.version).toBe(2);
   });
 });
 

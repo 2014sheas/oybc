@@ -123,6 +123,43 @@ extension AppDatabase {
         )
     }
 
+    /// Sealed-window immunity boundary (docs §Write paths → "Sealed-window
+    /// immunity", Decision 9). Build the immune windows for a task from the
+    /// non-deleted SEALED boards that place it — directly or via a placed
+    /// compound (the same reachability the pull-path re-derivation uses). An
+    /// event whose `occurredAt` falls inside one of these `[startDate,
+    /// sealedAt]` windows can NEVER be tombstoned by any un-complete /
+    /// decrement gesture — history stays history.
+    ///
+    /// MUST be called inside the ambient tombstone transaction (covers
+    /// boards / boardTasks / compoundChildren). Returns `[]` (a fast no-op)
+    /// when the user has no sealed boards, so unsealed workspaces pay
+    /// nothing. Mirrors web's `getSealImmuneWindowsForTask`.
+    ///
+    /// - Parameters:
+    ///   - db: The active GRDB write transaction.
+    ///   - taskId: The event-owning task whose immune windows to resolve.
+    static func sealImmuneWindows(db: Database, taskId: String) throws -> [SealImmuneWindow] {
+        let sealedBoards = try Board
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+            .filter { $0.sealedAt != nil }
+        guard !sealedBoards.isEmpty else { return [] }
+        // BoardTask has no `isDeleted` column — it's a pure placement record
+        // that's hard-deleted (never soft-deleted), unlike Board/CompoundChild.
+        let boardTasks = try BoardTask.fetchAll(db)
+        let children = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: taskId, children: children)
+        let affected = DerivationPass.findAffectedBoardIds(changedTaskId: taskId, parentCompounds: parents, boardTasks: boardTasks)
+        let placing = sealedBoards.filter { affected.contains($0.id) }
+        return buildSealImmuneWindows(
+            sealedBoards: placing.compactMap { b in
+                guard let sealedAt = b.sealedAt else { return nil }
+                return (startDate: b.startDate, sealedAt: sealedAt)
+            }
+        )
+    }
+
     /// Enqueue a taskEvent row for sync (append-only precedence lives in the D3
     /// coalescer).
     private static func enqueueEventSync(db: Database, event: TaskEvent, op: SyncOperationType, now: String) throws {
@@ -166,12 +203,15 @@ extension AppDatabase {
     /// Window-scoped un-complete (docs §Write paths — "Un-complete is
     /// window-scoped"): tombstone ALL non-deleted completion events with
     /// `occurredAt >= windowStart` for the viewed context, then restamp caches.
-    /// (Sealed-window immunity lands in PR C; no sealed boards exist yet, so
-    /// every in-window event is tombstonable.)
+    /// Sealed-window-immune events (docs Decision 9) are skipped — an event
+    /// inside a sealed board's frozen window can never be tombstoned, so a
+    /// live-board un-complete whose window overlaps a sealed window leaves the
+    /// immune event (and its green) intact.
     ///
     /// Mirrors `tombstoneWindowCompletions` in taskEvents.ts.
     static func tombstoneWindowCompletions(db: Database, taskId: String, windowStart: String, now: String) throws {
         let lowerDate = DateFormatting.parseISO(windowStart)
+        let immuneWindows = try sealImmuneWindows(db: db, taskId: taskId)
         let events = try TaskEvent.filter(Column("taskId") == taskId).fetchAll(db)
         for var e in events {
             if e.isDeleted { continue }
@@ -179,6 +219,7 @@ extension AppDatabase {
             // windowStart provided but unparseable → tombstone nothing (defensive).
             guard let lower = lowerDate, let occurred = DateFormatting.parseISO(e.occurredAt) else { continue }
             if occurred < lower { continue }
+            if isOccurredAtSealImmune(e.occurredAt, windows: immuneWindows) { continue } // sealed history is immutable
             e.isDeleted = true
             e.deletedAt = now
             e.updatedAt = now
@@ -189,18 +230,23 @@ extension AppDatabase {
         try stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
     }
 
-    /// Tombstone the latest non-deleted completion event (docs §Write paths —
-    /// library un-complete "acts on the latest event"), then restamp caches.
-    /// Used by library-context toggles that have no board window. Still restamps
-    /// from the empty set when no live completion exists (reconciles a stale
-    /// lifetime cache to "incomplete").
+    /// Tombstone the latest non-deleted, non-immune completion event (docs
+    /// §Write paths — library un-complete "acts on the latest event"), then
+    /// restamp caches. Used by library-context toggles that have no board
+    /// window. Sealed-window-immune events (docs Decision 9) are excluded from
+    /// the candidate set: if the latest — or every — live completion is
+    /// immune, this is inert (the UI disables the affordance with an
+    /// explanation rather than silently eating the tap). Still restamps from
+    /// the empty set when no tombstonable completion event exists (reconciles
+    /// a stale lifetime cache to "incomplete").
     ///
     /// Mirrors `tombstoneLatestCompletion` in taskEvents.ts.
     static func tombstoneLatestCompletion(db: Database, taskId: String, now: String) throws {
+        let immuneWindows = try sealImmuneWindows(db: db, taskId: taskId)
         let live = try TaskEvent
             .filter(Column("taskId") == taskId)
             .fetchAll(db)
-            .filter { !$0.isDeleted && $0.kind == .completion }
+            .filter { !$0.isDeleted && $0.kind == .completion && !isOccurredAtSealImmune($0.occurredAt, windows: immuneWindows) }
         guard var latest = live.first else {
             try stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
             return
@@ -216,6 +262,42 @@ extension AppDatabase {
         try latest.save(db)
         try enqueueEventSync(db: db, event: latest, op: .delete, now: now)
         try stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
+    }
+
+    /// Whether a library-context un-complete for this task would be inert
+    /// because its green is held by a sealed-window-immune completion (docs
+    /// Decision 9 + §Write paths — "the toggle is disabled with an
+    /// explanatory affordance"). True iff there is at least one live
+    /// completion event AND every live completion event is sealed-immune (so
+    /// `tombstoneLatestCompletion` would find no candidate and the square
+    /// would stay green). UI surfaces that offer un-complete read this to
+    /// render disabled-with-explanation.
+    ///
+    /// Mirrors web's `isUncompleteBlockedBySeal`.
+    ///
+    /// - Parameters:
+    ///   - db: The active GRDB transaction (read-only use is fine inside a
+    ///     `read` or `write` block).
+    ///   - taskId: The event-owning task.
+    /// - Returns: `true` iff the un-complete affordance should be disabled + explained.
+    static func isUncompleteBlockedBySeal(db: Database, taskId: String) throws -> Bool {
+        let immuneWindows = try sealImmuneWindows(db: db, taskId: taskId)
+        guard !immuneWindows.isEmpty else { return false }
+        let live = try TaskEvent
+            .filter(Column("taskId") == taskId)
+            .fetchAll(db)
+            .filter { !$0.isDeleted && $0.kind == .completion }
+        guard !live.isEmpty else { return false }
+        return live.allSatisfy { isOccurredAtSealImmune($0.occurredAt, windows: immuneWindows) }
+    }
+
+    /// Convenience read-path wrapper of `isUncompleteBlockedBySeal(db:taskId:)`
+    /// for UI callers that don't already have an open transaction.
+    ///
+    /// - Parameter taskId: The event-owning task.
+    /// - Returns: `true` iff the un-complete affordance should be disabled + explained.
+    func isUncompleteBlockedBySeal(taskId: String) throws -> Bool {
+        try read { db in try Self.isUncompleteBlockedBySeal(db: db, taskId: taskId) }
     }
 
     /// Append a signed-delta `increment` event (docs §Write paths — Increment /

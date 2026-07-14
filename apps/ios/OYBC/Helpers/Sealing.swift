@@ -53,3 +53,25 @@ func isBoardPastBackstop(_ board: Board, nowMs: Double) -> Bool {
     ) else { return false }
     return nowMs > deadline
 }
+
+/// Whether board-PLAY interactions are locked (docs §Effects of sealed —
+/// "Not editable": tap-to-complete, counter stepper, context-menu actions,
+/// the empty-cell "+" add affordance, and the toolbar Edit entry point).
+/// `BoardPlayView.isBoardLocked` composes this predicate.
+///
+/// A board locks when — and only when — it is SEALED. Sealing REPLACES the
+/// old expiry-based interaction lock: per docs §Sealing → Lifecycle, an
+/// expired-but-unsealed board is "still fully live" (the closing-out
+/// banner's **Log** action depends on this — the 11:58pm workout logged at
+/// 12:04am counts for the closing daily), and the timeframe-scaled backstop
+/// bounds the overtime, after which the board auto-seals and locks. A sealed
+/// board can never be interacted with again (no unseal gesture in v1).
+///
+/// Extracted as a standalone pure function (rather than left inline in the
+/// view) so the gating rule is unit-testable without instantiating SwiftUI.
+///
+/// - Parameter board: The board to test.
+/// - Returns: `true` iff every play interaction should be disabled.
+func isBoardPlayLocked(_ board: Board) -> Bool {
+    board.sealedAt != nil
+}

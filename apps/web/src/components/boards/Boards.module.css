@@ -168,6 +168,108 @@
   white-space: nowrap;
 }
 
+/* ---- windowed-completion closing-out banner (seal prompt) ---- */
+.closingBanner {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  padding: 14px 16px;
+  margin: 0 0 20px;
+}
+.closingBannerHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--riso-ink);
+  margin-bottom: 12px;
+}
+.closingBannerItems {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.closingBannerItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  padding: 10px 14px;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.closingBannerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.closingBannerName {
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
+}
+.closingBannerWindow {
+  font-size: 12px;
+  color: var(--riso-muted);
+}
+.closingBannerActions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.closingBannerLog,
+.closingBannerSeal {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 7px 14px;
+  border-radius: var(--riso-r-card);
+  border: 2px solid var(--riso-ink);
+  cursor: pointer;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.closingBannerLog {
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+/* Seal is the primary action: gold fill → --riso-ink-static content (never the
+   adaptive ink) so the label stays legible in dark mode. */
+.closingBannerSeal {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.closingBannerLog:hover,
+.closingBannerSeal:hover {
+  transform: translate(-1px, -1px);
+}
+.closingBannerLog:active,
+.closingBannerSeal:active {
+  transform: translate(2px, 2px);
+}
+.closingBannerLog:focus-visible,
+.closingBannerSeal:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.closingBannerLog:disabled,
+.closingBannerSeal:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* ---- windowed-completion upgrade note (one-time, dismissible) ---- */
 .wcNote {
   display: flex;
@@ -392,6 +494,24 @@
   align-items: flex-end;
   gap: 5px;
   flex-shrink: 0;
+}
+/* Windowed Completion — "Sealed" frozen-record pill on a board card. Neutral
+   filled pill; --riso-ink used for border + text only (never as a fill behind
+   cream), so it stays legible in dark mode. */
+.sealedBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  font-family: var(--riso-font-head);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .bcardName {
   font-family: var(--riso-font-head);

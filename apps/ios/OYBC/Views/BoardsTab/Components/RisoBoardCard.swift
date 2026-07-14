@@ -52,7 +52,15 @@ struct RisoBoardCard: View {
                 // Right column: badge(s) stacked above mini-grid
                 VStack(alignment: .trailing, spacing: 9) {
                     VStack(alignment: .trailing, spacing: 4) {
-                        RisoBoardStatusBadge(kind: badgeKind)
+                        // Windowed Completion — a sealed board shows the
+                        // "Sealed" pill in place of the live status badge
+                        // (docs §Effects of sealed; OQ1 resolution: single
+                        // badge, no distinct "ended-but-empty" treatment).
+                        if board.sealedAt != nil {
+                            RisoSealedBadge()
+                        } else {
+                            RisoBoardStatusBadge(kind: badgeKind)
+                        }
                         // Issue #321 — provenance tag for recurring-spawned boards.
                         if RisoRecurringBadge.shouldShow(for: board) {
                             RisoRecurringBadge()

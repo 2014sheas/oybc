@@ -11,6 +11,7 @@ export * from './useAppliedTheme';
 export * from './useSyncStatus';
 export * from './useSyncLoop';
 export * from './usePendingRecurringBoards';
+export * from './useClosingOutBoards';
 export * from './useParentBoardTasks';
 export * from './useSourceBoards';
 export * from './useSourceBoardPlacements';

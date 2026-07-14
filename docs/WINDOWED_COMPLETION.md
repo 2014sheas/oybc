@@ -415,6 +415,27 @@ Dexie version bump + GRDB migration (a new `registerMigration` in
 4. Cache fields are already consistent by construction (events were derived from
    them) — no restamp needed at migration time.
 
+### Migration bleed-greens converge to windowed truth (I-1)
+
+Step 3 seals expired boards from the **pre-migration rendered state** (lifetime
+`Task.isCompleted` / `currentCount` caches, no window context) — deliberately, so
+the seal reproduces exactly what the user last saw. That means a migration-sealed
+board can freeze a **bleed green**: a square whose task was completed *before that
+board's window opened*, green today only via the global-bit bleed this design
+fixes. This is a one-migration artifact, not a permanent falsehood.
+
+It self-corrects on the **first post-migration synced activity**. The pull-path
+re-derivation hook (`reDeriveSealedBoardsForTasks` web / `reDeriveSealedBoards`
+iOS) recomputes the frozen snapshot from the **windowed** event union bounded at
+the board's `sealedAt` whenever a `taskEvent` for a placed task lands — and the
+bleed square flips grey, converging the record to windowed truth. Because
+re-derivation is a pure function of the converged union (no `version` bump, no
+enqueue), every device converges independently; a device that never syncs new
+activity for that task simply keeps the (honest, last-seen) migration snapshot.
+The convergence flip is covered at the shared-kernel level by
+`tests/algorithms/migrationSealConvergence.test.ts` (lifetime seal → windowed
+re-derivation, both NORMAL and COUNTING bleed squares).
+
 ### What changes visibly at upgrade (review finding M5)
 
 The earlier draft claimed "nothing the user sees changes at upgrade" — that holds
@@ -516,14 +537,44 @@ can merge immediately.
 
 1. Should sealed-but-not-greenlogged boards get a distinct visual treatment
    ("ended" vs "active")? Pure UI; decide at C-PR design time.
+   **Resolved (C-PR, slice 2/2): No distinct treatment.** A sealed board carries
+   a single functional **"Sealed"** badge (Riso `RisoBadge` / `BoardStatusBadge`
+   vocabulary) regardless of greenlog outcome; its frozen grid + existing
+   progress/bingo meta already convey how much was completed. Rationale:
+   consistency with the app's existing single-status-badge pattern (one badge per
+   card, mutually exclusive with Active/Expiring), and the doc flags this
+   treatment as optional-only. A separate "ended-but-empty" state would add a
+   third overlapping visual state for no integrity gain.
 2. Is `windowLength/4` (capped at 48h) the right backstop shape, or should the
    divisor differ per timeframe? Tunable constant; revisit with real usage.
 3. Should the closing-out prompt batch (one row per board) or collapse ("3 boards
    closed — review")? UI call at C-PR time.
+   **Resolved (C-PR, slice 2/2): One banner row per closing board.** Mirrors the
+   6.1 recurring-window banner (`RecurringWindowBanner` web /
+   `PendingRecurringBoardsViewModel` iOS), which already renders one tappable row
+   per pending window. Rationale: the per-board **Log** / **Seal** actions need
+   per-board identity, so a collapsed "3 boards — review" row would just have to
+   expand back into per-board rows anyway; matching the recurring banner keeps
+   the Boards-tab prompt vocabulary uniform. The banner naturally self-limits (a
+   user rarely has more than a handful of windows close at once), so no explicit
+   cap is added.
 4. Should the library/Tasks-tab un-complete toggle survive at all post-events, or
    become a read-only lifetime indicator (with undo living only on live boards)?
    The sealed-immunity rule makes the toggle correct but occasionally inert —
    decide at B-PR UX time.
+5. *(Surfaced at C-PR implementation, resolved)* **The pre-existing expiry-based
+   play lock conflicted with the Lifecycle's Log flow — resolved: sealing
+   REPLACES expiry as the interaction lock.** Both platforms previously disabled
+   all play interactions once `endDate` passed; but §Lifecycle step 2 defines
+   **Log** as opening the closing board "still fully live", and the
+   Accepted-boundary-edge section (the 11:58pm workout logged at 12:04am) only
+   works if logging during unsealed overtime is possible. Every
+   expired-and-playable board is by construction in the closing-out set, so the
+   old expiry lock and the new seal lock cover the same boards — the seal lock
+   just arrives after the (backstop-bounded) overtime instead of at the stroke
+   of `endDate`. Play surfaces on both platforms now lock on `sealedAt != null`
+   only (web `BoardPlaySurface`/`useBoardPlay` `playLocked`; iOS
+   `isBoardPlayLocked`); expiry remains a display-only signal (badges, banner).
 
 ## Cross-platform file map (indicative, PR-B/C scope)
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AchievementTrigger,
   BoardStatus,
@@ -117,6 +117,16 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     isExpired,
     squareWindowContext,
   } = useBoardPlayData(board, userId);
+
+  // Windowed Completion — sealed boards are a frozen, read-only historical
+  // record (docs §Effects of sealed): the grid renders `done` from the stored
+  // `sealedCompletedCells` snapshot (not live event queries), and every play
+  // interaction (tap, context menu, +, edit entry) is disabled.
+  const isSealed = board.sealedAt != null;
+  const sealedCellSet = useMemo(
+    () => new Set(isSealed ? (board.sealedCompletedCells ?? []) : []),
+    [isSealed, board.sealedCompletedCells],
+  );
 
   // ── UI state ───────────────────────────────────────────────────────────
 
@@ -255,7 +265,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     compoundChildrenByCompound,
     allBoardTasks,
     gridSize,
-    isExpired,
+    // Sealing replaced the expiry lock (docs §Lifecycle): play handlers are
+    // locked only on sealed boards; an expired-but-unsealed board stays live.
+    playLocked: isSealed,
     squareWindowContext,
     onFlash: showFlash,
     onCreditedToast: setCreditedToast,
@@ -426,8 +438,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           <div className={play.railTop}>
             {header}
             {/* Edit entry: ACTIVE boards only, and only when the container allows
-                editing (allowEdit=false in the core-board pager). */}
-            {board.status === BoardStatus.ACTIVE && allowEdit && (
+                editing (allowEdit=false in the core-board pager). Sealed boards
+                are frozen — never editable (docs §Effects of sealed: not editable). */}
+            {board.status === BoardStatus.ACTIVE && allowEdit && !isSealed && (
               <button
                 type="button"
                 className={`${play.back} ${play.iconBtn}`}
@@ -443,7 +456,11 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
             <h2 className={play.title}>{board.name}</h2>
             <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <BoardStatusBadge status={board.status} />
+              {isSealed ? (
+                <span className={styles.sealedBadge}>Sealed</span>
+              ) : (
+                <BoardStatusBadge status={board.status} />
+              )}
               {board.spawnedFromTemplateId != null && <RecurringBadge />}
             </div>
           </div>
@@ -596,7 +613,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                       !editMode &&
                       !isPinnedCenter &&
                       board.status === BoardStatus.ACTIVE &&
-                      !isExpired;
+                      !isSealed;
                     cells.push(
                       <div
                         key={`empty-${row}-${col}`}
@@ -640,10 +657,22 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 const squareState = taskToSquareState(
                   task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
                 );
-                const taskIsCompleted = squareState.isCompleted;
+                // Windowed Completion — on a SEALED board, `done` reads the
+                // frozen `sealedCompletedCells` snapshot (docs §Effects of
+                // sealed), never live event queries (which could bleed a
+                // post-seal log of the same task from another live board).
+                const cellIndex = row * gridSize + col;
+                const taskIsCompleted = isSealed
+                  ? sealedCellSet.has(cellIndex)
+                  : squareState.isCompleted;
                 // Use squareState.currentCount (baseline-adjusted for linked
                 // counters). For standalone counters this equals task.currentCount.
-                const taskCurrentCount = squareState.currentCount;
+                // On a sealed board only completion was snapshotted (not partial
+                // progress), so a frozen counting square reads max/max when green
+                // and 0/max otherwise — an honest read of what was frozen.
+                const taskCurrentCount = isSealed
+                  ? (taskIsCompleted ? (task.maxCount ?? 0) : 0)
+                  : squareState.currentCount;
 
                 // Resolve the display label:
                 // - If the task has a title, use it.
@@ -688,7 +717,11 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 // Edit mode taps are handled by a wrapper div below (we need
                 // mouse coordinates which RisoBoardCell's onClick: () => void
                 // does not expose).
-                const handlePlayClick = (!editMode && !isExpired)
+                // Sealing REPLACES the old expiry-based interaction lock
+                // (docs §Lifecycle: an expired-but-unsealed board is "still
+                // fully live" — the closing-out banner's Log action opens it
+                // to log late activity; the backstop bounds the overtime).
+                const handlePlayClick = (!editMode && !isSealed)
                   ? () => {
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
                         setSelectedSquareId(boardTaskId);
@@ -746,7 +779,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                     }
                     onClick={editMode ? undefined : handlePlayClick}
                     onContextMenu={editMode ? undefined : (e) => {
-                      if (isExpired) return;
+                      if (isSealed) return;
                       e.preventDefault();
                       setContextMenu({ squareId: boardTaskId, x: e.clientX, y: e.clientY });
                     }}
@@ -914,7 +947,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             state={squareState}
             onClose={() => setSelectedSquareId(null)}
             onToggleComplete={() => {
-              if (isExpired) return;
+              if (isSealed) return;
               // `handleComplete` now comes from `useBoardPlay`; the ref-access
               // chain that previously tripped `react-hooks/refs` is no longer
               // visible to the analyzer (the handler is an opaque hook return),
@@ -922,7 +955,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
             }}
             onIncrementCount={() => {
-              if (isExpired) return;
+              if (isSealed) return;
               // Phase 3 — Shared Counters: same routing as the grid onAct.
               if (task.sharedCounterId != null) {
                 void handleSharedCounterIncrement(task.sharedCounterId);
@@ -933,7 +966,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               }
             }}
             onDecrementCount={() => {
-              if (isExpired || isLinkedCounter) return;
+              if (isSealed || isLinkedCounter) return;
               // Phase 2 — Source shared counters route through decrementSharedCounter.
               if (sharedCounterSourceIds.has(task.id)) {
                 void handleSharedCounterDecrement(task.id);
@@ -942,7 +975,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               }
             }}
             onToggleStep={(stepId: string) => {
-              if (isExpired) return;
+              if (isSealed) return;
               // Per-board step completion is not tracked under the unified model.
               // Progress steps link to their own Task records; toggle them directly.
               void handleCompoundChildToggle(stepId);
@@ -983,13 +1016,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         // Linked derived counters are read-only — decrement/reset must be gated.
         const isLinkedCounter = squareData.sharedCounterId != null;
 
-        // M3 — Swap is available on ACTIVE non-expired squares that are not a
-        // pinned center. Phase 2b: NONE center (bt.isCenter may be true in DB
-        // for wizard-placed boards) is swappable — only FREE/CUSTOM_FREE/CHOSEN
-        // centers are pinned.
+        // M3 — Swap is available on ACTIVE non-sealed squares that are not a
+        // pinned center (sealed replaces the old expiry gate; the context menu
+        // is unreachable on sealed boards anyway). Phase 2b: NONE center
+        // (bt.isCenter may be true in DB for wizard-placed boards) is swappable
+        // — only FREE/CUSTOM_FREE/CHOSEN centers are pinned.
         const swapEligible =
           board.status === BoardStatus.ACTIVE &&
-          !isExpired &&
+          !isSealed &&
           !(bt.isCenter && board.centerSquareType !== CenterSquareType.NONE);
 
         // Phase 2 — resolve the shared-counter hint for this task.

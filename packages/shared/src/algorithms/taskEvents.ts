@@ -130,6 +130,57 @@ export function resolveTaskWindowState(
 }
 
 /**
+ * A sealed board's frozen window as epoch-ms bounds (docs §Write paths →
+ * "Sealed-window immunity"). An event is immune to tombstoning iff its
+ * `occurredAt` falls inside one of these windows.
+ */
+export interface SealImmuneWindow {
+  /** Sealed board's `startDate` as epoch ms (inclusive lower bound). */
+  startMs: number;
+  /** Sealed board's `sealedAt` as epoch ms (inclusive upper bound). */
+  sealedAtMs: number;
+}
+
+/**
+ * Build the immune windows for a task from the sealed boards that place it
+ * (docs Decision 9 + §Write paths). The caller resolves *which* non-deleted
+ * sealed boards place the task (directly or via a placed compound — the same
+ * reachability the pull-path re-derivation uses) and passes their
+ * `startDate`/`sealedAt`; this turns them into epoch-ms bounds.
+ *
+ * @param sealedBoards Sealed boards placing the task (each with a set `sealedAt`).
+ * @returns One immune window per sealed board.
+ */
+export function buildSealImmuneWindows(
+  sealedBoards: ReadonlyArray<{ startDate: string; sealedAt: string }>,
+): SealImmuneWindow[] {
+  return sealedBoards.map((b) => ({
+    startMs: new Date(b.startDate).getTime(),
+    sealedAtMs: new Date(b.sealedAt).getTime(),
+  }));
+}
+
+/**
+ * Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
+ * it falls inside `[startDate, sealedAt]` of some sealed board that places the
+ * task. Immune events can never be tombstoned by any un-complete/decrement
+ * gesture — history stays history. Bounds are inclusive on both ends (the
+ * boundary instants belong to the frozen record).
+ *
+ * @param occurredAt The event's semantic timestamp (ISO8601).
+ * @param windows    The task's immune windows (from {@link buildSealImmuneWindows}).
+ * @returns `true` iff the event is immune to tombstoning.
+ */
+export function isOccurredAtSealImmune(
+  occurredAt: string,
+  windows: ReadonlyArray<SealImmuneWindow>,
+): boolean {
+  if (windows.length === 0) return false;
+  const t = new Date(occurredAt).getTime();
+  return windows.some((w) => w.startMs <= t && t <= w.sealedAtMs);
+}
+
+/**
  * The auto-seal backstop **duration** for a board's window (docs §Sealing):
  * `min(48h, windowLength/4)`. Timeframe-scaling falls out of the window length
  * itself — daily → 6h, weekly → 42h, monthly/yearly/custom≥8d → 48h — so one

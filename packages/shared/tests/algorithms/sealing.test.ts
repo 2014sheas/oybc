@@ -127,3 +127,51 @@ describe('isBoardPastBackstop', () => {
     expect(isBoardPastBackstop(board, endMs + 100 * H)).toBe(false);
   });
 });
+
+// ── Sealed-window tombstone immunity (docs Decision 9 + §Write paths) ─────────
+import {
+  buildSealImmuneWindows,
+  isOccurredAtSealImmune,
+} from '../../src/algorithms/taskEvents';
+
+describe('sealed-window tombstone immunity', () => {
+  const sealedBoards = [
+    { startDate: '2026-07-01T00:00:00.000Z', sealedAt: '2026-07-02T06:00:00.000Z' },
+    { startDate: '2026-07-05T00:00:00.000Z', sealedAt: '2026-07-06T06:00:00.000Z' },
+  ];
+  const windows = buildSealImmuneWindows(sealedBoards);
+
+  it('builds one ms-bounded window per sealed board', () => {
+    expect(windows).toEqual([
+      {
+        startMs: new Date('2026-07-01T00:00:00.000Z').getTime(),
+        sealedAtMs: new Date('2026-07-02T06:00:00.000Z').getTime(),
+      },
+      {
+        startMs: new Date('2026-07-05T00:00:00.000Z').getTime(),
+        sealedAtMs: new Date('2026-07-06T06:00:00.000Z').getTime(),
+      },
+    ]);
+  });
+
+  it('an event inside a sealed window is immune', () => {
+    expect(isOccurredAtSealImmune('2026-07-01T12:00:00.000Z', windows)).toBe(true);
+    expect(isOccurredAtSealImmune('2026-07-05T18:00:00.000Z', windows)).toBe(true);
+  });
+
+  it('bounds are inclusive on both ends (boundary instants belong to the frozen record)', () => {
+    expect(isOccurredAtSealImmune('2026-07-01T00:00:00.000Z', windows)).toBe(true); // == startDate
+    expect(isOccurredAtSealImmune('2026-07-02T06:00:00.000Z', windows)).toBe(true); // == sealedAt
+  });
+
+  it('an event outside every sealed window is NOT immune (tombstonable)', () => {
+    expect(isOccurredAtSealImmune('2026-06-30T23:59:59.999Z', windows)).toBe(false); // pre-window
+    expect(isOccurredAtSealImmune('2026-07-02T06:00:00.001Z', windows)).toBe(false); // post-seal overtime
+    expect(isOccurredAtSealImmune('2026-07-04T12:00:00.000Z', windows)).toBe(false); // between windows
+  });
+
+  it('no sealed boards → nothing is immune', () => {
+    expect(isOccurredAtSealImmune('2026-07-01T12:00:00.000Z', [])).toBe(false);
+    expect(buildSealImmuneWindows([])).toEqual([]);
+  });
+});

@@ -232,7 +232,14 @@ struct MainTabView: View {
                         selectedTab = 2
                     },
                     onOpenTutorial: { boardsPath.append(TutorialRoute()) },
-                    onResumeDraft: { boardId in openDraftInWizard(boardId) }
+                    onResumeDraft: { boardId in openDraftInWizard(boardId) },
+                    onOpenClosingBoard: { boardId in
+                        // Windowed Completion — closing-out banner's "Log"
+                        // action: push the still-live board onto this SAME
+                        // stack (we're already on the Boards tab), matching
+                        // the Core Boards grid's onOpenCoreWindow pattern.
+                        boardsPath.append(boardId)
+                    }
                 )
                 .navigationDestination(for: TutorialRoute.self) { _ in
                     TutorialBoardView(

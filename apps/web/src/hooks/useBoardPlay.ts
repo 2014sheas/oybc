@@ -88,7 +88,14 @@ export interface UseBoardPlayParams {
   compoundChildrenByCompound: Record<string, CompoundChild[]>;
   allBoardTasks: BoardTask[];
   gridSize: BoardSize;
-  isExpired: boolean;
+  /**
+   * Whether play-mode write handlers are locked. Windowed Completion (docs
+   * §Effects of sealed / §Lifecycle): the caller passes `board.sealedAt !=
+   * null` — sealing REPLACED the old expiry-based lock, so an
+   * expired-but-unsealed board stays fully live until it seals (the
+   * closing-out banner's Log action depends on this).
+   */
+  playLocked: boolean;
   /**
    * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the board's
    * window context (from `useBoardPlayData`/`useSquareWindowContext`), threaded
@@ -178,7 +185,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     compoundChildrenByCompound,
     allBoardTasks,
     gridSize,
-    isExpired,
+    playLocked,
     squareWindowContext,
     onFlash,
     onCreditedToast,
@@ -574,7 +581,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    */
   const handleSharedCounterIncrement = useCallback(
     async (sourceTaskId: string): Promise<void> => {
-      if (isExpired) return;
+      if (playLocked) return;
       try {
         // Capture the pre-increment board stats for flash comparison.
         const boardBefore = await db.boards.get(boardId);
@@ -625,7 +632,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         onFlash('Something went wrong', 'bingo');
       }
     },
-    [boardId, isExpired, onFlash, onCreditedToast, taskMap],
+    [boardId, playLocked, onFlash, onCreditedToast, taskMap],
   );
 
   /**
@@ -637,7 +644,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    */
   const handleSharedCounterDecrement = useCallback(
     async (sourceTaskId: string): Promise<void> => {
-      if (isExpired) return;
+      if (playLocked) return;
       try {
         const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId);
         // No-op: nothing changed (count was already 0).
@@ -663,7 +670,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         onFlash('Something went wrong', 'bingo');
       }
     },
-    [boardId, isExpired, onFlash, onCreditedToast, taskMap],
+    [boardId, playLocked, onFlash, onCreditedToast, taskMap],
   );
 
   /**
@@ -677,7 +684,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    */
   const handleCompoundChildToggle = useCallback(
     async (childTaskId: string): Promise<void> => {
-      if (isExpired) return;
+      if (playLocked) return;
       const childTask = taskMap[childTaskId];
       if (!childTask) return;
 
@@ -707,7 +714,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         }
       }
     },
-    [isExpired, taskMap, boardTasks, allBoardTasks, handleComplete, onFlash]
+    [playLocked, taskMap, boardTasks, allBoardTasks, handleComplete, onFlash]
   );
 
   // ── Play-mode board-task write methods ─────────────────────────────────

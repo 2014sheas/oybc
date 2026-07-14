@@ -7,6 +7,10 @@ enum RisoButtonKind {
     case primary   // red / paper
     case blue      // blue / paper
     case green     // green / paper — compound-type submit action
+    case gold      // gold / inkStatic — primary CTA on a non-toolbar surface
+                    // (e.g. the closing-out banner's Seal action). Uses
+                    // risoInkStatic (never adaptive risoInk) so the label
+                    // stays legible on gold in dark mode.
 
     var fill: Color {
         switch self {
@@ -14,11 +18,13 @@ enum RisoButtonKind {
         case .primary: return .risoRed
         case .blue: return .risoBlue
         case .green: return .risoGreen
+        case .gold: return .risoGold
         }
     }
     var foreground: Color {
         switch self {
         case .neutral: return .risoInk
+        case .gold: return .risoInkStatic
         default: return .risoPaper
         }
     }

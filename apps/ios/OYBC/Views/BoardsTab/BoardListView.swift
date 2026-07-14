@@ -57,6 +57,12 @@ struct BoardListView: View {
     /// of pushing `BoardPlayView`. Wired by MainTabView. Nil in preview.
     var onResumeDraft: ((String) -> Void)? = nil
 
+    /// Windowed Completion — the closing-out banner's "Log" action: open the
+    /// (still fully live) board so the user can log any last activity before
+    /// sealing. Wired by MainTabView to push the board id onto the Boards-tab
+    /// stack (the existing `String` `.navigationDestination`). Nil in preview.
+    var onOpenClosingBoard: ((String) -> Void)? = nil
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
@@ -71,6 +77,8 @@ struct BoardListView: View {
     @State private var deleteError: String?
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
     @State private var spawnVM = RecurringBoardSpawnViewModel()
+    /// Windowed Completion — closing-out (Log/Seal) banner state.
+    @State private var closingOutVM = ClosingOutBoardsViewModel()
     /// User's week-start pref ("monday"/"sunday") for the core grid's local
     /// window-boundary fallback. Loaded in `onAppearLoad`.
     @State private var weekStartDayPref: String = "monday"
@@ -154,6 +162,22 @@ struct BoardListView: View {
                     .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
+
+                // Windowed Completion — closing-out prompt (docs §Sealing →
+                // Lifecycle → Prompt). One row per board whose window ended
+                // but isn't sealed yet (OQ3 resolution: not collapsed).
+                ClosingOutBannerView(
+                    boards: closingOutVM.boards,
+                    sealingBoardId: closingOutVM.sealingBoardId,
+                    onLog: { boardId in onOpenClosingBoard?(boardId) },
+                    onSeal: { boardId in
+                        guard let userId = authService.currentUser?.id else { return }
+                        closingOutVM.seal(boardId: boardId, userId: userId)
+                    }
+                )
+                .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
 
             // ---- Board cards ----
@@ -370,6 +394,19 @@ struct BoardListView: View {
                     .listRowBackground(Color.clear)
             }
 
+            ClosingOutBannerView(
+                boards: closingOutVM.boards,
+                sealingBoardId: closingOutVM.sealingBoardId,
+                onLog: { boardId in onOpenClosingBoard?(boardId) },
+                onSeal: { boardId in
+                    guard let userId = authService.currentUser?.id else { return }
+                    closingOutVM.seal(boardId: boardId, userId: userId)
+                }
+            )
+            .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+
             emptyStateCenteredRow
                 .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
                 .listRowSeparator(.hidden)
@@ -470,6 +507,7 @@ struct BoardListView: View {
         loadBoards()
         if let userId = authService.currentUser?.id {
             pendingRecurringVM.reloadAsync(userId: userId)
+            closingOutVM.reloadAsync(userId: userId)
             _Concurrency.Task {
                 let user = (try? AppDatabase.shared.fetchUser(id: userId)) ?? nil
                 let weekStartDay = user?.decodedPreferences.weekStartDay ?? .monday
@@ -482,7 +520,12 @@ struct BoardListView: View {
                 await _Concurrency.Task.detached(priority: .utility) {
                     _ = try? AppDatabase.shared.runBackstopAutoSeal(userId: userId)
                 }.value
-                await MainActor.run { loadBoards() }
+                await MainActor.run {
+                    loadBoards()
+                    // A backstop pass may have silently sealed a board that
+                    // was in the closing-out set — drop it from the banner.
+                    closingOutVM.reloadAsync(userId: userId)
+                }
             }
         }
     }
