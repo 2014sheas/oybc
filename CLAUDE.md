@@ -41,6 +41,15 @@ Schema shape:
 
 The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables are still present in old migrations so first-launch backfill on dev/test devices works. They are read only by (a) the GRDB/Dexie first-launch migrations that backfill `compound_children`, and (b) the sync service's known-collections list, which lets the push loop drain DELETE tombstones to Firestore. No live UI reads, no live writes — once a device has migrated and drained, those rows are inert. Build deferred compound playgrounds (`CompoundTaskPlayground` / `GlobalCompletionPlayground`) when a future feature genuinely needs them — the snapshot test target (`OYBCSnapshotTests`) is the primary visual-verification surface today.
 
+## Windowed Completion (event-sourced, shipped)
+
+Completion is **event-sourced**, not a single mutable global bit. Canonical doc: [`docs/WINDOWED_COMPLETION.md`](docs/WINDOWED_COMPLETION.md) (shipped via PR train A #316 / B #318 / C #326 / D). The one-paragraph model:
+
+- **`task_events`** is a synced occurrence log (`kind: completion | increment`, `occurredAt`) for **event-owning** tasks (`NORMAL`, plain `COUNTING`). Derived shared-counters, compounds, and achievements are **carved out** — they own no events and read lifetime caches / derive as before.
+- A task's state on a board is evaluated **against that board's window** `[startDate, ∞)`, not globally. `Task.isCompleted`/`currentCount`/`completedAt` are demoted to **lifetime caches** (library/global reads; recomputed from events on pull; never trusted for windowed board grids). This is why the top-of-doc "completion is global per Task" line is the *library* view — the per-board view is windowed.
+- **Past windows seal** (`Board.sealedAt` + `sealedCompletedCells`): a permanent read-only record, excluded from the live derivation fan-out; the snapshot re-derives deterministically from the converged event union (never LWW-races). Board Edit gates on `!sealedAt`.
+- **Invariants not to regress**: events only for event-owning tasks (Zod-enforced at the boundary); `taskEvents` syncs by per-row LWW + union-by-id (no merge); sealed boards never mutate except via deterministic pull-path re-derivation; the recurring-spawn path runs the derivation pass at spawn so stored stats are derivation output (fresh window → zero + FREE-center auto-fill), never a hand-init. The retired `sharedCounterMerge`/`lastSyncedCount` machinery is gone — do not reintroduce a `currentCount` merge.
+
 ## Recurring Boards (Phase 6 — shipped)
 
 Three sub-phases, all merged to `dev`. Canonical design: [`docs/ARCHITECTURE.md` §Phase 6](docs/ARCHITECTURE.md#phase-6-recurring-boards--shipped).
@@ -406,7 +415,7 @@ oybc/
 
 ### Database Schema (Identical Across Platforms)
 
-**Tables**: `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `progress_counters`, `sync_queue`. Legacy `task_steps` / `composite_tasks` / `composite_nodes` linger in old migrations for first-launch backfill only — no live reads/writes (see top-of-doc Task model section).
+**Tables**: `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `progress_counters`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). Legacy `task_steps` / `composite_tasks` / `composite_nodes` linger in old migrations for first-launch backfill only — no live reads/writes (see top-of-doc Task model section).
 
 **Key Design Elements**:
 
@@ -427,7 +436,11 @@ oybc/
 
 **Conflict Resolution** (MVP): Last-write-wins using version fields. Higher version wins; same version → newer timestamp wins.
 
-**Cross-Board Features**: Achievement squares and bingo lines always recomputed from source data. Task step linking uses additive merge.
+**Sync collections** (`SYNC_COLLECTIONS` in `@oybc/shared`, mirrored in both platforms' sync services, enforced by the C4 sync-contract fixture): `boards`, `tasks`, `boardTasks`, `compoundChildren`, `recurringBoardTemplates`, `defaultPools`, `taskEvents`. `taskEvents` (Windowed Completion) syncs by per-row LWW + soft-delete tombstones, **union by id** — exactly like `compoundChildren`, no new conflict machinery.
+
+**Cross-Board Features**: Achievement squares and bingo lines always recomputed from source data.
+
+**Counting conflicts** resolve by **union-of-events** on `taskEvents`, not merge. The old Phase-4 additive-merge shared-counter sync (`sharedCounterMerge` + `lastSyncedCount` stamping) was **retired** by Windowed Completion (dead code deleted in WC PR D; `lastSyncedCount` field/column kept inert for decode compat).
 
 See `docs/SYNC_STRATEGY.md` for details.
 

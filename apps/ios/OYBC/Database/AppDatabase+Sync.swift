@@ -25,45 +25,6 @@ extension AppDatabase {
         }
     }
 
-    /// Atomically marks a pushed sync-queue item completed and — for a counting
-    /// task — advances its `lastSyncedCount` to the pushed value, in ONE GRDB
-    /// write transaction.
-    ///
-    /// D2 (issue #294): the `lastSyncedCount` advance used to run as a separate
-    /// write that swallowed its own failure, silently downgrading the next
-    /// shared-counter conflict from additive merge to increment-losing LWW.
-    /// Folding it into the completion write closes that window — both land or
-    /// neither does. On failure the error propagates to the push loop, which
-    /// marks the item FAILED and retries; the advance is idempotent (sets the
-    /// common ancestor := pushed value), so the retry re-applies it cleanly.
-    /// Pass `nil` for a non-counting push to make this a plain completion.
-    ///
-    /// - Parameters:
-    ///   - item: The queue item to complete.
-    ///   - countAdvance: `(taskId, pushedCount)` for a counting push, or `nil`.
-    ///   - beforeCountAdvance: Test-only seam; runs inside the transaction just
-    ///     before the count write so a test can force a mid-transaction failure
-    ///     to prove atomic rollback. Never passed in production.
-    func completePushedItem(
-        _ item: SyncQueueItem,
-        countAdvance: (taskId: String, pushedCount: Int)?,
-        beforeCountAdvance: (() throws -> Void)? = nil
-    ) throws {
-        try write { db in
-            var completed = item
-            completed.status = .completed
-            completed.completedAt = AppDatabase.currentTimestamp()
-            try completed.save(db)
-            try beforeCountAdvance?()
-            if let advance = countAdvance {
-                try db.execute(
-                    sql: "UPDATE tasks SET lastSyncedCount = ? WHERE id = ?",
-                    arguments: [advance.pushedCount, advance.taskId]
-                )
-            }
-        }
-    }
-
     /// Reset sync queue items left in `inProgress` from a force-quit
     /// or crashed push back to `pending`. Mirrors the equivalent reset
     /// at the top of the web `pushSync`.

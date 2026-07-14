@@ -1330,4 +1330,19 @@ Per the Phase 0 Phasing section: `ProgressCounter` types, Dexie / GRDB table def
 
 ---
 
+## Windowed Completion — event-sourced task completion (shipped)
+
+> **Canonical design: [`docs/WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md).** This is a pointer summary only.
+
+Task completion used to be a single mutable global bit (`Task.isCompleted` / `currentCount`), while boards are windowed temporal artifacts — producing two verified failure modes: **recurring respawn bleed** (a task completed Monday spawns Tuesday's board pre-greenlogged) and **mutable history** (decrementing a counter today retroactively breaks last month's streak). Windowed Completion (shipped via the PR train A #316 / B #318 / C #326 / D) fixes both by making completion **event-sourced**:
+
+- **`task_events`** — one new synced collection (SQLite `task_events`, Dexie `taskEvents`, Firestore `users/{uid}/taskEvents`). Each row is a `completion` or `increment` occurrence with an `occurredAt` timestamp; per-row LWW + soft-delete tombstones (tombstone = undo), **union by id** — no new conflict machinery. Only **event-owning** tasks (`NORMAL`, plain `COUNTING`) carry events; derived shared-counters, compounds, and achievements are carved out and read their lifetime caches / derive as before.
+- **Windowed evaluation** — a task's state on a board is computed against that board's window `[startDate, ∞)` (events with `occurredAt >= startDate`), not a global bit. The same task legitimately shows different states on today's board vs this month's. `Task.isCompleted`/`currentCount`/`completedAt` are demoted to **lifetime caches** — read by library/global surfaces, recomputed from events on pull, never trusted for windowed board grids.
+- **Board sealing** — past windows seal (lazy prompt-to-seal on app-open + timeframe-scaled auto-seal backstop) into a permanent, read-only historical record (`Board.sealedAt` + `sealedCompletedCells`). Sealed boards drop out of the live derivation fan-out; their snapshot re-derives deterministically from the converged event union, so it never LWW-races. Board Edit is gated on `!sealedAt`.
+- **Retired** — the Phase-4 additive-merge shared-counter sync (`sharedCounterMerge` + `lastSyncedCount` stamping) is gone; counting conflicts resolve by union-of-events. The `lastSyncedCount` column/field stays inert for decode compatibility. The **recurring-spawn path now runs the derivation pass at spawn**, so a spawned board's stored stats are derivation output (a fresh window computes to zero + FREE-center auto-fill), not a hand-initialized `completedTasks: 0`.
+
+See `WINDOWED_COMPLETION.md` for the full model, sync/batched-recompute details, migration/backfill, sealing lifecycle, and testing matrix. Cross-refs: [`TASK_SYSTEM.md`](./TASK_SYSTEM.md) (task model amendment), [`SYNC_STRATEGY.md` §Task Events sync](./SYNC_STRATEGY.md#task-events-sync-windowed-completion--shipped).
+
+---
+
 This plan represents a complete rebuild of OYBC with offline-first architecture, designed to provide instant UX and work perfectly without internet connection.

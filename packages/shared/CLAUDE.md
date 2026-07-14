@@ -16,8 +16,8 @@ src/
 │                 #   SyncQueueItem, RecurringBoardTemplate, DefaultPool
 │                 #   (TaskStep / CompositeTask persist as legacy migration-read types only)
 ├── algorithms/   # bingo detection, shuffle, calendar boundaries, compound evaluation,
-│                 #   derivation pass, recurring boards, streaks, shared-counter merge,
-│                 #   cross-board rollup, task expiry, cycle detection, migration helpers
+│                 #   derivation pass, recurring boards, streaks, task events (windowed
+│                 #   completion), cross-board rollup, task expiry, cycle detection, migration helpers
 ├── validation/   # Zod schemas for all types
 ├── constants/    # Enums (BoardStatus, TaskType = NORMAL/COUNTING/COMPOUND/ACHIEVEMENT,
 │                 #   Timeframe, CenterSquareType, AchievementTrigger, OperatorType) + sync-retry constants

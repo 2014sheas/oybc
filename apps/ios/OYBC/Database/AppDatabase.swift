@@ -493,14 +493,12 @@ final class AppDatabase {
         }
 
         // v16: Phase 4 — Shared Counter Sync. Adds `lastSyncedCount` (INTEGER)
-        // to `tasks`. This is the common-ancestor value used by SyncService's
-        // additive-merge conflict resolver: when both local and remote have
-        // incremented since `lastSyncedCount`, the resolver sums the deltas
-        // instead of picking a winner (which would lose one device's work).
-        //
-        // NULL for existing rows: the nil value causes the conflict resolver to
-        // fall back to plain LWW on first conflict after migration — correct,
-        // since no common ancestor is known yet.
+        // to `tasks`. RETIRED by Windowed Completion: it was the common-ancestor
+        // for the additive-merge conflict resolver, which is gone (counting-task
+        // conflicts now resolve by union-of-events —
+        // docs/WINDOWED_COMPLETION.md §Shared counters interaction). The column
+        // stays (this migration is history; the field decodes old rows) but is
+        // inert — nothing reads or writes it. Do NOT drop it (breaks decode).
         //
         // Dead-scaffolding note (Decision 1 / Phase 4 cleanup): the `progress_counters`
         // SQLite table remains in place — SQLite cannot drop a table without

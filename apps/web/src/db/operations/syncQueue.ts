@@ -273,60 +273,6 @@ export async function markSyncItemCompleted(id: string): Promise<void> {
 }
 
 /**
- * The shared-counter ancestor bookkeeping that must land atomically with a
- * successful counting-task push: advance `lastSyncedCount` to the value just
- * pushed to Firestore, so the next conflict can compute the local delta.
- */
-export interface CountAdvance {
-  /** The counting task's id. */
-  taskId: string;
-  /** The `currentCount` value just pushed to Firestore. */
-  pushedCount: number;
-}
-
-/**
- * Atomically mark a pushed sync-queue item COMPLETED and — for a counting
- * task — advance its `lastSyncedCount` to the pushed value, in ONE Dexie
- * transaction over `syncQueue` + `tasks`.
- *
- * D2 (issue #294): the `lastSyncedCount` advance used to run as a separate
- * write that swallowed its own failure, silently downgrading the NEXT
- * shared-counter conflict from additive merge to increment-losing LWW.
- * Folding it into the queue-completion transaction closes that window — both
- * writes commit together or neither does. If the transaction fails it
- * propagates to the push loop, which marks the item FAILED and retries; the
- * advance is idempotent (sets the common ancestor := pushed value), so the
- * retry re-applies it cleanly. Passing `null` for a non-counting push makes
- * this a plain queue-completion.
- *
- * @param queueItemId - The sync-queue item to mark completed.
- * @param countAdvance - The counting-task ancestor advance, or `null`.
- * @param testHooks - Test-only seam. `beforeCountAdvance` runs inside the
- *   transaction just before the count write, letting a test force a
- *   mid-transaction failure to prove atomic rollback. Never passed in prod.
- */
-export async function completePushedItem(
-  queueItemId: string,
-  countAdvance: CountAdvance | null,
-  testHooks?: { beforeCountAdvance?: () => void | Promise<void> },
-): Promise<void> {
-  await db.transaction('rw', [db.syncQueue, db.tasks], async () => {
-    await db.syncQueue.update(queueItemId, {
-      status: SyncStatus.COMPLETED,
-      completedAt: currentTimestamp(),
-    });
-    if (testHooks?.beforeCountAdvance) {
-      await testHooks.beforeCountAdvance();
-    }
-    if (countAdvance) {
-      await db.tasks.update(countAdvance.taskId, {
-        lastSyncedCount: countAdvance.pushedCount,
-      });
-    }
-  });
-}
-
-/**
  * Mark sync item as failed
  */
 export async function markSyncItemFailed(

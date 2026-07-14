@@ -107,18 +107,14 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     //     → displayed = source.currentCount − baseline.
     var baseline: Int?
 
-    // Phase 4 — Shared Counter Sync. The `currentCount` value that was last
-    // confirmed pushed to (or pulled from) Firestore for this Task. Used as the
-    // common-ancestor baseline for additive-merge conflict resolution:
-    //
-    //   mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)
-    //
-    // Set after every successful push of this counting Task and after every
-    // remote-wins pull. NOT updated on local increments — only on confirmed
-    // Firestore round-trips.
-    //
-    // When nil (first sync, or Task pre-dates Phase 4): the conflict resolver
-    // falls back to plain LWW. Stored as INTEGER in SQLite (GRDB v16 migration).
+    // RETIRED (Windowed Completion). Phase 4's shared-counter additive-merge
+    // common-ancestor baseline. The additive-merge resolver it fed was retired —
+    // counting-task conflicts now resolve by union-of-events, not by merging
+    // `currentCount` (docs/WINDOWED_COMPLETION.md §Shared counters interaction).
+    // Nothing writes or reads this field anymore (WC PR B stopped stamping it;
+    // WC PR D deleted the merge machinery). Kept on the model + as the GRDB v16
+    // column for decode compatibility with old rows / pre-WC clients — dropping
+    // it would break decode. Inert residue; do not re-wire it.
     var lastSyncedCount: Int?
 
     /// Draft-board provenance. `true` when the task was created inside the

@@ -1,6 +1,10 @@
 # Windowed Completion — task events + board sealing
 
-> **Status: DESIGN (Gate-1 approved decisions locked 2026-07-09; no implementation yet).**
+> **Status: SHIPPED (PRs A–D). Canonical reference for the event-sourced
+> completion model.** Gate-1 decisions locked 2026-07-09; the PR train A #316,
+> B #318, C #326, D (this PR) landed the `task_events` collection, windowed
+> evaluation, board sealing, and the dead-`sharedCounterMerge` cleanup. See
+> [§Phasing](#phasing-suggested-pr-train) for the per-PR breakdown.
 > Provenance: the 2026-07-09 task/board design review identified a structural fault
 > line — Task completion is a single mutable global bit, while boards are windowed
 > temporal artifacts — producing two verified failure modes (respawn bleed, mutable
@@ -486,12 +490,12 @@ only for boards sealed by step 3. Be honest about the rest:
 
 ## Phasing (suggested PR train)
 
-| PR | Scope | Risk |
-| -- | ----- | ---- |
-| A | `packages/shared`: `TaskEvent` type + Zod, `resolveTaskWindowState`, window-context params on `evaluateCompound` / `computeBoardStatsUpdate` (defaulting to lifetime = today's behavior), backfill id/timestamp helpers, backstop formula, tests | Low — no platform behavior change |
-| B | Both platforms: `task_events` migrations + backfill, write paths append events + stamp caches, windowed reads in grids/derivation (incl. derived-task carve-out branch), sync collection + `firestore.rules` + batched pull recompute, **`sharedCounterMerge` neutered**, upgrade note UI | **High — the flag-day PR**; both platforms in lockstep |
-| C | Sealing: Board schema fields, closing-out prompt UX (web + iOS), timeframe-scaled backstop, migration sealing, fan-out exclusion, sealed-grid rendering, seal re-derivation hook in the pull path, Board-Edit gating on `!sealedAt` | Medium |
-| D | Delete dead `sharedCounterMerge` code; spawn-time derivation pass; doc updates (TASK_SYSTEM, SYNC_STRATEGY, ARCHITECTURE, CLAUDE.md pointers) | Low |
+| PR | Scope | Status |
+| -- | ----- | ------ |
+| A | `packages/shared`: `TaskEvent` type + Zod, `resolveTaskWindowState`, window-context params on `evaluateCompound` / `computeBoardStatsUpdate` (defaulting to lifetime = today's behavior), backfill id/timestamp helpers, backstop formula, tests | **Shipped (#316)** |
+| B | Both platforms: `task_events` migrations + backfill, write paths append events + stamp caches, windowed reads in grids/derivation (incl. derived-task carve-out branch), sync collection + `firestore.rules` + batched pull recompute, **`sharedCounterMerge` neutered**, upgrade note UI | **Shipped (#318)** |
+| C | Sealing: Board schema fields, closing-out prompt UX (web + iOS), timeframe-scaled backstop, migration sealing, fan-out exclusion, sealed-grid rendering, seal re-derivation hook in the pull path, Board-Edit gating on `!sealedAt` | **Shipped (#326)** |
+| D | Delete dead `sharedCounterMerge` / `lastSyncedCount` code (both platforms; `lastSyncedCount` column/field kept inert for decode compat); spawn-time derivation pass (recurring spawn now writes derivation output, not a hand-init 0); doc updates (TASK_SYSTEM, SYNC_STRATEGY, ARCHITECTURE, CLAUDE.md pointers) | **Shipped (this PR)** |
 | Phase 2 (separate design pass) | `linkedAt` + windowed derived counters; timeframe-scoped counter goals (Decision 6 unlock) | — |
 
 B before C is required (sealing snapshots windowed evaluation). A is pure prep and

@@ -5,9 +5,11 @@ import GRDB
 /// Seam tests (E3 / issue #299) for `SyncService.applyRemoteSubdoc(...)` — the
 /// iOS pull-apply path. This is the integration boundary where several
 /// well-tested pure units meet: `validateRemotePullDocument` → `resolveConflict`
-/// (LWW) → `needsAdditiveMerge`/`additiveMergeCount` → `upsertLocalRecord` +
-/// `runPullCascade`, all inside ONE GRDB write so a cascade failure rolls back
-/// the upsert.
+/// (LWW) → `upsertLocalRecord` + `runPullCascade`, all inside ONE GRDB write so a
+/// cascade failure rolls back the upsert. (The Phase-4 additive-merge gate that
+/// used to sit between LWW and the upsert was retired by Windowed Completion —
+/// counting-task conflicts resolve by union-of-events; case 4 below now asserts
+/// that retirement.)
 ///
 /// `SyncService` is constructed with an injected in-memory
 /// `AppDatabase.makeTestInstance()` (E3 seam-injection: `init(database:)`); the
@@ -23,10 +25,9 @@ import GRDB
 ///      forward-incompatible `type` passes validation, upserts as a raw row,
 ///      then `runPullCascade`'s `Task.fetchAll` decode throws → the whole
 ///      transaction rolls back → the row never persists.
-///   4. Additive-merge gate (the SharedCounterMerge integration seam): merge
-///      fires only when ALL conditions hold (counting local+remote, both moved
-///      off `lastSyncedCount`, and the task is a shared-counter source); a
-///      non-source counting task falls through to plain LWW.
+///   4. Additive-merge is RETIRED (Windowed Completion): even a shared-counter
+///      source with divergent local+remote counts falls through to plain LWW —
+///      no merge, no version bump, `lastSyncedCount` left untouched.
 @MainActor
 final class SyncPullApplyTests: XCTestCase {
 

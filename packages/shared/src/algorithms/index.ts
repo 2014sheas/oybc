@@ -155,10 +155,10 @@ export type {
   LinkedTaskIncrementResult,
 } from './sharedCounter';
 
-// ===== Phase 4 — Shared counter sync / additive-merge conflict resolution =====
-export { additiveMergeCount, needsAdditiveMerge } from './sharedCounterMerge';
-
-export type { MergeCountResult } from './sharedCounterMerge';
+// Phase 4's `sharedCounterMerge` (additiveMergeCount / needsAdditiveMerge) was
+// retired by Windowed Completion — counting-task conflicts now resolve by
+// union-of-events, not additive merge (docs/WINDOWED_COMPLETION.md §Shared
+// counters interaction). The module + its tests/fixtures were deleted in WC PR D.
 
 // ===== Shared Counters — Hub / Detail read-model builder (P1) =====
 export { buildSharedCounterGroups } from './sharedCounterGroups';
