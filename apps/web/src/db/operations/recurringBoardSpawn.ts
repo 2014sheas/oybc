@@ -5,10 +5,13 @@ import {
   SyncOperationType,
   buildSpawnPlacement,
   validateSpawnPool,
+  computeBoardStatsUpdate,
   type Board,
   type BoardTask,
+  type CompoundChild,
   type RecurringBoardTemplate,
   type Task,
+  type TaskEvent,
   type PendingTemplateSpawn,
   type SpawnPoolFailureReason,
 } from '@oybc/shared';
@@ -71,6 +74,8 @@ export async function spawnTemplateBoard(
       db.boards,
       db.boardTasks,
       db.tasks,
+      db.compoundChildren,
+      db.taskEvents,
       db.recurringBoardTemplates,
       db.syncQueue,
     ],
@@ -172,6 +177,35 @@ export async function spawnTemplateBoard(
           version: 1,
         });
       }
+
+      // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this closes —
+      // respawn-bleed row): run the derivation pass at spawn so stored stats are
+      // derivation output, not a hand-initialized 0. A fresh window has no events,
+      // so event-owning squares resolve incomplete (no respawn bleed); a
+      // FREE/CUSTOM_FREE center still auto-fills. The invariant "stored stats are
+      // always derivation output" now holds from the first row written.
+      const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
+      const childrenByCompound: Record<string, CompoundChild[]> = {};
+      for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+      const taskById: Record<string, Task> = {};
+      for (const t of await db.tasks.toArray()) taskById[t.id] = t;
+      const eventsByTaskId: Record<string, TaskEvent[]> = {};
+      for (const e of await db.taskEvents.toArray()) {
+        if (e.isDeleted) continue;
+        (eventsByTaskId[e.taskId] ??= []).push(e);
+      }
+      const allBoards = await db.boards.toArray();
+      const stats = computeBoardStatsUpdate(
+        board,
+        boardTasks,
+        childrenByCompound,
+        taskById,
+        allBoards,
+        { eventsByTaskId },
+      );
+      board.completedTasks = stats.completedTasks;
+      board.linesCompleted = stats.linesCompleted;
+      board.completedLineIds = stats.completedLineIds;
 
       const updatedTemplate: RecurringBoardTemplate = {
         ...template,

@@ -460,8 +460,9 @@ export const TaskSchema = z.object({
   sharedCounterId: z.string().uuid().nullable().optional(),
   // Phase 2 — Shared Counters. Baseline offset (source count at link time).
   baseline: z.number().int().min(0).nullable().optional(),
-  // Phase 4 — Shared Counter Sync. Common-ancestor value for additive-merge
-  // conflict resolution. Null/absent means no confirmed Firestore round-trip yet.
+  // RETIRED (Windowed Completion) — Phase 4 additive-merge common-ancestor.
+  // Inert residue; nothing reads/writes it (docs/WINDOWED_COMPLETION.md §Shared
+  // counters interaction). Kept in the schema for decode compat with old rows.
   lastSyncedCount: z.number().int().nonnegative().nullable().optional(),
   // Draft-board provenance. `true` for wizard-born (deferred-persist)
   // tasks; absent/false for standalone + copied + pre-feature tasks.

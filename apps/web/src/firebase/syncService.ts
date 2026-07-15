@@ -30,8 +30,6 @@ import {
   promoteEligibleFailedItems,
   countExhaustedSyncItems,
   retryExhaustedSyncItems,
-  completePushedItem,
-  type CountAdvance,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
@@ -153,68 +151,6 @@ export interface SyncResult {
   pull: PullResult;
 }
 
-// ─── Phase 4 / D2: lastSyncedCount bookkeeping after push ────────────────────
-
-/**
- * Derive the shared-counter ancestor advance for a just-pushed payload:
- * `{ taskId, pushedCount }` for a COUNTING task, or `null` for anything else.
- * `lastSyncedCount` is sync bookkeeping only counting tasks carry.
- *
- * @param entityType - The entity type from the sync queue item.
- * @param entityId - The task ID.
- * @param payload - The sync payload that was just pushed to Firestore.
- * @returns The count advance, or `null` when the push isn't a counting task.
- */
-function countAdvanceForPush(
-  entityType: string,
-  entityId: string,
-  payload: SyncableEntity,
-): CountAdvance | null {
-  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Shared counters
-  // interaction — "Retired: sharedCounterMerge + lastSyncedCount stamping — in
-  // PR B, not later"). The counting-task ancestor advance is NEUTERED: with
-  // per-row event union replacing the additive-merge conflict resolver, an
-  // advancing `lastSyncedCount` on push would only feed a merge branch that no
-  // longer runs. Always return null so nothing stamps the (now inert) field on
-  // the push path. PR D deletes the dead `CountAdvance` plumbing; the field
-  // stays in the schema for decode compatibility.
-  void entityType;
-  void entityId;
-  void payload;
-  return null;
-}
-
-/**
- * Atomically complete a just-pushed sync-queue item and advance its
- * `lastSyncedCount` (D2, issue #294). The completion + ancestor advance land in
- * one Dexie transaction, so the advance can no longer half-fail and silently
- * downgrade the next conflict to LWW. On failure we re-throw so the push loop
- * marks the item FAILED and retries it (the advance is idempotent) — first
- * logging the semantic consequence loudly instead of swallowing it.
- *
- * @param item - The pending sync-queue item that was just pushed.
- * @param entityType - Its entity type.
- * @param payload - The payload written to Firestore.
- */
-async function completePushedItemLoud(
-  item: { id: string; entityId: string },
-  entityType: string,
-  payload: SyncableEntity,
-): Promise<void> {
-  const countAdvance = countAdvanceForPush(entityType, item.entityId, payload);
-  try {
-    await completePushedItem(item.id, countAdvance);
-  } catch (err) {
-    if (countAdvance) {
-      console.error(
-        `[sync] lastSyncedCount advance failed for tasks/${item.entityId}; push will retry — until it lands, a concurrent conflict for this counter falls back to increment-losing LWW`,
-        err,
-      );
-    }
-    throw err;
-  }
-}
-
 // ─── Push Sync ────────────────────────────────────────────────────────────────
 
 /**
@@ -333,10 +269,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
       if (!remoteSnap.exists()) {
         // No remote — push directly
         await writeSingleDoc(docRef, payload);
-        // Phase 4 / D2: mark completed AND advance lastSyncedCount for a
-        // counting task in one atomic transaction, so the advance can't
-        // half-fail and silently downgrade the next conflict to LWW.
-        await completePushedItemLoud(item, entityType, payload);
+        await markSyncItemCompleted(item.id);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(`Pushed ${entityType}/${item.entityId} (new)`);
@@ -350,9 +283,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
       if (resolution.winner === 'local') {
         // Local wins — push to Firestore
         await writeSingleDoc(docRef, payload);
-        // Phase 4 / D2: mark completed AND advance lastSyncedCount for a
-        // counting task in one atomic transaction (see the no-remote branch).
-        await completePushedItemLoud(item, entityType, payload);
+        await markSyncItemCompleted(item.id);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(
@@ -556,15 +487,10 @@ async function applyRemoteSubdoc(
   // pulled value is authoritative.
   //
   // Windowed Completion (docs/WINDOWED_COMPLETION.md §Shared counters
-  // interaction): the Phase-4 additive-merge branch for shared-counter sources
-  // is RETIRED here. Between an event-writing client and a still-active merge
-  // branch, the pull path would author a merged `currentCount` with no backing
-  // TaskEvent, fighting the event-driven cache recompute. Union-of-events (the
-  // batched `taskEvents` pull recompute — see §Sync) is the new conflict model
-  // for counting tasks, so a pulled counting Task now just LWW-upserts like any
-  // other row. PR D deletes the dead `additiveMergeCount` / `needsAdditiveMerge`
-  // / `lastSyncedCount`-stamping code; B hard-bypasses it.
-  const mergeLog: string | null = null;
+  // interaction): counting-task conflicts resolve by union-of-events (the
+  // batched `taskEvents` pull recompute — see §Sync), so a pulled counting Task
+  // just LWW-upserts like any other row. The Phase-4 additive-merge branch for
+  // shared-counter sources was retired here (its dead code deleted in WC PR D).
   await db.transaction(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
@@ -602,9 +528,6 @@ async function applyRemoteSubdoc(
   recordSyncEvent('pulled');
   if (isNew) {
     return `Pulled ${collectionName}/${validated.id} (new)`;
-  }
-  if (mergeLog) {
-    return `Pulled ${collectionName}/${validated.id} (additive-merge: ${mergeLog})`;
   }
   return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
 }

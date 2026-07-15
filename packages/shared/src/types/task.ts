@@ -177,24 +177,16 @@ export interface Task {
   baseline?: number | null;
 
   /**
-   * Phase 4 — Shared Counter Sync. The `currentCount` value that was last
-   * confirmed pushed to (or pulled from) Firestore for this Task. Used as the
-   * common-ancestor baseline for additive-merge conflict resolution:
+   * RETIRED (Windowed Completion). Phase 4's shared-counter additive-merge
+   * common-ancestor baseline. The additive-merge conflict resolver it fed was
+   * retired — counting-task conflicts now resolve by union-of-events, not by
+   * merging `currentCount` (docs/WINDOWED_COMPLETION.md §Shared counters
+   * interaction). Nothing writes or reads this field anymore (WC PR B stopped
+   * stamping it; WC PR D deleted the merge machinery).
    *
-   *   mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)
-   *
-   * Set after every successful push of this counting Task and after every
-   * remote-wins pull. Not bumped on local increments — only on confirmed
-   * Firestore round-trips.
-   *
-   * When null/undefined (first sync, or Task pre-dates Phase 4 migration):
-   * the conflict resolver falls back to plain LWW — no common ancestor is
-   * known so additive merge is not safe.
-   *
-   * Only meaningful on `type === COUNTING` tasks that are shared-counter
-   * sources (i.e. at least one other Task has `sharedCounterId === this.id`).
-   * Stored on ALL counting tasks for forward-compatibility (if the source
-   * designation changes, the field is already present).
+   * The field is kept in the type + Zod schema + persisted columns for decode
+   * compatibility — old synced rows and pre-WC clients may still carry it, so
+   * dropping it would break decode. It is inert residue; do not re-wire it.
    */
   lastSyncedCount?: number | null;
 }

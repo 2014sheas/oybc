@@ -346,6 +346,74 @@ final class WindowedCompletionTests: XCTestCase {
         let june = makeBoard(id: "b-june")
         XCTAssertTrue(try db.windowedState(db_taskId: "t1", windowStart: june.startDate).isCompleted)
     }
+
+    // MARK: - 10. Spawn-time derivation pass — stored stats == derivation output (WC PR D)
+
+    func test_spawnRecurringBoard_storedStatsEqualDerivationOutput() throws {
+        let db = try makeDb(); try seedUser(db)
+
+        // 3×3 FREE center → 8 seed tasks. Each is lifetime-complete with a
+        // completion event in JUNE — BEFORE the JULY spawn window.
+        var seedIds: [String] = []
+        try db.write { db in
+            for i in 0..<8 {
+                let id = "seed\(i)"
+                try self.makeTask(id, type: .normal, isCompleted: true,
+                                  completedAt: "2026-06-10T00:00:00.000").save(db)
+                try self.makeEvent("e-\(id)", taskId: id, kind: .completion,
+                                   occurredAt: "2026-06-10T00:00:00.000").save(db)
+                seedIds.append(id)
+            }
+        }
+
+        let now = AppDatabase.currentTimestamp()
+        let template = RecurringBoardTemplate(
+            id: "tpl-d", userId: userId, name: "Daily", timeframe: .monthly,
+            boardSize: 3, centerSquareType: .free, isRandomized: false,
+            seedTaskIds: seedIds, isActive: true,
+            createdAt: now, updatedAt: now, version: 1
+        )
+        try db.saveRecurringBoardTemplate(template)
+
+        let boardId = AppDatabase.generateUUID()
+        let outcome = try db.spawnRecurringBoard(
+            PendingTemplateSpawn(
+                template: template,
+                windowStart: "2026-07-01T00:00:00.000",
+                windowEnd: "2026-07-31T23:59:59.999",
+                suggestedName: "Daily — Jul"
+            ),
+            boardId: boardId, now: now
+        )
+        guard case .spawned = outcome else { return XCTFail("expected .spawned, got \(outcome)") }
+
+        // Read the persisted board + placements straight out of the DB — NO
+        // cascade in between — and recompute. The invariant: the spawn path
+        // itself wrote derivation output, so a fresh recomputation matches.
+        try db.read { db in
+            let board = try XCTUnwrap(try Board.fetchOne(db, key: boardId))
+            let placements = try BoardTask.filter(Column("boardId") == boardId).fetchAll(db)
+            let windowContext = try AppDatabase.buildWindowContext(db: db)
+            let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
+            var taskById: [String: Task] = [:]
+            for t in try Task.fetchAll(db) { taskById[t.id] = t }
+            let allBoards = try Board.filter(Column("isDeleted") == false).fetchAll(db)
+
+            let derived = DerivationPass.computeBoardStatsUpdate(
+                board: board, boardTasksOnBoard: placements,
+                childrenByCompound: childrenByCompound, taskById: taskById,
+                allBoards: allBoards, windowContext: windowContext
+            )
+            XCTAssertEqual(board.completedTasks, derived.completedTasks)
+            XCTAssertEqual(board.linesCompleted, derived.linesCompleted)
+            XCTAssertEqual(board.completedLineIds ?? [], derived.completedLineIds)
+            // Fresh window: only the FREE center auto-fills, no bled task squares.
+            XCTAssertEqual(board.completedTasks, 1)
+            XCTAssertEqual(board.linesCompleted, 0)
+        }
+    }
 }
 
 // Test-only convenience to resolve windowed state through the DB read path.

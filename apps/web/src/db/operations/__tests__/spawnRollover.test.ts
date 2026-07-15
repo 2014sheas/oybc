@@ -3,6 +3,8 @@ import {
   CenterSquareType,
   Timeframe,
   TaskType,
+  computeBoardStatsUpdate,
+  type CompoundChild,
   type RecurringBoardTemplate,
   type Task,
   type TaskEvent,
@@ -134,5 +136,71 @@ describe('Windowed Completion — respawn bleed regression', () => {
       const state = taskToSquareState(task!, undefined, {}, {}, windowContext);
       expect(state.isCompleted).toBe(false); // windowed square is EMPTY
     }
+  });
+
+  it('spawn-time derivation pass — stored board stats equal derivation output (no separate cascade needed)', async () => {
+    const seedTaskIds: string[] = [];
+    for (let i = 0; i < POOL_SIZE; i += 1) {
+      seedTaskIds.push(await seedPoolTaskWithPriorCompletion(i));
+    }
+
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-2',
+      userId: 'user-1',
+      name: 'Daily Workout',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.FREE,
+      isRandomized: false,
+      seedTaskIds,
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: NEW_WINDOW_START,
+      windowEnd: NEW_WINDOW_END,
+      suggestedName: 'Daily Workout — May 6',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Read the persisted board + its placements straight out of the DB — NO
+    // cascade run in between. The invariant under test: the spawn path itself
+    // wrote derivation output, so a fresh recomputation matches byte-for-byte.
+    const board = await db.boards.get(result.boardId);
+    expect(board).toBeDefined();
+    const boardTasks = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
+    const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
+    const childrenByCompound: Record<string, CompoundChild[]> = {};
+    for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+    const taskById: Record<string, Task> = {};
+    for (const t of await db.tasks.toArray()) taskById[t.id] = t;
+    const events = (await db.taskEvents.toArray()).filter((e) => !e.isDeleted);
+    const eventsByTaskId: Record<string, TaskEvent[]> = {};
+    for (const e of events) (eventsByTaskId[e.taskId] ??= []).push(e);
+    const allBoards = await db.boards.toArray();
+
+    const derived = computeBoardStatsUpdate(
+      board!,
+      boardTasks,
+      childrenByCompound,
+      taskById,
+      allBoards,
+      { eventsByTaskId },
+    );
+
+    expect(board!.completedTasks).toBe(derived.completedTasks);
+    expect(board!.linesCompleted).toBe(derived.linesCompleted);
+    expect(board!.completedLineIds ?? []).toEqual(derived.completedLineIds);
+    // Fresh window: only the FREE center, no bled task squares.
+    expect(board!.completedTasks).toBe(1);
+    expect(board!.linesCompleted).toBe(0);
   });
 });
