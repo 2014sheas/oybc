@@ -141,7 +141,7 @@ extension AppDatabase {
 
             for affectedBoardId in affectedBoardIds {
                 guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
-                      !affectedBoard.isDeleted else { continue }
+                      !affectedBoard.isDeleted, affectedBoard.sealedAt == nil else { continue }
 
                 let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
                 let update = DerivationPass.computeBoardStatsUpdate(
@@ -365,7 +365,7 @@ extension AppDatabase {
             }
 
             for boardId in affectedBoardIds {
-                guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
+                guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
                 let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: board,
@@ -474,7 +474,7 @@ extension AppDatabase {
             }
 
             for affectedBoardId in affectedBoardIds {
-                guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted else { continue }
+                guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted, board.sealedAt == nil else { continue }
                 let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: board,

@@ -1,13 +1,22 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
-import { useBoards, useCoreBoardSlots, usePendingRecurringBoards, useRecurringBoardSpawn } from '../hooks';
+import {
+  useBoards,
+  useCoreBoardSlots,
+  usePendingRecurringBoards,
+  useRecurringBoardSpawn,
+  useBackstopAutoSeal,
+  useClosingOutBoards,
+} from '../hooks';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
+import { sealBoard } from '../db/operations/sealing';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
 import { RecurringWindowBanner } from '../components/boards/RecurringWindowBanner';
+import { ClosingOutBanner } from '../components/boards/ClosingOutBanner';
 import { WindowedCompletionNote } from '../components/boards/WindowedCompletionNote';
 import { BoardStatus, type PendingRecurringBoard } from '@oybc/shared';
 import styles from '../components/boards/Boards.module.css';
@@ -34,6 +43,14 @@ export function BoardsPage(): React.ReactElement {
   const pendingRecurring = usePendingRecurringBoards(user?.id);
   // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
   useRecurringBoardSpawn(user?.id);
+
+  // Windowed Completion — lazy auto-seal backstop (docs §Sealing). Same
+  // lazy-detection posture as recurring spawn: boards past their backstop
+  // deadline seal on Boards-tab open, never background-scheduled.
+  useBackstopAutoSeal(user?.id);
+  // Windowed Completion — the closing-out set: boards whose window ended but
+  // aren't sealed yet (still inside the backstop grace). Prompted, not silent.
+  const closingOutBoards = useClosingOutBoards(user?.id);
   const [activeFilter, setActiveFilter] = useState<string>('active');
 
   /** Delete a board from the boards list. Draft boards route through
@@ -103,6 +120,14 @@ export function BoardsPage(): React.ReactElement {
       />
 
       <WindowedCompletionNote />
+
+      <ClosingOutBanner
+        boards={closingOutBoards}
+        onLog={(id) => navigate(`/boards/${id}`)}
+        onSeal={async (id) => {
+          await sealBoard(id);
+        }}
+      />
 
       <RecurringWindowBanner
         pending={pendingRecurring}

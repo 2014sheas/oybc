@@ -84,7 +84,7 @@ extension AppDatabase {
         }
 
         for boardId in allAffectedBoardIds {
-            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else {
+            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else {
                 continue
             }
             let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }

@@ -175,6 +175,12 @@ struct BoardPlayView: View {
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
+    /// Windowed Completion (docs Decision 9 + §Write paths — "the toggle is
+    /// disabled with an explanatory affordance"). Task ids whose un-complete
+    /// affordance in `detailSheet` would be inert because every live
+    /// completion is sealed-window-immune. Populated on-demand when the
+    /// detail sheet opens (see `loadSealBlockedTaskIds`), not per grid render.
+    @State private var sealBlockedTaskIds: Set<String> = []
     // MARK: Edit-mode draft state (Phase 1 board-edit chrome)
     // NOTE (B2-I3): the edit-draft *data* layer moved to `BoardPlayViewModel`.
     // The `BoardEditPanel`'s seven two-way bindings are now `$viewModel.editName`
@@ -364,10 +370,26 @@ struct BoardPlayView: View {
         return map
     }
 
-    /// Whether the current board has passed its `endDate` (non-Custom timeframe only).
+    /// Whether the current board is a frozen, read-only historical record
+    /// (docs §Effects of sealed: "Not editable" — a sealed board can never be
+    /// interacted with again). Sealing REPLACES the old expiry lock: an
+    /// expired-but-unsealed board stays fully live (docs §Lifecycle — the
+    /// closing-out banner's Log action opens it to log late activity) until
+    /// the user seals it or the backstop does. Gates every play interaction:
+    /// tap-to-complete, counter stepper, context-menu actions, the empty-cell
+    /// "+" add affordance, and the toolbar Edit entry. Delegates to the
+    /// standalone `isBoardPlayLocked` predicate (Helpers/Sealing.swift) so
+    /// the gating rule is unit-testable.
     private var isBoardLocked: Bool {
         guard let b = board else { return false }
-        return isBoardExpired(b)
+        return isBoardPlayLocked(b)
+    }
+
+    /// Windowed Completion — whether the current board is sealed (docs
+    /// §Effects of sealed). Sealed boards render read-only from
+    /// `sealedCompletedCells` rather than live event queries.
+    private var isSealed: Bool {
+        board?.sealedAt != nil
     }
 
     /// Set of 0-based cell indices (row * gridSize + col) that are part of a
@@ -437,9 +459,10 @@ struct BoardPlayView: View {
                                 .padding(.horizontal, Riso.gutter)
                         }
 
-                        // ── Expired banner (below grid) ──
+                        // ── Sealed banner (below grid) ── locked == sealed;
+                        // an expired-but-unsealed board stays live (no banner).
                         if isBoardLocked {
-                            Text("Board expired — interactions disabled")
+                            Text("Board sealed — a permanent record")
                                 .font(.risoBody(12, .semibold))
                                 .foregroundStyle(Color.risoRed)
                                 .padding(.horizontal, Riso.gutter)
@@ -686,7 +709,10 @@ struct BoardPlayView: View {
             // M2 — "Edit" button: visible on ACTIVE non-embedded boards when the
             // edit-mode panel is not already open (hide it once we're editing so
             // the top bar inside `BoardEditPanel` owns all navigation).
-            if let b = board, b.status == .active, !embedded, !editMode {
+            // Windowed Completion — a sealed board is never editable (docs
+            // §Effects of sealed: rearranging squares under a frozen snapshot
+            // would desync the frozen record; no unseal gesture in v1).
+            if let b = board, b.status == .active, !embedded, !editMode, !isSealed {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Edit") {
                         viewModel.seedEditDraft(from: b)
@@ -982,6 +1008,12 @@ struct BoardPlayView: View {
         )) {
             detailSheet
         }
+        // Windowed Completion — resolve seal-immunity for the un-complete
+        // affordance(s) the detail sheet is about to show. On-demand (sheet
+        // open only), not per grid render.
+        .onChange(of: detailBoardTaskId) { _, newValue in
+            loadSealBlockedTaskIds(for: newValue)
+        }
         // `onDismiss:` fires AFTER the sheet has visually unmounted, so
         // the subsequent boardsPath mutation (via onOpenBoard) lands in
         // a clean SwiftUI transaction. Using .onChange of the item here
@@ -1119,10 +1151,16 @@ struct BoardPlayView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Status badge (+ recurring-provenance tag, issue #321)
+            // Status badge (+ recurring-provenance tag, issue #321). Windowed
+            // Completion — a sealed board shows the "Sealed" pill in place of
+            // the live status badge (docs §Effects of sealed; OQ1 resolution).
             if let b = board {
                 VStack(alignment: .trailing, spacing: 4) {
-                    risoStatusBadge(status: b.status)
+                    if b.sealedAt != nil {
+                        RisoSealedBadge()
+                    } else {
+                        risoStatusBadge(status: b.status)
+                    }
                     if RisoRecurringBadge.shouldShow(for: b) {
                         RisoRecurringBadge()
                     }
@@ -1473,7 +1511,14 @@ struct BoardPlayView: View {
         // Completion derivation — preserved verbatim from original playSquare.
         // Compounds: NEVER read Task.isCompleted. Achievements: derive from
         // cross-board references. Primitives: read Task.isCompleted directly.
+        // Windowed Completion — a SEALED board renders `done` from the frozen
+        // `sealedCompletedCells` snapshot (docs §Effects of sealed), never
+        // live event queries (which could bleed a post-seal log of the same
+        // task from another live board).
         let isCompleted: Bool = {
+            if isSealed {
+                return board?.sealedCompletedCells?.contains(index) ?? false
+            }
             guard let task = task else { return false }
             if task.type == .compound {
                 return CompoundEvaluation.evaluate(
@@ -1498,7 +1543,11 @@ struct BoardPlayView: View {
         let rawCount = task?.currentCount ?? 0
         let maxVal = task?.maxCount ?? 0
         let isLinkedCounter = task?.sharedCounterId != nil
+        // Windowed Completion — only completion was snapshotted at seal time
+        // (not partial progress), so a frozen counting square reads max/max
+        // when green and 0/max otherwise — an honest read of what was frozen.
         let current: Int = {
+            if isSealed { return isCompleted ? maxVal : 0 }
             guard let t = task else { return 0 }
             if t.sharedCounterId != nil {
                 return deriveDisplayedCount(
@@ -1834,27 +1883,66 @@ struct BoardPlayView: View {
         }
     }
 
+    /// 0-based grid index (row * gridSize + col) for a BoardTask — used to
+    /// look up its membership in a sealed board's frozen `sealedCompletedCells`.
+    private func cellIndex(for boardTask: BoardTask) -> Int {
+        boardTask.row * gridSize + boardTask.col
+    }
+
+    /// Windowed Completion (docs Decision 9) — resolve `isUncompleteBlockedBySeal`
+    /// for every un-complete affordance the detail sheet is about to render:
+    /// the boardTask's own task (normal/counting Mark-complete button), plus
+    /// every compound child row (the sheet's "Children" list). Off-main; the
+    /// result populates `sealBlockedTaskIds` so the sheet renders
+    /// disabled-with-explanation for any task whose green is held entirely by
+    /// a sealed-window-immune completion.
+    ///
+    /// - Parameter boardTaskId: The `detailBoardTaskId` that just changed, or
+    ///   `nil` when the sheet closed (clears the set).
+    private func loadSealBlockedTaskIds(for boardTaskId: String?) {
+        guard let boardTaskId,
+              let bt = boardTasks.first(where: { $0.id == boardTaskId }),
+              let task = taskMap[bt.taskId] else {
+            sealBlockedTaskIds = []
+            return
+        }
+        var candidateIds: [String] = [task.id]
+        if task.type == .compound {
+            let children = compoundChildrenByCompound[task.id] ?? []
+            candidateIds.append(contentsOf: children.map { $0.childTaskId })
+        }
+        _Concurrency.Task.detached(priority: .utility) {
+            var blocked: Set<String> = []
+            for id in candidateIds {
+                if let isBlocked = try? AppDatabase.shared.isUncompleteBlockedBySeal(taskId: id), isBlocked {
+                    blocked.insert(id)
+                }
+            }
+            await MainActor.run { self.sealBlockedTaskIds = blocked }
+        }
+    }
+
     @ViewBuilder
     private func normalDetailContent(boardTask: BoardTask) -> some View {
-        // Windowed Completion — reflect the WINDOWED completed state.
-        let isCompleted = taskMap[boardTask.taskId].map { windowedIsCompleted($0) } ?? false
+        // Windowed Completion — a SEALED board reads `done` from the frozen
+        // snapshot (docs §Effects of sealed), never live events.
+        let isCompleted = isSealed
+            ? (board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false)
+            : (taskMap[boardTask.taskId].map { windowedIsCompleted($0) } ?? false)
+        // Windowed Completion (docs Decision 9) — if every live completion is
+        // sealed-window-immune, un-completing here would be inert (the
+        // tombstone finds nothing to tombstone). Disable + explain instead of
+        // a tap that silently does nothing.
+        let sealBlocked = isCompleted && sealBlockedTaskIds.contains(boardTask.taskId)
         detailSection("Completion") {
-            Button {
+            CompletionToggleView(
+                isCompleted: isCompleted,
+                sealBlocked: sealBlocked,
+                disabled: isProcessing || isBoardLocked
+            ) {
                 viewModel.handleNormalTap(boardTask: boardTask)
                 detailBoardTaskId = nil
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: isCompleted ? "xmark.circle" : "checkmark.circle")
-                    Text(isCompleted ? "Mark incomplete" : "Mark complete")
-                }
-                .font(.risoHead(15, .bold))
-                .foregroundStyle(isCompleted ? Color.risoInk : Color.risoPaper)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-                .risoCard(fill: isCompleted ? .risoPaper2 : .risoGreen)
             }
-            .buttonStyle(RisoButtonStyle())
-            .disabled(isProcessing || isBoardLocked)
         }
     }
 
@@ -1869,6 +1957,13 @@ struct BoardPlayView: View {
         let unitText = task.unit ?? ""
         let isLinkedCounter = task.sharedCounterId != nil
         let current: Int = {
+            // Windowed Completion — a SEALED board only snapshotted completion
+            // (not partial progress): max/max when the frozen cell is green,
+            // 0/max otherwise (docs §Effects of sealed).
+            if isSealed {
+                let done = board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false
+                return done ? maxVal : 0
+            }
             if task.sharedCounterId != nil {
                 return deriveDisplayedCount(
                     derivedBaseline: task.baseline ?? 0,
@@ -1956,34 +2051,46 @@ struct BoardPlayView: View {
                             if ct.sharedCounterId != nil { return ct.isCompleted }
                             return windowedIsCompleted(ct)
                         }()
+                        // Windowed Completion (docs Decision 9) — a child whose
+                        // only live completion(s) are sealed-window-immune
+                        // can't be un-completed from here; disable + explain.
+                        let sealBlocked = isDone && sealBlockedTaskIds.contains(link.childTaskId)
 
-                        HStack(spacing: 10) {
-                            Button {
-                                guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
-                                viewModel.handleCompoundChildToggle(childTask: ct)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(isDone ? Color.risoGreen : Color.risoMuted)
-                                    Text(childTask?.title ?? link.childTaskId)
-                                        .font(.risoBody(14, .semibold))
-                                        .foregroundStyle(Color.risoInk)
-                                    Spacer(minLength: 0)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 10) {
+                                Button {
+                                    guard let ct = childTask, !isBoardLocked, !isProcessing, !sealBlocked else { return }
+                                    viewModel.handleCompoundChildToggle(childTask: ct)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(isDone ? Color.risoGreen : Color.risoMuted)
+                                        Text(childTask?.title ?? link.childTaskId)
+                                            .font(.risoBody(14, .semibold))
+                                            .foregroundStyle(Color.risoInk)
+                                        Spacer(minLength: 0)
+                                    }
                                 }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isProcessing || isBoardLocked || childTask == nil)
+                                .buttonStyle(.plain)
+                                .disabled(isProcessing || isBoardLocked || childTask == nil || sealBlocked)
 
-                            // Info button — opens the child task's detail in the library sheet.
-                            Button {
-                                taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
-                            } label: {
-                                Image(systemName: "info.circle")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(Color.risoMuted)
+                                // Info button — opens the child task's detail in the library sheet.
+                                Button {
+                                    taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
+                                } label: {
+                                    Image(systemName: "info.circle")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(Color.risoMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
+                            if sealBlocked {
+                                Text("Completed in a sealed window")
+                                    .font(.risoBody(11, .semibold))
+                                    .foregroundStyle(Color.risoMuted)
+                                    .padding(.leading, 24)
+                            }
                         }
                     }
                 }

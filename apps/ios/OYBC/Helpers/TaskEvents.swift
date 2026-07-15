@@ -135,6 +135,59 @@ func resolveTaskWindowState(
     return TaskWindowState(isCompleted: completions > 0, count: completions)
 }
 
+// MARK: - Sealed-window tombstone immunity (Decision 9)
+
+/// A sealed board's frozen window as epoch-ms bounds (docs §Write paths →
+/// "Sealed-window immunity"). An event is immune to tombstoning iff its
+/// `occurredAt` falls inside one of these windows. Mirrors the TS
+/// `SealImmuneWindow` interface.
+struct SealImmuneWindow: Equatable {
+    /// Sealed board's `startDate` as epoch ms (inclusive lower bound).
+    let startMs: Double
+    /// Sealed board's `sealedAt` as epoch ms (inclusive upper bound).
+    let sealedAtMs: Double
+}
+
+/// Build the immune windows for a task from the sealed boards that place it
+/// (docs Decision 9 + §Write paths). The caller resolves *which* non-deleted
+/// sealed boards place the task (directly or via a placed compound — the same
+/// reachability the pull-path re-derivation uses) and passes their
+/// `startDate`/`sealedAt`; this turns them into epoch-ms bounds.
+///
+/// Mirrors the TS `buildSealImmuneWindows`.
+///
+/// - Parameter sealedBoards: Sealed boards placing the task (each with a set `sealedAt`).
+/// - Returns: One immune window per sealed board. Unparseable dates map to
+///   `0` (matching the TS `new Date(...).getTime()` → `NaN` degrade, which
+///   fails every comparison — a defensive no-op, not a live window).
+func buildSealImmuneWindows(
+    sealedBoards: [(startDate: String, sealedAt: String)]
+) -> [SealImmuneWindow] {
+    sealedBoards.map { b in
+        let startMs = DateFormatting.parseISO(b.startDate).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
+        let sealedAtMs = DateFormatting.parseISO(b.sealedAt).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
+        return SealImmuneWindow(startMs: startMs, sealedAtMs: sealedAtMs)
+    }
+}
+
+/// Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
+/// it falls inside `[startDate, sealedAt]` of some sealed board that places the
+/// task. Immune events can never be tombstoned by any un-complete/decrement
+/// gesture — history stays history. Bounds are inclusive on both ends (the
+/// boundary instants belong to the frozen record). Mirrors the TS
+/// `isOccurredAtSealImmune`.
+///
+/// - Parameters:
+///   - occurredAt: The event's semantic timestamp (ISO8601).
+///   - windows: The task's immune windows (from `buildSealImmuneWindows`).
+/// - Returns: `true` iff the event is immune to tombstoning.
+func isOccurredAtSealImmune(_ occurredAt: String, windows: [SealImmuneWindow]) -> Bool {
+    guard !windows.isEmpty else { return false }
+    guard let occurred = DateFormatting.parseISO(occurredAt) else { return false }
+    let t = occurred.timeIntervalSince1970 * 1000
+    return windows.contains { $0.startMs <= t && t <= $0.sealedAtMs }
+}
+
 // MARK: - Backstop formula
 
 /// The auto-seal backstop **duration** for a board's window (docs §Sealing):

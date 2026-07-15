@@ -31,6 +31,8 @@ export {
   resolveTaskWindowState,
   backstopWindowMs,
   computeBackstopDeadlineMs,
+  buildSealImmuneWindows,
+  isOccurredAtSealImmune,
   BACKSTOP_MAX_MS,
 } from './taskEvents';
 
@@ -38,7 +40,17 @@ export type {
   TaskWindowState,
   CompoundWindowContext,
   WindowEvaluationContext,
+  SealImmuneWindow,
 } from './taskEvents';
+
+// ===== Windowed Completion — board sealing detection (PR C) =====
+export {
+  isBoardSealable,
+  isBoardClosingOut,
+  isBoardPastBackstop,
+} from './sealing';
+
+export type { SealableBoardFields } from './sealing';
 
 export { uuidv5, OYBC_NAMESPACE } from './uuidv5';
 

@@ -1,10 +1,14 @@
 import { db } from '../internal';
-import type { Task, TaskEvent } from '@oybc/shared';
+import type { Task, TaskEvent, SealImmuneWindow } from '@oybc/shared';
 import {
   SyncOperationType,
   TaskType,
   isEventOwningTask,
   resolveTaskWindowState,
+  findTransitiveParentCompounds,
+  findAffectedBoardIds,
+  buildSealImmuneWindows,
+  isOccurredAtSealImmune,
 } from '@oybc/shared';
 import { generateUUID } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -130,6 +134,34 @@ export async function recomputeTaskCachesFromPull(taskId: string): Promise<void>
   });
 }
 
+/**
+ * Sealed-window immunity boundary (docs §Write paths → "Sealed-window immunity",
+ * Decision 9). Build the immune windows for a task from the non-deleted SEALED
+ * boards that place it — directly or via a placed compound (the same
+ * reachability the pull-path re-derivation uses). An event whose `occurredAt`
+ * falls inside one of these `[startDate, sealedAt]` windows can NEVER be
+ * tombstoned by any un-complete / decrement gesture — history stays history.
+ *
+ * MUST be called inside the ambient tombstone transaction (covers boards /
+ * boardTasks / compoundChildren). Returns `[]` (a fast no-op) when the user has
+ * no sealed boards, so unsealed workspaces pay nothing.
+ *
+ * @param taskId The event-owning task whose immune windows to resolve.
+ */
+async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWindow[]> {
+  const sealedBoards = (await db.boards.toArray()).filter((b) => !b.isDeleted && b.sealedAt != null);
+  if (sealedBoards.length === 0) return [];
+  // BoardTask rows are hard-deleted (no soft-delete flag), so no isDeleted filter.
+  const boardTasks = await db.boardTasks.toArray();
+  const children = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
+  const parents = findTransitiveParentCompounds(taskId, children);
+  const affected = findAffectedBoardIds(taskId, parents, boardTasks);
+  const placing = sealedBoards.filter((b) => affected.has(b.id));
+  return buildSealImmuneWindows(
+    placing.map((b) => ({ startDate: b.startDate, sealedAt: b.sealedAt as string })),
+  );
+}
+
 /** Enqueue a taskEvent row for sync (append-only precedence lives in the D3 coalescer). */
 async function enqueueEventSync(eventId: string, op: SyncOperationType): Promise<void> {
   const row = await db.taskEvents.get(eventId);
@@ -173,8 +205,10 @@ export async function appendCompletionEvent(
 /**
  * Window-scoped un-complete (docs §Write paths — "Un-complete is window-scoped"):
  * tombstone ALL non-deleted completion events with `occurredAt >= windowStart`
- * for the viewed context, then restamp caches. (Sealed-window immunity lands in
- * PR C; no sealed boards exist yet, so every in-window event is tombstonable.)
+ * for the viewed context, then restamp caches. Sealed-window-immune events
+ * (docs Decision 9) are skipped — an event inside a sealed board's frozen window
+ * can never be tombstoned, so a live-board un-complete whose window overlaps a
+ * sealed window leaves the immune event (and its green) intact.
  *
  * @param taskId      The event-owning task.
  * @param windowStart The context window lower bound (board `startDate`).
@@ -186,11 +220,13 @@ export async function tombstoneWindowCompletions(
   now: string,
 ): Promise<void> {
   const lowerMs = new Date(windowStart).getTime();
+  const immuneWindows = await getSealImmuneWindowsForTask(taskId);
   const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
   for (const e of events) {
     if (e.isDeleted) continue;
     if (e.kind !== 'completion') continue;
     if (new Date(e.occurredAt).getTime() < lowerMs) continue;
+    if (isOccurredAtSealImmune(e.occurredAt, immuneWindows)) continue; // sealed history is immutable
     await db.taskEvents.update(e.id, {
       isDeleted: true,
       deletedAt: now,
@@ -203,17 +239,21 @@ export async function tombstoneWindowCompletions(
 }
 
 /**
- * Tombstone the latest non-deleted completion event (docs §Write paths —
- * library un-complete "acts on the latest event"), then restamp caches. Used
- * by library-context toggles that have no board window. No-op if no live
- * completion event exists.
+ * Tombstone the latest non-deleted, non-immune completion event (docs §Write
+ * paths — library un-complete "acts on the latest event"), then restamp caches.
+ * Used by library-context toggles that have no board window. Sealed-window-immune
+ * events (docs Decision 9) are excluded from the candidate set: if the latest —
+ * or every — live completion is immune, this is inert (the UI disables the
+ * affordance with an explanation rather than silently eating the tap). No-op if
+ * no tombstonable completion event exists.
  *
  * @param taskId The event-owning task.
  * @param now    The write timestamp.
  */
 export async function tombstoneLatestCompletion(taskId: string, now: string): Promise<void> {
+  const immuneWindows = await getSealImmuneWindowsForTask(taskId);
   const events = (await db.taskEvents.where('taskId').equals(taskId).toArray()).filter(
-    (e) => !e.isDeleted && e.kind === 'completion',
+    (e) => !e.isDeleted && e.kind === 'completion' && !isOccurredAtSealImmune(e.occurredAt, immuneWindows),
   );
   if (events.length === 0) {
     // Still restamp — a stale lifetime cache (e.g. legacy isCompleted with no
@@ -232,6 +272,28 @@ export async function tombstoneLatestCompletion(taskId: string, now: string): Pr
   });
   await enqueueEventSync(latest.id, SyncOperationType.DELETE);
   await stampTaskCachesAuthored(taskId, now);
+}
+
+/**
+ * Whether a library-context un-complete for this task would be inert because
+ * its green is held by a sealed-window-immune completion (docs Decision 9 +
+ * §Write paths — "the toggle is disabled with an explanatory affordance").
+ * True iff there is at least one live completion event AND every live
+ * completion event is sealed-immune (so `tombstoneLatestCompletion` would find
+ * no candidate and the square would stay green). The TaskDetail / compound-child
+ * un-complete affordance reads this to render disabled-with-explanation.
+ *
+ * @param taskId The event-owning task.
+ * @returns `true` iff the un-complete affordance should be disabled + explained.
+ */
+export async function isUncompleteBlockedBySeal(taskId: string): Promise<boolean> {
+  const immuneWindows = await getSealImmuneWindowsForTask(taskId);
+  if (immuneWindows.length === 0) return false;
+  const live = (await db.taskEvents.where('taskId').equals(taskId).toArray()).filter(
+    (e) => !e.isDeleted && e.kind === 'completion',
+  );
+  if (live.length === 0) return false;
+  return live.every((e) => isOccurredAtSealImmune(e.occurredAt, immuneWindows));
 }
 
 /**

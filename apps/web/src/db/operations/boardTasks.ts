@@ -212,7 +212,7 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
       // 3. One cascade pass per affected board.
       for (const affectedBoardId of affectedBoardIds) {
         const affectedBoard = await db.boards.get(affectedBoardId);
-        if (!affectedBoard || affectedBoard.isDeleted) continue;
+        if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
         const boardTasksOnBoard = allBoardTasksPost.filter(
           (bt) => bt.boardId === affectedBoardId,
@@ -337,7 +337,7 @@ export async function addBoardTaskToBoard(
       // 3. One cascade pass per affected board.
       for (const affectedBoardId of affectedBoardIds) {
         const affectedBoard = await db.boards.get(affectedBoardId);
-        if (!affectedBoard || affectedBoard.isDeleted) continue;
+        if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
         const boardTasksOnBoard = allBoardTasksPost.filter(
           (bt) => bt.boardId === affectedBoardId,
@@ -615,7 +615,7 @@ export async function updateBoardTaskAndCascade(
       // 3c. One cascade pass per affected board.
       for (const affectedBoardId of affectedBoardIds) {
         const affectedBoard = await db.boards.get(affectedBoardId);
-        if (!affectedBoard || affectedBoard.isDeleted) continue;
+        if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
         const boardTasksOnBoard = allBoardTasksPost.filter(
           (bt) => bt.boardId === affectedBoardId,

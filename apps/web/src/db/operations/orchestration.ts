@@ -151,7 +151,11 @@ export async function runBoardCascadeForTasks(
 
   for (const affectedBoardId of affectedBoardIds) {
     const affectedBoard = await db.boards.get(affectedBoardId);
-    if (!affectedBoard || affectedBoard.isDeleted) continue;
+    // Windowed Completion — sealed boards drop out of the live derivation
+    // fan-out (docs §Effects of sealed). Greenlog can no longer revert on
+    // them from live activity; the ONLY sanctioned mutation is the
+    // deterministic pull-path re-derivation (see sealing.ts).
+    if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
     const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
     const stats: BoardStatsUpdate = computeBoardStatsUpdate(
@@ -274,6 +278,11 @@ export async function handleTaskCompletion(
       if (primaryBoard.status === BoardStatus.DRAFT) {
         await db.boards.update(boardId, {
           status: BoardStatus.ACTIVE,
+          // Windowed Completion — stamp the activation instant so the
+          // auto-seal backstop keys off max(endDate, activatedAt): a draft
+          // activated after its window expired gets a full prompt cycle
+          // (docs §Sealing → backstop). Only stamp once.
+          activatedAt: primaryBoard.activatedAt ?? now,
           updatedAt: now,
           version: (primaryBoard.version ?? 1) + 1,
         });

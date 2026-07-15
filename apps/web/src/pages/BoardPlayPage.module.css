@@ -61,6 +61,27 @@
   margin-bottom: 12px;
 }
 
+/* ─── Sealed badge (Windowed Completion) ────────────────────────────────────── */
+
+/* Frozen historical record marker. Neutral filled pill (ink border + ink text
+   on paper-2) — deliberately calmer than the Active/Expiring badges, reading as
+   "closed, read-only". Uses --riso-ink (adaptive) for BORDER + TEXT only, never
+   as a fill behind cream content, so it stays legible in dark mode. */
+.sealedBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  font-family: var(--riso-font-head);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* ─── Interactive grid ──────────────────────────────────────────────────────── */
 
 /* Riso board frame (Phase 3b) — the inline gridTemplateColumns sets the columns. */

@@ -81,7 +81,14 @@ export function BoardCard({ board, onOpen, onDelete }: BoardCardProps): React.Re
           </div>
           <div className={styles.bcardBadges}>
             {board.spawnedFromTemplateId != null && <RecurringBadge />}
-            <RisoBadge kind={badge.kind}>{badge.text}</RisoBadge>
+            {board.sealedAt != null ? (
+              // Windowed Completion — a sealed board is a frozen historical
+              // record; one functional "Sealed" badge (OQ1 resolution), shown
+              // in place of the live status badge.
+              <span className={styles.sealedBadge}>Sealed</span>
+            ) : (
+              <RisoBadge kind={badge.kind}>{badge.text}</RisoBadge>
+            )}
           </div>
         </div>
         <div className={styles.bcardBody}>
