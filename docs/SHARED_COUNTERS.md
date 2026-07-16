@@ -19,8 +19,8 @@ OYBC shipped a live, production shared-counter **engine** (Issue #84, Phases 0�
 - **`sharedCounterId`** FK on `Task` links a *derived* counting task to a *source* task.
 - **`incrementSharedCounter(sourceId)`** (`AppDatabase.swift` ~L1467 / web `db/operations/tasks.ts` ~L509) does the **atomic cross-board fan-out** — increment the source, re-derive every linked task on every board, recompute bingo/greenlog, enqueue sync — in one transaction. This *is* the handoff's credit/ripple logic, already working offline + across devices.
 - **`deriveDisplayedCount({baseline, maxCount}, {currentCount})`** (`packages/shared/src/algorithms/sharedCounter.ts`, Swift twin `Helpers/SharedCounter.swift`) → `max(0, currentCount − baseline)`, no high-end clamp (overshoot is real), one-way completion latch.
-- **Additive-merge sync** (`sharedCounterMerge.ts` + Swift twin) — three-way merge via `lastSyncedCount` prevents lost offline increments.
-- Inherit-vs-start-from-zero baseline at link time; cascade delete of source→derived.
+- **Additive-merge sync** — superseded: `sharedCounterMerge` / `lastSyncedCount` were retired by Windowed Completion (union-of-`task_events` makes offline increments unlosable; see `docs/WINDOWED_COMPLETION.md`).
+- Inherit-vs-start-from-zero baseline at link time. **Correction (2026-07-15, P5 review):** an earlier revision of this line claimed "cascade delete of source→derived" — that is wrong. Deleting a source leaves derived rows linked to the tombstone, whose steppers then silently no-op. P5's unlink-then-delete (below) fixes the hub deletion path.
 
 **Count is global per Task** (`Task.currentCount`); `BoardTask` is a pure placement record with no count. `progress_counters` / `ProgressCounter` / `calculateCountingRollup` are **vestigial dead** (rejected in ARCHITECTURE.md Decision 1 for the per-Task `sharedCounterId` model) — do not use them.
 
@@ -28,7 +28,7 @@ So **Shared Counters = the UX + a read-model on top of the existing engine.** Th
 
 ## Model mapping
 
-A **"counter"** = one **source** counting task (a task with ≥1 live task linking to it via `sharedCounterId`) + all its linked tasks.
+A **"counter"** = one **source** counting task (a task with ≥1 live task linking to it via `sharedCounterId` — **or, since P5, a task flagged `isCounter`**) + all its linked tasks.
 
 | Handoff concept | OYBC mapping |
 | --- | --- |
@@ -64,7 +64,7 @@ No engine change: P2's `incrementSharedCounter` already fans the log out to ever
 
 ## Deferred (not in this MVP)
 
-- **P4 rich stats** — 7-day sparkline, counter-level streak, best-window, closed-window history. The only real schema addition (needs a per-day / per-window increment log). The Detail screen is built with seams for these.
+- **P4 rich stats** — 7-day sparkline, counter-level streak, best-window, closed-window history. *(Update 2026-07: the "only real schema addition" this bullet used to require — a per-increment log — has since shipped as `task_events` (`docs/WINDOWED_COMPLETION.md`). P4 is now a pure read-model feature over source-task increment events; hub-born counters (P5) have full history from birth, with seed events identifiable by the far-past `occurredAt` sentinel.)*
 - **True per-window resets** ("a fresh weekly task starts at 0 while all-time climbs") — OYBC's already-deferred "Decision 6 / v2"; the prototype only conveys it via copy + independent goals.
 - **Never-reset lifetime accumulator** — MVP uses `currentCount`.
 - **Fully-automatic grouping by action+unit** (silent link, no prompt) — NOT building. Instead see "Link suggestions" below.
@@ -93,3 +93,112 @@ Web:     apps/web/src/pages/CountersHubPage.tsx        ←→  iOS  Views/Profil
          apps/web/src/hooks/useSharedCounterGroups.ts  ←→       Helpers/SharedCounterGroups.swift (port)
          components/counters/* (Ledger card, member row, log stepper)  ←→  Views/ProfileTab/Components/*
 ```
+
+## P5 — Hub-born counters (design locked 2026-07-15)
+
+> **Status: DESIGN** (Gate-1 decisions locked 2026-07-15; adversarial internal
+> review applied — the engine-guard, field-drop, seed-window, and
+> delete-blast-radius rules below are review-driven). Not yet implemented.
+>
+> Create counters directly in the Counters Hub, instead of a counter existing
+> only once a second task links to a source.
+
+### Concept
+
+A hub-born counter is a **standalone source counting task**: `isCounter: true`,
+`action` + `unit`, auto-generated editable title, **no `maxCount`**, no board
+placement. No new entity, no engine rewrite. The counter acquires members the
+way counters already do — the create-form link suggestion and the counting
+template picker are the intended "put this counter on a board" path (members
+carry the goals and windows; the counter is the accumulator).
+
+### Locked decisions (P5)
+
+| # | Decision |
+| - | -------- |
+| 1 | New optional synced field `Task.isCounter?: boolean` (forward-compatible decode; `Board.isCore` precedent). No new entity — counter identity stays "the source task" per ARCHITECTURE Decision 1. |
+| 2 | Hub visibility: one group per source with ≥1 live link **OR** `isCounter === true`. This is a new enumeration branch in `buildSharedCounterGroups` (groups are currently seeded exclusively from link edges — it cannot be a filter tweak). Single-member groups render immediately; member-view math already tolerates goal-less, placeless sources. |
+| 3 | Create sheet fields: **Action + Unit + optional Starting count**. Title auto-generates and stays editable — requires a **goal-less variant of `generateCounterTaskTitle`** (the current template interpolates `maxCount` and would render "Push-ups 0 reps"); audit the render-time `?? 0` regeneration call sites while adding it. |
+| 4 | Starting count = one seed `increment` TaskEvent with **`occurredAt` = a fixed far-past sentinel** (shared epoch constant), NOT `now`. Lifetime sums include it; no board window ever does. (Review finding: a now-stamped seed leaks the entire starting count into any window covering creation the moment the task later gains a goal or placement.) P4 stats can distinguish seeds by the sentinel. |
+| 5 | Library visibility keys on the **pair** `isCounter === true && maxCount == null`: excluded from Tasks-tab browse + wizard boardable picker (via `computeBrowsableTasks`, which both surfaces on both platforms already consume) **and** from compound-child pickers, with rejection at the child-link write layer (a goal-less child can never complete — it would make an AND parent silently unreachable). Keying on the pair, not bare absent-`maxCount`, keeps PR-1 inert and guarantees a row whose flag is stripped by an old client degrades to a *visible library row*, never an unreachable task. |
+| 6 | Goal-less counters ARE valid link targets — deliberately kept in the counting template picker and `findLinkableCounter` candidates. |
+| 7 | Dedupe at hub-create: classify `findLinkableCounter`'s match — an **established counter** (has links or `isCounter`) → "You already have a **{name}** counter" + jump-to affordance, create disabled; a **standalone task** → one-tap **Promote** (sets `isCounter: true`; keeps its goal, count, placements — it stays library-visible per decision 5). The classify helper returns the matched Task row: `memberCount` alone cannot distinguish a standalone from a flagged single-member counter. |
+| 8 | Hub delete = **unlink-then-delete**: clear each member's `sharedCounterId` + `baseline`, mint one snapshot `increment` event per member (`delta` = its displayed count at unlink, `occurredAt = now`) so its squares keep showing what they showed, then soft-delete the source. `computeTaskDeletionImpact` extends to enumerate member tasks/boards for the confirm dialog. (Review finding: `deleteTaskWithCascade` today leaves members linked to a tombstoned source whose steppers silently no-op — and this doc's old "cascade delete of source→derived" claim was false; corrected in §engine above.) |
+| 9 | Board-play shared-ness recognizes flagged counters: the `sharedCounterSourceIds` builders (`useBoardPlayData`, `useCounterArrivals`, iOS twins) add an `isCounter` branch so a promoted zero-link counter placed on a board shows the ↔ marker and participates in P3 arrival detection. |
+
+### Engine change (small but required)
+
+`incrementSharedCounter` / `decrementSharedCounter` currently **throw** on a
+nil/undefined source `maxCount` ("data integrity error") on both platforms
+(web `tasks.sharedCounter.ts`, iOS `AppDatabase+SharedCounters.swift`) — the
+hub-born counter's own Log stepper would crash on first tap. Both guards relax
+to accept goal-less sources, and the source completion-latch comparisons gain a
+`maxCount != null` guard (a goal-less source never auto-completes;
+`resolveTaskWindowState` and the lifetime-cache stamp already handle absent
+`maxCount` — the engine guards are the only gap). Web also needs a combined
+**create-task-plus-seed-event operation**: `createTask`'s transaction doesn't
+compose with `appendIncrementEvent`'s ambient-transaction requirement today.
+iOS composes both inside one `write` block.
+
+### Validation
+
+`CreateTaskInputSchema`'s counting refine: `maxCount` stays required **except**
+when `isCounter === true`. Row-level `TaskSchema` already tolerates absent
+`maxCount` on counting rows (no change — good for pull compat). `isCounter` is
+forbidden on non-COUNTING types (new refine). Child-link writes reject goal-less
+counter children (decision 5).
+
+### Sync & mixed versions
+
+`isCounter` rides the existing whole-payload task push/pull on both platforms —
+**no syncService change and no Dexie version bump** (non-indexed field); one
+GRDB column migration + Swift Codable/decode update. Accepted mixed-version
+edge (same risk class as `isCore`, documented): an old client rewriting the
+task doc drops the flag and LWW propagates the loss — the counter leaves the
+hub until re-promoted, but decision 5's exclusion key guarantees the task
+stays reachable in the library. Not mitigated further in v1.
+
+### Accepted edges
+
+- **Two-device offline duplicate creates** ("Push-ups · reps" on both) → two
+  sources, two hub cards, unmergeable by LWW (different ids). Same race class
+  as the existing create-and-link flow; accepted. A render-time duplicate badge
+  (reusing the classify match) is the recorded v2 seam — no merge UI now.
+- **Stale auto-title** if action/unit ever change post-create: moot in v1 —
+  goal-less counters have no edit surface (hub create + log + delete only).
+- **Doc drift recorded:** `WINDOWED_COMPLETION.md` specced hub decrements as
+  "tombstone the latest increment"; the shipped hub Detail stepper appends a
+  clamped negative delta instead (seed-safe; correction noted in that doc).
+
+### Out of scope (P5)
+
+- "Add to a board" button on Counter Detail — the template-picker /
+  link-suggestion path covers the need; button deferred with a seam.
+- Per-window derived display (`WINDOWED_COMPLETION.md` Phase 2) and P4 stats.
+- Counter merge UI; counter editing (rename / re-unit).
+
+### Delivery
+
+- **PR-1 (shared, inert):** `Task.isCounter` type + Zod (counting-refine
+  exemption, non-counting rejection, child-link rejection), `buildSharedCounterGroups`
+  isCounter enumeration branch, `computeBrowsableTasks` pair-keyed exclusion,
+  goal-less `generateCounterTaskTitle` variant, seed-sentinel constant,
+  classify-match helper (returns matched Task), tests. No behavior change until
+  UI sets the flag.
+- **PR-2 (platforms):** GRDB migration + Swift model/ports
+  (`SharedCounterGroups.swift`, `BrowsableTasks.swift`, `LinkableCounter.swift`),
+  engine-guard + latch relaxation ×2 platforms, web combined create+seed op,
+  hub "+ New counter" button + empty-state CTA + Riso create sheet (dedupe /
+  promote slot), unlink-then-delete + extended impact preview, shared-ness
+  id-set branches, Detail single-member copy tweak, Vitest/XCTest + snapshots.
+
+### Testing (delta)
+
+Shared: single-member group enumeration (flag × links truth table); exclusion-key
+truth table (`isCounter` × `maxCount`); classify-match (established / standalone /
+none); goal-less title variant; seed sentinel never enters any window sum;
+latch null-guard vectors. Platforms: create+seed atomicity; Log stepper on a
+goal-less source (no throw, lifetime updates); promote flow end-to-end;
+unlink-then-delete mints snapshot events + members become plain counting tasks;
+flag-stripped row still browsable (regression for the field-drop edge); hub +
+create-sheet + single-member detail snapshots.
