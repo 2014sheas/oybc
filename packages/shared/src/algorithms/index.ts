@@ -34,6 +34,7 @@ export {
   buildSealImmuneWindows,
   isOccurredAtSealImmune,
   BACKSTOP_MAX_MS,
+  SEED_EVENT_OCCURRED_AT,
 } from './taskEvents';
 
 export type {

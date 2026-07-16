@@ -15,6 +15,14 @@ import { TaskType } from '../constants/enums';
 export const BACKSTOP_MAX_MS = 48 * 60 * 60 * 1000;
 
 /**
+ * P5 — Hub-born counters. `occurredAt` for seed (starting-count) increment
+ * events. Fixed far-past sentinel: lifetime sums include the seed, no board
+ * window ever does, and P4 stats can identify seeds by it.
+ * Canonical design: docs/SHARED_COUNTERS.md §P5 decision 4.
+ */
+export const SEED_EVENT_OCCURRED_AT = '1970-01-01T00:00:00.000Z';
+
+/**
  * The result of resolving a task's state within a window: whether the square
  * is complete, and the windowed count (0 for normal tasks).
  */
