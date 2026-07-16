@@ -33,7 +33,7 @@ export interface BuildArrivalSquaresInput {
 function counterDisplayName(source: Task | undefined): string {
   if (!source) return '';
   if (source.title && source.title.trim()) return source.title;
-  return generateCounterTaskTitle(source.action ?? '', source.maxCount ?? 0, source.unit ?? '');
+  return generateCounterTaskTitle(source.action ?? '', source.maxCount, source.unit ?? '');
 }
 
 /**

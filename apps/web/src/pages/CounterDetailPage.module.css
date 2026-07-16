@@ -267,3 +267,18 @@
   flex-shrink: 0;
   display: inline-block;
 }
+
+/* ─── Delete-counter footer action (P5) ─── */
+.deleteAction {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.deleteError {
+  margin: 12px 2px 0;
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.9rem;
+}

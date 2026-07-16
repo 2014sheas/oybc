@@ -8,3 +8,8 @@ export { CounterLedgerCard } from './CounterLedgerCard';
 export { CounterDetailTaskCard } from './CounterDetailTaskCard';
 export { CreateCounterSheet } from './CreateCounterSheet';
 export type { CreateCounterSheetProps } from './CreateCounterSheet';
+export { CounterDeleteConfirmDialog } from './CounterDeleteConfirmDialog';
+export type {
+  CounterDeleteConfirmDialogProps,
+  CounterDeleteConfirmMember,
+} from './CounterDeleteConfirmDialog';
