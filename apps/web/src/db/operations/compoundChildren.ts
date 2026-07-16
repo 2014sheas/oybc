@@ -7,7 +7,7 @@
 
 import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
-import { SyncOperationType } from '@oybc/shared';
+import { SyncOperationType, isGoalLessCounter } from '@oybc/shared';
 import type { CompoundChild, CreateCompoundChildInput } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 
@@ -82,10 +82,21 @@ export async function fetchCompoundChild(id: string): Promise<CompoundChild | un
  * doesn't equal `compoundTaskId` (Zod already enforces self-reference but
  * an upstream FK check is the caller's job). Enqueues a CREATE sync entry.
  *
+ * P5 guard: rejects a goal-less counter (`isGoalLessCounter`) as a child —
+ * a hub-born counter with no `maxCount` has nothing evaluable to
+ * contribute to a compound's AND/OR/M_OF_N logic (docs/SHARED_COUNTERS.md
+ * §P5). A promoted counter (still `isCounter` but with a `maxCount`) is
+ * unaffected and may be a child normally.
+ *
  * @param input - Fields required to create the compound child link.
  * @returns The newly created CompoundChild row.
+ * @throws If the referenced child task is a goal-less counter.
  */
 export async function createCompoundChild(input: CreateCompoundChildInput): Promise<CompoundChild> {
+  const child = await db.tasks.get(input.childTaskId);
+  if (child && isGoalLessCounter(child)) {
+    throw new Error('createCompoundChild: goal-less counter tasks cannot be compound children');
+  }
   const row: CompoundChild = {
     id: generateUUID(),
     compoundTaskId: input.compoundTaskId,

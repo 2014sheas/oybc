@@ -10,3 +10,4 @@ export * from './tasks.sharedCounter';
 export * from './tasks.deletion';
 export * from './tasks.steps';
 export * from './tasks.copy';
+export * from './tasks.counter';
