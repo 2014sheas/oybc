@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { classifyCounterCreateMatch, generateCounterTaskTitle, type Task } from '@oybc/shared';
 import { createCounterTask, promoteTaskToCounter } from '../../db/operations/tasks';
@@ -48,26 +48,29 @@ export function CreateCounterSheet({
   onCreated,
 }: CreateCounterSheetProps): React.ReactElement | null {
   const navigate = useNavigate();
+  const genRef = useRef(0);
   const [action, setAction] = useState('');
   const [unit, setUnit] = useState('');
   const [startingCountStr, setStartingCountStr] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Escape-to-cancel, mirroring DeriveCounterModal.
+  // Escape-to-cancel, mirroring DeriveCounterModal. Guard against in-flight ops.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !busy) onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, busy]);
 
   // Reset field state each time the sheet (re)opens so a prior session's
-  // partial input never bleeds into the next.
+  // partial input never bleeds into the next. Increment generation counter
+  // to guard stale-request handlers.
   useEffect(() => {
     if (open) {
+      genRef.current += 1;
       setAction('');
       setUnit('');
       setStartingCountStr('');
@@ -99,6 +102,8 @@ export function CreateCounterSheet({
 
   async function handleCreate(): Promise<void> {
     if (!canCreate) return;
+    genRef.current += 1;
+    const gen = genRef.current;
     setError(null);
     setBusy(true);
     try {
@@ -108,20 +113,26 @@ export function CreateCounterSheet({
         unit: trimmedUnit,
         startingCount: parsed || undefined,
       });
+      if (genRef.current !== gen) return;
       onCreated(t.id);
     } catch (e) {
+      if (genRef.current !== gen) return;
       setError(e instanceof Error ? e.message : 'Could not create counter.');
       setBusy(false);
     }
   }
 
   async function handlePromote(taskId: string): Promise<void> {
+    genRef.current += 1;
+    const gen = genRef.current;
     setError(null);
     setBusy(true);
     try {
       const t = await promoteTaskToCounter(taskId);
+      if (genRef.current !== gen) return;
       onCreated(t.id);
     } catch (e) {
+      if (genRef.current !== gen) return;
       setError(e instanceof Error ? e.message : 'Could not promote to counter.');
       setBusy(false);
     }
@@ -138,7 +149,7 @@ export function CreateCounterSheet({
       aria-modal="true"
       aria-label="New counter"
       className={styles.backdrop}
-      onClick={onClose}
+      onClick={() => !busy && onClose()}
     >
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
         <h3 className={styles.title}>New counter</h3>
@@ -227,7 +238,12 @@ export function CreateCounterSheet({
         {error && <div className={styles.error}>{error}</div>}
 
         <div className={styles.actions}>
-          <button type="button" onClick={onClose} className={styles.cancelButton}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className={styles.cancelButton}
+          >
             Cancel
           </button>
           <button
