@@ -132,6 +132,19 @@ export interface Task {
    */
   createdInWizard?: boolean;
 
+  /**
+   * P5 — Hub-born counters. `true` marks this COUNTING task as a counter in
+   * its own right: it appears in the Counters Hub even with zero linked
+   * tasks, and — when goal-less (`maxCount` absent) — is excluded from
+   * library-browse surfaces (it lives in the hub; board presence goes
+   * through linked member tasks). Set by the hub "+ New counter" create and
+   * promote-at-dedupe paths only; excluded from `UpdateTaskInput` (the
+   * `lastSpawnedWindowKey` precedent). Optional/absent on all pre-P5 rows;
+   * forward-compatible decode (`Board.isCore` precedent).
+   * Canonical design: docs/SHARED_COUNTERS.md §P5.
+   */
+  isCounter?: boolean;
+
   // Phase 6.Y — Timeboxed Tasks. All three fields are optional; when
   // ALL are absent the task is "indefinite" (never expires, always
   // shows in the Tasks tab). When `endDate` is set, the Tasks tab
@@ -283,6 +296,12 @@ export interface CreateTaskInput {
    * must be absent when `sharedCounterId` is absent. See `Task.baseline`.
    */
   baseline?: number | null;
+
+  /**
+   * P5 — Hub-born counters. See `Task.isCounter` for the full invariant
+   * documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
+   */
+  isCounter?: boolean;
 }
 
 /**

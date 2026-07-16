@@ -236,15 +236,19 @@ export const CreateTaskInputSchema = z.object({
   // file (e.g. `referencedBoardId`, `centerTaskId`) — rejects empty strings.
   sharedCounterId: z.string().uuid().nullable().optional(),
   baseline: z.number().int().min(0).nullable().optional(),
+  // P5 — Hub-born counters. See `Task.isCounter` for the full invariant
+  // documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
+  isCounter: z.boolean().optional(),
 }).refine(
   (data) => {
-    // Counting tasks must have action, unit, and maxCount
+    // Counting tasks must have action, unit, and maxCount — except hub-born
+    // counters (isCounter), which are goal-less accumulators (P5).
     if (data.type === TaskType.COUNTING) {
-      return data.action && data.unit && data.maxCount;
+      return data.action && data.unit && (data.maxCount || data.isCounter === true);
     }
     return true;
   },
-  { message: 'Counting tasks must have action, unit, and maxCount' }
+  { message: 'Counting tasks must have action, unit, and maxCount (unless isCounter)' }
 ).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -263,6 +267,12 @@ export const CreateTaskInputSchema = z.object({
 ).refine(
   sharedCounterFieldsConsistent,
   { message: "sharedCounterId and baseline must both be set (with baseline >= 0) or both be absent/null" },
+).refine(
+  (data) => data.isCounter !== true || data.type === TaskType.COUNTING,
+  { message: 'Only COUNTING tasks may set isCounter' },
+).refine(
+  (data) => data.isCounter !== true || data.sharedCounterId == null,
+  { message: 'A derived (linked) counting task cannot be a counter' },
 );
 // Note: post-unification, Progress tasks are created via
 // `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
@@ -471,6 +481,9 @@ export const TaskSchema = z.object({
   // and other-platform payloads omit it; must round-trip through sync
   // (z.object strips unknown keys, so it has to be declared here).
   createdInWizard: z.boolean().optional(),
+  // P5 — Hub-born counters. See `Task.isCounter` for the full invariant
+  // documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
+  isCounter: z.boolean().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.
