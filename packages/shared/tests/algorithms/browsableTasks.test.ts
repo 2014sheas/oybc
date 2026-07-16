@@ -6,12 +6,19 @@
  * board (draft-only, or orphaned — deleted from the pool / board gone).
  */
 
-import { computeBrowsableTasks } from '../../src/algorithms/browsableTasks';
+import {
+  computeBrowsableTasks,
+  isGoalLessCounter,
+} from '../../src/algorithms/browsableTasks';
 import { BoardStatus, TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 import type { BoardTask } from '../../src/types/boardTask';
 
-function task(id: string, createdInWizard: boolean): Task {
+function task(
+  id: string,
+  createdInWizard: boolean,
+  overrides: Partial<Task> = {},
+): Task {
   return {
     id,
     userId: 'u1',
@@ -25,6 +32,7 @@ function task(id: string, createdInWizard: boolean): Task {
     version: 1,
     isDeleted: false,
     createdInWizard,
+    ...overrides,
   };
 }
 
@@ -153,5 +161,74 @@ describe('computeBrowsableTasks', () => {
     const tasks = [task('parent', true), task('child', true)];
     const result = computeBrowsableTasks(tasks, [], {}, { child: ['parent'] });
     expect(result).toHaveLength(0);
+  });
+});
+
+describe('goal-less counter exclusion (P5)', () => {
+  it('hides a goal-less isCounter task from browse', () => {
+    const tasks = [
+      task('a', false, {
+        type: TaskType.COUNTING,
+        isCounter: true,
+        maxCount: undefined,
+      }),
+    ];
+    const result = computeBrowsableTasks(tasks, [], {});
+    expect(result).toHaveLength(0);
+  });
+
+  it('keeps a promoted counter (isCounter + maxCount) visible', () => {
+    const tasks = [
+      task('a', false, {
+        type: TaskType.COUNTING,
+        isCounter: true,
+        maxCount: 50,
+      }),
+    ];
+    const result = computeBrowsableTasks(tasks, [], {});
+    expect(ids(result)).toEqual(new Set(['a']));
+  });
+
+  it('keeps a goal-less row WITHOUT the flag visible (old-client flag-drop degrades safely)', () => {
+    const tasks = [
+      task('a', false, {
+        type: TaskType.COUNTING,
+        isCounter: undefined,
+        maxCount: undefined,
+      }),
+    ];
+    const result = computeBrowsableTasks(tasks, [], {});
+    expect(ids(result)).toEqual(new Set(['a']));
+  });
+
+  it('isGoalLessCounter truth table', () => {
+    expect(
+      isGoalLessCounter({
+        type: TaskType.COUNTING,
+        isCounter: true,
+        maxCount: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      isGoalLessCounter({
+        type: TaskType.COUNTING,
+        isCounter: true,
+        maxCount: 50,
+      }),
+    ).toBe(false);
+    expect(
+      isGoalLessCounter({
+        type: TaskType.COUNTING,
+        isCounter: undefined,
+        maxCount: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      isGoalLessCounter({
+        type: TaskType.NORMAL,
+        isCounter: true,
+        maxCount: undefined,
+      }),
+    ).toBe(false);
   });
 });

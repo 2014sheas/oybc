@@ -145,7 +145,7 @@ export type {
 
 export { isTaskExpired } from './taskExpiry';
 
-export { computeBrowsableTasks } from './browsableTasks';
+export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
 
 // ===== Phase 1 + Phase 3 — Shared counter =====
 export { deriveDisplayedCount, propagateIncrement } from './sharedCounter';
