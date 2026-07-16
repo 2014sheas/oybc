@@ -180,14 +180,14 @@ stays reachable in the library. Not mitigated further in v1.
 ### Delivery
 
 - **PR-1 (shared, inert):** `Task.isCounter` type + Zod (counting-refine
-  exemption, non-counting rejection, child-link rejection), `buildSharedCounterGroups`
+  exemption, non-counting rejection), `buildSharedCounterGroups`
   isCounter enumeration branch, `computeBrowsableTasks` pair-keyed exclusion,
   goal-less `generateCounterTaskTitle` variant, seed-sentinel constant,
   classify-match helper (returns matched Task), tests. No behavior change until
   UI sets the flag.
 - **PR-2 (platforms):** GRDB migration + Swift model/ports
   (`SharedCounterGroups.swift`, `BrowsableTasks.swift`, `LinkableCounter.swift`),
-  engine-guard + latch relaxation ×2 platforms, web combined create+seed op,
+  engine-guard + latch relaxation ×2 platforms, compound-child write guards via isGoalLessCounter (Zod cannot inspect the referenced row; inline autoCreate children are already schema-safe), web combined create+seed op,
   hub "+ New counter" button + empty-state CTA + Riso create sheet (dedupe /
   promote slot), unlink-then-delete + extended impact preview, shared-ness
   id-set branches, Detail single-member copy tweak, Vitest/XCTest + snapshots.

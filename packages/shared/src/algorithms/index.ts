@@ -34,6 +34,7 @@ export {
   buildSealImmuneWindows,
   isOccurredAtSealImmune,
   BACKSTOP_MAX_MS,
+  SEED_EVENT_OCCURRED_AT,
 } from './taskEvents';
 
 export type {
@@ -144,7 +145,7 @@ export type {
 
 export { isTaskExpired } from './taskExpiry';
 
-export { computeBrowsableTasks } from './browsableTasks';
+export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
 
 // ===== Phase 1 + Phase 3 — Shared counter =====
 export { deriveDisplayedCount, propagateIncrement } from './sharedCounter';
@@ -180,9 +181,13 @@ export type {
 } from './counterArrivals';
 
 // ===== Shared Counters — "link a new task to an existing counter" match =====
-export { findLinkableCounter } from './linkableCounter';
+export { classifyCounterCreateMatch, findLinkableCounter } from './linkableCounter';
 
-export type { LinkableCounter, FindLinkableCounterInput } from './linkableCounter';
+export type {
+  CounterCreateMatch,
+  LinkableCounter,
+  FindLinkableCounterInput,
+} from './linkableCounter';
 
 // ===== Sync contract — LWW conflict resolution (C4 / issue #261) =====
 export { resolveConflict } from './lwwResolve';

@@ -1,19 +1,26 @@
 import type { Task } from '../types/task';
 import type { BoardTask } from '../types/boardTask';
-import { BoardStatus } from '../constants/enums';
+import { BoardStatus, TaskType } from '../constants/enums';
 
 /**
  * Filters the task library to the set that should appear in library-browse
  * surfaces (the Tasks tab list, the wizard "add from library" picker).
  *
- * Rule — a task is HIDDEN iff it is wizard-born (`createdInWizard === true`)
- * AND it has no placement on a live, non-draft board. Concretely, a
- * wizard-born task is hidden when it lives ONLY on draft boards, or has no
- * live placement at all (removed from the wizard pool — its Task row lingers
- * after persist drops the `board_task` — or its only board was deleted).
- * Everything else is visible: standalone/copied tasks (`createdInWizard`
- * falsy) are never hidden, and a wizard-born task with at least one
- * active/completed placement is visible.
+ * Two independent classes of task are hidden:
+ *
+ * 1. Wizard-orphans — a task is HIDDEN iff it is wizard-born
+ * (`createdInWizard === true`) AND it has no placement on a live, non-draft
+ * board. Concretely, a wizard-born task is hidden when it lives ONLY on
+ * draft boards, or has no live placement at all (removed from the wizard
+ * pool — its Task row lingers after persist drops the `board_task` — or its
+ * only board was deleted). Everything else is visible: standalone/copied
+ * tasks (`createdInWizard` falsy) are never hidden, and a wizard-born task
+ * with at least one active/completed placement is visible.
+ *
+ * 2. Goal-less counters (P5) — a COUNTING task with `isCounter === true` and
+ * no `maxCount` cannot evaluate on a board; it lives in the Counters Hub,
+ * not the library. See `isGoalLessCounter` for the exact predicate and why
+ * it keys on the pair rather than bare absent-`maxCount`.
  *
  * Mirror of the iOS `TaskLibraryViewModel.computeBrowsableTasks`
  * (`streaks.ts ↔ Streaks.swift`-style parity). Pure and fully derived at read
@@ -47,6 +54,7 @@ export function computeBrowsableTasks(
     (placementsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
   }
   return tasks.filter((task) => {
+    if (isGoalLessCounter(task)) return false;
     if (!task.createdInWizard) return true;
     // Effective placements: own + inherited from parent compound(s).
     const boardIds = new Set<string>(placementsByTask[task.id]);
@@ -62,4 +70,22 @@ export function computeBrowsableTasks(
     }
     return false;
   });
+}
+
+/**
+ * P5 — Hub-born counters. A goal-less counter (COUNTING + `isCounter` +
+ * no `maxCount`) cannot evaluate on a board; it lives in the Counters Hub,
+ * not the library. Keyed on the PAIR — never bare absent-`maxCount` — so a
+ * row whose flag was stripped by an old client degrades to a visible
+ * library row, never an unreachable task (docs/SHARED_COUNTERS.md §P5
+ * decision 5). Also used by the PR-2 compound-child write guards.
+ */
+export function isGoalLessCounter(
+  task: Pick<Task, 'type' | 'isCounter' | 'maxCount'>,
+): boolean {
+  return (
+    task.type === TaskType.COUNTING &&
+    task.isCounter === true &&
+    task.maxCount == null
+  );
 }

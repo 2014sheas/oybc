@@ -6,9 +6,11 @@
  * data the shared-counter *engine* already maintains (Issue #84, Phases 0–4) —
  * it introduces no new stored state.
  *
- * A "counter" = one SOURCE counting task (a task that at least one other task
- * links to via `sharedCounterId`) plus every task that links to it. The source
- * task's `currentCount` is the counter's running "lifetime" total; each member
+ * A "counter" = one SOURCE counting task — either a task that at least one
+ * other task links to via `sharedCounterId`, or (P5) a task explicitly
+ * flagged `isCounter` so it renders as a single-member group even with zero
+ * links — plus every task that links to it. The source task's `currentCount`
+ * is the counter's running "lifetime" total; each member
  * task's displayed value is derived from that total via `deriveDisplayedCount`
  * (mirroring the live increment path).
  *
@@ -124,8 +126,9 @@ function pickPrimaryBoard(
  * Build the Counters-Hub / Counter-Detail view-models from the task graph.
  *
  * @returns One `SharedCounterGroup` per source counting task that has at least
- *   one live linked task, sorted by counter name (case-insensitive) for a
- *   stable display order. Empty array when the user has no shared counters.
+ *   one live linked task OR is flagged `isCounter` (P5 hub-born counters),
+ *   sorted by counter name (case-insensitive) for a stable display order.
+ *   Empty array when the user has no shared counters.
  */
 export function buildSharedCounterGroups(
   input: BuildSharedCounterGroupsInput,
@@ -143,6 +146,23 @@ export function buildSharedCounterGroups(
     const list = linkedBySource.get(src);
     if (list) list.push(t);
     else linkedBySource.set(src, [t]);
+  }
+
+  // P5 — hub-born counters: a COUNTING task flagged `isCounter` is a counter
+  // in its own right, even with zero linked tasks. Seed an empty linked list
+  // for flagged sources the link walk didn't already discover, so they flow
+  // through the same member-view pipeline as single-member groups. A flagged
+  // row that is itself derived (`sharedCounterId` set) is malformed — Zod
+  // rejects the combination at create-input time, but synced rows are unguarded — and is ignored defensively here.
+  for (const t of tasks) {
+    if (
+      t.type === TaskType.COUNTING &&
+      t.isCounter === true &&
+      t.sharedCounterId == null &&
+      !linkedBySource.has(t.id)
+    ) {
+      linkedBySource.set(t.id, []);
+    }
   }
 
   const groups: SharedCounterGroup[] = [];

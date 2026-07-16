@@ -6,6 +6,7 @@ import {
   backstopWindowMs,
   computeBackstopDeadlineMs,
   BACKSTOP_MAX_MS,
+  SEED_EVENT_OCCURRED_AT,
 } from '../../src/algorithms/taskEvents';
 import type { Task, TaskEvent, TaskEventKind } from '../../src/types';
 import { TaskType } from '../../src/constants/enums';
@@ -130,6 +131,20 @@ describe('resolveTaskWindowState (fixture-driven, tests/fixtures/taskWindowState
     ];
     const result = resolveTaskWindowState(task, events, '2026-07-01T00:00:00.000Z');
     expect(result).toEqual({ isCompleted: false, count: 0 });
+  });
+
+  it('a seed event at SEED_EVENT_OCCURRED_AT counts toward lifetime but never toward any window (P5)', () => {
+    const task = makeTask({ type: TaskType.COUNTING, maxCount: 50 });
+    const seed = makeEvent({
+      kind: 'increment',
+      delta: 500,
+      occurredAt: SEED_EVENT_OCCURRED_AT,
+    });
+    const lifetime = resolveTaskWindowState(task, [seed], null);
+    expect(lifetime.count).toBe(500);
+    const windowed = resolveTaskWindowState(task, [seed], '2026-07-01T00:00:00.000Z');
+    expect(windowed.count).toBe(0);
+    expect(windowed.isCompleted).toBe(false);
   });
 });
 

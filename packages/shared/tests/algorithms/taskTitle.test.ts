@@ -33,3 +33,21 @@ describe('generateCounterTaskTitle', () => {
     expect(generateCounterTaskTitle('Do', 1, 'pushup')).toBe('Do 1 pushup');
   });
 });
+
+describe('generateCounterTaskTitle — goal-less variant (P5)', () => {
+  it('renders "{action} ({unit})" when maxCount is null', () => {
+    expect(generateCounterTaskTitle('Push-ups', null, 'reps')).toBe('Push-ups (reps)');
+  });
+
+  it('renders the same when maxCount is undefined', () => {
+    expect(generateCounterTaskTitle(' Push-ups ', undefined, ' reps ')).toBe('Push-ups (reps)');
+  });
+
+  it('keeps the numeric form when maxCount is present', () => {
+    expect(generateCounterTaskTitle('Read', 100, 'pages')).toBe('Read 100 pages');
+  });
+
+  it('providedTitle still wins', () => {
+    expect(generateCounterTaskTitle('Push-ups', null, 'reps', 'My tally')).toBe('My tally');
+  });
+});
