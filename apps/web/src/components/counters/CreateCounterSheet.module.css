@@ -1,0 +1,283 @@
+/* CreateCounterSheet — Counters Hub "+ New counter" modal (Shared Counters P5).
+   Pattern mirrors DeriveCounterModal.module.css (backdrop + dialog + fields). */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.dialog {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  animation: slideUp 0.2s ease-out;
+}
+
+.title {
+  margin: 0 0 14px;
+  font-family: var(--riso-font-head);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+.fieldLabel {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--riso-muted);
+  margin: 12px 0 6px;
+}
+
+.fieldLabel:first-of-type {
+  margin-top: 0;
+}
+
+.fieldInput {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-card);
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font: inherit;
+  font-family: var(--riso-font-body);
+  box-sizing: border-box;
+  transition: box-shadow 0.1s;
+}
+
+.fieldInput:focus {
+  outline: none;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.fieldInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* Helper copy under the Starting count field. */
+.helperText {
+  margin-top: 4px;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  color: var(--riso-muted);
+}
+
+/* Live preview of the generated counter title. */
+.preview {
+  margin-top: 12px;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  color: var(--riso-muted);
+}
+
+/* ─── Dedupe match cards ─── */
+
+.matchCardEstablished,
+.matchCardStandalone {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+/* Established — blocking/informational; gold is a LIGHT fill so text uses
+   --riso-ink-static (never the adaptive --riso-ink, which would go
+   invisible-on-invisible against a light fill in dark mode). */
+.matchCardEstablished {
+  background: var(--riso-gold);
+}
+
+/* Standalone — a positive one-tap action; green is a DARK fill so text uses
+   --riso-on-color (static cream). */
+.matchCardStandalone {
+  background: var(--riso-green);
+}
+
+.matchTitle {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.matchCardEstablished .matchTitle,
+.matchCardEstablished .matchSub {
+  color: var(--riso-ink-static);
+}
+
+.matchCardStandalone .matchTitle,
+.matchCardStandalone .matchSub {
+  color: var(--riso-on-color);
+}
+
+.matchSub {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.82;
+}
+
+.matchLinkButton,
+.matchPromoteButton {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 6px 14px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.matchLinkButton {
+  background: var(--riso-on-color);
+  color: var(--riso-ink-static);
+}
+
+.matchPromoteButton {
+  background: var(--riso-on-color);
+  color: var(--riso-ink-static);
+}
+
+.matchLinkButton:hover,
+.matchPromoteButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.matchLinkButton:active,
+.matchPromoteButton:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.matchPromoteButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.matchLinkButton:focus-visible,
+.matchPromoteButton:focus-visible {
+  outline: 3px solid var(--riso-ink-static);
+  outline-offset: 2px;
+}
+
+/* Validation / thrown-op error. */
+.error {
+  margin-top: 10px;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  color: var(--riso-red);
+  font-weight: 600;
+}
+
+/* Button row */
+.actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cancelButton,
+.saveButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 9px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.cancelButton {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+
+/* Save uses blue — counting type colour. */
+.saveButton {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+
+.cancelButton:hover:not(:disabled),
+.saveButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.cancelButton:active:not(:disabled),
+.saveButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.cancelButton:disabled,
+.saveButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* Blue-filled save — cream ring so it shows against the fill. */
+.saveButton:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: -3px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .dialog {
+    animation: none;
+  }
+  .cancelButton,
+  .saveButton,
+  .fieldInput,
+  .matchLinkButton,
+  .matchPromoteButton {
+    transition: none;
+  }
+}
