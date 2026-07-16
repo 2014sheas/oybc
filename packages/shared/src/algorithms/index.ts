@@ -181,9 +181,13 @@ export type {
 } from './counterArrivals';
 
 // ===== Shared Counters — "link a new task to an existing counter" match =====
-export { findLinkableCounter } from './linkableCounter';
+export { classifyCounterCreateMatch, findLinkableCounter } from './linkableCounter';
 
-export type { LinkableCounter, FindLinkableCounterInput } from './linkableCounter';
+export type {
+  CounterCreateMatch,
+  LinkableCounter,
+  FindLinkableCounterInput,
+} from './linkableCounter';
 
 // ===== Sync contract — LWW conflict resolution (C4 / issue #261) =====
 export { resolveConflict } from './lwwResolve';

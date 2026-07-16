@@ -104,3 +104,39 @@ export function findLinkableCounter(
     memberCount: 1 + (linkerCountBySource.get(best.id) ?? 0),
   };
 }
+
+/** P5 — hub-create dedupe classification result. */
+export type CounterCreateMatch = {
+  kind: 'established' | 'standalone';
+  /** The matched source/standalone Task row (promote target when standalone). */
+  task: Task;
+  lifetime: number;
+  memberCount: number;
+};
+
+/**
+ * Classify what the hub "+ New counter" form's typed action+unit collides
+ * with: an ESTABLISHED counter (has linked tasks or is flagged `isCounter`)
+ * → the UI blocks create and offers jump-to; a STANDALONE counting task →
+ * the UI offers one-tap promote (set `isCounter: true` on it). `null` when
+ * nothing matches (create proceeds). Wraps `findLinkableCounter`; the task
+ * row is looked up because `memberCount` alone cannot distinguish a
+ * standalone from a flagged single-member counter
+ * (docs/SHARED_COUNTERS.md §P5 decision 7).
+ */
+export function classifyCounterCreateMatch(
+  input: FindLinkableCounterInput,
+  tasks: readonly Task[],
+): CounterCreateMatch | null {
+  const match = findLinkableCounter(input, tasks);
+  if (!match) return null;
+  const task = tasks.find((t) => t.id === match.counterId);
+  if (!task) return null;
+  const established = match.memberCount > 1 || task.isCounter === true;
+  return {
+    kind: established ? 'established' : 'standalone',
+    task,
+    lifetime: match.lifetime,
+    memberCount: match.memberCount,
+  };
+}

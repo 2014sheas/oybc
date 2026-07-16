@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { findLinkableCounter } from '../../src/algorithms/linkableCounter';
+import { classifyCounterCreateMatch, findLinkableCounter } from '../../src/algorithms/linkableCounter';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 
@@ -27,6 +27,7 @@ interface MiniTask {
   sharedCounterId?: string | null;
   isDeleted?: boolean;
   type?: string;
+  isCounter?: boolean;
 }
 
 interface Vector {
@@ -62,6 +63,7 @@ function toTask(m: MiniTask): Task {
     updatedAt: TS,
     version: 1,
     isDeleted: m.isDeleted ?? false,
+    isCounter: m.isCounter,
   };
 }
 
@@ -88,4 +90,74 @@ describe('findLinkableCounter (fixture-driven, tests/fixtures/linkableCounterVec
       }
     });
   }
+});
+
+describe('classifyCounterCreateMatch (P5 hub-create dedupe)', () => {
+  it('classifies a linked source as established', () => {
+    // Source "Push-ups" + one linker sharing the counter → memberCount 2, kind 'established'.
+    const source = toTask({ id: 'source', action: 'Push-ups', unit: 'reps', currentCount: 40 });
+    const linker = toTask({
+      id: 'linker',
+      action: 'Push-ups',
+      unit: 'reps',
+      sharedCounterId: 'source',
+    });
+    const tasks = [source, linker];
+
+    const result = classifyCounterCreateMatch({ action: 'Push-ups', unit: 'reps' }, tasks);
+
+    expect(result).not.toBeNull();
+    expect(result!.kind).toBe('established');
+    expect(result!.task.id).toBe('source');
+    expect(result!.lifetime).toBe(40);
+    expect(result!.memberCount).toBe(2);
+  });
+
+  it('classifies a flagged zero-link counter as established', () => {
+    // isCounter: true, no linkers → memberCount 1 but still 'established' because of the flag.
+    const flagged = toTask({
+      id: 'flagged',
+      action: 'Sit-ups',
+      unit: 'reps',
+      currentCount: 10,
+      isCounter: true,
+    });
+    const tasks = [flagged];
+
+    const result = classifyCounterCreateMatch({ action: 'Sit-ups', unit: 'reps' }, tasks);
+
+    expect(result).not.toBeNull();
+    expect(result!.kind).toBe('established');
+    expect(result!.task.id).toBe('flagged');
+    expect(result!.lifetime).toBe(10);
+    expect(result!.memberCount).toBe(1);
+  });
+
+  it('classifies a plain standalone counting task as standalone', () => {
+    // No isCounter flag, no linkers → 'standalone', matched task row returned as the promote target.
+    const standalone = toTask({
+      id: 'standalone',
+      action: 'Squats',
+      unit: 'reps',
+      currentCount: 5,
+    });
+    const tasks = [standalone];
+
+    const result = classifyCounterCreateMatch({ action: 'Squats', unit: 'reps' }, tasks);
+
+    expect(result).not.toBeNull();
+    expect(result!.kind).toBe('standalone');
+    expect(result!.task.id).toBe('standalone');
+    expect(result!.lifetime).toBe(5);
+    expect(result!.memberCount).toBe(1);
+  });
+
+  it('returns null when nothing matches', () => {
+    const other = toTask({ id: 'other', action: 'Push-ups', unit: 'reps' });
+    const tasks = [other];
+
+    const result = classifyCounterCreateMatch({ action: 'Lunges', unit: 'reps' }, tasks);
+
+    expect(result).toBeNull();
+  });
 });
