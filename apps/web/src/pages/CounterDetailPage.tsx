@@ -116,6 +116,7 @@ export function CounterDetailPage(): React.ReactElement {
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : 'Failed to delete counter.');
       setIsDeleting(false);
+      setDeleteImpact(null);
     }
   }, [counterId, isDeleting, navigate]);
 
