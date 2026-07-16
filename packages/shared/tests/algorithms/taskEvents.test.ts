@@ -142,7 +142,7 @@ describe('resolveTaskWindowState (fixture-driven, tests/fixtures/taskWindowState
     });
     const lifetime = resolveTaskWindowState(task, [seed], null);
     expect(lifetime.count).toBe(500);
-    const windowed = resolveTaskWindowState(task, [seed], '2026-07-01T00:00:00.000');
+    const windowed = resolveTaskWindowState(task, [seed], '2026-07-01T00:00:00.000Z');
     expect(windowed.count).toBe(0);
     expect(windowed.isCompleted).toBe(false);
   });

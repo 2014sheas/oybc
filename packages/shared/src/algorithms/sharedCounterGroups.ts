@@ -126,8 +126,9 @@ function pickPrimaryBoard(
  * Build the Counters-Hub / Counter-Detail view-models from the task graph.
  *
  * @returns One `SharedCounterGroup` per source counting task that has at least
- *   one live linked task, sorted by counter name (case-insensitive) for a
- *   stable display order. Empty array when the user has no shared counters.
+ *   one live linked task OR is flagged `isCounter` (P5 hub-born counters),
+ *   sorted by counter name (case-insensitive) for a stable display order.
+ *   Empty array when the user has no shared counters.
  */
 export function buildSharedCounterGroups(
   input: BuildSharedCounterGroupsInput,
@@ -152,7 +153,7 @@ export function buildSharedCounterGroups(
   // for flagged sources the link walk didn't already discover, so they flow
   // through the same member-view pipeline as single-member groups. A flagged
   // row that is itself derived (`sharedCounterId` set) is malformed — Zod
-  // rejects the combination — and is ignored defensively here.
+  // rejects the combination at create-input time, but synced rows are unguarded — and is ignored defensively here.
   for (const t of tasks) {
     if (
       t.type === TaskType.COUNTING &&
