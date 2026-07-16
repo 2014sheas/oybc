@@ -137,6 +137,130 @@ function toBoardTask(m: MiniBoardTask): BoardTask {
   };
 }
 
+/**
+ * P5 — hub-born counters. NOT added to the shared fixture-vector JSON above:
+ * that file is consumed by BOTH this TS test and
+ * `apps/ios/OYBCTests/SharedCounterGroupsVectorTests.swift` against the
+ * Swift mirror, which doesn't have `isCounter` support yet (Swift port is
+ * PR-2). These cases reuse the same `toTask`/`toBoard`/`toBoardTask`
+ * fixture builders as the vector-driven suite above, spreading `isCounter`
+ * onto the `MiniTask`-built `Task` since `MiniTask` predates the P5 flag.
+ */
+describe('hub-born counters (P5)', () => {
+  it('a flagged zero-link source becomes a single-member group', () => {
+    const source = {
+      ...toTask({
+        id: 'c1',
+        title: 'Counter c1',
+        currentCount: 500,
+        maxCount: null,
+        sharedCounterId: null,
+        baseline: null,
+        isDeleted: false,
+      }),
+      isCounter: true,
+    };
+
+    const groups = buildSharedCounterGroups({
+      tasks: [source],
+      boards: [],
+      boardTasks: [],
+    });
+
+    expect(groups).toHaveLength(1);
+    const [group] = groups;
+    expect(group.counterId).toBe('c1');
+    expect(group.lifetime).toBe(500);
+    expect(group.taskCount).toBe(1);
+    expect(group.boardCount).toBe(0);
+    expect(group.tasks).toHaveLength(1);
+    expect(group.tasks[0].isSource).toBe(true);
+    expect(group.tasks[0].goal).toBe(0);
+    expect(group.tasks[0].met).toBe(false);
+  });
+
+  it('a flagged source WITH links produces one group, not two', () => {
+    const source = {
+      ...toTask({
+        id: 'src',
+        title: 'Counter src',
+        currentCount: 200,
+        maxCount: null,
+        sharedCounterId: null,
+        baseline: null,
+        isDeleted: false,
+      }),
+      isCounter: true,
+    };
+    const linked = toTask({
+      id: 'der',
+      title: 'Counter der',
+      currentCount: null,
+      maxCount: 50,
+      sharedCounterId: 'src',
+      baseline: 0,
+      isDeleted: false,
+    });
+
+    const groups = buildSharedCounterGroups({
+      tasks: [source, linked],
+      boards: [],
+      boardTasks: [],
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].counterId).toBe('src');
+    expect(groups[0].taskCount).toBe(2);
+  });
+
+  it('an unflagged standalone counting task still produces no group', () => {
+    const standalone = toTask({
+      id: 'a',
+      title: 'Counter a',
+      currentCount: 5,
+      maxCount: null,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+    });
+
+    const groups = buildSharedCounterGroups({
+      tasks: [standalone],
+      boards: [],
+      boardTasks: [],
+    });
+
+    expect(groups).toHaveLength(0);
+  });
+
+  it('a flagged but DERIVED task is ignored (malformed row)', () => {
+    // Malformed: isCounter + sharedCounterId set together — Zod rejects this
+    // combination at input-validation time, but the pure read-model is
+    // defensive against a row that slipped through anyway.
+    const malformed = {
+      ...toTask({
+        id: 'mal',
+        title: 'Counter mal',
+        currentCount: 10,
+        maxCount: null,
+        sharedCounterId: 'missing-source',
+        baseline: 0,
+        isDeleted: false,
+      }),
+      isCounter: true,
+    };
+
+    const groups = buildSharedCounterGroups({
+      tasks: [malformed],
+      boards: [],
+      boardTasks: [],
+    });
+
+    expect(groups.find((g) => g.counterId === 'mal')).toBeUndefined();
+    expect(groups).toHaveLength(0);
+  });
+});
+
 describe('buildSharedCounterGroups (fixture-driven, tests/fixtures/sharedCounterGroupsVectors.json)', () => {
   it('fixture is non-empty', () => {
     expect(fixture.vectors.length).toBeGreaterThan(0);
