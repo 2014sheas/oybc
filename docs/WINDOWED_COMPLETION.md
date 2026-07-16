@@ -232,6 +232,12 @@ Kept, still synced, stamped transactionally on every event write — but demoted
     correction removes the occurrence being corrected rather than poisoning the
     current window with a dangling negative. Display sums remain low-clamped at 0
     as a belt against cross-device races.
+    **As-shipped drift (recorded 2026-07-15, P5 review):** the Counters Hub
+    Detail stepper actually ships the *board-context* behavior — a negative
+    delta clamped to the lifetime total (`decrementSharedCounter`), not the
+    tombstone rule above. Seed-safe and simpler, but a hub decrement on a
+    *placed* source task can leave a dangling negative in its live window
+    (display stays clamped). Revisit if that surfaces as user confusion.
 - **`incrementSharedCounter(sourceId)`**: unchanged contract; internally becomes
   append-event-on-source + propagation-stamp of derived tasks + derivation. Still
   the single logging path for every member task's square and the counter detail
