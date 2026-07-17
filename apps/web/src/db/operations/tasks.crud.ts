@@ -7,7 +7,7 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, hasCycle, isEventOwningTask } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
@@ -272,6 +272,22 @@ export async function createCompound(
         // Should be impossible given Zod validation, but defensive: skip
         // an entry that has neither childTaskId nor autoCreate.
         continue;
+      }
+
+      if (!inlineCreatedTask) {
+        // P5 guard: this entry references an EXISTING task (not an inline
+        // autoCreate) — reject a goal-less counter (`isGoalLessCounter`):
+        // a hub-born counter with no `maxCount` has nothing evaluable to
+        // contribute to a compound's AND/OR/M_OF_N logic
+        // (docs/SHARED_COUNTERS.md §P5). Inline-autoCreate children always
+        // carry a `maxCount` (COUNTING autoCreate requires a goal), so they
+        // can't be goal-less and need no check.
+        const existingChild = await db.tasks.get(childTaskId);
+        if (existingChild && isGoalLessCounter(existingChild)) {
+          throw new Error(
+            'createCompound: goal-less counter tasks cannot be compound children',
+          );
+        }
       }
 
       const childRow: CompoundChild = {

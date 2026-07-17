@@ -5,9 +5,10 @@ import {
   promoteTaskToCounter,
   deleteCounterWithUnlink,
   computeTaskDeletionImpact,
+  createCompound,
 } from '../tasks';
 import { createCompoundChild } from '../compoundChildren';
-import { SEED_EVENT_OCCURRED_AT, TaskType, type Task } from '@oybc/shared';
+import { SEED_EVENT_OCCURRED_AT, TaskType, OperatorType, type Task } from '@oybc/shared';
 
 const NOW = '2026-07-16T10:00:00.000Z';
 
@@ -357,5 +358,61 @@ describe('createCompoundChild — goal-less counter guard (P5)', () => {
       childIndex: 0,
     });
     expect(child.childTaskId).toBe('goaled1');
+  });
+});
+
+describe('createCompound — goal-less counter child guard (P5 review)', () => {
+  it('rejects an existing goal-less counter referenced as a child', async () => {
+    await db.tasks.add({
+      id: 'goalless2',
+      userId: 'u1',
+      title: 'Push-ups (reps)',
+      type: TaskType.COUNTING,
+      action: 'Push-ups',
+      unit: 'reps',
+      isCounter: true,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+
+    await expect(
+      createCompound('u1', {
+        title: 'Morning routine',
+        operator: OperatorType.AND,
+        isOrdered: false,
+        children: [{ childTaskId: 'goalless2' }],
+      }),
+    ).rejects.toThrow('createCompound: goal-less counter tasks cannot be compound children');
+
+    // No partial writes: the parent compound task itself must not persist.
+    const allTasks = await db.tasks.filter((t) => t.type === TaskType.COMPOUND).toArray();
+    expect(allTasks).toHaveLength(0);
+    const children = await db.compoundChildren.toArray();
+    expect(children).toHaveLength(0);
+  });
+
+  it('accepts a promoted (goaled) counter referenced as a child', async () => {
+    await db.tasks.add(standaloneCountingTask({ id: 'goaled2', isCounter: true }));
+
+    const compound = await createCompound('u1', {
+      title: 'Morning routine',
+      operator: OperatorType.AND,
+      isOrdered: false,
+      children: [{ childTaskId: 'goaled2' }],
+    });
+
+    expect(compound.type).toBe(TaskType.COMPOUND);
+    const children = await db.compoundChildren
+      .where('compoundTaskId')
+      .equals(compound.id)
+      .toArray();
+    expect(children).toHaveLength(1);
+    expect(children[0].childTaskId).toBe('goaled2');
   });
 });

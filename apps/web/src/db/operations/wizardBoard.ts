@@ -2,6 +2,7 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  isGoalLessCounter,
   type CompoundChild,
   type CreateBoardInput,
   type Task,
@@ -91,6 +92,28 @@ export async function persistWizardBoardRows({
       );
       for (const payload of pendingTasks) {
         if (!placedTaskIds.has(payload.task.id)) continue;
+
+        // P5 guard: a `childLinks` row may reference either one of this
+        // payload's own `childTasks` (a brand-new inline child — always
+        // carries a `maxCount` if COUNTING, so never goal-less) or an
+        // EXISTING task elsewhere in the library. No live caller currently
+        // builds the latter (web's compound wizard writes immediately via
+        // `createCompound`, already guarded, rather than deferring through
+        // this pending-task shape) — but the shape permits it, and iOS's
+        // analogous `createTaskWithPairedChildrenAndEnqueue` guards the same
+        // case, so this mirrors that defensively for any future deferred
+        // web compound-authoring path.
+        const newChildIds = new Set(payload.childTasks.map((t) => t.id));
+        for (const link of payload.childLinks) {
+          if (newChildIds.has(link.childTaskId)) continue;
+          const existingChild = await db.tasks.get(link.childTaskId);
+          if (existingChild && isGoalLessCounter(existingChild)) {
+            throw new Error(
+              'persistWizardBoardRows: goal-less counter tasks cannot be compound children',
+            );
+          }
+        }
+
         await db.tasks.add(payload.task);
         await addToSyncQueue(
           'tasks',
