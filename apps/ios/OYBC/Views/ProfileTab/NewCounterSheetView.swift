@@ -136,6 +136,7 @@ struct NewCounterSheetView: View {
     }
 
     private func handlePromote(taskId: String) {
+        guard !busy else { return }
         error = nil
         busy = true
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -250,6 +251,7 @@ struct NewCounterSheetContentView: View {
                     RisoButton(title: "View counter", kind: .neutral, small: true) {
                         onViewCounter(match.task.id)
                     }
+                    .disabled(busy)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
@@ -271,6 +273,7 @@ struct NewCounterSheetContentView: View {
                     RisoButton(title: "Promote", kind: .neutral, small: true) {
                         onPromote(match.task.id)
                     }
+                    .disabled(busy)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
