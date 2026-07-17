@@ -725,6 +725,11 @@ final class AppDatabase {
             try AppDatabase.sealExpiredBoardsAtMigration(db: db, now: Self.currentTimestamp())
         }
 
+        // v23: P5 hub-born counters. Adds `isCounter` (INTEGER 0/1) to `tasks`.
+        migrator.registerMigration("v23") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isCounter INTEGER NOT NULL DEFAULT 0")
+        }
+
         return migrator
     }
 

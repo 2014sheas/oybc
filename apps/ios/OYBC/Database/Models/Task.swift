@@ -126,6 +126,14 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// pre-migration rows are all `false`. Stored as INTEGER (GRDB v17).
     var createdInWizard: Bool
 
+    /// P5 — hub-born counter flag. `true` marks a COUNTING task created from
+    /// the Counters Hub as a goal-less accumulator (`maxCount == nil`) — a
+    /// running tally with no threshold to complete against, as opposed to a
+    /// standard goaled counting task. Defaults to `false`; standalone +
+    /// wizard-born + pre-migration rows are all `false`. Stored as INTEGER
+    /// (GRDB v23).
+    var isCounter: Bool
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -171,7 +179,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         sharedCounterId: String? = nil,
         baseline: Int? = nil,
         lastSyncedCount: Int? = nil,
-        createdInWizard: Bool = false
+        createdInWizard: Bool = false,
+        isCounter: Bool = false
     ) {
         self.id = id
         self.userId = userId
@@ -209,6 +218,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.baseline = baseline
         self.lastSyncedCount = lastSyncedCount
         self.createdInWizard = createdInWizard
+        self.isCounter = isCounter
     }
 
     // MARK: - Codable
@@ -233,6 +243,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case lastSyncedCount
         // Draft-board provenance (GRDB v17)
         case createdInWizard
+        // P5 — hub-born counter flag (GRDB v23)
+        case isCounter
     }
 
     // Custom decoding for progressCounters (stored as JSON string)
@@ -289,6 +301,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Draft-board provenance. Forward-compat: pre-v17 local rows + pre-feature
         // sync payloads (and all standalone/copied tasks) decode as false.
         createdInWizard = try container.decodeIfPresent(Bool.self, forKey: .createdInWizard) ?? false
+        // P5 — hub-born counter flag. Forward-compat: pre-v23 local rows +
+        // pre-feature sync payloads (and all non-hub-born tasks) decode as false.
+        isCounter = try container.decodeIfPresent(Bool.self, forKey: .isCounter) ?? false
     }
 
     // Custom encoding for progressCounters (store as JSON string)
@@ -342,6 +357,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Draft-board provenance — always encoded (like isCompleted) so the
         // field is present in every Firestore doc + GRDB row.
         try container.encode(createdInWizard, forKey: .createdInWizard)
+        // P5 — hub-born counter flag — always encoded, same rationale.
+        try container.encode(isCounter, forKey: .isCounter)
     }
 }
 

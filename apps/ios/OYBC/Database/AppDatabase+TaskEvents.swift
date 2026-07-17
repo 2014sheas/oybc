@@ -319,10 +319,21 @@ extension AppDatabase {
     ///
     /// Mirrors `insertIncrementEventRaw` in taskEvents.ts.
     ///
+    /// - Parameter occurredAt: Optional override for the event's `occurredAt`
+    ///   (defaults to `now`). Used by seed/backfill paths (P5) that need to
+    ///   anchor an event at a sentinel timestamp distinct from the write-time
+    ///   `createdAt`/`updatedAt`.
     /// - Returns: `true` if an event row was written; `false` on a zero delta /
     ///            a missing or non-event-owning task.
     @discardableResult
-    static func insertIncrementEventRaw(db: Database, taskId: String, delta: Int, boardId: String?, now: String) throws -> Bool {
+    static func insertIncrementEventRaw(
+        db: Database,
+        taskId: String,
+        delta: Int,
+        boardId: String?,
+        now: String,
+        occurredAt: String? = nil
+    ) throws -> Bool {
         if delta == 0 { return false }
         guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { return false }
         let event = TaskEvent(
@@ -331,7 +342,7 @@ extension AppDatabase {
             taskId: taskId,
             kind: .increment,
             delta: delta,
-            occurredAt: now,
+            occurredAt: occurredAt ?? now,
             boardId: boardId,
             createdAt: now,
             updatedAt: now,

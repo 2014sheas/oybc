@@ -68,4 +68,34 @@ final class TaskTitleTests: XCTestCase {
     // (e.g. `5.7 -> 5`). iOS's `maxCount` is `Int` end-to-end (parsed via
     // `Int(...)` at every call site before reaching this helper), so there is
     // no fractional-input case to mirror — the type system enforces it.
+
+    // MARK: - Goal-less variant (P5)
+
+    func test_goalless_rendersActionUnit_whenMaxCountIsNil() {
+        XCTAssertEqual(
+            TaskTitle.generateCounterTaskTitle(action: "Push-ups", maxCount: nil, unit: "reps"),
+            "Push-ups (reps)"
+        )
+    }
+
+    func test_goalless_trimsActionAndUnit_whenMaxCountIsNil() {
+        XCTAssertEqual(
+            TaskTitle.generateCounterTaskTitle(action: " Push-ups ", maxCount: nil, unit: " reps "),
+            "Push-ups (reps)"
+        )
+    }
+
+    func test_goalless_keepsNumericForm_whenMaxCountIsPresent() {
+        XCTAssertEqual(
+            TaskTitle.generateCounterTaskTitle(action: "Read", maxCount: 100, unit: "pages"),
+            "Read 100 pages"
+        )
+    }
+
+    func test_goalless_providedTitleStillWins_whenMaxCountIsNil() {
+        XCTAssertEqual(
+            TaskTitle.generateCounterTaskTitle(action: "Push-ups", maxCount: nil, unit: "reps", providedTitle: "My tally"),
+            "My tally"
+        )
+    }
 }
