@@ -120,6 +120,29 @@ struct BoardWizardTasksStepView: View {
         return combined
     }
 
+    /// Unfiltered (non-browsable-filtered) task pool + this session's pending
+    /// tasks, used ONLY as the counter-link suggestion pool passed to
+    /// `RisoSpecialTaskPanel`. Unlike `effectiveAllTasks` (which is built
+    /// from `browsableTasks` for pickers/autocomplete), this uses
+    /// `library.libraryTasks` so goal-less hub-born counters — which
+    /// `computeBrowsableTasks` excludes — still surface a link suggestion
+    /// in the wizard. Compound-child pickers must keep using
+    /// `effectiveAllTasks`; only the suggestion pool changes here.
+    private var effectiveSuggestionPool: [Task] {
+        guard let pending = pendingTasks, !pending.isEmpty else {
+            return library.libraryTasks
+        }
+        var seen = Set(library.libraryTasks.map { $0.id })
+        var combined = library.libraryTasks
+        for payload in pending.values {
+            if !seen.contains(payload.task.id) {
+                combined.append(payload.task)
+                seen.insert(payload.task.id)
+            }
+        }
+        return combined
+    }
+
     private var selectedCount: Int { selectedTaskIds.count }
     private var isCountSatisfied: Bool { selectedCount >= tasksRequired }
     private var isCenterSatisfied: Bool {
@@ -216,6 +239,7 @@ struct BoardWizardTasksStepView: View {
                         defaultStartDate: currentStartDate,
                         defaultEndDate: currentEndDate,
                         taskLibrary: effectiveAllTasks,
+                        suggestionPool: effectiveSuggestionPool,
                         onTaskCreated: { taskId, title, type in
                             onTaskCreated(taskId, title, type)
                         },

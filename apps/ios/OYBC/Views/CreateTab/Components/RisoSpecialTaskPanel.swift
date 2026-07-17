@@ -27,7 +27,17 @@ struct RisoSpecialTaskPanel: View {
     let defaultStartDate: String?
     let defaultEndDate: String?
     /// Effective task library (live + pending) for compound sub autocomplete.
+    /// This is browsable-FILTERED at wizard call sites (draft-born tasks are
+    /// excluded) — compound-child pickers must stay filtered like this.
     var taskLibrary: [OYBC.Task] = []
+    /// Separate, UNFILTERED pool used only for the counter-link suggestion
+    /// (`updateLinkSuggestion`). Goal-less hub-born counters are excluded
+    /// from the browsable set, so the wizard's suggestion would never fire
+    /// against them if it reused `taskLibrary`. Defaults to `nil`, which
+    /// falls back to `taskLibrary` — so the Tasks-tab call site (which
+    /// already passes the full, unfiltered library as `taskLibrary`) is
+    /// unaffected.
+    var suggestionPool: [OYBC.Task]? = nil
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
     let onCompositeCreated: (OYBC.Task) -> Void
     let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
@@ -263,7 +273,7 @@ struct RisoSpecialTaskPanel: View {
         linkSuggestion = findLinkableCounter(
             action: countingActionText,
             unit: countingUnitText,
-            tasks: taskLibrary
+            tasks: suggestionPool ?? taskLibrary
         )
         linkConfirmed = false
         linkBaselineMode = .fresh

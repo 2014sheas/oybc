@@ -115,9 +115,9 @@ export function CreateCounterSheet({
       });
       if (genRef.current !== gen) return;
       onCreated(t.id);
-    } catch (e) {
+    } catch {
       if (genRef.current !== gen) return;
-      setError(e instanceof Error ? e.message : 'Could not create counter.');
+      setError('Could not create counter.');
       setBusy(false);
     }
   }
@@ -131,9 +131,9 @@ export function CreateCounterSheet({
       const t = await promoteTaskToCounter(taskId);
       if (genRef.current !== gen) return;
       onCreated(t.id);
-    } catch (e) {
+    } catch {
       if (genRef.current !== gen) return;
-      setError(e instanceof Error ? e.message : 'Could not promote to counter.');
+      setError('Could not promote to counter.');
       setBusy(false);
     }
   }

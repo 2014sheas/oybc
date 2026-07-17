@@ -100,7 +100,7 @@ Web:     apps/web/src/pages/CountersHubPage.tsx        ←→  iOS  Views/Profil
 > Gate-2 device verification pending (relayed checklist). Original design record below.
 > (Gate-1 decisions locked 2026-07-15; adversarial internal
 > review applied — the engine-guard, field-drop, seed-window, and
-> delete-blast-radius rules below are review-driven). Not yet implemented.
+> delete-blast-radius rules below are review-driven.)
 >
 > Create counters directly in the Counters Hub, instead of a counter existing
 > only once a second task links to a source.

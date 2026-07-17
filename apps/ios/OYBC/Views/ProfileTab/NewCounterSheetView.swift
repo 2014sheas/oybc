@@ -101,6 +101,10 @@ struct NewCounterSheetView: View {
                 }
             }
         }
+        // The presenting site (`CountersHubView`) has no visibility into this
+        // sheet's private `busy` state, so the dismiss guard lives here,
+        // keyed on this view's own `busy`.
+        .interactiveDismissDisabled(busy)
     }
 
     // MARK: - Actions
@@ -245,7 +249,7 @@ struct NewCounterSheetContentView: View {
                     Text("You already have a \"\(name)\" counter")
                         .font(.risoHead(13, .bold))
                         .foregroundStyle(Color.risoInkStatic)
-                    Text("\(match.lifetime) all-time · \(match.memberCount) task\(match.memberCount == 1 ? "" : "s")")
+                    Text("\(match.lifetime.formatted()) all-time · \(match.memberCount) task\(match.memberCount == 1 ? "" : "s")")
                         .font(.risoBody(11, .semibold))
                         .foregroundStyle(Color.risoInkStatic.opacity(0.82))
                     RisoButton(title: "View counter", kind: .neutral, small: true) {

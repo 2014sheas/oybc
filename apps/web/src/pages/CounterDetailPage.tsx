@@ -101,8 +101,8 @@ export function CounterDetailPage(): React.ReactElement {
     try {
       const impact = await computeTaskDeletionImpact(counterId);
       setDeleteImpact(impact);
-    } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to compute delete impact.');
+    } catch {
+      setDeleteError('Failed to delete counter.');
     }
   }, [counterId]);
 
@@ -113,8 +113,8 @@ export function CounterDetailPage(): React.ReactElement {
     try {
       await deleteCounterWithUnlink(counterId);
       navigate('/profile/counters');
-    } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to delete counter.');
+    } catch {
+      setDeleteError('Failed to delete counter.');
       setIsDeleting(false);
       setDeleteImpact(null);
     }

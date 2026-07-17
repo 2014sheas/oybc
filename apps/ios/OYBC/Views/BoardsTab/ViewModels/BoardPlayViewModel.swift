@@ -1492,7 +1492,7 @@ final class BoardPlayViewModel: ObservableObject {
         if !source.title.trimmingCharacters(in: .whitespaces).isEmpty { return source.title }
         return TaskTitle.generateCounterTaskTitle(
             action: source.action ?? "",
-            maxCount: source.maxCount ?? 0,
+            maxCount: source.maxCount,
             unit: source.unit ?? ""
         )
     }

@@ -80,6 +80,7 @@ struct CounterDetailView: View {
                     onConfirm: { handleConfirmDelete(impact: impact) },
                     onCancel: { deleteImpact = nil }
                 )
+                .interactiveDismissDisabled(isDeleting)
             }
         }
     }
