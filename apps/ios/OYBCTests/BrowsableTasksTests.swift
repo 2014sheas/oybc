@@ -14,19 +14,27 @@ final class BrowsableTasksTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func task(_ id: String, createdInWizard: Bool) -> Task {
+    private func task(
+        _ id: String,
+        createdInWizard: Bool,
+        type: TaskType = .normal,
+        maxCount: Int? = nil,
+        isCounter: Bool = false
+    ) -> Task {
         Task(
             id: id,
             userId: "u1",
             title: "Task \(id)",
-            type: .normal,
+            type: type,
+            maxCount: maxCount,
             totalCompletions: 0,
             totalInstances: 0,
             createdAt: "2026-07-01T12:00:00.000Z",
             updatedAt: "2026-07-01T12:00:00.000Z",
             version: 1,
             isDeleted: false,
-            createdInWizard: createdInWizard
+            createdInWizard: createdInWizard,
+            isCounter: isCounter
         )
     }
 
@@ -162,5 +170,62 @@ final class BrowsableTasksTests: XCTestCase {
             childToParents: ["child": ["parent"]]
         )
         XCTAssertTrue(result.isEmpty)
+    }
+
+    // MARK: - Goal-less counter exclusion (P5)
+    //
+    // Swift port of the TS `describe('goal-less counter exclusion (P5)')`
+    // block in `packages/shared/tests/algorithms/browsableTasks.test.ts`.
+
+    func test_hidesGoalLessCounterFromBrowse() {
+        let result = BrowsableTasks.computeBrowsableTasks(
+            tasks: [task("a", createdInWizard: false, type: .counting, maxCount: nil, isCounter: true)],
+            boardTasks: [],
+            boardStatusById: [:]
+        )
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    func test_keepsPromotedCounterVisible() {
+        let result = BrowsableTasks.computeBrowsableTasks(
+            tasks: [task("a", createdInWizard: false, type: .counting, maxCount: 50, isCounter: true)],
+            boardTasks: [],
+            boardStatusById: [:]
+        )
+        XCTAssertEqual(ids(result), ["a"])
+    }
+
+    func test_keepsGoalLessRowWithoutFlagVisible() {
+        // Old-client flag-drop degrades safely: no `isCounter` flag → visible
+        // library row, even with no `maxCount`.
+        let result = BrowsableTasks.computeBrowsableTasks(
+            tasks: [task("a", createdInWizard: false, type: .counting, maxCount: nil, isCounter: false)],
+            boardTasks: [],
+            boardStatusById: [:]
+        )
+        XCTAssertEqual(ids(result), ["a"])
+    }
+
+    func test_isGoalLessCounterTruthTable() {
+        XCTAssertTrue(
+            BrowsableTasks.isGoalLessCounter(
+                task("a", createdInWizard: false, type: .counting, maxCount: nil, isCounter: true)
+            )
+        )
+        XCTAssertFalse(
+            BrowsableTasks.isGoalLessCounter(
+                task("a", createdInWizard: false, type: .counting, maxCount: 50, isCounter: true)
+            )
+        )
+        XCTAssertFalse(
+            BrowsableTasks.isGoalLessCounter(
+                task("a", createdInWizard: false, type: .counting, maxCount: nil, isCounter: false)
+            )
+        )
+        XCTAssertFalse(
+            BrowsableTasks.isGoalLessCounter(
+                task("a", createdInWizard: false, type: .normal, maxCount: nil, isCounter: true)
+            )
+        )
     }
 }

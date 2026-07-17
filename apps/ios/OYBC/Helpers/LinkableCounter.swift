@@ -109,3 +109,67 @@ func findLinkableCounter(
         memberCount: 1 + (linkerCountBySource[best.id] ?? 0)
     )
 }
+
+// MARK: - Hub-create dedupe classification (P5)
+
+/// What the hub "+ New counter" form's typed action+unit collided with.
+/// Mirrors the TypeScript `CounterCreateMatch['kind']` union.
+enum CounterCreateMatchKind: Equatable {
+    /// An established counter (has linked tasks or is flagged `isCounter`)
+    /// — the UI blocks create and offers jump-to.
+    case established
+    /// A standalone counting task — the UI offers one-tap promote (set
+    /// `isCounter: true` on it).
+    case standalone
+}
+
+/// P5 — hub-create dedupe classification result. Mirror of the TypeScript
+/// `CounterCreateMatch` type.
+struct CounterCreateMatch {
+    let kind: CounterCreateMatchKind
+    /// The matched source/standalone Task row (promote target when standalone).
+    let task: Task
+    let lifetime: Int
+    let memberCount: Int
+}
+
+/// Classify what the hub "+ New counter" form's typed action+unit collides
+/// with: an ESTABLISHED counter (has linked tasks or is flagged `isCounter`)
+/// → the UI blocks create and offers jump-to; a STANDALONE counting task →
+/// the UI offers one-tap promote (set `isCounter: true` on it). `nil` when
+/// nothing matches (create proceeds). Wraps `findLinkableCounter`; the task
+/// row is looked up because `memberCount` alone cannot distinguish a
+/// standalone from a flagged single-member counter
+/// (docs/SHARED_COUNTERS.md §P5 decision 7).
+///
+/// - Parameters:
+///   - action: The new task's action (activity) as typed.
+///   - unit: The new task's unit as typed.
+///   - excludeTaskId: Exclude this task id from matches (when editing an
+///     existing task).
+///   - tasks: All tasks to search (non-deleted inclusive; internal filter
+///     removes soft-deleted rows and non-counting types).
+/// - Returns: The classification, or `nil` when nothing matches.
+func classifyCounterCreateMatch(
+    action: String,
+    unit: String,
+    excludeTaskId: String? = nil,
+    tasks: [Task]
+) -> CounterCreateMatch? {
+    guard let match = findLinkableCounter(
+        action: action,
+        unit: unit,
+        excludeTaskId: excludeTaskId,
+        tasks: tasks
+    ) else { return nil }
+
+    guard let task = tasks.first(where: { $0.id == match.counterId }) else { return nil }
+
+    let established = match.memberCount > 1 || task.isCounter == true
+    return CounterCreateMatch(
+        kind: established ? .established : .standalone,
+        task: task,
+        lifetime: match.lifetime,
+        memberCount: match.memberCount
+    )
+}

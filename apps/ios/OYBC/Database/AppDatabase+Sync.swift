@@ -242,10 +242,16 @@ extension AppDatabase {
         /// A payload that was encoded by `JSONEncoder` couldn't be converted
         /// to a UTF-8 string for storage as a sync-queue item.
         case payloadEncoding(String)
+        /// P5: a compound-child link referenced an existing task that is a
+        /// goal-less counter (`BrowsableTasks.isGoalLessCounter`) — it has
+        /// nothing evaluable to contribute to a compound's AND/OR/M_OF_N
+        /// logic. Mirrors web's `createCompoundChild` guard.
+        case invalidCompoundChild(String)
 
         var errorDescription: String? {
             switch self {
             case .payloadEncoding(let msg): return msg
+            case .invalidCompoundChild(let msg): return msg
             }
         }
     }

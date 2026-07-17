@@ -4,8 +4,9 @@ import XCTest
 /// Unit tests for `buildSharedCounterGroups` in `SharedCounterGroups.swift`.
 ///
 /// Swift port of `packages/shared/tests/algorithms/sharedCounterGroups.test.ts`.
-/// Both suites cover the same 11 cases so drift between the TS source of truth
-/// and the Swift port is caught immediately.
+/// Both suites cover the same 11 core cases (plus the P5 `isCounter` block
+/// below) so drift between the TS source of truth and the Swift port is
+/// caught immediately.
 ///
 /// Cases:
 ///  1. No shared-counter links → empty result.
@@ -19,6 +20,12 @@ import XCTest
 ///  9. Same board for both members → boardCount = 1 (distinct).
 /// 10. Sort groups by name, case-insensitively.
 /// 11. Prefer ACTIVE over DRAFT as primary placement.
+///
+/// P5 (isCounter, hub-born counters — see below):
+/// 12. Flagged zero-link source → single-member group.
+/// 13. Flagged source WITH links → one group, not two.
+/// 14. Unflagged standalone counting task → still no group.
+/// 15. Flagged but DERIVED task (malformed row) → ignored.
 final class SharedCounterGroupsTests: XCTestCase {
 
     // MARK: - Fixtures
@@ -35,7 +42,8 @@ final class SharedCounterGroupsTests: XCTestCase {
         baseline: Int? = nil,
         timeframe: Timeframe? = nil,
         startDate: String? = nil,
-        isDeleted: Bool = false
+        isDeleted: Bool = false,
+        isCounter: Bool = false
     ) -> Task {
         Task(
             id: id,
@@ -55,7 +63,8 @@ final class SharedCounterGroupsTests: XCTestCase {
             timeframe: timeframe,
             startDate: startDate,
             sharedCounterId: sharedCounterId,
-            baseline: baseline
+            baseline: baseline,
+            isCounter: isCounter
         )
     }
 
@@ -278,5 +287,55 @@ final class SharedCounterGroupsTests: XCTestCase {
         let sourceView = groups[0].tasks.first { $0.taskId == "src" }!
         XCTAssertEqual(sourceView.boardId, "active")
         XCTAssertTrue(sourceView.isActive)
+    }
+
+    // MARK: - P5. Hub-born counters (isCounter)
+    //
+    // Swift port of the TS `describe('hub-born counters (P5)')` block in
+    // `packages/shared/tests/algorithms/sharedCounterGroups.test.ts`.
+
+    func test_flaggedZeroLinkSource_becomesSingleMemberGroup() {
+        let source = counter("c1", title: "Counter c1", currentCount: 500, isCounter: true)
+        let groups = buildSharedCounterGroups(tasks: [source], boardTasks: [], boards: [])
+
+        XCTAssertEqual(groups.count, 1)
+        let group = groups[0]
+        XCTAssertEqual(group.counterId, "c1")
+        XCTAssertEqual(group.lifetime, 500)
+        XCTAssertEqual(group.taskCount, 1)
+        XCTAssertEqual(group.boardCount, 0)
+        XCTAssertEqual(group.tasks.count, 1)
+        XCTAssertTrue(group.tasks[0].isSource)
+        XCTAssertEqual(group.tasks[0].goal, 0)
+        XCTAssertFalse(group.tasks[0].met)
+    }
+
+    func test_flaggedSourceWithLinks_producesOneGroupNotTwo() {
+        let source = counter("src", title: "Counter src", currentCount: 200, isCounter: true)
+        let linked = counter("der", title: "Counter der", maxCount: 50, sharedCounterId: "src", baseline: 0)
+        let groups = buildSharedCounterGroups(tasks: [source, linked], boardTasks: [], boards: [])
+
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].counterId, "src")
+        XCTAssertEqual(groups[0].taskCount, 2)
+    }
+
+    func test_unflaggedStandaloneCountingTask_stillProducesNoGroup() {
+        let standalone = counter("a", title: "Counter a", currentCount: 5)
+        let groups = buildSharedCounterGroups(tasks: [standalone], boardTasks: [], boards: [])
+        XCTAssertTrue(groups.isEmpty)
+    }
+
+    func test_flaggedButDerivedTask_isIgnored() {
+        // Malformed: isCounter + sharedCounterId set together — validators
+        // reject the combination at create-input time, but the pure
+        // read-model is defensive against a row that slipped through anyway.
+        let malformed = counter(
+            "mal", title: "Counter mal", currentCount: 10,
+            sharedCounterId: "missing-source", baseline: 0, isCounter: true
+        )
+        let groups = buildSharedCounterGroups(tasks: [malformed], boardTasks: [], boards: [])
+        XCTAssertNil(groups.first { $0.counterId == "mal" })
+        XCTAssertTrue(groups.isEmpty)
     }
 }

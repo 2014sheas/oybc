@@ -30,7 +30,8 @@ final class LinkableCounterTests: XCTestCase {
         currentCount: Int? = nil,
         sharedCounterId: String? = nil,
         isDeleted: Bool = false,
-        type: TaskType = .counting
+        type: TaskType = .counting,
+        isCounter: Bool = false
     ) -> Task {
         Task(
             id: id,
@@ -46,7 +47,8 @@ final class LinkableCounterTests: XCTestCase {
             updatedAt: ts,
             version: 1,
             isDeleted: isDeleted,
-            sharedCounterId: sharedCounterId
+            sharedCounterId: sharedCounterId,
+            isCounter: isCounter
         )
     }
 
@@ -129,5 +131,53 @@ final class LinkableCounterTests: XCTestCase {
         let deleted = task("del",  action: "Push-ups", unit: "reps", isDeleted: true)
         let normal  = task("norm", action: "Push-ups", unit: "reps", type: .normal)
         XCTAssertNil(findLinkableCounter(action: "Push-ups", unit: "reps", tasks: [deleted, normal]))
+    }
+
+    // MARK: - classifyCounterCreateMatch (P5 hub-create dedupe)
+    //
+    // Swift port of the TS `describe('classifyCounterCreateMatch (P5 hub-create dedupe)')`
+    // block in `packages/shared/tests/algorithms/linkableCounter.test.ts`.
+
+    func testClassifiesLinkedSourceAsEstablished() {
+        // Source "Push-ups" + one linker sharing the counter → memberCount 2, kind established.
+        let source = task("source", action: "Push-ups", unit: "reps", currentCount: 40)
+        let linker = task("linker", action: "Push-ups", unit: "reps", sharedCounterId: "source")
+        let result = classifyCounterCreateMatch(action: "Push-ups", unit: "reps", tasks: [source, linker])
+
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.kind, .established)
+        XCTAssertEqual(result?.task.id, "source")
+        XCTAssertEqual(result?.lifetime, 40)
+        XCTAssertEqual(result?.memberCount, 2)
+    }
+
+    func testClassifiesFlaggedZeroLinkCounterAsEstablished() {
+        // isCounter: true, no linkers → memberCount 1 but still established because of the flag.
+        let flagged = task("flagged", action: "Sit-ups", unit: "reps", currentCount: 10, isCounter: true)
+        let result = classifyCounterCreateMatch(action: "Sit-ups", unit: "reps", tasks: [flagged])
+
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.kind, .established)
+        XCTAssertEqual(result?.task.id, "flagged")
+        XCTAssertEqual(result?.lifetime, 10)
+        XCTAssertEqual(result?.memberCount, 1)
+    }
+
+    func testClassifiesPlainStandaloneCountingTaskAsStandalone() {
+        // No isCounter flag, no linkers → standalone; matched task row returned as the promote target.
+        let standalone = task("standalone", action: "Squats", unit: "reps", currentCount: 5)
+        let result = classifyCounterCreateMatch(action: "Squats", unit: "reps", tasks: [standalone])
+
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.kind, .standalone)
+        XCTAssertEqual(result?.task.id, "standalone")
+        XCTAssertEqual(result?.lifetime, 5)
+        XCTAssertEqual(result?.memberCount, 1)
+    }
+
+    func testClassifyReturnsNilWhenNothingMatches() {
+        let other = task("other", action: "Push-ups", unit: "reps")
+        let result = classifyCounterCreateMatch(action: "Lunges", unit: "reps", tasks: [other])
+        XCTAssertNil(result)
     }
 }

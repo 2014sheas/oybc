@@ -29,6 +29,8 @@ interface MiniTask {
   sharedCounterId: string | null;
   baseline: number | null;
   isDeleted: boolean;
+  /** P5 hub-born-counter flag. Optional — absent/false on the core 11 vectors. */
+  isCounter?: boolean;
 }
 
 interface MiniBoard {
@@ -98,6 +100,7 @@ function toTask(m: MiniTask): Task {
     updatedAt: TS,
     version: 1,
     isDeleted: m.isDeleted,
+    isCounter: m.isCounter,
   };
 }
 

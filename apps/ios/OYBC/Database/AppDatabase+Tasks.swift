@@ -455,18 +455,38 @@ extension AppDatabase {
     /// `zip(childTasks, childLinks)` write shape moved verbatim from the
     /// create form's immediate-persist path.
     ///
+    /// P5 guard: a `childLinks` row referencing an existing task (not one of
+    /// `childTasks`) throws if that task is a goal-less counter
+    /// (`BrowsableTasks.isGoalLessCounter`) — see `AppDatabaseError.invalidCompoundChild`.
+    ///
     /// - Parameters:
     ///   - task: The parent Task to insert.
     ///   - childTasks: New child Task rows, paired positionally with `childLinks`.
     ///   - childLinks: The CompoundChild link rows, paired with `childTasks`.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
+    /// - Throws: `AppDatabaseError.invalidCompoundChild` if a link references
+    ///   an existing goal-less counter task.
     func createTaskWithPairedChildrenAndEnqueue(
         task: Task,
         childTasks: [Task],
         childLinks: [CompoundChild],
         now: String
     ) throws {
+        let newChildIds = Set(childTasks.map { $0.id })
         try write { db in
+            // P5 guard: any link whose childTaskId is NOT one of the new
+            // children created in this call references an existing task —
+            // reject it if that task is a goal-less counter (mirrors web's
+            // `createCompoundChild` guard).
+            for link in childLinks where !newChildIds.contains(link.childTaskId) {
+                if let existing = try Task.fetchOne(db, key: link.childTaskId),
+                   BrowsableTasks.isGoalLessCounter(existing) {
+                    throw AppDatabaseError.invalidCompoundChild(
+                        "createTaskWithPairedChildrenAndEnqueue: goal-less counter tasks cannot be compound children"
+                    )
+                }
+            }
+
             try task.save(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "tasks",
@@ -503,12 +523,21 @@ extension AppDatabase {
     /// `.create`-enqueued in one transaction. Moved verbatim from the create
     /// form's `handleCreateCompoundAndAddToPool` immediate path.
     ///
+    /// P5 guard: a `childLinks` row referencing an existing-library task
+    /// (not one of `newChildTasks`) throws if that task is a goal-less
+    /// counter (`BrowsableTasks.isGoalLessCounter`) — a hub-born counter with
+    /// no `maxCount` has nothing evaluable to contribute to a compound's
+    /// AND/OR/M_OF_N logic (docs/SHARED_COUNTERS.md §P5). A promoted counter
+    /// (still `isCounter` but with a `maxCount`) is unaffected.
+    ///
     /// - Parameters:
     ///   - parent: The compound parent Task to insert.
     ///   - newChildTasks: The NEW inline child Task rows to insert.
     ///   - childLinks: The CompoundChild link rows (both new-inline and
     ///     existing-library children).
     ///   - now: ISO8601 timestamp for the sync-queue rows.
+    /// - Throws: `AppDatabaseError.invalidCompoundChild` if a link references
+    ///   an existing-library goal-less counter task.
     func createCompoundAndEnqueue(
         parent: Task,
         newChildTasks: [Task],
@@ -517,6 +546,19 @@ extension AppDatabase {
     ) throws {
         let newChildIds = Set(newChildTasks.map { $0.id })
         try write { db in
+            // P5 guard: any link whose childTaskId is NOT one of the new
+            // inline children created in this call references an existing
+            // task — reject it if that task is a goal-less counter (mirrors
+            // web's `createCompoundChild` guard).
+            for link in childLinks where !newChildIds.contains(link.childTaskId) {
+                if let existing = try Task.fetchOne(db, key: link.childTaskId),
+                   BrowsableTasks.isGoalLessCounter(existing) {
+                    throw AppDatabaseError.invalidCompoundChild(
+                        "createCompoundAndEnqueue: goal-less counter tasks cannot be compound children"
+                    )
+                }
+            }
+
             // 1. Parent compound task + sync entry.
             try parent.save(db)
             try SyncQueueBuilder.makeItem(
