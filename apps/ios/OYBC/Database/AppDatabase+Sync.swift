@@ -247,11 +247,21 @@ extension AppDatabase {
         /// nothing evaluable to contribute to a compound's AND/OR/M_OF_N
         /// logic. Mirrors web's `createCompoundChild` guard.
         case invalidCompoundChild(String)
+        /// P5: `createCounterTask` input failed validation (blank
+        /// action/unit, or a negative `startingCount`). Mirrors web's
+        /// `createCounterTask` throws.
+        case invalidCounterInput(String)
+        /// P5 decision 7: `promoteTaskToCounter` guard rejected the target —
+        /// missing/deleted, not `.counting`, or itself a derived (linked)
+        /// task. Mirrors web's `promoteTaskToCounter` throws.
+        case counterPromotionRejected(String)
 
         var errorDescription: String? {
             switch self {
             case .payloadEncoding(let msg): return msg
             case .invalidCompoundChild(let msg): return msg
+            case .invalidCounterInput(let msg): return msg
+            case .counterPromotionRejected(let msg): return msg
             }
         }
     }

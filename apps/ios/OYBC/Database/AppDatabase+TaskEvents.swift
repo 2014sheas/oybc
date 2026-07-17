@@ -1,6 +1,22 @@
 import Foundation
 import GRDB
 
+/// P5 (Shared Counters Hub, docs/SHARED_COUNTERS.md §P5) constants for the
+/// task-event write paths. Kept as a top-level namespace (not nested in
+/// `AppDatabase`) so counter write ops elsewhere can reference
+/// `TaskEvents.seedEventOccurredAt` directly, mirroring the TS import style.
+enum TaskEvents {
+    /// Sentinel `occurredAt` for a hub counter's seed increment event
+    /// (`createCounterTask`, P5 decision — see `AppDatabase+Counters.swift`).
+    /// Anchoring the seed event here — rather than at `now` — keeps it
+    /// outside every board window, so it never counts toward a windowed
+    /// board read; it exists purely so the lifetime event sum matches the
+    /// task row's authoritative `currentCount`. Mirrors the TS
+    /// `SEED_EVENT_OCCURRED_AT` export in
+    /// `packages/shared/src/algorithms/taskEvents.ts`.
+    static let seedEventOccurredAt = "1970-01-01T00:00:00.000Z"
+}
+
 // MARK: - Task Event write choke points + cache recompute
 //
 // Swift twin of `apps/web/src/db/operations/taskEvents.ts` (Windowed Completion,

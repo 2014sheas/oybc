@@ -875,6 +875,17 @@ extension AppDatabase {
         /// `CompoundChild` rows where the task IS the parent compound.
         /// Each parent link is severed; the child Tasks remain.
         let parentLinkCount: Int
+        /// P5 decision 8 — live (non-deleted) tasks whose `sharedCounterId`
+        /// points at this task, i.e. this task is a counter SOURCE with
+        /// derived members. Deleting a source unlinks these (see
+        /// `deleteCounterWithUnlink` in `AppDatabase+Counters.swift`) rather
+        /// than orphaning them, so the confirm dialog surfaces this count
+        /// separately from the ordinary board/compound impact above.
+        let counterMemberCount: Int
+        /// The counter-member Task rows themselves (same set counted by
+        /// `counterMemberCount`), so the confirm sheet can list them without
+        /// a second fetch.
+        let counterMembers: [Task]
     }
 
     /// Read-only impact calculation; safe to call before showing the
@@ -904,12 +915,17 @@ extension AppDatabase {
             let parentLinks = try CompoundChild
                 .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
                 .fetchCount(db)
+            let counterMembers = try Task
+                .filter(Column("sharedCounterId") == taskId && Column("isDeleted") == false)
+                .fetchAll(db)
             return TaskDeletionImpact(
                 boardTaskCount: visiblePlacements.count,
                 affectedBoardIds: Array(liveBoardIds),
                 affectedBoards: liveBoards,
                 childLinkCount: childLinks,
                 parentLinkCount: parentLinks,
+                counterMemberCount: counterMembers.count,
+                counterMembers: counterMembers,
             )
         }
     }
@@ -931,60 +947,77 @@ extension AppDatabase {
     /// crash mid-cascade leaves a consistent local DB.
     func deleteTaskWithCascade(taskId: String) throws {
         try write { db in
-            guard var task = try Task.fetchOne(db, key: taskId) else { return }
             let now = Self.currentTimestamp()
+            try Self.deleteTaskWithCascadeInDb(db: db, taskId: taskId, now: now)
+        }
+    }
 
-            // 1. Hard-delete BoardTask placements.
-            let placements = try BoardTask
-                .filter(Column("taskId") == taskId)
-                .fetchAll(db)
-            for bt in placements {
-                _ = try bt.delete(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boardTasks",
-                    entityId: bt.id,
-                    operationType: .delete,
-                    payload: bt,
-                    now: now,
-                ).enqueue(db)
-            }
+    /// Cascade-delete a task given an ALREADY-OPEN write transaction — same
+    /// four steps as `deleteTaskWithCascade`, extracted so callers that need
+    /// the cascade to run alongside other writes in one wider transaction
+    /// (e.g. `deleteCounterWithUnlink` in `AppDatabase+Counters.swift`, P5
+    /// decision 8) don't have to nest a second `write` block. Pure code-
+    /// motion — `deleteTaskWithCascade` now delegates to this from inside
+    /// its own `write` block; behavior is unchanged. Mirrors web's
+    /// `deleteTaskWithCascadeInTxn`.
+    ///
+    /// - Parameters:
+    ///   - db: GRDB database handle (must be inside a write transaction).
+    ///   - taskId: The task to cascade-delete.
+    ///   - now: ISO8601 timestamp stamped on every row written here.
+    static func deleteTaskWithCascadeInDb(db: Database, taskId: String, now: String) throws {
+        guard var task = try Task.fetchOne(db, key: taskId) else { return }
 
-            // 2 + 3. Soft-delete compound-child links — both directions.
-            let parentLinks = try CompoundChild
-                .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
-                .fetchAll(db)
-            let childLinks = try CompoundChild
-                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
-                .fetchAll(db)
-            for var link in parentLinks + childLinks {
-                link.isDeleted = true
-                link.deletedAt = now
-                link.updatedAt = now
-                link.version += 1
-                try link.update(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "compoundChildren",
-                    entityId: link.id,
-                    operationType: .delete,
-                    payload: link,
-                    now: now,
-                ).enqueue(db)
-            }
-
-            // 4. Soft-delete the Task itself.
-            task.isDeleted = true
-            task.deletedAt = now
-            task.updatedAt = now
-            task.version += 1
-            try task.update(db)
+        // 1. Hard-delete BoardTask placements.
+        let placements = try BoardTask
+            .filter(Column("taskId") == taskId)
+            .fetchAll(db)
+        for bt in placements {
+            _ = try bt.delete(db)
             try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: task.id,
+                entityType: "boardTasks",
+                entityId: bt.id,
                 operationType: .delete,
-                payload: task,
+                payload: bt,
                 now: now,
             ).enqueue(db)
         }
+
+        // 2 + 3. Soft-delete compound-child links — both directions.
+        let parentLinks = try CompoundChild
+            .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
+            .fetchAll(db)
+        let childLinks = try CompoundChild
+            .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
+            .fetchAll(db)
+        for var link in parentLinks + childLinks {
+            link.isDeleted = true
+            link.deletedAt = now
+            link.updatedAt = now
+            link.version += 1
+            try link.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "compoundChildren",
+                entityId: link.id,
+                operationType: .delete,
+                payload: link,
+                now: now,
+            ).enqueue(db)
+        }
+
+        // 4. Soft-delete the Task itself.
+        task.isDeleted = true
+        task.deletedAt = now
+        task.updatedAt = now
+        task.version += 1
+        try task.update(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "tasks",
+            entityId: task.id,
+            operationType: .delete,
+            payload: task,
+            now: now,
+        ).enqueue(db)
     }
 
 }
