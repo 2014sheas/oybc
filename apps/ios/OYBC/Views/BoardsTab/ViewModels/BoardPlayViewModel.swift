@@ -507,8 +507,12 @@ final class BoardPlayViewModel: ObservableObject {
             return
         }
 
-        // (b) Source counter — check if any task in the workspace links to this task.
+        // (b) Source counter — check if any task in the workspace links to this
+        // task, OR it's a promoted zero-link counter (P5: `isCounter == true`,
+        // no members yet — still routes through the shared-counter engine so
+        // its tap lands on the global lifetime total, not a per-board window).
         let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
+            || task.isCounter == true
         if isSource {
             runSharedCounterIncrement(sourceTaskId: task.id, counterName: task.title)
             return
@@ -661,7 +665,10 @@ final class BoardPlayViewModel: ObservableObject {
             runSharedCounterDecrement(sourceTaskId: sourceId, counterName: task.title)
             return
         }
+        // (b) Source counter — same detection as handleCountingTap, including
+        // the P5 zero-link `isCounter` branch.
         let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
+            || task.isCounter == true
         if isSource {
             runSharedCounterDecrement(sourceTaskId: task.id, counterName: task.title)
             return
@@ -1444,7 +1451,13 @@ final class BoardPlayViewModel: ObservableObject {
             let counterId: String
             if let source = task.sharedCounterId {
                 counterId = source
-            } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted }) {
+            } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted })
+                || task.isCounter == true {
+                // P5: a promoted zero-link counter (no members yet) is still
+                // its own source — mirrors web `useBoardPlayData.ts:176`
+                // (`if (t.isCounter === true) sources.add(t.id)`), so it
+                // participates in arrival detection from the moment it's
+                // promoted, not just once a first member links to it.
                 counterId = task.id
             } else {
                 continue  // Not part of a shared-counter group.
