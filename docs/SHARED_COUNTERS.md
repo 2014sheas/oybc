@@ -96,7 +96,9 @@ Web:     apps/web/src/pages/CountersHubPage.tsx        ←→  iOS  Views/Profil
 
 ## P5 — Hub-born counters (design locked 2026-07-15)
 
-> **Status: DESIGN** (Gate-1 decisions locked 2026-07-15; adversarial internal
+> **Status: IMPLEMENTED — PR-1 #330 (shared, merged) + PR-2 (platforms, this PR).**
+> Gate-2 device verification pending (relayed checklist). Original design record below.
+> (Gate-1 decisions locked 2026-07-15; adversarial internal
 > review applied — the engine-guard, field-drop, seed-window, and
 > delete-blast-radius rules below are review-driven). Not yet implemented.
 >
