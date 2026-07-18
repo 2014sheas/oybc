@@ -204,3 +204,88 @@ goal-less source (no throw, lifetime updates); promote flow end-to-end;
 unlink-then-delete mints snapshot events + members become plain counting tasks;
 flag-stripped row still browsable (regression for the field-drop edge); hub +
 create-sheet + single-member detail snapshots.
+
+## Counters UX refresh (design locked 2026-07-18)
+
+Handoff: `design_handoff_refining_counters/` (gitignored; README + SPEC +
+`proto/counters-refined.html`, authoritative sections Turns 8 → 7 → 4 → 3;
+Turns 1/2/5/6 are explorations — do not implement). Ground-up UX refresh of
+the counters area — Hub, Detail, creation surfaces, board-play touchpoints —
+**web + iOS in the same release** (handoff resolved decision 6).
+
+### The model (no schema change)
+
+- **Identity = (verb, noun)** — exactly today's `action` + `unit` key,
+  case-insensitive, trimmed. Verb defaults to **"Do"**.
+- **Counter display name** = `"{Verb} {noun}"` with "Do" elided:
+  Do·push-ups → "Push-ups"; Run·miles → "Run miles". The P5 goal-less
+  `"{action} ({unit})"` parenthetical format is **removed** — the goal-less
+  title IS the counter name. No unit chips anywhere.
+- **Task titles** = `"{Verb} {goal} {noun}"` via `generateCounterTaskTitle`
+  unchanged; custom titles still override.
+- **Linking** — exact pair match at creation auto-links, always with a
+  visible hint card + "Don't link" opt-out. No fuzzy matching, no silent
+  merges. Run·miles ≠ Bike·miles by construction.
+- **Legacy verb-less counters** — silent display-only "Do" backfill; **no
+  data migration** (single-user pre-release).
+- **Dedupe at create collapses to one state**: exact pair collision → gold
+  "You already have this counter → Open it". The P5 promote/standalone
+  classifier UI and green "Use as counter" card are **removed** (Turn 7
+  superseded Turn 4). The underlying promote operation may remain as an
+  internal seam but has no create-sheet entry point.
+
+### Amount logging
+
+- Chips **1 / default / 25 / #custom** on Counter Detail, the Hub ledger
+  card's one-tap "+ Log" pill, and the shared-square quick actions; a plain
+  board tap logs the default amount.
+- **default = last-used amount per counter** — new persisted
+  `defaultLogAmount` (local persistence, synced like preferences; storage
+  location decided at R2 planning).
+- **Undo reverses the whole log entry**, not −1 — `TaskEvent.delta` already
+  carries signed amounts, so a "+10" is one increment event and undo
+  reverses that entry. Undo depth = last entry now; full ledger arrives
+  with P4 storage.
+- Decrement mirrors the add amount and clamps lifetime at 0 (disabled at 0).
+
+### Screens (see handoff README for pixel spec)
+
+- **Hub**: one-line intro; ledger cards keep per-task rows + gain the
+  "+ Log" pill; header "New counter" hidden when empty; empty state = single
+  CTA. Desktop: 2-up grid.
+- **Detail**: kicker "SHARED COUNTER"; hero all-time + 7-day sparkline +
+  milestone bar; stat strip Today / Streak / Best week (**P4 data — UI built
+  now, fed later**); blue log card with amount chips + −/Add pair; one-line
+  explainer; task cards ("Appears on" chip section removed); "Recent weeks"
+  history (P4); delete demoted to a quiet red text link. Desktop: two-column
+  (sticky log rail left).
+- **Creation**: CreateCounterSheet → Verb (default "Do") + "What you count"
+  (plural noun) + optional "Start from", live preview card, RisoButton
+  footer (ad-hoc button CSS deleted). CountingStepFields → labels
+  **Verb\* · Goal\* · Counting\***, live title preview, blue auto-link hint
+  card + outlined "Don't link" pill. DeriveCounterModal → "Smaller version",
+  inherits the pair, previews derived title, RisoButton footer.
+- **Board-play**: RisoCreditedToast amount-aware ("**+10 push-ups** — also
+  counted on Daily Grind.") + Undo pill; RisoArrivalBanner tightened copy;
+  square modal/context menu gains the same amount options.
+
+### P4 contract
+
+The P4 storage plan must include **counter-level** closed-window rollups
+(not just per-task) — "Best week" / "Recent weeks" / sparkline feed from it
+(handoff resolved decision 5).
+
+### Delivery (lockstep PRs, web + iOS together)
+
+- **R1 — identity & creation surfaces**: shared counter-name formatter
+  (Do-elision + verb-less backfill) replacing the parenthetical branch;
+  CreateCounterSheet/NewCounterSheetView refit (fields, preview, gold-only
+  dedupe, promote UI removed, RisoButton footers); CountingStepFields relabel
+  + link-hint card + "Don't link"; derive modal retitle; Swift-mirror vector
+  updates.
+- **R2 — Hub + Detail refresh**: ledger card + "+ Log" pill; empty state;
+  Detail hero / stat strip / log card with amount chips; `defaultLogAmount`
+  persistence; last-entry Undo; delete-as-link; desktop layouts; P4 stub UI.
+- **R3 — board-play touchpoints**: amount-aware toast + Undo; banner copy;
+  square quick-action amounts; board tap logs default; decrement mirrors
+  amount.
