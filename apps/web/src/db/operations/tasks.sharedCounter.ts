@@ -66,18 +66,16 @@ export async function incrementSharedCounter(
       }
 
       // 2. Compute new source count — NO high-end clamp (overshoot is intentional).
-      if (source.maxCount == null) {
-        throw new Error(
-          `incrementSharedCounter: source task ${sourceTaskId} has null/undefined maxCount — data integrity error`,
-        );
-      }
+      // A goal-less source (P5 hub-born counter, `maxCount == null`) never
+      // auto-completes — the one-way latch below only fires once a maxCount exists.
       const newSourceCount = (source.currentCount ?? 0) + by;
       const sourceMaxCount = source.maxCount;
 
       // isCompleted: one-way latch. Source uses a simpler logic than derived tasks:
       // the source tracks its own maxCount independently. We apply the latch here too.
       const sourceWasCompleted = source.isCompleted;
-      const sourceNowCompleted = sourceWasCompleted || newSourceCount >= sourceMaxCount;
+      const sourceNowCompleted =
+        sourceWasCompleted || (sourceMaxCount != null && newSourceCount >= sourceMaxCount);
 
       const updatedSource: Partial<Task> = {
         currentCount: newSourceCount,
@@ -216,17 +214,14 @@ export async function decrementSharedCounter(
       const eff = Math.min(by, currentCount);
       if (eff === 0) return { affectedBoards: [], effectiveDelta: 0 };
 
-      if (source.maxCount == null) {
-        throw new Error(
-          `decrementSharedCounter: source task ${sourceTaskId} has null/undefined maxCount — data integrity error`,
-        );
-      }
-
+      // A goal-less source (P5 hub-born counter, `maxCount == null`) never
+      // auto-completes — the one-way latch below only fires once a maxCount exists.
       const newSourceCount = currentCount - eff;
 
       // 3. ONE-WAY LATCH: decrement does NOT un-complete.
       const sourceWasCompleted = source.isCompleted;
-      const sourceNowCompleted = sourceWasCompleted || newSourceCount >= source.maxCount;
+      const sourceNowCompleted =
+        sourceWasCompleted || (source.maxCount != null && newSourceCount >= source.maxCount);
 
       const updatedSource: Partial<Task> = {
         currentCount: newSourceCount,

@@ -99,4 +99,19 @@ describe('buildArrivalSquares', () => {
     });
     expect(squares).toEqual([]);
   });
+
+  it('P5: a flagged zero-link counter source participates via its own id', () => {
+    // A promoted/hub-born counter (isCounter: true) with NO linked members
+    // still shows up in sharedCounterSourceIds (per useBoardPlayData's
+    // isCounter branch) — it should self-resolve to its own counterId.
+    const source = makeTask({ id: 'src', title: 'Push-ups', isCounter: true, currentCount: 8 });
+    const squares = buildArrivalSquares({
+      boardTasks: [bt('src')],
+      taskMap: { src: source },
+      sharedCounterSourceIds: new Set(['src']),
+    });
+    expect(squares).toEqual([
+      { taskId: 'src', counterId: 'src', counterName: 'Push-ups', displayed: 8 },
+    ]);
+  });
 });

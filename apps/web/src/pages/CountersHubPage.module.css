@@ -4,6 +4,15 @@
   padding: 0;
 }
 
+/* Wraps the sub-page header (back link + title) and the "+ New counter"
+   button on the same row. */
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 /* Red kicker label above the h1 — matches the prototype's "PROFILE" kicker. */
 .kicker {
   font-family: var(--riso-font-head);
@@ -61,5 +70,5 @@
   color: var(--riso-muted);
   line-height: 1.45;
   max-width: 280px;
-  margin: 0;
+  margin: 0 0 8px;
 }

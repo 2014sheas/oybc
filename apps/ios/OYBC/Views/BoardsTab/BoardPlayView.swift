@@ -1371,7 +1371,9 @@ struct BoardPlayView: View {
         let sourceId: String
         if let linkedSourceId = task.sharedCounterId {
             sourceId = linkedSourceId
-        } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted }) {
+        } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted })
+            || task.isCounter == true {
+            // P5: a promoted zero-link counter is its own source too.
             sourceId = task.id
         } else {
             return nil  // Not in a shared group.
@@ -1561,10 +1563,13 @@ struct BoardPlayView: View {
         }()
 
         // P2: Shared-counter marker — true for source tasks that have linked tasks
-        // pointing at them, or for linked tasks with sharedCounterId set.
+        // pointing at them, for linked tasks with sharedCounterId set, or (P5)
+        // for a promoted zero-link counter (`isCounter == true`) — mirrors web
+        // `useBoardPlayData.ts`'s `sharedCounterSourceIds` set exactly.
         let isSharedCounterCell: Bool = {
             guard let t = task, t.type == .counting else { return false }
             if t.sharedCounterId != nil { return true }
+            if t.isCounter == true { return true }
             return allTasks.contains { $0.sharedCounterId == t.id && !$0.isDeleted }
         }()
 

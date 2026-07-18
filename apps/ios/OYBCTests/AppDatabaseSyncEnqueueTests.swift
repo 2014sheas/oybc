@@ -37,7 +37,13 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         try db.saveUser(user)
     }
 
-    private func makeTask(_ id: String, userId: String = "u1", type: TaskType = .normal) -> Task {
+    private func makeTask(
+        _ id: String,
+        userId: String = "u1",
+        type: TaskType = .normal,
+        maxCount: Int? = nil,
+        isCounter: Bool = false
+    ) -> Task {
         let now = AppDatabase.currentTimestamp()
         return Task(
             id: id,
@@ -47,7 +53,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             type: type,
             action: nil,
             unit: nil,
-            maxCount: nil,
+            maxCount: maxCount,
             operatorType: type == .compound ? .and : nil,
             threshold: nil,
             isOrdered: nil,
@@ -75,7 +81,8 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             sharedCounterId: nil,
             baseline: nil,
             lastSyncedCount: nil,
-            createdInWizard: false
+            createdInWizard: false,
+            isCounter: isCounter
         )
     }
 
@@ -215,6 +222,71 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
                        "existing-library child must not be re-created")
         // Both links enqueued.
         XCTAssertEqual(count(rows, type: "compoundChildren", op: .create), 2)
+    }
+
+    // MARK: - createCompoundAndEnqueue — P5 goal-less-counter child guard
+
+    func test_createCompoundAndEnqueue_existingGoalLessCounterChild_throws() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // An existing-library child that is a goal-less counter (COUNTING +
+        // isCounter + no maxCount) — nothing evaluable to contribute.
+        try db.saveTask(makeTask("goalless", type: .counting, maxCount: nil, isCounter: true))
+
+        let parent = makeTask("cp2", type: .compound)
+        let link = makeLink(id: "lg", parent: "cp2", child: "goalless", index: 0)
+
+        XCTAssertThrowsError(
+            try db.createCompoundAndEnqueue(parent: parent, newChildTasks: [], childLinks: [link], now: now)
+        ) { error in
+            let message = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            XCTAssertTrue(
+                message.contains("goal-less counter tasks cannot be compound children"),
+                "unexpected error message: \(message)"
+            )
+        }
+        // Nothing should have been written — the guard runs before any write.
+        XCTAssertNil(try db.fetchTask(id: "cp2"))
+    }
+
+    func test_createCompoundAndEnqueue_existingPromotedCounterChild_succeeds() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // A promoted counter (isCounter + maxCount) is unaffected by the guard.
+        try db.saveTask(makeTask("promoted", type: .counting, maxCount: 50, isCounter: true))
+
+        let parent = makeTask("cp3", type: .compound)
+        let link = makeLink(id: "lp", parent: "cp3", child: "promoted", index: 0)
+
+        try db.createCompoundAndEnqueue(parent: parent, newChildTasks: [], childLinks: [link], now: now)
+
+        XCTAssertNotNil(try db.fetchTask(id: "cp3"))
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "compoundChildren", op: .create), 1)
+    }
+
+    func test_createTaskWithPairedChildren_existingGoalLessCounterChild_throws() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        try db.saveTask(makeTask("goalless2", type: .counting, maxCount: nil, isCounter: true))
+
+        let parent = makeTask("p2", type: .compound)
+        // Reference an existing goal-less counter with no paired new child task.
+        let link = makeLink(id: "l3", parent: "p2", child: "goalless2", index: 0)
+
+        XCTAssertThrowsError(
+            try db.createTaskWithPairedChildrenAndEnqueue(task: parent, childTasks: [], childLinks: [link], now: now)
+        ) { error in
+            let message = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            XCTAssertTrue(message.contains("goal-less counter tasks cannot be compound children"))
+        }
+        XCTAssertNil(try db.fetchTask(id: "p2"))
     }
 
     // MARK: - completeTaskOrchestrated

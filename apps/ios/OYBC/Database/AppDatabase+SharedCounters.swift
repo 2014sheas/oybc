@@ -205,20 +205,17 @@ extension AppDatabase {
             }
 
             // 2. Compute new source count — NO high-end clamp.
-            guard let sourceMaxCount = source.maxCount else {
-                throw NSError(
-                    domain: "AppDatabase.incrementSharedCounter",
-                    code: 4,
-                    userInfo: [NSLocalizedDescriptionKey:
-                        "incrementSharedCounter: source task \(sourceTaskId) has nil maxCount — data integrity error"]
-                )
-            }
+            // P5: `maxCount` may be nil for a goal-less (hub-born) source —
+            // a running tally with no threshold. Such a source must never
+            // auto-complete (there is nothing to reach).
+            let sourceMaxCount = source.maxCount
             let prevSourceCount = source.currentCount ?? 0
             let newSourceCount = prevSourceCount + by
 
-            // ONE-WAY LATCH on source completion.
+            // ONE-WAY LATCH on source completion. Goal-less sources
+            // (sourceMaxCount == nil) never latch complete.
             let sourceWasCompleted = source.isCompleted
-            let sourceNowCompleted = sourceWasCompleted || newSourceCount >= sourceMaxCount
+            let sourceNowCompleted = sourceWasCompleted || (sourceMaxCount.map { newSourceCount >= $0 } ?? false)
 
             source.currentCount = newSourceCount
             source.isCompleted = sourceNowCompleted

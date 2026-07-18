@@ -618,7 +618,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
           const sourceTask = taskMap[sourceTaskId];
           const counterName = sourceTask
             ? (sourceTask.title?.trim() ||
-               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount ?? 0, sourceTask.unit ?? ''))
+               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount, sourceTask.unit ?? ''))
             : '';
           onCreditedToast({
             name: counterName,
@@ -656,7 +656,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
           const sourceTask = taskMap[sourceTaskId];
           const counterName = sourceTask
             ? (sourceTask.title?.trim() ||
-               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount ?? 0, sourceTask.unit ?? ''))
+               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount, sourceTask.unit ?? ''))
             : '';
           onCreditedToast({
             name: counterName,

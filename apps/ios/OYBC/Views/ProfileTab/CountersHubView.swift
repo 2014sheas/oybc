@@ -18,13 +18,43 @@ struct CountersHubView: View {
 
     @State private var groups: [SharedCounterGroup] = []
     @State private var isLoaded = false
+    @State private var tasksForDedupe: [OYBC.Task] = []
+
+    /// "+ New counter" sheet presentation (P5). `deleteImpact`-style Binding
+    /// derivation isn't needed here — the sheet always dismisses via either
+    /// Cancel or a successful create/promote/view-counter callback.
+    @State private var isNewCounterSheetPresented = false
+    /// Set by the sheet's `onNavigateToCounter` callback (create success,
+    /// promote success, or an established match's "View counter" tap) —
+    /// drives the push to `CounterDetailView` once the sheet finishes
+    /// dismissing.
+    @State private var navigateToCounterId: String? = nil
 
     // MARK: - Body
 
     var body: some View {
-        CountersHubContent(groups: groups, isLoaded: isLoaded)
-            .navigationBarHidden(true)
-            .onAppear { loadData() }
+        CountersHubContent(
+            groups: groups,
+            isLoaded: isLoaded,
+            onNewCounter: { isNewCounterSheetPresented = true }
+        )
+        .navigationBarHidden(true)
+        .onAppear { loadData() }
+        .sheet(isPresented: $isNewCounterSheetPresented, onDismiss: { loadData() }) {
+            if let userId = authService.currentUser?.id {
+                NewCounterSheetView(
+                    userId: userId,
+                    tasks: tasksForDedupe,
+                    onNavigateToCounter: { counterId in
+                        isNewCounterSheetPresented = false
+                        navigateToCounterId = counterId
+                    }
+                )
+            }
+        }
+        .navigationDestination(item: $navigateToCounterId) { counterId in
+            CounterDetailView(counterId: counterId)
+        }
     }
 
     // MARK: - Data loading
@@ -38,6 +68,7 @@ struct CountersHubView: View {
             let result = buildSharedCounterGroups(tasks: tasks, boardTasks: boardTasks, boards: boards)
             await MainActor.run {
                 groups = result
+                tasksForDedupe = tasks
                 isLoaded = true
             }
         }
@@ -52,6 +83,10 @@ struct CountersHubContent: View {
 
     let groups: [SharedCounterGroup]
     var isLoaded: Bool = true
+    /// Fired by the header's trailing button (and the empty-state CTA) to
+    /// open the "+ New counter" sheet. Defaults to a no-op so previews and
+    /// other non-interactive callers don't need to supply one.
+    var onNewCounter: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -60,9 +95,15 @@ struct CountersHubContent: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
 
-                    RisoSubPageHeader(title: "Shared counters")
-                        .padding(.top, 16)
-                        .padding(.bottom, 20)
+                    HStack(spacing: 8) {
+                        RisoSubPageHeader(title: "Shared counters")
+                        RisoButton(title: "+ New counter", kind: .blue, small: true) {
+                            onNewCounter()
+                        }
+                        .padding(.trailing, Riso.gutter)
+                    }
+                    .padding(.top, 16)
+                    .padding(.bottom, 20)
 
                     // Intro paragraph
                     Text("One activity, one running tally. Log **push-ups** on any board and every task that counts push-ups moves — each keeping its own start and finish.")
@@ -119,16 +160,20 @@ struct CountersHubContent: View {
 
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Image(systemName: "arrow.triangle.2.circlepath")
+            Text("↔")
                 .font(.system(size: 32, weight: .semibold))
                 .foregroundStyle(Color.risoMuted.opacity(0.5))
-            Text("No shared counters yet")
+            Text("No counters yet")
                 .font(.risoBody(14, .semibold))
                 .foregroundStyle(Color.risoMuted)
-            Text("Link counting tasks to a shared counter to see them here.")
+            Text("Create a counter to track one activity across every board — or link a counting task when you create one.")
                 .font(.risoBody(12, .regular))
                 .foregroundStyle(Color.risoMuted.opacity(0.7))
                 .multilineTextAlignment(.center)
+            RisoButton(title: "+ New counter", kind: .blue, small: true) {
+                onNewCounter()
+            }
+            .padding(.top, 6)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)

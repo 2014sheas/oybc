@@ -1,0 +1,183 @@
+/* CounterDeleteConfirmDialog — destructive confirm sheet for deleting a
+   shared-counter source (P5). Pattern mirrors TaskDetailContent.module.css's
+   sheet/confirm-dialog rules + CreateCounterSheet.module.css's backdrop. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  /* true black, not ink — an ink scrim over dark-mode paper barely darkens. */
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 460px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  animation: slideUp 0.2s ease-out;
+}
+
+.sheetHeading {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+.confirmBody {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--riso-ink);
+  line-height: 1.45;
+}
+
+/* ── Linked-members list ── */
+.membersSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.membersHeading {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+
+.membersList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.membersItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--riso-paper);
+  border: 1.5px solid var(--riso-hair);
+  border-radius: var(--riso-r-card);
+}
+
+.membersTitle {
+  flex: 1;
+  font-family: var(--riso-font-head);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--riso-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.membersBoard {
+  font-family: var(--riso-font-body);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--riso-muted);
+  flex-shrink: 0;
+}
+
+/* ── Footer actions ── */
+.sheetActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.cancelButton,
+.deleteButton {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 11px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.cancelButton {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+
+.deleteButton {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+
+.cancelButton:hover:not(:disabled),
+.deleteButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.cancelButton:active:not(:disabled),
+.deleteButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.cancelButton:disabled,
+.deleteButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.deleteButton:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: -3px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .sheet {
+    animation: none;
+  }
+  .cancelButton,
+  .deleteButton {
+    transition: none;
+  }
+}

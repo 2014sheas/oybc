@@ -17,13 +17,14 @@ enum TaskTitle {
     ///
     /// - Parameters:
     ///   - action: Action verb (e.g., "Read").
-    ///   - maxCount: Target count (e.g., 100).
+    ///   - maxCount: Target count (e.g., 100), or `nil` for a goal-less
+    ///     hub-born counter (P5) — a running tally with no threshold.
     ///   - unit: Unit of measurement (e.g., "pages").
     ///   - providedTitle: Optional user-provided title.
     /// - Returns: The resolved task title string.
     static func generateCounterTaskTitle(
         action: String,
-        maxCount: Int,
+        maxCount: Int?,
         unit: String,
         providedTitle: String? = nil
     ) -> String {
@@ -33,6 +34,12 @@ enum TaskTitle {
         }
         let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        // P5 — hub-born counters are goal-less accumulators; title carries the
+        // activity + unit ("Push-ups (reps)") so same-activity counters with
+        // different units stay distinguishable.
+        guard let maxCount else {
+            return "\(trimmedAction) (\(trimmedUnit))"
+        }
         return "\(trimmedAction) \(maxCount) \(trimmedUnit)"
     }
 }

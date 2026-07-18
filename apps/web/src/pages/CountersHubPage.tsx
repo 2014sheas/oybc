@@ -1,8 +1,10 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
-import { CounterLedgerCard } from '../components/counters';
-import { RisoSectionLabel } from '../components/riso';
+import { useTasks } from '../hooks/useTasks';
+import { CounterLedgerCard, CreateCounterSheet } from '../components/counters';
+import { RisoButton, RisoSectionLabel } from '../components/riso';
 import profileStyles from './ProfilePage.module.css';
 import styles from './CountersHubPage.module.css';
 
@@ -26,19 +28,32 @@ import styles from './CountersHubPage.module.css';
  */
 export function CountersHubPage(): React.ReactElement {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const groups = useSharedCounterGroups(user?.id);
+  const tasks = useTasks(user?.id) ?? [];
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  function handleCreated(counterId: string): void {
+    setSheetOpen(false);
+    navigate(`/profile/counters/${counterId}`);
+  }
 
   return (
     <div className={styles.container}>
       {/* Sub-page header */}
-      <div className={profileStyles.subPageHeader}>
-        <Link to="/profile" className={profileStyles.backLink} aria-label="Back to Profile">
-          &larr;
-        </Link>
-        <div>
-          <div className={styles.kicker}>PROFILE</div>
-          <h1 className={profileStyles.header}>Shared counters</h1>
+      <div className={styles.headerRow}>
+        <div className={profileStyles.subPageHeader}>
+          <Link to="/profile" className={profileStyles.backLink} aria-label="Back to Profile">
+            &larr;
+          </Link>
+          <div>
+            <div className={styles.kicker}>PROFILE</div>
+            <h1 className={profileStyles.header}>Shared counters</h1>
+          </div>
         </div>
+        <RisoButton kind="blue" size="small" onClick={() => setSheetOpen(true)}>
+          + New counter
+        </RisoButton>
       </div>
 
       {/* Intro paragraph */}
@@ -49,7 +64,7 @@ export function CountersHubPage(): React.ReactElement {
 
       {/* Counter cards — Ledger layout */}
       {groups.length === 0 ? (
-        <EmptyState />
+        <EmptyState onNewCounter={() => setSheetOpen(true)} />
       ) : (
         <>
           <RisoSectionLabel>Your counters</RisoSectionLabel>
@@ -68,18 +83,32 @@ export function CountersHubPage(): React.ReactElement {
         Counters are shared automatically — tasks with the same activity and unit link up on their
         own.
       </p>
+
+      {user?.id && (
+        <CreateCounterSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          tasks={tasks}
+          userId={user.id}
+          onCreated={handleCreated}
+        />
+      )}
     </div>
   );
 }
 
-function EmptyState(): React.ReactElement {
+function EmptyState({ onNewCounter }: { onNewCounter: () => void }): React.ReactElement {
   return (
     <div className={styles.emptyState} role="status" aria-live="polite">
       <span className={styles.emptyIcon} aria-hidden="true">↔</span>
-      <p className={styles.emptyPrimary}>No shared counters yet</p>
+      <p className={styles.emptyPrimary}>No counters yet</p>
       <p className={styles.emptySub}>
-        Link a counting task to an existing counter when creating or editing a task to see it here.
+        Create a counter to track one activity across every board — or link a counting task when
+        you create one.
       </p>
+      <RisoButton kind="blue" size="small" onClick={onNewCounter}>
+        + New counter
+      </RisoButton>
     </div>
   );
 }

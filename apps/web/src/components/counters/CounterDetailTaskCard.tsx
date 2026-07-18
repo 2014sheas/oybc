@@ -22,7 +22,9 @@ interface CounterDetailTaskCardProps {
  *
  * Inactive cards (inactive=true, "Not counting now" section):
  *   - Greyed out, not clickable.
- *   - Shows "Starts counting when this board goes live."
+ *   - Shows "Starts counting when this board goes live." when the member
+ *     is placed on a (not-yet-live) board, or "Not on any board yet — log
+ *     from here anytime." (P5) when the member has no board placement at all.
  *
  * Matches the `cd-task` design from the shared-counters design handoff.
  */
@@ -64,7 +66,11 @@ export function CounterDetailTaskCard({
             <span>{task.boardName}</span>
           </div>
         )}
-        <div className={styles.caption}>Starts counting when this board goes live.</div>
+        <div className={styles.caption}>
+          {task.boardId == null
+            ? 'Not on any board yet — log from here anytime.'
+            : 'Starts counting when this board goes live.'}
+        </div>
       </div>
     );
   }

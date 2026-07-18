@@ -324,6 +324,9 @@ export async function appendIncrementEvent(
  * would double-bump `version`. The event still needs to exist so windowed board
  * reads of the source counting square resolve correctly.
  *
+ * @param occurredAt Optional override for the event's `occurredAt` (defaults
+ *   to `now`). Used by seed/backfill paths that need to anchor an event at a
+ *   sentinel timestamp distinct from the write-time `createdAt`/`updatedAt`.
  * @returns `true` if an event row was written; `false` on a zero delta / a
  *          missing or non-event-owning task.
  */
@@ -332,6 +335,7 @@ export async function insertIncrementEventRaw(
   delta: number,
   boardId: string | undefined,
   now: string,
+  occurredAt: string = now,
 ): Promise<boolean> {
   if (delta === 0) return false;
   const task = await db.tasks.get(taskId);
@@ -342,7 +346,7 @@ export async function insertIncrementEventRaw(
     taskId,
     kind: 'increment',
     delta,
-    occurredAt: now,
+    occurredAt,
     boardId,
     createdAt: now,
     updatedAt: now,

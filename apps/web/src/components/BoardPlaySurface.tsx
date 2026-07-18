@@ -311,7 +311,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     const taskName = t
       ? t.title && t.title.trim()
         ? t.title
-        : generateCounterTaskTitle(t.action ?? '', t.maxCount ?? 0, t.unit ?? '')
+        : generateCounterTaskTitle(t.action ?? '', t.maxCount, t.unit ?? '')
       : '';
     const counterName = arrival.arrivedCounters[0]?.counterName ?? '';
     return { taskName, counterName };
@@ -680,7 +680,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 const displayLabel = task.title && task.title.trim()
                   ? task.title
                   : (task.type === TaskType.COUNTING
-                      ? generateCounterTaskTitle(task.action ?? '', task.maxCount ?? 0, task.unit ?? '')
+                      ? generateCounterTaskTitle(task.action ?? '', task.maxCount, task.unit ?? '')
                       : '');
 
                 // Phase 2 — Shared Counters: mark the cell as shared when

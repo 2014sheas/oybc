@@ -310,7 +310,8 @@ final class BoardPlayViewModelTests: XCTestCase {
         userId: String = "u1",
         maxCount: Int = 3,
         currentCount: Int? = nil,
-        sharedCounterId: String? = nil
+        sharedCounterId: String? = nil,
+        isCounter: Bool = false
     ) -> Task {
         var t = makeTask(id, userId: userId)
         t.type = .counting
@@ -319,6 +320,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         t.maxCount = maxCount
         t.currentCount = currentCount
         t.sharedCounterId = sharedCounterId
+        t.isCounter = isCounter
         return t
     }
 
@@ -515,6 +517,82 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.flashEvent?.creditToast != nil },
                       "credit toast flash event never published for the OTHER board")
         XCTAssertTrue(try XCTUnwrap(vm.flashEvent?.creditToast).contains("Board b2"))
+    }
+
+    // MARK: - 8a. P5 zero-link `isCounter` tap-routing (review fix — no direct
+    // test existed for the `|| task.isCounter == true` disjunct added to
+    // `handleCountingTap` / `handleCountingDecrement`'s source detection).
+    //
+    // These mirror `test_arrivalDetection_promotedZeroLinkCounter_stillDetectsArrival`'s
+    // fixture: a promoted STANDALONE counting task (`isCounter: true`, no
+    // linked members at all) placed on a single board. Because
+    // `allTasks.contains { $0.sharedCounterId == task.id }` is false here (no
+    // sibling links to it), only the `isCounter` branch can route this task
+    // through the shared-counter engine — so a passing test proves that
+    // specific disjunct, not the membership branch already covered by
+    // `test_sharedCounterIncrement_incrementsSource_andEmitsCreditToast`.
+    //
+    // Observable proof of routing: the shared-counter engine
+    // (`incrementSharedCounter`/`decrementSharedCounter`) always calls
+    // `insertIncrementEventRaw(..., boardId: nil, ...)` (lifetime event, no
+    // board scope), whereas the legacy standalone path's `setWindowedCount`
+    // intent calls `appendIncrementEvent(..., boardId: board.id, ...)` (window-
+    // scoped). Asserting the persisted `TaskEvent.boardId == nil` therefore
+    // distinguishes "went through the shared-counter engine" from "fell
+    // through to the legacy windowed path" — exactly the branch under test.
+
+    func test_handleCountingTap_zeroLinkIsCounter_routesThroughSharedCounterEngine() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        // Zero-link: no other task's sharedCounterId points at "c-solo".
+        try db.saveTask(makeCountingTask("c-solo", maxCount: 5, currentCount: 0, isCounter: true))
+        try db.saveBoardTask(makeBoardTask(id: "bt-solo", boardId: "b1", taskId: "c-solo", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-solo" })
+        let task = try XCTUnwrap(vm.taskMap["c-solo"])
+        XCTAssertFalse(vm.allTasks.contains { $0.sharedCounterId == "c-solo" },
+                        "fixture must have zero linked members — only isCounter can route this")
+
+        vm.handleCountingTap(boardTask: bt, task: task)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-solo")?.currentCount == 1 && !vm.isProcessing },
+                      "shared-counter increment never bumped the zero-link isCounter source")
+        XCTAssertEqual(try XCTUnwrap(dbTask(db, "c-solo")).currentCount, 1)
+
+        let events = try db.fetchNonDeletedTaskEvents(userId: "u1").filter { $0.taskId == "c-solo" }
+        XCTAssertEqual(events.count, 1, "exactly one lifetime increment event should have been appended")
+        XCTAssertNil(events.first?.boardId,
+                     "shared-counter engine appends a lifetime event (boardId nil); a non-nil boardId would mean this fell through to the legacy windowed path")
+        XCTAssertEqual(events.first?.delta, 1)
+    }
+
+    func test_handleCountingDecrement_zeroLinkIsCounter_routesThroughSharedCounterEngine() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        // Zero-link, seeded above 0 so the decrement has something to remove.
+        try db.saveTask(makeCountingTask("c-solo", maxCount: 5, currentCount: 2, isCounter: true))
+        try db.saveBoardTask(makeBoardTask(id: "bt-solo", boardId: "b1", taskId: "c-solo", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-solo" })
+        let task = try XCTUnwrap(vm.taskMap["c-solo"])
+        XCTAssertFalse(vm.allTasks.contains { $0.sharedCounterId == "c-solo" },
+                        "fixture must have zero linked members — only isCounter can route this")
+
+        vm.handleCountingDecrement(boardTask: bt, task: task)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-solo")?.currentCount == 1 && !vm.isProcessing },
+                      "shared-counter decrement never dropped the zero-link isCounter source, or threw")
+        XCTAssertEqual(try XCTUnwrap(dbTask(db, "c-solo")).currentCount, 1)
+
+        let events = try db.fetchNonDeletedTaskEvents(userId: "u1").filter { $0.taskId == "c-solo" }
+        XCTAssertEqual(events.count, 1, "exactly one lifetime decrement event should have been appended")
+        XCTAssertNil(events.first?.boardId,
+                     "shared-counter engine appends a lifetime event (boardId nil); a non-nil boardId would mean this fell through to the legacy windowed path")
+        XCTAssertEqual(events.first?.delta, -1)
     }
 
     // MARK: - 8b. GREENLOG flash gating on the completion transition (issue #272)
@@ -878,6 +956,48 @@ final class BoardPlayViewModelTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
         XCTAssertEqual(vm.arrivalEvent?.id, firstId,
                        "re-snapshot after shown must suppress a second arrival event")
+    }
+
+    /// P5 — a promoted STANDALONE counting task (no linked members, flagged
+    /// `isCounter: true` via `promoteTaskToCounter`) must still participate in
+    /// arrival detection: `sharedCounterArrivalSquares()`'s `|| task.isCounter
+    /// == true` branch treats it as its own source (mirrors web
+    /// `useBoardPlayData.ts:176`), so an elsewhere-log (e.g. a +1 from Counter
+    /// Detail) still shows the arrival banner even though nothing links to it.
+    func test_arrivalDetection_promotedZeroLinkCounter_stillDetectsArrival() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCountingTask("c-solo", maxCount: 5, currentCount: 0, isCounter: true))
+        try db.saveBoardTask(makeBoardTask(id: "bt-solo", boardId: "b1", taskId: "c-solo", row: 0, col: 0))
+
+        let store = makeIsolatedStore()
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db, arrivalStore: store)
+
+        // First open: seeds the baseline (c-solo displayed 0) — first view never arrives.
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && !vm.allTasks.isEmpty })
+        XCTAssertNil(vm.arrivalEvent, "first view must not arrive")
+
+        // Logged elsewhere (Counter Detail's +1) — no other task links to it.
+        var solo = try XCTUnwrap(dbTask(db, "c-solo"))
+        solo.currentCount = 2
+        solo.version += 1
+        try db.saveTask(solo)
+
+        // Reopen → detect against the seeded baseline → c-solo arrived (2 > 0)
+        // even though `allTasks.contains { $0.sharedCounterId == "c-solo" }`
+        // is false (zero linked members) — only the `isCounter` branch makes
+        // this fire.
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.arrivalEvent != nil },
+                      "a zero-link isCounter task must still register as a shared-counter source")
+        let ev = try XCTUnwrap(vm.arrivalEvent)
+        XCTAssertEqual(ev.totalArrivedSquares, 1)
+        XCTAssertTrue(ev.arrivedTaskIds.contains("c-solo"))
+        XCTAssertEqual(ev.arrivedCounters.first?.counterId, "c-solo")
     }
 
     func test_arrivalStore_roundTripsPerBoard() {

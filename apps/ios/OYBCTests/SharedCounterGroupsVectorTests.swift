@@ -23,6 +23,26 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let sharedCounterId: String?
         let baseline: Int?
         let isDeleted: Bool
+        /// P5 hub-born-counter flag. Optional in the JSON — absent/false on
+        /// the core 11 vectors; extend with `decodeIfPresent ?? false` since
+        /// the Swift `Task.isCounter` field is non-optional.
+        let isCounter: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case id, title, currentCount, maxCount, sharedCounterId, baseline, isDeleted, isCounter
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            title = try container.decode(String.self, forKey: .title)
+            currentCount = try container.decodeIfPresent(Int.self, forKey: .currentCount)
+            maxCount = try container.decodeIfPresent(Int.self, forKey: .maxCount)
+            sharedCounterId = try container.decodeIfPresent(String.self, forKey: .sharedCounterId)
+            baseline = try container.decodeIfPresent(Int.self, forKey: .baseline)
+            isDeleted = try container.decode(Bool.self, forKey: .isDeleted)
+            isCounter = try container.decodeIfPresent(Bool.self, forKey: .isCounter) ?? false
+        }
     }
 
     private struct MiniBoard: Decodable {
@@ -103,7 +123,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             version: 1,
             isDeleted: m.isDeleted,
             sharedCounterId: m.sharedCounterId,
-            baseline: m.baseline
+            baseline: m.baseline,
+            isCounter: m.isCounter
         )
     }
 

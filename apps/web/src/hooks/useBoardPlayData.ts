@@ -173,6 +173,7 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     const sources = new Set<string>();
     for (const t of Object.values(taskMap)) {
       if (t.sharedCounterId) sources.add(t.sharedCounterId);
+      if (t.isCounter === true) sources.add(t.id); // P5: promoted zero-link counters
     }
     return sources;
   }, [taskMap]);

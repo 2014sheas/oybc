@@ -21,6 +21,7 @@ struct CounterDetailView: View {
     let counterId: String
 
     @EnvironmentObject var authService: AuthService
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - Private state
 
@@ -28,6 +29,11 @@ struct CounterDetailView: View {
     @State private var isLoaded = false
     @State private var isLogging = false
     @State private var logError: String?
+
+    // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
+    @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
+    @State private var isDeleting = false
+    @State private var deleteError: String?
 
     // MARK: - Body
 
@@ -40,9 +46,11 @@ struct CounterDetailView: View {
                     group: group,
                     isLogging: isLogging,
                     logError: logError,
+                    deleteError: deleteError,
                     onIncrement: { handleIncrement(group: group) },
                     onDecrement: { handleDecrement(group: group) },
-                    onNavigateToBoard: { _ in /* routed via NavigationLink in content */ }
+                    onNavigateToBoard: { _ in /* routed via NavigationLink in content */ },
+                    onDeleteTap: handleDeleteTap
                 )
             } else if isLoaded {
                 notFoundState
@@ -53,6 +61,28 @@ struct CounterDetailView: View {
         }
         .navigationBarHidden(true)
         .onAppear { loadData() }
+        // Delete-confirm sheet — mirrors the `countingStepperBoardTaskId`
+        // Binding-derivation pattern in `BoardPlayView.swift`. NOT a
+        // `swipeActions` destructive Button (known SwiftUI crash trap) and
+        // NOT a plain `.alert` (the member-unlink list needs a scrollable
+        // custom body, matching web's richer `CounterDeleteConfirmDialog`).
+        .sheet(
+            isPresented: Binding(
+                get: { deleteImpact != nil },
+                set: { if !$0 { deleteImpact = nil } }
+            )
+        ) {
+            if let impact = deleteImpact, let group {
+                CounterDeleteConfirmView(
+                    group: group,
+                    impact: impact,
+                    isDeleting: isDeleting,
+                    onConfirm: { handleConfirmDelete(impact: impact) },
+                    onCancel: { deleteImpact = nil }
+                )
+                .interactiveDismissDisabled(isDeleting)
+            }
+        }
     }
 
     // MARK: - Data loading
@@ -119,6 +149,56 @@ struct CounterDetailView: View {
         }
     }
 
+    // MARK: - Delete counter (P5 decision 8)
+
+    /// Computes the deletion impact (member count + rows) before showing the
+    /// confirm sheet — read-only, safe to call before the user commits.
+    private func handleDeleteTap() {
+        deleteError = nil
+        let id = counterId
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                let impact = try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
+                await MainActor.run { deleteImpact = impact }
+            } catch {
+                await MainActor.run { deleteError = "Failed to compute delete impact." }
+            }
+        }
+    }
+
+    /// Confirms the delete: unlinks every live member (each keeps its current
+    /// count as an independent standalone counter) then cascade-deletes the
+    /// source, all in one GRDB write transaction (`deleteCounterWithUnlink`).
+    ///
+    /// On success, pops back to the Counters Hub. On failure, closes the
+    /// confirm sheet and surfaces `deleteError` on the underlying page —
+    /// mirrors web's `CounterDetailPage.handleConfirmDelete` close-dialog-
+    /// on-error pattern (never leaves a stale confirm sheet open over a
+    /// failed op the user can't see feedback for).
+    private func handleConfirmDelete(impact: AppDatabase.TaskDeletionImpact) {
+        guard !isDeleting else { return }
+        isDeleting = true
+        deleteError = nil
+        let id = counterId
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let now = AppDatabase.currentTimestamp()
+            do {
+                try AppDatabase.shared.deleteCounterWithUnlink(sourceId: id, now: now)
+                await MainActor.run {
+                    isDeleting = false
+                    deleteImpact = nil
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    isDeleting = false
+                    deleteImpact = nil
+                    deleteError = "Failed to delete counter."
+                }
+            }
+        }
+    }
+
     // MARK: - Not-found state
 
     private var notFoundState: some View {
@@ -143,9 +223,16 @@ struct CounterDetailContent: View {
     let group: SharedCounterGroup
     var isLogging: Bool = false
     var logError: String? = nil
+    /// Surfaced when a delete attempt fails — the confirm sheet has already
+    /// closed by the time this is shown (mirrors web's close-dialog-on-error
+    /// pattern), so it renders on this page itself.
+    var deleteError: String? = nil
     var onIncrement: () -> Void = {}
     var onDecrement: () -> Void = {}
     var onNavigateToBoard: (String) -> Void = { _ in }
+    /// Fired by the "Delete counter" footer action — the container computes
+    /// the deletion impact and shows the confirm sheet.
+    var onDeleteTap: () -> Void = {}
 
     // MARK: - Derived
 
@@ -229,6 +316,23 @@ struct CounterDetailContent: View {
                 // P4: "Recent windows" history — leave seam
                 // P4: seam: import the closed-window history rows here once
                 //     P4 data storage lands (per-day / per-window increment log).
+
+                // Delete-counter action (P5 decision 8). Reuses the RisoButton
+                // `primary` kind — the same red/on-color destructive styling
+                // TaskDeleteConfirmView's confirm pill uses, matching web's
+                // "reusing TaskConfirmDeleteDialog's confirm button" note.
+                if let deleteError {
+                    Text(deleteError)
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoRed)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 8)
+                }
+                RisoButton(title: "Delete counter", kind: .primary, fullWidth: true) {
+                    onDeleteTap()
+                }
+                .padding(.horizontal, Riso.gutter)
+                .padding(.bottom, 14)
 
                 Spacer(minLength: 24)
             }
@@ -570,7 +674,9 @@ struct CounterDetailContent: View {
                     .font(.risoBody(13, .semibold))
                     .foregroundStyle(Color.risoMuted)
                     .lineLimit(1)
-                Text("Starts counting when this board goes live.")
+                Text(member.boardId == nil
+                     ? "Not on any board yet — log from here anytime."
+                     : "Starts counting when this board goes live.")
                     .font(.risoBody(10, .regular))
                     .foregroundStyle(Color.risoMuted.opacity(0.7))
                     .lineLimit(1)
@@ -595,6 +701,133 @@ struct CounterDetailContent: View {
             .risoSectionLabel()
             .padding(.horizontal, Riso.gutter)
             .padding(.bottom, 8)
+    }
+}
+
+// MARK: - CounterDeleteConfirmView
+
+/// Destructive confirm sheet for deleting a shared-counter source (P5
+/// decision 8: `deleteCounterWithUnlink`). iOS twin of web's
+/// `CounterDeleteConfirmDialog` — copy is VERBATIM per CLAUDE.md
+/// cross-platform parity rule.
+///
+/// Structurally mirrors `TaskDeleteConfirmView` (NavigationStack +
+/// `.presentationDetents([.medium])` + a gold-toolbar Cancel/red-toolbar
+/// destructive-confirm pill) rather than the simpler `.alert` `TaskDetailView`
+/// uses elsewhere — the member-unlink list needs a scrollable custom body,
+/// which `.alert` can't host and `.confirmationDialog` / `swipeActions`
+/// (crash trap — see repo memory) can't either.
+///
+/// Deleting a source UNLINKS its live members (each keeps its current count
+/// as an independent standalone counter) rather than cascade-deleting them —
+/// distinct from the ordinary task-delete cascade `TaskDeleteConfirmView` shows.
+struct CounterDeleteConfirmView: View {
+    let group: SharedCounterGroup
+    let impact: AppDatabase.TaskDeletionImpact
+    var isDeleting: Bool = false
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    private var hasMembers: Bool { impact.counterMemberCount > 0 }
+
+    private func boardName(for memberId: String) -> String? {
+        group.tasks.first(where: { $0.taskId == memberId })?.boardName
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+
+                    Text("'\(group.name)' and its lifetime total will be deleted.")
+                        .font(.risoBody(14, .semibold))
+                        .foregroundStyle(Color.risoInk)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(13)
+                        .risoCard(fill: .risoPaper2)
+                        .risoHardShadow(Riso.Shadow.small)
+
+                    if hasMembers {
+                        membersSection
+                    }
+                }
+                .padding(Riso.gutter)
+            }
+            .background(Color.risoPaper.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Delete counter?")
+                        .font(.risoHead(17, .extraBold))
+                        .foregroundStyle(Color.risoInk)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onCancel() }
+                        .font(.risoBody(15, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .disabled(isDeleting)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    RisoToolbarPill(
+                        title: hasMembers
+                            ? "Delete counter & unlink \(impact.counterMemberCount) tasks"
+                            : "Delete counter",
+                        fill: .risoRed,
+                        foreground: .risoPaper
+                    ) {
+                        onConfirm()
+                    }
+                    .disabled(isDeleting)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    // MARK: - Members section
+
+    @ViewBuilder
+    private var membersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(impact.counterMemberCount) linked task\(impact.counterMemberCount == 1 ? "" : "s") will be unlinked and keep their current counts:")
+                .risoSectionLabel()
+
+            VStack(spacing: 7) {
+                ForEach(impact.counterMembers, id: \.id) { member in
+                    memberRow(member)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(13)
+        .risoCard(fill: .risoPaper2)
+        .risoHardShadow(Riso.Shadow.small)
+    }
+
+    private func memberRow(_ member: Task) -> some View {
+        HStack(spacing: 8) {
+            Text(member.title)
+                .font(.risoHead(13, .bold))
+                .foregroundStyle(Color.risoInk)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            if let boardName = boardName(for: member.id) {
+                Text(boardName)
+                    .font(.risoBody(11, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                .fill(Color.risoPaper)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cellRadius)
+                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                )
+        )
     }
 }
 
@@ -689,5 +922,57 @@ struct CounterDetailContent: View {
     return NavigationStack {
         CounterDetailContent(group: group)
     }
+}
+
+#Preview("Delete counter — confirm sheet") {
+    let src = SharedCounterMemberTask(
+        taskId: "src",
+        taskTitle: "Push-ups",
+        isSource: true,
+        boardId: "bm",
+        boardName: "February Fitness",
+        timeframe: .monthly,
+        window: "February 2026",
+        goal: 1000,
+        logged: 512,
+        met: false,
+        over: 0,
+        isActive: true
+    )
+    let group = SharedCounterGroup(
+        counterId: "src",
+        name: "Push-ups",
+        action: "Do",
+        unit: "reps",
+        lifetime: 512,
+        tasks: [src],
+        taskCount: 1,
+        boardCount: 1,
+        activeTaskCount: 1
+    )
+    let now = "2026-02-01T00:00:00.000"
+    let member = Task(
+        id: "der1", userId: "u1", title: "Push-ups", type: .counting,
+        action: "Do", unit: "reps",
+        totalCompletions: 0, totalInstances: 0,
+        currentCount: 45,
+        createdAt: now, updatedAt: now,
+        version: 1, isDeleted: false
+    )
+    let impact = AppDatabase.TaskDeletionImpact(
+        boardTaskCount: 1,
+        affectedBoardIds: ["bm"],
+        affectedBoards: [],
+        childLinkCount: 0,
+        parentLinkCount: 0,
+        counterMemberCount: 1,
+        counterMembers: [member]
+    )
+    return CounterDeleteConfirmView(
+        group: group,
+        impact: impact,
+        onConfirm: {},
+        onCancel: {}
+    )
 }
 #endif

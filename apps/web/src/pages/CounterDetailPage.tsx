@@ -1,12 +1,18 @@
 import { useCallback, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Timeframe } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
-import { decrementSharedCounter, incrementSharedCounter } from '../db/operations/tasks';
-import { CounterDetailTaskCard } from '../components/counters';
+import {
+  computeTaskDeletionImpact,
+  decrementSharedCounter,
+  deleteCounterWithUnlink,
+  incrementSharedCounter,
+  type TaskDeletionImpact,
+} from '../db/operations/tasks';
+import { CounterDeleteConfirmDialog, CounterDetailTaskCard } from '../components/counters';
 import { timeframeDotColor } from '../components/counters/timeframeDotColor';
-import { RisoSectionLabel } from '../components/riso';
+import { RisoButton, RisoSectionLabel } from '../components/riso';
 import profileStyles from './ProfilePage.module.css';
 import styles from './CounterDetailPage.module.css';
 
@@ -56,9 +62,15 @@ function timeframeLabel(tf: Timeframe | null): string {
  */
 export function CounterDetailPage(): React.ReactElement {
   const { counterId } = useParams<{ counterId: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const groups = useSharedCounterGroups(user?.id);
   const [isLogging, setIsLogging] = useState(false);
+
+  // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
+  const [deleteImpact, setDeleteImpact] = useState<TaskDeletionImpact | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const group = groups.find((g) => g.counterId === counterId);
 
@@ -82,6 +94,36 @@ export function CounterDetailPage(): React.ReactElement {
       setIsLogging(false);
     }
   }, [counterId, isLogging]);
+
+  const handleDeleteClick = useCallback(async () => {
+    if (!counterId) return;
+    setDeleteError(null);
+    try {
+      const impact = await computeTaskDeletionImpact(counterId);
+      setDeleteImpact(impact);
+    } catch {
+      setDeleteError('Failed to delete counter.');
+    }
+  }, [counterId]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!counterId || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteCounterWithUnlink(counterId);
+      navigate('/profile/counters');
+    } catch {
+      setDeleteError('Failed to delete counter.');
+      setIsDeleting(false);
+      setDeleteImpact(null);
+    }
+  }, [counterId, isDeleting, navigate]);
+
+  const handleCancelDelete = useCallback(() => {
+    if (isDeleting) return;
+    setDeleteImpact(null);
+  }, [isDeleting]);
 
   // ─── Loading / not-found states ───────────────────────────────────────────
 
@@ -284,6 +326,33 @@ export function CounterDetailPage(): React.ReactElement {
             ))}
           </div>
         </>
+      )}
+
+      {/* Delete-counter action (P5 decision 8). This page has no existing
+          action row, so the destructive action sits as its own footer,
+          reusing the RisoButton `primary` kind — the same red/on-color
+          destructive styling as TaskConfirmDeleteDialog's confirm button. */}
+      {deleteError && <p className={styles.deleteError}>{deleteError}</p>}
+      <div className={styles.deleteAction}>
+        <RisoButton kind="primary" onClick={() => void handleDeleteClick()}>
+          Delete counter
+        </RisoButton>
+      </div>
+
+      {deleteImpact && (
+        <CounterDeleteConfirmDialog
+          counterName={group.name}
+          memberCount={deleteImpact.counterMemberCount}
+          members={deleteImpact.counterMembers.map((m) => ({
+            id: m.id,
+            title: m.title,
+            boardName:
+              group.tasks.find((t) => t.taskId === m.id)?.boardName ?? null,
+          }))}
+          busy={isDeleting}
+          onConfirm={() => void handleConfirmDelete()}
+          onCancel={handleCancelDelete}
+        />
       )}
     </div>
   );

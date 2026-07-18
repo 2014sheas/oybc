@@ -132,6 +132,23 @@ func buildSharedCounterGroups(
         linkedBySource[srcId, default: []].append(t)
     }
 
+    // P5 — hub-born counters: a COUNTING task flagged `isCounter` is a
+    // counter in its own right, even with zero linked tasks. Seed an empty
+    // linked list for flagged sources the link walk didn't already
+    // discover, so they flow through the same member-view pipeline as
+    // single-member groups. A flagged row that is itself derived
+    // (`sharedCounterId` set) is malformed — the create-input validators
+    // reject the combination, but synced rows are unguarded — and is
+    // ignored defensively here.
+    for t in liveTasks {
+        if t.type == .counting,
+           t.isCounter == true,
+           t.sharedCounterId == nil,
+           linkedBySource[t.id] == nil {
+            linkedBySource[t.id] = []
+        }
+    }
+
     var groups: [SharedCounterGroup] = []
 
     for (sourceId, linked) in linkedBySource {

@@ -1,6 +1,22 @@
 import Foundation
 import GRDB
 
+/// P5 (Shared Counters Hub, docs/SHARED_COUNTERS.md §P5) constants for the
+/// task-event write paths. Kept as a top-level namespace (not nested in
+/// `AppDatabase`) so counter write ops elsewhere can reference
+/// `TaskEvents.seedEventOccurredAt` directly, mirroring the TS import style.
+enum TaskEvents {
+    /// Sentinel `occurredAt` for a hub counter's seed increment event
+    /// (`createCounterTask`, P5 decision — see `AppDatabase+Counters.swift`).
+    /// Anchoring the seed event here — rather than at `now` — keeps it
+    /// outside every board window, so it never counts toward a windowed
+    /// board read; it exists purely so the lifetime event sum matches the
+    /// task row's authoritative `currentCount`. Mirrors the TS
+    /// `SEED_EVENT_OCCURRED_AT` export in
+    /// `packages/shared/src/algorithms/taskEvents.ts`.
+    static let seedEventOccurredAt = "1970-01-01T00:00:00.000Z"
+}
+
 // MARK: - Task Event write choke points + cache recompute
 //
 // Swift twin of `apps/web/src/db/operations/taskEvents.ts` (Windowed Completion,
@@ -319,10 +335,21 @@ extension AppDatabase {
     ///
     /// Mirrors `insertIncrementEventRaw` in taskEvents.ts.
     ///
+    /// - Parameter occurredAt: Optional override for the event's `occurredAt`
+    ///   (defaults to `now`). Used by seed/backfill paths (P5) that need to
+    ///   anchor an event at a sentinel timestamp distinct from the write-time
+    ///   `createdAt`/`updatedAt`.
     /// - Returns: `true` if an event row was written; `false` on a zero delta /
     ///            a missing or non-event-owning task.
     @discardableResult
-    static func insertIncrementEventRaw(db: Database, taskId: String, delta: Int, boardId: String?, now: String) throws -> Bool {
+    static func insertIncrementEventRaw(
+        db: Database,
+        taskId: String,
+        delta: Int,
+        boardId: String?,
+        now: String,
+        occurredAt: String? = nil
+    ) throws -> Bool {
         if delta == 0 { return false }
         guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { return false }
         let event = TaskEvent(
@@ -331,7 +358,7 @@ extension AppDatabase {
             taskId: taskId,
             kind: .increment,
             delta: delta,
-            occurredAt: now,
+            occurredAt: occurredAt ?? now,
             boardId: boardId,
             createdAt: now,
             updatedAt: now,

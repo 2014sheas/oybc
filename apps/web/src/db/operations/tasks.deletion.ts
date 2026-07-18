@@ -2,6 +2,7 @@ import { db } from '../internal';
 import type {
   Board,
   CompoundChild,
+  Task,
 } from '@oybc/shared';
 import { SyncOperationType } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
@@ -48,6 +49,12 @@ export interface TaskDeletionImpact {
   /** Count of `CompoundChild` rows where the task IS the parent
    *  compound. Each parent link is severed; the child Tasks remain. */
   parentLinkCount: number;
+  /** P5 — count of live tasks whose `sharedCounterId` points at this task
+   *  (i.e. this task is a counter source). 0 for any non-source task. */
+  counterMemberCount: number;
+  /** P5 — the live counter-member Task rows themselves, so the confirm
+   *  dialog can name them without a second fetch. `[]` for non-sources. */
+  counterMembers: Task[];
 }
 /**
  * Compute the cascade impact for a candidate deletion. Pure read; does
@@ -83,12 +90,19 @@ export async function computeTaskDeletionImpact(
   const parentLinks = await db.compoundChildren
     .filter((c: CompoundChild) => !c.isDeleted && c.compoundTaskId === id)
     .toArray();
+  // P5 — live tasks whose sharedCounterId points at this task (i.e. this
+  // task is a counter source). 0/[] for any non-source task.
+  const counterMembers = await db.tasks
+    .where('sharedCounterId').equals(id)
+    .filter((t) => !t.isDeleted).toArray();
   return {
     boardTaskCount: visiblePlacements.length,
     affectedBoardIds: Array.from(liveBoardIdSet),
     affectedBoards: liveBoards,
     childLinkCount: childLinks.length,
     parentLinkCount: parentLinks.length,
+    counterMemberCount: counterMembers.length,
+    counterMembers,
   };
 }
 /**
@@ -125,52 +139,72 @@ export async function deleteTaskWithCascade(id: string): Promise<void> {
     'rw',
     [db.tasks, db.boardTasks, db.compoundChildren, db.syncQueue],
     async () => {
-      const existing = await db.tasks.get(id);
-      if (!existing) return;
-
-      // 1. Hard-delete BoardTask placements.
-      const placements = await db.boardTasks.where('taskId').equals(id).toArray();
-      for (const bt of placements) {
-        await db.boardTasks.delete(bt.id);
-        await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
-      }
-
-      // 2 + 3. Soft-delete compound-child links — both as-parent and
-      //        as-child. Same loop, different filter.
-      const linkPredicate = (c: CompoundChild) =>
-        !c.isDeleted && (c.compoundTaskId === id || c.childTaskId === id);
-      const linksToDelete = await db.compoundChildren.filter(linkPredicate).toArray();
-      const now = currentTimestamp();
-      for (const link of linksToDelete) {
-        const patch: Partial<CompoundChild> = {
-          isDeleted: true,
-          deletedAt: now,
-          updatedAt: now,
-          version: (link.version ?? 0) + 1,
-        };
-        await db.compoundChildren.update(link.id, patch);
-        const updated = await db.compoundChildren.get(link.id);
-        if (updated) {
-          await addToSyncQueue(
-            'compoundChildren',
-            link.id,
-            SyncOperationType.DELETE,
-            updated,
-          );
-        }
-      }
-
-      // 4. Soft-delete the Task itself.
-      await db.tasks.update(id, {
-        isDeleted: true,
-        deletedAt: now,
-        updatedAt: now,
-        version: (existing.version ?? 0) + 1,
-      });
-      const updatedTask = await db.tasks.get(id);
-      if (updatedTask) {
-        await addToSyncQueue('tasks', id, SyncOperationType.DELETE, updatedTask);
-      }
+      await deleteTaskWithCascadeInTxn(id, currentTimestamp());
     },
   );
+}
+
+/**
+ * In-transaction body of `deleteTaskWithCascade` (code-motion extraction,
+ * P5 PR-2 — `deleteCounterWithUnlink` needs to run the cascade inside its
+ * own wider transaction, which also covers `taskEvents`). Identical
+ * behavior to the original inline body; the only difference is the caller
+ * supplies the ambient transaction and the shared `now` timestamp instead
+ * of this function opening its own.
+ *
+ * Callers MUST already be inside a `db.transaction('rw', [...])` that
+ * covers at least `[tasks, boardTasks, compoundChildren, syncQueue]` (a
+ * superset of that list is fine — `deleteCounterWithUnlink`'s transaction
+ * also covers `taskEvents`).
+ *
+ * @param id - The task to cascade-delete.
+ * @param now - The write timestamp shared with the caller's other writes
+ *   in the same transaction (so all rows agree on one instant).
+ */
+export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promise<void> {
+  const existing = await db.tasks.get(id);
+  if (!existing) return;
+
+  // 1. Hard-delete BoardTask placements.
+  const placements = await db.boardTasks.where('taskId').equals(id).toArray();
+  for (const bt of placements) {
+    await db.boardTasks.delete(bt.id);
+    await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+  }
+
+  // 2 + 3. Soft-delete compound-child links — both as-parent and
+  //        as-child. Same loop, different filter.
+  const linkPredicate = (c: CompoundChild) =>
+    !c.isDeleted && (c.compoundTaskId === id || c.childTaskId === id);
+  const linksToDelete = await db.compoundChildren.filter(linkPredicate).toArray();
+  for (const link of linksToDelete) {
+    const patch: Partial<CompoundChild> = {
+      isDeleted: true,
+      deletedAt: now,
+      updatedAt: now,
+      version: (link.version ?? 0) + 1,
+    };
+    await db.compoundChildren.update(link.id, patch);
+    const updated = await db.compoundChildren.get(link.id);
+    if (updated) {
+      await addToSyncQueue(
+        'compoundChildren',
+        link.id,
+        SyncOperationType.DELETE,
+        updated,
+      );
+    }
+  }
+
+  // 4. Soft-delete the Task itself.
+  await db.tasks.update(id, {
+    isDeleted: true,
+    deletedAt: now,
+    updatedAt: now,
+    version: (existing.version ?? 0) + 1,
+  });
+  const updatedTask = await db.tasks.get(id);
+  if (updatedTask) {
+    await addToSyncQueue('tasks', id, SyncOperationType.DELETE, updatedTask);
+  }
 }
