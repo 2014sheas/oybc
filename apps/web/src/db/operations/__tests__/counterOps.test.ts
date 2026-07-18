@@ -76,7 +76,10 @@ describe('createCounterTask (P5)', () => {
     });
     expect(t.isCounter).toBe(true);
     expect(t.maxCount).toBeUndefined();
-    expect(t.title).toBe('Push-ups (reps)');
+    // R1: goal-less title is now the pair-derived counter name
+    // (formatCounterName) — action "Push-ups" isn't the elided "Do" verb,
+    // so it renders "{Verb} {noun}", not the retired "{action} ({unit})".
+    expect(t.title).toBe('Push-ups reps');
     expect(t.currentCount).toBe(500);
     expect(t.type).toBe(TaskType.COUNTING);
 
@@ -97,7 +100,7 @@ describe('createCounterTask (P5)', () => {
   it('without startingCount writes no seed event and count 0', async () => {
     const t = await createCounterTask('u1', { action: 'Read', unit: 'pages' });
     expect(t.currentCount).toBe(0);
-    expect(t.title).toBe('Read (pages)');
+    expect(t.title).toBe('Read pages');
     const events = await db.taskEvents.where('taskId').equals(t.id).toArray();
     expect(events).toHaveLength(0);
   });

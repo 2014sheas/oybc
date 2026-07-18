@@ -7,6 +7,9 @@ export * from '@oybc/bingo-core';
 
 export { generateCounterTaskTitle } from './taskTitle';
 
+// ===== Pair-derived counter display names (R1 — counters refresh) =====
+export { formatCounterName } from './counterName';
+
 export {
   evaluateCompositeTree,
 } from './compositeEvaluation';

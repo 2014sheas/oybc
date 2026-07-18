@@ -35,7 +35,7 @@
       "tasks": [
         { "id": "src", "action": "Push-ups", "unit": "reps", "currentCount": 512 }
       ],
-      "expected": { "counterId": "src", "name": "Push-ups", "lifetime": 512, "memberCount": 1 }
+      "expected": { "counterId": "src", "name": "Push-ups reps", "lifetime": 512, "memberCount": 1 }
     },
     {
       "name": "unit-alone-does-not-match",
@@ -55,7 +55,7 @@
         { "id": "d1", "action": "Push-ups", "unit": "reps", "sharedCounterId": "src" },
         { "id": "d2", "action": "Push-ups", "unit": "reps", "sharedCounterId": "src" }
       ],
-      "expected": { "counterId": "src", "name": "Push-ups", "lifetime": 100, "memberCount": 3 }
+      "expected": { "counterId": "src", "name": "Push-ups reps", "lifetime": 100, "memberCount": 3 }
     },
     {
       "name": "prefers-most-established-counter",
@@ -67,7 +67,7 @@
         { "id": "d1", "action": "Run", "unit": "km", "sharedCounterId": "src" },
         { "id": "d2", "action": "Run", "unit": "km", "sharedCounterId": "src" }
       ],
-      "expected": { "counterId": "src", "name": "Run", "lifetime": 10, "memberCount": 3 }
+      "expected": { "counterId": "src", "name": "Run km", "lifetime": 10, "memberCount": 3 }
     },
     {
       "name": "excludes-task-being-edited",
