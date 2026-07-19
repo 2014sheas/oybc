@@ -15,12 +15,13 @@ import SnapshotTesting
 /// `SnapshotFixtures` builders.
 ///
 /// Exception (bugfix/board-preview-real-cells): `FromBoardPickerView`'s row
-/// thumbnail now renders through `RisoBoardPreviewGrid`, which self-loads the
-/// TRUE preview grid per board id. The picker fixtures below never persist
-/// their boards to `AppDatabase.shared` (only `vm.eligibleBoards`/
-/// `vm.completionByBoardId` are stubbed in-memory), so the thumbnail
-/// deterministically renders empty — a real fixture would need a seeded
-/// `AppDatabase.makeTestInstance()`, out of scope for this leaf-view suite.
+/// thumbnail reads `vm.previewCellsByBoardId[board.id]` — batch-built by
+/// `SourceBoardsViewModel.reload(userId:)`, never a per-row DB self-load (the
+/// perf follow-up that replaced the original per-row `RisoBoardPreviewGrid`).
+/// The picker fixtures below only stub `vm.eligibleBoards`/
+/// `vm.completionByBoardId` in-memory and never call `reload`, so
+/// `previewCellsByBoardId` stays empty and the thumbnail deterministically
+/// falls back to its all-empty placeholder — still fully DB-free.
 ///
 /// Light + dark for every variant. `recordMode: .missing` auto-records
 /// baselines on first run and passes green on subsequent runs.

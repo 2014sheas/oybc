@@ -71,6 +71,13 @@ struct BoardListView: View {
     // MARK: - State
 
     @State private var boards: [Board] = []
+    /// TRUE mini-preview cells per board (bugfix/board-preview-real-cells perf
+    /// follow-up), keyed by board id. Batch-built ONCE per `loadBoards()` call
+    /// via `BoardPreviewCells.fetchWorkspaceData`/`buildMany` — NOT per-card —
+    /// so N board cards don't each mount their own workspace-wide reads. Empty
+    /// (nil lookup) renders as `RisoBoardCard`'s all-empty placeholder until
+    /// the batch fetch resolves.
+    @State private var previewCellsByBoardId: [String: BoardPreviewCellsResult] = [:]
     @State private var activeFilter: String = "active"
     @State private var loadError: String?
     @State private var boardPendingDelete: Board?
@@ -198,7 +205,8 @@ struct BoardListView: View {
                                 RisoBoardCard(
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
-                                    isExpiring: isBoardExpiringSoon(board)
+                                    isExpiring: isBoardExpiringSoon(board),
+                                    previewCells: previewCells(for: board)
                                 )
                             }
                         } else {
@@ -206,7 +214,8 @@ struct BoardListView: View {
                                 RisoBoardCard(
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
-                                    isExpiring: isBoardExpiringSoon(board)
+                                    isExpiring: isBoardExpiringSoon(board),
+                                    previewCells: previewCells(for: board)
                                 )
                             }
                         }
@@ -477,6 +486,20 @@ struct BoardListView: View {
 
     // MARK: - Helpers
 
+    /// Resolves a board's batch-built preview cells, or an all-empty
+    /// placeholder sized to `board.boardSize` while the batch fetch is still
+    /// in flight. ALWAYS non-nil so `RisoBoardCard` never falls back to its
+    /// own self-loading `RisoBoardPreviewGrid` — that per-card fallback is
+    /// exactly the N-cards-N-reads regression this hoist fixes; passing `nil`
+    /// here (even transiently, on first load) would let every visible card
+    /// mount its own workspace-wide fetch simultaneously.
+    private func previewCells(for board: Board) -> BoardPreviewCellsResult {
+        previewCellsByBoardId[board.id] ?? BoardPreviewCellsResult(
+            size: board.boardSize,
+            cells: Array(repeating: .empty, count: board.boardSize * board.boardSize)
+        )
+    }
+
     /// Human-readable label for a board's timeframe window (e.g. "This week · 4 days left").
     private func boardTimeframeLabel(_ board: Board) -> String {
         guard let startDate = parseISO8601Date(board.startDate) else {
@@ -540,8 +563,29 @@ struct BoardListView: View {
                     boards = result
                     loadError = nil
                 }
+                loadPreviewCells(boards: result, userId: userId)
             } catch {
                 await MainActor.run { loadError = error.localizedDescription }
+            }
+        }
+    }
+
+    /// Batch-builds `previewCellsByBoardId` for every board on screen — ONE
+    /// workspace-scoped fetch (`BoardPreviewCells.fetchWorkspaceData`) + ONE
+    /// `fetchAllBoardTasks()`, reused across every board's `build(...)` call,
+    /// instead of each `RisoBoardCard` mounting its own fetch (the perf
+    /// regression this hoist fixes — see `RisoBoardPreviewGrid`'s doc comment).
+    /// Runs off the main thread; called after every `loadBoards()` reload
+    /// (initial load, post-delete, post-backstop-autoseal) so previews stay
+    /// in sync with the list.
+    private func loadPreviewCells(boards: [Board], userId: String) {
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let database = AppDatabase.shared
+            let allBoardTasks = (try? database.fetchAllBoardTasks()) ?? []
+            let workspace = BoardPreviewCells.fetchWorkspaceData(userId: userId, database: database)
+            let result = BoardPreviewCells.buildMany(boards: boards, boardTasks: allBoardTasks, workspace: workspace)
+            await MainActor.run {
+                self.previewCellsByBoardId = result
             }
         }
     }

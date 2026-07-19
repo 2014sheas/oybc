@@ -17,9 +17,15 @@ struct RisoBoardCard: View {
     /// Whether this board is expiring soon (drives the badge color).
     let isExpiring: Bool
     /// Pre-computed TRUE preview cells (bugfix/board-preview-real-cells).
-    /// When `nil` (the default — both production call sites), the card
-    /// self-loads via `RisoBoardPreviewGrid`. Snapshot tests inject this
-    /// directly so the DB is never touched.
+    /// `BoardListView` (a LIST of cards) batch-builds these once via
+    /// `BoardPreviewCells.fetchWorkspaceData`/`buildMany` and always passes a
+    /// non-nil value (an all-empty placeholder while its batch fetch is in
+    /// flight) — it never relies on the `nil` fallback below, since that
+    /// fallback mounting per-card is exactly the N-cards-N-reads perf bug the
+    /// batch hoist fixes. `nil` (the default) is for genuinely single-card
+    /// contexts only — `CoreBoardWindowCellView` (one board per pager
+    /// screen) — where it self-loads via `RisoBoardPreviewGrid`. Snapshot
+    /// tests inject a value directly so the DB is never touched.
     var previewCells: BoardPreviewCellsResult? = nil
 
     private var progressValue: Double {

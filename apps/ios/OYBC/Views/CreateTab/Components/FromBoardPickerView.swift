@@ -72,12 +72,22 @@ struct FromBoardPickerView: View {
         let completion = vm.completionByBoardId[board.id]
             ?? (0, board.boardSize * board.boardSize)
 
+        // TRUE board thumbnail (bugfix/board-preview-real-cells), batch-built
+        // ONCE for the whole list by `vm.reload` — NOT `RisoBoardPreviewGrid`,
+        // whose per-row self-loading in this `LazyVStack` would re-run
+        // workspace-wide reads on every scroll-triggered re-render (the perf
+        // regression the batch hoist fixes). Falls back to an all-empty
+        // placeholder for the brief gap before the batch fetch resolves.
+        let cells = vm.previewCellsByBoardId[board.id] ?? BoardPreviewCellsResult(
+            size: board.boardSize,
+            cells: Array(repeating: .empty, count: board.boardSize * board.boardSize)
+        )
+
         Button {
             onPickBoard(board.id)
         } label: {
             HStack(spacing: 12) {
-                // Mini-grid thumbnail — the TRUE board (bugfix/board-preview-real-cells).
-                RisoBoardPreviewGrid(board: board, size: 46)
+                RisoMiniGrid(gridSize: cells.size, cells: cells.cells, size: 46)
 
                 // Board meta
                 VStack(alignment: .leading, spacing: 3) {

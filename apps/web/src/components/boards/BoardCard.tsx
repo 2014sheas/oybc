@@ -4,10 +4,13 @@ import { isBoardExpired, isBoardExpiringSoon, statusLabel } from '../../utils/bo
 import { RisoBadge, RisoIcon, type RisoBadgeKind } from '../riso';
 import { RecurringBadge } from '../RecurringBadge';
 import { BoardMiniGrid } from '../home/BoardMiniGrid';
+import type { BoardPreviewCellsResult } from '../home/boardPreviewCells';
 import styles from './Boards.module.css';
 
 export interface BoardCardProps {
   board: Board;
+  /** This board's TRUE preview cells — see `BoardMiniGrid`'s `previewCells` doc. */
+  previewCells: BoardPreviewCellsResult;
   onOpen: (boardId: string) => void;
   /**
    * Called after the user confirms deletion. When omitted the delete
@@ -45,14 +48,16 @@ function badgeFor(board: Board): { kind: RisoBadgeKind; text: string } {
 
 /**
  * Riso board card — one card in the Boards grid: name + timeframe + status
- * badge, a progress bar + squares/bingo meta, and a board mini-grid. Reads the
- * board's denormalized fields; the mini-grid is the count-approximation
- * (`BoardMiniGrid`) — true positions would mean a live query per card.
+ * badge, a progress bar + squares/bingo meta, and a board mini-grid. Reads
+ * the board's denormalized fields; the mini-grid (`BoardMiniGrid`) renders
+ * the TRUE board from `previewCells`, which the page (`BoardsPage`) batch-
+ * builds once for the whole list via `useBoardsPreviewCells` — never a
+ * per-card live query.
  *
  * When `onDelete` is provided a hover-revealed trash button appears; confirming
  * it opens a Riso-styled alert dialog before committing the soft-delete.
  */
-export function BoardCard({ board, onOpen, onDelete }: BoardCardProps): React.ReactElement {
+export function BoardCard({ board, previewCells, onOpen, onDelete }: BoardCardProps): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -108,7 +113,7 @@ export function BoardCard({ board, onOpen, onDelete }: BoardCardProps): React.Re
               )}
             </div>
           </div>
-          <BoardMiniGrid board={board} cell={11} />
+          <BoardMiniGrid board={board} previewCells={previewCells} cell={11} />
         </div>
       </button>
 

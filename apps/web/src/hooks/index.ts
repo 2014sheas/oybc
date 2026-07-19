@@ -24,4 +24,4 @@ export * from './useBoardPlayData';
 export * from './useBoardPlay';
 export * from './useSquareWindowContext';
 export * from './useCounterArrivals';
-export * from './useBoardPreviewCells';
+export * from './useBoardsPreviewCells';

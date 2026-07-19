@@ -119,6 +119,84 @@ enum BoardPreviewCells {
         return BoardPreviewCellsResult(size: size, cells: cells)
     }
 
+    // MARK: - Batch loading (perf follow-up, bugfix/board-preview-real-cells)
+    //
+    // `build(...)` itself is pure/DB-free. These helpers own the DB side —
+    // extracted so a screen rendering MANY boards (`BoardListView`,
+    // `SourceBoardsViewModel`/`FromBoardPickerView`) fetches the four
+    // workspace-scoped datasets ONCE and reuses them for every board's
+    // `build(...)` call, instead of each board's card independently
+    // fetching all tasks / all compound children / all boards / all events
+    // (an N-cards-N-times-the-reads bug — see `RisoBoardPreviewGrid`, whose
+    // doc comment documents its OWN per-card fetch as intentionally
+    // single-card-scoped, not a pattern to replicate in a list).
+
+    /// The four workspace-scoped datasets `build(...)` needs, pre-fetched and
+    /// pre-grouped. Independent of any one board — reused across every
+    /// board's `build(...)` call in `buildMany(...)`.
+    struct WorkspaceData {
+        let taskMap: [String: Task]
+        let childrenByCompound: [String: [CompoundChild]]
+        let allBoardsInWorkspace: [Board]
+        let eventsByTaskId: [String: [TaskEvent]]
+    }
+
+    /// Fetches `WorkspaceData` via `AppDatabase` reads — call ONCE per screen
+    /// load (not per board/card). Safe to call off the main thread; each
+    /// underlying `fetch*` call already wraps its own GRDB `read`. Sequential
+    /// (not one transaction) — the same tradeoff `BoardPlayViewModel.fetchTaskData`
+    /// and `RisoBoardPreviewGrid.load()` already accept for this class of read.
+    static func fetchWorkspaceData(userId: String, database: AppDatabase = .shared) -> WorkspaceData {
+        let allTasks = (try? database.fetchTasks(userId: userId)) ?? []
+        let allCompoundChildren = (try? database.fetchAllCompoundChildren()) ?? []
+        let allBoardsInWorkspace = (try? database.fetchBoards(userId: userId)) ?? []
+        let events = (try? database.fetchNonDeletedTaskEvents(userId: userId)) ?? []
+
+        var taskMap: [String: Task] = [:]
+        for t in allTasks { taskMap[t.id] = t }
+
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allCompoundChildren where !c.isDeleted {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+
+        var eventsByTaskId: [String: [TaskEvent]] = [:]
+        for e in events { eventsByTaskId[e.taskId, default: []].append(e) }
+
+        return WorkspaceData(
+            taskMap: taskMap,
+            childrenByCompound: childrenByCompound,
+            allBoardsInWorkspace: allBoardsInWorkspace,
+            eventsByTaskId: eventsByTaskId
+        )
+    }
+
+    /// Builds preview cells for MANY boards from one shared `boardTasks`
+    /// array + one shared `WorkspaceData` — the batch counterpart to `build`.
+    /// `boardTasks` may cover the whole workspace (each `build` call filters
+    /// to its own `board.id` internally) or just the boards being rendered.
+    ///
+    /// - Returns: `board.id` → `BoardPreviewCellsResult`.
+    static func buildMany(
+        boards: [Board],
+        boardTasks: [BoardTask],
+        workspace: WorkspaceData
+    ) -> [String: BoardPreviewCellsResult] {
+        var out: [String: BoardPreviewCellsResult] = [:]
+        out.reserveCapacity(boards.count)
+        for board in boards {
+            out[board.id] = build(
+                board: board,
+                boardTasks: boardTasks,
+                taskMap: workspace.taskMap,
+                childrenByCompound: workspace.childrenByCompound,
+                eventsByTaskId: workspace.eventsByTaskId,
+                allBoardsInWorkspace: workspace.allBoardsInWorkspace
+            )
+        }
+        return out
+    }
+
     /// Local mirror of `BoardPlayView.achievementCellIsCompleted` — see that
     /// method's doc comment. Kept in lockstep by hand (both are small, direct
     /// ports of `DerivationPass`'s ACHIEVEMENT branch).
