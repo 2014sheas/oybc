@@ -181,14 +181,17 @@ struct RisoCompoundFieldsView: View {
 
     // MARK: - Derived properties
 
-    /// Live preview title for a new counting sub: "Run 5 km".
-    private var subCountingPreview: String {
+    /// Live title preview for a new counting sub — "Title: {derived title}",
+    /// matching `RisoSpecialTaskPanel.countingTitle` / web's
+    /// `CountingStepFields` exactly. Empty (hidden) until verb + counting +
+    /// a valid positive goal are all present — no placeholder-substituted
+    /// fallback text.
+    private var subCountingTitle: String {
         let a = subInputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let g = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
-        let u = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "reps"
-            : subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(a.isEmpty ? "Run" : a) \(g) \(u)"
+        let g = subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let u = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !a.isEmpty, !u.isEmpty, let goal = Int(g), goal > 0 else { return "" }
+        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
     }
 
     /// The typed sub goal as a positive Int, or nil when blank/invalid.
@@ -270,10 +273,17 @@ struct RisoCompoundFieldsView: View {
                 }
             }
 
+            // "Verb" label — R1 vocabulary, only when adding a counting sub
+            // (the same input doubles as the Normal sub's free-text title,
+            // which has no fixed label).
+            if newSubType == .counting {
+                fieldLabel("Verb", required: true)
+            }
+
             // Sub-add input row + Add button
             HStack(spacing: 8) {
                 TextField(
-                    newSubType == .counting ? "Action — e.g. Run" : "Add a sub-task…",
+                    newSubType == .counting ? "Do" : "Add a sub-task…",
                     text: $subInputText
                 )
                 .font(.risoHead(14, .bold))
@@ -334,24 +344,32 @@ struct RisoCompoundFieldsView: View {
             }
             .onChange(of: newSubType) { _, _ in updateSubLinkSuggestion() }
 
-            // Counting sub config row: Goal + Unit + live preview
+            // Counting sub config row: Goal + Counting + live preview
+            // ("Title: {derived title}", matching RisoSpecialTaskPanel /
+            // web's CountingStepFields exactly).
             if newSubType == .counting {
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
-                        Text("Goal")
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            fieldLabel("Goal", required: true)
+                            RisoNumberField(placeholder: "100", text: $subGoalText)
+                                .frame(width: 70)
+                        }
+                        VStack(alignment: .leading, spacing: 5) {
+                            fieldLabel("Counting", required: true)
+                            RisoTextField(placeholder: "push-ups", text: $subUnitText)
+                                .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
+                        }
+                    }
+
+                    if !subCountingTitle.isEmpty {
+                        (Text("Title: ")
                             .font(.risoBody(11, .semibold))
                             .foregroundStyle(Color.risoMuted)
-                        RisoNumberField(placeholder: "5", text: $subGoalText)
-                            .frame(width: 60)
-                        RisoTextField(placeholder: "reps", text: $subUnitText)
-                            .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
+                        + Text(subCountingTitle)
+                            .font(.risoBody(11, .extraBold))
+                            .foregroundStyle(Color.risoInk))
                     }
-                    (Text("reads as ")
-                        .font(.risoBody(11, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                    + Text(subCountingPreview)
-                        .font(.risoBody(11, .extraBold))
-                        .foregroundStyle(Color.risoInk))
 
                     // Counter-link hint (R1 — same auto-link-default-ON
                     // mechanism as RisoSpecialTaskPanel's standalone
@@ -667,16 +685,27 @@ struct RisoCompoundFieldsView: View {
     // MARK: - Field helpers
 
     @ViewBuilder
-    private func fieldRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldRow<Content: View>(label: String, required: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            fieldLabel(label)
+            fieldLabel(label, required: required)
             content()
         }
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .risoSectionLabel()
+    /// - Parameter required: Appends a red "*" (matches
+    ///   `RisoBoardSetupForm`'s / `RisoSpecialTaskPanel`'s required-field
+    ///   convention) — web's `CountingStepFields` marks Verb/Goal/Counting
+    ///   required-starred; the inline counting-sub fields here mirror that.
+    private func fieldLabel(_ text: String, required: Bool = false) -> some View {
+        HStack(spacing: 3) {
+            Text(text)
+                .risoSectionLabel()
+            if required {
+                Text("*")
+                    .font(.risoBody(11, .bold))
+                    .foregroundStyle(Color.risoRed)
+            }
+        }
     }
 
     // (risoTextInput / risoNumberInput removed — use the kit's
