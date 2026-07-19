@@ -135,7 +135,10 @@ struct RisoBoardPlayCell: View {
             let sharedSuffix = isSharedCounter ? ", shared counter" : ""
             return "\(title), counting, \(currentCount) of \(maxCount)\(sharedSuffix)"
         case .compound:
-            return "\(title), compound, \(compoundDoneCount) of \(compoundChildCount) subtasks done"
+            // Same operator-aware target as the visual bar, so VoiceOver
+            // never contradicts it (e.g. "1 of 4" on a complete Any-of cell).
+            let required = compoundRequiredCount ?? compoundChildCount
+            return "\(title), compound, \(min(compoundDoneCount, required)) of \(required) needed subtasks done"
         case .achievement:
             return "\(title), achievement, \(isCompleted ? "earned" : "not yet earned")"
         case .normal:
