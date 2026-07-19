@@ -76,7 +76,10 @@ final class LinkableCounterTests: XCTestCase {
         let result = findLinkableCounter(action: "  push-UPS ", unit: "REPS", tasks: tasks)
         XCTAssertNotNil(result)
         XCTAssertEqual(result!.counterId, "src")
-        XCTAssertEqual(result!.name, "Push-ups")
+        // R1: pair-derived name — action "Push-ups" isn't "Do", so it's
+        // kept verbatim (capitalized) + the unit, mirroring the
+        // `matches-standalone-case-space-insensitive` fixture vector.
+        XCTAssertEqual(result!.name, "Push-ups reps")
         XCTAssertEqual(result!.lifetime, 512)
         XCTAssertEqual(result!.memberCount, 1)
     }

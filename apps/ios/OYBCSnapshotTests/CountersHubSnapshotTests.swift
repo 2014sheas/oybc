@@ -86,18 +86,20 @@ final class CountersHubSnapshotTests: XCTestCase {
 
     @ViewBuilder
     private func sheetHost(
-        action: String,
+        verb: String,
         unit: String,
-        previewTitle: String,
+        previewName: String,
         match: CounterCreateMatch?
     ) -> some View {
         NavigationStack {
             ScrollView {
                 NewCounterSheetContentView(
-                    action: .constant(action),
+                    verb: .constant(verb),
                     unit: .constant(unit),
                     startingCountText: .constant(""),
-                    previewTitle: previewTitle,
+                    previewName: previewName,
+                    previewCount: 0,
+                    trimmedUnit: unit,
                     match: match
                 )
                 .padding(16)
@@ -107,51 +109,51 @@ final class CountersHubSnapshotTests: XCTestCase {
     }
 
     func testNewCounterSheetDefaultLight() {
-        let host = sheetHost(action: "", unit: "", previewTitle: "", match: nil)
-        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 340)), record: recordMode)
+        let host = sheetHost(verb: "", unit: "", previewName: "", match: nil)
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 460)), record: recordMode)
     }
 
     func testNewCounterSheetDefaultDark() {
-        let host = sheetHost(action: "", unit: "", previewTitle: "", match: nil)
+        let host = sheetHost(verb: "", unit: "", previewName: "", match: nil)
         assertSnapshot(
             of: host,
-            as: .image(layout: .fixed(width: 393, height: 340), traits: .init(userInterfaceStyle: .dark)),
+            as: .image(layout: .fixed(width: 393, height: 460), traits: .init(userInterfaceStyle: .dark)),
             record: recordMode
         )
     }
 
-    // MARK: - New counter sheet — established match (Create disabled, "View counter")
+    // MARK: - New counter sheet — established match (Create disabled, "Open {CounterName}")
 
     func testNewCounterSheetEstablishedMatchLight() {
         let now = "2026-02-01T00:00:00.000"
         let sourceTask = Task(
             id: "src", userId: "u1", title: "Push-ups", type: .counting,
-            action: "Push-ups", unit: "reps",
+            action: "Do", unit: "push-ups",
             totalCompletions: 0, totalInstances: 0,
             currentCount: 512,
             createdAt: now, updatedAt: now,
             version: 1, isDeleted: false, isCounter: true
         )
         let match = CounterCreateMatch(kind: .established, task: sourceTask, lifetime: 512, memberCount: 2)
-        let host = sheetHost(action: "Push-ups", unit: "reps", previewTitle: "Push-ups (reps)", match: match)
-        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 480)), record: recordMode)
+        let host = sheetHost(verb: "", unit: "push-ups", previewName: "Push-ups", match: match)
+        assertSnapshot(of: host, as: .image(layout: .fixed(width: 393, height: 660)), record: recordMode)
     }
 
     func testNewCounterSheetEstablishedMatchDark() {
         let now = "2026-02-01T00:00:00.000"
         let sourceTask = Task(
             id: "src", userId: "u1", title: "Push-ups", type: .counting,
-            action: "Push-ups", unit: "reps",
+            action: "Do", unit: "push-ups",
             totalCompletions: 0, totalInstances: 0,
             currentCount: 512,
             createdAt: now, updatedAt: now,
             version: 1, isDeleted: false, isCounter: true
         )
         let match = CounterCreateMatch(kind: .established, task: sourceTask, lifetime: 512, memberCount: 2)
-        let host = sheetHost(action: "Push-ups", unit: "reps", previewTitle: "Push-ups (reps)", match: match)
+        let host = sheetHost(verb: "", unit: "push-ups", previewName: "Push-ups", match: match)
         assertSnapshot(
             of: host,
-            as: .image(layout: .fixed(width: 393, height: 480), traits: .init(userInterfaceStyle: .dark)),
+            as: .image(layout: .fixed(width: 393, height: 660), traits: .init(userInterfaceStyle: .dark)),
             record: recordMode
         )
     }

@@ -186,7 +186,7 @@ fileprivate enum CompoundSeed {
                 threshold: 2,
                 subs: [
                     .newNormal(title: "Meditate 10 min"),
-                    .newCounting(action: "Run", goal: 5, unit: "km"),
+                    .newCounting(action: "Run", goal: 5, unit: "km", sharedCounterId: nil, baseline: nil),
                 ],
                 subInputText: "",
                 newSubType: .normal,

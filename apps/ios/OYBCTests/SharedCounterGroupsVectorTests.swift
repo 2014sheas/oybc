@@ -112,8 +112,20 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             userId: "u1",
             title: m.title,
             type: .counting,
-            action: "Do",
-            unit: "reps",
+            // R1 (pair-derived counter names): intentionally left nil. These
+            // fixture vectors predate pair-derived naming and were authored
+            // to assert on `title`; leaving action/unit nil means
+            // `CounterName.formatCounterName(nil, nil) == ""`, so
+            // `buildSharedCounterGroups`'s `name` falls back to the stored
+            // `title` — every vector's `expected.name` stays exactly what it
+            // was pre-R1. Pair-derivation itself is covered by
+            // `CounterNameTests` and the dedicated pair-derived-name cases in
+            // `SharedCounterGroupsTests`. Mirrors the TS fixture-driven
+            // test's `toTask` (packages/shared/tests/algorithms/
+            // sharedCounterGroups.test.ts), which leaves action/unit
+            // undefined for the same reason.
+            action: nil,
+            unit: nil,
             maxCount: m.maxCount,
             totalCompletions: 0,
             totalInstances: 0,

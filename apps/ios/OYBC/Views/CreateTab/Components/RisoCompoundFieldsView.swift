@@ -94,6 +94,15 @@ struct RisoCompoundFieldsView: View {
     /// Controls visibility of the smart-autocomplete dropdown below the sub input.
     @State private var subAutocompleteVisible: Bool = false
 
+    // Counter-link suggestion state for the new-counting-sub fields (R1
+    // counters refresh — auto-link default ON). Mirrors
+    // `RisoSpecialTaskPanel`'s `linkSuggestion` / `linkDisabled` so inline
+    // compound children are born linked exactly like standalone counting
+    // tasks. `subInputText` doubles as the sub's verb when `newSubType ==
+    // .counting`.
+    @State private var subLinkSuggestion: LinkableCounterSuggestion? = nil
+    @State private var subLinkDisabled: Bool = false
+
     /// Owned form VM — reset on each successful submit.
     @State private var form = CreateFormViewModel()
 
@@ -180,6 +189,14 @@ struct RisoCompoundFieldsView: View {
             ? "reps"
             : subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
         return "\(a.isEmpty ? "Run" : a) \(g) \(u)"
+    }
+
+    /// The typed sub goal as a positive Int, or nil when blank/invalid.
+    /// Gates `subCounterLinkBanner` — mirrors `RisoSpecialTaskPanel`'s
+    /// `countingGoal` (the hint only shows once a valid goal exists).
+    private var subCountingGoal: Int? {
+        guard let g = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
+        return g
     }
 
     /// Gates the "Add to board ✦" button — title must be non-empty and at
@@ -272,6 +289,7 @@ struct RisoCompoundFieldsView: View {
                 )
                 .onChange(of: subInputText) { _, _ in
                     subAutocompleteVisible = !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    updateSubLinkSuggestion()
                 }
                 .onSubmit { addNewSub() }
 
@@ -314,6 +332,7 @@ struct RisoCompoundFieldsView: View {
                     newSubType = .counting
                 }
             }
+            .onChange(of: newSubType) { _, _ in updateSubLinkSuggestion() }
 
             // Counting sub config row: Goal + Unit + live preview
             if newSubType == .counting {
@@ -325,6 +344,7 @@ struct RisoCompoundFieldsView: View {
                         RisoNumberField(placeholder: "5", text: $subGoalText)
                             .frame(width: 60)
                         RisoTextField(placeholder: "reps", text: $subUnitText)
+                            .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
                     }
                     (Text("reads as ")
                         .font(.risoBody(11, .semibold))
@@ -332,6 +352,11 @@ struct RisoCompoundFieldsView: View {
                     + Text(subCountingPreview)
                         .font(.risoBody(11, .extraBold))
                         .foregroundStyle(Color.risoInk))
+
+                    // Counter-link hint (R1 — same auto-link-default-ON
+                    // mechanism as RisoSpecialTaskPanel's standalone
+                    // counting fields, only shown once a valid goal exists).
+                    subCounterLinkBanner
                 }
             }
 
@@ -510,6 +535,42 @@ struct RisoCompoundFieldsView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Counter-link hint (new counting sub)
+
+    /// Hint shown below the new-counting-sub fields when an existing
+    /// counter matches the typed (verb, noun) pair AND a valid goal is
+    /// entered. R1 counters refresh: linking is ON by default; "Don't
+    /// link" opts out for this sub (mirrors `RisoSpecialTaskPanel`'s
+    /// `counterLinkBanner`, factored into the shared `RisoCounterLinkHintView`).
+    @ViewBuilder
+    private var subCounterLinkBanner: some View {
+        if let suggestion = subLinkSuggestion, let goal = subCountingGoal {
+            RisoCounterLinkHintView(
+                counterName: suggestion.name,
+                lifetime: suggestion.lifetime,
+                goal: goal,
+                linked: !subLinkDisabled,
+                onToggle: { subLinkDisabled.toggle() }
+            )
+        }
+    }
+
+    /// Recomputes the sub's link suggestion whenever the typed (verb, noun)
+    /// pair changes. Resets the opt-out flag so an edited pair re-offers
+    /// linking by default (web parity).
+    private func updateSubLinkSuggestion() {
+        guard newSubType == .counting else {
+            subLinkSuggestion = nil
+            return
+        }
+        subLinkSuggestion = findLinkableCounter(
+            action: subInputText,
+            unit: subUnitText,
+            tasks: taskLibrary
+        )
+        subLinkDisabled = false
+    }
+
     // MARK: - Sub-add action
 
     /// Adds the current sub-input as a new sub (new Normal or new Counting).
@@ -527,7 +588,16 @@ struct RisoCompoundFieldsView: View {
             let unit = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? "reps"
                 : subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-            sub = .newCounting(action: text, goal: goal, unit: unit)
+            // R1: auto-link default ON — apply the suggestion unless opted
+            // out via "Don't link". Baseline is always "start fresh".
+            let linked = subLinkSuggestion != nil && !subLinkDisabled && subCountingGoal != nil
+            sub = .newCounting(
+                action: text,
+                goal: goal,
+                unit: unit,
+                sharedCounterId: linked ? subLinkSuggestion?.counterId : nil,
+                baseline: linked ? subLinkSuggestion?.lifetime : nil
+            )
         }
 
         compoundSubs.append(sub)
@@ -537,6 +607,8 @@ struct RisoCompoundFieldsView: View {
         subGoalText = "5"
         subUnitText = ""
         newSubType = .normal
+        subLinkSuggestion = nil
+        subLinkDisabled = false
     }
 
     // MARK: - Submit
@@ -588,6 +660,8 @@ struct RisoCompoundFieldsView: View {
         subGoalText       = "5"
         subUnitText       = ""
         subAutocompleteVisible = false
+        subLinkSuggestion = nil
+        subLinkDisabled   = false
     }
 
     // MARK: - Field helpers

@@ -56,7 +56,9 @@ struct SharedCounterGroup: Identifiable {
     var id: String { counterId }
     /// Stable id = the source task's id.
     let counterId: String
-    /// Display name = the source task's title.
+    /// Display name — pair-derived via `CounterName.formatCounterName(action,
+    /// unit)`, falling back to the source task's stored title when the pair
+    /// can't produce a name (R1 counters refresh).
     let name: String
     /// Action verb (e.g. "Do") from the source task.
     let action: String?
@@ -222,7 +224,13 @@ func buildSharedCounterGroups(
 
         groups.append(SharedCounterGroup(
             counterId: sourceId,
-            name: source.title,
+            // R1: pair-derived display name (CounterName.formatCounterName),
+            // stored-title fallback when the (action, unit) pair can't
+            // produce one (e.g. a legacy row with neither field set).
+            name: {
+                let derived = CounterName.formatCounterName(action: source.action, unit: source.unit)
+                return derived.isEmpty ? source.title : derived
+            }(),
             action: source.action,
             unit: source.unit,
             lifetime: lifetime,

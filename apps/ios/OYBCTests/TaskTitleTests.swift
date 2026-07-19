@@ -69,19 +69,26 @@ final class TaskTitleTests: XCTestCase {
     // `Int(...)` at every call site before reaching this helper), so there is
     // no fractional-input case to mirror — the type system enforces it.
 
-    // MARK: - Goal-less variant (P5)
+    // MARK: - Goal-less variant (P5; R1 counters refresh — pair-derived name)
 
-    func test_goalless_rendersActionUnit_whenMaxCountIsNil() {
+    func test_goalless_rendersPairDerivedName_whenMaxCountIsNil() {
         XCTAssertEqual(
-            TaskTitle.generateCounterTaskTitle(action: "Push-ups", maxCount: nil, unit: "reps"),
-            "Push-ups (reps)"
+            TaskTitle.generateCounterTaskTitle(action: "Do", maxCount: nil, unit: "push-ups"),
+            "Push-ups"
+        )
+    }
+
+    func test_goalless_keepsNonDoVerb_whenMaxCountIsNil() {
+        XCTAssertEqual(
+            TaskTitle.generateCounterTaskTitle(action: "Run", maxCount: nil, unit: "miles"),
+            "Run miles"
         )
     }
 
     func test_goalless_trimsActionAndUnit_whenMaxCountIsNil() {
         XCTAssertEqual(
-            TaskTitle.generateCounterTaskTitle(action: " Push-ups ", maxCount: nil, unit: " reps "),
-            "Push-ups (reps)"
+            TaskTitle.generateCounterTaskTitle(action: " Do ", maxCount: nil, unit: " push-ups "),
+            "Push-ups"
         )
     }
 
@@ -94,7 +101,7 @@ final class TaskTitleTests: XCTestCase {
 
     func test_goalless_providedTitleStillWins_whenMaxCountIsNil() {
         XCTAssertEqual(
-            TaskTitle.generateCounterTaskTitle(action: "Push-ups", maxCount: nil, unit: "reps", providedTitle: "My tally"),
+            TaskTitle.generateCounterTaskTitle(action: "Do", maxCount: nil, unit: "push-ups", providedTitle: "My tally"),
             "My tally"
         )
     }

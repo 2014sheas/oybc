@@ -250,23 +250,31 @@ final class CreateFormViewModel {
             break
 
         case .counting:
+            // R1 counters refresh — field names are Verb/Goal/Counting
+            // everywhere (RisoSpecialTaskPanel's labels); these error
+            // strings are the web parity contract for the same relabel
+            // (apps/web/src/pages/createPage/useCreateFormState.ts).
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
             let m = countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !a.isEmpty else {
-                errorMessage = "Action is required for Counting tasks"
+                errorMessage = "Verb is required"
                 return
             }
             guard a.count <= CreateFormLimits.action else {
-                errorMessage = "Action must be \(CreateFormLimits.action) characters or less"
+                errorMessage = "Verb must be \(CreateFormLimits.action) characters or less"
                 return
             }
             guard !u.isEmpty else {
-                errorMessage = "Unit is required for Counting tasks"
+                errorMessage = "Counting is required"
                 return
             }
             guard u.count <= CreateFormLimits.unit else {
-                errorMessage = "Unit must be \(CreateFormLimits.unit) characters or less"
+                errorMessage = "Counting must be \(CreateFormLimits.unit) characters or less"
+                return
+            }
+            guard !m.isEmpty else {
+                errorMessage = "Goal is required"
                 return
             }
             guard let v = Int(m), v > 0 else {
@@ -468,14 +476,25 @@ final class CreateFormViewModel {
         case newNormal(title: String)
         /// Inline Counting task to be created on submit.
         /// title is auto-generated as "\(action) \(goal) \(unit)" at save time.
-        case newCounting(action: String, goal: Int, unit: String)
+        ///
+        /// - Parameters:
+        ///   - sharedCounterId: R1 counters refresh — auto-link. Non-nil
+        ///     when the sub's (verb, noun) pair matched an existing counter
+        ///     and the user hasn't opted out via the "Don't link" hint, so
+        ///     the inline-created child is born already linked (mirrors
+        ///     `Task.sharedCounterId`). Must be paired with `baseline`.
+        ///   - baseline: The auto-link baseline — always the matched
+        ///     counter's lifetime count at add time ("start fresh": the new
+        ///     sub's own window begins at 0). Must be set when
+        ///     `sharedCounterId` is set.
+        case newCounting(action: String, goal: Int, unit: String, sharedCounterId: String?, baseline: Int?)
 
         /// Display title for the sub chip in the UI.
         var displayTitle: String {
             switch self {
             case .existing(_, let t, _): return t
             case .newNormal(let t): return t
-            case .newCounting(let a, let g, let u):
+            case .newCounting(let a, let g, let u, _, _):
                 return TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u)
             }
         }
@@ -632,7 +651,7 @@ final class CreateFormViewModel {
                 childTasks.append(newTask)
                 childTaskId = newId
 
-            case .newCounting(let action, let goal, let unit):
+            case .newCounting(let action, let goal, let unit, let sharedCounterId, let baseline):
                 let newId = AppDatabase.generateUUID()
                 let autoTitle = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit)
                 let newTask = OYBC.Task(
@@ -649,7 +668,11 @@ final class CreateFormViewModel {
                     createdAt: now,
                     updatedAt: now,
                     version: 1,
-                    isDeleted: false
+                    isDeleted: false,
+                    // R1 counters refresh — auto-link (see
+                    // `CompoundSubItem.newCounting` doc).
+                    sharedCounterId: sharedCounterId,
+                    baseline: baseline
                 )
                 childTasks.append(newTask)
                 childTaskId = newId

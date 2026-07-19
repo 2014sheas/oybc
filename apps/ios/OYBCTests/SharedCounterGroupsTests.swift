@@ -43,15 +43,23 @@ final class SharedCounterGroupsTests: XCTestCase {
         timeframe: Timeframe? = nil,
         startDate: String? = nil,
         isDeleted: Bool = false,
-        isCounter: Bool = false
+        isCounter: Bool = false,
+        // R1 (pair-derived counter names): left nil by default so the
+        // pre-existing 15 cases (authored pre-R1) keep asserting on
+        // `title` via the CounterName.formatCounterName("") fallback —
+        // mirrors the TS fixture's `toTask` (see
+        // packages/shared/tests/algorithms/sharedCounterGroups.test.ts).
+        // Dedicated pair-derived-name cases below pass explicit values.
+        action: String? = nil,
+        unit: String? = nil
     ) -> Task {
         Task(
             id: id,
             userId: "u1",
             title: title ?? "Counter \(id)",
             type: .counting,
-            action: "Do",
-            unit: "reps",
+            action: action,
+            unit: unit,
             maxCount: maxCount,
             totalCompletions: 0,
             totalInstances: 0,
@@ -337,5 +345,41 @@ final class SharedCounterGroupsTests: XCTestCase {
         let groups = buildSharedCounterGroups(tasks: [malformed], boardTasks: [], boards: [])
         XCTAssertNil(groups.first { $0.counterId == "mal" })
         XCTAssertTrue(groups.isEmpty)
+    }
+
+    // MARK: - Pair-derived counter names (R1 counters refresh)
+    //
+    // Mirrors the TS `describe('pair-derived counter names (R1)')` block in
+    // `packages/shared/tests/algorithms/sharedCounterGroups.test.ts`. Task-1
+    // coverage note: `sharedCounterGroupsVectors.json` has no action/unit
+    // fields, so `SharedCounterGroupsVectorTests` never exercises this path
+    // — these three cases are the actual coverage for pair-derivation
+    // flowing through `buildSharedCounterGroups`.
+
+    func test_derivesGroupName_fromSourcesActionUnitPair_elidingDefaultDo() {
+        let source = counter(
+            "src", title: "Fallback title (should not be used)", currentCount: 40,
+            isCounter: true, action: "Do", unit: "push-ups"
+        )
+        let groups = buildSharedCounterGroups(tasks: [source], boardTasks: [], boards: [])
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].name, "Push-ups")
+    }
+
+    func test_keepsNonDoVerb_inTheDerivedName() {
+        let source = counter(
+            "src", title: "Fallback title (should not be used)", currentCount: 10,
+            isCounter: true, action: "Run", unit: "miles"
+        )
+        let groups = buildSharedCounterGroups(tasks: [source], boardTasks: [], boards: [])
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].name, "Run miles")
+    }
+
+    func test_fallsBackToStoredTitle_whenPairCannotProduceAName() {
+        let source = counter("src2", title: "Stored Title", currentCount: 10, isCounter: true)
+        let groups = buildSharedCounterGroups(tasks: [source], boardTasks: [], boards: [])
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].name, "Stored Title")
     }
 }

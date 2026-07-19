@@ -29,7 +29,10 @@ import Foundation
 struct LinkableCounterSuggestion {
     /// The source counting task id — set as the new task's `sharedCounterId`.
     let counterId: String
-    /// Display label for the suggestion — the counter's activity (source `action`).
+    /// Display label for the suggestion — pair-derived via
+    /// `CounterName.formatCounterName(action, unit)`, falling back to the
+    /// source's stored title when the pair can't produce a name (R1
+    /// counters refresh).
     let name: String
     /// All-time lifetime = the source's `currentCount`.
     let lifetime: Int
@@ -97,10 +100,11 @@ func findLinkableCounter(
         return x.id < y.id
     }.first!
 
-    // Name: prefer the source's trimmed `action` (the activity), falling back
-    // to `title` (mirrors TS: `(best.action ?? '').trim() || best.title`).
-    let trimmedAction = (best.action ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    let name = trimmedAction.isEmpty ? best.title : trimmedAction
+    // Name: R1 pair-derived display name (CounterName.formatCounterName),
+    // falling back to `title` when the pair can't produce one (mirrors TS:
+    // `formatCounterName(best.action, best.unit) || best.title`).
+    let derivedName = CounterName.formatCounterName(action: best.action, unit: best.unit)
+    let name = derivedName.isEmpty ? best.title : derivedName
 
     return LinkableCounterSuggestion(
         counterId: best.id,
