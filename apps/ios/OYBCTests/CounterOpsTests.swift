@@ -133,7 +133,10 @@ final class CounterOpsTests: XCTestCase {
 
         XCTAssertTrue(t.isCounter)
         XCTAssertNil(t.maxCount)
-        XCTAssertEqual(t.title, "Push-ups (reps)")
+        // R1 counters refresh: goal-less title IS the pair-derived counter
+        // name (CounterName.formatCounterName) — "Push-ups" isn't "Do", so
+        // it's kept verbatim + the unit.
+        XCTAssertEqual(t.title, "Push-ups reps")
         XCTAssertEqual(t.currentCount, 500)
         XCTAssertEqual(t.type, .counting)
 
@@ -159,7 +162,8 @@ final class CounterOpsTests: XCTestCase {
         let t = try db.createCounterTask(userId: "u1", action: "Read", unit: "pages", startingCount: nil, now: now)
 
         XCTAssertEqual(t.currentCount, 0)
-        XCTAssertEqual(t.title, "Read (pages)")
+        // R1 counters refresh: pair-derived name, not the P5 parenthetical.
+        XCTAssertEqual(t.title, "Read pages")
 
         let events = try db.read { try TaskEvent.filter(Column("taskId") == t.id).fetchAll($0) }
         XCTAssertTrue(events.isEmpty)

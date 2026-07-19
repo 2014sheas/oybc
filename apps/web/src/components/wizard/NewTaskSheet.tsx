@@ -47,6 +47,15 @@ export interface NewTaskSheetProps {
    * keeps it `false`.
    */
   deferPersist?: boolean;
+  /**
+   * R1 counters refresh (review fix) — unfiltered task pool (persisted +
+   * this wizard session's pending tasks) used only for the counter-link
+   * auto-link match, so a pending (not-yet-persisted) counter created
+   * earlier in the same wizard visit is still linkable. Passed straight
+   * through to `CreateNewTaskForm`; omitted for standalone Tasks-tab usage,
+   * which falls back to the live `useTasks` pool there.
+   */
+  suggestionPool?: Task[];
 }
 
 /**
@@ -73,6 +82,7 @@ export function NewTaskSheet({
   defaultStartDate,
   defaultEndDate,
   deferPersist = false,
+  suggestionPool,
 }: NewTaskSheetProps): React.ReactElement | null {
   useEffect(() => {
     if (!isOpen) return;
@@ -97,6 +107,7 @@ export function NewTaskSheet({
       defaultStartDate={defaultStartDate}
       defaultEndDate={defaultEndDate}
       deferPersist={deferPersist}
+      suggestionPool={suggestionPool}
     />
   );
 }
@@ -116,6 +127,7 @@ function NewTaskSheetBody({
   defaultStartDate,
   defaultEndDate,
   deferPersist = false,
+  suggestionPool,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
   const form = useCreateFormState({
     userId,
@@ -131,10 +143,15 @@ function NewTaskSheetBody({
   });
 
   /**
-   * Handles the "Link to existing counter" confirm from CountingTemplatePicker.
-   * Creates a new COUNTING task with `sharedCounterId` + `baseline` set, then
-   * notifies the parent and closes the sheet. Respects the same deferred-persist
-   * path as the regular COUNTING create so wizard usage stays atomic.
+   * R1 counters refresh — auto-link. `CreateNewTaskForm` calls this instead
+   * of `form.handleSubmit` when a counting-task submit's (verb, noun) pair
+   * exactly matches an existing counter and the user hasn't opted out via
+   * `CounterLinkHint`'s "Don't link" pill (linking is ON by default; the
+   * manual "Link to existing counter" mode this docstring used to describe
+   * was retired — see `CountingTemplatePicker`). Creates a new COUNTING
+   * task with `sharedCounterId` + `baseline` set, then notifies the parent
+   * and closes the sheet. Respects the same deferred-persist path as the
+   * regular COUNTING create so wizard usage stays atomic.
    */
   const handleCreateLinked = useCallback(
     async (input: LinkedCounterInput): Promise<void> => {
@@ -241,6 +258,7 @@ function NewTaskSheetBody({
             }}
             submitLabel={submitLabel ?? 'Create & Select'}
             onCreateLinked={handleCreateLinked}
+            suggestionPool={suggestionPool}
           />
         </div>
       </div>

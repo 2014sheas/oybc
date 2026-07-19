@@ -87,8 +87,15 @@ function toTask(m: MiniTask): Task {
     userId: 'u1',
     title: m.title,
     type: TaskType.COUNTING,
-    action: 'Do',
-    unit: 'reps',
+    // R1 (pair-derived counter names): intentionally NOT set here. These
+    // fixture vectors predate pair-derived naming and were authored to
+    // assert on `title`; leaving action/unit unset means
+    // `formatCounterName(undefined, undefined) === ''`, so
+    // `buildSharedCounterGroups`'s `name` falls back to the stored `title`
+    // (docs: the pair-can't-produce-a-name fallback) — every vector's
+    // `expected.name` stays exactly what it was pre-R1. Pair-derivation
+    // itself is covered by tests/algorithms/counterName.test.ts and the
+    // "pair-derived counter names (R1)" describe block below.
     maxCount: m.maxCount ?? undefined,
     currentCount: m.currentCount ?? undefined,
     sharedCounterId: m.sharedCounterId,
@@ -261,6 +268,72 @@ describe('hub-born counters (P5)', () => {
 
     expect(groups.find((g) => g.counterId === 'mal')).toBeUndefined();
     expect(groups).toHaveLength(0);
+  });
+});
+
+describe('pair-derived counter names (R1)', () => {
+  it("derives the group name from the source task's action+unit pair, eliding a default Do", () => {
+    const source = {
+      ...toTask({
+        id: 'src',
+        title: 'Fallback title (should not be used)',
+        currentCount: 40,
+        maxCount: null,
+        sharedCounterId: null,
+        baseline: null,
+        isDeleted: false,
+      }),
+      action: 'Do',
+      unit: 'push-ups',
+      isCounter: true,
+    };
+
+    const groups = buildSharedCounterGroups({ tasks: [source], boards: [], boardTasks: [] });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('Push-ups');
+  });
+
+  it('keeps a non-Do verb in the derived name', () => {
+    const source = {
+      ...toTask({
+        id: 'src',
+        title: 'Fallback title (should not be used)',
+        currentCount: 10,
+        maxCount: null,
+        sharedCounterId: null,
+        baseline: null,
+        isDeleted: false,
+      }),
+      action: 'Run',
+      unit: 'miles',
+      isCounter: true,
+    };
+
+    const groups = buildSharedCounterGroups({ tasks: [source], boards: [], boardTasks: [] });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('Run miles');
+  });
+
+  it('falls back to the stored title when the pair cannot produce a name', () => {
+    const source = {
+      ...toTask({
+        id: 'src2',
+        title: 'Stored Title',
+        currentCount: 10,
+        maxCount: null,
+        sharedCounterId: null,
+        baseline: null,
+        isDeleted: false,
+      }),
+      isCounter: true,
+    };
+
+    const groups = buildSharedCounterGroups({ tasks: [source], boards: [], boardTasks: [] });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('Stored Title');
   });
 });
 

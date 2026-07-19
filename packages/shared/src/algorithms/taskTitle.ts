@@ -1,3 +1,5 @@
+import { formatCounterName } from './counterName';
+
 /**
  * Generates a display title for a COUNTING task.
  *
@@ -19,11 +21,13 @@ export function generateCounterTaskTitle(
   if (providedTitle && providedTitle.trim().length > 0) {
     return providedTitle.trim();
   }
-  // P5 — hub-born counters are goal-less accumulators; title carries the
-  // activity + unit ("Push-ups (reps)") so same-activity counters with
-  // different units stay distinguishable.
+  // Goal-less hub-born counters are accumulators with no numeric target —
+  // the title IS the pair-derived counter display name (design 2026-07-18,
+  // R1 counters refresh). The earlier P5 "{action} ({unit})" parenthetical
+  // is retired: "Do" + "push-ups" now renders "Push-ups", "Run" + "miles"
+  // renders "Run miles" — see `formatCounterName`.
   if (maxCount == null) {
-    return `${action.trim()} (${unit.trim()})`;
+    return formatCounterName(action, unit);
   }
   return `${action.trim()} ${Math.floor(maxCount)} ${unit.trim()}`;
 }

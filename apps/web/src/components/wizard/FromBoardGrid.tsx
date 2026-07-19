@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   CenterSquareType,
   TaskType,
+  generateCounterTaskTitle,
   getCenterDisplayText,
   isTaskExpired,
   type Board,
@@ -17,6 +18,7 @@ import {
 import { useSourceBoardPlacements, type SourceBoardPlacement } from '../../hooks/useSourceBoardPlacements';
 import { RowContextMenu, type RowContextMenuItem } from './RowContextMenu';
 import { DeriveCounterModal } from './DeriveCounterModal';
+import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import styles from './FromBoardGrid.module.css';
 
 interface FromBoardGridProps {
@@ -349,14 +351,29 @@ export function FromBoardGrid({
             }
             const action = (derivingFromTask.action ?? '').trim();
             const unit = (derivingFromTask.unit ?? '').trim();
-            const title = `${action} ${parsed} ${unit}`;
+            const title = generateCounterTaskTitle(action, parsed, unit);
             try {
+              // R1 counters refresh — "Derive smaller version" must produce
+              // a LINKED task, not a standalone duplicate. See
+              // `resolveDeriveLinkTarget` for the source-resolution rule.
+              // Unlike BoardWizardTasksStep (which has a synchronous
+              // taskMap), this grid only has the source BOARD's placements
+              // in memory, so the root task is fetched by id when
+              // `derivingFromTask` is itself derived.
+              const rootId = derivingFromTask.sharedCounterId ?? derivingFromTask.id;
+              const rootTask =
+                rootId === derivingFromTask.id
+                  ? derivingFromTask
+                  : (await fetchTasksByIds([rootId]))[0];
+              const linkTarget = resolveDeriveLinkTarget(derivingFromTask, rootTask);
               const newTask = await createTask(userId, {
                 title,
                 type: TaskType.COUNTING,
                 action,
                 unit,
                 maxCount: parsed,
+                sharedCounterId: linkTarget.sharedCounterId,
+                baseline: linkTarget.baseline,
               });
               onTaskCreated(newTask);
               setDerivingFromTask(null);

@@ -6,9 +6,13 @@
  * (the user confirms — never silent). This is the pure MATCH: given the typed
  * action+unit, which existing counter (source task) should the new task join?
  *
- * In OYBC's model the counting `action` field carries the ACTIVITY ("Push-ups"),
- * with `unit` ("reps") — there is no separate generic verb — so `action + unit`
- * cleanly identifies a counter (Push-ups ≠ Sit-ups even though both are "· reps").
+ * In OYBC's (verb, noun) model, the counting `action` field carries the VERB
+ * (e.g. "Do", "Run" — defaulting to "Do" when blank) and `unit` carries the
+ * counted NOUN (e.g. "push-ups", "km"). `action + unit` together still
+ * cleanly identify a counter — a "Do push-ups" counter is distinct from a
+ * "Do sit-ups" counter even though both default to the same "Do" verb — but
+ * the pair is now display-formatted via `formatCounterName` (R1 — verb
+ * elided when it's the default "Do"), not `action` read raw.
  *
  * Linking sets the new task's `sharedCounterId` to the returned `counterId` and
  * a baseline (start-from-zero by default). No engine change — this feeds the
@@ -18,12 +22,17 @@
 
 import type { Task } from '../types/task';
 import { TaskType } from '../constants/enums';
+import { formatCounterName } from './counterName';
 
 /** The existing counter a new task can join, plus display stats for the suggestion. */
 export interface LinkableCounter {
   /** The source counting task id — set as the new task's `sharedCounterId`. */
   counterId: string;
-  /** Display label for the suggestion — the counter's activity (source `action`). */
+  /**
+   * Display label for the suggestion — the counter's pair-derived name
+   * (`formatCounterName(action, unit)`), falling back to the source's
+   * stored `title` when the pair can't produce one.
+   */
   name: string;
   /** All-time lifetime = the source's `currentCount`. */
   lifetime: number;
@@ -99,7 +108,7 @@ export function findLinkableCounter(
   const best = candidates[0];
   return {
     counterId: best.id,
-    name: (best.action ?? '').trim() || best.title,
+    name: formatCounterName(best.action, best.unit) || best.title,
     lifetime: best.currentCount ?? 0,
     memberCount: 1 + (linkerCountBySource.get(best.id) ?? 0),
   };

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { classifyCounterCreateMatch, generateCounterTaskTitle, type Task } from '@oybc/shared';
-import { createCounterTask, promoteTaskToCounter } from '../../db/operations/tasks';
+import { classifyCounterCreateMatch, formatCounterName, type Task } from '@oybc/shared';
+import { createCounterTask } from '../../db/operations/tasks';
+import { RisoButton } from '../riso';
 import styles from './CreateCounterSheet.module.css';
 
 export interface CreateCounterSheetProps {
@@ -13,23 +14,31 @@ export interface CreateCounterSheetProps {
   tasks: readonly Task[];
   /** Authenticated user id — owner of the new counter task. */
   userId: string;
-  /** Called with the resulting task id after a create or promote succeeds. */
+  /** Called with the resulting task id after a create succeeds. */
   onCreated: (counterId: string) => void;
 }
 
+/** Fallback verb when the "TASK VERB" field is left blank — per the
+ *  (verb, noun) identity model, an empty verb submits as "Do". */
+const DEFAULT_VERB = 'Do';
+
 /**
  * CreateCounterSheet — Counters Hub "+ New counter" modal (Shared Counters
- * P5, PR-2; docs/SHARED_COUNTERS.md §P5).
+ * P5, PR-2; R1 counters refresh — "Refining counters" design handoff
+ * §Creation Surfaces).
  *
- * Lets the user type an Action + Unit (+ optional starting count) to create
- * a new goal-less hub-born counter task via `createCounterTask`. Recomputes
- * a dedupe classification per keystroke via `classifyCounterCreateMatch`:
+ * Fields follow the (verb, noun) identity model: "WHAT ARE YOU COUNTING?"
+ * captures the noun (stored as `unit`), the optional "TASK VERB" captures
+ * the verb (stored as `action`, defaulting to "Do" when left blank), and
+ * "START FROM" seeds the lifetime total. Recomputes a dedupe classification
+ * per keystroke via `classifyCounterCreateMatch`:
  *
- *   - `established` match → Create is disabled; a card offers "View counter"
- *     (navigates to the existing counter's detail page and closes the sheet).
- *   - `standalone` match → a card offers one-tap "Promote", which flags the
- *     existing standalone counting task as a counter (`promoteTaskToCounter`)
- *     instead of creating a duplicate.
+ *   - `established` match → Create is disabled; a gold card offers
+ *     "Open {CounterName}" (navigates to the existing counter's detail page
+ *     and closes the sheet).
+ *   - `standalone` match → ignored (R1: the promote-to-counter UI entry
+ *     point was removed; `promoteTaskToCounter` itself is untouched — see
+ *     CLAUDE.md's Global Constraints). Create proceeds normally.
  *   - no match → Create proceeds normally.
  *
  * Modeled on `DeriveCounterModal` (backdrop + `role="dialog"` +
@@ -49,8 +58,8 @@ export function CreateCounterSheet({
 }: CreateCounterSheetProps): React.ReactElement | null {
   const navigate = useNavigate();
   const genRef = useRef(0);
-  const [action, setAction] = useState('');
-  const [unit, setUnit] = useState('');
+  const [verb, setVerb] = useState('');
+  const [noun, setNoun] = useState('');
   const [startingCountStr, setStartingCountStr] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,34 +80,35 @@ export function CreateCounterSheet({
   useEffect(() => {
     if (open) {
       genRef.current += 1;
-      setAction('');
-      setUnit('');
+      setVerb('');
+      setNoun('');
       setStartingCountStr('');
       setError(null);
       setBusy(false);
     }
   }, [open]);
 
-  const trimmedAction = action.trim();
-  const trimmedUnit = unit.trim();
-  const previewTitle =
-    trimmedAction && trimmedUnit
-      ? generateCounterTaskTitle(trimmedAction, null, trimmedUnit)
-      : '';
+  const trimmedVerb = verb.trim();
+  const trimmedNoun = noun.trim();
+  const effectiveVerb = trimmedVerb || DEFAULT_VERB;
+  const previewName = trimmedNoun ? formatCounterName(effectiveVerb, trimmedNoun) : '';
+  const startFromNum = parseInt(startingCountStr, 10);
+  const previewCount = Number.isFinite(startFromNum) && startFromNum > 0 ? startFromNum : 0;
 
   // Recompute per keystroke, like CountingTemplatePicker's `suggestion` memo.
   const match = useMemo(
     () =>
-      trimmedAction && trimmedUnit
-        ? classifyCounterCreateMatch({ action: trimmedAction, unit: trimmedUnit }, tasks)
+      trimmedNoun
+        ? classifyCounterCreateMatch({ action: effectiveVerb, unit: trimmedNoun }, tasks)
         : null,
-    [trimmedAction, trimmedUnit, tasks],
+    [effectiveVerb, trimmedNoun, tasks],
   );
 
   if (!open) return null;
 
-  const canCreate =
-    trimmedAction !== '' && trimmedUnit !== '' && match?.kind !== 'established' && !busy;
+  // R1: the promote/standalone card was removed — a `standalone` match no
+  // longer blocks or offers anything; only `established` blocks create.
+  const canCreate = trimmedNoun !== '' && match?.kind !== 'established' && !busy;
 
   async function handleCreate(): Promise<void> {
     if (!canCreate) return;
@@ -109,8 +119,8 @@ export function CreateCounterSheet({
     try {
       const parsed = parseInt(startingCountStr, 10);
       const t = await createCounterTask(userId, {
-        action: trimmedAction,
-        unit: trimmedUnit,
+        action: effectiveVerb,
+        unit: trimmedNoun,
         startingCount: parsed || undefined,
       });
       if (genRef.current !== gen) return;
@@ -122,23 +132,7 @@ export function CreateCounterSheet({
     }
   }
 
-  async function handlePromote(taskId: string): Promise<void> {
-    genRef.current += 1;
-    const gen = genRef.current;
-    setError(null);
-    setBusy(true);
-    try {
-      const t = await promoteTaskToCounter(taskId);
-      if (genRef.current !== gen) return;
-      onCreated(t.id);
-    } catch {
-      if (genRef.current !== gen) return;
-      setError('Could not promote to counter.');
-      setBusy(false);
-    }
-  }
-
-  function handleViewCounter(taskId: string): void {
+  function handleOpenCounter(taskId: string): void {
     onClose();
     navigate(`/profile/counters/${taskId}`);
   }
@@ -154,33 +148,37 @@ export function CreateCounterSheet({
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
         <h3 className={styles.title}>New counter</h3>
 
-        <label className={styles.fieldLabel} htmlFor="create-counter-action">
-          Action
+        <label className={styles.fieldLabel} htmlFor="create-counter-noun">
+          What are you counting?
         </label>
         <input
-          id="create-counter-action"
+          id="create-counter-noun"
           type="text"
           autoFocus
-          value={action}
-          onChange={(e) => setAction(e.target.value)}
-          placeholder="Push-ups"
+          value={noun}
+          onChange={(e) => setNoun(e.target.value)}
+          placeholder="push-ups"
           className={styles.fieldInput}
         />
+        <div className={styles.helperText}>A plural noun — push-ups, pages, miles.</div>
 
-        <label className={styles.fieldLabel} htmlFor="create-counter-unit">
-          Unit
+        <label className={styles.fieldLabel} htmlFor="create-counter-verb">
+          Task verb (optional)
         </label>
         <input
-          id="create-counter-unit"
+          id="create-counter-verb"
           type="text"
-          value={unit}
-          onChange={(e) => setUnit(e.target.value)}
-          placeholder="reps"
+          value={verb}
+          onChange={(e) => setVerb(e.target.value)}
+          placeholder="Do"
           className={styles.fieldInput}
         />
+        <div className={styles.helperText}>
+          Used in task titles — &quot;Do 100 push-ups&quot;. Try &quot;Read&quot; for pages, &quot;Run&quot; for miles.
+        </div>
 
         <label className={styles.fieldLabel} htmlFor="create-counter-starting-count">
-          Starting count (optional)
+          Start from (optional)
         </label>
         <input
           id="create-counter-starting-count"
@@ -194,43 +192,34 @@ export function CreateCounterSheet({
         />
         <div className={styles.helperText}>Already partway? Seed the lifetime total.</div>
 
-        {previewTitle && (
-          <div className={styles.preview}>
-            New counter: <strong>{previewTitle}</strong>
+        {previewName && (
+          <div className={styles.previewCard}>
+            <div className={styles.previewRow}>
+              <span className={styles.previewName}>{previewName}</span>
+              <span className={styles.previewCount}>{previewCount.toLocaleString()}</span>
+            </div>
+            <div className={styles.previewFooter}>
+              <span className={styles.previewSub}>
+                Tasks that count {trimmedNoun} link up automatically.
+              </span>
+              <span className={styles.previewAllTime}>All-time</span>
+            </div>
           </div>
         )}
 
         {match?.kind === 'established' && (
           <div className={styles.matchCardEstablished}>
-            <p className={styles.matchTitle}>
-              You already have a &quot;{(match.task.action ?? '').trim() || match.task.title}&quot;
-              counter
-            </p>
+            <p className={styles.matchTitle}>You&apos;re already counting {trimmedNoun}</p>
             <p className={styles.matchSub}>
-              {match.lifetime.toLocaleString()} all-time · {match.memberCount} task
+              {match.lifetime.toLocaleString()} all-time · counting on {match.memberCount} task
               {match.memberCount !== 1 ? 's' : ''}
             </p>
             <button
               type="button"
               className={styles.matchLinkButton}
-              onClick={() => handleViewCounter(match.task.id)}
+              onClick={() => handleOpenCounter(match.task.id)}
             >
-              View counter
-            </button>
-          </div>
-        )}
-
-        {match?.kind === 'standalone' && (
-          <div className={styles.matchCardStandalone}>
-            <p className={styles.matchTitle}>Make &quot;{match.task.title}&quot; this counter?</p>
-            <p className={styles.matchSub}>Keeps its count, goal, and boards.</p>
-            <button
-              type="button"
-              className={styles.matchPromoteButton}
-              disabled={busy}
-              onClick={() => handlePromote(match.task.id)}
-            >
-              Promote
+              Open {formatCounterName(match.task.action, match.task.unit) || match.task.title}
             </button>
           </div>
         )}
@@ -238,22 +227,12 @@ export function CreateCounterSheet({
         {error && <div className={styles.error}>{error}</div>}
 
         <div className={styles.actions}>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className={styles.cancelButton}
-          >
+          <RisoButton kind="ghost" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={!canCreate}
-            className={styles.saveButton}
-          >
+          </RisoButton>
+          <RisoButton kind="blue" onClick={handleCreate} disabled={!canCreate}>
             Create counter
-          </button>
+          </RisoButton>
         </div>
       </div>
     </div>

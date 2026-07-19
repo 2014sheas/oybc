@@ -376,6 +376,22 @@ export interface AutoCreateCompoundChildTask {
   action?: string;
   unit?: string;
   maxCount?: number;
+  /**
+   * R1 counters refresh — auto-link (docs/SHARED_COUNTERS.md, counters UX
+   * refresh spec). When the counting child's (action, unit) pair matches an
+   * existing counter and the user hasn't opted out via the "Don't link"
+   * hint, the caller sets this to the matched counter's source Task id so
+   * the inline-created child is born already linked (same semantics as
+   * `Task.sharedCounterId`). Must be paired with `baseline`.
+   */
+  sharedCounterId?: string | null;
+  /**
+   * The auto-link baseline — always the source counter's lifetime count at
+   * creation time ("start fresh": the new task's own window begins at 0
+   * regardless of the source's history). See `Task.baseline`. Must be
+   * provided when `sharedCounterId` is set.
+   */
+  baseline?: number | null;
 }
 
 /**

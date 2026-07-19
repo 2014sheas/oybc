@@ -372,8 +372,16 @@ struct FromBoardGridView: View {
         }
     }
 
-    // MARK: - Derive save (logic unchanged)
+    // MARK: - Derive save
 
+    /// R1 counters refresh — "Derive smaller version…" must produce a
+    /// LINKED task, not a standalone duplicate (the sheet's own copy
+    /// promises "same counter, lower goal" / "still counts {noun}"). See
+    /// `resolveDeriveLinkTarget` for the source-resolution rule. Unlike
+    /// `RisoLibrarySheetView` (which has a synchronous task map from the
+    /// wizard's library), this grid only has the source BOARD's placements
+    /// in memory, so the root task is fetched by id when `source` is
+    /// itself derived.
     private func handleDeriveSave(source: OYBC.Task) {
         guard let action = source.action,
               let unit = source.unit,
@@ -390,27 +398,33 @@ struct FromBoardGridView: View {
         let now = AppDatabase.currentTimestamp()
         let newId = AppDatabase.generateUUID()
 
-        let newTask = OYBC.Task(
-            id: newId,
-            userId: userId,
-            title: title,
-            description: nil,
-            type: .counting,
-            action: trimmedAction,
-            unit: trimmedUnit,
-            maxCount: parsed,
-            totalCompletions: 0,
-            totalInstances: 0,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            isDeleted: false
-        )
-
         // Keep the sheet open until the write either succeeds or fails
         // visibly. Mirrors the web grid's `onSave`.
         DispatchQueue.global(qos: .userInitiated).async {
             do {
+                let rootId = source.sharedCounterId ?? source.id
+                let rootTask = rootId == source.id ? source : try AppDatabase.shared.fetchTask(id: rootId)
+                let linkTarget = resolveDeriveLinkTarget(source: source, rootTask: rootTask)
+
+                let newTask = OYBC.Task(
+                    id: newId,
+                    userId: userId,
+                    title: title,
+                    description: nil,
+                    type: .counting,
+                    action: trimmedAction,
+                    unit: trimmedUnit,
+                    maxCount: parsed,
+                    totalCompletions: 0,
+                    totalInstances: 0,
+                    createdAt: now,
+                    updatedAt: now,
+                    version: 1,
+                    isDeleted: false,
+                    sharedCounterId: linkTarget.sharedCounterId,
+                    baseline: linkTarget.baseline
+                )
+
                 try AppDatabase.shared.createTaskAndEnqueue(newTask, now: now)
                 DispatchQueue.main.async {
                     derivingFromTask = nil
@@ -443,29 +457,28 @@ private struct RisoDeriveCounterSheet: View {
         let action = (source.action ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let unit = (source.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let parsed = Int(input.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-        let preview = parsed > 0 ? "\(action) \(parsed) \(unit)" : nil
+        let derivedTitle = parsed > 0 ? TaskTitle.generateCounterTaskTitle(action: action, maxCount: parsed, unit: unit) : nil
 
         NavigationStack {
             ZStack {
                 RisoPaperBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        // From section
+                        // From section — "From {title} — same counter, lower goal."
                         VStack(alignment: .leading, spacing: 6) {
                             Text("DERIVED FROM")
                                 .font(.risoBody(11, .bold))
                                 .tracking(0.22 * 11)
                                 .foregroundStyle(Color.risoMuted)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(source.title)
-                                    .font(.risoHead(14, .bold))
-                                    .foregroundStyle(Color.risoInk)
-                                if let max = source.maxCount, !action.isEmpty, !unit.isEmpty {
-                                    Text("\(action) \(max) \(unit)")
-                                        .font(.risoBody(11, .semibold))
-                                        .foregroundStyle(Color.risoMuted)
-                                }
-                            }
+                            (Text("From ")
+                                .font(.risoBody(13, .semibold))
+                                .foregroundStyle(Color.risoMuted)
+                            + Text(source.title)
+                                .font(.risoHead(13, .bold))
+                                .foregroundStyle(Color.risoInk)
+                            + Text(" — same counter, lower goal.")
+                                .font(.risoBody(13, .semibold))
+                                .foregroundStyle(Color.risoMuted))
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.risoPaper2)
@@ -485,16 +498,17 @@ private struct RisoDeriveCounterSheet: View {
                             RisoNumberField(placeholder: "e.g. 20", text: $input)
                         }
 
-                        // Preview row
-                        if let preview {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("New title:")
-                                    .font(.risoBody(10.5, .semibold))
-                                    .foregroundStyle(Color.risoMuted)
-                                Text(preview)
-                                    .font(.risoHead(13, .bold))
-                                    .foregroundStyle(Color.risoInk)
-                            }
+                        // Preview row — "New task: {derived title} — still counts {noun}."
+                        if let derivedTitle {
+                            (Text("New task: ")
+                                .font(.risoBody(12, .regular))
+                                .foregroundStyle(Color.risoMuted)
+                            + Text(derivedTitle)
+                                .font(.risoHead(13, .bold))
+                                .foregroundStyle(Color.risoInk)
+                            + Text(" — still counts \(unit).")
+                                .font(.risoBody(12, .regular))
+                                .foregroundStyle(Color.risoMuted))
                         }
 
                         // Error
@@ -507,7 +521,7 @@ private struct RisoDeriveCounterSheet: View {
                     .padding(Riso.gutter)
                 }
             }
-            .navigationTitle("Derive smaller version")
+            .navigationTitle("Smaller version")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -516,7 +530,7 @@ private struct RisoDeriveCounterSheet: View {
                         .foregroundStyle(Color.risoInk)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave() }
+                    Button("Create") { onSave() }
                         .font(.risoHead(14, .bold))
                         .foregroundStyle(Color.risoBlue)
                 }

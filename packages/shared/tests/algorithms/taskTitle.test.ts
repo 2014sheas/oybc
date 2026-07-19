@@ -34,13 +34,17 @@ describe('generateCounterTaskTitle', () => {
   });
 });
 
-describe('generateCounterTaskTitle — goal-less variant (P5)', () => {
-  it('renders "{action} ({unit})" when maxCount is null', () => {
-    expect(generateCounterTaskTitle('Push-ups', null, 'reps')).toBe('Push-ups (reps)');
+describe('generateCounterTaskTitle — goal-less variant (pair-derived, R1)', () => {
+  it('derives the pair-derived counter name when maxCount is null, eliding a default "Do"', () => {
+    expect(generateCounterTaskTitle('Do', null, 'push-ups')).toBe('Push-ups');
   });
 
-  it('renders the same when maxCount is undefined', () => {
-    expect(generateCounterTaskTitle(' Push-ups ', undefined, ' reps ')).toBe('Push-ups (reps)');
+  it('renders the same when maxCount is undefined, with surrounding whitespace trimmed', () => {
+    expect(generateCounterTaskTitle(' Do ', undefined, ' push-ups ')).toBe('Push-ups');
+  });
+
+  it('keeps a non-"Do" verb in the goal-less title', () => {
+    expect(generateCounterTaskTitle('Run', null, 'miles')).toBe('Run miles');
   });
 
   it('keeps the numeric form when maxCount is present', () => {
@@ -48,6 +52,6 @@ describe('generateCounterTaskTitle — goal-less variant (P5)', () => {
   });
 
   it('providedTitle still wins', () => {
-    expect(generateCounterTaskTitle('Push-ups', null, 'reps', 'My tally')).toBe('My tally');
+    expect(generateCounterTaskTitle('Do', null, 'push-ups', 'My tally')).toBe('My tally');
   });
 });

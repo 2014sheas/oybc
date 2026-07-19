@@ -17,10 +17,12 @@ import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useT
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
+import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import { FromBoardGrid } from './FromBoardGrid';
 import { FromBoardPicker } from './FromBoardPicker';
 import { NewTaskSheet } from './NewTaskSheet';
 import { RowContextMenu } from './RowContextMenu';
+import { mergeSuggestionPool } from './suggestionPool';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import styles from './BoardWizardTasksStep.module.css';
@@ -195,6 +197,22 @@ export function BoardWizardTasksStep({
     const ids = new Set(browsableTasks.map((t) => t.id));
     return [...browsableTasks, ...pendingArr.filter((t) => !ids.has(t.id))];
   }, [browsableTasks, pendingTasks]);
+
+  // R1 counters refresh (review fix) — unfiltered (non-browsable-filtered)
+  // task pool + this session's pending tasks, used ONLY as the counter-link
+  // suggestion pool passed to `NewTaskSheet` → `CreateNewTaskForm`. Unlike
+  // `effectiveAllTasks` (built from `browsableTasks` for pickers/autocomplete),
+  // this uses `library.allTasks` so goal-less hub-born counters — which
+  // `computeBrowsableTasks` excludes — still surface a link suggestion in the
+  // wizard, AND so a same-session pending counter (created earlier in this
+  // wizard visit, not yet persisted) is matchable too — otherwise creating
+  // counting task A (pending) then a same-pair task B silently duplicates
+  // instead of linking. Mirrors iOS `BoardWizardTasksStepView.effectiveSuggestionPool`.
+  const effectiveSuggestionPool = useMemo<Task[]>(
+    () => mergeSuggestionPool(library.allTasks, pendingTasks),
+    [library.allTasks, pendingTasks],
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<TasksFilter>('all');
 
@@ -773,6 +791,7 @@ export function BoardWizardTasksStep({
         defaultStartDate={currentStartDate}
         defaultEndDate={currentEndDate}
         deferPersist={onPendingCreated !== undefined}
+        suggestionPool={effectiveSuggestionPool}
       />
 
       {rowContextMenu && (() => {
@@ -896,7 +915,18 @@ export function BoardWizardTasksStep({
             }
             const action = (derivingFromTask.action ?? '').trim();
             const unit = (derivingFromTask.unit ?? '').trim();
-            const title = `${action} ${parsed} ${unit}`;
+            const title = generateCounterTaskTitle(action, parsed, unit);
+            // R1 counters refresh — "Derive smaller version" must produce a
+            // LINKED task, not a standalone duplicate (the modal's own copy
+            // already promises "same counter, lower goal"). See
+            // `resolveDeriveLinkTarget` for the source-resolution rule.
+            // `effectiveTaskMap` (already loaded for this component's row
+            // rendering) resolves the root task synchronously when
+            // `derivingFromTask` is itself derived.
+            const linkTarget = resolveDeriveLinkTarget(
+              derivingFromTask,
+              effectiveTaskMap[derivingFromTask.sharedCounterId ?? derivingFromTask.id],
+            );
             try {
               const newTask = await createTask(userId, {
                 title,
@@ -904,6 +934,8 @@ export function BoardWizardTasksStep({
                 action,
                 unit,
                 maxCount: parsed,
+                sharedCounterId: linkTarget.sharedCounterId,
+                baseline: linkTarget.baseline,
               });
               onTaskCreated(newTask);
               setDerivingFromTask(null);

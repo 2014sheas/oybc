@@ -252,6 +252,12 @@ export async function createCompound(
           unit: entry.autoCreate.unit,
           maxCount: entry.autoCreate.maxCount,
           currentCount: entry.autoCreate.type === TaskType.COUNTING ? 0 : undefined,
+          // R1 counters refresh — auto-link (docs/SHARED_COUNTERS.md). When the
+          // caller resolved an exact (action, unit) match and the user hasn't
+          // opted out via the "Don't link" hint, the child is born already
+          // linked to that counter with a "start fresh" baseline.
+          sharedCounterId: entry.autoCreate.sharedCounterId ?? undefined,
+          baseline: entry.autoCreate.baseline ?? undefined,
           isCompleted: false,
           totalCompletions: 0,
           totalInstances: 0,

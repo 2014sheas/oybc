@@ -32,6 +32,7 @@ import type { BoardTask } from '../types/boardTask';
 import { BoardStatus, TaskType, Timeframe } from '../constants/enums';
 import { deriveDisplayedCount } from './sharedCounter';
 import { formatTimeframeLabel } from './calendarBoundaries';
+import { formatCounterName } from './counterName';
 
 /**
  * One member task of a shared counter, resolved to its board placement +
@@ -72,7 +73,11 @@ export interface SharedCounterMemberTask {
 export interface SharedCounterGroup {
   /** Stable id = the source task's id. */
   counterId: string;
-  /** Display name = the source task's title. */
+  /**
+   * Display name — pair-derived via `formatCounterName(action, unit)` (R1),
+   * falling back to the source task's stored `title` when the pair can't
+   * produce one (e.g. a legacy row with neither field set).
+   */
   name: string;
   /** Action verb (e.g. "Do") + unit (e.g. "reps") from the source task. */
   action: string | null;
@@ -227,7 +232,10 @@ export function buildSharedCounterGroups(
 
     groups.push({
       counterId: sourceId,
-      name: source.title,
+      // R1: pair-derived display name (formatCounterName), stored-title
+      // fallback when the (action, unit) pair can't produce one (e.g. a
+      // legacy row with neither field set).
+      name: formatCounterName(source.action, source.unit) || source.title,
       action: source.action ?? null,
       unit: source.unit ?? null,
       lifetime,
