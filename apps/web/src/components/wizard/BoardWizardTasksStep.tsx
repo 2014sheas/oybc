@@ -17,6 +17,7 @@ import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useT
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
+import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import { FromBoardGrid } from './FromBoardGrid';
 import { FromBoardPicker } from './FromBoardPicker';
 import { NewTaskSheet } from './NewTaskSheet';
@@ -896,7 +897,18 @@ export function BoardWizardTasksStep({
             }
             const action = (derivingFromTask.action ?? '').trim();
             const unit = (derivingFromTask.unit ?? '').trim();
-            const title = `${action} ${parsed} ${unit}`;
+            const title = generateCounterTaskTitle(action, parsed, unit);
+            // R1 counters refresh — "Derive smaller version" must produce a
+            // LINKED task, not a standalone duplicate (the modal's own copy
+            // already promises "same counter, lower goal"). See
+            // `resolveDeriveLinkTarget` for the source-resolution rule.
+            // `effectiveTaskMap` (already loaded for this component's row
+            // rendering) resolves the root task synchronously when
+            // `derivingFromTask` is itself derived.
+            const linkTarget = resolveDeriveLinkTarget(
+              derivingFromTask,
+              effectiveTaskMap[derivingFromTask.sharedCounterId ?? derivingFromTask.id],
+            );
             try {
               const newTask = await createTask(userId, {
                 title,
@@ -904,6 +916,8 @@ export function BoardWizardTasksStep({
                 action,
                 unit,
                 maxCount: parsed,
+                sharedCounterId: linkTarget.sharedCounterId,
+                baseline: linkTarget.baseline,
               });
               onTaskCreated(newTask);
               setDerivingFromTask(null);
