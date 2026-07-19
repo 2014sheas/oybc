@@ -69,6 +69,18 @@ export interface CreateNewTaskFormProps {
    * — useful for contexts where linked-counter creation isn't wired yet.
    */
   onCreateLinked?: (input: LinkedCounterInput) => void;
+  /**
+   * R1 counters refresh (review fix) — unfiltered task pool (persisted +
+   * the wizard session's in-memory pending tasks) used only for the
+   * counter-link auto-link match. Without this, a counting task created
+   * earlier in the same wizard visit (still pending, not yet in `useTasks`)
+   * wouldn't be linkable — a same-pair follow-up create would silently
+   * duplicate instead of linking (iOS already merges pending tasks into its
+   * match pool via `effectiveSuggestionPool`). Defaults to the live
+   * `useTasks` pool when omitted (non-wizard hosts, e.g. Tasks-tab), so
+   * behavior there is unchanged.
+   */
+  suggestionPool?: Task[];
 }
 
 export function CreateNewTaskForm({
@@ -77,6 +89,7 @@ export function CreateNewTaskForm({
   onCompositeCreated,
   submitLabel = 'Create & Add to Pool',
   onCreateLinked,
+  suggestionPool,
 }: CreateNewTaskFormProps): React.ReactElement {
   // Phase 6.3 — Workspace lookups for the Achievement-task picker.
   // Both hooks return non-deleted rows for `userId` (or `[]` while
@@ -89,7 +102,13 @@ export function CreateNewTaskForm({
   // (needs the full live pool, same source CountingTemplatePicker's own
   // `useTaskLibrary` reads) and resolves the matched source Task at submit
   // time for `LinkedCounterInput.source`.
+  //
+  // `suggestionPool` (wizard callers only) additionally merges in this
+  // session's pending tasks — falls back to the plain live `tasks` pool
+  // when omitted (e.g. Tasks-tab standalone usage) so behavior there is
+  // unchanged.
   const tasks = useTasks(userId) ?? EMPTY_TASKS;
+  const matchPool = suggestionPool ?? tasks;
   const trimmedAction = form.action.trim();
   const trimmedUnit = form.unit.trim();
   const parsedMaxCount = parseInt(form.maxCountStr, 10);
@@ -106,9 +125,9 @@ export function CreateNewTaskForm({
   const counterMatch = useMemo(
     () =>
       form.taskType === TaskType.COUNTING && trimmedAction && trimmedUnit
-        ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, tasks)
+        ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, matchPool)
         : null,
-    [form.taskType, trimmedAction, trimmedUnit, tasks],
+    [form.taskType, trimmedAction, trimmedUnit, matchPool],
   );
 
   // Gate on `onCreateLinked` too — without it, submit can't actually honor
@@ -142,7 +161,7 @@ export function CreateNewTaskForm({
       goalValid
     ) {
       e.preventDefault();
-      const sourceTask = tasks.find((t) => t.id === counterMatch.counterId);
+      const sourceTask = matchPool.find((t) => t.id === counterMatch.counterId);
       if (!sourceTask) {
         // Match resolved from a stale snapshot (e.g. the source was deleted
         // between keystrokes) — fall back to a plain create rather than

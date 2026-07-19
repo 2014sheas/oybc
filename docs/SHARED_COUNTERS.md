@@ -69,12 +69,13 @@ No engine change: P2's `incrementSharedCounter` already fans the log out to ever
 - **Never-reset lifetime accumulator** — MVP uses `currentCount`.
 - **Fully-automatic grouping by action+unit** (silent link, no prompt) — NOT building. Instead see "Link suggestions" below.
 
-## Link suggestions — adding a task to an existing counter (BUILDING)
+## Link suggestions — adding a task to an existing counter (SHIPPED, R1)
 
-The handoff's "counters link up on their own" is core, not deferred: without it, adding a task to an existing counter means hunting a dropdown. We build the **suggest-confirm** version (user chose this over silent-auto and over passive-suggest): when a new COUNTING task's `action + unit` match an existing counter, the create form surfaces a one-tap "Counts on your existing **{name}** counter" suggestion (OFF until tapped — never silent). Accepting routes through the existing linked-counter create path (`sharedCounterId` + baseline; default **start-this-window-at-0**). No engine change.
+The handoff's "counters link up on their own" is core, not deferred: without it, adding a task to an existing counter means hunting a dropdown. *(Update — R1 counters refresh, 2026-07-18: this shipped as **auto-link, default ON**, superseding the suggest-confirm design this section originally described.)* Identity is the **(verb, noun) pair** — today's `action` + `unit` key, case-insensitive, trimmed, verb defaulting to "Do" (see [§The model](#the-model-no-schema-change)) — not a single "activity" string. When a new COUNTING task's typed (verb, noun) pair exactly matches an existing counter, the create form links it **by default**: an always-visible `RisoCounterLinkHintView` / `CounterLinkHint` card explains what will happen ("Counts toward your **{name}** counter") with a "Don't link" pill to opt out for that create (toggling back re-enables). No fuzzy matching, no silent merges, no confirm-first step. Accepting (the default) routes through the existing linked-counter create path (`sharedCounterId` + baseline; always **start-fresh** — the baseline is the source's lifetime `currentCount` at link time; the manual "Inherit total" baseline mode was retired in R1). No engine change.
 
-- **Shared:** `findLinkableCounter({action, unit, excludeTaskId?}, tasks) → { counterId, name, lifetime, memberCount } | null` (`packages/shared/src/algorithms/linkableCounter.ts`, Jest-tested). In OYBC the counting `action` field carries the activity ("Push-ups"), so `action+unit` cleanly identifies a counter (Push-ups ≠ Sit-ups). Matches non-derived candidates; most-established counter wins. iOS ports it (`LinkableCounter.swift`).
-- **UI (both platforms):** an inline suggestion in the counting create sub-fields, wherever counting tasks are created (board-wizard Tasks step special panel, Tasks-tab New Task sheet, quick-add). Tap to link (baseline choice), or ignore. Reuses `LinkedCounterInput` / `sharedCounterId`.
+- **Shared:** `findLinkableCounter({action, unit, excludeTaskId?}, tasks) → { counterId, name, lifetime, memberCount } | null` (`packages/shared/src/algorithms/linkableCounter.ts`, Jest-tested). `action` is the **verb** and `unit` is the **noun** — together they form the (verb, noun) pair that identifies a counter (Do·push-ups ≠ Do·sit-ups; Run·miles ≠ Bike·miles by construction). Matches non-derived candidates; most-established counter wins. `name` is the pair-derived display name (`formatCounterName`), falling back to the source's stored title. iOS ports it (`LinkableCounter.swift`).
+- **UI (both platforms):** the auto-link hint card renders inline in the counting create sub-fields, wherever counting tasks are created (board-wizard Tasks step special panel + its inline compound-sub counting fields, Tasks-tab New Task sheet, quick-add). Linking is on by default; "Don't link" opts out for that create. Reuses `LinkedCounterInput` / `sharedCounterId`.
+- **Suggestion pool caveat:** the match pool must include goal-less hub-born counters (excluded from the browsable task list) and, in wizard contexts, this session's not-yet-persisted pending tasks — otherwise a hub counter or a just-created same-pair task silently fails to link. See `suggestionPool` (iOS `RisoSpecialTaskPanel`/`RisoCompoundFieldsView`; web `BoardWizardTasksStep.effectiveSuggestionPool` / `CreateNewTaskForm`'s `suggestionPool` prop).
 
 ## Locked decisions
 
@@ -281,11 +282,26 @@ The P4 storage plan must include **counter-level** closed-window rollups
   (Do-elision + verb-less backfill) replacing the parenthetical branch;
   CreateCounterSheet/NewCounterSheetView refit (fields, preview, gold-only
   dedupe, promote UI removed, RisoButton footers); CountingStepFields relabel
-  + link-hint card + "Don't link"; derive modal retitle; Swift-mirror vector
-  updates.
+  + link-hint card + "Don't link"; derive modal retitled to "Smaller
+  version" **and** now LINKS the created task to the source counter via the
+  shared `resolveDeriveLinkTarget` (no chained links — a derive-of-a-derive
+  links to the resolved ROOT source, never to the intermediate derived task;
+  baseline = the root's lifetime `currentCount ?? 0`, i.e. always
+  start-fresh) — this fixed a pre-existing iOS TODO'd bug where "Derive
+  smaller version…" created a standalone, unlinked duplicate task despite
+  the modal's own copy promising "same counter, lower goal"; Swift-mirror
+  vector updates.
 - **R2 — Hub + Detail refresh**: ledger card + "+ Log" pill; empty state;
   Detail hero / stat strip / log card with amount chips; `defaultLogAmount`
   persistence; last-entry Undo; delete-as-link; desktop layouts; P4 stub UI.
+  Also in scope: edit/copy task sheets adopt the Verb/Counting vocabulary
+  (still Action/Unit after R1) + a same-pair standalone-vs-hub-counter
+  disambiguation note (editing/copying a task whose pair matches both a
+  standalone counting task and an established hub counter needs a rule for
+  which one wins — R1 shipped creation-time auto-link only, not this case).
 - **R3 — board-play touchpoints**: amount-aware toast + Undo; banner copy;
   square quick-action amounts; board tap logs default; decrement mirrors
-  amount.
+  amount. Also in scope: toasts/arrival banners switch from stored task
+  titles to pair-derived counter names (`formatCounterName`) — R1 only
+  changed the Hub/Detail/creation surfaces; `RisoCreditedToast` /
+  `RisoArrivalBanner` still read `task.title` today.
