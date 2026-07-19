@@ -114,18 +114,20 @@ final class CreateFormViewModel {
     /// this task. Only relevant when `taskType == .counting`.
     var countingDeriveFromTask: OYBC.Task? = nil
 
-    // Counter-link suggestion (Shared Counters — counter-link-suggest).
-    // Non-nil when the user confirmed the counter-link suggestion banner in
-    // the counting create panel. Written from `RisoSpecialTaskPanel` before
-    // calling `handleCreateAndAddToPool`.
+    // Counter-link (R1 counters refresh — auto-link default ON).
+    // Non-nil when the typed (verb, noun) pair matched an existing counter
+    // AND the user did not tap "Don't link" to opt out. Written from
+    // `RisoSpecialTaskPanel` (and `RisoCompoundFieldsView`'s inline counting
+    // subs) before calling `handleCreateAndAddToPool` — there is no
+    // confirm-first suggestion banner anymore; the `RisoCounterLinkHintView`
+    // card just explains what auto-linking will do and offers the opt-out.
     //
     // When set, the new task is linked to the given counter source:
     //   sharedCounterId = countingSharedCounterId
     //   baseline        = countingBaseline
-    //     - "Start fresh": baseline = source.currentCount at link time
-    //       → displayed = source.currentCount − baseline (starts at 0).
-    //     - "Inherit total": baseline = 0
-    //       → displayed = source.currentCount (inherits the running total).
+    // Baseline is always "start fresh" (the manual baseline picker /
+    // "Inherit total" mode was retired in R1): baseline = source.currentCount
+    // at link time → displayed = source.currentCount − baseline (starts at 0).
     var countingSharedCounterId: String? = nil
     var countingBaseline: Int? = nil
 

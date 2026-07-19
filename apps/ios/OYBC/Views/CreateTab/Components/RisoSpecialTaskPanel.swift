@@ -339,6 +339,7 @@ struct RisoSpecialTaskPanel: View {
     private var compoundFields: some View {
         RisoCompoundFieldsView(
             taskLibrary: taskLibrary,
+            suggestionPool: suggestionPool,
             userId: userId,
             defaultTimeframe: defaultTimeframe,
             defaultStartDate: defaultStartDate,

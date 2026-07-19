@@ -530,7 +530,7 @@ private struct RisoDeriveCounterSheet: View {
                         .foregroundStyle(Color.risoInk)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave() }
+                    Button("Create") { onSave() }
                         .font(.risoHead(14, .bold))
                         .foregroundStyle(Color.risoBlue)
                 }

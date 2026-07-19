@@ -130,6 +130,64 @@ final class RisoCompoundPanelSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - 5. New-sub type = Counting, counter-link hint visible (R1
+    // review fix: covers the `RisoCounterLinkHintView` on-blue token fix in
+    // both the auto-link-default-ON state and the "Don't link" opted-out
+    // state). The seed's (verb, noun) pair ("Run", "km") matches
+    // `SnapshotFixtures.makeCompoundSnapshotLibrary()`'s "cs-c1" task via the
+    // real `findLinkableCounter` — not a hand-typed suggestion — so the
+    // fixture stays honest to production matching.
+
+    func testCompoundNewSubCountingLinkedLight() {
+        let view = makeHost(seed: .newSubCountingLinked)
+            .padding(16)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 560)),
+            record: recordMode
+        )
+    }
+
+    func testCompoundNewSubCountingLinkedDark() {
+        let view = makeHost(seed: .newSubCountingLinked)
+            .padding(16)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 560),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
+    func testCompoundNewSubCountingOptedOutLight() {
+        let view = makeHost(seed: .newSubCountingOptedOut)
+            .padding(16)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 560)),
+            record: recordMode
+        )
+    }
+
+    func testCompoundNewSubCountingOptedOutDark() {
+        let view = makeHost(seed: .newSubCountingOptedOut)
+            .padding(16)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 560),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - Builder
 
     /// Wraps `RisoCompoundFieldsView` in the same panel card + header chrome
@@ -154,6 +212,25 @@ fileprivate enum CompoundSeed {
     case inOrderWithSubs
     /// New-sub type flipped to Counting, showing Goal/unit row + preview.
     case newSubCounting
+    /// New-sub type = Counting, (verb, noun) pair matches an existing
+    /// counter ("Run"/"km" → fixture's "cs-c1") — counter-link hint visible,
+    /// auto-link default ON ("Don't link" pill).
+    case newSubCountingLinked
+    /// Same match as `.newSubCountingLinked`, but opted out via "Don't
+    /// link" — hint shows the unlinked copy + "Link" pill.
+    case newSubCountingOptedOut
+
+    /// The real `findLinkableCounter` match for "Run"/"km" against the
+    /// shared compound-panel fixture library — used by the two
+    /// counter-link-hint variants so the suggestion shown is exactly what
+    /// production would compute, not a hand-typed stand-in.
+    private static var runKmSuggestion: LinkableCounterSuggestion? {
+        findLinkableCounter(
+            action: "Run",
+            unit: "km",
+            tasks: SnapshotFixtures.makeCompoundSnapshotLibrary()
+        )
+    }
 
     var fieldSeed: RisoCompoundFieldsView.Seed {
         switch self {
@@ -205,6 +282,36 @@ fileprivate enum CompoundSeed {
                 newSubType: .counting,
                 subGoalText: "5",
                 subUnitText: "km"
+            )
+        case .newSubCountingLinked:
+            return RisoCompoundFieldsView.Seed(
+                title: "Workout block",
+                rule: .allOf,
+                threshold: 2,
+                subs: [
+                    .newNormal(title: "Warm up"),
+                ],
+                subInputText: "Run",
+                newSubType: .counting,
+                subGoalText: "5",
+                subUnitText: "km",
+                subLinkSuggestion: Self.runKmSuggestion,
+                subLinkDisabled: false
+            )
+        case .newSubCountingOptedOut:
+            return RisoCompoundFieldsView.Seed(
+                title: "Workout block",
+                rule: .allOf,
+                threshold: 2,
+                subs: [
+                    .newNormal(title: "Warm up"),
+                ],
+                subInputText: "Run",
+                newSubType: .counting,
+                subGoalText: "5",
+                subUnitText: "km",
+                subLinkSuggestion: Self.runKmSuggestion,
+                subLinkDisabled: true
             )
         }
     }

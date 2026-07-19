@@ -29,8 +29,14 @@ struct RisoCompoundFieldsView: View {
         var subs: [CreateFormViewModel.CompoundSubItem] = []
         var subInputText: String = ""
         var newSubType: NewSubType = .normal
-        var subGoalText: String = "5"
+        var subGoalText: String = ""
         var subUnitText: String = ""
+        /// Pre-seeds the counter-link hint state directly, bypassing the
+        /// `.onChange` recompute (which doesn't fire from a seeded initial
+        /// value) — lets snapshot tests render `RisoCounterLinkHintView` in
+        /// context without needing to simulate keystrokes.
+        var subLinkSuggestion: LinkableCounterSuggestion? = nil
+        var subLinkDisabled: Bool = false
     }
 
     // MARK: - Enums
@@ -62,6 +68,15 @@ struct RisoCompoundFieldsView: View {
     /// The effective merged task library (live + pending) for smart autocomplete.
     /// Compound tasks are excluded from matches per spec.
     let taskLibrary: [OYBC.Task]
+    /// Separate, UNFILTERED pool used only for the new-counting-sub
+    /// counter-link suggestion (`updateSubLinkSuggestion`) — mirrors
+    /// `RisoSpecialTaskPanel.suggestionPool`. Goal-less hub-born counters are
+    /// excluded from the browsable `taskLibrary`, so matching against it
+    /// would never surface a link suggestion for them. Defaults to `nil`,
+    /// which falls back to `taskLibrary` so existing call sites (Tasks-tab,
+    /// which already passes the full unfiltered library as `taskLibrary`)
+    /// are unaffected. Autocomplete keeps using `taskLibrary` unconditionally.
+    var suggestionPool: [OYBC.Task]? = nil
 
     let userId: String
     /// Optional timeframe — nil produces an indefinite task (Tasks-tab usage).
@@ -115,6 +130,7 @@ struct RisoCompoundFieldsView: View {
     ///     `Timeframe` from the wizard; pass `nil` for indefinite Tasks-tab tasks.
     init(
         taskLibrary: [OYBC.Task],
+        suggestionPool: [OYBC.Task]? = nil,
         userId: String,
         defaultTimeframe: Timeframe? = nil,
         defaultStartDate: String? = nil,
@@ -125,6 +141,7 @@ struct RisoCompoundFieldsView: View {
         onSubmitted: @escaping () -> Void
     ) {
         self.taskLibrary = taskLibrary
+        self.suggestionPool = suggestionPool
         self.userId = userId
         self.defaultTimeframe = defaultTimeframe
         self.defaultStartDate = defaultStartDate
@@ -141,7 +158,7 @@ struct RisoCompoundFieldsView: View {
         _compoundSubs     = State(initialValue: [])
         _subInputText     = State(initialValue: "")
         _newSubType       = State(initialValue: .normal)
-        _subGoalText      = State(initialValue: "5")
+        _subGoalText      = State(initialValue: "")
         _subUnitText      = State(initialValue: "")
     }
 
@@ -150,6 +167,7 @@ struct RisoCompoundFieldsView: View {
     init(
         seed: Seed,
         taskLibrary: [OYBC.Task],
+        suggestionPool: [OYBC.Task]? = nil,
         userId: String = "preview-user",
         defaultTimeframe: Timeframe? = nil,
         defaultStartDate: String? = nil,
@@ -160,6 +178,7 @@ struct RisoCompoundFieldsView: View {
         onSubmitted: @escaping () -> Void = {}
     ) {
         self.taskLibrary = taskLibrary
+        self.suggestionPool = suggestionPool
         self.userId = userId
         self.defaultTimeframe = defaultTimeframe
         self.defaultStartDate = defaultStartDate
@@ -177,6 +196,8 @@ struct RisoCompoundFieldsView: View {
         _newSubType       = State(initialValue: seed.newSubType)
         _subGoalText      = State(initialValue: seed.subGoalText)
         _subUnitText      = State(initialValue: seed.subUnitText)
+        _subLinkSuggestion = State(initialValue: seed.subLinkSuggestion)
+        _subLinkDisabled  = State(initialValue: seed.subLinkDisabled)
     }
 
     // MARK: - Derived properties
@@ -584,7 +605,7 @@ struct RisoCompoundFieldsView: View {
         subLinkSuggestion = findLinkableCounter(
             action: subInputText,
             unit: subUnitText,
-            tasks: taskLibrary
+            tasks: suggestionPool ?? taskLibrary
         )
         subLinkDisabled = false
     }
@@ -622,7 +643,7 @@ struct RisoCompoundFieldsView: View {
         subInputText = ""
         subAutocompleteVisible = false
         // Reset counting sub fields after each add
-        subGoalText = "5"
+        subGoalText = ""
         subUnitText = ""
         newSubType = .normal
         subLinkSuggestion = nil
@@ -675,7 +696,7 @@ struct RisoCompoundFieldsView: View {
         compoundSubs      = []
         subInputText      = ""
         newSubType        = .normal
-        subGoalText       = "5"
+        subGoalText       = ""
         subUnitText       = ""
         subAutocompleteVisible = false
         subLinkSuggestion = nil

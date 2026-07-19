@@ -528,7 +528,7 @@ struct RisoLibrarySheetView: View {
                             .foregroundStyle(Color.risoInk)
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        RisoToolbarPill(title: "Save") { saveDerivedCounter(source: source) }
+                        RisoToolbarPill(title: "Create") { saveDerivedCounter(source: source) }
                         .disabled(!isDeriveInputValid(source: source))
                     }
                     ToolbarItem(placement: .cancellationAction) {
