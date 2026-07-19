@@ -32,6 +32,15 @@ export interface InlineSubtaskDraft {
    *  has dirty fields, the click is pending until they confirm switching
    *  (and losing the current fields). Null/undefined = no pending switch. */
   pendingTypeSwitch?: InlineSubtaskType;
+  /**
+   * R1 counters refresh — auto-link opt-out. When the typed (action, unit)
+   * pair exactly matches an existing counter, linking is ON by default
+   * (see `CounterLinkHint`); setting this `true` is the "Don't link" opt-out
+   * for this create. Reset to `false` whenever `action`/`unit` change so a
+   * fresh pair always starts linked. Only meaningful when
+   * `inlineType === 'counting'`.
+   */
+  linkDisabled?: boolean;
 }
 
 export type SubtaskDraft = ExistingSubtaskDraft | InlineSubtaskDraft;

@@ -143,6 +143,13 @@
   background: var(--riso-paper);
 }
 
+/* Live derived-title preview — R1 counters refresh. */
+.titlePreview {
+  font-family: var(--riso-font-body);
+  font-size: 0.8rem;
+  color: var(--riso-muted);
+}
+
 /* steps section */
 .stepsSection {
   display: flex;

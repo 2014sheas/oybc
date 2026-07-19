@@ -351,6 +351,9 @@ export const AutoCreateCompoundChildTaskSchema = z.object({
   action: z.string().min(1).max(50).optional(),
   unit: z.string().min(1).max(50).optional(),
   maxCount: z.number().int().positive().optional(),
+  // R1 counters refresh — auto-link (see AutoCreateCompoundChildTask doc).
+  sharedCounterId: z.string().uuid().nullable().optional(),
+  baseline: z.number().int().min(0).nullable().optional(),
 }).refine(
   (data) => {
     if (data.type === TaskType.COUNTING) {
@@ -359,6 +362,9 @@ export const AutoCreateCompoundChildTaskSchema = z.object({
     return true;
   },
   { message: 'Counting child tasks require action, unit, and maxCount' },
+).refine(
+  (data) => (data.sharedCounterId != null) === (data.baseline != null),
+  { message: 'sharedCounterId and baseline must both be set or both be absent' },
 );
 
 export const CreateCompoundChildEntrySchema = z.object({

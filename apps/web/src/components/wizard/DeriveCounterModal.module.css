@@ -92,65 +92,12 @@
   font-weight: 600;
 }
 
-/* Button row */
+/* Button row — RisoButton handles its own visuals; this just lays them out. */
 .actions {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.cancelButton,
-.saveButton {
-  font-family: var(--riso-font-head);
-  font-weight: 700;
-  font-size: 14px;
-  padding: 9px 16px;
-  border: 2px solid var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  cursor: pointer;
-  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
-  transition: transform 0.09s, box-shadow 0.09s;
-}
-
-.cancelButton {
-  background: var(--riso-paper-2);
-  color: var(--riso-ink);
-}
-
-/* Save uses blue — counting type colour */
-.saveButton {
-  background: var(--riso-blue);
-  color: var(--riso-on-color);
-}
-
-.cancelButton:hover:not(:disabled),
-.saveButton:hover:not(:disabled) {
-  transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
-}
-
-.cancelButton:active:not(:disabled),
-.saveButton:active:not(:disabled) {
-  transform: translate(3px, 3px);
-  box-shadow: 0 0 0 var(--riso-shadow-ink);
-}
-
-.cancelButton:disabled,
-.saveButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.cancelButton:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-
-/* Blue-filled save — cream ring so it shows against the fill */
-.saveButton:focus-visible {
-  outline: 3px solid var(--riso-on-color);
-  outline-offset: -3px;
 }
 
 @keyframes fadeIn {
@@ -168,8 +115,6 @@
   .dialog {
     animation: none;
   }
-  .cancelButton,
-  .saveButton,
   .fieldInput {
     transition: none;
   }

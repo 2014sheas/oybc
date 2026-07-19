@@ -131,10 +131,15 @@ function NewTaskSheetBody({
   });
 
   /**
-   * Handles the "Link to existing counter" confirm from CountingTemplatePicker.
-   * Creates a new COUNTING task with `sharedCounterId` + `baseline` set, then
-   * notifies the parent and closes the sheet. Respects the same deferred-persist
-   * path as the regular COUNTING create so wizard usage stays atomic.
+   * R1 counters refresh — auto-link. `CreateNewTaskForm` calls this instead
+   * of `form.handleSubmit` when a counting-task submit's (verb, noun) pair
+   * exactly matches an existing counter and the user hasn't opted out via
+   * `CounterLinkHint`'s "Don't link" pill (linking is ON by default; the
+   * manual "Link to existing counter" mode this docstring used to describe
+   * was retired — see `CountingTemplatePicker`). Creates a new COUNTING
+   * task with `sharedCounterId` + `baseline` set, then notifies the parent
+   * and closes the sheet. Respects the same deferred-persist path as the
+   * regular COUNTING create so wizard usage stays atomic.
    */
   const handleCreateLinked = useCallback(
     async (input: LinkedCounterInput): Promise<void> => {

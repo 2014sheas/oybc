@@ -1,3 +1,4 @@
+import { generateCounterTaskTitle } from '@oybc/shared';
 import styles from './CountingStepFields.module.css';
 
 /** Maximum character lengths matching shared validation schemas */
@@ -26,16 +27,19 @@ interface CountingStepFieldsProps {
 }
 
 /**
- * CountingStepFields - Reusable counting step sub-fields (Action → Goal → Unit)
+ * CountingStepFields - Reusable counting step sub-fields (Verb → Goal → Counting)
  *
- * Renders the three required fields for a counting task step in the canonical order.
- * Used inside progress task step rows in both ProgressTaskCreationPlayground and
- * UnifiedTaskCreatorPlayground to ensure consistent field order and labels.
+ * Renders the three required fields for a counting task step in the canonical
+ * order, using the shared (verb, noun) vocabulary — R1 counters refresh
+ * ("Refining counters" design handoff §Creation Surfaces). `action` still
+ * carries the verb and `unit` still carries the counted noun; only the
+ * labels/placeholders changed. Used inside the compound builder's
+ * `SubtaskCard` inline counting fields.
  *
  * @param idPrefix - Unique prefix for input IDs (e.g., "step-abc123")
- * @param action - Current action value
- * @param maxCount - Current max count value (as string from input)
- * @param unit - Current unit value
+ * @param action - Current verb value (stored as `action`)
+ * @param maxCount - Current goal value (as string from input)
+ * @param unit - Current counted-noun value (stored as `unit`)
  * @param errors - Optional field-level error messages
  * @param onChange - Callback fired when any field changes
  */
@@ -47,12 +51,21 @@ export function CountingStepFields({
   errors,
   onChange,
 }: CountingStepFieldsProps): React.ReactElement {
+  const trimmedAction = action.trim();
+  const trimmedUnit = unit.trim();
+  const parsedMaxCount = parseInt(maxCount, 10);
+  const goalValid = Number.isInteger(parsedMaxCount) && parsedMaxCount > 0;
+  const titlePreview =
+    trimmedAction && trimmedUnit && goalValid
+      ? generateCounterTaskTitle(trimmedAction, parsedMaxCount, trimmedUnit)
+      : '';
+
   return (
     <div className={styles.countingFields}>
-      {/* Action */}
+      {/* Verb */}
       <div className={styles.fieldGroup}>
         <label className={styles.label} htmlFor={`${idPrefix}-action`}>
-          Action<span className={styles.required}>*</span>
+          Verb<span className={styles.required}>*</span>
         </label>
         <input
           id={`${idPrefix}-action`}
@@ -60,7 +73,7 @@ export function CountingStepFields({
           className={`${styles.input} ${errors?.action ? styles.inputError : ''}`}
           value={action}
           onChange={(e) => onChange('action', e.target.value)}
-          placeholder='e.g., "Read"'
+          placeholder="Do"
           maxLength={ACTION_MAX_LENGTH}
         />
         {errors?.action && (
@@ -80,7 +93,7 @@ export function CountingStepFields({
           className={`${styles.input} ${errors?.maxCount ? styles.inputError : ''}`}
           value={maxCount}
           onChange={(e) => onChange('maxCount', e.target.value)}
-          placeholder="e.g., 100"
+          placeholder="100"
           min="1"
         />
         {errors?.maxCount && (
@@ -88,10 +101,10 @@ export function CountingStepFields({
         )}
       </div>
 
-      {/* Unit */}
+      {/* Counting */}
       <div className={styles.fieldGroup}>
         <label className={styles.label} htmlFor={`${idPrefix}-unit`}>
-          Unit<span className={styles.required}>*</span>
+          Counting<span className={styles.required}>*</span>
         </label>
         <input
           id={`${idPrefix}-unit`}
@@ -99,13 +112,19 @@ export function CountingStepFields({
           className={`${styles.input} ${errors?.unit ? styles.inputError : ''}`}
           value={unit}
           onChange={(e) => onChange('unit', e.target.value)}
-          placeholder='e.g., "pages"'
+          placeholder="push-ups"
           maxLength={UNIT_MAX_LENGTH}
         />
         {errors?.unit && (
           <span className={styles.fieldError}>{errors.unit}</span>
         )}
       </div>
+
+      {titlePreview && (
+        <div className={styles.titlePreview}>
+          Title: <strong>{titlePreview}</strong>
+        </div>
+      )}
     </div>
   );
 }

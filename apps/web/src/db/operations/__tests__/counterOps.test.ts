@@ -419,3 +419,62 @@ describe('createCompound — goal-less counter child guard (P5 review)', () => {
     expect(children[0].childTaskId).toBe('goaled2');
   });
 });
+
+describe('createCompound — inline counting child auto-link (R1 counters refresh)', () => {
+  it('threads sharedCounterId + baseline onto an inline-created counting child', async () => {
+    const compound = await createCompound('u1', {
+      title: 'Morning routine',
+      operator: OperatorType.AND,
+      isOrdered: false,
+      children: [
+        {
+          autoCreate: {
+            type: TaskType.COUNTING,
+            title: 'Do 100 push-ups',
+            action: 'Do',
+            unit: 'push-ups',
+            maxCount: 100,
+            sharedCounterId: 'src1',
+            baseline: 42,
+          },
+        },
+      ],
+    });
+
+    const links = await db.compoundChildren
+      .where('compoundTaskId')
+      .equals(compound.id)
+      .toArray();
+    expect(links).toHaveLength(1);
+    const child = await db.tasks.get(links[0].childTaskId);
+    expect(child?.sharedCounterId).toBe('src1');
+    expect(child?.baseline).toBe(42);
+  });
+
+  it('leaves sharedCounterId/baseline unset on an inline counting child when the pair has no match (or the user opted out)', async () => {
+    const compound = await createCompound('u1', {
+      title: 'Morning routine',
+      operator: OperatorType.AND,
+      isOrdered: false,
+      children: [
+        {
+          autoCreate: {
+            type: TaskType.COUNTING,
+            title: 'Do 100 push-ups',
+            action: 'Do',
+            unit: 'push-ups',
+            maxCount: 100,
+          },
+        },
+      ],
+    });
+
+    const links = await db.compoundChildren
+      .where('compoundTaskId')
+      .equals(compound.id)
+      .toArray();
+    const child = await db.tasks.get(links[0].childTaskId);
+    expect(child?.sharedCounterId).toBeUndefined();
+    expect(child?.baseline).toBeUndefined();
+  });
+});
