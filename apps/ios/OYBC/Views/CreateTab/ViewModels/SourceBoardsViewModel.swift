@@ -39,9 +39,9 @@ final class SourceBoardsViewModel {
     /// TRUE mini-preview cells per eligible board (bugfix/board-preview-real-cells
     /// perf follow-up), batch-built ONCE per `reload(userId:)` call via
     /// `BoardPreviewCells.fetchWorkspaceData`/`buildMany` — NOT one fetch per
-    /// row. `FromBoardPickerView` reads this directly rather than mounting
-    /// `RisoBoardPreviewGrid` per row (which would re-run workspace-wide
-    /// reads on every scroll-triggered re-render of a `LazyVStack`).
+    /// row. `FromBoardPickerView` reads this directly rather than
+    /// self-loading per row (which would re-run workspace-wide reads on
+    /// every scroll-triggered re-render of a `LazyVStack`).
     var previewCellsByBoardId: [String: BoardPreviewCellsResult] = [:]
 
     /// Placements on the currently-loaded source board, row-major.

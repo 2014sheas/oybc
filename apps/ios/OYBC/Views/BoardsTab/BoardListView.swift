@@ -488,11 +488,10 @@ struct BoardListView: View {
 
     /// Resolves a board's batch-built preview cells, or an all-empty
     /// placeholder sized to `board.boardSize` while the batch fetch is still
-    /// in flight. ALWAYS non-nil so `RisoBoardCard` never falls back to its
-    /// own self-loading `RisoBoardPreviewGrid` — that per-card fallback is
-    /// exactly the N-cards-N-reads regression this hoist fixes; passing `nil`
-    /// here (even transiently, on first load) would let every visible card
-    /// mount its own workspace-wide fetch simultaneously.
+    /// in flight. `RisoBoardCard.previewCells` is required (no self-loading
+    /// fallback), so this always returns something concrete — passing an
+    /// undefined/placeholder value here (even transiently, on first load)
+    /// keeps every visible card DB-free; only this one batch fetch reads.
     private func previewCells(for board: Board) -> BoardPreviewCellsResult {
         previewCellsByBoardId[board.id] ?? BoardPreviewCellsResult(
             size: board.boardSize,
@@ -573,11 +572,10 @@ struct BoardListView: View {
     /// Batch-builds `previewCellsByBoardId` for every board on screen — ONE
     /// workspace-scoped fetch (`BoardPreviewCells.fetchWorkspaceData`) + ONE
     /// `fetchAllBoardTasks()`, reused across every board's `build(...)` call,
-    /// instead of each `RisoBoardCard` mounting its own fetch (the perf
-    /// regression this hoist fixes — see `RisoBoardPreviewGrid`'s doc comment).
-    /// Runs off the main thread; called after every `loadBoards()` reload
-    /// (initial load, post-delete, post-backstop-autoseal) so previews stay
-    /// in sync with the list.
+    /// instead of each `RisoBoardCard` mounting its own fetch. Runs off the
+    /// main thread; called after every `loadBoards()` reload (initial load,
+    /// post-delete, post-backstop-autoseal) so previews stay in sync with
+    /// the list.
     private func loadPreviewCells(boards: [Board], userId: String) {
         _Concurrency.Task.detached(priority: .userInitiated) {
             let database = AppDatabase.shared

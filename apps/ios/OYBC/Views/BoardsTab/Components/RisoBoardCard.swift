@@ -16,17 +16,18 @@ struct RisoBoardCard: View {
     let timeframeLabel: String
     /// Whether this board is expiring soon (drives the badge color).
     let isExpiring: Bool
-    /// Pre-computed TRUE preview cells (bugfix/board-preview-real-cells).
-    /// `BoardListView` (a LIST of cards) batch-builds these once via
-    /// `BoardPreviewCells.fetchWorkspaceData`/`buildMany` and always passes a
-    /// non-nil value (an all-empty placeholder while its batch fetch is in
-    /// flight) — it never relies on the `nil` fallback below, since that
-    /// fallback mounting per-card is exactly the N-cards-N-reads perf bug the
-    /// batch hoist fixes. `nil` (the default) is for genuinely single-card
-    /// contexts only — `CoreBoardWindowCellView` (one board per pager
-    /// screen) — where it self-loads via `RisoBoardPreviewGrid`. Snapshot
-    /// tests inject a value directly so the DB is never touched.
-    var previewCells: BoardPreviewCellsResult? = nil
+    /// TRUE preview cells (bugfix/board-preview-real-cells) — REQUIRED, no
+    /// self-loading fallback. Every production caller (`BoardListView`,
+    /// `CoreBoardWindowCellView` via `CoreBoardBrowserViewModel`) batch-builds
+    /// these once for its whole list via `BoardPreviewCells.fetchWorkspaceData`/
+    /// `buildMany` and passes an all-empty placeholder while the batch fetch
+    /// is in flight — never `nil`. A prior revision let this be optional with
+    /// a per-card self-loading fallback (`RisoBoardPreviewGrid`); every
+    /// caller that used the fallback turned out to be a LIST (N cards), which
+    /// re-ran full-table reads N times per screen. The fallback + wrapper
+    /// were deleted rather than left as a footgun for the next call site.
+    /// Snapshot tests inject a fixture value so the DB is never touched.
+    let previewCells: BoardPreviewCellsResult
 
     private var progressValue: Double {
         guard board.totalTasks > 0 else { return 0 }
@@ -77,11 +78,7 @@ struct RisoBoardCard: View {
                             RisoRecurringBadge()
                         }
                     }
-                    if let previewCells {
-                        RisoMiniGrid(gridSize: previewCells.size, cells: previewCells.cells)
-                    } else {
-                        RisoBoardPreviewGrid(board: board)
-                    }
+                    RisoMiniGrid(gridSize: previewCells.size, cells: previewCells.cells)
                 }
                 .fixedSize()
             }
@@ -158,6 +155,14 @@ private func previewBoard(
     return try! JSONDecoder().decode(Board.self, from: data)
 }
 
+/// Row-major fixture cells for the canvas preview — first `completed` of
+/// `size*size` cells marked done. Not a derivation exercise (see
+/// `BoardPreviewCellsTests` for that), just pixels for the Xcode canvas.
+private func previewCells(completed: Int, size: Int = 5) -> BoardPreviewCellsResult {
+    let cells: [BoardPreviewCell] = (0..<(size * size)).map { $0 < completed ? .task(completed: true) : .task(completed: false) }
+    return BoardPreviewCellsResult(size: size, cells: cells)
+}
+
 #Preview("Board Cards") {
     ZStack {
         RisoPaperBackground()
@@ -166,22 +171,26 @@ private func previewBoard(
                 RisoBoardCard(
                     board: previewBoard(id: "b-a", name: "Weekly Wellness", timeframe: .weekly, status: .active),
                     timeframeLabel: "This week · 4 days left",
-                    isExpiring: false
+                    isExpiring: false,
+                    previewCells: previewCells(completed: 12)
                 )
                 RisoBoardCard(
                     board: previewBoard(id: "b-c", name: "January Reading Sprint", timeframe: .monthly, status: .completed, completed: 25, total: 25, lines: 3),
                     timeframeLabel: "January 2026",
-                    isExpiring: false
+                    isExpiring: false,
+                    previewCells: previewCells(completed: 25)
                 )
                 RisoBoardCard(
                     board: previewBoard(id: "b-d", name: "My New Board", timeframe: .weekly, status: .draft, completed: 0, lines: 0),
                     timeframeLabel: "This week",
-                    isExpiring: false
+                    isExpiring: false,
+                    previewCells: previewCells(completed: 0)
                 )
                 RisoBoardCard(
                     board: previewBoard(id: "b-e", name: "Fitness February", timeframe: .monthly, status: .active, completed: 20),
                     timeframeLabel: "This month · expires soon",
-                    isExpiring: true
+                    isExpiring: true,
+                    previewCells: previewCells(completed: 20)
                 )
             }
             .padding(Riso.gutter)

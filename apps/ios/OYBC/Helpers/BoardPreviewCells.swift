@@ -123,13 +123,14 @@ enum BoardPreviewCells {
     //
     // `build(...)` itself is pure/DB-free. These helpers own the DB side —
     // extracted so a screen rendering MANY boards (`BoardListView`,
-    // `SourceBoardsViewModel`/`FromBoardPickerView`) fetches the four
-    // workspace-scoped datasets ONCE and reuses them for every board's
-    // `build(...)` call, instead of each board's card independently
-    // fetching all tasks / all compound children / all boards / all events
-    // (an N-cards-N-times-the-reads bug — see `RisoBoardPreviewGrid`, whose
-    // doc comment documents its OWN per-card fetch as intentionally
-    // single-card-scoped, not a pattern to replicate in a list).
+    // `CoreBoardBrowserViewModel`, `SourceBoardsViewModel`/
+    // `FromBoardPickerView`) fetches the four workspace-scoped datasets ONCE
+    // and reuses them for every board's `build(...)` call, instead of each
+    // board's card independently fetching all tasks / all compound children
+    // / all boards / all events (an N-cards-N-times-the-reads bug — a
+    // per-card self-loading wrapper, `RisoBoardPreviewGrid`, briefly existed
+    // and was deleted once every remaining caller turned out to be a list;
+    // `RisoBoardCard.previewCells` is now required, no self-load fallback).
 
     /// The four workspace-scoped datasets `build(...)` needs, pre-fetched and
     /// pre-grouped. Independent of any one board — reused across every
@@ -139,13 +140,17 @@ enum BoardPreviewCells {
         let childrenByCompound: [String: [CompoundChild]]
         let allBoardsInWorkspace: [Board]
         let eventsByTaskId: [String: [TaskEvent]]
+
+        /// Empty placeholder — for a view/view-model's initial state before
+        /// its first `fetchWorkspaceData` call resolves.
+        static let empty = WorkspaceData(taskMap: [:], childrenByCompound: [:], allBoardsInWorkspace: [], eventsByTaskId: [:])
     }
 
     /// Fetches `WorkspaceData` via `AppDatabase` reads — call ONCE per screen
     /// load (not per board/card). Safe to call off the main thread; each
     /// underlying `fetch*` call already wraps its own GRDB `read`. Sequential
     /// (not one transaction) — the same tradeoff `BoardPlayViewModel.fetchTaskData`
-    /// and `RisoBoardPreviewGrid.load()` already accept for this class of read.
+    /// already accepts for this class of read.
     static func fetchWorkspaceData(userId: String, database: AppDatabase = .shared) -> WorkspaceData {
         let allTasks = (try? database.fetchTasks(userId: userId)) ?? []
         let allCompoundChildren = (try? database.fetchAllCompoundChildren()) ?? []

@@ -3,11 +3,15 @@ import SwiftUI
 /// Pure presentational thumbnail grid shown in each `RisoBoardCard` (and the
 /// wizard's "From a board" picker rows). Renders the TRUE board: `gridSize`
 /// columns/rows and one `BoardPreviewCell` per position, row-major — no DB
-/// access, no randomness, snapshot-safe. Callers that need to load a board's
-/// real cells go through `RisoBoardPreviewGrid`, which wraps this view with a
-/// `.task`-based DB fetch; this view itself just renders whatever cells it's
-/// given (bugfix/board-preview-real-cells — this used to be a fixed 5×5 with a
-/// count-scaled pseudo-random scatter; see git history for the old approach).
+/// access, no randomness, snapshot-safe. Callers own their own data: batch-
+/// build cells via `BoardPreviewCells.fetchWorkspaceData`/`buildMany` at the
+/// list-owning view/view-model (`BoardListView`, `CoreBoardBrowserViewModel`,
+/// `SourceBoardsViewModel`) and pass the result straight in — there is no
+/// self-loading wrapper (a per-card `RisoBoardPreviewGrid` existed briefly and
+/// was deleted once every remaining caller turned out to be a list, re-running
+/// full-table reads N times per screen; see git history). Bugfix/board-
+/// preview-real-cells — this used to be a fixed 5×5 with a count-scaled
+/// pseudo-random scatter; see git history for the old approach.
 ///
 /// `size` controls the rendered width/height of the whole grid; each cell
 /// scales to fill the grid with 1px gaps.

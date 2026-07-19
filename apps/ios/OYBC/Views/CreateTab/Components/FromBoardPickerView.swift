@@ -73,10 +73,10 @@ struct FromBoardPickerView: View {
             ?? (0, board.boardSize * board.boardSize)
 
         // TRUE board thumbnail (bugfix/board-preview-real-cells), batch-built
-        // ONCE for the whole list by `vm.reload` — NOT `RisoBoardPreviewGrid`,
-        // whose per-row self-loading in this `LazyVStack` would re-run
-        // workspace-wide reads on every scroll-triggered re-render (the perf
-        // regression the batch hoist fixes). Falls back to an all-empty
+        // ONCE for the whole list by `vm.reload` — never a per-row self-load,
+        // which in this `LazyVStack` would re-run workspace-wide reads on
+        // every scroll-triggered re-render (the perf regression the batch
+        // hoist fixes). Falls back to an all-empty
         // placeholder for the brief gap before the batch fetch resolves.
         let cells = vm.previewCellsByBoardId[board.id] ?? BoardPreviewCellsResult(
             size: board.boardSize,
