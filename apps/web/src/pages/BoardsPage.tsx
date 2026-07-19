@@ -8,6 +8,7 @@ import {
   useRecurringBoardSpawn,
   useBackstopAutoSeal,
   useClosingOutBoards,
+  useBoardsPreviewCells,
 } from '../hooks';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
@@ -38,6 +39,10 @@ export function BoardsPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
   const allBoards = useBoards(user?.id) ?? [];
+  // Perf follow-up (bugfix/board-preview-real-cells): ONE hoisted hook for
+  // the whole list's mini-grid data, not one `useBoardPreviewCells` mount
+  // per `BoardCard`.
+  const previewCellsByBoardId = useBoardsPreviewCells(allBoards, user?.id);
   const coreBoardSlots = useCoreBoardSlots(user?.id);
   // Phase 6.1: detect new recurring windows that need a board created.
   const pendingRecurring = usePendingRecurringBoards(user?.id);
@@ -158,6 +163,7 @@ export function BoardsPage(): React.ReactElement {
             <BoardCard
                 key={board.id}
                 board={board}
+                previewCells={previewCellsByBoardId[board.id]}
                 onOpen={(id) => {
                   // Drafts never open as a playable board — tap routes to
                   // the wizard resume flow (cross-tab via ?resumeDraft).

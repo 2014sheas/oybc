@@ -93,7 +93,8 @@ struct CoreBoardBrowserView: View {
                             // Adapt at the call site so both signatures
                             // read naturally in their own contexts.
                             onCreate: { date, tf in onCreate(tf, date) },
-                            onResumeDraft: onResumeDraft
+                            onResumeDraft: onResumeDraft,
+                            previewCellsByBoardId: vm.previewCellsByBoardId
                         )
                         .id(cell.windowStart)
                         .padding(.horizontal, Riso.gutter)

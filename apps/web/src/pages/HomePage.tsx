@@ -3,6 +3,7 @@ import { AchievementTrigger, BoardStatus, Timeframe, computeStreak } from '@oybc
 import { useAuth } from '../firebase/useAuth';
 import { useBoards } from '../hooks/useBoards';
 import { usePreferences } from '../hooks/usePreferences';
+import { useBoardsPreviewCells } from '../hooks/useBoardsPreviewCells';
 import { RisoButton, RisoCard, RisoIcon, RisoSectionLabel } from '../components/riso';
 import { StreakPill } from '../components/home/StreakPill';
 import { ResumePanel } from '../components/home/ResumePanel';
@@ -40,6 +41,11 @@ export function HomePage(): React.ReactElement {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const featured = activeBoards[0];
   const rail = activeBoards.slice(1, 5);
+  // Perf follow-up (bugfix/board-preview-real-cells): ONE hoisted hook for
+  // the rail's mini-grid data, not one per `BoardRail` card. `ResumePanel`'s
+  // featured-board poster uses `RisoBoard` (Phase 3a renderer) directly, not
+  // `BoardMiniGrid`, so it isn't part of this hoist.
+  const railPreviewCellsByBoardId = useBoardsPreviewCells(rail, user?.id);
 
   const streak = computeStreak(
     Timeframe.DAILY,
@@ -86,7 +92,7 @@ export function HomePage(): React.ReactElement {
                   <RisoIcon name="chevron" size={13} />
                 </button>
               </div>
-              <BoardRail boards={rail} onOpen={openBoard} />
+              <BoardRail boards={rail} previewCellsByBoardId={railPreviewCellsByBoardId} onOpen={openBoard} />
             </>
           )}
         </>

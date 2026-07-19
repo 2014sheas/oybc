@@ -48,7 +48,10 @@ final class RisoRecurringBadgeSnapshotTests: XCTestCase {
             status: .active,
             spawnedFromTemplateId: "tpl-1"
         )
-        return RisoBoardCard(board: board, timeframeLabel: "This week · 4 days left", isExpiring: false)
+        return RisoBoardCard(
+            board: board, timeframeLabel: "This week · 4 days left", isExpiring: false,
+            previewCells: SnapshotFixtures.makePreviewCells(completed: board.completedTasks, size: board.boardSize)
+        )
             .padding(Riso.gutter)
             .background(Color.risoPaper)
     }

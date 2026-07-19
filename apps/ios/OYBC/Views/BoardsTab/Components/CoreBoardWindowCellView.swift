@@ -28,6 +28,13 @@ struct CoreBoardWindowCellView: View {
     /// directly (matching the Boards-home draft cards) rather than routing
     /// through BoardPlayView's catch-all guard.
     var onResumeDraft: (String) -> Void = { _ in }
+    /// TRUE preview cells for the browser's currently-loaded boards
+    /// (bugfix/board-preview-real-cells perf follow-up), batch-built by
+    /// `CoreBoardBrowserViewModel` and passed straight through from
+    /// `CoreBoardBrowserView`. Defaults to `[:]` so existing snapshot-test
+    /// call sites keep compiling; a miss falls back to an all-empty
+    /// placeholder rather than letting `RisoBoardCard` self-load.
+    var previewCellsByBoardId: [String: BoardPreviewCellsResult] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -117,10 +124,24 @@ struct CoreBoardWindowCellView: View {
             RisoBoardCard(
                 board: board,
                 timeframeLabel: windowTimeframeLabel(board),
-                isExpiring: false
+                isExpiring: false,
+                previewCells: previewCells(for: board)
             )
         }
         .buttonStyle(.plain)
+    }
+
+    /// Resolves a board's batch-built preview cells, or an all-empty
+    /// placeholder sized to `board.boardSize` if not found. `RisoBoardCard
+    /// .previewCells` is required (no self-loading fallback exists), so this
+    /// always supplies something concrete — keeping every row DB-free even
+    /// during `LazyVStack` scroll-triggered remounts. Mirrors
+    /// `BoardListView.previewCells(for:)`.
+    private func previewCells(for board: Board) -> BoardPreviewCellsResult {
+        previewCellsByBoardId[board.id] ?? BoardPreviewCellsResult(
+            size: board.boardSize,
+            cells: Array(repeating: .empty, count: board.boardSize * board.boardSize)
+        )
     }
 
     // MARK: - Empty

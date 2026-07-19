@@ -25,7 +25,8 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
     // MARK: - RisoMiniGrid
 
     func testMiniGridEmpty() {
-        let view = RisoMiniGrid(boardId: "board-empty", completedCount: 0, totalCount: 25)
+        let cells = SnapshotFixtures.makePreviewCells(completed: 0)
+        let view = RisoMiniGrid(gridSize: cells.size, cells: cells.cells)
             .padding(8)
             .background(Color.risoPaper2)
         assertSnapshot(
@@ -36,7 +37,8 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
     }
 
     func testMiniGridPartial() {
-        let view = RisoMiniGrid(boardId: "board-abc", completedCount: 12, totalCount: 25)
+        let cells = SnapshotFixtures.makePreviewCells(completed: 12)
+        let view = RisoMiniGrid(gridSize: cells.size, cells: cells.cells)
             .padding(8)
             .background(Color.risoPaper2)
         assertSnapshot(
@@ -47,7 +49,8 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
     }
 
     func testMiniGridFull() {
-        let view = RisoMiniGrid(boardId: "board-full", completedCount: 25, totalCount: 25)
+        let cells = SnapshotFixtures.makePreviewCells(completed: 25)
+        let view = RisoMiniGrid(gridSize: cells.size, cells: cells.cells)
             .padding(8)
             .background(Color.risoPaper2)
         assertSnapshot(
@@ -378,7 +381,8 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
             RisoBoardCard(
                 board: board,
                 timeframeLabel: timeframeLabel,
-                isExpiring: isExpiring
+                isExpiring: isExpiring,
+                previewCells: SnapshotFixtures.makePreviewCells(completed: completed, size: board.boardSize)
             )
             .padding(20)
         }
@@ -468,13 +472,22 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
 
                     // Board cards
                     VStack(spacing: 0) {
-                        RisoBoardCard(board: activeBoard, timeframeLabel: "This week · 4 days left", isExpiring: false)
+                        RisoBoardCard(
+                            board: activeBoard, timeframeLabel: "This week · 4 days left", isExpiring: false,
+                            previewCells: SnapshotFixtures.makePreviewCells(completed: activeBoard.completedTasks, size: activeBoard.boardSize)
+                        )
                             .padding(.horizontal, Riso.gutter)
                             .padding(.bottom, 14)
-                        RisoBoardCard(board: completedBoard, timeframeLabel: "January 2026", isExpiring: false)
+                        RisoBoardCard(
+                            board: completedBoard, timeframeLabel: "January 2026", isExpiring: false,
+                            previewCells: SnapshotFixtures.makePreviewCells(completed: completedBoard.completedTasks, size: completedBoard.boardSize)
+                        )
                             .padding(.horizontal, Riso.gutter)
                             .padding(.bottom, 14)
-                        RisoBoardCard(board: draftBoard, timeframeLabel: "This week", isExpiring: false)
+                        RisoBoardCard(
+                            board: draftBoard, timeframeLabel: "This week", isExpiring: false,
+                            previewCells: SnapshotFixtures.makePreviewCells(completed: draftBoard.completedTasks, size: draftBoard.boardSize)
+                        )
                             .padding(.horizontal, Riso.gutter)
                             .padding(.bottom, 20)
                     }
