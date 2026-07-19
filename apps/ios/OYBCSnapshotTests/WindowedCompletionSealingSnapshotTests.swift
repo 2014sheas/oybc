@@ -174,9 +174,17 @@ final class WindowedCompletionSealingSnapshotTests: XCTestCase {
         let sealedData = try! JSONSerialization.data(withJSONObject: dict)
         let sealed = try! JSONDecoder().decode(Board.self, from: sealedData)
 
+        // Mirrors the board's `sealedCompletedCells` snapshot ([0,1,2]) so
+        // this DB-free fixture demonstrates the sealed short-circuit
+        // (bugfix/board-preview-real-cells) — indices 0/1/2 render filled,
+        // everything else empty (no real placements known to this fixture).
+        let previewCells = BoardPreviewCellsResult(
+            size: sealed.boardSize,
+            cells: (0..<(sealed.boardSize * sealed.boardSize)).map { [0, 1, 2].contains($0) ? .task(completed: true) : .empty }
+        )
         let view = ZStack {
             RisoPaperBackground()
-            RisoBoardCard(board: sealed, timeframeLabel: "January 2026", isExpiring: false)
+            RisoBoardCard(board: sealed, timeframeLabel: "January 2026", isExpiring: false, previewCells: previewCells)
                 .padding(Riso.gutter)
         }
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 200)), record: recordMode)

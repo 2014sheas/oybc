@@ -76,13 +76,8 @@ struct FromBoardPickerView: View {
             onPickBoard(board.id)
         } label: {
             HStack(spacing: 12) {
-                // Mini-grid thumbnail (Riso component, count-based scatter)
-                RisoMiniGrid(
-                    boardId: board.id,
-                    completedCount: completion.completed,
-                    totalCount: completion.total,
-                    size: 46
-                )
+                // Mini-grid thumbnail — the TRUE board (bugfix/board-preview-real-cells).
+                RisoBoardPreviewGrid(board: board, size: 46)
 
                 // Board meta
                 VStack(alignment: .leading, spacing: 3) {

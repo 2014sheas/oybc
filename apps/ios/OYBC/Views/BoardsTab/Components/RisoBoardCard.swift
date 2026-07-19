@@ -16,6 +16,11 @@ struct RisoBoardCard: View {
     let timeframeLabel: String
     /// Whether this board is expiring soon (drives the badge color).
     let isExpiring: Bool
+    /// Pre-computed TRUE preview cells (bugfix/board-preview-real-cells).
+    /// When `nil` (the default — both production call sites), the card
+    /// self-loads via `RisoBoardPreviewGrid`. Snapshot tests inject this
+    /// directly so the DB is never touched.
+    var previewCells: BoardPreviewCellsResult? = nil
 
     private var progressValue: Double {
         guard board.totalTasks > 0 else { return 0 }
@@ -66,11 +71,11 @@ struct RisoBoardCard: View {
                             RisoRecurringBadge()
                         }
                     }
-                    RisoMiniGrid(
-                        boardId: board.id,
-                        completedCount: board.completedTasks,
-                        totalCount: board.totalTasks
-                    )
+                    if let previewCells {
+                        RisoMiniGrid(gridSize: previewCells.size, cells: previewCells.cells)
+                    } else {
+                        RisoBoardPreviewGrid(board: board)
+                    }
                 }
                 .fixedSize()
             }

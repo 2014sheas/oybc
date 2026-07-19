@@ -14,6 +14,14 @@ import SnapshotTesting
 /// not self-load from `AppDatabase.shared`. All fixtures are seeded via
 /// `SnapshotFixtures` builders.
 ///
+/// Exception (bugfix/board-preview-real-cells): `FromBoardPickerView`'s row
+/// thumbnail now renders through `RisoBoardPreviewGrid`, which self-loads the
+/// TRUE preview grid per board id. The picker fixtures below never persist
+/// their boards to `AppDatabase.shared` (only `vm.eligibleBoards`/
+/// `vm.completionByBoardId` are stubbed in-memory), so the thumbnail
+/// deterministically renders empty — a real fixture would need a seeded
+/// `AppDatabase.makeTestInstance()`, out of scope for this leaf-view suite.
+///
 /// Light + dark for every variant. `recordMode: .missing` auto-records
 /// baselines on first run and passes green on subsequent runs.
 final class RisoWizardLibrarySnapshotTests: XCTestCase {
