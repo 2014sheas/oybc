@@ -32,6 +32,12 @@ struct RisoBoardPlayCell: View {
     // Compound cells
     var compoundDoneCount: Int = 0
     var compoundChildCount: Int = 0
+    /// Operator-aware completion target for the compound progress bar
+    /// (AND → child count, OR → 1, M_OF_N → threshold), mirroring web's
+    /// DetailModal fractions in `interactiveTaskSquareUtils.progressFraction`.
+    /// `nil` falls back to `compoundChildCount` (AND semantics) so preview/
+    /// fixture call sites that predate the operator-aware bar are unaffected.
+    var compoundRequiredCount: Int? = nil
 
     var onTap: (() -> Void)? = nil
 
@@ -129,7 +135,10 @@ struct RisoBoardPlayCell: View {
             let sharedSuffix = isSharedCounter ? ", shared counter" : ""
             return "\(title), counting, \(currentCount) of \(maxCount)\(sharedSuffix)"
         case .compound:
-            return "\(title), compound, \(compoundDoneCount) of \(compoundChildCount) subtasks done"
+            // Same operator-aware target as the visual bar, so VoiceOver
+            // never contradicts it (e.g. "1 of 4" on a complete Any-of cell).
+            let required = compoundRequiredCount ?? compoundChildCount
+            return "\(title), compound, \(min(compoundDoneCount, required)) of \(required) needed subtasks done"
         case .achievement:
             return "\(title), achievement, \(isCompleted ? "earned" : "not yet earned")"
         case .normal:
@@ -262,7 +271,10 @@ struct RisoBoardPlayCell: View {
             case .counting:
                 return (currentCount, maxCount, Color.risoBlue)
             case .compound:
-                return (compoundDoneCount, compoundChildCount, Color.risoGreen)
+                // Denominator = the operator's completion target, so an
+                // "Any of" square reads 1/1 (not 1/4) once any child is done.
+                let required = compoundRequiredCount ?? compoundChildCount
+                return (min(compoundDoneCount, required), required, Color.risoGreen)
             default:
                 return (0, 1, Color.risoBlue)
             }

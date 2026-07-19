@@ -175,6 +175,14 @@ struct BoardPlayView: View {
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
+    /// Child task detail opened from INSIDE the on-board detail sheet (the
+    /// compound child ⓘ button). Deliberately a separate item from
+    /// `taskDetailSheetTaskId`: that sheet presents from the view root, and
+    /// SwiftUI silently queues a sibling sheet until the detail sheet is
+    /// manually dismissed. This item's sheet presents from the detail
+    /// sheet's own content instead, stacking immediately — matching web's
+    /// overlay behavior (DetailModal + TaskDetailSheet are independent).
+    @State private var compoundChildDetailTaskId: TaskIdItem?
     /// Windowed Completion (docs Decision 9 + §Write paths — "the toggle is
     /// disabled with an explanatory affordance"). Task ids whose un-complete
     /// affordance in `detailSheet` would be inert because every live
@@ -1005,7 +1013,16 @@ struct BoardPlayView: View {
         .sheet(isPresented: Binding(
             get: { detailBoardTaskId != nil },
             set: { if !$0 { detailBoardTaskId = nil } }
-        )) {
+        ), onDismiss: {
+            // Drains cross-board nav requested from the NESTED child detail
+            // sheet (see `compoundChildDetailTaskId`): child dismiss closes
+            // this sheet, then navigation lands here post-unmount — same
+            // clean-transaction pattern as the library sheet below.
+            if let target = pendingOpenBoardId {
+                pendingOpenBoardId = nil
+                onOpenBoard(target)
+            }
+        }) {
             detailSheet
         }
         // Windowed Completion — resolve seal-immunity for the un-complete
@@ -1590,6 +1607,21 @@ struct BoardPlayView: View {
             return windowedIsCompleted(childTask)
         }.count
 
+        // Operator-aware completion target for the cell's progress bar —
+        // mirrors web's DetailModal fractions (OR → any one child completes;
+        // M_OF_N → threshold; AND → all children) and matches the
+        // `CompoundEvaluation` semantics that color the cell green.
+        let compoundRequiredCount: Int = {
+            guard let t = task, t.type == .compound, !compoundLinks.isEmpty else {
+                return compoundLinks.count
+            }
+            switch t.operatorType {
+            case .or:        return 1
+            case .mOfN:      return Swift.max(1, t.threshold ?? 1)
+            case .and, nil:  return compoundLinks.count
+            }
+        }()
+
         let cellKind: CellTaskType = {
             switch taskType {
             case .normal:      return .normal
@@ -1611,6 +1643,7 @@ struct BoardPlayView: View {
             isSharedCounter: isSharedCounterCell,
             compoundDoneCount: compoundDoneCount,
             compoundChildCount: compoundLinks.count,
+            compoundRequiredCount: compoundRequiredCount,
             onTap: {
                 guard !isBoardLocked, !isProcessing else { return }
                 // Haptic feedback — fire immediately on tap (before async write
@@ -1837,6 +1870,27 @@ struct BoardPlayView: View {
                 }
             }
             .presentationDetents([.medium, .large])
+            // Nested child detail — presented from the detail sheet's own
+            // content so it stacks immediately instead of waiting for the
+            // parent to dismiss (SwiftUI queues sibling sheets on one host).
+            .sheet(
+                item: $compoundChildDetailTaskId,
+                onDismiss: {
+                    // Cross-board nav from the nested sheet: also close the
+                    // parent detail sheet; its onDismiss drains
+                    // `pendingOpenBoardId` in a clean transaction.
+                    if pendingOpenBoardId != nil { detailBoardTaskId = nil }
+                }
+            ) { item in
+                TaskDetailSheetView(
+                    taskId: item.id,
+                    onClose: { compoundChildDetailTaskId = nil },
+                    onOpenBoard: { newBoardId in
+                        pendingOpenBoardId = newBoardId
+                        compoundChildDetailTaskId = nil
+                    }
+                )
+            }
         }
     }
 
@@ -2079,9 +2133,10 @@ struct BoardPlayView: View {
                                 .buttonStyle(.plain)
                                 .disabled(isProcessing || isBoardLocked || childTask == nil || sealBlocked)
 
-                                // Info button — opens the child task's detail in the library sheet.
+                                // Info button — opens the child task's detail, stacked
+                                // on top of this sheet (see `compoundChildDetailTaskId`).
                                 Button {
-                                    taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
+                                    compoundChildDetailTaskId = TaskIdItem(id: link.childTaskId)
                                 } label: {
                                     Image(systemName: "info.circle")
                                         .font(.system(size: 16))
