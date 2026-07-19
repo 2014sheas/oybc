@@ -223,6 +223,19 @@ struct RisoCompoundFieldsView: View {
         return g
     }
 
+    /// Gates the sub "Add" button and `addNewSub()`. A Normal sub needs only
+    /// its title; a Counting sub additionally needs a valid positive Goal and
+    /// a non-blank Counting noun — mirroring `RisoSpecialTaskPanel`'s
+    /// `canSubmitCounting` and web's `evaluateSubtaskReadiness`, so an
+    /// untouched Goal (blank since R1 removed the "5" pre-fill) can never
+    /// silently produce a `maxCount = 1` / "reps" child.
+    private var canAddSub: Bool {
+        guard !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard newSubType == .counting else { return true }
+        return subCountingGoal != nil
+            && !subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// Gates the "Add to board ✦" button — title must be non-empty and at
     /// least 2 sub-tasks must be present.
     private var canSubmitCompound: Bool {
@@ -333,16 +346,14 @@ struct RisoCompoundFieldsView: View {
                 .padding(.horizontal, 14)
                 .background(
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .fill(subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color.risoMuted
-                            : Color.risoGreen)
+                        .fill(canAddSub ? Color.risoGreen : Color.risoMuted)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
                         .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
                 )
                 .buttonStyle(.plain)
-                .disabled(subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(!canAddSub)
             }
 
             // Smart autocomplete dropdown
@@ -615,21 +626,21 @@ struct RisoCompoundFieldsView: View {
     /// Adds the current sub-input as a new sub (new Normal or new Counting).
     /// Called on "Add" button tap or when the TextField submits (`.onSubmit`).
     private func addNewSub() {
+        guard canAddSub else { return }
         let text = subInputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
 
         let sub: CreateFormViewModel.CompoundSubItem
         switch newSubType {
         case .normal:
             sub = .newNormal(title: text)
         case .counting:
-            let goal = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
-            let unit = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "reps"
-                : subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // `canAddSub` guarantees a valid positive goal and non-blank unit
+            // for a counting sub — no silent `?? 1` / "reps" fallbacks.
+            guard let goal = subCountingGoal else { return }
+            let unit = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
             // R1: auto-link default ON — apply the suggestion unless opted
             // out via "Don't link". Baseline is always "start fresh".
-            let linked = subLinkSuggestion != nil && !subLinkDisabled && subCountingGoal != nil
+            let linked = subLinkSuggestion != nil && !subLinkDisabled
             sub = .newCounting(
                 action: text,
                 goal: goal,
