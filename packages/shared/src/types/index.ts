@@ -10,3 +10,5 @@ export * from './syncQueue';
 export * from './compositeTask';
 export * from './recurringBoardTemplate';
 export * from './defaultPool';
+export * from './pool';
+export * from './coreBoardDefault';

@@ -146,6 +146,15 @@ export type {
   BuildSpawnPlacementArgs,
 } from './recurringBoardTemplates';
 
+// ===== Task Pools + Recurring Boards Rework (P1) — mix resolver =====
+export {
+  resolveMix,
+  clearRemovalsForUntoggle,
+  isLegacyShapedRecord,
+} from './poolMix';
+
+export type { PoolMixSource, ResolveMixResult } from './poolMix';
+
 export { isTaskExpired } from './taskExpiry';
 
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
