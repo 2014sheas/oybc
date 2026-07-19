@@ -140,11 +140,24 @@ works because P1 also **rewires the legacy template UI's persistence** to the
 generalized model while its UI stays visually unchanged: legacy template
 CREATE mints a Pool exactly like migration step 2 (`poolIds:[newPool]`);
 legacy template EDIT (the `?editTemplate=` wizard flow + Add-tasks) writes
-the linked Pool's `taskIds`. So between P1 and P7 the old surfaces keep
-working against the new model — no window where a template is created or
-edited into a dead `seedTaskIds` field. **Deep-link retirement is split**:
+the linked Pool's `taskIds`. **The write-through is scoped by record shape**:
+it applies only to legacy-shaped records (exactly one legacy/migration-minted
+pool, empty `manualTaskIds` + `removedTaskIds`) — which is TOTAL during
+P1→P4, since migration and legacy-create both produce that shape and richer
+shapes cannot exist before P4. Defensive rule anyway: a non-legacy-shaped
+record reached by the legacy editor saves its flattened list as
+`manualTaskIds` and clears `poolIds`/`removedTaskIds` — the legacy editor
+never writes a Pool it didn't mint (shared-pool corruption is the failure
+mode this forbids; "the saved pool is never modified by any board-side
+action" holds). From **P4**, `?editTemplate=` **re-points into the new
+wizard's edit mode** (generalized fields native), so every record shape —
+P4 wizard records with shared pools, P6 repeat-this-board records with no
+pool — stays editable from the still-alive templates page until P7 retires
+it. So there is no window where a record is created into, edited into, or
+stranded with a dead field. **Deep-link retirement is split**:
 `?newRecurring=1` dies at P4 (with the CTA); `?editTemplate=` survives to P7
-and dies with the templates page whose Edit buttons emit it.
+(re-targeted at P4 as above) and dies with the templates page whose Edit
+buttons emit it.
 
 Mixed-version note: an old client would still write `DefaultPool`/
 `seedTaskIds`. Accepted (single user, own devices, sequential updates).
@@ -272,8 +285,9 @@ Mixed-version note: an old client would still write `DefaultPool`/
 - **P3 — Wizard**: pull-in-a-pool card, provenance subtitles,
   save-selection-as-pool.
 - **P4 — Setup step**: Repeats segmented one-flow; retire recurring CTA +
-  `?newRecurring=1` (`?editTemplate=` survives to P7 with the templates
-  page); post-save navigation lands on the spawned board.
+  `?newRecurring=1`; `?editTemplate=` survives to P7 but re-points into the
+  new wizard's edit mode (all record shapes editable from P4 on); post-save
+  navigation lands on the spawned board.
 - **P5 — Core setup**: pool pre-fill + one-off quick-add + "Start every…"
   checkbox writing `CoreBoardDefault`.
 - **P6 — Board screen**: manage row w/ Pause/Resume, "Repeat this board…",
