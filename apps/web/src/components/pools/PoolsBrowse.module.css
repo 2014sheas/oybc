@@ -1,0 +1,49 @@
+/* PoolsBrowse — Tasks-tab Pools segment content (P2). */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.intro {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  max-width: 520px;
+  line-height: 1.5;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.newPoolButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: transparent;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.newPoolButton:hover {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+
+.newPoolButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}

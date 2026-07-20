@@ -36,9 +36,10 @@ Pool {
   was the deleted pool become stale-inert per the removals semantics.
 - **Health is derived, never stored**: resolvable non-deleted `taskIds` count
   vs the consumer's `fillableCellCount` (from `@oybc/bingo-core`). Pool cards
-  warn ONLY when a repeating board consumes the pool and it's short
-  (`"2 short of a 3×3 — Weekly reset can't spawn"`); warnings on pool cards,
-  roster rows, and (while it exists) template rows all derive from the same
+  warn ONLY when a repeating board consumes the pool and it's short, as a
+  single combined board-count line (`"Short on 1 board"` / `"Short on N
+  boards"` — owner decision, 2026-07-20); warnings on pool cards, roster
+  rows, and (while it exists) template rows all derive from the same
   source — fix once, heals everywhere.
 
 ### Changed: the spawn record (recurrence as board property)
@@ -174,13 +175,18 @@ acceptance above; not treated as a bug to fix.
 
 1. **Tasks tab → Pools segment** — Library/Pools pill segmented ("Pools · N");
    pool cards (name, first-4 chips, "+N more", count, contextual short
-   warning); dashed "+ New pool". **NO board actions on pool surfaces**
+   warning — one combined line, e.g. `"Short on 1 board"` / `"Short on 2
+   boards"`, not one line per consuming board — owner decision, 2026-07-20);
+   dashed "+ New pool". **NO board actions on pool surfaces**
    (locked): no "use in board", no FEEDS control, no default pinning.
    Starter packs: **deferred** (locked 2026-07-19) — the card design exists,
    ships when curated content does.
 2. **Pool edit sheet** — extends iOS `PoolEditSheet`: NAME field replaces
    timeframe keying; TASKS chips w/ ✕; ADD TASKS mirrors the wizard pattern
-   (quick-add row + library reuse picker); dashed deck-preview line; Delete
+   (quick-add row + library reuse picker); dashed deck-preview line (e.g.
+   `"8 tasks in the deck · fills a 3×3"` when healthy, or `"6 tasks in the
+   deck · short on required tasks"` when short — the short branch drops the
+   missing-count and board-size detail, owner decision, 2026-07-20); Delete
    pool (red text) in edit mode.
 3. **Create hub** — ONE primary CTA ("Start a new board" / "One-off or
    repeating — decide in setup"); the separate recurring CTA (issue #71's
@@ -313,4 +319,6 @@ Post-handoff additions beyond the prototype (same date, coordinator-recommended,
 owner-approved via plan review): the Deal-again zero-user-completed-cells
 guard; Repeat-this-board's window-key alignment + `spawnedFromTemplateId`
 back-stamp; derived (non-cascade) pool detachment; the P1 legacy-UI
-persistence rewire + split deep-link retirement.
+persistence rewire + split deep-link retirement. P2 review follow-up:
+combined board-count card warning + count-free deck-preview short line
+(owner, 2026-07-20).

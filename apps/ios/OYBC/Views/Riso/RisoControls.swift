@@ -150,24 +150,51 @@ struct RisoChip: View {
 
 // MARK: - Segmented control
 
+/// `RisoSegmented`'s two visual forms. Mirrors the web `RisoSegmented`
+/// `variant` prop (`'card' | 'pill'`) verbatim.
+///
+/// - `.card` (default): bordered card buttons, colored active fill — the
+///   prominent wizard/preferences picker. Existing call sites are
+///   unaffected (this is the pre-existing, unchanged rendering).
+/// - `.pill`: rounded compact toggle, ink active fill / paper text, muted
+///   idle text — the Tasks-tab Library/Pools segment (P2 Task 3).
+enum RisoSegmentedStyle {
+    case card
+    case pill
+}
+
 /// Generic segmented control — selected segment = filled / paper text.
 ///
-/// - `equalWidth` (default true): segments each take an equal share of the
-///   width. Set false to size each segment to its label — use this when
-///   labels vary in length and equal-width would clip the long ones.
-/// - `selectedFill`: per-value fill for the selected segment (default blue
-///   for all). Pass e.g. `{ $0.risoColor }` to color-code by value.
+/// - `equalWidth` (default true, `.card` style only): segments each take an
+///   equal share of the width. Set false to size each segment to its label
+///   — use this when labels vary in length and equal-width would clip the
+///   long ones. Ignored by `.pill`, which always sizes to content (mirrors
+///   the web `.pill` CSS: an `inline-flex` container hugging its content).
+/// - `selectedFill` (`.card` style only): per-value fill for the selected
+///   segment (default blue for all). Pass e.g. `{ $0.risoColor }` to
+///   color-code by value. `.pill`'s active fill is always ink (never
+///   per-value) per the web pill CSS.
+/// - `style`: `.card` (default) or `.pill` — see `RisoSegmentedStyle`.
 ///
-/// The default `equalWidth: true` path is intentionally visually identical to
-/// the original control — the full snapshot suite confirms no diff for existing
-/// callers. Use `equalWidth: false` for uneven labels that would otherwise clip.
+/// The default `equalWidth: true, style: .card` path is intentionally
+/// visually identical to the original control — the full snapshot suite
+/// confirms no diff for existing callers. Use `equalWidth: false` for
+/// uneven `.card` labels that would otherwise clip.
 struct RisoSegmented<T: Hashable>: View {
     let options: [(value: T, label: String)]
     @Binding var selection: T
     var equalWidth: Bool = true
     var selectedFill: (T) -> Color = { _ in .risoBlue }
+    var style: RisoSegmentedStyle = .card
 
     var body: some View {
+        switch style {
+        case .card: cardBody
+        case .pill: pillBody
+        }
+    }
+
+    private var cardBody: some View {
         HStack(spacing: 6) {
             ForEach(options, id: \.value) { opt in
                 Button { selection = opt.value } label: {
@@ -192,6 +219,32 @@ struct RisoSegmented<T: Hashable>: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// Rounded compact toggle: 2pt ink keyline capsule container (paper
+    /// fill, 4pt internal padding), each segment a content-sized capsule
+    /// button — ink fill / paper text when selected, transparent / muted
+    /// text when idle. Mirrors web `RisoSegmented.module.css`'s `.pill`
+    /// rule set exactly (font-head 11 bold, 7px/12px padding, 4pt gap).
+    private var pillBody: some View {
+        HStack(spacing: 4) {
+            ForEach(options, id: \.value) { opt in
+                let isOn = selection == opt.value
+                Button { selection = opt.value } label: {
+                    Text(opt.label)
+                        .font(.risoHead(11, .bold))
+                        .lineLimit(1)
+                        .foregroundStyle(isOn ? Color.risoPaper : Color.risoMuted)
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 12)
+                        .background(Capsule().fill(isOn ? Color.risoInk : Color.clear))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Capsule().fill(Color.risoPaper))
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
     }
 }
 
