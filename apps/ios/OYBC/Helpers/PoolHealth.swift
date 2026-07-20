@@ -23,12 +23,10 @@ enum PoolHealth {
         let templateId: String
         let templateName: String
         let timeframe: Timeframe
-        /// The consuming template's board size — carried so a renderer can
-        /// call `formatPoolShortWarning` directly off a consumer without a
-        /// separate template lookup (mirrors the TS `PoolHealthConsumer`
-        /// doc: web's pool card originally re-resolved this via a
-        /// `templatesById` map; threading it here instead removes that
-        /// indirection on both platforms).
+        /// The consuming template's board size. Not read by the card's
+        /// combined `formatPoolShortSummary` line (which only counts
+        /// consumers), but kept on the consumer for any other per-template
+        /// rendering.
         let boardSize: Int
         /// How many more resolvable tasks the template's mix needs. Always > 0.
         let shortBy: Int
@@ -102,31 +100,16 @@ enum PoolHealth {
         return Result(taskCount: taskCount, consumers: consumers)
     }
 
-    /// Displayed label for each `Timeframe` in the warning copy, mirroring
-    /// the TS `TIMEFRAME_LABELS` map exactly. `.custom` / `.indefinite`
-    /// never reach here in practice (repeating boards exclude both), but a
-    /// mapping keeps this total.
-    ///
-    /// Deliberately NOT `Timeframe.risoDisplayName` (`RecurringTemplatesView
-    /// .swift`), which labels `.indefinite` as "Ongoing" for board-status
-    /// UI — this map exists solely to keep `formatPoolShortWarning`'s copy
-    /// byte-identical to web's `formatPoolShortWarning`.
-    private static let timeframeLabels: [Timeframe: String] = [
-        .daily: "Daily",
-        .weekly: "Weekly",
-        .monthly: "Monthly",
-        .yearly: "Yearly",
-        .custom: "Custom",
-        .indefinite: "Indefinite",
-    ]
-
-    /// Formats the single, cross-platform-shared copy for a short pool
-    /// consumer: `"{N} short of a {S}×{S} — {Timeframe} reset can't spawn"`
-    /// (e.g. `"2 short of a 3×3 — Weekly reset can't spawn"`). Web and iOS
-    /// render this string verbatim — do not hand-roll the copy on either
-    /// platform.
-    static func formatPoolShortWarning(shortBy: Int, boardSize: Int, timeframe: Timeframe) -> String {
-        let label = timeframeLabels[timeframe] ?? timeframe.rawValue.capitalized
-        return "\(shortBy) short of a \(boardSize)×\(boardSize) — \(label) reset can't spawn"
+    /// Formats the single, cross-platform-shared pool-CARD warning line —
+    /// board-count syntax, combining every short consumer into one line
+    /// instead of one line per consumer (owner decision, 2026-07-20; see
+    /// docs/POOLS_RECURRING.md §Surfaces item 1): `""` when there are no
+    /// short consumers (render nothing), `"Short on 1 board"` for exactly
+    /// one, or `"Short on {N} boards"` for two or more. Web and iOS render
+    /// this string verbatim — do not hand-roll the copy on either platform.
+    static func formatPoolShortSummary(_ consumers: [Consumer]) -> String {
+        if consumers.isEmpty { return "" }
+        if consumers.count == 1 { return "Short on 1 board" }
+        return "Short on \(consumers.count) boards"
     }
 }

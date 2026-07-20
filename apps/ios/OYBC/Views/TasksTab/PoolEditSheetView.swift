@@ -478,8 +478,9 @@ struct PoolEditSheetView: View {
     }
 
     // MARK: - Deck preview (page-local; mirrors web `poolDeckPreview.ts` —
-    // NOT the shared `PoolHealth.formatPoolShortWarning`, which names the
-    // consuming template/timeframe for the pool-CARD warning line instead)
+    // NOT the shared `PoolHealth.formatPoolShortSummary`, which combines
+    // short consumers into one board-count line for the pool-CARD warning
+    // instead)
 
     private struct DeckFloor {
         let boardSize: Int
@@ -509,14 +510,15 @@ struct PoolEditSheetView: View {
         return best ?? defaultDeckFloor
     }
 
-    /// `"{N} tasks in the deck · fills a {S}×{S}"` / `"· {shortBy} short of
-    /// a {S}×{S}"` — byte-identical to web's `formatDeckPreview`.
+    /// `"{N} tasks in the deck · fills a {S}×{S}"` / `"· short on required
+    /// tasks"` — byte-identical to web's `formatDeckPreview` (owner
+    /// decision, 2026-07-20: the short branch drops the missing-count and
+    /// board-size detail).
     private static func formatDeckPreview(taskCount: Int, deckFloor: DeckFloor) -> String {
         let base = "\(taskCount) task\(taskCount == 1 ? "" : "s") in the deck"
         if taskCount >= deckFloor.floor {
             return "\(base) · fills a \(deckFloor.boardSize)×\(deckFloor.boardSize)"
         }
-        let shortBy = deckFloor.floor - taskCount
-        return "\(base) · \(shortBy) short of a \(deckFloor.boardSize)×\(deckFloor.boardSize)"
+        return "\(base) · short on required tasks"
     }
 }

@@ -179,9 +179,9 @@ final class PoolHealthTests: XCTestCase {
         )
 
         XCTAssertEqual(result.consumers[0].shortBy, 14)
-        // boardSize is carried on the consumer itself so a renderer can call
-        // `formatPoolShortWarning` directly off it, with no separate
-        // template lookup needed.
+        // boardSize is carried on the consumer itself for any per-template
+        // rendering, even though the combined card summary line
+        // (`formatPoolShortSummary`) only counts consumers.
         XCTAssertEqual(result.consumers[0].boardSize, 4)
     }
 
@@ -245,34 +245,36 @@ final class PoolHealthTests: XCTestCase {
         XCTAssertEqual(result.consumers, [])
     }
 
-    // MARK: - formatPoolShortWarning
+    // MARK: - formatPoolShortSummary
 
-    func testFormatWarning_ExactFormat() {
-        XCTAssertEqual(
-            PoolHealth.formatPoolShortWarning(shortBy: 2, boardSize: 3, timeframe: .weekly),
-            "2 short of a 3×3 — Weekly reset can't spawn"
-        )
+    func testFormatSummary_EmptyConsumers_ReturnsEmptyString() {
+        XCTAssertEqual(PoolHealth.formatPoolShortSummary([]), "")
     }
 
-    func testFormatWarning_CapitalizesEachTimeframe() {
-        XCTAssertEqual(
-            PoolHealth.formatPoolShortWarning(shortBy: 1, boardSize: 3, timeframe: .daily),
-            "1 short of a 3×3 — Daily reset can't spawn"
+    func testFormatSummary_OneConsumer_ReturnsSingularBoard() {
+        let consumer = PoolHealth.Consumer(
+            templateId: "tpl1", templateName: "Template tpl1",
+            timeframe: .weekly, boardSize: 3, shortBy: 6
         )
-        XCTAssertEqual(
-            PoolHealth.formatPoolShortWarning(shortBy: 1, boardSize: 3, timeframe: .monthly),
-            "1 short of a 3×3 — Monthly reset can't spawn"
-        )
-        XCTAssertEqual(
-            PoolHealth.formatPoolShortWarning(shortBy: 1, boardSize: 3, timeframe: .yearly),
-            "1 short of a 3×3 — Yearly reset can't spawn"
-        )
+        XCTAssertEqual(PoolHealth.formatPoolShortSummary([consumer]), "Short on 1 board")
     }
 
-    func testFormatWarning_4x4BoardSize() {
+    func testFormatSummary_MultipleConsumers_ReturnsPluralBoardCount() {
+        let consumerA = PoolHealth.Consumer(
+            templateId: "tplA", templateName: "Morning Kickstart",
+            timeframe: .daily, boardSize: 3, shortBy: 7
+        )
+        let consumerB = PoolHealth.Consumer(
+            templateId: "tplB", templateName: "Weekly Reset",
+            timeframe: .weekly, boardSize: 3, shortBy: 8
+        )
+        let consumerC = PoolHealth.Consumer(
+            templateId: "tplC", templateName: "Monthly Refresh",
+            timeframe: .monthly, boardSize: 4, shortBy: 14
+        )
+        XCTAssertEqual(PoolHealth.formatPoolShortSummary([consumerA, consumerB]), "Short on 2 boards")
         XCTAssertEqual(
-            PoolHealth.formatPoolShortWarning(shortBy: 14, boardSize: 4, timeframe: .monthly),
-            "14 short of a 4×4 — Monthly reset can't spawn"
+            PoolHealth.formatPoolShortSummary([consumerA, consumerB, consumerC]), "Short on 3 boards"
         )
     }
 }

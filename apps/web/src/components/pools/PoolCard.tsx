@@ -1,4 +1,4 @@
-import { formatPoolShortWarning } from '@oybc/shared';
+import { formatPoolShortSummary } from '@oybc/shared';
 import type { Pool, PoolHealthResult, Task } from '@oybc/shared';
 import { RisoCard } from '../riso';
 import styles from './PoolCard.module.css';
@@ -12,9 +12,9 @@ export interface PoolCardProps {
    *  row + count. Resolved once at the page level (batched), not here. */
   tasks: Task[];
   /** This pool's derived health (P2 Task 1's `computePoolHealth`), passed
-   *  in from the page's batched pass — never computed per-card. Each
-   *  consumer carries its own `boardSize`, so the warning line renders
-   *  straight off it — no separate template lookup needed. */
+   *  in from the page's batched pass — never computed per-card. Rendered
+   *  as a single combined board-count line via `formatPoolShortSummary`
+   *  (owner decision, 2026-07-20) — no per-consumer detail. */
   health: PoolHealthResult;
   onClick: (pool: Pool) => void;
 }
@@ -32,6 +32,7 @@ export function PoolCard({ pool, tasks, health, onClick }: PoolCardProps): React
   const visible = tasks.slice(0, CHIP_LIMIT);
   const overflow = tasks.length - visible.length;
   const taskCount = health.taskCount;
+  const shortSummary = formatPoolShortSummary(health.consumers);
 
   return (
     <RisoCard
@@ -67,15 +68,11 @@ export function PoolCard({ pool, tasks, health, onClick }: PoolCardProps): React
         <strong>{taskCount}</strong> task{taskCount === 1 ? '' : 's'} · tap to edit
       </div>
 
-      {health.consumers.map((consumer) => (
-        <div key={consumer.templateId} className={styles.warning} role="status">
-          {formatPoolShortWarning({
-            shortBy: consumer.shortBy,
-            boardSize: consumer.boardSize,
-            timeframe: consumer.timeframe,
-          })}
+      {shortSummary !== '' && (
+        <div className={styles.warning} role="status">
+          {shortSummary}
         </div>
-      ))}
+      )}
     </RisoCard>
   );
 }

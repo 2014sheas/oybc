@@ -74,11 +74,10 @@ struct PoolsBrowseView: View {
                     Text("tap to edit").font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
                 }
 
-                ForEach(health.consumers, id: \.templateId) { consumer in
-                    Text(PoolHealth.formatPoolShortWarning(
-                        shortBy: consumer.shortBy, boardSize: consumer.boardSize, timeframe: consumer.timeframe
-                    ))
-                    .font(.risoBody(12, .bold)).foregroundStyle(Color.risoRed)
+                let shortSummary = PoolHealth.formatPoolShortSummary(health.consumers)
+                if !shortSummary.isEmpty {
+                    Text(shortSummary)
+                        .font(.risoBody(12, .bold)).foregroundStyle(Color.risoRed)
                 }
             }
             .padding(Riso.cardPadding)

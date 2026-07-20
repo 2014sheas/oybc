@@ -100,16 +100,16 @@ describe('formatDeckPreview', () => {
 
   it('formats the "short" branch when below the floor', () => {
     expect(formatDeckPreview(6, { boardSize: 3, floor: 8 })).toBe(
-      '6 tasks in the deck · 2 short of a 3×3',
+      '6 tasks in the deck · short on required tasks',
     );
   });
 
   it('handles the 0-task / singular-"task" edges', () => {
     expect(formatDeckPreview(0, { boardSize: 3, floor: 8 })).toBe(
-      '0 tasks in the deck · 8 short of a 3×3',
+      '0 tasks in the deck · short on required tasks',
     );
     expect(formatDeckPreview(1, { boardSize: 3, floor: 8 })).toBe(
-      '1 task in the deck · 7 short of a 3×3',
+      '1 task in the deck · short on required tasks',
     );
   });
 });

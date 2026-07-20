@@ -1,6 +1,6 @@
 import {
   computePoolHealth,
-  formatPoolShortWarning,
+  formatPoolShortSummary,
 } from '../../src/algorithms/poolHealth';
 import { TaskType, Timeframe, CenterSquareType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
@@ -211,9 +211,9 @@ describe('computePoolHealth — shortBy math across sizes/centers', () => {
     const result = computePoolHealth(pool, { templates: [template], poolsById, tasksById });
 
     expect(result.consumers[0].shortBy).toBe(14);
-    // P2 Task 2 review: boardSize is carried on the consumer itself so a
-    // renderer can call `formatPoolShortWarning` directly off it, with no
-    // separate template lookup needed.
+    // P2 Task 2 review: boardSize is carried on the consumer itself for any
+    // per-template rendering, even though the combined card summary line
+    // (`formatPoolShortSummary`) only counts consumers.
     expect(result.consumers[0].boardSize).toBe(4);
   });
 
@@ -301,30 +301,47 @@ describe('computePoolHealth — healthy pool (no consumers)', () => {
   });
 });
 
-// ─── formatPoolShortWarning ─────────────────────────────────────────────────────
+// ─── formatPoolShortSummary ─────────────────────────────────────────────────────
 
-describe('formatPoolShortWarning', () => {
-  it('formats exactly "{N} short of a {S}×{S} — {Timeframe} reset can\'t spawn"', () => {
-    expect(
-      formatPoolShortWarning({ shortBy: 2, boardSize: 3, timeframe: Timeframe.WEEKLY }),
-    ).toBe("2 short of a 3×3 — Weekly reset can't spawn");
+describe('formatPoolShortSummary', () => {
+  it('returns the empty string for zero consumers (render nothing)', () => {
+    expect(formatPoolShortSummary([])).toBe('');
   });
 
-  it('capitalizes each timeframe correctly', () => {
-    expect(
-      formatPoolShortWarning({ shortBy: 1, boardSize: 3, timeframe: Timeframe.DAILY }),
-    ).toBe("1 short of a 3×3 — Daily reset can't spawn");
-    expect(
-      formatPoolShortWarning({ shortBy: 1, boardSize: 3, timeframe: Timeframe.MONTHLY }),
-    ).toBe("1 short of a 3×3 — Monthly reset can't spawn");
-    expect(
-      formatPoolShortWarning({ shortBy: 1, boardSize: 3, timeframe: Timeframe.YEARLY }),
-    ).toBe("1 short of a 3×3 — Yearly reset can't spawn");
+  it('returns "Short on 1 board" for exactly one consumer', () => {
+    const consumer = {
+      templateId: 'tpl1',
+      templateName: 'Template tpl1',
+      timeframe: Timeframe.WEEKLY,
+      boardSize: 3,
+      shortBy: 6,
+    };
+    expect(formatPoolShortSummary([consumer])).toBe('Short on 1 board');
   });
 
-  it('formats a 4x4 board size', () => {
-    expect(
-      formatPoolShortWarning({ shortBy: 14, boardSize: 4, timeframe: Timeframe.MONTHLY }),
-    ).toBe("14 short of a 4×4 — Monthly reset can't spawn");
+  it('returns "Short on {N} boards" for two or more consumers', () => {
+    const consumerA = {
+      templateId: 'tplA',
+      templateName: 'Morning Kickstart',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      shortBy: 7,
+    };
+    const consumerB = {
+      templateId: 'tplB',
+      templateName: 'Weekly Reset',
+      timeframe: Timeframe.WEEKLY,
+      boardSize: 3,
+      shortBy: 8,
+    };
+    const consumerC = {
+      templateId: 'tplC',
+      templateName: 'Monthly Refresh',
+      timeframe: Timeframe.MONTHLY,
+      boardSize: 4,
+      shortBy: 14,
+    };
+    expect(formatPoolShortSummary([consumerA, consumerB])).toBe('Short on 2 boards');
+    expect(formatPoolShortSummary([consumerA, consumerB, consumerC])).toBe('Short on 3 boards');
   });
 });

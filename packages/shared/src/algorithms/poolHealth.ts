@@ -33,11 +33,9 @@ export interface PoolHealthConsumer {
   templateId: string;
   templateName: string;
   timeframe: Timeframe;
-  /** The consuming template's board size — carried so a renderer can call
-   *  `formatPoolShortWarning` directly off a consumer without a separate
-   *  template lookup (P2 Task 2 review: web's pool card originally
-   *  re-resolved this via a `templatesById` map; threading it here instead
-   *  removes that indirection on both platforms). */
+  /** The consuming template's board size. Not read by the card's combined
+   *  `formatPoolShortSummary` line (which only counts consumers), but kept
+   *  on the consumer for any other per-template rendering. */
   boardSize: number;
   /** How many more resolvable tasks the template's mix needs. Always > 0. */
   shortBy: number;
@@ -119,39 +117,16 @@ export function computePoolHealth(
 }
 
 /**
- * Displayed label for each `Timeframe` in the warning copy. `CUSTOM` /
- * `INDEFINITE` never reach here — repeating boards (spawn records) exclude
- * both (docs/POOLS_RECURRING.md), but a fallback keeps this total.
+ * Formats the single, cross-platform-shared pool-CARD warning line —
+ * board-count syntax, combining every short consumer into one line
+ * instead of one line per consumer (owner decision, 2026-07-20; see
+ * docs/POOLS_RECURRING.md §Surfaces item 1): `''` when there are no short
+ * consumers (render nothing), `'Short on 1 board'` for exactly one, or
+ * `'Short on {N} boards'` for two or more. Web and iOS render this string
+ * verbatim — do not hand-roll the copy on either platform.
  */
-const TIMEFRAME_LABELS: Record<Timeframe, string> = {
-  [Timeframe.DAILY]: 'Daily',
-  [Timeframe.WEEKLY]: 'Weekly',
-  [Timeframe.MONTHLY]: 'Monthly',
-  [Timeframe.YEARLY]: 'Yearly',
-  [Timeframe.CUSTOM]: 'Custom',
-  [Timeframe.INDEFINITE]: 'Indefinite',
-};
-
-/**
- * Fields `formatPoolShortWarning` needs — a subset of `PoolHealthConsumer`
- * plus the consuming template's `boardSize` (not carried on the consumer
- * itself, since the floor's `shortBy` is already baked in).
- */
-export interface PoolShortWarningInput {
-  shortBy: number;
-  boardSize: number;
-  timeframe: Timeframe;
-}
-
-/**
- * Formats the single, cross-platform-shared copy for a short pool
- * consumer: `"{N} short of a {S}×{S} — {Timeframe} reset can't spawn"`
- * (e.g. `"2 short of a 3×3 — Weekly reset can't spawn"`). Web and iOS
- * render this string verbatim — do not hand-roll the copy on either
- * platform.
- */
-export function formatPoolShortWarning(input: PoolShortWarningInput): string {
-  const { shortBy, boardSize, timeframe } = input;
-  const timeframeLabel = TIMEFRAME_LABELS[timeframe];
-  return `${shortBy} short of a ${boardSize}×${boardSize} — ${timeframeLabel} reset can't spawn`;
+export function formatPoolShortSummary(consumers: PoolHealthConsumer[]): string {
+  if (consumers.length === 0) return '';
+  if (consumers.length === 1) return 'Short on 1 board';
+  return `Short on ${consumers.length} boards`;
 }
