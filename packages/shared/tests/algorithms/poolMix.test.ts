@@ -400,4 +400,25 @@ describe('clampMintedPoolName', () => {
   it('respects a custom maxLen', () => {
     expect(clampMintedPoolName('abcdefghij', 'pool', 10)).toBe('abcde pool');
   });
+
+  // Cross-platform clamp-unit parity (P1 #336 review M-1): the clamp must
+  // measure the SAME unit as PoolSchema's z.string().max(120) — UTF-16 code
+  // units — so iOS (Swift twin) and web agree on validity for a non-BMP name.
+  // A non-BMP char (🎯, 2 UTF-16 units) near the boundary must not overflow.
+  it('clamps by UTF-16 units, never splitting a non-BMP surrogate pair', () => {
+    // 57 × 🎯 = 114 UTF-16 units; + " pool" (5) = 119 ≤ 120 → unclamped.
+    const name57targets = '🎯'.repeat(57);
+    const under = clampMintedPoolName(name57targets, 'pool');
+    expect(under).toBe(`${name57targets} pool`);
+    expect(under.length).toBe(119);
+
+    // 58 × 🎯 = 116 units; source budget is 115 → must drop the last whole
+    // 🎯 (not split it), landing at 57 🎯 (114) + " pool" = 119 ≤ 120.
+    const name58targets = '🎯'.repeat(58);
+    const clamped = clampMintedPoolName(name58targets, 'pool');
+    expect(clamped).toBe(`${'🎯'.repeat(57)} pool`);
+    expect(clamped.length).toBeLessThanOrEqual(120);
+    // No lone surrogate: round-trips through UTF-16 unchanged.
+    expect([...clamped].every((cp) => cp.codePointAt(0)! <= 0x10ffff)).toBe(true);
+  });
 });

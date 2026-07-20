@@ -178,16 +178,25 @@ enum PoolMix {
     ///   - sourceName: The un-suffixed source text (template name / timeframe label).
     ///   - suffix: The word appended after a single space (e.g. `"pool"`, `"default"`).
     ///   - maxLen: The schema's max length. Defaults to `PoolSchema`'s 120.
-    /// - Returns: `"<clamped sourceName> <suffix>"`, guaranteed `.count <= maxLen`.
+    /// - Returns: `"<clamped sourceName> <suffix>"`, guaranteed
+    ///   `.utf16.count <= maxLen`.
+    ///
+    /// - Note: `PoolSchema.name` is `z.string().max(120)`, which measures
+    ///   **UTF-16 code units** (JS string length). We clamp by the same unit
+    ///   — NOT Swift `Character`s — so a non-BMP-heavy name (emoji, ZWJ
+    ///   sequences) can't mint a name iOS thinks is ≤120 but web rejects on
+    ///   pull as >120, stranding the pool doc on the peer. Characters are
+    ///   accumulated whole so a surrogate pair is never split mid-clamp.
     static func clampMintedPoolName(_ sourceName: String, suffix: String, maxLen: Int = 120) -> String {
         let suffixWithSpace = " \(suffix)"
-        let maxSourceLen = max(0, maxLen - suffixWithSpace.count)
-        let clampedSource: String
-        if sourceName.count > maxSourceLen {
-            clampedSource = String(sourceName.prefix(maxSourceLen))
-        } else {
-            clampedSource = sourceName
-        }
+        let maxSourceUnits = max(0, maxLen - suffixWithSpace.utf16.count)
+        let units = Array(sourceName.utf16)
+        guard units.count > maxSourceUnits else { return "\(sourceName)\(suffixWithSpace)" }
+        var end = maxSourceUnits
+        // If the last kept unit is a high surrogate (0xD800–0xDBFF), its low
+        // partner is being cut — drop the whole char instead of splitting it.
+        if end > 0, (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
+        let clampedSource = String(decoding: units[0..<end], as: UTF16.self)
         return "\(clampedSource)\(suffixWithSpace)"
     }
 }

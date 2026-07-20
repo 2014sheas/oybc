@@ -354,4 +354,22 @@ final class PoolMixTests: XCTestCase {
     func testClampMintedPoolName_RespectsACustomMaxLen() {
         XCTAssertEqual(PoolMix.clampMintedPoolName("abcdefghij", suffix: "pool", maxLen: 10), "abcde pool")
     }
+
+    // Cross-platform clamp-unit parity (#336 review M-1): must measure UTF-16
+    // code units — like PoolSchema's max(120) — not Swift Characters, and must
+    // never split a non-BMP surrogate pair. Mirrors the web vector.
+    func testClampMintedPoolName_ClampsByUTF16Units_NoSurrogateSplit() {
+        // 57 × 🎯 = 114 UTF-16 units; + " pool" (5) = 119 ≤ 120 → unclamped.
+        let name57 = String(repeating: "🎯", count: 57)
+        let under = PoolMix.clampMintedPoolName(name57, suffix: "pool")
+        XCTAssertEqual(under, name57 + " pool")
+        XCTAssertEqual(under.utf16.count, 119)
+
+        // 58 × 🎯 = 116 units; source budget 115 → drop the last whole 🎯
+        // (never split it) → 57 🎯 + " pool" = 119 ≤ 120.
+        let name58 = String(repeating: "🎯", count: 58)
+        let clamped = PoolMix.clampMintedPoolName(name58, suffix: "pool")
+        XCTAssertEqual(clamped, String(repeating: "🎯", count: 57) + " pool")
+        XCTAssertLessThanOrEqual(clamped.utf16.count, 120)
+    }
 }

@@ -227,10 +227,18 @@ export function isLegacyShapedRecord(record: PoolMixSource): boolean {
  * a Swift twin: `PoolMix.swift`'s `clampMintedPoolName` — keep them in
  * sync.
  *
+ * `.length` (JS) and `.utf16.count` (Swift) both measure UTF-16 code units,
+ * the same unit `PoolSchema`'s `.max(120)` counts — so the two platforms
+ * clamp the identical boundary. When that boundary would fall between a
+ * surrogate pair (a non-BMP char — emoji, ZWJ sequences), we back off one
+ * unit rather than emit a lone surrogate; both platforms do this identically,
+ * so a non-BMP-heavy name mints byte-equal on web and iOS (review M-1).
+ *
  * @param sourceName The un-suffixed source text (template name / timeframe label).
  * @param suffix     The word appended after a single space (e.g. `"pool"`, `"default"`).
  * @param maxLen     The schema's max length. Defaults to `PoolSchema`'s 120.
- * @returns `"<clamped sourceName> <suffix>"`, guaranteed `.length <= maxLen`.
+ * @returns `"<clamped sourceName> <suffix>"`, guaranteed `.length <= maxLen`
+ *          and never ending in a split surrogate.
  */
 export function clampMintedPoolName(
   sourceName: string,
@@ -239,7 +247,16 @@ export function clampMintedPoolName(
 ): string {
   const suffixWithSpace = ` ${suffix}`;
   const maxSourceLen = Math.max(0, maxLen - suffixWithSpace.length);
-  const clampedSource =
-    sourceName.length > maxSourceLen ? sourceName.slice(0, maxSourceLen) : sourceName;
+  let clampedSource = sourceName;
+  if (sourceName.length > maxSourceLen) {
+    let end = maxSourceLen;
+    // If the last kept unit is a high surrogate (0xD800–0xDBFF), its low
+    // partner is being cut — drop the whole char instead of splitting it.
+    if (end > 0) {
+      const lastUnit = sourceName.charCodeAt(end - 1);
+      if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 1;
+    }
+    clampedSource = sourceName.slice(0, end);
+  }
   return `${clampedSource}${suffixWithSpace}`;
 }
