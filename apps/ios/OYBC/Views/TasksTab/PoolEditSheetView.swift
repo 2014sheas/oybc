@@ -55,7 +55,10 @@ struct PoolEditSheetView: View {
     private var trimmedLibrarySearch: String {
         librarySearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    private var canSave: Bool { !trimmedName.isEmpty && !poolTaskIds.isEmpty && !busy }
+    // Gate on the RESOLVABLE count (like web), not the raw id list, so a pool
+    // whose references are all soft-deleted reads "TASKS (0)" and blocks Save
+    // on both platforms — an all-stale pool can't be re-saved by a rename alone.
+    private var canSave: Bool { !trimmedName.isEmpty && !selectedTasks.isEmpty && !busy }
 
     /// The RESOLVABLE subset of `poolTaskIds`, in order — what "TASKS (N)",
     /// the chip row, and the deck preview render (never `poolTaskIds.count`
