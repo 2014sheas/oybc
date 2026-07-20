@@ -112,11 +112,38 @@ extension AppDatabase {
         var outcome: RecurringSpawnOutcome?
         do {
             try write { db in
-                let allTasks = try Task
-                    .filter(template.seedTaskIds.contains(Column("id")))
-                    .fetchAll(db)
+                // P1 (Task Pools + Recurring Boards Rework,
+                // docs/POOLS_RECURRING.md §Changed: the spawn record) — the
+                // task source is the resolved pool-mix, not
+                // `template.seedTaskIds` directly. Post-migration EVERY
+                // live template has `poolIds` set, so `seedTaskIds` is
+                // never read here (left verbatim on the record for
+                // decode-compat only — see `RecurringBoardTemplate`'s
+                // "seedTaskIds end state" doc).
+                //
+                // Full-table task read (not a targeted seedTaskIds lookup):
+                // `PoolMix.resolveMix` needs a `tasksById` map to filter
+                // each pool's OWN resolvable supply (deleted tasks skipped
+                // — derived detachment), and the same map is reused below
+                // for the spawn-time derivation pass, so this isn't an
+                // added read (mirrors web's `spawnTemplateBoard`).
+                let allTasks = try Task.fetchAll(db)
                 let tasksById = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
-                let orderedPool: [Task] = template.seedTaskIds.compactMap { tasksById[$0] }
+
+                let poolIds = template.poolIds ?? []
+                let pools = poolIds.isEmpty
+                    ? []
+                    : try Pool.filter(poolIds.contains(Column("id"))).fetchAll(db)
+                let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
+
+                let mix = PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById)
+                // Resolve mix task ids → Task[] in mix order. Drops any ids
+                // that don't resolve at all (e.g. a hard-gone manual
+                // reference — the manual layer isn't deleted-filtered by
+                // resolveMix itself); the validator below catches a
+                // resolved-but-deleted task (possible for a manual-sourced
+                // id) as `.hasDeletedTasks`.
+                let orderedPool: [Task] = mix.taskIds.compactMap { tasksById[$0] }
 
                 if orderedPool.isEmpty {
                     outcome = .skipped(templateId: template.id, reason: .noPoolTasksResolved)
@@ -191,8 +218,11 @@ extension AppDatabase {
                     .fetchAll(db)
                 var childrenByCompound: [String: [CompoundChild]] = [:]
                 for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
-                var taskById: [String: Task] = [:]
-                for t in try Task.fetchAll(db) { taskById[t.id] = t }
+                // Reuse the `tasksById` map read at the top of this closure
+                // for mix resolution — no writes to `tasks` happen in
+                // between, so it's still an accurate snapshot for the
+                // derivation pass (mirrors web's reuse of `tasksById`).
+                let taskById: [String: Task] = tasksById
                 let allBoardsForDerivation = try Board
                     .filter(Column("isDeleted") == false)
                     .fetchAll(db)

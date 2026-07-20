@@ -35,25 +35,14 @@ import {
   SyncOperationType,
   SyncStatus,
   UserSchema,
-  BoardSchema,
-  TaskSchema,
-  TaskStepSchema,
-  BoardTaskSchema,
-  CompositeTaskSchema,
-  CompositeNodeSchema,
-  CompoundChildSchema,
-  RecurringBoardTemplateSchema,
-  DefaultPoolSchema,
-  TaskEventSchema,
   mergeUserPreferences,
   SYNC_COLLECTIONS,
-  USER_SCOPED_SYNC_COLLECTIONS,
   LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
   type User,
   type SyncCollection,
 } from '@oybc/shared';
-import { runBoardCascadeForTask } from '../db/operations/orchestration';
 import { applyTaskEventsBatch } from '../db/operations/taskEventPull';
+import { applyRemoteSubdoc } from '../db/operations/pullApply';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,58 +57,6 @@ import { applyTaskEventsBatch } from '../db/operations/taskEventPull';
  * push-drain entries, iOS mirroring story, etc.).
  */
 const SYNCABLE_COLLECTIONS = SYNC_COLLECTIONS;
-
-/**
- * Zod schema per syncable subcollection. Remote documents pulled from
- * Firestore are validated against these before being applied to the
- * local Dexie row. A failure is logged and the document is skipped —
- * the safety-net pull will retry on the next cycle.
- *
- * Defense-in-depth: Firestore rules already gate write shape, but a
- * compromised client, SDK bug, or future schema change could emit a
- * malformed document. Validating on read prevents corrupted rows from
- * slipping into the local source-of-truth database.
- */
-// Each schema's `safeParse` returns a discriminated union — narrowing to
-// the common shape gives us a single callable type to map across
-// collections without pulling zod itself into web's dependency graph.
-type RemoteSchema = {
-  safeParse: (input: unknown) =>
-    | { success: true; data: unknown }
-    | { success: false; error: { issues: Array<{ path: (string | number)[]; message: string }> } };
-};
-
-const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
-  boards: BoardSchema,
-  tasks: TaskSchema,
-  taskSteps: TaskStepSchema,
-  boardTasks: BoardTaskSchema,
-  compositeTasks: CompositeTaskSchema,
-  compositeNodes: CompositeNodeSchema,
-  compoundChildren: CompoundChildSchema,
-  recurringBoardTemplates: RecurringBoardTemplateSchema,
-  defaultPools: DefaultPoolSchema,
-  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync). Row-shape Zod
-  // (delta ⇄ kind, occurredAt required); the "event-owning tasks only" rule is
-  // a Task-type check the row alone can't carry, so it lives at the write
-  // choke points, not here. PR B sub-slice 1 wires the pull validator only —
-  // no event write/read paths yet, so events sync harmlessly empty.
-  taskEvents: TaskEventSchema,
-};
-
-/**
- * Subset of syncable collections whose documents carry a top-level
- * `userId` field. For these, the pull path must reject any document
- * whose `userId` doesn't match the authenticated user — a defense
- * against a compromised peer that writes into its own path with a
- * spoofed `userId` and hopes that a future cross-user share path
- * surfaces it.
- *
- * Sourced from `@oybc/shared`'s `USER_SCOPED_SYNC_COLLECTIONS`.
- */
-const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set(
-  USER_SCOPED_SYNC_COLLECTIONS,
-);
 
 /**
  * Legacy collections kept in SYNCABLE_COLLECTIONS so the push path can drain
@@ -398,139 +335,14 @@ async function applyRemoteUserDoc(
   return null; // local-wins → silent no-op
 }
 
-/**
- * Apply a remote document from a syncable subcollection to the local
- * Dexie table, running LWW conflict resolution. Used by `pullSync` and
- * the per-collection snapshot listener.
- *
- * Validates the payload against the Zod schema for the collection
- * before touching Dexie. A failed parse (missing fields, wrong types,
- * version < 1, userId mismatch for user-scoped collections) logs a
- * `Skipped` status and returns without writing — corrupted remote data
- * must never reach the local source-of-truth DB.
- *
- * @param collectionName The Firestore subcollection being pulled.
- * @param remoteData The raw document data from Firestore (untrusted).
- * @param authenticatedUserId The current user's uid, for userId scope
- *   checks on user-scoped collections.
- * @returns A short status string for logging; `null` if local-wins.
- */
-async function applyRemoteSubdoc(
-  collectionName: SyncCollection,
-  remoteData: unknown,
-  authenticatedUserId: string
-): Promise<string | null> {
-  const schema = COLLECTION_SCHEMAS[collectionName];
-  const parsed = schema.safeParse(remoteData);
-  if (!parsed.success) {
-    const reason = parsed.error.issues
-      .map((i) => `${i.path.join('.')}: ${i.message}`)
-      .join(', ');
-    const id =
-      typeof (remoteData as { id?: unknown })?.id === 'string'
-        ? (remoteData as { id: string }).id
-        : '?';
-    return `Skipped malformed ${collectionName}/${id}: ${reason}`;
-  }
-
-  const validated = parsed.data as SyncableEntity;
-
-  // Guard against a peer writing a document with a spoofed `userId`
-  // into its own path — reject anything that doesn't match the
-  // authenticated user on user-scoped collections.
-  //
-  // The status string omits both the payload and authenticated uids
-  // because it flows through `console.debug('[sync]', status)` in the
-  // snapshot listener; log collection or a screenshot would otherwise
-  // leak stable identifiers. The collection + doc id is enough to
-  // triage in practice; the full uids are already one query away in
-  // Dexie if needed.
-  if (USER_SCOPED_COLLECTIONS.has(collectionName)) {
-    const payloadUserId = (validated as { userId?: unknown }).userId;
-    if (payloadUserId !== authenticatedUserId) {
-      return `Skipped ${collectionName}/${validated.id}: userId mismatch`;
-    }
-  }
-
-  // CompoundChild has no `userId` column — children scope through their
-  // parent compound's userId. A crafted Firestore doc with a `compoundTaskId`
-  // pointing at another user's compound would land in local Dexie with no
-  // direct check. Resolve the parent and reject on mismatch.
-  if (collectionName === 'compoundChildren') {
-    const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
-    if (typeof compoundTaskId !== 'string' || !compoundTaskId) {
-      return `Skipped compoundChildren/${validated.id}: missing compoundTaskId`;
-    }
-    const parentTask = await db.tasks.get(compoundTaskId);
-    if (!parentTask) {
-      // No local parent — could be a legitimate cross-device race. Defer:
-      // skip this pull cycle, the safety net will retry. Don't accept blind.
-      return `Skipped compoundChildren/${validated.id}: parent compound not yet present locally`;
-    }
-    if (parentTask.userId !== authenticatedUserId) {
-      return `Skipped compoundChildren/${validated.id}: parent userId mismatch`;
-    }
-  }
-
-  const table = db.table(collectionName);
-  const localData = (await table.get(validated.id)) as SyncableEntity | undefined;
-
-  const isNew = !localData;
-  const remoteWins = isNew || resolveConflict(localData!, validated).winner === 'remote';
-
-  if (!remoteWins) {
-    return null; // local-wins → silent no-op
-  }
-
-  // Apply the remote row to local Dexie under standard LWW. The cascade runs
-  // in the same transaction so a cascade failure rolls back the upsert — the
-  // pulled value is authoritative.
-  //
-  // Windowed Completion (docs/WINDOWED_COMPLETION.md §Shared counters
-  // interaction): counting-task conflicts resolve by union-of-events (the
-  // batched `taskEvents` pull recompute — see §Sync), so a pulled counting Task
-  // just LWW-upserts like any other row. The Phase-4 additive-merge branch for
-  // shared-counter sources was retired here (its dead code deleted in WC PR D).
-  await db.transaction(
-    'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
-    async () => {
-      await table.put(validated);
-
-      // After pulling a Task or CompoundChild, cascade the board derivation
-      // pass so that any board containing the changed task recomputes its
-      // stats + status transitions. The cascade writes boards + sync queue
-      // entries but does NOT touch the Task itself — pulled value is final.
-      //
-      // Cascade unconditionally (matches iOS SyncService.runPullCascade).
-      // The previous `completionChanged` gate (isCompleted/currentCount diff)
-      // missed compound-affecting edits — operator/threshold/isOrdered changes
-      // would leave boards with stale stats + completedLineIds even though
-      // the compound's derived state had flipped. The cascade is idempotent
-      // and small-N, so always running it is the safer + iOS-parity choice.
-      if (collectionName === 'tasks') {
-        // Let cascade errors propagate so the outer Dexie transaction rolls
-        // back the `table.put(validated)` that just landed. Pulling will retry
-        // on the next cycle. Previously this branch swallowed errors, which
-        // left the task applied locally but board stats stale forever — a
-        // silent divergence that no safety net resolved.
-        await runBoardCascadeForTask(validated.id);
-      } else if (collectionName === 'compoundChildren') {
-        // For a pulled CompoundChild, cascade via the parent compound task.
-        const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
-        if (typeof compoundTaskId === 'string' && compoundTaskId) {
-          await runBoardCascadeForTask(compoundTaskId);
-        }
-      }
-    },
-  );
-
-  recordSyncEvent('pulled');
-  if (isNew) {
-    return `Pulled ${collectionName}/${validated.id} (new)`;
-  }
-  return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
-}
+// `applyRemoteSubdoc` (apply a remote document from a syncable subcollection
+// to the local Dexie table, running LWW conflict resolution — used by
+// `pullSync` and the per-collection snapshot listener) now lives in
+// `db/operations/pullApply.ts` — a firebase-free home so its unit test's
+// import graph never reaches `firebase/config` (the #280/#281 CI-only
+// failure: `firebase/config` initializes Firebase Auth at import time,
+// which throws `auth/invalid-api-key` on a CI runner with no `.env.local`).
+// This module keeps a thin caller via the import above.
 
 // Batched pull-path handler for the `taskEvents` collection
 // (docs/WINDOWED_COMPLETION.md §Sync — "Batched pull-path recompute") now

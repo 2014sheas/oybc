@@ -4,7 +4,7 @@
 export const POOL_PREVIEW_LIMIT = 3;
 
 export interface PoolPreview {
-  /** Up to `limit` resolved titles, in seedTaskIds order. */
+  /** Up to `limit` resolved titles, in `taskIds` order. */
   titles: string[];
   /** Count of additional RESOLVED titles beyond `titles` (0 ⇒ no
    *  "+k more" chip). Resolved-based, not raw pool length — unresolvable
@@ -18,22 +18,27 @@ export interface PoolPreview {
  * Resolve the first few pool task titles for a template row's compact
  * pool preview.
  *
- * Walks `seedTaskIds` in order, resolving each id against `taskMap` and
- * skipping unresolvable ids (soft-deleted tasks stay in the pool array
- * by design — see `RecurringBoardTemplate.seedTaskIds`).
+ * Walks `taskIds` in order, resolving each id against `taskMap` and
+ * skipping unresolvable ids. As of P1 (Task Pools + Recurring Boards
+ * Rework), the caller passes the template's CURRENT resolved pool-mix
+ * (from `useTemplateMixes`/`computeTemplateMixes`), not
+ * `RecurringBoardTemplate.seedTaskIds` directly — that field is stale
+ * after the legacy-editor write-through runs (docs/POOLS_RECURRING.md
+ * §Migration "seedTaskIds end state"). The function itself is agnostic
+ * to which array it's handed — it just resolves ids in order.
  *
- * @param seedTaskIds - The template's pool, in stored order.
+ * @param taskIds - The task ids to preview, in display order.
  * @param taskMap - id → task lookup (only `title` is read).
  * @param limit - Maximum titles to return (defaults to POOL_PREVIEW_LIMIT).
  * @returns The first `limit` resolved titles + the resolved overflow count.
  */
 export function computePoolPreview(
-  seedTaskIds: string[],
+  taskIds: string[],
   taskMap: Record<string, { title: string } | undefined>,
   limit: number = POOL_PREVIEW_LIMIT,
 ): PoolPreview {
   const resolved: string[] = [];
-  for (const id of seedTaskIds) {
+  for (const id of taskIds) {
     const found = taskMap[id];
     if (found) resolved.push(found.title);
   }

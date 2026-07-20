@@ -59,6 +59,11 @@ export const SYNC_COLLECTIONS = [
   // soft-delete tombstones like compoundChildren. Carries a `userId` field, so
   // it also joins USER_SCOPED_SYNC_COLLECTIONS below.
   'taskEvents',
+  // Task Pools + Recurring Boards Rework (P1, docs/POOLS_RECURRING.md
+  // §Data model). Standard per-row LWW + tombstones, both carry `userId`
+  // → also join USER_SCOPED_SYNC_COLLECTIONS below.
+  'pools',
+  'coreBoardDefaults',
 ] as const;
 
 /** Union of the literal collection-name strings in `SYNC_COLLECTIONS`. */
@@ -84,6 +89,9 @@ export const USER_SCOPED_SYNC_COLLECTIONS = [
   // TaskEvent rows carry a top-level `userId` (docs/WINDOWED_COMPLETION.md
   // §New entity) → the pull path enforces the owner-match check.
   'taskEvents',
+  // P1 — Pool and CoreBoardDefault rows both carry a top-level `userId`.
+  'pools',
+  'coreBoardDefaults',
 ] as const satisfies readonly SyncCollection[];
 
 /**
@@ -95,6 +103,14 @@ export const USER_SCOPED_SYNC_COLLECTIONS = [
  * row that no live code reads, or (on iOS) attempt to upsert into a
  * dropped table.
  *
+ * `defaultPools` joined this list in P1 (Task Pools + Recurring Boards
+ * Rework, docs/POOLS_RECURRING.md §Migration): first-launch backfill
+ * migrates every `DefaultPool` row into a `Pool` + `CoreBoardDefault`
+ * pair and soft-deletes the `DefaultPool` row. It stays in
+ * `SYNC_COLLECTIONS` so the push path can drain those DELETE tombstones
+ * (same composite-tables precedent), but the pull path must not
+ * resurrect a `DefaultPool` row a peer already migrated away.
+ *
  * Consumers: web `LEGACY_PULL_SKIP_COLLECTIONS` in `syncService.ts`; iOS
  * `legacyPullSkipCollections` in `SyncService.swift`.
  */
@@ -102,4 +118,5 @@ export const LEGACY_PULL_SKIP_COLLECTIONS = [
   'taskSteps',
   'compositeTasks',
   'compositeNodes',
+  'defaultPools',
 ] as const satisfies readonly SyncCollection[];

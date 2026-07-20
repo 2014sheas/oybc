@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDefaultPool } from '../../hooks';
+import { useDefaultPool, useTemplateMix } from '../../hooks';
 import {
   CenterSquareType,
   Timeframe,
@@ -384,9 +384,31 @@ export function useBoardWizard({
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
     if (draft) return new Set(draft.boardTasks.map((bt) => bt.taskId));
+    // Synchronous fallback only — `effectiveTemplate.seedTaskIds` is stale
+    // once P1's legacy-editor write-through has run (it writes through to
+    // the linked Pool, not this field; see `useTemplateMix`'s docstring).
+    // The one-shot effect below replaces this with the resolved mix as
+    // soon as it loads.
     if (effectiveTemplate) return new Set(effectiveTemplate.seedTaskIds);
     return new Set();
   });
+
+  // P1 (Task Pools + Recurring Boards Rework) — resolve the template's
+  // CURRENT pool-mix task ids and replace the seedTaskIds-based initial
+  // state above once loaded. One-shot via a ref flag, same pattern as the
+  // DefaultPool prefill effect below: without it, re-opening "Edit"/"Add
+  // tasks" a second time would silently drop whatever a prior edit wrote
+  // through to the Pool, and Save would destructively overwrite the Pool
+  // with the stale set.
+  const templateMix = useTemplateMix(effectiveTemplate);
+  const templateMixAppliedRef = useRef(false);
+  useEffect(() => {
+    if (templateMixAppliedRef.current) return;
+    if (!effectiveTemplate) return;
+    if (templateMix === undefined) return; // still loading
+    templateMixAppliedRef.current = true;
+    setSelectedTaskIds(templateMix);
+  }, [effectiveTemplate, templateMix]);
 
   // Phase 6.X — Default Pool prefill. When the wizard is banner-launched
   // (`effectivePrefill` set) AND no draft/template hydrated the

@@ -6,9 +6,11 @@ import {
   buildSpawnPlacement,
   validateSpawnPool,
   computeBoardStatsUpdate,
+  resolveMix,
   type Board,
   type BoardTask,
   type CompoundChild,
+  type Pool,
   type RecurringBoardTemplate,
   type Task,
   type TaskEvent,
@@ -74,23 +76,44 @@ export async function spawnTemplateBoard(
       db.boards,
       db.boardTasks,
       db.tasks,
+      db.pools,
       db.compoundChildren,
       db.taskEvents,
       db.recurringBoardTemplates,
       db.syncQueue,
     ],
     async (): Promise<SpawnResult> => {
-      // Resolve seedTaskIds → Task[] in seedTaskIds order. Drops any
-      // ids that don't resolve; the validator catches the resulting
-      // pool-too-small as `has_deleted_tasks` (caller responsibility:
-      // the create/update form rejects deleted refs at save time).
-      const tasks = await db.tasks
-        .where('id')
-        .anyOf(template.seedTaskIds)
-        .toArray();
-      const tasksById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
-      const orderedPool: Task[] = template.seedTaskIds
-        .map((id) => tasksById.get(id))
+      // P1 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+      // §Changed: the spawn record) — the task source is the resolved
+      // pool-mix, not `template.seedTaskIds` directly. Post-migration EVERY
+      // live template has `poolIds` set, so `seedTaskIds` is never read
+      // here (left verbatim on the record for decode-compat only — see
+      // `RecurringBoardTemplate`'s docstring's "seedTaskIds end state").
+      //
+      // Single full-table reads (tasks, pools) rather than a targeted
+      // `anyOf(seedTaskIds)` lookup: `resolveMix` needs a `tasksById` map
+      // to filter each pool's OWN resolvable supply (deleted tasks skipped
+      // — derived detachment), and the same `allTasks`/`tasksById` are
+      // reused below for the spawn-time derivation pass, so this is not an
+      // added read.
+      const allTasks = await db.tasks.toArray();
+      const tasksById: Record<string, Task> = {};
+      for (const t of allTasks) tasksById[t.id] = t;
+
+      const poolIds = template.poolIds ?? [];
+      const pools = poolIds.length > 0 ? await db.pools.where('id').anyOf(poolIds).toArray() : [];
+      const poolsById: Record<string, Pool> = {};
+      for (const p of pools) poolsById[p.id] = p;
+
+      const mix = resolveMix(template, poolsById, tasksById);
+      // Resolve mix task ids → Task[] in mix order. Drops any ids that
+      // don't resolve at all (e.g. a hard-gone manual reference — the
+      // manual layer isn't deleted-filtered by resolveMix itself); the
+      // validator below catches a resolved-but-deleted task (possible
+      // for a manual-sourced id, since resolveMix only filters deletion
+      // for pool-sourced supply) as `has_deleted_tasks`.
+      const orderedPool: Task[] = mix.taskIds
+        .map((id) => tasksById[id])
         .filter((t): t is Task => t !== undefined);
 
       if (orderedPool.length === 0) {
@@ -187,8 +210,10 @@ export async function spawnTemplateBoard(
       const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
       const childrenByCompound: Record<string, CompoundChild[]> = {};
       for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
-      const taskById: Record<string, Task> = {};
-      for (const t of await db.tasks.toArray()) taskById[t.id] = t;
+      // Reuse the `tasksById` map read at the top of this closure for
+      // mix resolution — no writes to `tasks` happen in between, so it's
+      // still an accurate snapshot for the derivation pass.
+      const taskById: Record<string, Task> = tasksById;
       const eventsByTaskId: Record<string, TaskEvent[]> = {};
       for (const e of await db.taskEvents.toArray()) {
         if (e.isDeleted) continue;

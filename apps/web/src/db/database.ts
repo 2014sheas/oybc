@@ -12,6 +12,8 @@ import type {
   CompoundChild,
   RecurringBoardTemplate,
   DefaultPool,
+  Pool,
+  CoreBoardDefault,
 } from '@oybc/shared';
 
 /**
@@ -33,6 +35,8 @@ export class AppDatabase extends Dexie {
   recurringBoardTemplates!: Table<RecurringBoardTemplate, string>;
   defaultPools!: Table<DefaultPool, string>;
   taskEvents!: Table<TaskEvent, string>;
+  pools!: Table<Pool, string>;
+  coreBoardDefaults!: Table<CoreBoardDefault, string>;
 
   constructor() {
     super('oybc');
@@ -374,6 +378,47 @@ export class AppDatabase extends Dexie {
     this.version(14).stores({}).upgrade((tx) => {
       // Dynamic import avoids a top-of-file cycle (migrationV14 imports `db`).
       return import('./operations/migrationV14').then((mod) => mod.runMigrationV14(tx));
+    });
+
+    // v15: Task Pools + Recurring Boards Rework (P1, docs/POOLS_RECURRING.md
+    // §Data model + §Migration). New `pools` and `coreBoardDefaults` stores —
+    // created EMPTY here, mirroring the taskEvents v12/v13 split (schema shape
+    // separated from the backfill upgrade so the upgrade still fires even on a
+    // dev machine that already opened the DB at v15-empty).
+    //
+    // `pools`: `[userId+isDeleted]` scopes the sync pull + the future Tasks-tab
+    // Pools segment list query (P2); `updatedAt` for ordered reads. No index on
+    // `taskIds` — consumers (`resolveMix`, health checks) read the whole row.
+    //
+    // `coreBoardDefaults`: `[userId+timeframe]` is the one-row-per-(user,
+    // timeframe) lookup the core-board setup prefill needs (mirrors the
+    // `defaultPools` v8 index); `[userId+isDeleted]` scopes the sync pull.
+    this.version(15).stores({
+      pools: `
+        id,
+        [userId+isDeleted],
+        updatedAt
+      `,
+      coreBoardDefaults: `
+        id,
+        [userId+timeframe],
+        [userId+isDeleted],
+        updatedAt
+      `,
+    });
+
+    // v16: Task Pools + Recurring Boards Rework — first-launch BACKFILL
+    // (docs/POOLS_RECURRING.md §Migration). Runs AFTER v15 created the stores
+    // empty. Mints: (1) a `Pool` + `CoreBoardDefault` row per `DefaultPool`,
+    // soft-deleting the `DefaultPool` row; (2) a `Pool` per
+    // `RecurringBoardTemplate`'s `seedTaskIds`, stamping `poolIds: [pool.id]`,
+    // `manualTaskIds: []`, `removedTaskIds: []` on the template (`seedTaskIds`
+    // itself is left VERBATIM — decode-compat only, never read after P1).
+    // No schema shape change here (`.stores({})` no-op); the version bump is
+    // the vehicle for the `.upgrade()` callback, same pattern as v13/v14.
+    this.version(16).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV16 imports `db`).
+      return import('./operations/migrationV16').then((mod) => mod.runMigrationV16(tx));
     });
   }
 }

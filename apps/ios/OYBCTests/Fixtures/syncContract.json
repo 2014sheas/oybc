@@ -10,7 +10,9 @@
     "compoundChildren",
     "recurringBoardTemplates",
     "defaultPools",
-    "taskEvents"
+    "taskEvents",
+    "pools",
+    "coreBoardDefaults"
   ],
   "userScopedSyncCollections": [
     "boards",
@@ -18,11 +20,14 @@
     "compositeTasks",
     "recurringBoardTemplates",
     "defaultPools",
-    "taskEvents"
+    "taskEvents",
+    "pools",
+    "coreBoardDefaults"
   ],
   "legacyPullSkipCollections": [
     "taskSteps",
     "compositeTasks",
-    "compositeNodes"
+    "compositeNodes",
+    "defaultPools"
   ]
 }

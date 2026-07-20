@@ -19,6 +19,20 @@ extension AppDatabase {
         }
     }
 
+    /// Fetch tasks by id, regardless of `isDeleted` (callers that need to
+    /// distinguish should check the returned rows' `isDeleted`). Used by
+    /// `PoolMix.resolveMix` callers (spawn path, wizard template-mix
+    /// hydration) that already have a set of referenced task ids and need
+    /// a `tasksById` lookup. Mirrors `fetchBoards(ids:)`.
+    func fetchTasks(ids: [String]) throws -> [Task] {
+        guard !ids.isEmpty else { return [] }
+        return try read { db in
+            try Task
+                .filter(ids.contains(Column("id")))
+                .fetchAll(db)
+        }
+    }
+
     func saveTask(_ task: Task) throws {
         try write { db in
             try task.save(db)

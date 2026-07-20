@@ -5,6 +5,7 @@ import {
   TaskType,
   computeBoardStatsUpdate,
   type CompoundChild,
+  type Pool,
   type RecurringBoardTemplate,
   type Task,
   type TaskEvent,
@@ -71,6 +72,7 @@ afterEach(async () => {
   await db.boards.clear();
   await db.boardTasks.clear();
   await db.recurringBoardTemplates.clear();
+  await db.pools.clear();
   await db.taskEvents.clear();
   await db.syncQueue.clear();
 });
@@ -82,6 +84,22 @@ describe('Windowed Completion — respawn bleed regression', () => {
       seedTaskIds.push(await seedPoolTaskWithPriorCompletion(i));
     }
 
+    // P1 (Task Pools + Recurring Boards Rework) — the spawn path resolves
+    // the mix from poolIds/manualTaskIds/removedTaskIds, not seedTaskIds
+    // directly (seedTaskIds is left verbatim, decode-compat only). Seed a
+    // migrated-shape Pool carrying the same task ids.
+    const pool: Pool = {
+      id: 'pool-1',
+      userId: 'user-1',
+      name: 'Daily Workout pool',
+      taskIds: seedTaskIds,
+      createdAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    };
+    await db.pools.add(pool);
+
     const template: RecurringBoardTemplate = {
       id: 'tmpl-1',
       userId: 'user-1',
@@ -91,6 +109,9 @@ describe('Windowed Completion — respawn bleed regression', () => {
       centerSquareType: CenterSquareType.FREE,
       isRandomized: false,
       seedTaskIds,
+      poolIds: [pool.id],
+      manualTaskIds: [],
+      removedTaskIds: [],
       lastSpawnedWindowKey: null,
       isActive: true,
       createdAt: '2026-05-01T00:00:00.000Z',
@@ -144,6 +165,20 @@ describe('Windowed Completion — respawn bleed regression', () => {
       seedTaskIds.push(await seedPoolTaskWithPriorCompletion(i));
     }
 
+    // P1 (Task Pools + Recurring Boards Rework) — seed a migrated-shape
+    // Pool; see the sibling test above for the full rationale.
+    const pool2: Pool = {
+      id: 'pool-2',
+      userId: 'user-1',
+      name: 'Daily Workout pool',
+      taskIds: seedTaskIds,
+      createdAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    };
+    await db.pools.add(pool2);
+
     const template: RecurringBoardTemplate = {
       id: 'tmpl-2',
       userId: 'user-1',
@@ -153,6 +188,9 @@ describe('Windowed Completion — respawn bleed regression', () => {
       centerSquareType: CenterSquareType.FREE,
       isRandomized: false,
       seedTaskIds,
+      poolIds: [pool2.id],
+      manualTaskIds: [],
+      removedTaskIds: [],
       lastSpawnedWindowKey: null,
       isActive: true,
       createdAt: '2026-05-01T00:00:00.000Z',

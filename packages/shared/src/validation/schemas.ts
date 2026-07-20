@@ -850,6 +850,23 @@ const RecurringCenterSquareTypeSchema = z.union([
   z.literal(CenterSquareType.NONE),
 ]);
 
+/**
+ * P1 (Task Pools rework) — the three generalized-source fields, additive
+ * and optional on every RecurringBoardTemplate schema (create/update/full)
+ * so a legacy (`seedTaskIds`-only) payload still validates. Each array
+ * gets its own no-dup refine, mirroring `seedTaskIds`'s — a duplicate
+ * `poolId`/`manualTaskId`/`removedTaskId` is a caller bug the schema
+ * should catch before it reaches `resolveMix`.
+ */
+const poolIdsNoDup = (data: { poolIds?: string[] }): boolean =>
+  data.poolIds === undefined || new Set(data.poolIds).size === data.poolIds.length;
+const manualTaskIdsNoDup = (data: { manualTaskIds?: string[] }): boolean =>
+  data.manualTaskIds === undefined ||
+  new Set(data.manualTaskIds).size === data.manualTaskIds.length;
+const removedTaskIdsNoDup = (data: { removedTaskIds?: string[] }): boolean =>
+  data.removedTaskIds === undefined ||
+  new Set(data.removedTaskIds).size === data.removedTaskIds.length;
+
 export const CreateRecurringBoardTemplateInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   timeframe: RecurringTimeframeSchema,
@@ -859,6 +876,9 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()).min(1),
   isActive: z.boolean(),
+  poolIds: z.array(z.string().uuid()).optional(),
+  manualTaskIds: z.array(z.string().uuid()).optional(),
+  removedTaskIds: z.array(z.string().uuid()).optional(),
 }).refine(
   (data) => {
     if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
@@ -881,6 +901,15 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
     return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
   },
   { message: 'seedTaskIds must not contain duplicates' },
+).refine(
+  poolIdsNoDup,
+  { message: 'poolIds must not contain duplicates' },
+).refine(
+  manualTaskIdsNoDup,
+  { message: 'manualTaskIds must not contain duplicates' },
+).refine(
+  removedTaskIdsNoDup,
+  { message: 'removedTaskIds must not contain duplicates' },
 );
 
 export const UpdateRecurringBoardTemplateInputSchema = z.object({
@@ -892,12 +921,24 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
   isRandomized: z.boolean().optional(),
   seedTaskIds: z.array(z.string().uuid()).min(1).optional(),
   isActive: z.boolean().optional(),
+  poolIds: z.array(z.string().uuid()).optional(),
+  manualTaskIds: z.array(z.string().uuid()).optional(),
+  removedTaskIds: z.array(z.string().uuid()).optional(),
 }).refine(
   (data) => {
     if (data.seedTaskIds === undefined) return true;
     return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
   },
   { message: 'seedTaskIds must not contain duplicates' },
+).refine(
+  poolIdsNoDup,
+  { message: 'poolIds must not contain duplicates' },
+).refine(
+  manualTaskIdsNoDup,
+  { message: 'manualTaskIds must not contain duplicates' },
+).refine(
+  removedTaskIdsNoDup,
+  { message: 'removedTaskIds must not contain duplicates' },
 ).refine(
   (data) => {
     // When a partial update sets `centerSquareType` to CUSTOM_FREE, it must
@@ -926,6 +967,11 @@ export const RecurringBoardTemplateSchema = z.object({
   centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()),
+  // P1 — additive, optional generalized-source fields. See
+  // types/recurringBoardTemplate.ts for the mix formula + "legacy shape".
+  poolIds: z.array(z.string().uuid()).optional(),
+  manualTaskIds: z.array(z.string().uuid()).optional(),
+  removedTaskIds: z.array(z.string().uuid()).optional(),
   lastSpawnedWindowKey: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
@@ -934,7 +980,117 @@ export const RecurringBoardTemplateSchema = z.object({
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
-});
+}).refine(
+  poolIdsNoDup,
+  { message: 'poolIds must not contain duplicates' },
+).refine(
+  manualTaskIdsNoDup,
+  { message: 'manualTaskIds must not contain duplicates' },
+).refine(
+  removedTaskIdsNoDup,
+  { message: 'removedTaskIds must not contain duplicates' },
+);
+
+// ===== Pool Schemas (P1 — Task Pools + Recurring Boards Rework) =====
+
+/**
+ * Pools follow the same name bounds as templates (1-120 chars after trim —
+ * `RecurringTimeframeSchema`'s sibling convention, reused for parity).
+ * `taskIds` MAY be empty — a pool can be created empty and filled later,
+ * matching `DefaultPool`'s tolerance.
+ */
+export const CreatePoolInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  taskIds: z.array(z.string().uuid()),
+}).refine(
+  (data) => new Set(data.taskIds).size === data.taskIds.length,
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const UpdatePoolInputSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  taskIds: z.array(z.string().uuid()).optional(),
+}).refine(
+  (data) => {
+    if (data.taskIds === undefined) return true;
+    return new Set(data.taskIds).size === data.taskIds.length;
+  },
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const PoolSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  name: z.string().min(1).max(120),
+  taskIds: z.array(z.string().uuid()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+}).refine(
+  (data) => new Set(data.taskIds).size === data.taskIds.length,
+  { message: 'taskIds must not contain duplicates' },
+);
+
+// ===== CoreBoardDefault Schemas (P1 — replaces DefaultPool) =====
+
+/**
+ * `Timeframe.CUSTOM` is excluded — same reason as `DefaultPool` /
+ * `RecurringBoardTemplate`: a "default" tied to a computed recurring
+ * window has no semantic for custom-window boards. Both `corePoolIds` and
+ * `coreDefaultTaskIds` MAY be empty ("No default tasks" is a valid,
+ * expected state — never "Not set").
+ */
+export const CreateCoreBoardDefaultInputSchema = z.object({
+  timeframe: RecurringTimeframeSchema,
+  corePoolIds: z.array(z.string().uuid()),
+  coreDefaultTaskIds: z.array(z.string().uuid()),
+}).refine(
+  (data) => new Set(data.corePoolIds).size === data.corePoolIds.length,
+  { message: 'corePoolIds must not contain duplicates' },
+).refine(
+  (data) => new Set(data.coreDefaultTaskIds).size === data.coreDefaultTaskIds.length,
+  { message: 'coreDefaultTaskIds must not contain duplicates' },
+);
+
+export const UpdateCoreBoardDefaultInputSchema = z.object({
+  corePoolIds: z.array(z.string().uuid()).optional(),
+  coreDefaultTaskIds: z.array(z.string().uuid()).optional(),
+}).refine(
+  (data) => {
+    if (data.corePoolIds === undefined) return true;
+    return new Set(data.corePoolIds).size === data.corePoolIds.length;
+  },
+  { message: 'corePoolIds must not contain duplicates' },
+).refine(
+  (data) => {
+    if (data.coreDefaultTaskIds === undefined) return true;
+    return new Set(data.coreDefaultTaskIds).size === data.coreDefaultTaskIds.length;
+  },
+  { message: 'coreDefaultTaskIds must not contain duplicates' },
+);
+
+export const CoreBoardDefaultSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  timeframe: RecurringTimeframeSchema,
+  corePoolIds: z.array(z.string().uuid()),
+  coreDefaultTaskIds: z.array(z.string().uuid()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+}).refine(
+  (data) => new Set(data.corePoolIds).size === data.corePoolIds.length,
+  { message: 'corePoolIds must not contain duplicates' },
+).refine(
+  (data) => new Set(data.coreDefaultTaskIds).size === data.coreDefaultTaskIds.length,
+  { message: 'coreDefaultTaskIds must not contain duplicates' },
+);
 
 // ===== DefaultPool Schemas (Phase 6.X — Default Pools) =====
 

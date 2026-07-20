@@ -53,6 +53,7 @@ struct RecurringTemplatesView: View {
                                     attentionReason: templatesVM.attentionByTemplateId[tpl.id],
                                     poolPreview: templatesVM.poolPreviewByTemplateId[tpl.id] ?? [],
                                     poolPreviewOverflow: templatesVM.poolPreviewOverflowByTemplateId[tpl.id] ?? 0,
+                                    poolTaskCount: templatesVM.mixByTemplateId[tpl.id]?.count,
                                     onEdit: { onEditTemplate?(tpl.id) },
                                     onToggleActive: { newValue in setActive(tpl, newValue) },
                                     onDelete: { deleteTemplate(id: tpl.id) },

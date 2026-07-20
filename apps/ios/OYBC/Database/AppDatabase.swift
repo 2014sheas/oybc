@@ -730,6 +730,90 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isCounter INTEGER NOT NULL DEFAULT 0")
         }
 
+        // v24: Task Pools + Recurring Boards Rework (P1) — schema only
+        // (docs/POOLS_RECURRING.md §Data model). New `pools` +
+        // `core_board_defaults` tables (JSON-string TEXT arrays, same
+        // house style as `default_pools`/`recurring_board_templates`), plus
+        // three additive NULLABLE TEXT columns on `recurring_board_templates`
+        // (`poolIds`, `manualTaskIds`, `removedTaskIds` — see
+        // `RecurringBoardTemplate.swift`'s tri-state null-preserving
+        // decode/encode). Mirrors web's Dexie v15 (store creation). Data
+        // backfill is v25, run AFTER these tables/columns exist.
+        migrator.registerMigration("v24") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS pools (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    taskIds TEXT NOT NULL DEFAULT '[]',
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_pools_user_deleted ON pools(userId, isDeleted)")
+
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS core_board_defaults (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    corePoolIds TEXT NOT NULL DEFAULT '[]',
+                    coreDefaultTaskIds TEXT NOT NULL DEFAULT '[]',
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_core_board_defaults_user_timeframe ON core_board_defaults(userId, timeframe)")
+            try db.execute(sql: "CREATE INDEX idx_core_board_defaults_user_deleted ON core_board_defaults(userId, isDeleted)")
+
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN poolIds TEXT")
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN manualTaskIds TEXT")
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN removedTaskIds TEXT")
+        }
+
+        // v25: Task Pools + Recurring Boards Rework (P1) — first-launch data
+        // migration (docs/POOLS_RECURRING.md §Migration). Twin of web's
+        // Dexie `runMigrationV16`. Two independent steps, both idempotent
+        // by construction (state-based, no separate "migration completed"
+        // marker — mirrors the v20/v22 backfill precedent):
+        //
+        //   1. Each non-deleted `DefaultPool` row → a `Pool` named
+        //      "<Timeframe> default" + a `CoreBoardDefault` row for that
+        //      timeframe with `corePoolIds: [newPool.id]`,
+        //      `coreDefaultTaskIds: []`. The `DefaultPool` row is then
+        //      soft-deleted (tombstone drains to Firestore via the push
+        //      path; `defaultPools` joins `LEGACY_PULL_SKIP_COLLECTIONS`
+        //      in SyncService.swift).
+        //   2. Each `RecurringBoardTemplate` whose `poolIds` column IS NULL
+        //      (the "genuinely un-migrated" half of `PoolMix.isLegacyShapedRecord`)
+        //      has its `seedTaskIds` extracted into a `Pool` named
+        //      "<template name> pool"; the template is stamped with
+        //      `poolIds: [newPool.id]`, `manualTaskIds: []`,
+        //      `removedTaskIds: []`. `seedTaskIds` itself is left VERBATIM
+        //      (decode-compat, the `lastSyncedCount` precedent) and is
+        //      never read live post-migration.
+        //
+        // Both steps enqueue sync entries via raw SQL inline inserts
+        // (`MigrationV25Helpers.enqueueMigrationSync`, mirrors v20/v14 —
+        // the migration owns its own transaction, which `SyncQueueBuilder`'s
+        // coalescing `enqueue(db)` isn't written to participate in). Raw SQL
+        // is fine here specifically because every row minted by this
+        // migration is a brand-new id with no pre-existing PENDING row to
+        // coalesce against — there's nothing for the coalescer to do.
+        migrator.registerMigration("v25") { db in
+            try MigrationV25Helpers.run(db, now: Self.currentTimestamp())
+        }
+
         return migrator
     }
 

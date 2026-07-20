@@ -337,3 +337,67 @@ export function buildBackfillTaskEvent(task: Task): TaskEvent | null {
     occurredAt: task.completedAt ?? task.updatedAt,
   };
 }
+
+// ─── Task Pools + Recurring Boards Rework — P1 migration mint ids ─────────
+//
+// docs/POOLS_RECURRING.md §Migration. The v16/v25 first-launch backfill
+// (`migrationV16.ts` web, `MigrationV25Helpers.swift` iOS) mints a `Pool` +
+// (for DefaultPool) a `CoreBoardDefault` per legacy row. Two devices that
+// have each locally cached a copy of the SAME `DefaultPool` /
+// `RecurringBoardTemplate` row (pre-sync, or synced-then-migrated
+// independently before either device saw the other's migration output)
+// would otherwise mint DIFFERENT random ids for what is conceptually the
+// same derived row — sync then converges on TWO Pool/CoreBoardDefault docs
+// instead of one. `uuidv5`, keyed off the SOURCE row's stable id, makes both
+// devices derive the identical id, so sync's per-id LWW upsert naturally
+// dedupes instead of duplicating.
+//
+// Unlike `backfillTaskEventId` (kind-qualified over a task id), these are
+// migration-source-qualified over the DefaultPool/template id — the
+// namespace string's `pools-p1:` prefix + literal middle segment is what
+// keeps the three mint sites from colliding with each other or with any
+// other uuidv5 consumer sharing `OYBC_NAMESPACE`.
+//
+// ONLY the migration mint sites use these — the legacy-create paths
+// (web `wizardPersist.ts`, iOS `BoardWizardPersist.swift`) mint at
+// user-action time on a single device and correctly keep random ids; see
+// each file's header for why deterministic ids would be wrong there.
+
+/**
+ * Deterministic id for the `Pool` minted from a `DefaultPool` row during the
+ * P1 migration (docs §Migration, step 1). Keyed off `defaultPool.id` so two
+ * devices migrating the same DefaultPool row independently mint the SAME
+ * Pool id.
+ *
+ * @param defaultPoolId The source `DefaultPool.id`.
+ * @returns A deterministic v5 UUID.
+ */
+export function migrationDefaultPoolToPoolId(defaultPoolId: string): string {
+  return uuidv5(`pools-p1:defaultPool-pool:${defaultPoolId}`, OYBC_NAMESPACE);
+}
+
+/**
+ * Deterministic id for the `CoreBoardDefault` minted from a `DefaultPool`
+ * row during the P1 migration (docs §Migration, step 1). Keyed off
+ * `defaultPool.id` so two devices migrating the same DefaultPool row
+ * independently mint the SAME CoreBoardDefault id.
+ *
+ * @param defaultPoolId The source `DefaultPool.id`.
+ * @returns A deterministic v5 UUID.
+ */
+export function migrationDefaultPoolToCoreBoardDefaultId(defaultPoolId: string): string {
+  return uuidv5(`pools-p1:coreBoardDefault:${defaultPoolId}`, OYBC_NAMESPACE);
+}
+
+/**
+ * Deterministic id for the `Pool` minted from a `RecurringBoardTemplate`'s
+ * `seedTaskIds` during the P1 migration (docs §Migration, step 2). Keyed off
+ * `template.id` so two devices migrating the same template row independently
+ * mint the SAME Pool id.
+ *
+ * @param templateId The source `RecurringBoardTemplate.id`.
+ * @returns A deterministic v5 UUID.
+ */
+export function migrationTemplateToPoolId(templateId: string): string {
+  return uuidv5(`pools-p1:template-pool:${templateId}`, OYBC_NAMESPACE);
+}
