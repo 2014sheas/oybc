@@ -27,12 +27,21 @@ struct RecurringTemplateCard: View {
     /// Non-nil when this template's pool can't spawn — surfaces a badge.
     /// Strict mirror of web's `attentionReason` (see `RecurringTemplateRow`).
     let attentionReason: SpawnPoolFailureReason?
-    /// First-3 resolved task titles from the pool, in `seedTaskIds` order
-    /// (issue #321). Empty ⇒ no chip row (e.g. zero resolvable titles).
+    /// First-3 resolved task titles from the pool, in mix order (issue
+    /// #321). Empty ⇒ no chip row (e.g. zero resolvable titles).
     var poolPreview: [String] = []
     /// Count of additional resolved titles beyond `poolPreview`'s first 3.
     /// 0 ⇒ no "+{k} more" overflow chip.
     var poolPreviewOverflow: Int = 0
+    /// The "N-task pool" meta-row count. P1 (Task Pools + Recurring
+    /// Boards Rework) — `template.seedTaskIds.count` goes stale the first
+    /// time the legacy-editor write-through edits the linked Pool (see
+    /// `RecurringBoardTemplatesViewModel.mixByTemplateId`'s doc), so the
+    /// caller should pass the CURRENT resolved mix's count. `nil` (the
+    /// default) falls back to `template.seedTaskIds.count` — used by
+    /// previews/snapshots that construct a bare template with no live
+    /// mix data.
+    var poolTaskCount: Int? = nil
     let onEdit: () -> Void
     let onToggleActive: (Bool) -> Void
     let onDelete: () -> Void
@@ -150,7 +159,7 @@ struct RecurringTemplateCard: View {
                 .foregroundStyle(active ? Color.risoInk : Color.risoMuted)
             Text("board").font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
             Text("·").foregroundStyle(Color.risoMuted)
-            Text("\(template.seedTaskIds.count)").font(.risoBody(12, .bold))
+            Text("\(poolTaskCount ?? template.seedTaskIds.count)").font(.risoBody(12, .bold))
                 .foregroundStyle(active ? Color.risoInk : Color.risoMuted)
             Text("-task pool").font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
             Text("·").foregroundStyle(Color.risoMuted)

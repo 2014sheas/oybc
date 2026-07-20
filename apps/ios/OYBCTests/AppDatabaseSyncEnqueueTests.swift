@@ -452,8 +452,22 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         return ids
     }
 
-    private func makeTemplate(id: String, seedIds: [String]) -> RecurringBoardTemplate {
+    /// Builds a template already in the migrated shape (`poolIds: [pool]`,
+    /// `manualTaskIds: []`, `removedTaskIds: []`) — mints and saves the
+    /// backing `Pool` directly against `db` so `spawnRecurringBoard`'s
+    /// `PoolMix.resolveMix` call resolves the same task ids `seedIds`
+    /// used to resolve to pre-P1. A template with no `poolIds` would
+    /// resolve to an EMPTY mix post-P1 (spawn never falls back to
+    /// `seedTaskIds` — see `RecurringBoardTemplate`'s "seedTaskIds end
+    /// state" doc), so every spawn-path test needs a real pool.
+    private func makeTemplate(_ db: AppDatabase, id: String, seedIds: [String]) throws -> RecurringBoardTemplate {
         let now = AppDatabase.currentTimestamp()
+        let pool = Pool(
+            id: "\(id)-pool", userId: "u1", name: "\(id) pool", taskIds: seedIds,
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+            isDeleted: false, deletedAt: nil
+        )
+        try db.write { grdb in try pool.insert(grdb) }
         return RecurringBoardTemplate(
             id: id,
             userId: "u1",
@@ -463,6 +477,9 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             centerSquareType: .free,
             isRandomized: false,
             seedTaskIds: seedIds,
+            poolIds: [pool.id],
+            manualTaskIds: [],
+            removedTaskIds: [],
             isActive: true,
             createdAt: now,
             updatedAt: now,
@@ -475,7 +492,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         try seedUser(db)
         // 3×3 FREE center → 8 fillable cells.
         let seedIds = try seedSpawnTasks(db, count: 8)
-        let template = makeTemplate(id: "tpl", seedIds: seedIds)
+        let template = try makeTemplate(db, id: "tpl", seedIds: seedIds)
         try db.saveRecurringBoardTemplate(template)
         let now = AppDatabase.currentTimestamp()
 
@@ -512,7 +529,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         let db = try makeDb()
         try seedUser(db)
         let seedIds = try seedSpawnTasks(db, count: 2) // < 8 required
-        let template = makeTemplate(id: "tpl2", seedIds: seedIds)
+        let template = try makeTemplate(db, id: "tpl2", seedIds: seedIds)
         try db.saveRecurringBoardTemplate(template)
         let now = AppDatabase.currentTimestamp()
 

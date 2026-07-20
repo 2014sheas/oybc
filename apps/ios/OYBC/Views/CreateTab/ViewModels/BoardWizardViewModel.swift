@@ -186,7 +186,7 @@ final class BoardWizardViewModel {
             self.timeframe = t.timeframe
             self.centerType = t.centerSquareType
             self.centerCustomName = t.centerSquareCustomName ?? ""
-            self.selectedTaskIds = Set(t.seedTaskIds)
+            self.selectedTaskIds = Self.resolveTemplateHydrationTaskIds(t, database: database)
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -268,6 +268,55 @@ final class BoardWizardViewModel {
         case .custom:     return .custom
         case .indefinite: return .indefinite
         }
+    }
+
+    /// Resolves a template's CURRENT pool-mix task ids for edit-mode
+    /// hydration. iOS twin of web's `useTemplateMix`.
+    ///
+    /// P1 (Task Pools + Recurring Boards Rework,
+    /// docs/POOLS_RECURRING.md §Migration "seedTaskIds end state") rewired
+    /// the legacy template editor's persistence to write edits through to
+    /// the linked `Pool`'s `taskIds` instead of the template's own
+    /// `seedTaskIds` field — which is left VERBATIM (decode-compat only)
+    /// and never read again. That means this hydration can no longer read
+    /// `t.seedTaskIds` directly: after a first "Add tasks"/"Edit"
+    /// round-trip, that field is stale — it would silently drop whatever
+    /// the write-through already applied to the Pool, and re-opening the
+    /// wizard a second time would show (and then re-save, DESTRUCTIVELY)
+    /// the wrong selection.
+    ///
+    /// Un-migrated safety net (shouldn't occur post-migration — the
+    /// first-launch migration always stamps a length-1 `poolIds`): falls
+    /// back to `seedTaskIds` verbatim when `poolIds` is absent OR empty —
+    /// `isLegacyShapedRecord`'s "no pool yet" case. Resolving that via
+    /// `PoolMix.resolveMix` would silently return an EMPTY mix (no pools,
+    /// no manual) rather than the user's actual historical selection.
+    ///
+    /// Any DB read failure also falls back to `seedTaskIds` (silent, like
+    /// the DefaultPool prefill above) so the wizard still opens with a
+    /// usable selection rather than an error.
+    private static func resolveTemplateHydrationTaskIds(
+        _ template: RecurringBoardTemplate,
+        database: AppDatabase
+    ) -> Set<String> {
+        guard let poolIds = template.poolIds, !poolIds.isEmpty else {
+            return Set(template.seedTaskIds)
+        }
+        guard let pools = try? database.fetchPools(ids: poolIds) else {
+            return Set(template.seedTaskIds)
+        }
+        let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
+
+        var referencedIds = Set<String>()
+        for pool in pools { referencedIds.formUnion(pool.taskIds) }
+        referencedIds.formUnion(template.manualTaskIds ?? [])
+
+        guard let tasks = try? database.fetchTasks(ids: Array(referencedIds)) else {
+            return Set(template.seedTaskIds)
+        }
+        let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+
+        return Set(PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById).taskIds)
     }
 
     // MARK: - Coupled mutators

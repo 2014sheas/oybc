@@ -327,9 +327,27 @@ enum RecurringTemplatePersistOutcome {
 ///   two writes are sequential GRDB transactions; if the spawn fails
 ///   (e.g. soft-deleted task race), the template still exists with
 ///   `lastSpawnedWindowKey=nil` and the next Boards-tab open will retry.
-/// - **Edit** (`editingTemplateId` set): updates the template via a
-///   direct `saveRecurringBoardTemplate`. Does NOT spawn — edits don't
-///   retroactively change previously-spawned boards.
+/// - **Edit** (`editingTemplateId` set): the P1 legacy-editor write-through
+///   is SHAPE-SCOPED (`PoolMix.isLegacyShapedRecord`):
+///     - legacy-shaped WITH a linked pool (the normal post-P1 case: exactly
+///       one pool, no manual additions, no removals) → writes the
+///       selection straight through to that Pool's `taskIds` via
+///       `updatePoolAndEnqueue` — the shared Pool IS the source of truth,
+///       so the template's own `poolIds`/`manualTaskIds`/`removedTaskIds`
+///       don't need to change.
+///     - legacy-shaped WITHOUT a pool yet (defensive — shouldn't occur
+///       post-migration, since migration always mints one, but a record
+///       edited before its first-launch migration ran would hit this) →
+///       mints a Pool exactly like the create path / migration step 2.
+///     - non-legacy-shaped (2+ pools, any manual additions, any removals —
+///       cannot occur before P4 ships the generalized wizard, but handled
+///       defensively) → flattens the selection to `manualTaskIds` and
+///       clears `poolIds`/`removedTaskIds`. The legacy editor never writes
+///       a Pool it didn't mint.
+///   `seedTaskIds` itself is left untouched on edit — verbatim/stale,
+///   never read after P1. Does NOT spawn — edits don't retroactively
+///   change previously-spawned boards, and the next window's spawn will
+///   pick up the new mix naturally.
 ///
 /// Runs on a background queue; dispatches callbacks on the main queue.
 func persistRecurringTemplate(
@@ -361,37 +379,97 @@ func persistRecurringTemplate(
                     }
                     return
                 }
-                let updated = RecurringBoardTemplate(
-                    id: existing.id,
-                    userId: existing.userId,
-                    name: trimmedName,
-                    timeframe: timeframe,
-                    boardSize: boardSize,
-                    centerSquareType: centerType,
-                    centerSquareCustomName: customCenterName,
-                    isRandomized: isRandomized,
-                    seedTaskIds: seedTaskIds,
-                    // `isActive` isn't surfaced in the wizard form (the
-                    // templates list owns the pause toggle), so preserve.
-                    lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
-                    isActive: existing.isActive,
-                    createdAt: existing.createdAt,
-                    updatedAt: now,
-                    lastSyncedAt: existing.lastSyncedAt,
-                    version: existing.version + 1,
-                    isDeleted: false,
-                    deletedAt: nil
-                )
-                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                    updated,
-                    operation: .update,
-                    now: now
-                )
-                DispatchQueue.main.async { onSuccess(.updated(templateId: updated.id)) }
+
+                // Base field update — shared by every shape branch below.
+                // `seedTaskIds` is intentionally omitted (left
+                // verbatim/stale, never read after P1); poolIds/manual/
+                // removed are set per-branch.
+                func baseUpdate(
+                    poolIds: [String]?,
+                    manualTaskIds: [String]?,
+                    removedTaskIds: [String]?
+                ) -> RecurringBoardTemplate {
+                    RecurringBoardTemplate(
+                        id: existing.id,
+                        userId: existing.userId,
+                        name: trimmedName,
+                        timeframe: timeframe,
+                        boardSize: boardSize,
+                        centerSquareType: centerType,
+                        centerSquareCustomName: customCenterName,
+                        isRandomized: isRandomized,
+                        seedTaskIds: existing.seedTaskIds,
+                        poolIds: poolIds,
+                        manualTaskIds: manualTaskIds,
+                        removedTaskIds: removedTaskIds,
+                        // `isActive` isn't surfaced in the wizard form (the
+                        // templates list owns the pause toggle), so preserve.
+                        lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
+                        isActive: existing.isActive,
+                        createdAt: existing.createdAt,
+                        updatedAt: now,
+                        lastSyncedAt: existing.lastSyncedAt,
+                        version: existing.version + 1,
+                        isDeleted: false,
+                        deletedAt: nil
+                    )
+                }
+
+                if PoolMix.isLegacyShapedRecord(existing) {
+                    if let existingPoolId = existing.poolIds?.first {
+                        // Normal post-P1 case: write straight through to
+                        // the linked Pool. The Pool is the shared source
+                        // of truth for the mix — no change needed to the
+                        // template's own poolIds/manualTaskIds/removedTaskIds.
+                        try AppDatabase.shared.updatePoolAndEnqueue(
+                            id: existingPoolId, taskIds: seedTaskIds, now: now
+                        )
+                        let updated = baseUpdate(
+                            poolIds: existing.poolIds,
+                            manualTaskIds: existing.manualTaskIds,
+                            removedTaskIds: existing.removedTaskIds
+                        )
+                        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                            updated, operation: .update, now: now
+                        )
+                    } else {
+                        // Defensive: a legacy-shaped record with no pool
+                        // yet (edited before its first-launch migration
+                        // ran). Mint a Pool exactly like the create path /
+                        // migration step 2.
+                        let pool = try AppDatabase.shared.createPoolAndEnqueue(
+                            userId: userId, name: "\(trimmedName) pool", taskIds: seedTaskIds, now: now
+                        )
+                        let updated = baseUpdate(
+                            poolIds: [pool.id], manualTaskIds: [], removedTaskIds: []
+                        )
+                        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                            updated, operation: .update, now: now
+                        )
+                    }
+                } else {
+                    // Defensive flatten: a richer shape (2+ pools, manual
+                    // additions, or removals) reached by the legacy
+                    // editor. Never write a Pool this editor didn't mint —
+                    // flatten to manualTaskIds instead.
+                    let updated = baseUpdate(
+                        poolIds: [], manualTaskIds: seedTaskIds, removedTaskIds: []
+                    )
+                    try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                        updated, operation: .update, now: now
+                    )
+                }
+
+                DispatchQueue.main.async { onSuccess(.updated(templateId: templateId)) }
                 return
             }
 
             // ── Fresh-create path ─────────────────────────────────────
+            // Mint a Pool from the selection (mirrors migration step 2),
+            // then insert the template already in the migrated shape.
+            let pool = try AppDatabase.shared.createPoolAndEnqueue(
+                userId: userId, name: "\(trimmedName) pool", taskIds: seedTaskIds, now: now
+            )
             let template = RecurringBoardTemplate(
                 id: AppDatabase.generateUUID(),
                 userId: userId,
@@ -402,6 +480,9 @@ func persistRecurringTemplate(
                 centerSquareCustomName: customCenterName,
                 isRandomized: isRandomized,
                 seedTaskIds: seedTaskIds,
+                poolIds: [pool.id],
+                manualTaskIds: [],
+                removedTaskIds: [],
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,

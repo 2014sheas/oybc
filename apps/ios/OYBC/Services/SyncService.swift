@@ -22,8 +22,10 @@ let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
     ("compositeNodes", "composite_nodes"),            // legacy — same
     ("compoundChildren", "compound_children"),
     ("recurringBoardTemplates", "recurring_board_templates"), // Phase 6.2
-    ("defaultPools", "default_pools"),                       // Phase 6.X
+    ("defaultPools", "default_pools"),                       // Phase 6.X — legacy, see legacyPullSkipCollections
     ("taskEvents", "task_events"),                           // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync)
+    ("pools", "pools"),                                       // P1 — Task Pools + Recurring Boards Rework
+    ("coreBoardDefaults", "core_board_defaults"),              // P1 — replaces defaultPools
     // `users` is handled as the parent doc at `users/{userId}` (not a
     // subcollection child), but the GRDB table it writes back into is still
     // `users`, so it participates in the allowedGRDBTables whitelist.
@@ -46,18 +48,29 @@ let userScopedCollections: Set<String> = [
     "defaultPools",
     // TaskEvent rows carry a top-level `userId` (Windowed Completion).
     "taskEvents",
+    // P1 — Task Pools + Recurring Boards Rework. Both carry a top-level `userId`.
+    "pools", "coreBoardDefaults",
 ]
 
-/// Collections whose GRDB tables were dropped in the v7 data migration.
-/// They stay in `syncableCollections` so the push path can drain DELETE
-/// sync ops for pre-migration rows (cleaning up Firestore), but the pull
-/// path must skip them — upserting into a dropped table would crash.
+/// Collections whose GRDB tables were dropped (or, for `defaultPools`,
+/// retired by a first-launch data migration) — `taskSteps` /
+/// `compositeTasks` / `compositeNodes`' tables were literally dropped in
+/// the v7 data migration; `defaultPools` (P1 — Task Pools + Recurring
+/// Boards Rework) keeps its `default_pools` table, but every row is
+/// soft-deleted by the v25 migration (docs/POOLS_RECURRING.md §Migration),
+/// so pulling a peer's still-live `DefaultPool` doc (a mixed-version
+/// device that hasn't migrated yet) would resurrect a row the local
+/// migration already tombstoned. All four stay in `syncableCollections`
+/// so the push path can drain DELETE sync ops for pre-migration rows
+/// (cleaning up Firestore), but the pull path must skip them — for the
+/// first three, upserting into a dropped table would crash; for
+/// `defaultPools`, upserting would fight the local migration's tombstone.
 ///
 /// Must set-match `@oybc/shared`'s `LEGACY_PULL_SKIP_COLLECTIONS` —
 /// enforced by `OYBCTests/SyncContractTests.swift`. Not `private` so
 /// that test can see it via `@testable import OYBC`.
 let legacyPullSkipCollections: Set<String> = [
-    "taskSteps", "compositeTasks", "compositeNodes",
+    "taskSteps", "compositeTasks", "compositeNodes", "defaultPools",
 ]
 
 /// Validates the baseline sync-safety invariants that every pulled

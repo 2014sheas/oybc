@@ -367,10 +367,19 @@ final class WindowedCompletionTests: XCTestCase {
         }
 
         let now = AppDatabase.currentTimestamp()
+        // P1 — spawn resolves via the pool mix, not seedTaskIds directly;
+        // mint a backing Pool so the template is in the migrated shape.
+        let pool = Pool(
+            id: "pool-d", userId: userId, name: "Daily pool", taskIds: seedIds,
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+            isDeleted: false, deletedAt: nil
+        )
+        try db.write { grdb in try pool.insert(grdb) }
         let template = RecurringBoardTemplate(
             id: "tpl-d", userId: userId, name: "Daily", timeframe: .monthly,
             boardSize: 3, centerSquareType: .free, isRandomized: false,
-            seedTaskIds: seedIds, isActive: true,
+            seedTaskIds: seedIds, poolIds: [pool.id], manualTaskIds: [], removedTaskIds: [],
+            isActive: true,
             createdAt: now, updatedAt: now, version: 1
         )
         try db.saveRecurringBoardTemplate(template)
