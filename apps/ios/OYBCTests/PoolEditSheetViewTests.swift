@@ -54,6 +54,19 @@ final class PoolEditSheetViewTests: XCTestCase {
         XCTAssertNil(PoolEditSheetView.nameLengthError(for: "Morning Kickstart"))
     }
 
+    // #340 review Minor 1: the bound is UTF-16 code units (like Zod's max(120)
+    // / web's name.length), NOT Swift Characters — else an emoji-heavy name
+    // ≤120 graphemes but >120 units passes here yet a web peer drops it on pull.
+    func testNameLengthError_CountsUTF16UnitsNotGraphemes() {
+        // 61 × 🎯 = 61 graphemes but 122 UTF-16 units → must error.
+        let emojiName = String(repeating: "🎯", count: 61)
+        XCTAssertEqual(emojiName.count, 61)
+        XCTAssertEqual(emojiName.utf16.count, 122)
+        XCTAssertNotNil(PoolEditSheetView.nameLengthError(for: emojiName))
+        // 60 × 🎯 = 120 units → exactly at the bound, no error.
+        XCTAssertNil(PoolEditSheetView.nameLengthError(for: String(repeating: "🎯", count: 60)))
+    }
+
     func testNameLengthError_MatchesWebCopyByteForByte() {
         // `poolEditSheetOps.ts`'s `savePoolFromSheet` throws
         // "Pool name must be 120 characters or fewer." and the sheet's

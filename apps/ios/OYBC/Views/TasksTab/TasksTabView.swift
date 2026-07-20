@@ -92,16 +92,6 @@ struct TasksTabView: View {
             )
             let effectiveExpanded = expandedCompoundIds.union(autoExpand)
 
-            // Pools segment — batched ONCE per render, never per-card.
-            let tasksById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
-            let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
-            let healthByPoolId = Dictionary(uniqueKeysWithValues: pools.map { pool in
-                (pool.id, PoolHealth.computePoolHealth(pool, templates: poolTemplates, poolsById: poolsById, tasksById: tasksById))
-            })
-            let poolTasksById = Dictionary(uniqueKeysWithValues: pools.map { pool in
-                (pool.id, pool.taskIds.compactMap { tasksById[$0] })
-            })
-
             List {
                 // ── Scrolling header (not sticky) ────────────────────
                 Group {
@@ -144,6 +134,19 @@ struct TasksTabView: View {
 
                 // ── Pools segment content ────────────────────────────
                 if segment == .pools {
+                    // Health/preview lookups — built ONCE here (never per-card),
+                    // and only in Pools mode so Library-mode keystrokes don't
+                    // re-run resolveMix over every pool×template (matches web,
+                    // which only computes this inside the mounted PoolsBrowse).
+                    let tasksById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
+                    let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
+                    let healthByPoolId = Dictionary(uniqueKeysWithValues: pools.map { pool in
+                        (pool.id, PoolHealth.computePoolHealth(pool, templates: poolTemplates, poolsById: poolsById, tasksById: tasksById))
+                    })
+                    let poolTasksById = Dictionary(uniqueKeysWithValues: pools.map { pool in
+                        (pool.id, pool.taskIds.compactMap { tasksById[$0] })
+                    })
+
                     PoolsBrowseView(
                         pools: pools,
                         poolTasksById: poolTasksById,

@@ -424,7 +424,11 @@ struct PoolEditSheetView: View {
     /// `savePoolFromSheet` throw as rendered through the sheet's
     /// `Could not save pool: ` catch-branch prefix.
     static func nameLengthError(for trimmedName: String) -> String? {
-        guard trimmedName.count > nameMaxLength else { return nil }
+        // Count UTF-16 code units, NOT Swift Characters — `PoolSchema.name`'s
+        // `z.string().max(120)` and web's `name.length` both measure UTF-16
+        // units, so an emoji/astral-heavy name that's ≤120 graphemes but >120
+        // units would pass here yet be dropped by a web peer's Zod pull.
+        guard trimmedName.utf16.count > nameMaxLength else { return nil }
         return "Could not save pool: Pool name must be \(nameMaxLength) characters or fewer."
     }
 
