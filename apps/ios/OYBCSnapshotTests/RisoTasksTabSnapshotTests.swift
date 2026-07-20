@@ -10,6 +10,8 @@ import SnapshotTesting
 ///     Achievement) in light + dark.
 ///   - `RisoCompoundGroupRowView` collapsed + expanded in light + dark.
 ///   - `RisoTasksControlsView` (header controls) in light + dark.
+///   - Tasks-tab header + Library/Pools pill segment (P2 Task 3) in
+///     light + dark — see `TasksTabHeaderSegmentPreview` below.
 ///   - `RisoTaskDetailContentView` for a Normal task in light + dark.
 ///
 /// All timestamps are pinned via `SnapshotFixtures.fixedTimestamp` so
@@ -348,6 +350,40 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Tasks-tab header + Pools segment (P2 Task 3)
+    //
+    // `TasksTabView` itself stays excluded (see the class doc above), but
+    // its header composition — kicker "Your library" + H1 "Tasks" + the
+    // new pill Library/Pools segment sitting above the controls block — is
+    // DB-free UI, so it's reproduced here with the SAME production
+    // modifiers/component (`.risoKicker()` / `.risoH1()` / `RisoSegmented`)
+    // `TasksTabView.headerRow` / `.segmentRow` compose, guarding the
+    // "sits above the controls block" placement from the handoff
+    // screenshot `01-pools.png`.
+
+    private func tasksTabHeaderWithSegment() -> some View {
+        TasksTabHeaderSegmentPreview()
+            .padding(Riso.gutter)
+            .background(Color.risoPaper)
+            .frame(width: 393, height: 140)
+    }
+
+    func testTasksTabHeaderWithSegmentLight() {
+        assertSnapshot(
+            of: tasksTabHeaderWithSegment(),
+            as: .image(layout: .fixed(width: 393, height: 140), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
+    func testTasksTabHeaderWithSegmentDark() {
+        assertSnapshot(
+            of: tasksTabHeaderWithSegment(),
+            as: .image(layout: .fixed(width: 393, height: 140), traits: darkTraits()),
+            record: recordMode
+        )
+    }
+
     // MARK: - RisoTaskDetailContentView — Normal task
 
     func testDetailNormalLight() {
@@ -505,5 +541,36 @@ private struct ControlsWrapper: View {
             groupByCompound: $groupByCompound,
             resultCount: resultCount
         )
+    }
+}
+
+// MARK: - Stateful wrapper for Tasks-tab header + Pools segment snapshot
+
+/// Thin SwiftUI view reproducing `TasksTabView.headerRow` + `.segmentRow`'s
+/// composition (kicker + H1 + pill segment) with its own `@State` binding,
+/// so the pairing renders in isolation without touching `TasksTabView`
+/// itself (self-loading, excluded — see class doc). Uses the exact same
+/// production modifiers/component as the real screen, just not the
+/// private computed properties directly.
+private struct TasksTabHeaderSegmentPreview: View {
+    private enum Segment: Hashable { case library, pools }
+    @State private var segment: Segment = .pools
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your library").risoKicker()
+                    Text("Tasks").risoH1()
+                }
+                Spacer(minLength: 12)
+                RisoIconButton(systemImage: "plus") {}
+            }
+            RisoSegmented(
+                options: [(Segment.library, "Library"), (Segment.pools, "Pools · 2")],
+                selection: $segment,
+                style: .pill
+            )
+        }
     }
 }
