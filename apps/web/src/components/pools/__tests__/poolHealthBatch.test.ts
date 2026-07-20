@@ -99,7 +99,13 @@ describe('computePoolHealthByPoolId', () => {
 
     expect(result.pA.consumers).toEqual([]);
     expect(result.pB.consumers).toEqual([
-      { templateId: 'tplB', templateName: 'Feeds B', timeframe: Timeframe.WEEKLY, shortBy: 7 },
+      {
+        templateId: 'tplB',
+        templateName: 'Feeds B',
+        timeframe: Timeframe.WEEKLY,
+        boardSize: 3,
+        shortBy: 7,
+      },
     ]);
   });
 

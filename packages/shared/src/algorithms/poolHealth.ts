@@ -33,6 +33,12 @@ export interface PoolHealthConsumer {
   templateId: string;
   templateName: string;
   timeframe: Timeframe;
+  /** The consuming template's board size — carried so a renderer can call
+   *  `formatPoolShortWarning` directly off a consumer without a separate
+   *  template lookup (P2 Task 2 review: web's pool card originally
+   *  re-resolved this via a `templatesById` map; threading it here instead
+   *  removes that indirection on both platforms). */
+  boardSize: number;
   /** How many more resolvable tasks the template's mix needs. Always > 0. */
   shortBy: number;
 }
@@ -104,6 +110,7 @@ export function computePoolHealth(
       templateId: template.id,
       templateName: template.name,
       timeframe: template.timeframe,
+      boardSize: template.boardSize,
       shortBy,
     });
   }

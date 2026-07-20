@@ -1,5 +1,5 @@
 import { formatPoolShortWarning } from '@oybc/shared';
-import type { Pool, PoolHealthResult, RecurringBoardTemplate, Task } from '@oybc/shared';
+import type { Pool, PoolHealthResult, Task } from '@oybc/shared';
 import { RisoCard } from '../riso';
 import styles from './PoolCard.module.css';
 
@@ -12,13 +12,10 @@ export interface PoolCardProps {
    *  row + count. Resolved once at the page level (batched), not here. */
   tasks: Task[];
   /** This pool's derived health (P2 Task 1's `computePoolHealth`), passed
-   *  in from the page's batched pass — never computed per-card. */
+   *  in from the page's batched pass — never computed per-card. Each
+   *  consumer carries its own `boardSize`, so the warning line renders
+   *  straight off it — no separate template lookup needed. */
   health: PoolHealthResult;
-  /** id → template lookup (built once at the page level) — `PoolHealthConsumer`
-   *  doesn't carry `boardSize` itself, only `shortBy`/`timeframe`/name, so the
-   *  warning line resolves it here rather than re-threading it onto Task 1's
-   *  shared type. */
-  templatesById: Record<string, RecurringBoardTemplate>;
   onClick: (pool: Pool) => void;
 }
 
@@ -31,13 +28,7 @@ export interface PoolCardProps {
  * NO board-related actions render here (locked decision) — the whole
  * card is a single tap target that opens the edit sheet.
  */
-export function PoolCard({
-  pool,
-  tasks,
-  health,
-  templatesById,
-  onClick,
-}: PoolCardProps): React.ReactElement {
+export function PoolCard({ pool, tasks, health, onClick }: PoolCardProps): React.ReactElement {
   const visible = tasks.slice(0, CHIP_LIMIT);
   const overflow = tasks.length - visible.length;
   const taskCount = health.taskCount;
@@ -76,18 +67,15 @@ export function PoolCard({
         <strong>{taskCount}</strong> task{taskCount === 1 ? '' : 's'} · tap to edit
       </div>
 
-      {health.consumers.map((consumer) => {
-        const boardSize = templatesById[consumer.templateId]?.boardSize ?? 3;
-        return (
-          <div key={consumer.templateId} className={styles.warning} role="status">
-            {formatPoolShortWarning({
-              shortBy: consumer.shortBy,
-              boardSize,
-              timeframe: consumer.timeframe,
-            })}
-          </div>
-        );
-      })}
+      {health.consumers.map((consumer) => (
+        <div key={consumer.templateId} className={styles.warning} role="status">
+          {formatPoolShortWarning({
+            shortBy: consumer.shortBy,
+            boardSize: consumer.boardSize,
+            timeframe: consumer.timeframe,
+          })}
+        </div>
+      ))}
     </RisoCard>
   );
 }

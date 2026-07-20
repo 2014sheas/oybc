@@ -34,6 +34,13 @@ export interface WizardQuickAddRowProps {
    * Absent for immediate-persist callers (e.g. Tasks-tab quick-add).
    */
   onPendingCreated?: (payload: PendingTaskPayload) => void;
+  /**
+   * Externally-driven disable (e.g. a parent sheet's save/delete in
+   * flight). Defaults to `false` — existing callers are unaffected.
+   * Combines with the row's own `isSubmitting` state, which already
+   * disables mid-submit regardless of this prop.
+   */
+  disabled?: boolean;
 }
 
 /** Rotating placeholder pool — mirrors the iOS `RisoQuickAddRowView` suggestions. */
@@ -72,6 +79,7 @@ export function WizardQuickAddRow({
   currentEndDate,
   onTaskCreated,
   onPendingCreated,
+  disabled = false,
 }: WizardQuickAddRowProps): React.ReactElement {
   const [text, setText] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -79,7 +87,7 @@ export function WizardQuickAddRow({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const trimmed = text.trim();
-  const canSubmit = trimmed.length > 0 && !isSubmitting;
+  const canSubmit = trimmed.length > 0 && !isSubmitting && !disabled;
   const placeholder = PLACEHOLDERS[placeholderIndex % PLACEHOLDERS.length];
   const deferPersist = onPendingCreated !== undefined;
 
@@ -168,7 +176,7 @@ export function WizardQuickAddRow({
         aria-label="New normal task title"
         autoComplete="off"
         spellCheck
-        disabled={isSubmitting}
+        disabled={isSubmitting || disabled}
       />
       <RisoButton
         kind="primary"

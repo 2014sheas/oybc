@@ -121,7 +121,13 @@ describe('computePoolHealth — consumer detection', () => {
     });
 
     expect(result.consumers).toEqual([
-      { templateId: 'tpl1', templateName: 'Template tpl1', timeframe: Timeframe.WEEKLY, shortBy: 6 },
+      {
+        templateId: 'tpl1',
+        templateName: 'Template tpl1',
+        timeframe: Timeframe.WEEKLY,
+        boardSize: 3,
+        shortBy: 6,
+      },
     ]);
   });
 
@@ -195,7 +201,7 @@ describe('computePoolHealth — shortBy math across sizes/centers', () => {
     expect(result.consumers[0].shortBy).toBe(7);
   });
 
-  it('4x4: floor 16, mix 2 -> shortBy 14', () => {
+  it('4x4: floor 16, mix 2 -> shortBy 14, and threads the consuming template\'s boardSize', () => {
     const template = buildTemplate('tpl1', {
       poolIds: ['p1'],
       boardSize: 4,
@@ -205,6 +211,10 @@ describe('computePoolHealth — shortBy math across sizes/centers', () => {
     const result = computePoolHealth(pool, { templates: [template], poolsById, tasksById });
 
     expect(result.consumers[0].shortBy).toBe(14);
+    // P2 Task 2 review: boardSize is carried on the consumer itself so a
+    // renderer can call `formatPoolShortWarning` directly off it, with no
+    // separate template lookup needed.
+    expect(result.consumers[0].boardSize).toBe(4);
   });
 
   it('a template with enough mix to fill is NOT a consumer (shortBy 0 excluded)', () => {
@@ -256,8 +266,20 @@ describe('computePoolHealth — pool consumed by multiple templates', () => {
     });
 
     expect(result.consumers).toEqual([
-      { templateId: 'tplA', templateName: 'Morning Kickstart', timeframe: Timeframe.DAILY, shortBy: 7 },
-      { templateId: 'tplB', templateName: 'Weekly Reset', timeframe: Timeframe.WEEKLY, shortBy: 8 },
+      {
+        templateId: 'tplA',
+        templateName: 'Morning Kickstart',
+        timeframe: Timeframe.DAILY,
+        boardSize: 3,
+        shortBy: 7,
+      },
+      {
+        templateId: 'tplB',
+        templateName: 'Weekly Reset',
+        timeframe: Timeframe.WEEKLY,
+        boardSize: 3,
+        shortBy: 8,
+      },
     ]);
   });
 });

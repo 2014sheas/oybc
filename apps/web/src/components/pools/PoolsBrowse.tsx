@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
-import { usePools, useRecurringBoardTemplates, useTasks } from '../../hooks';
+import type { Pool, Task } from '@oybc/shared';
+import { useRecurringBoardTemplates } from '../../hooks';
 import { PoolCard } from './PoolCard';
 import { PoolEditSheet } from './PoolEditSheet';
 import { computePoolHealthByPoolId } from './poolHealthBatch';
@@ -8,15 +8,19 @@ import styles from './PoolsBrowse.module.css';
 
 export interface PoolsBrowseProps {
   userId: string;
+  /** The user's non-deleted pools — loaded ONCE at `TasksPage` (it already
+   *  needs the count for the segment's "Pools · N" label) and passed down
+   *  rather than re-subscribed here, so Pools mode doesn't run two
+   *  concurrent `usePools` live queries (`useLiveQuery` doesn't dedupe). */
+  pools: Pool[];
+  /** The user's full non-deleted task library — likewise already loaded at
+   *  `TasksPage` via `useTaskLibrary`; reused here instead of a second
+   *  `useTasks` subscription. */
+  allTasks: Task[];
 }
 
 /** Sheet visibility: closed, creating a new pool, or editing an existing one. */
 type SheetState = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; pool: Pool };
-
-// Stable empty fallback for `useTasks(userId) ?? FALLBACK` — see
-// `useTaskLibrary.ts`'s `EMPTY_TASKS` for the rationale (a fresh `[]`
-// literal on every render would defeat the `useMemo` below's dep check).
-const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 
 /**
  * PoolsBrowse — the Tasks-tab "Pools" segment (Task Pools + Recurring
@@ -31,24 +35,18 @@ const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
  * Health (the red short-warning line) is computed ONCE per render via
  * `computePoolHealthByPoolId` over the already-loaded pools/templates/
  * tasks — never per-card — per the repo's perf-constraint history.
+ * `pools`/`allTasks` are props (not local live queries) for the same
+ * single-read-set reason — see the props' docstrings.
  */
-export function PoolsBrowse({ userId }: PoolsBrowseProps): React.ReactElement {
-  const pools = usePools(userId);
+export function PoolsBrowse({ userId, pools, allTasks }: PoolsBrowseProps): React.ReactElement {
   const templates = useRecurringBoardTemplates(userId);
-  const tasks = useTasks(userId) ?? EMPTY_TASKS;
   const [sheet, setSheet] = useState<SheetState>({ kind: 'closed' });
 
   const tasksById = useMemo(() => {
     const m: Record<string, Task> = {};
-    for (const t of tasks) m[t.id] = t;
+    for (const t of allTasks) m[t.id] = t;
     return m;
-  }, [tasks]);
-
-  const templatesById = useMemo(() => {
-    const m: Record<string, RecurringBoardTemplate> = {};
-    for (const t of templates) m[t.id] = t;
-    return m;
-  }, [templates]);
+  }, [allTasks]);
 
   const healthByPoolId = useMemo(
     () => computePoolHealthByPoolId(pools, templates, tasksById),
@@ -79,7 +77,6 @@ export function PoolsBrowse({ userId }: PoolsBrowseProps): React.ReactElement {
               pool={pool}
               tasks={poolTasksById[pool.id] ?? []}
               health={healthByPoolId[pool.id] ?? { taskCount: 0, consumers: [] }}
-              templatesById={templatesById}
               onClick={(p) => setSheet({ kind: 'edit', pool: p })}
             />
           ))}
@@ -99,7 +96,7 @@ export function PoolsBrowse({ userId }: PoolsBrowseProps): React.ReactElement {
           userId={userId}
           pool={sheet.kind === 'edit' ? sheet.pool : undefined}
           templates={templates}
-          allTasks={tasks}
+          allTasks={allTasks}
           onClose={closeSheet}
           onSaved={closeSheet}
           onDeleted={closeSheet}

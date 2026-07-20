@@ -199,7 +199,7 @@ export function PoolEditSheet({
 
           <span className={styles.kicker}>Add tasks</span>
           <div className={styles.quickAddRow}>
-            <WizardQuickAddRow userId={userId} onTaskCreated={addTask} />
+            <WizardQuickAddRow userId={userId} onTaskCreated={addTask} disabled={busy} />
           </div>
 
           <button
