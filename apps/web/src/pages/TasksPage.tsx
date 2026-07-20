@@ -150,7 +150,12 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
       </div>
 
       {segment === 'pools' ? (
-        <PoolsBrowse userId={userId} pools={pools} allTasks={library.allTasks} />
+        <PoolsBrowse
+          userId={userId}
+          pools={pools}
+          allTasks={library.allTasks}
+          browsableTasks={filters.browsableTasks}
+        />
       ) : (
         <>
           <TasksFilterControls

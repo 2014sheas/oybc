@@ -7,6 +7,14 @@ export interface PoolEditSheetSaveInput {
   taskIds: string[];
 }
 
+/** `PoolSchema.name` bound (`packages/shared/src/validation/schemas.ts`) —
+ *  a name that saves past this fails Zod on the next pull (same class as
+ *  P1's minted-name clamp, a different entry point: this one is
+ *  user-typed, so it's enforced both as the input's `maxLength` AND here
+ *  as a save-time backstop against paste/IME input that bypasses the DOM
+ *  attribute). Mirrors iOS's `PoolEditSheetView.nameMaxLength`. */
+export const POOL_NAME_MAX_LENGTH = 120;
+
 /**
  * Persists a `PoolEditSheet` save — extracted from the component so the
  * create-vs-update branch (and the P1 CRUD ops it delegates to) has a
@@ -15,8 +23,11 @@ export interface PoolEditSheetSaveInput {
  * equivalent, so pure/op-level functions are how UI logic gets covered).
  *
  * `pool === undefined` ⇒ create mode (`createPool`); otherwise updates the
- * existing row (`updatePool`). Throws if `updatePool` reports the pool no
- * longer exists (soft-deleted or removed out from under the open sheet).
+ * existing row (`updatePool`). Throws if the trimmed name exceeds
+ * `POOL_NAME_MAX_LENGTH` (a >120-char name would otherwise save locally,
+ * push, then fail `PoolSchema` on the next pull — I-1) or if `updatePool`
+ * reports the pool no longer exists (soft-deleted or removed out from
+ * under the open sheet).
  */
 export async function savePoolFromSheet(
   userId: string,
@@ -24,6 +35,9 @@ export async function savePoolFromSheet(
   input: PoolEditSheetSaveInput,
 ): Promise<Pool> {
   const name = input.name.trim();
+  if (name.length > POOL_NAME_MAX_LENGTH) {
+    throw new Error(`Pool name must be ${POOL_NAME_MAX_LENGTH} characters or fewer.`);
+  }
   if (pool) {
     const updated = await updatePool(pool.id, { name, taskIds: input.taskIds });
     if (!updated) {

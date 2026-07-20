@@ -15,8 +15,17 @@ export interface PoolsBrowseProps {
   pools: Pool[];
   /** The user's full non-deleted task library — likewise already loaded at
    *  `TasksPage` via `useTaskLibrary`; reused here instead of a second
-   *  `useTasks` subscription. */
+   *  `useTasks` subscription. Feeds chip/health resolution — NEVER the
+   *  library-reuse picker (see `browsableTasks`). */
   allTasks: Task[];
+  /** The draft-filtered subset of `allTasks` (`useTasksFilters`'
+   *  `browsableTasks`, the same set the Library segment browses) — passed
+   *  through to `PoolEditSheet` for its "reuse a task from your library"
+   *  picker ONLY (P2 I-2). Pickers are browse surfaces: a wizard-born
+   *  draft task the Library hides shouldn't be offered here either, even
+   *  though a pool that already references one still resolves its chip
+   *  via `allTasks`. */
+  browsableTasks: Task[];
 }
 
 /** Sheet visibility: closed, creating a new pool, or editing an existing one. */
@@ -38,7 +47,12 @@ type SheetState = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; pool
  * `pools`/`allTasks` are props (not local live queries) for the same
  * single-read-set reason — see the props' docstrings.
  */
-export function PoolsBrowse({ userId, pools, allTasks }: PoolsBrowseProps): React.ReactElement {
+export function PoolsBrowse({
+  userId,
+  pools,
+  allTasks,
+  browsableTasks,
+}: PoolsBrowseProps): React.ReactElement {
   const templates = useRecurringBoardTemplates(userId);
   const [sheet, setSheet] = useState<SheetState>({ kind: 'closed' });
 
@@ -97,6 +111,7 @@ export function PoolsBrowse({ userId, pools, allTasks }: PoolsBrowseProps): Reac
           pool={sheet.kind === 'edit' ? sheet.pool : undefined}
           templates={templates}
           allTasks={allTasks}
+          browsableTasks={browsableTasks}
           onClose={closeSheet}
           onSaved={closeSheet}
           onDeleted={closeSheet}

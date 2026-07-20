@@ -61,6 +61,47 @@ describe('savePoolFromSheet', () => {
       'Pool no longer exists',
     );
   });
+
+  // I-1 — the 120-char PoolSchema.name bound. The sheet's `maxLength`
+  // attribute stops most typing, but paste/IME input can still bypass a
+  // DOM attribute, so the save path re-checks — a name that saves past
+  // this fails Zod on the next pull (same class as P1's minted-name
+  // clamp, a different — user-typed — entry point).
+  it('accepts a name at exactly the 120-char bound', async () => {
+    const name = 'a'.repeat(120);
+    const created = await savePoolFromSheet('user-1', undefined, { name, taskIds: [] });
+    expect(created.name).toBe(name);
+    expect(created.name.length).toBe(120);
+  });
+
+  it('rejects a 121-char name before it ever reaches the DB layer', async () => {
+    const name = 'a'.repeat(121);
+    await expect(
+      savePoolFromSheet('user-1', undefined, { name, taskIds: [] }),
+    ).rejects.toThrow('Pool name must be 120 characters or fewer.');
+
+    // Never wrote a row — the check runs before create/update.
+    const all = await db.pools.toArray();
+    expect(all).toHaveLength(0);
+  });
+
+  it('rejects a 121-char name in edit mode too, without mutating the existing row', async () => {
+    const created = await savePoolFromSheet('user-1', undefined, { name: 'A', taskIds: [] });
+    const tooLong = 'b'.repeat(121);
+    await expect(
+      savePoolFromSheet('user-1', created, { name: tooLong, taskIds: [] }),
+    ).rejects.toThrow('Pool name must be 120 characters or fewer.');
+
+    const stored = await fetchPool(created.id);
+    expect(stored?.name).toBe('A');
+    expect(stored?.version).toBe(1);
+  });
+
+  it('the 120-char check runs against the TRIMMED name (surrounding whitespace does not count)', async () => {
+    const name = `  ${'c'.repeat(120)}  `;
+    const created = await savePoolFromSheet('user-1', undefined, { name, taskIds: [] });
+    expect(created.name).toBe('c'.repeat(120));
+  });
 });
 
 describe('deletePoolFromSheet', () => {

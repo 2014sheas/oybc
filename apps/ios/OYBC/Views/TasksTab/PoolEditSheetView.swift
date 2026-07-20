@@ -52,23 +52,39 @@ struct PoolEditSheetView: View {
 
     private var isEditMode: Bool { pool != nil }
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var trimmedLibrarySearch: String {
+        librarySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     private var canSave: Bool { !trimmedName.isEmpty && !poolTaskIds.isEmpty && !busy }
 
+    /// The RESOLVABLE subset of `poolTaskIds`, in order — what "TASKS (N)",
+    /// the chip row, and the deck preview render (never `poolTaskIds.count`
+    /// directly), matching `computePoolHealth`'s "resolvable, non-deleted"
+    /// count semantics. Reads the FULL library set (`library.libraryTasks`,
+    /// never `library.browsableTasks`) so a pool that already references a
+    /// wizard-born draft task still resolves its chip (P2 I-3). The WRITE
+    /// path (`handleSave`) uses raw `poolTaskIds` — unresolvable ids
+    /// (soft-deleted or otherwise stale) are preserved on save, per
+    /// `Pool.taskIds`'s docstring contract.
     private var selectedTasks: [Task] {
-        poolTaskIds.compactMap { id in library.libraryTasks.first { $0.id == id } }
+        Self.resolveChips(taskIds: poolTaskIds, libraryTasks: library.libraryTasks)
     }
 
+    /// The library-reuse picker's candidate list — `library.browsableTasks`
+    /// (never `library.libraryTasks`), since pickers are browse surfaces: a
+    /// wizard-born draft task the Tasks-tab Library segment hides shouldn't
+    /// be offered here either (P2 I-2).
     private var libraryResults: [Task] {
-        let selected = Set(poolTaskIds)
-        let query = librarySearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return library.libraryTasks
-            .filter { !selected.contains($0.id) }
-            .filter { query.isEmpty || $0.title.lowercased().contains(query) }
+        Self.filterLibraryResults(
+            browsableTasks: library.browsableTasks,
+            selectedIds: Set(poolTaskIds),
+            query: librarySearch
+        )
     }
 
     private var deckPreviewText: String {
         Self.formatDeckPreview(
-            taskCount: poolTaskIds.count,
+            taskCount: selectedTasks.count,
             deckFloor: Self.computeDeckFloor(templates: templates, poolId: pool?.id ?? "")
         )
     }
@@ -104,6 +120,10 @@ struct PoolEditSheetView: View {
             }
         }
         .onAppear { seedForm() }
+        // M-3: mirrors web's backdrop-click/Escape busy-guard — a
+        // swipe-to-dismiss mid-save/delete would otherwise abandon the
+        // sheet while a write is still in flight.
+        .interactiveDismissDisabled(busy)
     }
 
     // MARK: - Header
@@ -138,7 +158,7 @@ struct PoolEditSheetView: View {
 
     private var tasksSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("TASKS (\(poolTaskIds.count))")
+            Text("TASKS (\(selectedTasks.count))")
                 .font(.risoBody(11, .bold)).tracking(1.1).foregroundStyle(Color.risoMuted)
             Text("Add a few tasks — boards deal their squares from this list.")
                 .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
@@ -223,7 +243,7 @@ struct PoolEditSheetView: View {
             Divider().background(Color.risoInk.opacity(0.08))
 
             if libraryResults.isEmpty {
-                Text(librarySearch.isEmpty ? "Every library task is already in this pool." : "No matches.")
+                Text(trimmedLibrarySearch.isEmpty ? "Every library task is already in this pool." : "No matches.")
                     .font(.risoBody(12.5, .regular)).foregroundStyle(Color.risoMuted)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity).padding(14)
@@ -315,6 +335,14 @@ struct PoolEditSheetView: View {
 
     private func handleSave() {
         guard canSave else { return }
+        // I-1: the `PoolSchema.name` 120-char bound. `RisoTextField` has no
+        // built-in `maxLength` (no existing iOS field-length-clamp pattern
+        // to reuse — grepped), so this is the enforcement point; matches
+        // web's save-path check byte-for-byte in copy.
+        if let lengthError = Self.nameLengthError(for: trimmedName) {
+            errorMessage = lengthError
+            return
+        }
         busy = true
         errorMessage = nil
         let uid = userId
@@ -374,6 +402,56 @@ struct PoolEditSheetView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Testable pure helpers (P2 final review I-1/I-2/I-3)
+    //
+    // `internal` (default), not `private` — `filterLibraryResults` /
+    // `resolveChips` / `nameLengthError` need to be reachable from
+    // `OYBCTests` via `@testable import OYBC`. Mirrors web's extracted
+    // `poolEditSheetSelectors.ts` / the `POOL_NAME_MAX_LENGTH` check in
+    // `poolEditSheetOps.ts` — same seam, same copy.
+
+    /// `PoolSchema.name` bound (`packages/shared/src/validation/schemas.ts`)
+    /// — a name that saves past this fails Zod on the next pull.
+    static let nameMaxLength = 120
+
+    /// I-1: `nil` when `trimmedName` is within bounds, else the exact
+    /// error string the sheet surfaces — byte-identical to web's
+    /// `savePoolFromSheet` throw as rendered through the sheet's
+    /// `Could not save pool: ` catch-branch prefix.
+    static func nameLengthError(for trimmedName: String) -> String? {
+        guard trimmedName.count > nameMaxLength else { return nil }
+        return "Could not save pool: Pool name must be \(nameMaxLength) characters or fewer."
+    }
+
+    /// I-2: the library-reuse picker's candidate list — `browsableTasks`
+    /// (NEVER `libraryTasks`) minus already-selected ids, filtered by a
+    /// trimmed, case-insensitive title query. Pickers are browse
+    /// surfaces: a wizard-born draft task the Library segment hides
+    /// shouldn't be offered here either.
+    static func filterLibraryResults(
+        browsableTasks: [Task],
+        selectedIds: Set<String>,
+        query: String
+    ) -> [Task] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return browsableTasks
+            .filter { !selectedIds.contains($0.id) }
+            .filter { trimmedQuery.isEmpty || $0.title.lowercased().contains(trimmedQuery) }
+    }
+
+    /// I-3: resolves `taskIds` into the RESOLVABLE subset, in `taskIds`
+    /// order. Reads the FULL library set (never the browsable/picker
+    /// subset) so a pool that already references a wizard-born draft
+    /// task — or any task that would otherwise be filtered from the
+    /// picker — still resolves to a visible chip. An id present in
+    /// neither `libraryTasks` NOR the caller's supplementary source
+    /// (soft-deleted or otherwise stale) is silently dropped from the
+    /// DISPLAY only — the write path preserves it (`poolTaskIds`, raw).
+    static func resolveChips(taskIds: [String], libraryTasks: [Task]) -> [Task] {
+        let byId = Dictionary(libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return taskIds.compactMap { byId[$0] }
     }
 
     // MARK: - Helpers

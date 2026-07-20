@@ -148,11 +148,18 @@ final class RisoPoolsSnapshotTests: XCTestCase {
 
     private func editSheet(existing: Bool) -> some View {
         let library = TaskLibraryViewModel()
-        library.libraryTasks = [
+        let tasks = [
             SnapshotFixtures.makeTask(id: "t1", title: "Meditate 10 min", type: .normal),
             SnapshotFixtures.makeTask(id: "t2", title: "Drink 64 oz water", type: .normal),
             SnapshotFixtures.makeTask(id: "t3", title: "Read 30 min", type: .normal),
         ]
+        library.libraryTasks = tasks
+        // None of the fixture tasks are wizard-born drafts, so the
+        // browsable (picker) set is identical to the full library set —
+        // keep both populated so a future test that opens the library
+        // picker doesn't silently render empty (P2 I-2: the picker reads
+        // `browsableTasks`, never `libraryTasks`).
+        library.browsableTasks = tasks
         let existingPool = existing ? pool("p1", "Morning Kickstart", taskIds: ["t1", "t2"]) : nil
         return PoolEditSheetView(
             pool: existingPool,

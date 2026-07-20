@@ -3,7 +3,8 @@ import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import { computeDeckFloor, formatDeckPreview } from './poolDeckPreview';
-import { deletePoolFromSheet, savePoolFromSheet } from './poolEditSheetOps';
+import { deletePoolFromSheet, savePoolFromSheet, POOL_NAME_MAX_LENGTH } from './poolEditSheetOps';
+import { resolvePoolChips, selectLibraryPickerResults } from './poolEditSheetSelectors';
 import styles from './PoolEditSheet.module.css';
 
 export interface PoolEditSheetProps {
@@ -15,9 +16,17 @@ export interface PoolEditSheetProps {
    *  compute the deck-preview line's floor (§POOLS_RECURRING.md Surfaces
    *  item 2: "smallest consuming floor, else the 3×3-FREE default 8"). */
   templates: RecurringBoardTemplate[];
-  /** The user's full non-deleted task library — feeds the "Reuse a task
-   *  from your library" picker. */
+  /** The user's full non-deleted task library — resolves `taskIds` into
+   *  chip titles/types. NOT the picker's source list (see
+   *  `browsableTasks`): a pool may reference a wizard-born draft task
+   *  that the Library hides, and that reference must still resolve to a
+   *  visible chip here. */
   allTasks: Task[];
+  /** Draft-filtered subset of `allTasks` (`useTasksFilters`'
+   *  `browsableTasks`) — the "Reuse a task from your library" picker's
+   *  source list (P2 I-2). Pickers are browse surfaces: they shouldn't
+   *  offer a wizard-born draft task the Library tab itself hides. */
+  browsableTasks: Task[];
   /** Backdrop click / Escape / Cancel / Close. */
   onClose: () => void;
   /** Fired after a successful create or save. */
@@ -51,6 +60,7 @@ export function PoolEditSheet({
   pool,
   templates,
   allTasks,
+  browsableTasks,
   onClose,
   onSaved,
   onDeleted,
@@ -58,15 +68,18 @@ export function PoolEditSheet({
   const isEdit = pool !== undefined;
 
   const [name, setName] = useState(pool?.name ?? '');
-  // Full Task objects, not just ids — sidesteps having to resolve titles
-  // against a possibly-stale library snapshot after a quick-add/library-pick.
-  const [poolTasks, setPoolTasks] = useState<Task[]>(() => {
-    if (!pool) return [];
-    const byId = new Map(allTasks.map((t) => [t.id, t] as const));
-    return pool.taskIds
-      .map((id) => byId.get(id))
-      .filter((t): t is Task => t !== undefined);
-  });
+  // Raw id list, in order — includes ids that don't resolve against
+  // `allTasks` (soft-deleted or otherwise missing) so a save preserves
+  // them per `Pool.taskIds`'s docstring contract (consumers filter at
+  // read time; a write must never prune). Chips/counts below render only
+  // the RESOLVABLE subset — never this list directly.
+  const [taskIds, setTaskIds] = useState<string[]>(() => pool?.taskIds ?? []);
+  // Supplements `allTasks` for freshly quick-added/library-picked tasks
+  // that may not have round-tripped through the `allTasks` prop's live
+  // query yet — sidesteps a title flash. Never the persistence source.
+  const [sessionTaskCache, setSessionTaskCache] = useState<Map<string, Task>>(
+    () => new Map(),
+  );
 
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [librarySearch, setLibrarySearch] = useState('');
@@ -85,7 +98,16 @@ export function PoolEditSheet({
   }, [onClose, busy]);
 
   const trimmedName = name.trim();
-  const poolTaskIds = useMemo(() => new Set(poolTasks.map((t) => t.id)), [poolTasks]);
+  const tasksById = useMemo(() => new Map(allTasks.map((t) => [t.id, t] as const)), [allTasks]);
+  const selectedIdSet = useMemo(() => new Set(taskIds), [taskIds]);
+  // The resolvable subset of `taskIds`, in `taskIds` order — this (never
+  // the raw id list) is what "TASKS (N)", the chip row, and the deck
+  // preview render, matching `computePoolHealth`'s "resolvable, non-
+  // deleted" count semantics (P2 I-3).
+  const poolTasks = useMemo(
+    () => resolvePoolChips(taskIds, tasksById, sessionTaskCache),
+    [taskIds, tasksById, sessionTaskCache],
+  );
   const canSave = trimmedName !== '' && poolTasks.length > 0 && !busy;
 
   const deckFloor = useMemo(
@@ -96,19 +118,22 @@ export function PoolEditSheet({
 
   const libraryQuery = librarySearch.trim().toLowerCase();
   const libraryResults = useMemo(
-    () =>
-      allTasks
-        .filter((t) => !poolTaskIds.has(t.id))
-        .filter((t) => libraryQuery === '' || t.title.toLowerCase().includes(libraryQuery)),
-    [allTasks, poolTaskIds, libraryQuery],
+    () => selectLibraryPickerResults(browsableTasks, selectedIdSet, librarySearch),
+    [browsableTasks, selectedIdSet, librarySearch],
   );
 
   function addTask(task: Task): void {
-    setPoolTasks((list) => (list.some((t) => t.id === task.id) ? list : [...list, task]));
+    setTaskIds((ids) => (ids.includes(task.id) ? ids : [...ids, task.id]));
+    setSessionTaskCache((cache) => {
+      if (cache.get(task.id) === task) return cache;
+      const next = new Map(cache);
+      next.set(task.id, task);
+      return next;
+    });
   }
 
   function removeTask(taskId: string): void {
-    setPoolTasks((list) => list.filter((t) => t.id !== taskId));
+    setTaskIds((ids) => ids.filter((id) => id !== taskId));
   }
 
   async function handleSave(): Promise<void> {
@@ -116,7 +141,10 @@ export function PoolEditSheet({
     setBusy(true);
     setError(null);
     try {
-      const taskIds = poolTasks.map((t) => t.id);
+      // Write the raw (possibly-includes-unresolvable) id list, minus any
+      // explicit removals and plus any additions — never the resolved
+      // display subset — so a stale/soft-deleted reference the user never
+      // touched survives the save (Pool.taskIds docstring contract).
       await savePoolFromSheet(userId, pool, { name: trimmedName, taskIds });
       onSaved();
     } catch (e) {
@@ -169,6 +197,7 @@ export function PoolEditSheet({
             placeholder='e.g. "Evening wind-down"'
             className={styles.nameInput}
             disabled={busy}
+            maxLength={POOL_NAME_MAX_LENGTH}
           />
 
           <div className={styles.tasksHeader}>
