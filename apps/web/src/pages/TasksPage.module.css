@@ -37,6 +37,11 @@
   line-height: 1.5;
 }
 
+/* ── Library/Pools segment (P2) ── */
+.segmentRow {
+  margin-top: 22px;
+}
+
 /* ── task list panel ── */
 .list {
   list-style: none;

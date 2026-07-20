@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TaskType, type Task } from '@oybc/shared';
-import { RisoButton, RisoIcon } from '../components/riso';
+import { RisoButton, RisoIcon, RisoSegmented } from '../components/riso';
 import { NewTaskSheet } from '../components/wizard/NewTaskSheet';
+import { PoolsBrowse } from '../components/pools/PoolsBrowse';
 import {
   computeTaskDeletionImpact,
   deleteTaskWithCascade,
   updateTaskAndCascade,
   type TaskDeletionImpact,
 } from '../db/operations/tasks';
+import { usePools } from '../hooks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { TasksFilterControls } from './tasks/TasksFilterControls';
 import { TaskRow } from './tasks/TaskRow';
@@ -16,6 +18,9 @@ import { TaskEditSheet } from './tasks/TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './tasks/TaskConfirmDeleteDialog';
 import { useTasksFilters } from './tasks/useTasksFilters';
 import styles from './TasksPage.module.css';
+
+/** Library/Pools segment mode (Task Pools + Recurring Boards Rework, P2). */
+type TasksSegment = 'library' | 'pools';
 
 export interface TasksPageProps {
   userId: string;
@@ -40,6 +45,12 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
   const library = useTaskLibrary(userId);
   const filters = useTasksFilters(library);
   const [showNewTaskSheet, setShowNewTaskSheet] = useState(false);
+
+  // Task Pools + Recurring Boards Rework (P2) — Library/Pools segment.
+  // `pools` only powers the "Pools · N" count here; PoolsBrowse loads its
+  // own (batched) data when the segment is active.
+  const [segment, setSegment] = useState<TasksSegment>('library');
+  const pools = usePools(userId);
 
   // Quick-action state for row-level edit / delete. Both modals are
   // mounted at the page root rather than inside `TaskRow` so the
@@ -125,93 +136,112 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
         </RisoButton>
       </header>
 
-      <TasksFilterControls
-        search={filters.search}
-        onSearchChange={filters.setSearch}
-        typeFilter={filters.typeFilter}
-        onTypeFilterChange={filters.setTypeFilter}
-        statusFilter={filters.statusFilter}
-        onStatusFilterChange={filters.setStatusFilter}
-        usageFilter={filters.usageFilter}
-        onUsageFilterChange={filters.setUsageFilter}
-        sortBy={filters.sortBy}
-        onSortByChange={filters.setSortBy}
-        showExpired={filters.showExpired}
-        onShowExpiredChange={filters.setShowExpired}
-        groupByCompound={filters.groupByCompound}
-        onGroupByCompoundChange={filters.setGroupByCompound}
-      />
+      <div className={styles.segmentRow}>
+        <RisoSegmented
+          variant="pill"
+          aria-label="Library or Pools"
+          value={segment}
+          onChange={setSegment}
+          options={[
+            { value: 'library', label: 'Library' },
+            { value: 'pools', label: `Pools · ${pools.length}` },
+          ]}
+        />
+      </div>
 
-      {deleteError !== null && (
-        <p className={styles.error} role="alert">
-          {deleteError}
-        </p>
-      )}
-
-      {filters.filteredTasks.length === 0 ? (
-        <EmptyState hasAnyTasks={library.allTasks.length > 0} />
+      {segment === 'pools' ? (
+        <PoolsBrowse userId={userId} />
       ) : (
-        <ul className={styles.list} aria-label="Task list">
-          {filters.filteredTasks.map((task) => {
-            const children = library.compoundChildrenByCompound[task.id] ?? [];
-            // Expandable: only compound tasks with children, and only when
-            // grouping is on (off = flat list, no disclosure chevron).
-            const isExpandable =
-              filters.groupByCompound &&
-              task.type === TaskType.COMPOUND &&
-              children.length > 0;
-            const isExpanded = isExpandable && effectiveExpanded.has(task.id);
-            return (
-              <li key={task.id}>
-                <TaskRow
-                  task={task}
-                  placementCount={filters.placementCountByTaskId[task.id] ?? 0}
-                  activePlacementCount={
-                    filters.activePlacementCountByTaskId[task.id] ?? 0
-                  }
-                  childCount={children.length}
-                  onClick={(id) => navigate(`/tasks/${id}`)}
-                  onEdit={handleRowEdit}
-                  onDelete={handleRowDelete}
-                  isExpandable={isExpandable}
-                  isExpanded={isExpanded}
-                  onToggleExpand={toggleExpand}
-                />
-                {isExpanded && (
-                  <ul
-                    className={styles.childList}
-                    aria-label={`${task.title || 'Compound'} subtasks`}
-                  >
-                    {children.map((link) => {
-                      const child = library.taskMap[link.childTaskId];
-                      if (!child) return null;
-                      // Single level only (#73): a child that is itself a
-                      // compound shows its subtask count but is not itself
-                      // expandable here — open its detail to go deeper.
-                      const grandchildren =
-                        library.compoundChildrenByCompound[child.id]?.length ?? 0;
-                      return (
-                        <li key={link.id}>
-                          <TaskRow
-                            task={child}
-                            placementCount={
-                              filters.placementCountByTaskId[child.id] ?? 0
-                            }
-                            activePlacementCount={
-                              filters.activePlacementCountByTaskId[child.id] ?? 0
-                            }
-                            childCount={grandchildren}
-                            onClick={(id) => navigate(`/tasks/${id}`)}
-                          />
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <TasksFilterControls
+            search={filters.search}
+            onSearchChange={filters.setSearch}
+            typeFilter={filters.typeFilter}
+            onTypeFilterChange={filters.setTypeFilter}
+            statusFilter={filters.statusFilter}
+            onStatusFilterChange={filters.setStatusFilter}
+            usageFilter={filters.usageFilter}
+            onUsageFilterChange={filters.setUsageFilter}
+            sortBy={filters.sortBy}
+            onSortByChange={filters.setSortBy}
+            showExpired={filters.showExpired}
+            onShowExpiredChange={filters.setShowExpired}
+            groupByCompound={filters.groupByCompound}
+            onGroupByCompoundChange={filters.setGroupByCompound}
+          />
+
+          {deleteError !== null && (
+            <p className={styles.error} role="alert">
+              {deleteError}
+            </p>
+          )}
+
+          {filters.filteredTasks.length === 0 ? (
+            <EmptyState hasAnyTasks={library.allTasks.length > 0} />
+          ) : (
+            <ul className={styles.list} aria-label="Task list">
+              {filters.filteredTasks.map((task) => {
+                const children = library.compoundChildrenByCompound[task.id] ?? [];
+                // Expandable: only compound tasks with children, and only when
+                // grouping is on (off = flat list, no disclosure chevron).
+                const isExpandable =
+                  filters.groupByCompound &&
+                  task.type === TaskType.COMPOUND &&
+                  children.length > 0;
+                const isExpanded = isExpandable && effectiveExpanded.has(task.id);
+                return (
+                  <li key={task.id}>
+                    <TaskRow
+                      task={task}
+                      placementCount={filters.placementCountByTaskId[task.id] ?? 0}
+                      activePlacementCount={
+                        filters.activePlacementCountByTaskId[task.id] ?? 0
+                      }
+                      childCount={children.length}
+                      onClick={(id) => navigate(`/tasks/${id}`)}
+                      onEdit={handleRowEdit}
+                      onDelete={handleRowDelete}
+                      isExpandable={isExpandable}
+                      isExpanded={isExpanded}
+                      onToggleExpand={toggleExpand}
+                    />
+                    {isExpanded && (
+                      <ul
+                        className={styles.childList}
+                        aria-label={`${task.title || 'Compound'} subtasks`}
+                      >
+                        {children.map((link) => {
+                          const child = library.taskMap[link.childTaskId];
+                          if (!child) return null;
+                          // Single level only (#73): a child that is itself a
+                          // compound shows its subtask count but is not itself
+                          // expandable here — open its detail to go deeper.
+                          const grandchildren =
+                            library.compoundChildrenByCompound[child.id]?.length ?? 0;
+                          return (
+                            <li key={link.id}>
+                              <TaskRow
+                                task={child}
+                                placementCount={
+                                  filters.placementCountByTaskId[child.id] ?? 0
+                                }
+                                activePlacementCount={
+                                  filters.activePlacementCountByTaskId[child.id] ?? 0
+                                }
+                                childCount={grandchildren}
+                                onClick={(id) => navigate(`/tasks/${id}`)}
+                              />
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
 
       <NewTaskSheet
