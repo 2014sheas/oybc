@@ -162,6 +162,16 @@ export {
 
 export type { PoolMixSource, ResolveMixResult } from './poolMix';
 
+// ===== Task Pools + Recurring Boards Rework (P2) — pool health =====
+export { computePoolHealth, formatPoolShortWarning } from './poolHealth';
+
+export type {
+  PoolHealthConsumer,
+  PoolHealthResult,
+  ComputePoolHealthInput,
+  PoolShortWarningInput,
+} from './poolHealth';
+
 export { isTaskExpired } from './taskExpiry';
 
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
