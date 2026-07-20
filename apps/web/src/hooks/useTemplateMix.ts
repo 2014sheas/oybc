@@ -29,9 +29,22 @@ export function useTemplateMix(
     if (!template) return undefined;
 
     // Un-migrated safety net (shouldn't occur post-migration — the
-    // first-launch migration always stamps `poolIds`): fall back to
-    // `seedTaskIds` verbatim when the generalized fields are absent.
-    if (template.poolIds === undefined) return new Set(template.seedTaskIds);
+    // first-launch migration always stamps a length-1 `poolIds`): fall
+    // back to `seedTaskIds` verbatim when the generalized fields are
+    // absent OR the pool array is empty. An empty `poolIds` with no
+    // manual/removed entries is `isLegacyShapedRecord`'s "no pool yet"
+    // case (wizardPersist's EDIT branch treats `poolIds?.[0] ===
+    // undefined` — true for both `undefined` and `[]` — as "mint a pool");
+    // resolving it via `resolveMix` would silently return an EMPTY mix
+    // (no pools, no manual) rather than the user's actual historical
+    // selection. The richer "flattened" shape this could theoretically
+    // collide with (`poolIds: []` + populated `manualTaskIds`) cannot
+    // occur before P4 — richer shapes require multi-pool/manual/removal
+    // authoring the P1 legacy wizard has no UI for (see
+    // `RecurringBoardTemplate`'s docstring).
+    if (template.poolIds === undefined || template.poolIds.length === 0) {
+      return new Set(template.seedTaskIds);
+    }
 
     const poolIds = template.poolIds;
     const pools: Pool[] =
