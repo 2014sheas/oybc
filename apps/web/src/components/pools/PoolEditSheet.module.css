@@ -62,8 +62,7 @@
   margin: 14px 0 6px;
 }
 
-.body > .kicker:first-child,
-.kicker:first-of-type {
+.body > .kicker:first-child {
   margin-top: 0;
 }
 
