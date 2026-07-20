@@ -78,6 +78,15 @@ export async function createRecurringBoardTemplate(
     version: 1,
     isDeleted: false,
   };
+  // P1 — additive, optional. The legacy template CREATE write-through
+  // (`wizardPersist.ts persistRecurringTemplate`) mints a Pool and passes
+  // these so the record is born already-migrated-shaped; callers that omit
+  // them (pre-P1 tests, any future un-migrated path) get the "genuinely
+  // un-migrated" shape (fields absent), same as `isLegacyShapedRecord`'s
+  // docstring describes.
+  if (input.poolIds !== undefined) template.poolIds = [...input.poolIds];
+  if (input.manualTaskIds !== undefined) template.manualTaskIds = [...input.manualTaskIds];
+  if (input.removedTaskIds !== undefined) template.removedTaskIds = [...input.removedTaskIds];
 
   await db.recurringBoardTemplates.add(template);
   await addToSyncQueue(

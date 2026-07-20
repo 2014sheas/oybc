@@ -30,19 +30,26 @@ service cloud.firestore {
           // Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync) — per-row
           // LWW + soft-delete tombstones like compoundChildren; carries a
           // `userId` field so it is also user-scoped below.
-          'taskEvents'
+          'taskEvents',
+          // Task Pools + Recurring Boards Rework (P1, docs/POOLS_RECURRING.md
+          // §Data model) — standard per-user LWW + tombstones, no client
+          // delete (soft-delete only), same shape as defaultPools/taskEvents.
+          'pools',
+          'coreBoardDefaults'
         ];
       }
 
       // Top-level entities (Board, Task, CompositeTask, RecurringBoardTemplate,
-      // DefaultPool, TaskEvent) carry a `userId` field in their payload. Child
-      // entities (TaskStep, BoardTask, CompositeNode) are scoped via their
-      // parent and do not.
+      // DefaultPool, TaskEvent, Pool, CoreBoardDefault) carry a `userId` field
+      // in their payload. Child entities (TaskStep, BoardTask, CompositeNode)
+      // are scoped via their parent and do not.
       function requiresUserIdField() {
         return collection in [
           'boards', 'tasks', 'compositeTasks', 'recurringBoardTemplates',
           'defaultPools',
-          'taskEvents'
+          'taskEvents',
+          'pools',
+          'coreBoardDefaults'
         ];
       }
 

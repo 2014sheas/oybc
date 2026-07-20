@@ -3,15 +3,19 @@ import {
   Timeframe,
   deriveSpawnedBoardName,
   getTimeframeBoundaries,
+  isLegacyShapedRecord,
   placeBoard,
   toLocalISO,
   type PendingTemplateSpawn,
   type Task,
+  type UpdateRecurringBoardTemplateInput,
 } from '@oybc/shared';
 import {
   createRecurringBoardTemplate,
+  fetchRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
+import { createPool, updatePool } from '../../db/operations/pools';
 import {
   persistWizardBoardRows,
   type WizardPendingTaskWrite,
@@ -280,18 +284,40 @@ export interface PersistRecurringTemplateArgs {
  * Persist path for `controller.isRecurring === true`. Branches on
  * `editingTemplateId`:
  *
- * - **Fresh create** (no `editingTemplateId`): inserts the
- *   `RecurringBoardTemplate` row, then immediately spawns the current
- *   window's board via `spawnTemplateBoard`. The two writes are
- *   sequential (each opens its own Dexie transaction); if the spawn
- *   fails (e.g. soft-deleted task race), the template still exists
- *   with `lastSpawnedWindowKey=null` and the next Boards-tab open
- *   will retry. Locked decision: first-spawn timing = immediate.
+ * - **Fresh create** (no `editingTemplateId`): mints a `Pool` named
+ *   "<template name> pool" from the selection (P1 — Task Pools +
+ *   Recurring Boards Rework, docs/POOLS_RECURRING.md §Migration
+ *   "seedTaskIds end state" — legacy CREATE mints a Pool exactly like
+ *   migration step 2), then inserts the `RecurringBoardTemplate` row
+ *   with `seedTaskIds` (decode-compat only, never read after P1) AND
+ *   `poolIds: [pool.id]`, `manualTaskIds: []`, `removedTaskIds: []`, then
+ *   immediately spawns the current window's board via
+ *   `spawnTemplateBoard`. If the spawn fails (e.g. soft-deleted task
+ *   race), the template still exists with `lastSpawnedWindowKey=null`
+ *   and the next Boards-tab open will retry. Locked decision: first-spawn
+ *   timing = immediate.
  *
- * - **Edit** (`editingTemplateId` set): updates the template via
- *   `updateRecurringBoardTemplate`. Does NOT spawn — edits don't
- *   retroactively change previously-spawned boards, and the next
- *   window's spawn will pick up the new pool naturally.
+ * - **Edit** (`editingTemplateId` set): the P1 legacy-editor write-through
+ *   is SHAPE-SCOPED (`isLegacyShapedRecord` from `@oybc/shared`):
+ *     - legacy-shaped WITH a linked pool (the normal post-P1 case: exactly
+ *       one pool, no manual additions, no removals) → writes the
+ *       selection straight through to that Pool's `taskIds` via
+ *       `updatePool` — the shared Pool IS the source of truth, so the
+ *       template's own `poolIds`/`manualTaskIds`/`removedTaskIds` don't
+ *       need to change.
+ *     - legacy-shaped WITHOUT a pool yet (defensive — shouldn't occur
+ *       post-migration, since migration always mints one, but a record
+ *       edited before its first-launch migration ran would hit this) →
+ *       mints a Pool exactly like the create path / migration step 2.
+ *     - non-legacy-shaped (2+ pools, any manual additions, any removals —
+ *       cannot occur before P4 ships the generalized wizard, but handled
+ *       defensively) → flattens the selection to `manualTaskIds` and
+ *       clears `poolIds`/`removedTaskIds`. The legacy editor never writes
+ *       a Pool it didn't mint.
+ *   `seedTaskIds` itself is left untouched on edit — verbatim/stale,
+ *   never read after P1. Does NOT spawn — edits don't retroactively
+ *   change previously-spawned boards, and the next window's spawn will
+ *   pick up the new mix naturally.
  */
 export async function persistRecurringTemplate({
   controller,
@@ -304,23 +330,74 @@ export async function persistRecurringTemplate({
       : undefined;
   const seedTaskIds = Array.from(controller.selectedTaskIds);
 
-  // Edit path: update + return. No spawn.
+  // Edit path: legacy write-through + field update. No spawn.
   if (controller.editingTemplateId !== null) {
-    await updateRecurringBoardTemplate(controller.editingTemplateId, {
+    const editingTemplateId = controller.editingTemplateId;
+    const baseUpdate: UpdateRecurringBoardTemplateInput = {
       name: trimmedName,
       timeframe: controller.timeframe,
       boardSize: controller.size,
       centerSquareType: controller.centerType,
       centerSquareCustomName: customName,
       isRandomized: controller.isRandomized,
-      seedTaskIds,
-      // `isActive` isn't surfaced in the wizard form (the templates
-      // list owns the pause toggle), so leave it untouched on edit.
-    });
-    return { templateId: controller.editingTemplateId, spawnedBoardId: null };
+      // `isActive` isn't surfaced in the wizard form (the templates list
+      // owns the pause toggle), so leave it untouched on edit.
+      // `seedTaskIds` intentionally omitted — left verbatim/stale, never
+      // read after P1 (docs/POOLS_RECURRING.md §Migration "seedTaskIds
+      // end state").
+    };
+
+    const existingTemplate = await fetchRecurringBoardTemplate(editingTemplateId);
+
+    if (existingTemplate && isLegacyShapedRecord(existingTemplate)) {
+      const existingPoolId = existingTemplate.poolIds?.[0];
+      if (existingPoolId !== undefined) {
+        // The normal post-P1 case: write straight through to the linked
+        // Pool. The Pool is the shared source of truth for the mix — no
+        // change needed to the template's own poolIds/manualTaskIds/
+        // removedTaskIds.
+        await updatePool(existingPoolId, { taskIds: seedTaskIds });
+        await updateRecurringBoardTemplate(editingTemplateId, baseUpdate);
+      } else {
+        // Defensive: a legacy-shaped record with no pool yet (edited
+        // before its first-launch migration ran). Mint a Pool exactly
+        // like the create path / migration step 2.
+        const pool = await createPool(userId, {
+          name: `${trimmedName} pool`,
+          taskIds: seedTaskIds,
+        });
+        await updateRecurringBoardTemplate(editingTemplateId, {
+          ...baseUpdate,
+          poolIds: [pool.id],
+          manualTaskIds: [],
+          removedTaskIds: [],
+        });
+      }
+    } else if (existingTemplate) {
+      // Defensive flatten: a richer shape (2+ pools, manual additions, or
+      // removals) reached by the legacy editor. Never write a Pool this
+      // editor didn't mint — flatten to manualTaskIds instead.
+      await updateRecurringBoardTemplate(editingTemplateId, {
+        ...baseUpdate,
+        manualTaskIds: seedTaskIds,
+        poolIds: [],
+        removedTaskIds: [],
+      });
+    } else {
+      // Concurrently-deleted template (fetch race) — nothing to write
+      // through against; fall back to the plain field update.
+      await updateRecurringBoardTemplate(editingTemplateId, baseUpdate);
+    }
+
+    return { templateId: editingTemplateId, spawnedBoardId: null };
   }
 
-  // Fresh create path: insert template, then spawn current window.
+  // Fresh create path: mint a Pool from the selection (mirrors migration
+  // step 2), then insert the template already in the migrated shape.
+  const pool = await createPool(userId, {
+    name: `${trimmedName} pool`,
+    taskIds: seedTaskIds,
+  });
   const template = await createRecurringBoardTemplate(userId, {
     name: trimmedName,
     timeframe: controller.timeframe,
@@ -330,6 +407,9 @@ export async function persistRecurringTemplate({
     isRandomized: controller.isRandomized,
     seedTaskIds,
     isActive: true,
+    poolIds: [pool.id],
+    manualTaskIds: [],
+    removedTaskIds: [],
   });
 
   // Compute the spawn window and create the board. `spawnTemplateBoard`

@@ -44,6 +44,8 @@ import {
   CompoundChildSchema,
   RecurringBoardTemplateSchema,
   DefaultPoolSchema,
+  PoolSchema,
+  CoreBoardDefaultSchema,
   TaskEventSchema,
   mergeUserPreferences,
   SYNC_COLLECTIONS,
@@ -105,6 +107,11 @@ const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   // choke points, not here. PR B sub-slice 1 wires the pull validator only —
   // no event write/read paths yet, so events sync harmlessly empty.
   taskEvents: TaskEventSchema,
+  // Task Pools + Recurring Boards Rework (P1, docs/POOLS_RECURRING.md
+  // §Data model). Standard per-row LWW + tombstones, same shape as every
+  // other user-scoped collection above.
+  pools: PoolSchema,
+  coreBoardDefaults: CoreBoardDefaultSchema,
 };
 
 /**
