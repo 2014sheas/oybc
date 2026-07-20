@@ -317,4 +317,41 @@ final class PoolMixTests: XCTestCase {
             PoolMixInput(poolIds: ["A"], manualTaskIds: [], removedTaskIds: ["r"])
         ))
     }
+
+    // MARK: - clampMintedPoolName (review finding I1)
+
+    func testClampMintedPoolName_ShortSourceLeftUntouched() {
+        XCTAssertEqual(PoolMix.clampMintedPoolName("Daily", suffix: "default"), "Daily default")
+        XCTAssertEqual(
+            PoolMix.clampMintedPoolName("Morning Kickstart", suffix: "pool"), "Morning Kickstart pool"
+        )
+    }
+
+    func testClampMintedPoolName_Boundary_120CharTemplateNameMintsExactly120CharPoolName() {
+        // PoolSchema.name (mirrored by the write-helper layer) is bounded to
+        // 120 chars — also matches RecurringBoardTemplate.name's own 120-char
+        // max, so this is a realistic worst-case source, not a contrived one.
+        let name120 = String(repeating: "x", count: 120)
+        let minted = PoolMix.clampMintedPoolName(name120, suffix: "pool")
+        XCTAssertEqual(minted.count, 120)
+        XCTAssertEqual(minted, String(repeating: "x", count: 115) + " pool")
+    }
+
+    func testClampMintedPoolName_ExactBoundary_115CharsPlusPoolSuffixIsUntouched() {
+        let name115 = String(repeating: "y", count: 115)
+        let minted = PoolMix.clampMintedPoolName(name115, suffix: "pool")
+        XCTAssertEqual(minted, name115 + " pool")
+        XCTAssertEqual(minted.count, 120)
+    }
+
+    func testClampMintedPoolName_LongerSuffixClampsSourceToASmallerBudget() {
+        let name120 = String(repeating: "z", count: 120)
+        let minted = PoolMix.clampMintedPoolName(name120, suffix: "default")
+        XCTAssertEqual(minted.count, 120)
+        XCTAssertEqual(minted, String(repeating: "z", count: 112) + " default")
+    }
+
+    func testClampMintedPoolName_RespectsACustomMaxLen() {
+        XCTAssertEqual(PoolMix.clampMintedPoolName("abcdefghij", suffix: "pool", maxLen: 10), "abcde pool")
+    }
 }

@@ -19,9 +19,10 @@ import { db } from '../db/internal';
  *
  * The Dexie orchestration here (`useTemplateMixes`) is a thin wrapper
  * around the pure `computeTemplateMixes`, which does the actual
- * per-template `resolveMix` fan-out + the empty-`poolIds` fallback (see
- * `useTemplateMix`'s docstring for why `poolIds === []` also falls back
- * to `seedTaskIds`). Splitting them out keeps the resolution logic
+ * per-template `resolveMix` fan-out + the `poolIds === undefined` fallback
+ * (see `useTemplateMix`'s docstring — review finding M2 — for why an
+ * empty-but-present `poolIds: []` must NOT also fall back to
+ * `seedTaskIds`). Splitting them out keeps the resolution logic
  * testable without a DOM/hook-render harness (this repo's Vitest setup
  * is `environment: 'node'` — see `vitest.config.ts` — so hooks that call
  * `useLiveQuery` can't be exercised directly; `wizardTimeframeSeed.ts`
@@ -36,9 +37,12 @@ export function useTemplateMixes(
   return useLiveQuery(async (): Promise<Record<string, string[]>> => {
     if (templates.length === 0) return {};
 
-    const migrated = templates.filter(
-      (t) => t.poolIds !== undefined && t.poolIds.length > 0,
-    );
+    // `poolIds !== undefined` ONLY — an empty-but-present `poolIds: []`
+    // still needs its `manualTaskIds` batched below (M2: it resolves via
+    // `resolveMix`, not the `seedTaskIds` fallback). The `.length > 0`
+    // guard this used to carry excluded exactly that case from the
+    // manual-task-id batch fetch.
+    const migrated = templates.filter((t) => t.poolIds !== undefined);
 
     const allPoolIds = new Set<string>();
     for (const t of migrated) for (const id of t.poolIds ?? []) allPoolIds.add(id);
@@ -71,10 +75,11 @@ export function useTemplateMixes(
  * be unit-tested without a Dexie/React harness — see
  * `hooks/__tests__/useTemplateMixes.test.ts`.
  *
- * Same "empty poolIds falls back to seedTaskIds" rule as `useTemplateMix`
- * (see that hook's docstring for the full rationale) — kept identical
- * here rather than re-derived so the batched and single-template paths
- * can never drift.
+ * Same "`poolIds === undefined` falls back to `seedTaskIds`" rule as
+ * `useTemplateMix` (see that hook's docstring for the full rationale,
+ * including review finding M2 — an empty-but-present `poolIds: []` does
+ * NOT fall back) — kept identical here rather than re-derived so the
+ * batched and single-template paths can never drift.
  */
 export function computeTemplateMixes(
   templates: RecurringBoardTemplate[],
@@ -83,7 +88,7 @@ export function computeTemplateMixes(
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const t of templates) {
-    if (t.poolIds === undefined || t.poolIds.length === 0) {
+    if (t.poolIds === undefined) {
       out[t.id] = t.seedTaskIds;
       continue;
     }

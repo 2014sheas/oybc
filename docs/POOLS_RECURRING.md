@@ -161,6 +161,14 @@ buttons emit it.
 
 Mixed-version note: an old client would still write `DefaultPool`/
 `seedTaskIds`. Accepted (single user, own devices, sequential updates).
+Platform divergence within that same accepted risk: web's pull path
+applies a winning remote doc **wholesale** (a pulled old-shape
+`RecurringBoardTemplate` — no `poolIds` — overwrites the local generalized
+stamp until the record naturally re-migrates), while iOS's GRDB column-merge
+pull retains locally-stamped columns a stale remote row doesn't carry —
+so only web can transiently fall back onto the stale `seedTaskIds` read
+path after such a pull. Bounded by the same single-user, sequential-update
+acceptance above; not treated as a bug to fix.
 
 ## Surfaces (see handoff README §Screens for pixel spec)
 

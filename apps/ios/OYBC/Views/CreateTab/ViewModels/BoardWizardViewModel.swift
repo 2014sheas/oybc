@@ -287,10 +287,19 @@ final class BoardWizardViewModel {
     ///
     /// Un-migrated safety net (shouldn't occur post-migration — the
     /// first-launch migration always stamps a length-1 `poolIds`): falls
-    /// back to `seedTaskIds` verbatim when `poolIds` is absent OR empty —
-    /// `isLegacyShapedRecord`'s "no pool yet" case. Resolving that via
-    /// `PoolMix.resolveMix` would silently return an EMPTY mix (no pools,
-    /// no manual) rather than the user's actual historical selection.
+    /// back to `seedTaskIds` verbatim ONLY when `poolIds` is `nil`
+    /// (genuinely un-migrated — see `PoolMix.isLegacyShapedRecord`'s
+    /// docstring).
+    ///
+    /// Review finding M2: this must NOT also fall back for an empty-but-
+    /// present `poolIds: []` — that shape also covers the defensive
+    /// "flatten" write-through (`BoardWizardPersist.swift`'s richer-shape
+    /// branch: `manualTaskIds: seedTaskIds, poolIds: [], removedTaskIds:
+    /// []`). Falling back to stale `seedTaskIds` there would silently
+    /// drop whatever the flatten already wrote to `manualTaskIds` — a
+    /// destructive-edit bug (re-saving the hydrated-wrong selection
+    /// resurrects stale seeds). `poolIds: []` resolves correctly through
+    /// `PoolMix.resolveMix` below regardless of which case produced it.
     ///
     /// Any DB read failure also falls back to `seedTaskIds` (silent, like
     /// the DefaultPool prefill above) so the wizard still opens with a
@@ -299,7 +308,7 @@ final class BoardWizardViewModel {
         _ template: RecurringBoardTemplate,
         database: AppDatabase
     ) -> Set<String> {
-        guard let poolIds = template.poolIds, !poolIds.isEmpty else {
+        guard let poolIds = template.poolIds else {
             return Set(template.seedTaskIds)
         }
         guard let pools = try? database.fetchPools(ids: poolIds) else {

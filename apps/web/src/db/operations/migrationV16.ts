@@ -4,6 +4,10 @@ import {
   SyncOperationType,
   SyncStatus,
   Timeframe,
+  migrationDefaultPoolToPoolId,
+  migrationDefaultPoolToCoreBoardDefaultId,
+  migrationTemplateToPoolId,
+  clampMintedPoolName,
   type Pool,
   type CoreBoardDefault,
   type RecurringBoardTemplate,
@@ -54,6 +58,34 @@ import { generateUUID, currentTimestamp } from '../utils';
  * helper opens its own transaction and isn't upgrade-tx-aware; mirrors
  * `migrationV13`/`migrationV14`).
  *
+ * Determinism (review finding C2): the minted `Pool` / `CoreBoardDefault`
+ * ids use `uuidv5` (`migrationDefaultPoolToPoolId` /
+ * `migrationDefaultPoolToCoreBoardDefaultId` / `migrationTemplateToPoolId`
+ * in `@oybc/shared`'s `migrationHelpers.ts`), NOT `generateUUID()`. Two
+ * devices independently migrating the same `DefaultPool` / template row
+ * (e.g. both offline pre-sync, or racing the first post-upgrade launch)
+ * must derive the SAME Pool/CoreBoardDefault id — a random id per device
+ * would converge, post-sync, into two duplicate rows per source instead of
+ * one. This mirrors the Windowed Completion backfill's
+ * `backfillTaskEventId` precedent exactly. iOS's `MigrationV25Helpers.swift`
+ * mints the identical ids via the Swift `UUIDv5` port — the namespace
+ * strings must stay byte-identical across platforms (see that file + the
+ * cross-platform id-literal test in each suite).
+ *
+ * The user-action-time LEGACY-CREATE mint paths (`wizardPersist.ts`,
+ * iOS `BoardWizardPersist.swift`) are NOT part of this — those mint on one
+ * device only (then sync as a normal CREATE), so random ids there are
+ * correct and unchanged.
+ *
+ * Name clamp (review finding I1): a `RecurringBoardTemplate.name` can be
+ * up to 120 chars; appending " pool" would push the minted Pool's name
+ * over `PoolSchema`'s 120-char max, which fails Zod on the next device's
+ * pull (the mint itself succeeds locally — no local Zod check on write —
+ * so this silently strands the doc on ONE device). `clampMintedPoolName`
+ * (`@oybc/shared`'s `poolMix.ts`) clamps the source text before appending
+ * the suffix at both mint sites below, and at the two `wizardPersist.ts` /
+ * `BoardWizardPersist.swift` legacy-create sites.
+ *
  * @param _tx The Dexie upgrade transaction (unused directly — Dexie binds
  *            all `db` table ops to the active transaction inside the
  *            callback).
@@ -81,9 +113,9 @@ async function migrateDefaultPools(): Promise<void> {
 
   for (const dp of defaultPools) {
     const pool: Pool = {
-      id: generateUUID(),
+      id: migrationDefaultPoolToPoolId(dp.id),
       userId: dp.userId,
-      name: `${TIMEFRAME_DEFAULT_LABEL[dp.timeframe]} default`,
+      name: clampMintedPoolName(TIMEFRAME_DEFAULT_LABEL[dp.timeframe], 'default'),
       taskIds: [...dp.taskIds],
       createdAt: now,
       updatedAt: now,
@@ -91,7 +123,7 @@ async function migrateDefaultPools(): Promise<void> {
       isDeleted: false,
     };
     const coreDefault: CoreBoardDefault = {
-      id: generateUUID(),
+      id: migrationDefaultPoolToCoreBoardDefaultId(dp.id),
       userId: dp.userId,
       timeframe: dp.timeframe,
       corePoolIds: [pool.id],
@@ -137,9 +169,9 @@ async function migrateRecurringBoardTemplates(): Promise<void> {
 
   for (const t of templates) {
     const pool: Pool = {
-      id: generateUUID(),
+      id: migrationTemplateToPoolId(t.id),
       userId: t.userId,
-      name: `${t.name} pool`,
+      name: clampMintedPoolName(t.name, 'pool'),
       taskIds: [...t.seedTaskIds],
       createdAt: now,
       updatedAt: now,

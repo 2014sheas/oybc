@@ -60,6 +60,12 @@ export { uuidv5, OYBC_NAMESPACE } from './uuidv5';
 
 export { backfillTaskEventId, buildBackfillTaskEvent } from './migrationHelpers';
 
+export {
+  migrationDefaultPoolToPoolId,
+  migrationDefaultPoolToCoreBoardDefaultId,
+  migrationTemplateToPoolId,
+} from './migrationHelpers';
+
 export { hasCycle } from './cycleDetection';
 
 export type {
@@ -151,6 +157,7 @@ export {
   resolveMix,
   clearRemovalsForUntoggle,
   isLegacyShapedRecord,
+  clampMintedPoolName,
 } from './poolMix';
 
 export type { PoolMixSource, ResolveMixResult } from './poolMix';

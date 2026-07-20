@@ -214,6 +214,114 @@ final class PoolsCoreBoardDefaultsMigrationTests: XCTestCase {
         XCTAssertEqual(try db.fetchCoreBoardDefaults(userId: userId).count, 1)
     }
 
+    // MARK: - C2: deterministic migration mint ids (review finding C2)
+    //
+    // The migration must mint DETERMINISTIC ids (uuidv5, keyed off the
+    // source row's id), not random UUIDs — two devices independently
+    // migrating the same DefaultPool/RecurringBoardTemplate row must
+    // derive the SAME Pool/CoreBoardDefault id, or sync converges on
+    // duplicate rows per source that can never be merged back down.
+
+    func testMigrateDefaultPools_DeterministicAcrossTwoIndependentFreshDeviceRuns() throws {
+        let now = AppDatabase.currentTimestamp()
+
+        // "Fresh run 1" — device A migrates its local copy of dp-shared.
+        let dbA = try makeDb()
+        try seedUser(dbA)
+        try dbA.saveDefaultPool(DefaultPool(
+            id: "dp-shared", userId: userId, timeframe: .yearly, taskIds: ["a"],
+            createdAt: now, updatedAt: now
+        ))
+        try dbA.write { try MigrationV25Helpers.run($0, now: now) }
+        let poolsA = try dbA.fetchPools(userId: userId)
+        let coreDefaultsA = try dbA.fetchCoreBoardDefaults(userId: userId)
+
+        // "Fresh run 2" — an independent device B migrates the SAME source
+        // row (same id), having never seen device A's migration output.
+        let dbB = try makeDb()
+        try seedUser(dbB)
+        try dbB.saveDefaultPool(DefaultPool(
+            id: "dp-shared", userId: userId, timeframe: .yearly, taskIds: ["a"],
+            createdAt: now, updatedAt: now
+        ))
+        try dbB.write { try MigrationV25Helpers.run($0, now: now) }
+        let poolsB = try dbB.fetchPools(userId: userId)
+        let coreDefaultsB = try dbB.fetchCoreBoardDefaults(userId: userId)
+
+        XCTAssertEqual(poolsA.first?.id, poolsB.first?.id)
+        XCTAssertEqual(coreDefaultsA.first?.id, coreDefaultsB.first?.id)
+    }
+
+    func testMigrateTemplates_DeterministicAcrossTwoIndependentFreshDeviceRuns() throws {
+        let now = AppDatabase.currentTimestamp()
+
+        let dbA = try makeDb()
+        try seedUser(dbA)
+        try dbA.saveRecurringBoardTemplate(
+            makeLegacyTemplate(id: "tpl-shared", name: "Shared Template", seedTaskIds: ["a"])
+        )
+        try dbA.write { try MigrationV25Helpers.run($0, now: now) }
+        let poolsA = try dbA.fetchPools(userId: userId)
+
+        let dbB = try makeDb()
+        try seedUser(dbB)
+        try dbB.saveRecurringBoardTemplate(
+            makeLegacyTemplate(id: "tpl-shared", name: "Shared Template", seedTaskIds: ["a"])
+        )
+        try dbB.write { try MigrationV25Helpers.run($0, now: now) }
+        let poolsB = try dbB.fetchPools(userId: userId)
+
+        XCTAssertEqual(poolsA.first?.id, poolsB.first?.id)
+    }
+
+    /// Cross-platform pin: this exact uuidv5 derivation is asserted
+    /// BYTE-IDENTICAL in the web Vitest suite
+    /// (`apps/web/src/db/operations/__tests__/migrationV16.test.ts`,
+    /// "derives the exact fixture id...") AND in `packages/shared`'s Jest
+    /// suite (`migrationHelpers.test.ts`, "derives the exact fixture ids
+    /// for the locked cross-platform vector"). If this literal ever needs
+    /// to change, update all three in the same PR.
+    func testDeterministicMintIds_MatchCrossPlatformFixture() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+        try db.saveDefaultPool(DefaultPool(
+            id: "dp-fixture-1", userId: userId, timeframe: .daily, taskIds: ["a"],
+            createdAt: now, updatedAt: now
+        ))
+        try db.saveRecurringBoardTemplate(
+            makeLegacyTemplate(id: "tmpl-fixture-1", name: "Daily Workout", seedTaskIds: ["a"])
+        )
+        try db.write { try MigrationV25Helpers.run($0, now: now) }
+
+        let pools = try db.fetchPools(userId: userId)
+        let coreDefaults = try db.fetchCoreBoardDefaults(userId: userId)
+        let mintedForDefaultPool = pools.first { $0.name == "Daily default" }
+        let mintedForTemplate = pools.first { $0.name == "Daily Workout pool" }
+
+        XCTAssertEqual(mintedForDefaultPool?.id, "e1105aeb-04bc-58ca-936c-be32ea86437b")
+        XCTAssertEqual(coreDefaults.first?.id, "94e67c0c-b1d1-50f6-90ab-6cedf9e60efc")
+        XCTAssertEqual(mintedForTemplate?.id, "f11ff2bb-283e-5867-8348-253dc1fe46db")
+    }
+
+    // MARK: - I1: minted pool name clamp (review finding I1)
+
+    func testMigrateTemplates_LongNameClampedTo120CharsAndValid() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let name120 = String(repeating: "A", count: 120)
+        try db.saveRecurringBoardTemplate(
+            makeLegacyTemplate(id: "tpl-long", name: name120, seedTaskIds: ["a"])
+        )
+        let now = AppDatabase.currentTimestamp()
+        try db.write { try MigrationV25Helpers.run($0, now: now) }
+
+        let pools = try db.fetchPools(userId: userId)
+        XCTAssertEqual(pools.count, 1)
+        XCTAssertEqual(pools[0].name.count, 120)
+        XCTAssertEqual(pools[0].name, String(repeating: "A", count: 115) + " pool")
+    }
+
     // MARK: - Sync row helpers (mirror AppDatabaseSyncEnqueueTests' pattern)
 
     private func syncRows(_ db: AppDatabase) throws -> [SyncQueueItem] {

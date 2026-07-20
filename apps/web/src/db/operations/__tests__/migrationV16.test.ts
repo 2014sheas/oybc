@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Transaction } from 'dexie';
 import {
   CenterSquareType,
+  PoolSchema,
   Timeframe,
   type DefaultPool,
   type RecurringBoardTemplate,
@@ -180,5 +181,103 @@ describe('migrationV16 — Task Pools + Recurring Boards Rework backfill', () =>
 
     expect(await db.pools.count()).toBe(0);
     expect(await db.coreBoardDefaults.count()).toBe(0);
+  });
+
+  // Review finding C2 (P1 final fix wave): the migration must mint
+  // DETERMINISTIC ids (uuidv5, keyed off the source row's id), not random
+  // UUIDs — two devices independently migrating the same DefaultPool /
+  // RecurringBoardTemplate row must derive the SAME Pool/CoreBoardDefault
+  // id, or sync converges on duplicate rows per source that can never be
+  // merged back down after the fact.
+  describe('C2 — deterministic migration mint ids', () => {
+    it('mints the SAME Pool + CoreBoardDefault id for a DefaultPool row across two independent fresh-device runs', async () => {
+      // "Fresh run 1" — device A migrates its local copy of dp-shared.
+      await db.defaultPools.add(seedDefaultPool({ id: 'dp-shared', timeframe: Timeframe.YEARLY }));
+      await runMigrationV16({} as Transaction);
+      const poolIdRun1 = (await db.pools.toArray())[0].id;
+      const coreDefaultIdRun1 = (await db.coreBoardDefaults.toArray())[0].id;
+
+      // Reset local state to simulate a second, independent device that
+      // never saw device A's migration output — only the SAME source
+      // DefaultPool row (same id, re-seeded un-migrated).
+      await db.pools.clear();
+      await db.coreBoardDefaults.clear();
+      await db.defaultPools.clear();
+      await db.syncQueue.clear();
+      await db.defaultPools.add(seedDefaultPool({ id: 'dp-shared', timeframe: Timeframe.YEARLY }));
+
+      // "Fresh run 2" — device B migrates the same source row independently.
+      await runMigrationV16({} as Transaction);
+      const poolIdRun2 = (await db.pools.toArray())[0].id;
+      const coreDefaultIdRun2 = (await db.coreBoardDefaults.toArray())[0].id;
+
+      expect(poolIdRun2).toBe(poolIdRun1);
+      expect(coreDefaultIdRun2).toBe(coreDefaultIdRun1);
+    });
+
+    it('mints the SAME Pool id for a RecurringBoardTemplate across two independent fresh-device runs', async () => {
+      await db.recurringBoardTemplates.add(seedTemplate({ id: 'tmpl-shared' }));
+      await runMigrationV16({} as Transaction);
+      const poolIdRun1 = (await db.pools.toArray())[0].id;
+
+      await db.pools.clear();
+      await db.recurringBoardTemplates.clear();
+      await db.syncQueue.clear();
+      await db.recurringBoardTemplates.add(seedTemplate({ id: 'tmpl-shared' }));
+
+      await runMigrationV16({} as Transaction);
+      const poolIdRun2 = (await db.pools.toArray())[0].id;
+
+      expect(poolIdRun2).toBe(poolIdRun1);
+    });
+
+    // Cross-platform pin: this exact uuidv5 derivation is asserted
+    // BYTE-IDENTICAL in the iOS XCTest suite
+    // (`OYBCTests/PoolsCoreBoardDefaultsMigrationTests.swift`,
+    // `test_deterministicMintIds_matchCrossPlatformFixture`). If this
+    // literal ever needs to change, the Swift literal MUST change with it
+    // in the same PR — the whole point of uuidv5 here is that both
+    // platforms derive the identical id from the identical source id.
+    it('derives the exact fixture id for a known DefaultPool id (locks the uuidv5 namespace strings cross-platform)', async () => {
+      await db.defaultPools.add(
+        seedDefaultPool({ id: 'dp-fixture-1', timeframe: Timeframe.DAILY }),
+      );
+      await db.recurringBoardTemplates.add(seedTemplate({ id: 'tmpl-fixture-1' }));
+
+      await runMigrationV16({} as Transaction);
+
+      const pools = await db.pools.toArray();
+      const coreDefaults = await db.coreBoardDefaults.toArray();
+
+      const mintedPoolForDefaultPool = pools.find((p) => p.name === 'Daily default');
+      const mintedPoolForTemplate = pools.find((p) => p.name === 'Daily Workout pool');
+
+      expect(mintedPoolForDefaultPool?.id).toBe('e1105aeb-04bc-58ca-936c-be32ea86437b');
+      expect(coreDefaults[0]?.id).toBe('94e67c0c-b1d1-50f6-90ab-6cedf9e60efc');
+      expect(mintedPoolForTemplate?.id).toBe('f11ff2bb-283e-5867-8348-253dc1fe46db');
+    });
+  });
+
+  // Review finding I1 (P1 final fix wave): a 120-char RecurringBoardTemplate
+  // name ("` pool`" appended = 125 chars unclamped) must mint a Pool name
+  // that's still ≤120 and passes PoolSchema — otherwise the pulled doc is
+  // rejected on any other device (`applyRemoteSubdoc`'s Zod validation).
+  it('I1 — a 120-char template name mints a Pool name clamped to exactly 120 chars, valid per PoolSchema', async () => {
+    const name120 = 'A'.repeat(120);
+    await db.recurringBoardTemplates.add(
+      seedTemplate({
+        id: 'tmpl-long',
+        name: name120,
+        seedTaskIds: ['11111111-1111-4111-8111-111111111111'],
+      }),
+    );
+
+    await runMigrationV16({} as Transaction);
+
+    const pools = await db.pools.toArray();
+    expect(pools).toHaveLength(1);
+    expect(pools[0].name.length).toBe(120);
+    expect(pools[0].name).toBe(`${'A'.repeat(115)} pool`);
+    expect(PoolSchema.safeParse(pools[0]).success).toBe(true);
   });
 });

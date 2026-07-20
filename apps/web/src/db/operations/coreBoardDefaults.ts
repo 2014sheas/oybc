@@ -50,8 +50,11 @@ export async function fetchCoreBoardDefault(
 /**
  * Create a new CoreBoardDefault row. Prefer `upsertCoreBoardDefault` from
  * UI code — this helper assumes the caller has already verified no row
- * exists for the `(userId, timeframe)` pair. Also used directly by the P1
- * migration (`migrationV16.ts`), which mints one row per `DefaultPool`.
+ * exists for the `(userId, timeframe)` pair. NOT used by the P1 migration
+ * (`migrationV16.ts`) — that migration inserts directly via
+ * `db.coreBoardDefaults.add()` (it needs a deterministic, uuidv5-derived
+ * id, not this helper's `generateUUID()`) inside its own upgrade
+ * transaction, which this helper doesn't participate in.
  */
 export async function createCoreBoardDefault(
   userId: string,

@@ -120,12 +120,33 @@ describe('computeTemplateMixes', () => {
     expect(result[template.id]).toEqual(template.seedTaskIds);
   });
 
-  it('falls back to seedTaskIds when poolIds is an empty array (the "no pool yet" edge, matching wizardPersist)', () => {
+  // Review finding M2 (P1 final fix wave): an empty-but-present
+  // `poolIds: []` must NOT fall back to `seedTaskIds` — it resolves
+  // through `resolveMix` (an empty pool union) instead, which correctly
+  // handles BOTH cases this shape covers:
+  //   - the "no pool yet" edge (no manual additions either) → empty mix.
+  //   - the "flattened" defensive write-through (manualTaskIds populated,
+  //     poolIds: []) → the manual selection, NOT the stale seedTaskIds.
+  it('resolves via resolveMix (empty mix) when poolIds is an empty array with no manual additions', () => {
     const template = makeTemplate({ poolIds: [], manualTaskIds: [], removedTaskIds: [] });
 
     const result = computeTemplateMixes([template], {}, {});
 
-    expect(result[template.id]).toEqual(template.seedTaskIds);
+    expect(result[template.id]).toEqual([]);
+    expect(result[template.id]).not.toEqual(template.seedTaskIds);
+  });
+
+  it('resolves via resolveMix (the manual layer) when poolIds is an empty array but manualTaskIds is populated — the "flattened" write-through shape must NOT resurrect stale seedTaskIds', () => {
+    const template = makeTemplate({
+      poolIds: [],
+      manualTaskIds: ['m1', 'm2'],
+      removedTaskIds: [],
+      seedTaskIds: ['stale-should-never-appear'],
+    });
+
+    const result = computeTemplateMixes([template], {}, {});
+
+    expect(result[template.id]).toEqual(['m1', 'm2']);
   });
 
   it('batches multiple templates independently in one call', () => {

@@ -18,7 +18,10 @@ final class BoardWizardTemplateEditTests: XCTestCase {
         timeframe: Timeframe = .weekly,
         boardSize: Int = 5,
         centerSquareType: CenterSquareType = .free,
-        seedTaskIds: [String]? = nil
+        seedTaskIds: [String]? = nil,
+        poolIds: [String]? = nil,
+        manualTaskIds: [String]? = nil,
+        removedTaskIds: [String]? = nil
     ) -> RecurringBoardTemplate {
         RecurringBoardTemplate(
             id: id,
@@ -30,6 +33,9 @@ final class BoardWizardTemplateEditTests: XCTestCase {
             centerSquareCustomName: nil,
             isRandomized: true,
             seedTaskIds: seedTaskIds ?? (0..<24).map { "task-\($0)" },
+            poolIds: poolIds,
+            manualTaskIds: manualTaskIds,
+            removedTaskIds: removedTaskIds,
             lastSpawnedWindowKey: nil,
             isActive: true,
             createdAt: "2026-05-01T00:00:00.000Z",
@@ -69,5 +75,47 @@ final class BoardWizardTemplateEditTests: XCTestCase {
         XCTAssertNil(vm.editingTemplateId)
         XCTAssertTrue(vm.selectedTaskIds.isEmpty)
         XCTAssertFalse(vm.isRecurring)
+    }
+
+    // MARK: - M2 (P1 final fix wave) — poolIds: [] must resolve via the
+    // mix, never fall back to stale seedTaskIds.
+
+    func testHydration_PoolIdsNil_FallsBackToSeedTaskIds() throws {
+        // Genuinely un-migrated (poolIds absent) — the ONLY case that may
+        // fall back.
+        let db = try AppDatabase.makeTestInstance()
+        let tpl = makeTemplate(seedTaskIds: ["a", "b"], poolIds: nil, manualTaskIds: nil, removedTaskIds: nil)
+        let vm = BoardWizardViewModel(preferences: .defaults, editingTemplate: tpl, database: db)
+
+        XCTAssertEqual(vm.selectedTaskIds, Set(["a", "b"]))
+    }
+
+    func testHydration_PoolIdsEmptyNoManual_ResolvesToEmptyMix_NotSeedTaskIds() throws {
+        // The "no pool yet" edge (defensive, shouldn't occur post-migration).
+        // Must resolve through PoolMix.resolveMix (empty mix), NOT fall
+        // back to seedTaskIds.
+        let db = try AppDatabase.makeTestInstance()
+        let tpl = makeTemplate(seedTaskIds: ["stale-should-never-appear"], poolIds: [], manualTaskIds: [], removedTaskIds: [])
+        let vm = BoardWizardViewModel(preferences: .defaults, editingTemplate: tpl, database: db)
+
+        XCTAssertEqual(vm.selectedTaskIds, [])
+    }
+
+    func testHydration_PoolIdsEmptyWithManual_ResolvesToManualSelection_NotSeedTaskIds() throws {
+        // The "flattened" defensive write-through shape
+        // (BoardWizardPersist.swift's richer-shape branch: manualTaskIds
+        // populated, poolIds: []). Falling back to seedTaskIds here would
+        // silently drop the flatten's manual selection — the
+        // destructive-edit bug this fix guards against.
+        let db = try AppDatabase.makeTestInstance()
+        let tpl = makeTemplate(
+            seedTaskIds: ["stale-should-never-appear"],
+            poolIds: [],
+            manualTaskIds: ["m1", "m2"],
+            removedTaskIds: []
+        )
+        let vm = BoardWizardViewModel(preferences: .defaults, editingTemplate: tpl, database: db)
+
+        XCTAssertEqual(vm.selectedTaskIds, Set(["m1", "m2"]))
     }
 }

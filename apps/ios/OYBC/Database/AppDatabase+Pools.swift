@@ -163,8 +163,12 @@ extension AppDatabase {
 
     /// Atomic upsert by `(userId, timeframe)` + sync-enqueue. Preferred
     /// entry point — guarantees per-timeframe uniqueness AND that the
-    /// change is queued for sync. Also used directly by the P1 migration,
-    /// which mints one row per `DefaultPool`.
+    /// change is queued for sync. NOT used by the P1 migration
+    /// (`MigrationV25Helpers.migrateDefaultPools`) — that migration
+    /// constructs + inserts `CoreBoardDefault` rows directly inside its own
+    /// upgrade transaction (it needs a deterministic, uuidv5-derived id,
+    /// not a fresh upsert), and enqueues sync via its own
+    /// `enqueueMigrationSync` raw-SQL helper.
     @discardableResult
     func upsertCoreBoardDefaultAndEnqueue(
         userId: String,

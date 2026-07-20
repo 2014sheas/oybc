@@ -120,11 +120,13 @@ final class RecurringBoardTemplatesViewModel {
     /// tests can exercise it directly without a database. iOS twin of
     /// web's `computeTemplateMixes`.
     ///
-    /// `poolIds == nil || poolIds!.isEmpty` falls back to `seedTaskIds`
-    /// verbatim — the same transient un-migrated safety net
-    /// `resolveTemplateHydrationTaskIds` uses (see that function's doc for
-    /// the full rationale; matches `PoolMix.isLegacyShapedRecord`'s "no
-    /// pool yet" case).
+    /// `poolIds == nil` ONLY falls back to `seedTaskIds` verbatim — the
+    /// same transient un-migrated safety net `resolveTemplateHydrationTaskIds`
+    /// uses (see that function's doc for the full rationale). Review
+    /// finding M2: an empty-but-present `poolIds: []` must NOT also fall
+    /// back — it also covers the defensive "flatten" write-through shape
+    /// (`manualTaskIds` populated, `poolIds: []`), which `PoolMix.resolveMix`
+    /// resolves correctly on its own.
     static func computeTemplateMixes(
         templates: [RecurringBoardTemplate],
         poolsById: [String: Pool],
@@ -132,7 +134,7 @@ final class RecurringBoardTemplatesViewModel {
     ) -> [String: [String]] {
         var out: [String: [String]] = [:]
         for template in templates {
-            guard let poolIds = template.poolIds, !poolIds.isEmpty else {
+            guard template.poolIds != nil else {
                 out[template.id] = template.seedTaskIds
                 continue
             }

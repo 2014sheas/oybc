@@ -210,3 +210,36 @@ export function isLegacyShapedRecord(record: PoolMixSource): boolean {
   const removedCount = record.removedTaskIds?.length ?? 0;
   return poolCount <= 1 && manualCount === 0 && removedCount === 0;
 }
+
+/**
+ * `PoolSchema.name` is bounded to 120 chars (`z.string().min(1).max(120)`,
+ * `schemas.ts`). Every site that MINTS a Pool by appending a fixed suffix
+ * word to a source name (a `RecurringBoardTemplate.name` — itself bounded
+ * to 120 — or a fixed timeframe label) must clamp the source FIRST, or the
+ * appended result can exceed 120 and fail `PoolSchema` on the next device's
+ * pull (review finding I1) — the doc never lands there, silently, since the
+ * mint itself succeeds locally (no local Zod check on write).
+ *
+ * Used by all four mint sites, both platforms: the P1 migration
+ * (`migrationV16.ts` / `MigrationV25Helpers.swift`, `" default"` /
+ * `" pool"` suffixes) and the legacy-create wizard-persist mint
+ * (`wizardPersist.ts` / `BoardWizardPersist.swift`, `" pool"` suffix). Has
+ * a Swift twin: `PoolMix.swift`'s `clampMintedPoolName` — keep them in
+ * sync.
+ *
+ * @param sourceName The un-suffixed source text (template name / timeframe label).
+ * @param suffix     The word appended after a single space (e.g. `"pool"`, `"default"`).
+ * @param maxLen     The schema's max length. Defaults to `PoolSchema`'s 120.
+ * @returns `"<clamped sourceName> <suffix>"`, guaranteed `.length <= maxLen`.
+ */
+export function clampMintedPoolName(
+  sourceName: string,
+  suffix: string,
+  maxLen = 120,
+): string {
+  const suffixWithSpace = ` ${suffix}`;
+  const maxSourceLen = Math.max(0, maxLen - suffixWithSpace.length);
+  const clampedSource =
+    sourceName.length > maxSourceLen ? sourceName.slice(0, maxSourceLen) : sourceName;
+  return `${clampedSource}${suffixWithSpace}`;
+}

@@ -438,7 +438,10 @@ func persistRecurringTemplate(
                         // ran). Mint a Pool exactly like the create path /
                         // migration step 2.
                         let pool = try AppDatabase.shared.createPoolAndEnqueue(
-                            userId: userId, name: "\(trimmedName) pool", taskIds: seedTaskIds, now: now
+                            userId: userId,
+                            name: PoolMix.clampMintedPoolName(trimmedName, suffix: "pool"),
+                            taskIds: seedTaskIds,
+                            now: now
                         )
                         let updated = baseUpdate(
                             poolIds: [pool.id], manualTaskIds: [], removedTaskIds: []
@@ -468,7 +471,10 @@ func persistRecurringTemplate(
             // Mint a Pool from the selection (mirrors migration step 2),
             // then insert the template already in the migrated shape.
             let pool = try AppDatabase.shared.createPoolAndEnqueue(
-                userId: userId, name: "\(trimmedName) pool", taskIds: seedTaskIds, now: now
+                userId: userId,
+                name: PoolMix.clampMintedPoolName(trimmedName, suffix: "pool"),
+                taskIds: seedTaskIds,
+                now: now
             )
             let template = RecurringBoardTemplate(
                 id: AppDatabase.generateUUID(),

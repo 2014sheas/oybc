@@ -2,6 +2,7 @@ import {
   resolveMix,
   clearRemovalsForUntoggle,
   isLegacyShapedRecord,
+  clampMintedPoolName,
 } from '../../src/algorithms/poolMix';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
@@ -362,5 +363,41 @@ describe('isLegacyShapedRecord', () => {
     expect(
       isLegacyShapedRecord({ poolIds: ['A'], manualTaskIds: [], removedTaskIds: ['r'] }),
     ).toBe(false);
+  });
+});
+
+// ─── clampMintedPoolName (review finding I1) ──────────────────────────────
+
+describe('clampMintedPoolName', () => {
+  it('leaves a short source name untouched', () => {
+    expect(clampMintedPoolName('Daily', 'default')).toBe('Daily default');
+    expect(clampMintedPoolName('Morning Kickstart', 'pool')).toBe('Morning Kickstart pool');
+  });
+
+  it('boundary: a 120-char template name mints exactly a 120-char Pool name', () => {
+    // PoolSchema.name is z.string().min(1).max(120) — the schema this
+    // guards. Also matches RecurringBoardTemplate.name's own 120-char max,
+    // so this is a realistic worst-case source, not a contrived one.
+    const name120 = 'x'.repeat(120);
+    const minted = clampMintedPoolName(name120, 'pool');
+    expect(minted.length).toBe(120);
+    expect(minted).toBe(`${'x'.repeat(115)} pool`);
+  });
+
+  it('a name at exactly the boundary (115 chars + " pool" = 120) is untouched', () => {
+    const name115 = 'y'.repeat(115);
+    expect(clampMintedPoolName(name115, 'pool')).toBe(`${name115} pool`);
+    expect(clampMintedPoolName(name115, 'pool').length).toBe(120);
+  });
+
+  it('a longer suffix (" default") clamps the source to a shorter budget', () => {
+    const name120 = 'z'.repeat(120);
+    const minted = clampMintedPoolName(name120, 'default');
+    expect(minted.length).toBe(120);
+    expect(minted).toBe(`${'z'.repeat(112)} default`);
+  });
+
+  it('respects a custom maxLen', () => {
+    expect(clampMintedPoolName('abcdefghij', 'pool', 10)).toBe('abcde pool');
   });
 });

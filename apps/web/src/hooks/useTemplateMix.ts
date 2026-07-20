@@ -30,19 +30,22 @@ export function useTemplateMix(
 
     // Un-migrated safety net (shouldn't occur post-migration — the
     // first-launch migration always stamps a length-1 `poolIds`): fall
-    // back to `seedTaskIds` verbatim when the generalized fields are
-    // absent OR the pool array is empty. An empty `poolIds` with no
-    // manual/removed entries is `isLegacyShapedRecord`'s "no pool yet"
-    // case (wizardPersist's EDIT branch treats `poolIds?.[0] ===
-    // undefined` — true for both `undefined` and `[]` — as "mint a pool");
-    // resolving it via `resolveMix` would silently return an EMPTY mix
-    // (no pools, no manual) rather than the user's actual historical
-    // selection. The richer "flattened" shape this could theoretically
-    // collide with (`poolIds: []` + populated `manualTaskIds`) cannot
-    // occur before P4 — richer shapes require multi-pool/manual/removal
-    // authoring the P1 legacy wizard has no UI for (see
-    // `RecurringBoardTemplate`'s docstring).
-    if (template.poolIds === undefined || template.poolIds.length === 0) {
+    // back to `seedTaskIds` verbatim ONLY when `poolIds` is absent
+    // (genuinely un-migrated — see `isLegacyShapedRecord`'s docstring).
+    //
+    // Review finding M2: this must NOT also fall back for an empty-but-
+    // PRESENT `poolIds: []` — that shape also covers the defensive
+    // "flatten" write-through (`wizardPersist.ts`'s richer-shape branch:
+    // `manualTaskIds: seedTaskIds, poolIds: [], removedTaskIds: []`).
+    // Falling back to stale `seedTaskIds` there would silently drop
+    // whatever the flatten already wrote to `manualTaskIds` — a
+    // destructive-edit bug (re-saving the hydrated-wrong selection
+    // resurrects stale seeds). `poolIds: []` resolves correctly through
+    // `resolveMix` below regardless of which case produced it: an empty
+    // pool union plus the manual layer (empty for the "no pool yet"
+    // case, populated for the "flattened" case) — both converge on the
+    // record's actual current selection.
+    if (template.poolIds === undefined) {
       return new Set(template.seedTaskIds);
     }
 

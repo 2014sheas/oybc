@@ -804,10 +804,12 @@ final class AppDatabase {
         //      never read live post-migration.
         //
         // Both steps enqueue sync entries via raw SQL inline inserts
-        // (mirrors v20/v14 — the migration owns its own transaction, and
-        // `SyncQueueBuilder`'s coalescing `enqueue(db)` is fine to use too
-        // since these are all fresh CREATE/UPDATE ops with no pre-existing
-        // PENDING row to coalesce against).
+        // (`MigrationV25Helpers.enqueueMigrationSync`, mirrors v20/v14 —
+        // the migration owns its own transaction, which `SyncQueueBuilder`'s
+        // coalescing `enqueue(db)` isn't written to participate in). Raw SQL
+        // is fine here specifically because every row minted by this
+        // migration is a brand-new id with no pre-existing PENDING row to
+        // coalesce against — there's nothing for the coalescer to do.
         migrator.registerMigration("v25") { db in
             try MigrationV25Helpers.run(db, now: Self.currentTimestamp())
         }

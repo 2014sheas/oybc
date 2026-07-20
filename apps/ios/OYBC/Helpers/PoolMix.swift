@@ -156,6 +156,40 @@ enum PoolMix {
         let removedCount = record.removedTaskIds?.count ?? 0
         return poolCount <= 1 && manualCount == 0 && removedCount == 0
     }
+
+    /// `PoolSchema.name` is bounded to 120 chars (`z.string().min(1).max(120)`,
+    /// `schemas.ts`) — mirrored by the write-helper layer here. Every site
+    /// that MINTS a Pool by appending a fixed suffix word to a source name
+    /// (a `RecurringBoardTemplate.name` — itself bounded to 120 — or a
+    /// fixed timeframe label) must clamp the source FIRST, or the appended
+    /// result can exceed 120 and fail schema validation on the next
+    /// device's pull (review finding I1) — the doc never lands there,
+    /// silently, since the mint itself succeeds locally (no local
+    /// validation on write).
+    ///
+    /// Used by all four mint sites, both platforms: the P1 migration
+    /// (`MigrationV25Helpers.swift` / `migrationV16.ts`, `" default"` /
+    /// `" pool"` suffixes) and the legacy-create wizard-persist mint
+    /// (`BoardWizardPersist.swift` / `wizardPersist.ts`, `" pool"` suffix).
+    /// Swift twin of `poolMix.ts`'s `clampMintedPoolName` — keep them in
+    /// sync.
+    ///
+    /// - Parameters:
+    ///   - sourceName: The un-suffixed source text (template name / timeframe label).
+    ///   - suffix: The word appended after a single space (e.g. `"pool"`, `"default"`).
+    ///   - maxLen: The schema's max length. Defaults to `PoolSchema`'s 120.
+    /// - Returns: `"<clamped sourceName> <suffix>"`, guaranteed `.count <= maxLen`.
+    static func clampMintedPoolName(_ sourceName: String, suffix: String, maxLen: Int = 120) -> String {
+        let suffixWithSpace = " \(suffix)"
+        let maxSourceLen = max(0, maxLen - suffixWithSpace.count)
+        let clampedSource: String
+        if sourceName.count > maxSourceLen {
+            clampedSource = String(sourceName.prefix(maxSourceLen))
+        } else {
+            clampedSource = sourceName
+        }
+        return "\(clampedSource)\(suffixWithSpace)"
+    }
 }
 
 /// The subset of a spawn record's fields `PoolMix.resolveMix` /

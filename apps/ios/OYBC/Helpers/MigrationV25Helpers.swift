@@ -19,11 +19,63 @@ import GRDB
 ///      `poolIds IS NULL`. A second run sees every row already stamped
 ///      with a `poolIds` array (this migration always stamps a length-1
 ///      array) by the first run, so it does nothing.
+///
+/// Determinism (review finding C2): the minted `Pool` / `CoreBoardDefault`
+/// ids use `UUIDv5.uuidv5` (`defaultPoolToPoolId` /
+/// `defaultPoolToCoreBoardDefaultId` / `templateToPoolId` below), NOT
+/// `AppDatabase.generateUUID()`. Two devices independently migrating the
+/// same `DefaultPool` / template row (e.g. both offline pre-sync, or
+/// racing the first post-upgrade launch) must derive the SAME
+/// Pool/CoreBoardDefault id — a random id per device would converge, post-
+/// sync, into two duplicate rows per source instead of one. This mirrors
+/// the Windowed Completion backfill's `backfillTaskEventId` precedent
+/// exactly. Web's `migrationV16.ts` mints the identical ids via
+/// `@oybc/shared`'s `migrationDefaultPoolToPoolId` /
+/// `migrationDefaultPoolToCoreBoardDefaultId` / `migrationTemplateToPoolId`
+/// — the namespace strings below MUST stay byte-identical to that file's
+/// (see `OYBCTests/PoolsCoreBoardDefaultsMigrationTests.swift`'s cross-platform id-literal
+/// test).
+///
+/// The user-action-time LEGACY-CREATE mint path (`BoardWizardPersist.swift`)
+/// is NOT part of this — it mints on one device only (then syncs as a
+/// normal CREATE), so a random id there is correct and unchanged.
+///
+/// Name clamp (review finding I1): a `RecurringBoardTemplate.name` can be
+/// up to 120 chars; appending " pool" would push the minted Pool's name
+/// over `PoolSchema`'s 120-char max, failing schema validation on the next
+/// device's pull (the mint itself succeeds locally, so this would silently
+/// strand the doc on one device). `PoolMix.clampMintedPoolName` clamps the
+/// source text before appending the suffix at both mint sites below, and
+/// at the two `BoardWizardPersist.swift` legacy-create sites.
 enum MigrationV25Helpers {
 
     static func run(_ db: Database, now: String) throws {
         try migrateDefaultPools(db, now: now)
         try migrateRecurringBoardTemplates(db, now: now)
+    }
+
+    /// Deterministic id for the `Pool` minted from a `DefaultPool` row
+    /// during the P1 migration (step 1). Keyed off `defaultPool.id` so two
+    /// devices migrating the same DefaultPool row independently mint the
+    /// SAME Pool id. MUST match web's `migrationDefaultPoolToPoolId`.
+    static func defaultPoolToPoolId(_ defaultPoolId: String) -> String {
+        UUIDv5.uuidv5(name: "pools-p1:defaultPool-pool:\(defaultPoolId)")
+    }
+
+    /// Deterministic id for the `CoreBoardDefault` minted from a
+    /// `DefaultPool` row during the P1 migration (step 1). Keyed off
+    /// `defaultPool.id`. MUST match web's
+    /// `migrationDefaultPoolToCoreBoardDefaultId`.
+    static func defaultPoolToCoreBoardDefaultId(_ defaultPoolId: String) -> String {
+        UUIDv5.uuidv5(name: "pools-p1:coreBoardDefault:\(defaultPoolId)")
+    }
+
+    /// Deterministic id for the `Pool` minted from a
+    /// `RecurringBoardTemplate`'s `seedTaskIds` during the P1 migration
+    /// (step 2). Keyed off `template.id`. MUST match web's
+    /// `migrationTemplateToPoolId`.
+    static func templateToPoolId(_ templateId: String) -> String {
+        UUIDv5.uuidv5(name: "pools-p1:template-pool:\(templateId)")
     }
 
     /// "<Timeframe> default" pool-naming label. `DefaultPool`/
@@ -54,9 +106,9 @@ enum MigrationV25Helpers {
         for dp in defaultPools {
             let label = timeframeDefaultLabel[dp.timeframe] ?? dp.timeframe.rawValue
             let pool = Pool(
-                id: AppDatabase.generateUUID(),
+                id: defaultPoolToPoolId(dp.id),
                 userId: dp.userId,
-                name: "\(label) default",
+                name: PoolMix.clampMintedPoolName(label, suffix: "default"),
                 taskIds: dp.taskIds,
                 createdAt: now,
                 updatedAt: now,
@@ -66,7 +118,7 @@ enum MigrationV25Helpers {
                 deletedAt: nil
             )
             let coreDefault = CoreBoardDefault(
-                id: AppDatabase.generateUUID(),
+                id: defaultPoolToCoreBoardDefaultId(dp.id),
                 userId: dp.userId,
                 timeframe: dp.timeframe,
                 corePoolIds: [pool.id],
@@ -123,9 +175,9 @@ enum MigrationV25Helpers {
 
         for template in templates {
             let pool = Pool(
-                id: AppDatabase.generateUUID(),
+                id: templateToPoolId(template.id),
                 userId: template.userId,
-                name: "\(template.name) pool",
+                name: PoolMix.clampMintedPoolName(template.name, suffix: "pool"),
                 taskIds: template.seedTaskIds,
                 createdAt: now,
                 updatedAt: now,

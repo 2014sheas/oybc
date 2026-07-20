@@ -1,6 +1,7 @@
 import {
   CenterSquareType,
   Timeframe,
+  clampMintedPoolName,
   deriveSpawnedBoardName,
   getTimeframeBoundaries,
   isLegacyShapedRecord,
@@ -363,7 +364,7 @@ export async function persistRecurringTemplate({
         // before its first-launch migration ran). Mint a Pool exactly
         // like the create path / migration step 2.
         const pool = await createPool(userId, {
-          name: `${trimmedName} pool`,
+          name: clampMintedPoolName(trimmedName, 'pool'),
           taskIds: seedTaskIds,
         });
         await updateRecurringBoardTemplate(editingTemplateId, {
@@ -395,7 +396,7 @@ export async function persistRecurringTemplate({
   // Fresh create path: mint a Pool from the selection (mirrors migration
   // step 2), then insert the template already in the migrated shape.
   const pool = await createPool(userId, {
-    name: `${trimmedName} pool`,
+    name: clampMintedPoolName(trimmedName, 'pool'),
     taskIds: seedTaskIds,
   });
   const template = await createRecurringBoardTemplate(userId, {
