@@ -25,19 +25,21 @@
   margin-bottom: 2px;
 }
 
-/* Cards list region */
+/* Cards region — one column on mobile, 2-up grid on desktop
+   (design handoff §Desktop — "Hub: cards in a 2-up grid (18px gap)"). */
 .cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
   margin-top: 4px;
+  margin-bottom: 24px;
 }
 
-/* Footer note */
-.footerNote {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--riso-muted);
-  line-height: 1.45;
-  padding: 0 2px;
-  margin: 8px 0 24px;
+@media (min-width: 900px) {
+  .cards {
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
 }
 
 /* ─── Empty state ─── */

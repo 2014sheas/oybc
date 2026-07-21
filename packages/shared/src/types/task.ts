@@ -145,6 +145,21 @@ export interface Task {
    */
   isCounter?: boolean;
 
+  /**
+   * Counters UX refresh (R2). The last amount the user logged against this
+   * counter — becomes the pre-selected "default" amount chip on the Hub's
+   * "+ Log" pill and Counter Detail's amount-chip row (alongside the fixed
+   * 1 / 25 / # options). Only meaningful on a source counting task (a plain
+   * or hub-born counter, i.e. `sharedCounterId == null`); derived (linked)
+   * tasks never set it — logging always happens through the source.
+   *
+   * Positive integer when present; absent means "no log yet" and callers
+   * fall back to `1`. Synced per-row LWW like every other Task field.
+   * Canonical design: docs/SHARED_COUNTERS.md §Counters UX refresh →
+   * Amount logging.
+   */
+  defaultLogAmount?: number;
+
   // Phase 6.Y — Timeboxed Tasks. All three fields are optional; when
   // ALL are absent the task is "indefinite" (never expires, always
   // shows in the Tasks tab). When `endDate` is set, the Tasks tab

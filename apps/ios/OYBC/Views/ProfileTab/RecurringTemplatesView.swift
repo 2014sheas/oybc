@@ -129,6 +129,13 @@ struct RecurringTemplatesView: View {
 /// Back square button + "PROFILE" kicker + H2 title used by all Profile sub-pages.
 struct RisoSubPageHeader: View {
     let title: String
+    /// Kicker label above the title (Bricolage 700, uppercase via
+    /// `.risoKicker()`). Defaults to "Profile" / red — every pre-existing
+    /// sub-page keeps this unchanged. Counter Detail (R2 Counters UX
+    /// refresh) overrides both to "Shared counter" / blue, rendered as the
+    /// "SHARED COUNTER" kicker per the design handoff.
+    var kicker: String = "Profile"
+    var kickerColor: Color = .risoRed
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -142,7 +149,7 @@ struct RisoSubPageHeader: View {
             }
             .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
             VStack(alignment: .leading, spacing: 2) {
-                Text("Profile").risoKicker()
+                Text(kicker).risoKicker(kickerColor)
                 Text(title).risoH2()
             }
             Spacer()

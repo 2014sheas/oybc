@@ -17,6 +17,9 @@ export interface RowContextMenuItem {
    *  already-selected subtask leaf rendered under a compound's
    *  "Add a subtask" submenu. */
   disabled?: boolean;
+  /** Render the label in `--riso-red` — for destructive actions (e.g.
+   *  Counter Detail's "⋯" overflow → "Delete counter…", R2). */
+  destructive?: boolean;
 }
 
 interface RowContextMenuProps {
@@ -82,7 +85,7 @@ export function RowContextMenu({
             onClose();
           }}
           disabled={it.disabled}
-          className={styles.item}
+          className={`${styles.item} ${it.destructive ? styles.itemDestructive : ''}`}
         >
           <span aria-hidden="true" className={styles.glyph}>
             {it.glyph}

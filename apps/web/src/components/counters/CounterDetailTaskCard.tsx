@@ -123,6 +123,10 @@ export function CounterDetailTaskCard({
 /**
  * Derives the window caption from the task's progress state.
  * Priority: over-goal → met → in progress (with remaining count).
+ *
+ * R2 Counters UX refresh — design handoff §Counter Detail: captions read
+ * "N to go · ends {window}" (remaining-first, window as a trailing "ends"
+ * clause), replacing the P1 "{window} · N to go" ordering.
  */
 function buildCaption(task: SharedCounterMemberTask, unit: string): string {
   if (task.met && task.over > 0) {
@@ -132,6 +136,6 @@ function buildCaption(task: SharedCounterMemberTask, unit: string): string {
     return '✓ Goal met this window';
   }
   const remaining = Math.max(0, task.goal - task.logged);
-  const windowPrefix = task.window ? `${task.window} · ` : '';
-  return `${windowPrefix}${remaining.toLocaleString()} ${unit} to go`;
+  const base = `${remaining.toLocaleString()} ${unit} to go`;
+  return task.window ? `${base} · ends ${task.window}` : base;
 }

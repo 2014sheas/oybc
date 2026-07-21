@@ -66,6 +66,14 @@ struct SharedCounterGroup: Identifiable {
     let unit: String?
     /// All-time running total = the source task's `currentCount`.
     let lifetime: Int
+    /// R2 Counters UX refresh — the counter's default log amount: the
+    /// source task's `defaultLogAmount`, or `nil` when never set (callers
+    /// fall back to `1`). Persisted per-counter via
+    /// `AppDatabase.setCounterDefaultLogAmount`, updated to the
+    /// most-recently-used log amount each time the user logs with a
+    /// different one. Defaulted here so every pre-existing call site
+    /// (previews, tests) that doesn't specify it keeps compiling.
+    var defaultLogAmount: Int? = nil
     /// Source task first, then linked tasks (deterministic order).
     let tasks: [SharedCounterMemberTask]
     /// Total member tasks (source + linked).
@@ -234,6 +242,7 @@ func buildSharedCounterGroups(
             action: source.action,
             unit: source.unit,
             lifetime: lifetime,
+            defaultLogAmount: source.defaultLogAmount,
             tasks: memberViews,
             taskCount: memberViews.count,
             boardCount: boardIdSet.count,

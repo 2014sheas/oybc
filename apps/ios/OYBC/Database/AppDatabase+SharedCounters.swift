@@ -432,4 +432,258 @@ extension AppDatabase {
         }
     }
 
+    // MARK: - R2 Counters UX refresh: Undo + default log amount
+
+    /// Result returned by `undoLastCounterLog`.
+    struct UndoCounterLogResult {
+        /// Distinct live ACTIVE boards containing any changed member task.
+        let affectedBoards: [AffectedBoard]
+        /// Absolute amount reversed (the tombstoned event's `|delta|`), or
+        /// `0` when there was nothing to undo (no live increment event on
+        /// the source).
+        let undoneAmount: Int
+    }
+
+    /// Reverses the most recent counter log on a source task (R2 Counters UX
+    /// refresh — the "Logged +N · Undo" toast).
+    ///
+    /// `incrementSharedCounter`/`decrementSharedCounter` append their event
+    /// via `insertIncrementEventRaw`, which deliberately SKIPS the cache
+    /// restamp (`stampTaskCachesAuthored`) — the source's `currentCount` is
+    /// already written authoritatively by their own arithmetic, and a
+    /// restamp would double-bump `version`. That means reversing a logged
+    /// entry is NOT a bare tombstone: this function must also correct
+    /// `currentCount` itself and re-run the cross-board cascade, mirroring
+    /// `decrementSharedCounter`'s write shape but keyed to the specific
+    /// event being undone (whose `delta` may itself be negative, if the
+    /// entry being undone was a decrement) rather than a fresh negative event.
+    ///
+    /// Sequence:
+    ///   1. `selectLastIncrementEntry` (pure) picks the most recent
+    ///      non-deleted, non-seed increment event on the source.
+    ///   2. Tombstone that event (`isDeleted`, bump version, enqueue DELETE).
+    ///   3. `newCurrentCount = max(0, currentCount - entry.delta)` —
+    ///      subtracting a positive delta reverses a log; subtracting a
+    ///      negative delta (an undone decrement) adds the amount back. The
+    ///      floor is defensive only: undoing the most-recent entry against
+    ///      the count it produced never goes negative in practice.
+    ///   4. ONE-WAY COMPLETION LATCH preserved, matching increment/decrement:
+    ///      undo does not un-complete an already-completed source.
+    ///   5. Propagate to linked tasks via `propagateIncrement` and re-run
+    ///      the board derivation cascade for the source + every linked task,
+    ///      exactly like increment/decrement.
+    ///
+    /// No-op (returns `undoneAmount == 0`) when the source is
+    /// missing/deleted or has no undoable entry — callers should treat that
+    /// as "Undo is no longer available" (e.g. the toast already dismissed
+    /// after a second log elsewhere).
+    ///
+    /// - Parameter sourceTaskId: The id of the source (template) task whose
+    ///   last log entry to reverse. Must NOT be a linked/derived task.
+    func undoLastCounterLog(sourceTaskId: String) throws -> UndoCounterLogResult {
+        try write { db in
+            let now = Self.currentTimestamp()
+
+            // 1. Fetch and validate the source task.
+            guard var source = try Task.fetchOne(db, key: sourceTaskId) else {
+                return UndoCounterLogResult(affectedBoards: [], undoneAmount: 0)
+            }
+            guard !source.isDeleted else {
+                return UndoCounterLogResult(affectedBoards: [], undoneAmount: 0)
+            }
+            guard source.type == .counting else {
+                throw NSError(
+                    domain: "AppDatabase.undoLastCounterLog",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "undoLastCounterLog: source task \(sourceTaskId) is not a COUNTING task"]
+                )
+            }
+            guard source.sharedCounterId == nil else {
+                throw NSError(
+                    domain: "AppDatabase.undoLastCounterLog",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "undoLastCounterLog: task \(sourceTaskId) is a linked derived counter; pass the source (template) task id instead"]
+                )
+            }
+
+            // 2. Find the entry to reverse.
+            let events = try TaskEvent.filter(Column("taskId") == sourceTaskId).fetchAll(db)
+            guard var entry = selectLastIncrementEntry(events: events, sourceTaskId: sourceTaskId) else {
+                return UndoCounterLogResult(affectedBoards: [], undoneAmount: 0)
+            }
+
+            // 3. Tombstone it.
+            entry.isDeleted = true
+            entry.deletedAt = now
+            entry.updatedAt = now
+            entry.version += 1
+            try entry.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "taskEvents",
+                entityId: entry.id,
+                operationType: .delete,
+                payload: entry,
+                now: now
+            ).enqueue(db)
+
+            // 4. Correct the source's currentCount by subtracting the
+            //    reversed entry's delta (raw-append bypassed the cache
+            //    restamp — see docstring above).
+            let entryDelta = entry.delta ?? 0
+            let currentCount = source.currentCount ?? 0
+            let newSourceCount = max(0, currentCount - entryDelta)
+
+            // 5. ONE-WAY LATCH: undo does not un-complete (mirrors increment/decrement).
+            let sourceWasCompleted = source.isCompleted
+            let sourceNowCompleted = sourceWasCompleted || (source.maxCount.map { newSourceCount >= $0 } ?? false)
+
+            source.currentCount = newSourceCount
+            source.isCompleted = sourceNowCompleted
+            if !sourceWasCompleted && sourceNowCompleted {
+                source.completedAt = now
+            }
+            source.updatedAt = now
+            source.version += 1
+            try source.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: sourceTaskId,
+                operationType: .update,
+                payload: source,
+                now: now
+            ).enqueue(db)
+
+            // 6. Find all linked (derived) tasks and propagate, exactly like
+            //    increment/decrement.
+            let linkedTasks = try Task
+                .filter(Column("sharedCounterId") == sourceTaskId)
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+
+            let propagation = propagateIncrement(
+                sourceAfterCurrentCount: newSourceCount,
+                linkedTasks: linkedTasks.map {
+                    PropagateIncrementLinkedTask(
+                        id: $0.id,
+                        baseline: $0.baseline,
+                        maxCount: $0.maxCount,
+                        isCompleted: $0.isCompleted
+                    )
+                }
+            )
+            for (result, var linked) in zip(propagation, linkedTasks) {
+                let linkedWasCompleted = linked.isCompleted
+
+                linked.currentCount = result.newCurrentCount
+                linked.isCompleted = result.newIsCompleted
+                if !linkedWasCompleted && result.newIsCompleted {
+                    linked.completedAt = now
+                }
+                linked.updatedAt = now
+                linked.version += 1
+                try linked.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: linked.id,
+                    operationType: .update,
+                    payload: linked,
+                    now: now
+                ).enqueue(db)
+            }
+
+            // 7. Board cascade + credit result.
+            let allChangedTaskIds = [sourceTaskId] + linkedTasks.map { $0.id }
+            let creditBoards = try runSharedCounterCascade(
+                db: db,
+                allChangedTaskIds: allChangedTaskIds,
+                now: now
+            )
+            return UndoCounterLogResult(affectedBoards: creditBoards, undoneAmount: abs(entryDelta))
+        }
+    }
+
+    /// Persists the amount a user just logged with as the counter's new
+    /// default (R2 Counters UX refresh — "Default amount = last-used per
+    /// counter, persisted"). A plain task-field update: version bump + sync
+    /// enqueue, no event/cascade side effects (this never changes
+    /// `currentCount`).
+    ///
+    /// No-op when the amount already matches the stored default (avoids a
+    /// needless version bump / sync entry on every repeat log with the same
+    /// amount).
+    ///
+    /// - Parameters:
+    ///   - sourceTaskId: The counter's source task id. Must NOT be a
+    ///     linked/derived task — `defaultLogAmount` is only meaningful on
+    ///     the accumulator.
+    ///   - amount: A positive integer.
+    func setCounterDefaultLogAmount(sourceTaskId: String, amount: Int) throws {
+        guard amount >= 1 else {
+            throw NSError(
+                domain: "AppDatabase.setCounterDefaultLogAmount",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "setCounterDefaultLogAmount: amount must be a positive integer"]
+            )
+        }
+
+        try write { db in
+            guard var source = try Task.fetchOne(db, key: sourceTaskId), !source.isDeleted else { return }
+            guard source.type == .counting else {
+                throw NSError(
+                    domain: "AppDatabase.setCounterDefaultLogAmount",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "setCounterDefaultLogAmount: task \(sourceTaskId) is not a COUNTING task"]
+                )
+            }
+            guard source.sharedCounterId == nil else {
+                throw NSError(
+                    domain: "AppDatabase.setCounterDefaultLogAmount",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "setCounterDefaultLogAmount: task \(sourceTaskId) is a linked derived counter; pass the source (template) task id instead"]
+                )
+            }
+            guard source.defaultLogAmount != amount else { return }
+
+            let now = Self.currentTimestamp()
+            source.defaultLogAmount = amount
+            source.updatedAt = now
+            source.version += 1
+            try source.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: sourceTaskId,
+                operationType: .update,
+                payload: source,
+                now: now
+            ).enqueue(db)
+        }
+    }
+
+    /// Reads a counter's trailing daily totals (7-day sparkline + "Today"
+    /// stat, R2 Counters UX refresh) — the source task's non-deleted
+    /// `TaskEvent`s reduced via `deriveCounterDailyTotals`. Read-only.
+    ///
+    /// - Parameters:
+    ///   - sourceTaskId: The counter's source task id.
+    ///   - days: Trailing window size (inclusive of today).
+    ///   - now: ISO8601 "now" — every day boundary is computed relative to this.
+    func fetchCounterDailyTotals(sourceTaskId: String, days: Int, now: String) throws -> CounterDailyTotalsResult {
+        try read { db in
+            let events = try TaskEvent
+                .filter(Column("taskId") == sourceTaskId && Column("isDeleted") == false)
+                .fetchAll(db)
+            return try deriveCounterDailyTotals(
+                events: events,
+                sourceTaskId: sourceTaskId,
+                now: now,
+                days: days,
+                seedSentinel: TaskEvents.seedEventOccurredAt
+            )
+        }
+    }
 }

@@ -2,20 +2,28 @@ import SwiftUI
 
 // MARK: - CounterDetailView (container)
 
-/// Profile sub-page — one shared counter's home (Shared Counters P1 + P2).
+/// Profile sub-page — one shared counter's home (Shared Counters P1 + P2,
+/// R2 Counters UX refresh).
 ///
-/// Container: loads fresh data on appear/after log, resolves the group from
-/// `buildSharedCounterGroups`, then renders `CounterDetailContent`.
+/// Container: loads fresh data on appear/after log/undo (group + trailing
+/// daily totals for the sparkline/Today stat), then renders
+/// `CounterDetailContent`.
 ///
-/// MVP sections (per docs/SHARED_COUNTERS.md P1):
-///   1. Hero: action/unit tag + lifetime hero + optional milestone bar.
-///   2. Log control: "Log {name}" + ±1 stepper (increment + decrement wired in P2).
-///   3. "Appears on" timeframe chips.
-///   4. "Shared by N tasks" — one card per active member (tappable → board).
-///   5. "Not counting now" — inactive members greyed.
-///
-/// Deferred (leave seams):
-///   - P4: 7-day sparkline, streak, best-window, recent-windows history.
+/// Sections (R2 Counters UX refresh — design handoff §Counter Detail):
+///   1. Header — back circle · blue "SHARED COUNTER" kicker · counter name ·
+///      "⋯" overflow (Delete counter…).
+///   2. Hero card — all-time total + REAL 7-day sparkline
+///      (`AppDatabase.fetchCounterDailyTotals`) + milestone bar
+///      (`counterMilestoneProgress`, `Helpers/CounterMilestone.swift`).
+///   3. Stat strip — Today (REAL) / Streak (STUB) / Best week (STUB).
+///   4. Log card (blue fill) — amount chips (1 / default / 25 / #) + −/+Add N.
+///      Logging updates the counter's `defaultLogAmount` to the amount just
+///      used and shows the reusable `CounterLogToastView` ("Logged +N · Undo").
+///   5. Explainer line.
+///   6. "Counting on N tasks" — active member cards.
+///   7. "Recent weeks" — STUB history card.
+///   8. "Not counting now" — inactive members greyed.
+///   9. Delete — quiet red text link (was a filled `RisoButton`).
 struct CounterDetailView: View {
 
     let counterId: String
@@ -27,29 +35,33 @@ struct CounterDetailView: View {
 
     @State private var group: SharedCounterGroup?
     @State private var isLoaded = false
+    @State private var dailyTotals = CounterDailyTotalsResult(days: [], todayTotal: 0)
     @State private var isLogging = false
     @State private var logError: String?
+    @State private var toast: DetailToastState?
 
     // Delete-counter (P5 decision 8: deleteCounterWithUnlink) UI state.
     @State private var deleteImpact: AppDatabase.TaskDeletionImpact?
     @State private var isDeleting = false
     @State private var deleteError: String?
 
+    /// Trailing window for the sparkline + "Today" stat.
+    private static let sparklineDays = 7
+
     // MARK: - Body
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             RisoPaperBackground()
 
             if let group {
                 CounterDetailContent(
                     group: group,
+                    dailyTotals: dailyTotals,
                     isLogging: isLogging,
                     logError: logError,
                     deleteError: deleteError,
-                    onIncrement: { handleIncrement(group: group) },
-                    onDecrement: { handleDecrement(group: group) },
-                    onNavigateToBoard: { _ in /* routed via NavigationLink in content */ },
+                    onLog: { amount, direction in handleLog(amount: amount, direction: direction) },
                     onDeleteTap: handleDeleteTap
                 )
             } else if isLoaded {
@@ -57,6 +69,20 @@ struct CounterDetailView: View {
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            if let toast {
+                CounterLogToastView(
+                    amount: toast.amount,
+                    unit: toast.unit,
+                    verb: toast.verb,
+                    onUndo: handleUndo,
+                    onDone: { self.toast = nil }
+                )
+                .padding(.horizontal, Riso.gutter)
+                .padding(.bottom, 24)
+                .id(toast.toastKey)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .navigationBarHidden(true)
@@ -89,62 +115,71 @@ struct CounterDetailView: View {
 
     private func loadData() {
         guard let userId = authService.currentUser?.id else { return }
+        let id = counterId
         _Concurrency.Task.detached(priority: .userInitiated) {
             let tasks = (try? AppDatabase.shared.fetchTasks(userId: userId)) ?? []
             let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
             let boardTasks = (try? AppDatabase.shared.fetchAllBoardTasks()) ?? []
             let groups = buildSharedCounterGroups(tasks: tasks, boardTasks: boardTasks, boards: boards)
-            let found = groups.first { $0.counterId == counterId }
+            let found = groups.first { $0.counterId == id }
+            let totals = (try? AppDatabase.shared.fetchCounterDailyTotals(
+                sourceTaskId: id, days: Self.sparklineDays, now: AppDatabase.currentTimestamp()
+            )) ?? CounterDailyTotalsResult(days: [], todayTotal: 0)
             await MainActor.run {
                 group = found
+                dailyTotals = totals
                 isLoaded = true
             }
         }
     }
 
-    // MARK: - Log increment
+    // MARK: - Log (amount-chip driven — P2 + R2)
 
-    private func handleIncrement(group: SharedCounterGroup) {
-        guard !isLogging else { return }
+    /// Logs `amount` in `direction`, persists it as the counter's new
+    /// default, then surfaces the "Logged/Removed" toast. Mirrors web's
+    /// `CounterDetailPage.handleLog`.
+    private func handleLog(amount: Int, direction: CounterLogDirection) {
+        guard !isLogging, amount > 0, let group else { return }
         isLogging = true
         logError = nil
+        let id = counterId
+        let unit = group.unit ?? ""
         _Concurrency.Task.detached(priority: .userInitiated) {
             do {
-                _ = try AppDatabase.shared.incrementSharedCounter(sourceTaskId: group.counterId, by: 1)
-                await MainActor.run {
-                    isLogging = false
-                    loadData() // reload to reflect new lifetime
+                switch direction {
+                case .add:
+                    _ = try AppDatabase.shared.incrementSharedCounter(sourceTaskId: id, by: amount)
+                case .remove:
+                    // decrementSharedCounter clamps to 0 itself — no additional guard needed.
+                    _ = try AppDatabase.shared.decrementSharedCounter(sourceTaskId: id, by: amount)
                 }
-            } catch {
+                // The amount just used becomes the new default (no-op if unchanged).
+                try AppDatabase.shared.setCounterDefaultLogAmount(sourceTaskId: id, amount: amount)
                 await MainActor.run {
                     isLogging = false
-                    logError = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    // MARK: - Log decrement (P2)
-
-    /// Decrements the source counter by 1. Silent no-op when `group.lifetime == 0`
-    /// (the engine also clamps via `eff = min(by, source.currentCount)`).
-    private func handleDecrement(group: SharedCounterGroup) {
-        guard !isLogging else { return }
-        guard group.lifetime > 0 else { return }  // fast-path guard; engine also clamps
-        isLogging = true
-        logError = nil
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                _ = try AppDatabase.shared.decrementSharedCounter(sourceTaskId: group.counterId, by: 1)
-                await MainActor.run {
-                    isLogging = false
+                    toast = DetailToastState(
+                        amount: amount, unit: unit,
+                        verb: direction == .add ? .logged : .removed,
+                        toastKey: UUID().uuidString
+                    )
                     loadData()
                 }
             } catch {
                 await MainActor.run {
                     isLogging = false
-                    logError = error.localizedDescription
+                    logError = "Failed to log. Try again."
                 }
+            }
+        }
+    }
+
+    private func handleUndo() {
+        let id = counterId
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            _ = try? AppDatabase.shared.undoLastCounterLog(sourceTaskId: id)
+            await MainActor.run {
+                toast = nil
+                loadData()
             }
         }
     }
@@ -214,29 +249,80 @@ struct CounterDetailView: View {
     }
 }
 
+/// Log direction for `CounterDetailContent.onLog` — an add ("+ Add N",
+/// `incrementSharedCounter`) or a remove ("−", `decrementSharedCounter`).
+enum CounterLogDirection {
+    case add
+    case remove
+}
+
+/// Toast state for the Counter Detail log card's "Logged/Removed +N · Undo" toast.
+private struct DetailToastState {
+    let amount: Int
+    let unit: String
+    let verb: CounterLogToastView.Verb
+    let toastKey: String
+}
+
 // MARK: - CounterDetailContent (pure-props leaf, snapshot-testable)
 
 /// Pure presentational leaf for the Counter Detail page.
-/// No environment, no DB, no Firebase — receives plain values.
+/// No environment, no DB, no Firebase — receives plain values. Owns its own
+/// amount-chip selection UI state (not tied to the DB), seeded once from
+/// `group.defaultLogAmount` on first appearance — mirrors web's
+/// `initializedForRef` guard (sync the chip selection to the counter's
+/// current default exactly once per counter, NOT on every live reload, so a
+/// background `defaultLogAmount` write from this very session's own log
+/// doesn't clobber the user's in-progress chip selection).
 struct CounterDetailContent: View {
 
     let group: SharedCounterGroup
-    var isLogging: Bool = false
-    var logError: String? = nil
+    var dailyTotals: CounterDailyTotalsResult
+    var isLogging: Bool
+    var logError: String?
     /// Surfaced when a delete attempt fails — the confirm sheet has already
     /// closed by the time this is shown (mirrors web's close-dialog-on-error
     /// pattern), so it renders on this page itself.
-    var deleteError: String? = nil
-    var onIncrement: () -> Void = {}
-    var onDecrement: () -> Void = {}
-    var onNavigateToBoard: (String) -> Void = { _ in }
-    /// Fired by the "Delete counter" footer action — the container computes
-    /// the deletion impact and shows the confirm sheet.
-    var onDeleteTap: () -> Void = {}
+    var deleteError: String?
+    var onLog: (Int, CounterLogDirection) -> Void
+    /// Fired by the "⋯" overflow menu's "Delete counter…" item AND the
+    /// footer's red text link — the container computes the deletion impact
+    /// and shows the confirm sheet.
+    var onDeleteTap: () -> Void
+
+    @State private var selectedAmount: Int
+    @State private var isCustomActive = false
+    @State private var customOpen = false
+    @State private var customDraft = ""
+
+    init(
+        group: SharedCounterGroup,
+        dailyTotals: CounterDailyTotalsResult = CounterDailyTotalsResult(days: [], todayTotal: 0),
+        isLogging: Bool = false,
+        logError: String? = nil,
+        deleteError: String? = nil,
+        initialSelectedAmount: Int? = nil,
+        /// Snapshot-testability seam: forces the "#" custom chip into its
+        /// selected (gold, showing the live amount) state without requiring
+        /// a real tap sequence. Production call sites never pass this.
+        initialCustomActive: Bool = false,
+        onLog: @escaping (Int, CounterLogDirection) -> Void = { _, _ in },
+        onDeleteTap: @escaping () -> Void = {}
+    ) {
+        self.group = group
+        self.dailyTotals = dailyTotals
+        self.isLogging = isLogging
+        self.logError = logError
+        self.deleteError = deleteError
+        self.onLog = onLog
+        self.onDeleteTap = onDeleteTap
+        _selectedAmount = State(initialValue: initialSelectedAmount ?? group.defaultLogAmount ?? 1)
+        _isCustomActive = State(initialValue: initialCustomActive)
+    }
 
     // MARK: - Derived
 
-    private var unitLabel: String { group.unit ?? "units" }
+    private var unitLabel: String { group.unit ?? "" }
 
     private var activeMembers: [SharedCounterMemberTask] {
         group.tasks.filter { $0.isActive }
@@ -246,28 +332,61 @@ struct CounterDetailContent: View {
         group.tasks.filter { !$0.isActive }
     }
 
-    private var distinctTimeframes: [Timeframe] {
-        var seen = Set<Timeframe>()
-        return group.tasks.compactMap { m -> Timeframe? in
-            guard let tf = m.timeframe, !seen.contains(tf) else { return nil }
-            seen.insert(tf)
-            return tf
-        }
+    private var milestoneProgress: CounterMilestoneProgress {
+        counterMilestoneProgress(group.lifetime)
     }
 
-    // Milestone: next round number above lifetime. Mirrors `cnNextMilestone`
-    // in the prototype (and web `nextMilestone`) exactly — same step list +
-    // the same "next 10k multiple" fallback past the top step.
-    private var milestone: Int? {
-        let steps = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
-        if let next = steps.first(where: { $0 > group.lifetime }) { return next }
-        return (group.lifetime / 10000 + 1) * 10000
+    private struct AmountChipOption {
+        /// `nil` marks the trailing custom "#" chip.
+        let value: Int?
+        let label: String
     }
 
-    private var milestoneFraction: Double {
-        guard let ms = milestone, ms > 0 else { return 1 }
-        // Progress from zero toward the next milestone (prototype: lifetime / nextMs).
-        return min(1.0, Double(group.lifetime) / Double(ms))
+    private var chips: [AmountChipOption] {
+        let defaultAmount = group.defaultLogAmount ?? 1
+        return [
+            AmountChipOption(value: 1, label: "1"),
+            AmountChipOption(value: defaultAmount, label: "\(defaultAmount)"),
+            AmountChipOption(value: 25, label: "25"),
+            AmountChipOption(value: nil, label: "#"),
+        ]
+    }
+
+    private var selectedChipIndex: Int? {
+        if isCustomActive { return chips.count - 1 }
+        return chips.firstIndex(where: { $0.value == selectedAmount })
+    }
+
+    /// Validates a raw custom-amount input string into a positive integer,
+    /// or `nil` when the input isn't one (empty, non-numeric, zero,
+    /// negative, fractional, or leading/trailing junk). Intentionally strict
+    /// (digits only on the trimmed string) — mirrors web's
+    /// `parseCustomLogAmount`.
+    private static func parseCustomLogAmount(_ raw: String) -> Int? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        guard let n = Int(trimmed), n > 0 else { return nil }
+        return n
+    }
+
+    // MARK: - Chip actions
+
+    private func selectChip(_ value: Int) {
+        selectedAmount = value
+        isCustomActive = false
+        customOpen = false
+    }
+
+    private func openCustomInput() {
+        customDraft = isCustomActive ? "\(selectedAmount)" : ""
+        customOpen = true
+    }
+
+    private func confirmCustomInput() {
+        guard let parsed = Self.parseCustomLogAmount(customDraft) else { return }
+        selectedAmount = parsed
+        isCustomActive = true
+        customOpen = false
     }
 
     // MARK: - Body
@@ -276,51 +395,58 @@ struct CounterDetailContent: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
 
-                RisoSubPageHeader(title: group.name)
-                    .padding(.top, 16)
-                    .padding(.bottom, 20)
+                // Header row — blue "SHARED COUNTER" kicker + "⋯" overflow.
+                HStack(spacing: 8) {
+                    RisoSubPageHeader(title: group.name, kicker: "Shared counter", kickerColor: .risoBlue)
+                    overflowMenu
+                        .padding(.trailing, Riso.gutter)
+                }
+                .padding(.top, 16)
+                .padding(.bottom, 20)
 
                 // 1. Hero card
                 heroCard
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 14)
 
-                // P4: sparkline slot — leave seam
-                // P4: stat strip (streak + best window) — leave seam
-
-                // 2. Log control card
-                logCard
+                // 2. Stat strip — Today (real) / Streak / Best week (P4 stubs)
+                statStrip
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 14)
 
-                // 3. "Appears on" timeframe chips
-                if !distinctTimeframes.isEmpty {
-                    appearsOnSection
-                        .padding(.bottom, 18)
-                }
+                // 3. Log card (amount chips + −/+Add N)
+                logCard
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 10)
 
-                // 4. "Shared by N tasks" (active members)
+                // 4. Explainer
+                Text("Logged \(unitLabel) count toward every active task and your all-time total.")
+                    .font(.risoBody(11, .regular))
+                    .foregroundStyle(Color.risoMuted)
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 18)
+
+                // 5. "Counting on N tasks" (active members)
                 if !activeMembers.isEmpty {
-                    sectionLabel("Shared by \(activeMembers.count) task\(activeMembers.count == 1 ? "" : "s")")
+                    sectionLabel("Counting on \(activeMembers.count) task\(activeMembers.count == 1 ? "" : "s")")
                     activeMembersSection
                         .padding(.bottom, 14)
                 }
 
-                // 5. "Not counting now" (inactive members)
+                // 6. "Recent weeks" — P4 stub
+                sectionLabel("Recent weeks")
+                recentWeeksCard
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 14)
+
+                // 7. "Not counting now" (inactive members)
                 if !inactiveMembers.isEmpty {
                     sectionLabel("Not counting now")
                     inactiveMembersSection
                         .padding(.bottom, 14)
                 }
 
-                // P4: "Recent windows" history — leave seam
-                // P4: seam: import the closed-window history rows here once
-                //     P4 data storage lands (per-day / per-window increment log).
-
-                // Delete-counter action (P5 decision 8). Reuses the RisoButton
-                // `primary` kind — the same red/on-color destructive styling
-                // TaskDeleteConfirmView's confirm pill uses, matching web's
-                // "reusing TaskConfirmDeleteDialog's confirm button" note.
+                // 8. Delete-counter action — quiet red text link.
                 if let deleteError {
                     Text(deleteError)
                         .font(.risoBody(12, .semibold))
@@ -328,71 +454,66 @@ struct CounterDetailContent: View {
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 8)
                 }
-                RisoButton(title: "Delete counter", kind: .primary, fullWidth: true) {
-                    onDeleteTap()
-                }
-                .padding(.horizontal, Riso.gutter)
-                .padding(.bottom, 14)
+                Button("Delete counter…", action: onDeleteTap)
+                    .font(.risoHead(12, .bold))
+                    .foregroundStyle(Color.risoRed)
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 14)
 
                 Spacer(minLength: 24)
             }
         }
     }
 
+    // MARK: - Overflow menu
+
+    private var overflowMenu: some View {
+        Menu {
+            Button(role: .destructive, action: onDeleteTap) {
+                Label("Delete counter…", systemImage: "trash")
+            }
+        } label: {
+            Text("⋯")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(Color.risoInk)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(Color.risoPaper2))
+                .overlay(Circle().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+        }
+        .accessibilityLabel("Counter options")
+    }
+
     // MARK: - Hero card
 
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Tag row: "Do · reps" + "Shared counter" label
-            HStack(spacing: 8) {
-                if let action = group.action {
-                    Text("\(action) · \(unitLabel)")
-                        .font(.risoHead(11, .bold))
-                        .tracking(0.3)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.lifetime.formatted())
+                        .font(.risoHead(46, .extraBold))
+                        .foregroundStyle(Color.risoBlue)
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.4)
+                        .lineLimit(1)
+                    Text("all-time \(unitLabel)")
+                        .font(.risoHead(14, .bold))
                         .foregroundStyle(Color.risoMuted)
                 }
-                Spacer()
-                Text("Shared counter")
-                    .font(.risoHead(10, .bold))
-                    .tracking(0.35)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Color.risoPaper)
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 8)
-                    .background(Capsule().fill(Color.risoBlue))
-                    .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+
+                Spacer(minLength: 8)
+
+                if !dailyTotals.days.isEmpty {
+                    sparkline
+                }
             }
             .padding(.horizontal, Riso.cardPadding)
             .padding(.top, Riso.cardPadding)
 
-            // Huge blue lifetime number
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(group.lifetime)")
-                    .font(.risoHead(52, .extraBold))
-                    .foregroundStyle(Color.risoBlue)
-                    .minimumScaleFactor(0.4)
-                    .lineLimit(1)
-                Text("all-time \(unitLabel)")
-                    .font(.risoHead(15, .bold))
-                    .foregroundStyle(Color.risoMuted)
-                    .padding(.bottom, 4)
-            }
-            .padding(.horizontal, Riso.cardPadding)
-            .padding(.top, 6)
-
-            // Milestone bar (optional)
-            if let ms = milestone {
-                milestoneBar(toward: ms)
-                    .padding(.horizontal, Riso.cardPadding)
-                    .padding(.top, 10)
-            }
-
-            // P4: sparkline (7-day trend) — seam
-            // P4 seam: insert `SparklineView` here once the per-day increment
-            //          log lands. The `recent: [Int]` array from the handoff
-            //          comes from a new P4 aggregation query.
-
-            Spacer().frame(height: Riso.cardPadding)
+            milestoneBar
+                .padding(.horizontal, Riso.cardPadding)
+                .padding(.top, 10)
+                .padding(.bottom, Riso.cardPadding)
         }
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
@@ -400,151 +521,207 @@ struct CounterDetailContent: View {
         .accessibilityLabel("\(group.name), \(group.lifetime) all-time \(unitLabel)")
     }
 
-    private func milestoneBar(toward ms: Int) -> some View {
+    /// 7-day sparkline (real data via `dailyTotals`) — 9px-wide bars, blue
+    /// with a static-ink border, today's bar gold.
+    private var sparkline: some View {
+        let maxDaily = max(1, dailyTotals.days.map(\.total).max() ?? 0)
+        return HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(dailyTotals.days.enumerated()), id: \.offset) { index, day in
+                let isToday = index == dailyTotals.days.count - 1
+                // 6% min-bar floor — matches web's `Math.max(6, …)` percentage
+                // exactly (R2 final review: 0.12 rendered tiny days ~2× taller).
+                let heightFraction = max(0.06, Double(day.total) / Double(maxDaily))
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(isToday ? Color.risoGold : Color.risoBlue)
+                    .frame(width: 9, height: 40 * heightFraction)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .strokeBorder(Color.risoInkStatic, lineWidth: 1)
+                    )
+            }
+        }
+        .frame(height: 40, alignment: .bottom)
+        .accessibilityLabel("7-day activity — today \(dailyTotals.todayTotal.formatted()) \(unitLabel)")
+    }
+
+    private var milestoneBar: some View {
         VStack(alignment: .leading, spacing: 4) {
-            RisoProgressBar(value: milestoneFraction, color: .risoBlue, height: 7)
-            Text("\(ms - group.lifetime) \(unitLabel) to \(ms)")
-                .font(.risoBody(10, .regular))
-                .foregroundStyle(Color.risoMuted)
+            RisoProgressBar(value: milestoneProgress.fraction, color: .risoBlue, height: 8)
+            (
+                Text("\(milestoneProgress.remaining.formatted()) to ")
+                    .font(.risoBody(10, .regular))
+                    .foregroundStyle(Color.risoMuted)
+                + Text(milestoneProgress.next.formatted())
+                    .font(.risoBody(10, .bold))
+                    .foregroundStyle(Color.risoMuted)
+                + Text(" milestone")
+                    .font(.risoBody(10, .regular))
+                    .foregroundStyle(Color.risoMuted)
+            )
         }
     }
 
-    // MARK: - Log control card
+    // MARK: - Stat strip
 
-    private var logCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Card header
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Log \(group.name)")
-                    .font(.risoHead(15, .bold))
-                    .foregroundStyle(Color.risoPaper)
-                if group.activeTaskCount > 0 {
-                    Text("Counts on all \(group.activeTaskCount) active task\(group.activeTaskCount == 1 ? "" : "s")")
-                        .font(.risoBody(11, .regular))
-                        .foregroundStyle(Color.risoPaper.opacity(0.8))
-                }
-            }
-
-            // ±1 stepper (P2: both + and − are wired)
-            HStack(spacing: 12) {
-                Spacer()
-
-                // −1 button (disabled at lifetime 0)
-                Button {
-                    onDecrement()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "minus")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("−1 \(unitLabel)")
-                            .font(.risoHead(15, .bold))
-                    }
-                    .foregroundStyle(Color.risoPaper)
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 18)
-                    .background(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .fill(Color.risoPaper.opacity(0.12))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoPaper.opacity(0.45), lineWidth: Riso.Keyline.dense)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(isLogging || group.lifetime == 0)
-
-                // +1 button
-                Button {
-                    onIncrement()
-                } label: {
-                    HStack(spacing: 6) {
-                        if isLogging {
-                            ProgressView()
-                                .tint(Color.risoPaper)
-                                .scaleEffect(0.85)
-                        } else {
-                            Image(systemName: "plus")
-                                .font(.system(size: 16, weight: .bold))
-                        }
-                        Text("+1 \(unitLabel)")
-                            .font(.risoHead(15, .bold))
-                    }
-                    .foregroundStyle(Color.risoPaper)
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 22)
-                    .background(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .fill(Color.risoPaper.opacity(0.18))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoPaper.opacity(0.6), lineWidth: Riso.Keyline.dense)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(isLogging)
-
-                Spacer()
-            }
-
-            if let err = logError {
-                Text(err)
-                    .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoPaper.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-            }
-
-            // Explainer note
-            Text("Every \(unitLabel) you log lands in each active task's window **and your all-time total** at once — each window keeps its own start and finish, so a fresh weekly task can start at 0 while your all-time keeps climbing.")
-                .font(.risoBody(11, .regular))
-                .foregroundStyle(Color.risoPaper.opacity(0.75))
-                .multilineTextAlignment(.leading)
+    private var statStrip: some View {
+        HStack(spacing: 10) {
+            statCard(label: "TODAY", value: dailyTotals.todayTotal.formatted())
+            // P4 — build-now-feed-P4: needs a real streak rollup (window-goal
+            // history); UI shipped now, wired to real data in P4.
+            statCard(label: "STREAK", value: "—")
+            // P4 — build-now-feed-P4: needs closed-window best-week rollup storage.
+            statCard(label: "BEST WEEK", value: "—")
         }
-        .padding(Riso.cardPadding)
-        .background(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .fill(Color.risoBlue)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
-        )
+    }
+
+    private func statCard(label: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.risoHead(17, .extraBold))
+                .foregroundStyle(Color.risoInk)
+            Text(label)
+                .font(.risoBody(9, .bold))
+                .tracking(0.9)
+                .foregroundStyle(Color.risoMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
-    // MARK: - "Appears on" timeframe chips
+    // MARK: - Log card
 
-    private var appearsOnSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Appears on")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(distinctTimeframes, id: \.self) { tf in
-                        timeframeChip(tf)
+    private var logCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Log \(unitLabel)")
+                    .font(.risoHead(15, .extraBold))
+                    .foregroundStyle(Color.risoPaper)
+                Text("counts toward \(activeMembers.count) active task\(activeMembers.count == 1 ? "" : "s")")
+                    .font(.risoBody(11, .regular))
+                    .foregroundStyle(Color.risoPaper.opacity(0.85))
+            }
+
+            chipRow
+
+            if customOpen {
+                customInputRow
+            }
+
+            logActionsRow
+
+            if let logError {
+                Text(logError)
+                    .font(.risoBody(11, .regular))
+                    .foregroundStyle(Color.risoPaper.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(Riso.cardPadding)
+        .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoBlue))
+        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+        )
+        .risoHardShadow(Riso.Shadow.card, radius: Riso.cardRadius)
+    }
+
+    /// Amount chip row: 1 / {default} / 25 / # — selected = gold fill +
+    /// `risoInkStatic` (dark-mode-safe content on gold); idle = transparent
+    /// with an on-color (`risoPaper`) border/text (content-on-blue-fill
+    /// contract).
+    private var chipRow: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
+                let isSelected = index == selectedChipIndex
+                Button {
+                    if let value = chip.value {
+                        selectChip(value)
+                    } else {
+                        openCustomInput()
                     }
+                } label: {
+                    Text(chip.value == nil && isSelected ? "\(selectedAmount)" : chip.label)
+                        .font(.risoHead(13, .extraBold))
+                        .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoPaper)
+                        .frame(minWidth: 40)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 10)
+                        .background(Capsule().fill(isSelected ? Color.risoGold : Color.clear))
+                        .overlay(
+                            Capsule().strokeBorder(
+                                isSelected ? Color.risoInk : Color.risoPaper.opacity(0.6),
+                                lineWidth: Riso.Keyline.dense
+                            )
+                        )
                 }
-                .padding(.horizontal, Riso.gutter)
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
     }
 
-    private func timeframeChip(_ tf: Timeframe) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(tf.risoColor)
-                .frame(width: 7, height: 7)
-            Text(tf.risoDisplayName.uppercased())
-                .font(.risoHead(11, .bold))
-                .tracking(0.3)
-                .foregroundStyle(Color.risoInk)
+    private var customInputRow: some View {
+        HStack(spacing: 8) {
+            RisoNumberField(placeholder: "Amount", text: $customDraft)
+            Button("OK", action: confirmCustomInput)
+                .font(.risoHead(13, .extraBold))
+                .foregroundStyle(Color.risoInkStatic)
+                .padding(.vertical, 9)
+                .padding(.horizontal, 14)
+                .background(Capsule().fill(Color.risoGold))
+                .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                .disabled(Self.parseCustomLogAmount(customDraft) == nil)
+                .opacity(Self.parseCustomLogAmount(customDraft) == nil ? 0.5 : 1)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 12)
-        .background(Capsule().fill(Color.risoPaper2))
-        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+    }
+
+    private var logActionsRow: some View {
+        HStack(spacing: 12) {
+            Button {
+                onLog(selectedAmount, .remove)
+            } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color.risoPaper)
+                    .frame(width: 52, height: 44)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Riso.cardRadius)
+                            .strokeBorder(Color.risoPaper.opacity(0.7), lineWidth: Riso.Keyline.dense)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(isLogging || group.lifetime == 0)
+            .accessibilityLabel("Remove \(selectedAmount) \(unitLabel)")
+
+            Button {
+                onLog(selectedAmount, .add)
+            } label: {
+                HStack(spacing: 6) {
+                    if isLogging {
+                        ProgressView()
+                            .tint(Color.risoInkStatic)
+                            .scaleEffect(0.85)
+                    }
+                    Text("＋ Add \(selectedAmount)")
+                        .font(.risoHead(15, .extraBold))
+                }
+                .foregroundStyle(Color.risoInkStatic)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoPaper))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                )
+            }
+            .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
+            .disabled(isLogging)
+            .accessibilityLabel("Add \(selectedAmount) \(unitLabel)")
+        }
     }
 
     // MARK: - Active members section
@@ -571,16 +748,6 @@ struct CounterDetailContent: View {
             guard member.goal > 0 else { return 1 }
             return min(1.0, Double(member.logged) / Double(member.goal))
         }()
-        let caption: String = {
-            if member.met {
-                return member.over > 0
-                    ? "✓ Goal met · \(member.over) over"
-                    : "✓ Goal met this window"
-            }
-            let remaining = member.goal - member.logged
-            let windowLabel = member.window ?? "this window"
-            return "\(windowLabel) · \(remaining) \(unitLabel) to go"
-        }()
 
         return NavigationLink {
             if let boardId = member.boardId {
@@ -589,12 +756,10 @@ struct CounterDetailContent: View {
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    // Timeframe dot
                     Circle()
                         .fill(member.timeframe?.risoColor ?? Color.risoMuted)
                         .frame(width: 9, height: 9)
 
-                    // Task name + board name
                     VStack(alignment: .leading, spacing: 1) {
                         Text(member.taskTitle)
                             .font(.risoBody(13, .bold))
@@ -608,9 +773,8 @@ struct CounterDetailContent: View {
 
                     Spacer()
 
-                    // logged/goal + chevron
                     HStack(spacing: 6) {
-                        Text("\(member.logged)/\(member.goal)")
+                        Text("\(member.logged.formatted())/\(member.goal.formatted())")
                             .font(.risoHead(14, .bold))
                             .foregroundStyle(member.met ? Color.risoGreen : Color.risoInk)
                         Image(systemName: "chevron.right")
@@ -619,15 +783,13 @@ struct CounterDetailContent: View {
                     }
                 }
 
-                // Window progress bar
                 RisoProgressBar(
                     value: progressFraction,
                     color: member.met ? .risoGreen : .risoBlue,
                     height: 6
                 )
 
-                // Caption
-                Text(caption)
+                Text(caption(for: member))
                     .font(.risoBody(10, .regular))
                     .foregroundStyle(member.met ? Color.risoGreen : Color.risoMuted)
                     .lineLimit(2)
@@ -639,8 +801,42 @@ struct CounterDetailContent: View {
         .disabled(member.boardId == nil)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(member.taskTitle) on \(member.boardName ?? "no board"), \(member.logged) of \(member.goal) \(unitLabel), \(caption)"
+            "\(member.taskTitle) on \(member.boardName ?? "no board"), \(member.logged) of \(member.goal) \(unitLabel), \(caption(for: member))"
         )
+    }
+
+    /// Derives the window caption from the task's progress state. Priority:
+    /// over-goal → met → in progress (with remaining count). Copy contract
+    /// (R2 Counters UX refresh, parity with web `buildCaption`): "N to go ·
+    /// ends {window}" — remaining-first, window as a trailing "ends" clause.
+    /// `member.window` is already a formatted label (e.g. "This week",
+    /// "February 2026"), never a literal day name — no day-specific phrasing
+    /// is invented here (that's a P4 follow-up).
+    private func caption(for member: SharedCounterMemberTask) -> String {
+        if member.met, member.over > 0 {
+            return "✓ Goal met · \(member.over.formatted()) over"
+        }
+        if member.met {
+            return "✓ Goal met this window"
+        }
+        let remaining = max(0, member.goal - member.logged)
+        let base = "\(remaining.formatted()) \(unitLabel) to go"
+        guard let window = member.window else { return base }
+        return "\(base) · ends \(window)"
+    }
+
+    // MARK: - Recent weeks (P4 stub)
+
+    private var recentWeeksCard: some View {
+        // P4 — build-now-feed-P4: needs closed-window history storage; UI
+        // shipped now (this card), real rows land in P4.
+        Text("Weekly history will appear here once you've logged for a few weeks.")
+            .font(.risoBody(12, .regular))
+            .foregroundStyle(Color.risoMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Riso.cardPadding)
+            .risoCard()
+            .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
     // MARK: - Inactive members section
@@ -664,7 +860,6 @@ struct CounterDetailContent: View {
 
     private func inactiveMemberRow(_ member: SharedCounterMemberTask) -> some View {
         HStack(spacing: 10) {
-            // Muted dot
             Circle()
                 .fill(Color.risoMuted.opacity(0.35))
                 .frame(width: 8, height: 8)
@@ -684,7 +879,7 @@ struct CounterDetailContent: View {
 
             Spacer()
 
-            Text("\(member.logged)/\(member.goal)")
+            Text("\(member.logged.formatted())/\(member.goal.formatted())")
                 .font(.risoBody(12, .regular))
                 .foregroundStyle(Color.risoMuted)
         }
@@ -883,13 +1078,26 @@ struct CounterDeleteConfirmView: View {
         action: "Do",
         unit: "reps",
         lifetime: 512,
+        defaultLogAmount: 10,
         tasks: [srcMember, weekMember, inactiveMember],
         taskCount: 3,
         boardCount: 2,
         activeTaskCount: 2
     )
-    return NavigationStack {
-        CounterDetailContent(group: group)
+    let dailyTotals = CounterDailyTotalsResult(
+        days: [
+            CounterDailyTotal(dateISO: "2026-01-26", total: 12),
+            CounterDailyTotal(dateISO: "2026-01-27", total: 0),
+            CounterDailyTotal(dateISO: "2026-01-28", total: 30),
+            CounterDailyTotal(dateISO: "2026-01-29", total: 8),
+            CounterDailyTotal(dateISO: "2026-01-30", total: 15),
+            CounterDailyTotal(dateISO: "2026-01-31", total: 20),
+            CounterDailyTotal(dateISO: "2026-02-01", total: 10),
+        ],
+        todayTotal: 10
+    )
+    NavigationStack {
+        CounterDetailContent(group: group, dailyTotals: dailyTotals)
     }
 }
 
@@ -919,7 +1127,7 @@ struct CounterDeleteConfirmView: View {
         boardCount: 1,
         activeTaskCount: 1
     )
-    return NavigationStack {
+    NavigationStack {
         CounterDetailContent(group: group)
     }
 }
@@ -968,7 +1176,7 @@ struct CounterDeleteConfirmView: View {
         counterMemberCount: 1,
         counterMembers: [member]
     )
-    return CounterDeleteConfirmView(
+    CounterDeleteConfirmView(
         group: group,
         impact: impact,
         onConfirm: {},

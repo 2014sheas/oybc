@@ -1,46 +1,86 @@
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import type { SharedCounterGroup, SharedCounterMemberTask } from '@oybc/shared';
+import { incrementSharedCounter } from '../../db/operations/tasks';
 import { timeframeDotColor } from './timeframeDotColor';
 import styles from './CounterLedgerCard.module.css';
+
+export interface CounterLoggedEvent {
+  counterId: string;
+  amount: number;
+  unit: string;
+}
 
 interface CounterLedgerCardProps {
   /** The shared counter group to render. */
   group: SharedCounterGroup;
+  /**
+   * Called after a successful "+ Log" tap, so the page can surface the
+   * shared Undo toast (`CounterLogToast`). Only one toast lives at the page
+   * level — this card never renders its own.
+   */
+  onLogged: (event: CounterLoggedEvent) => void;
 }
 
 /**
  * CounterLedgerCard — one card in the Counters Hub Ledger layout.
  *
- * Layout:
- *   Top row:  counter name + unit tag (left) | big blue lifetime + "all-time {unit}" (right)
+ * Layout (R2 Counters UX refresh — design handoff §Counters Hub):
+ *   Top row:  counter name (left) | big blue lifetime + "ALL-TIME" label (right)
  *   Rows:     one row per ACTIVE member task (dot + board · window, logged/goal, progress bar)
- *   Footer:   dashed divider · "Shared by N tasks · N boards" · "Open ›"
+ *   Footer:   dashed divider · "N tasks · N boards" · "+ Log" pill (blue) · muted "›" chevron
  *
- * Matches the `cn-led` design from the shared-counters handoff.
- * The "Open ›" link navigates to `/profile/counters/:counterId`.
+ * The WHOLE card is tappable → Detail (`/profile/counters/:counterId`), except
+ * the "+ Log" pill, which stops propagation and logs the counter's current
+ * default amount (`group.defaultLogAmount ?? 1`) in place via
+ * `incrementSharedCounter` — one tap, no chip picker (that lives on Detail).
  */
-export function CounterLedgerCard({ group }: CounterLedgerCardProps): React.ReactElement {
+export function CounterLedgerCard({ group, onLogged }: CounterLedgerCardProps): React.ReactElement {
+  const navigate = useNavigate();
+  const [isLogging, setIsLogging] = useState(false);
   const activeTasks = group.tasks.filter((t) => t.isActive);
   const lifetimeStr = group.lifetime.toLocaleString();
   const taskCountStr = `${group.activeTaskCount} task${group.activeTaskCount !== 1 ? 's' : ''}`;
   const boardCountStr = `${group.boardCount} board${group.boardCount !== 1 ? 's' : ''}`;
+  const logAmount = group.defaultLogAmount ?? 1;
+
+  function openDetail(): void {
+    navigate(`/profile/counters/${group.counterId}`);
+  }
+
+  async function handleLog(e: React.MouseEvent): Promise<void> {
+    e.stopPropagation();
+    if (isLogging) return;
+    setIsLogging(true);
+    try {
+      await incrementSharedCounter(group.counterId, logAmount);
+      onLogged({ counterId: group.counterId, amount: logAmount, unit: group.unit ?? '' });
+    } finally {
+      setIsLogging(false);
+    }
+  }
 
   return (
-    <div className={styles.card}>
+    <div
+      className={styles.card}
+      role="button"
+      tabIndex={0}
+      onClick={openDetail}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openDetail();
+        }
+      }}
+      aria-label={`Open ${group.name} counter detail`}
+    >
       {/* Top row: name + lifetime */}
       <div className={styles.top}>
-        <div className={styles.nameRow}>
-          <span className={styles.name}>{group.name}</span>
-          {group.unit && (
-            <span className={styles.unitTag} aria-label={`unit: ${group.unit}`}>
-              {group.unit}
-            </span>
-          )}
-        </div>
+        <span className={styles.name}>{group.name}</span>
         <div className={styles.lifetimeBlock} aria-label={`${lifetimeStr} all-time ${group.unit ?? 'total'}`}>
           <span className={styles.lifetimeNum}>{lifetimeStr}</span>
           <span className={styles.lifetimeLabel} aria-hidden="true">
-            all-time {group.unit ?? 'total'}
+            ALL-TIME
           </span>
         </div>
       </div>
@@ -54,18 +94,23 @@ export function CounterLedgerCard({ group }: CounterLedgerCardProps): React.Reac
         </div>
       )}
 
-      {/* Footer: meta + "Open ›" */}
+      {/* Footer: meta + "+ Log" pill + chevron */}
       <div className={styles.footer}>
         <span className={styles.footerMeta}>
-          Shared by {taskCountStr} · {boardCountStr}
+          {taskCountStr} · {boardCountStr}
         </span>
-        <Link
-          to={`/profile/counters/${group.counterId}`}
-          className={styles.openLink}
-          aria-label={`Open ${group.name} counter detail`}
+        <button
+          type="button"
+          className={styles.logPill}
+          onClick={(e) => void handleLog(e)}
+          disabled={isLogging}
+          aria-label={`Log ${logAmount} ${group.unit ?? ''} for ${group.name}`}
         >
-          Open ›
-        </Link>
+          + Log
+        </button>
+        <span className={styles.chevron} aria-hidden="true">
+          ›
+        </span>
       </div>
     </div>
   );
