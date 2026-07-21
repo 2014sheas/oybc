@@ -54,9 +54,13 @@ export function buildAmountChipOptions(defaultAmount: number): AmountChipOption[
  *   integer; callers pass the source task's `defaultLogAmount ?? 1`).
  */
 export function buildBoardQuickAmountOptions(defaultAmount: number): AmountChipOption[] {
+  // Board chips are SIGNED ("+1 / +{default} / #") per the R3 contract —
+  // unlike Detail's unsigned "1 / {default} / 25 / #" row — because on the
+  // board the chips drive both add and remove, and the handoff mock shows
+  // the signed form. iOS's stepper-sheet chips match this exactly.
   return [
-    { value: 1, label: '1' },
-    { value: defaultAmount, label: String(defaultAmount) },
+    { value: 1, label: '+1' },
+    { value: defaultAmount, label: `+${defaultAmount}` },
     { value: null, label: '#' },
   ];
 }

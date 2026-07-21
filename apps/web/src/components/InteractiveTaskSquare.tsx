@@ -227,7 +227,9 @@ export function FloatingContextMenu({
               onClose();
             }}
           >
-            − Remove {sq.action} (−1)
+            {/* R3: shared squares mirror the ADD amount on remove (contract:
+                "decrement mirrors the add amount") — plain counting stays −1. */}
+            − Remove {sq.action} (−{sharedAmountActions ? sharedAmountActions.defaultAmount : 1})
           </button>
           <button
             className={styles.contextMenuItem}
@@ -697,7 +699,7 @@ export function DetailModal({
                             isCustomChip ? quickAmount.onOpenCustom() : quickAmount.onSelectChip(chip.value as number)
                           }
                         >
-                          {isCustomChip && selected ? quickAmount.selected : chip.label}
+                          {isCustomChip && selected ? `#${quickAmount.selected}` : chip.label}
                         </button>
                       );
                     });

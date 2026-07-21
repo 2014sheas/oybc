@@ -18,18 +18,18 @@ describe('buildAmountChipOptions', () => {
 });
 
 describe('buildBoardQuickAmountOptions', () => {
-  it('builds the 3-position 1 / default / # row (no fixed 25 chip)', () => {
+  it('builds the SIGNED 3-position +1 / +default / # row (R3 contract; no fixed 25 chip)', () => {
     expect(buildBoardQuickAmountOptions(10)).toEqual([
-      { value: 1, label: '1' },
-      { value: 10, label: '10' },
+      { value: 1, label: '+1' },
+      { value: 10, label: '+10' },
       { value: null, label: '#' },
     ]);
   });
 
   it('renders the default chip verbatim even when it collides with 1', () => {
     expect(buildBoardQuickAmountOptions(1)).toEqual([
-      { value: 1, label: '1' },
-      { value: 1, label: '1' },
+      { value: 1, label: '+1' },
+      { value: 1, label: '+1' },
       { value: null, label: '#' },
     ]);
   });

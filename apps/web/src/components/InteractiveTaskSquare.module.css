@@ -343,7 +343,12 @@
 }
 
 .quickChip:hover:not(:disabled) {
+  /* Gold is a FIXED fill — content must pin to static ink or it goes
+     cream-on-gold in dark mode (the recurring adaptive-ink-on-gold trap;
+     mirrors .quickChipSelected). */
   background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  border-color: var(--riso-ink-static);
 }
 
 .quickChip:focus-visible {

@@ -332,3 +332,16 @@ Task 1 brief:
    the two drift-prone per-platform copies (web `nextMilestone` in
    `CounterDetailPage.tsx`, iOS `milestone` in `CounterDetailView.swift`);
    both platforms delete their local copy in favor of the shared export.
+
+### R3 — accepted platform divergence (context-menu packaging)
+
+The board square's amount quick-actions are packaged platform-idiomatically
+(R3 final review adjudication, 2026-07-21): **web**'s context menu offers
+`+1 / + Add {default} / # Custom…` (custom routes to the detail modal's chip
+row); **iOS**'s context menu offers single `+ Add {N}` / `− Remove {N}`
+quick-actions with the full `+1 / +{default} / #` chip row one tap away in
+the stepper sheet (SwiftUI context menus can't host a text-entry chip). Same
+capability set — one-tap default log, +1, custom amount, custom-persists-
+default — different idiomatic packaging, like TabBar vs bottom-nav. What IS
+contract-bound on both: the decrement mirrors the add amount, labels
+disclose the amount, and plain tap logs the default without persisting it.

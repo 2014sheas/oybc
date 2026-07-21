@@ -1183,8 +1183,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               // Linked derived counters are read-only — no decrement.
               if (isLinkedCounter) { setContextMenu(null); return; }
               // Phase 2 — Source shared counters route through decrementSharedCounter.
+              // R3: mirror the ADD amount (the counter's default) per the
+              // contract "decrement mirrors the add amount" — matches iOS's
+              // context menu and this menu's own remove label.
               if (sharedCounterSourceIds.has(task.id)) {
-                void handleSharedCounterDecrement(task.id);
+                void handleSharedCounterDecrement(
+                  task.id,
+                  resolveSharedCounterDefaultAmount(task),
+                );
               } else if (menuCurrentCount > 0) {
                 void handleComplete(bt.id, { currentCount: menuCurrentCount - 1 });
               }

@@ -1737,14 +1737,14 @@ struct BoardPlayView: View {
                 // stepper sheet's chip row; this menu quick-action never
                 // persists a new default (mirrors the sheet's plain-tap rule).
                 let quickAmount = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
-                Button("+ Add \(actionLabel)", systemImage: "plus") {
+                Button("+ Add \(quickAmount) \(actionLabel)", systemImage: "plus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
                 }
                 // No maxVal gate — overshoot is a feature (never clamp);
                 // matches the cell-tap stepper + detail-sheet stepper.
                 .disabled(isProcessing || isBoardLocked)
-                Button("− Remove \(actionLabel)", systemImage: "minus") {
+                Button("− Remove \(quickAmount) \(actionLabel)", systemImage: "minus") {
                     guard !isBoardLocked else { return }
                     viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
                 }
