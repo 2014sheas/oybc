@@ -88,7 +88,7 @@ struct RisoCountingStepperSheet: View {
         self.defaultLogAmount = defaultLogAmount
         self.onIncrement = onIncrement
         self.onDecrement = onDecrement
-        _selectedAmount = State(initialValue: defaultLogAmount ?? 1)
+        _selectedAmount = State(initialValue: CounterLogAmount.initialChip(defaultLogAmount))
     }
 
     // MARK: - Body
@@ -230,32 +230,21 @@ struct RisoCountingStepperSheet: View {
         let value: Int?
         let label: String
 
-        /// Keep-first dedupe by `value` (custom `nil` chip always kept) —
-        /// mirrors web `amountChips.dedupeChips`. A fresh counter's default
-        /// of 1 (or a default of 25 on Detail) would otherwise duplicate a
-        /// fixed chip (device-testing feedback, R3).
-        static func dedupingValues(_ chips: [AmountChipOption]) -> [AmountChipOption] {
-            var seen = Set<Int>()
-            return chips.filter { chip in
-                guard let value = chip.value else { return true }
-                return seen.insert(value).inserted
-            }
-        }
     }
 
     /// `+1` / `+{default}` / `#` — three options per the copy contract
     /// (deliberately NOT R2 Detail's 4-chip "1 / default / 25 / #" set; the
     /// design handoff mock for board-play squares shows exactly three).
     private var chips: [AmountChipOption] {
-        let amount = defaultLogAmount ?? 1
-        // Keep-first dedupe: a fresh counter's default of 1 would otherwise
-        // render two "+1" chips (device-testing feedback, R3). Mirrors web's
-        // dedupeChips; selection resolves by first index, so it's neutral.
-        return AmountChipOption.dedupingValues([
+        // FIXED signed presets (owner decision, 2026-07-21) — no dynamic
+        // "{default}" chip. The remembered default still drives the plain
+        // cell tap; it just doesn't get its own chip here. Mirrors web
+        // buildBoardQuickAmountOptions.
+        return [
             AmountChipOption(value: 1, label: "+1"),
-            AmountChipOption(value: amount, label: "+\(amount)"),
+            AmountChipOption(value: 10, label: "+10"),
             AmountChipOption(value: nil, label: "#"),
-        ])
+        ]
     }
 
     private var selectedChipIndex: Int? {

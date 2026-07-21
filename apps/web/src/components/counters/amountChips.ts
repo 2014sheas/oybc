@@ -30,32 +30,20 @@ export interface AmountChipOption {
  * @param defaultAmount The counter's current default log amount (positive
  *   integer; callers pass `group.defaultLogAmount ?? 1`).
  */
-export function buildAmountChipOptions(defaultAmount: number): AmountChipOption[] {
-  return dedupeChips([
+export function buildAmountChipOptions(): AmountChipOption[] {
+  // FIXED presets (owner decision, 2026-07-21): no dynamic "{default}" chip —
+  // it collided with the fixed values (a fresh counter's default is 1) and
+  // read as a bug on device. The per-counter default still drives the plain
+  // board tap, the Hub "+ Log" pill, and what "#" persists; it just doesn't
+  // get its own chip. Matches the handoff mock's literal "1 / 10 / 25 / #".
+  return [
     { value: 1, label: '1' },
-    { value: defaultAmount, label: String(defaultAmount) },
+    { value: 10, label: '10' },
     { value: 25, label: '25' },
     { value: null, label: '#' },
-  ]);
+  ];
 }
 
-/**
- * Drops chips whose `value` duplicates an earlier chip (keep-first). A fresh
- * counter's default is 1, which would otherwise render two "1"/"+1" chips
- * side by side (device-testing feedback, R3) — the design's "fixed positions"
- * intent doesn't survive contact with a literal duplicate. Selection logic on
- * both platforms resolves by first matching index, so dropping later
- * duplicates is behavior-neutral.
- */
-function dedupeChips(chips: AmountChipOption[]): AmountChipOption[] {
-  const seen = new Set<number>();
-  return chips.filter((chip) => {
-    if (chip.value === null) return true;
-    if (seen.has(chip.value)) return false;
-    seen.add(chip.value);
-    return true;
-  });
-}
 
 /**
  * Builds the board-play square quick-action chip row (R3 — Counters Refresh
@@ -71,16 +59,31 @@ function dedupeChips(chips: AmountChipOption[]): AmountChipOption[] {
  * @param defaultAmount The counter's current default log amount (positive
  *   integer; callers pass the source task's `defaultLogAmount ?? 1`).
  */
-export function buildBoardQuickAmountOptions(defaultAmount: number): AmountChipOption[] {
-  // Board chips are SIGNED ("+1 / +{default} / #") per the R3 contract —
-  // unlike Detail's unsigned "1 / {default} / 25 / #" row — because on the
-  // board the chips drive both add and remove, and the handoff mock shows
-  // the signed form. iOS's stepper-sheet chips match this exactly.
-  return dedupeChips([
+export function buildBoardQuickAmountOptions(): AmountChipOption[] {
+  // FIXED signed presets (owner decision, 2026-07-21) — see
+  // buildAmountChipOptions; board row stays 3-position (no 25).
+  return [
     { value: 1, label: '+1' },
-    { value: defaultAmount, label: `+${defaultAmount}` },
+    { value: 10, label: '+10' },
     { value: null, label: '#' },
-  ]);
+  ];
+}
+
+/** The fixed preset amounts backing both chip rows (excludes the custom "#"). */
+export const PRESET_LOG_AMOUNTS = [1, 10, 25] as const;
+
+/**
+ * The chip to pre-select when a picker opens: the counter's remembered
+ * `defaultLogAmount` when it happens to be a preset (so a habitual amount is
+ * one tap away), otherwise `10` — the fixed rows have no dynamic chip to
+ * carry an off-preset default, and a non-preset initial value would leave no
+ * chip highlighted. (The remembered default still drives the one-tap board
+ * paths — plain tap, Hub "+ Log" pill — independent of this.)
+ */
+export function initialChipAmount(defaultLogAmount: number | null | undefined): number {
+  return defaultLogAmount != null && (PRESET_LOG_AMOUNTS as readonly number[]).includes(defaultLogAmount)
+    ? defaultLogAmount
+    : 10;
 }
 
 /**

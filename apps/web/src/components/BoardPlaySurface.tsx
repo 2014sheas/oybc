@@ -26,7 +26,7 @@ import {
   resolveSharedCounterDefaultAmount,
   resolveSharedCounterSourceId,
 } from './boardPlaySharedCounterUtils';
-import { buildBoardQuickAmountOptions, parseCustomLogAmount } from './counters/amountChips';
+import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
 import { undoLastCounterLog } from '../db/operations/tasks';
 import { CellSwapModal } from './CellSwapModal';
 import { BoardStatusBadge } from './BoardStatusBadge';
@@ -200,7 +200,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     if (!sourceId) return; // Standalone counting square — no quick-action row.
     setModalQuickAmount({
       boardTaskId: selectedSquareId,
-      selected: resolveSharedCounterDefaultAmount(taskMap[sourceId]),
+      selected: initialChipAmount(taskMap[sourceId]?.defaultLogAmount),
       isCustomActive: false,
       customOpen: false,
       customDraft: '',
@@ -1009,14 +1009,17 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         const modalSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
         const activeQuickAmount =
           modalQuickAmount && modalQuickAmount.boardTaskId === bt.id ? modalQuickAmount : null;
-        const modalDefaultAmount = resolveSharedCounterDefaultAmount(
-          modalSourceId ? taskMap[modalSourceId] : undefined,
+        // Initial highlighted chip for the amount picker — a preset (or 10),
+        // NOT the raw remembered default (fixed rows have no off-preset chip).
+        // The remembered default still drives the plain grid tap + Hub pill.
+        const modalDefaultAmount = initialChipAmount(
+          modalSourceId ? taskMap[modalSourceId]?.defaultLogAmount : undefined,
         );
         const quickSelected = activeQuickAmount?.selected ?? modalDefaultAmount;
         const quickAmount =
           squareData.type === 'counting' && modalSourceId
             ? {
-                options: buildBoardQuickAmountOptions(modalDefaultAmount),
+                options: buildBoardQuickAmountOptions(),
                 selected: quickSelected,
                 isCustomActive: activeQuickAmount?.isCustomActive ?? false,
                 customOpen: activeQuickAmount?.customOpen ?? false,

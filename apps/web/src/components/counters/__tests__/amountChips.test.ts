@@ -1,24 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildAmountChipOptions, buildBoardQuickAmountOptions, parseCustomLogAmount } from '../amountChips';
+import { buildAmountChipOptions, buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from '../amountChips';
 
 describe('buildAmountChipOptions', () => {
-  it('builds the fixed 1 / default / 25 / # chip row', () => {
-    expect(buildAmountChipOptions(10)).toEqual([
+  it('builds the FIXED 1 / 10 / 25 / # row (no dynamic default chip)', () => {
+    expect(buildAmountChipOptions()).toEqual([
       { value: 1, label: '1' },
       { value: 10, label: '10' },
-      { value: 25, label: '25' },
-      { value: null, label: '#' },
-    ]);
-  });
-
-  it('dedupes the default chip when it collides with 1 or 25 (keep-first)', () => {
-    expect(buildAmountChipOptions(1)).toEqual([
-      { value: 1, label: '1' },
-      { value: 25, label: '25' },
-      { value: null, label: '#' },
-    ]);
-    expect(buildAmountChipOptions(25)).toEqual([
-      { value: 1, label: '1' },
       { value: 25, label: '25' },
       { value: null, label: '#' },
     ]);
@@ -26,21 +13,28 @@ describe('buildAmountChipOptions', () => {
 });
 
 describe('buildBoardQuickAmountOptions', () => {
-  it('builds the SIGNED 3-position +1 / +default / # row (R3 contract; no fixed 25 chip)', () => {
-    expect(buildBoardQuickAmountOptions(10)).toEqual([
+  it('builds the FIXED signed +1 / +10 / # row (no fixed 25, no dynamic chip)', () => {
+    expect(buildBoardQuickAmountOptions()).toEqual([
       { value: 1, label: '+1' },
       { value: 10, label: '+10' },
       { value: null, label: '#' },
     ]);
   });
+});
 
-  it('dedupes the default chip when it collides with 1 (keep-first)', () => {
-    expect(buildBoardQuickAmountOptions(1)).toEqual([
-      { value: 1, label: '+1' },
-      { value: null, label: '#' },
-    ]);
+describe('initialChipAmount', () => {
+  it('returns the remembered default when it is a preset', () => {
+    expect(initialChipAmount(1)).toBe(1);
+    expect(initialChipAmount(10)).toBe(10);
+    expect(initialChipAmount(25)).toBe(25);
+  });
+  it('falls back to 10 for an off-preset or missing default', () => {
+    expect(initialChipAmount(7)).toBe(10);
+    expect(initialChipAmount(null)).toBe(10);
+    expect(initialChipAmount(undefined)).toBe(10);
   });
 });
+
 
 describe('parseCustomLogAmount', () => {
   it('accepts positive integers', () => {

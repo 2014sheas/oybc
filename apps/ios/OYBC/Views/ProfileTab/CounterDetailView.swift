@@ -316,7 +316,7 @@ struct CounterDetailContent: View {
         self.deleteError = deleteError
         self.onLog = onLog
         self.onDeleteTap = onDeleteTap
-        _selectedAmount = State(initialValue: initialSelectedAmount ?? group.defaultLogAmount ?? 1)
+        _selectedAmount = State(initialValue: initialSelectedAmount ?? CounterLogAmount.initialChip(group.defaultLogAmount))
         _isCustomActive = State(initialValue: initialCustomActive)
     }
 
@@ -341,29 +341,17 @@ struct CounterDetailContent: View {
         let value: Int?
         let label: String
 
-        /// Keep-first dedupe by `value` (custom `nil` chip always kept) —
-        /// mirrors web `amountChips.dedupeChips`. A fresh counter's default
-        /// of 1 (or a default of 25 on Detail) would otherwise duplicate a
-        /// fixed chip (device-testing feedback, R3).
-        static func dedupingValues(_ chips: [AmountChipOption]) -> [AmountChipOption] {
-            var seen = Set<Int>()
-            return chips.filter { chip in
-                guard let value = chip.value else { return true }
-                return seen.insert(value).inserted
-            }
-        }
     }
 
     private var chips: [AmountChipOption] {
-        let defaultAmount = group.defaultLogAmount ?? 1
-        // Keep-first dedupe — see AmountChipOption.dedupingValues (a default
-        // of 1 or 25 would otherwise duplicate a fixed chip).
-        return AmountChipOption.dedupingValues([
+        // FIXED presets (owner decision, 2026-07-21) — matches the handoff
+        // mock's literal "1 / 10 / 25 / #"; no dynamic "{default}" chip.
+        return [
             AmountChipOption(value: 1, label: "1"),
-            AmountChipOption(value: defaultAmount, label: "\(defaultAmount)"),
+            AmountChipOption(value: 10, label: "10"),
             AmountChipOption(value: 25, label: "25"),
             AmountChipOption(value: nil, label: "#"),
-        ])
+        ]
     }
 
     private var selectedChipIndex: Int? {
