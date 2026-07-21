@@ -738,8 +738,11 @@ final class BoardPlayViewModel: ObservableObject {
     /// Reverses the SOURCE counter's last log entry (`undoLastCounterLog`) —
     /// wired to the credited toast's Undo pill (R3 board-play touchpoints).
     /// Mirrors `CounterDetailView.handleUndo`: runs the write off-main, then
-    /// reloads on the main actor. Silently no-ops if the entry is already
-    /// gone (e.g. the toast lingered past a second log elsewhere) — matches
+    /// reloads on the main actor. Reverses the counter's LATEST live entry
+    /// at tap time — if a second log landed elsewhere during the toast
+    /// window, THAT entry is reversed (not a no-op, and not necessarily the
+    /// displayed one); accepted single-user race, same semantics as R2's
+    /// Hub/Detail Undo (docs/SHARED_COUNTERS.md §R3) — matches
     /// `undoLastCounterLog`'s own no-op contract.
     ///
     /// - Parameter sourceTaskId: The counter's source task id (the toast's

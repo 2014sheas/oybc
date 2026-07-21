@@ -221,7 +221,11 @@ export function FloatingContextMenu({
           )}
           <button
             className={styles.contextMenuItem}
-            disabled={state.currentCount <= 0}
+            // Linked counters can't be decremented directly (the handler
+            // no-ops) — disable instead of presenting a dead control, matching
+            // the detail modal (#342 review M1).
+            disabled={state.currentCount <= 0 || sq.sharedCounterId != null}
+            title={sq.sharedCounterId != null ? 'Linked counters cannot be decremented directly' : undefined}
             onClick={() => {
               onDecrementCount?.(sq.id);
               onClose();

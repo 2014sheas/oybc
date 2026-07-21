@@ -435,8 +435,17 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           boardNames={creditedToast.boardNames}
           onUndo={() => {
             const sourceTaskId = creditedToast.sourceTaskId;
-            setCreditedToast(null);
-            void undoLastCounterLog(sourceTaskId);
+            // Await-then-clear like R2's Hub/Detail callers (#342 review M3):
+            // a failed undo must not leave the user believing it succeeded.
+            void (async () => {
+              try {
+                await undoLastCounterLog(sourceTaskId);
+              } catch (err) {
+                console.error('Undo failed', err);
+              } finally {
+                setCreditedToast(null);
+              }
+            })();
           }}
           onDone={() => setCreditedToast(null)}
         />

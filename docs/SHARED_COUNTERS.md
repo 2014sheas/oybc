@@ -345,3 +345,10 @@ capability set — one-tap default log, +1, custom amount, custom-persists-
 default — different idiomatic packaging, like TabBar vs bottom-nav. What IS
 contract-bound on both: the decrement mirrors the add amount, labels
 disclose the amount, and plain tap logs the default without persisting it.
+
+**Undo race (accepted, all surfaces)**: Undo reverses the counter's *latest*
+live entry at tap time via `selectLastIncrementEntry` — not an entry id
+captured by the toast. A log arriving from another surface/device inside the
+toast window is reversed instead of the displayed one. Accepted for a
+single-user product (same-surface re-logs replace the toast); threading the
+entry id through the toast payload is the exact-fix if this ever matters.

@@ -2100,6 +2100,17 @@ struct BoardPlayView: View {
                         viewModel.handleCountingTap(boardTask: boardTask, task: task, amount: quickAmount)
                     }
                 }
+
+                // R3 contract: "labels disclose the amount" on BOTH platforms —
+                // when the stepper moves by the counter's default (not 1), say
+                // so; bare ± glyphs silently logging 10 broke the contract
+                // (#342 final review I1).
+                if quickAmount != 1 {
+                    Text("Steps by \(quickAmount)\(unitText.isEmpty ? "" : " \(unitText)")")
+                        .font(.risoBody(11, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
         }
     }

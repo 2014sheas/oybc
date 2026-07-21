@@ -71,7 +71,11 @@ export type FlashVariant = 'bingo' | 'greenlog';
 /**
  * Credited-toast payload shown after a shared-counter log ripples to OTHER
  * boards (R3 — amount-aware + Undo; `sourceTaskId` lets the toast's Undo
- * pill call `undoLastCounterLog` on the exact entry it displays).
+ * pill call `undoLastCounterLog`, which reverses the counter's LATEST live
+ * entry at tap time — normally the one this toast displays, but a log from
+ * another surface/device during the toast window would be reversed instead;
+ * accepted single-user race, same semantics as R2's Hub/Detail Undo — see
+ * docs/SHARED_COUNTERS.md §R3).
  */
 export interface CreditedToast {
   /** The shared counter's source task id — what `undoLastCounterLog` reverses. */
