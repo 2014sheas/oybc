@@ -528,7 +528,9 @@ struct CounterDetailContent: View {
         return HStack(alignment: .bottom, spacing: 3) {
             ForEach(Array(dailyTotals.days.enumerated()), id: \.offset) { index, day in
                 let isToday = index == dailyTotals.days.count - 1
-                let heightFraction = max(0.12, Double(day.total) / Double(maxDaily))
+                // 6% min-bar floor — matches web's `Math.max(6, …)` percentage
+                // exactly (R2 final review: 0.12 rendered tiny days ~2× taller).
+                let heightFraction = max(0.06, Double(day.total) / Double(maxDaily))
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(isToday ? Color.risoGold : Color.risoBlue)
                     .frame(width: 9, height: 40 * heightFraction)
