@@ -11,9 +11,17 @@ describe('buildAmountChipOptions', () => {
     ]);
   });
 
-  it('renders the default chip verbatim even when it collides with 1 or 25', () => {
-    expect(buildAmountChipOptions(1)[1]).toEqual({ value: 1, label: '1' });
-    expect(buildAmountChipOptions(25)[1]).toEqual({ value: 25, label: '25' });
+  it('dedupes the default chip when it collides with 1 or 25 (keep-first)', () => {
+    expect(buildAmountChipOptions(1)).toEqual([
+      { value: 1, label: '1' },
+      { value: 25, label: '25' },
+      { value: null, label: '#' },
+    ]);
+    expect(buildAmountChipOptions(25)).toEqual([
+      { value: 1, label: '1' },
+      { value: 25, label: '25' },
+      { value: null, label: '#' },
+    ]);
   });
 });
 
@@ -26,9 +34,8 @@ describe('buildBoardQuickAmountOptions', () => {
     ]);
   });
 
-  it('renders the default chip verbatim even when it collides with 1', () => {
+  it('dedupes the default chip when it collides with 1 (keep-first)', () => {
     expect(buildBoardQuickAmountOptions(1)).toEqual([
-      { value: 1, label: '+1' },
       { value: 1, label: '+1' },
       { value: null, label: '#' },
     ]);

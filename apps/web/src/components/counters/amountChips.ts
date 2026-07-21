@@ -31,12 +31,30 @@ export interface AmountChipOption {
  *   integer; callers pass `group.defaultLogAmount ?? 1`).
  */
 export function buildAmountChipOptions(defaultAmount: number): AmountChipOption[] {
-  return [
+  return dedupeChips([
     { value: 1, label: '1' },
     { value: defaultAmount, label: String(defaultAmount) },
     { value: 25, label: '25' },
     { value: null, label: '#' },
-  ];
+  ]);
+}
+
+/**
+ * Drops chips whose `value` duplicates an earlier chip (keep-first). A fresh
+ * counter's default is 1, which would otherwise render two "1"/"+1" chips
+ * side by side (device-testing feedback, R3) — the design's "fixed positions"
+ * intent doesn't survive contact with a literal duplicate. Selection logic on
+ * both platforms resolves by first matching index, so dropping later
+ * duplicates is behavior-neutral.
+ */
+function dedupeChips(chips: AmountChipOption[]): AmountChipOption[] {
+  const seen = new Set<number>();
+  return chips.filter((chip) => {
+    if (chip.value === null) return true;
+    if (seen.has(chip.value)) return false;
+    seen.add(chip.value);
+    return true;
+  });
 }
 
 /**
@@ -58,11 +76,11 @@ export function buildBoardQuickAmountOptions(defaultAmount: number): AmountChipO
   // unlike Detail's unsigned "1 / {default} / 25 / #" row — because on the
   // board the chips drive both add and remove, and the handoff mock shows
   // the signed form. iOS's stepper-sheet chips match this exactly.
-  return [
+  return dedupeChips([
     { value: 1, label: '+1' },
     { value: defaultAmount, label: `+${defaultAmount}` },
     { value: null, label: '#' },
-  ];
+  ]);
 }
 
 /**

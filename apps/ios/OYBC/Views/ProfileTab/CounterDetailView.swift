@@ -340,16 +340,30 @@ struct CounterDetailContent: View {
         /// `nil` marks the trailing custom "#" chip.
         let value: Int?
         let label: String
+
+        /// Keep-first dedupe by `value` (custom `nil` chip always kept) —
+        /// mirrors web `amountChips.dedupeChips`. A fresh counter's default
+        /// of 1 (or a default of 25 on Detail) would otherwise duplicate a
+        /// fixed chip (device-testing feedback, R3).
+        static func dedupingValues(_ chips: [AmountChipOption]) -> [AmountChipOption] {
+            var seen = Set<Int>()
+            return chips.filter { chip in
+                guard let value = chip.value else { return true }
+                return seen.insert(value).inserted
+            }
+        }
     }
 
     private var chips: [AmountChipOption] {
         let defaultAmount = group.defaultLogAmount ?? 1
-        return [
+        // Keep-first dedupe — see AmountChipOption.dedupingValues (a default
+        // of 1 or 25 would otherwise duplicate a fixed chip).
+        return AmountChipOption.dedupingValues([
             AmountChipOption(value: 1, label: "1"),
             AmountChipOption(value: defaultAmount, label: "\(defaultAmount)"),
             AmountChipOption(value: 25, label: "25"),
             AmountChipOption(value: nil, label: "#"),
-        ]
+        ])
     }
 
     private var selectedChipIndex: Int? {
