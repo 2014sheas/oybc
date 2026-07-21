@@ -2,7 +2,13 @@ import { db } from '../internal';
 import type {
   Task,
 } from '@oybc/shared';
-import { BoardStatus, SyncOperationType, TaskType, propagateIncrement } from '@oybc/shared';
+import {
+  BoardStatus,
+  SyncOperationType,
+  TaskType,
+  propagateIncrement,
+  selectLastIncrementEntry,
+} from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
@@ -305,4 +311,235 @@ export async function decrementSharedCounter(
       return { affectedBoards, effectiveDelta: eff };
     },
   );
+}
+
+/**
+ * Result of {@link undoLastCounterLog}.
+ */
+export interface UndoCounterLogResult {
+  /** Distinct live ACTIVE boards containing any changed member task. */
+  affectedBoards: AffectedBoard[];
+  /**
+   * Absolute amount reversed (the tombstoned event's `|delta|`), or `0`
+   * when there was nothing to undo (no live increment event on the
+   * source).
+   */
+  undoneAmount: number;
+}
+
+/**
+ * Reverses the most recent counter log on a source task (R2 Counters UX
+ * refresh — the "Logged +N · Undo" toast).
+ *
+ * `incrementSharedCounter`/`decrementSharedCounter` append their event via
+ * `insertIncrementEventRaw`, which deliberately SKIPS the cache restamp
+ * (`stampTaskCachesAuthored`) — the source's `currentCount` is already
+ * written authoritatively by their own arithmetic, and a restamp would
+ * double-bump `version`. That means reversing a logged entry is NOT a bare
+ * tombstone: this function must also correct `currentCount` itself and
+ * re-run the cross-board cascade, mirroring `decrementSharedCounter`'s
+ * write shape but keyed to the specific event being undone (whose `delta`
+ * may itself be negative, if the entry being undone was a decrement) rather
+ * than a fresh negative event.
+ *
+ * Sequence:
+ *   1. `selectLastIncrementEntry` (pure, `@oybc/shared`) picks the most
+ *      recent non-deleted, non-seed increment event on the source.
+ *   2. Tombstone that event (`isDeleted`, bump version, enqueue DELETE).
+ *   3. `newCurrentCount = max(0, currentCount - entry.delta)` — subtracting
+ *      a positive delta reverses a log; subtracting a negative delta (an
+ *      undone decrement) adds the amount back. The floor is defensive only:
+ *      undoing the most-recent entry against the count it produced never
+ *      goes negative in practice.
+ *   4. ONE-WAY COMPLETION LATCH preserved, matching increment/decrement:
+ *      undo does not un-complete an already-completed source. (Undo is a
+ *      narrow reversal of the ledger entry, not a full re-derivation.)
+ *   5. Propagate to linked tasks via `propagateIncrement` and re-run the
+ *      board derivation cascade for the source + every linked task, exactly
+ *      like increment/decrement.
+ *
+ * No-op (returns `{ affectedBoards: [], undoneAmount: 0 }`) when the source
+ * is missing/deleted or has no undoable entry — callers should treat that
+ * as "Undo is no longer available" (e.g. the toast already dismissed after
+ * a second log elsewhere).
+ *
+ * @param sourceTaskId The id of the source (template) task whose last log
+ *   entry to reverse. Must NOT be a linked/derived task.
+ */
+export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCounterLogResult> {
+  return db.transaction(
+    'rw',
+    [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      const now = currentTimestamp();
+
+      // 1. Fetch and validate the source task.
+      const source = await db.tasks.get(sourceTaskId);
+      if (!source || source.isDeleted) return { affectedBoards: [], undoneAmount: 0 };
+      if (source.type !== TaskType.COUNTING) {
+        throw new Error(
+          `undoLastCounterLog: source task ${sourceTaskId} is not a COUNTING task`,
+        );
+      }
+      if (source.sharedCounterId != null) {
+        throw new Error(
+          `undoLastCounterLog: task ${sourceTaskId} is a linked derived counter; pass the source (template) task id instead`,
+        );
+      }
+
+      // 2. Find the entry to reverse.
+      const events = await db.taskEvents.where('taskId').equals(sourceTaskId).toArray();
+      const entry = selectLastIncrementEntry(events, sourceTaskId);
+      if (!entry) return { affectedBoards: [], undoneAmount: 0 };
+
+      // 3. Tombstone it.
+      const tombstonedVersion = (entry.version ?? 1) + 1;
+      await db.taskEvents.update(entry.id, {
+        isDeleted: true,
+        deletedAt: now,
+        updatedAt: now,
+        version: tombstonedVersion,
+      });
+      const savedEvent = await db.taskEvents.get(entry.id);
+      if (savedEvent) {
+        await addToSyncQueue('taskEvents', entry.id, SyncOperationType.DELETE, savedEvent, 0);
+      }
+
+      // 4. Correct the source's currentCount by subtracting the reversed
+      //    entry's delta (raw-append bypassed the cache restamp — see docstring).
+      //    `delta` is optional on `TaskEvent` only because it's forbidden on
+      //    `completion`-kind events; `selectLastIncrementEntry` only ever
+      //    returns `increment`-kind events, which always carry one — the
+      //    `?? 0` is a defensive fallback, never expected to fire.
+      const entryDelta = entry.delta ?? 0;
+      const currentCount = source.currentCount ?? 0;
+      const newSourceCount = Math.max(0, currentCount - entryDelta);
+
+      // 5. ONE-WAY LATCH: undo does not un-complete (mirrors increment/decrement).
+      const sourceWasCompleted = source.isCompleted;
+      const sourceNowCompleted =
+        sourceWasCompleted || (source.maxCount != null && newSourceCount >= source.maxCount);
+
+      const updatedSource: Partial<Task> = {
+        currentCount: newSourceCount,
+        isCompleted: sourceNowCompleted,
+        completedAt: !sourceWasCompleted && sourceNowCompleted ? now : source.completedAt,
+        updatedAt: now,
+        version: (source.version ?? 0) + 1,
+      };
+      await db.tasks.update(sourceTaskId, updatedSource);
+      const savedSource = await db.tasks.get(sourceTaskId);
+      if (savedSource) {
+        await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
+      }
+
+      // 6. Find all linked (derived) tasks and propagate, exactly like
+      //    increment/decrement.
+      const linkedTasks = await db.tasks
+        .filter((t) => !t.isDeleted && t.sharedCounterId === sourceTaskId)
+        .toArray();
+
+      const propagationResults = propagateIncrement(
+        { currentCount: newSourceCount },
+        linkedTasks.map((t) => ({
+          id: t.id,
+          baseline: t.baseline,
+          maxCount: t.maxCount,
+          isCompleted: t.isCompleted,
+        })),
+      );
+
+      for (const result of propagationResults) {
+        const linkedTask = linkedTasks.find((t) => t.id === result.taskId);
+        if (!linkedTask) continue;
+
+        const wasCompleted = linkedTask.isCompleted;
+        const nowCompleted = result.newIsCompleted;
+
+        const linkedPatch: Partial<Task> = {
+          currentCount: result.newCurrentCount,
+          isCompleted: nowCompleted,
+          completedAt: !wasCompleted && nowCompleted ? now : linkedTask.completedAt,
+          updatedAt: now,
+          version: (linkedTask.version ?? 0) + 1,
+        };
+        await db.tasks.update(result.taskId, linkedPatch);
+        const savedLinked = await db.tasks.get(result.taskId);
+        if (savedLinked) {
+          await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
+        }
+      }
+
+      // 7. Collect affected ACTIVE boards BEFORE the cascade rewrites stats.
+      const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
+      const placements = await db.boardTasks
+        .where('taskId').anyOf(allChangedTaskIds)
+        .toArray();
+      const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
+      const boardRows = uniqueBoardIds.length > 0
+        ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
+        : [];
+      const affectedBoards: AffectedBoard[] = boardRows
+        .filter((b) => !b.isDeleted && b.status === BoardStatus.ACTIVE)
+        .map((b) => ({ boardId: b.id, boardName: b.name }));
+
+      // 8. Run the board derivation cascade for the source + every linked task.
+      for (const taskId of allChangedTaskIds) {
+        await runBoardCascadeForTask(taskId);
+      }
+
+      return { affectedBoards, undoneAmount: Math.abs(entryDelta) };
+    },
+  );
+}
+
+/**
+ * Persists the amount a user just logged with as the counter's new default
+ * (R2 Counters UX refresh — "Default amount = last-used per counter,
+ * persisted"). A plain task-field update: version bump + sync enqueue, no
+ * event/cascade side effects (this never changes `currentCount`).
+ *
+ * No-op when the amount already matches the stored default (avoids a
+ * needless version bump / sync entry on every repeat log with the same
+ * amount).
+ *
+ * @param sourceTaskId The counter's source task id. Must NOT be a
+ *   linked/derived task — `defaultLogAmount` is only meaningful on the
+ *   accumulator.
+ * @param amount A positive integer.
+ */
+export async function setCounterDefaultLogAmount(
+  sourceTaskId: string,
+  amount: number,
+): Promise<void> {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error('setCounterDefaultLogAmount: amount must be a positive integer');
+  }
+
+  return db.transaction('rw', [db.tasks, db.syncQueue], async () => {
+    const source = await db.tasks.get(sourceTaskId);
+    if (!source || source.isDeleted) return;
+    if (source.type !== TaskType.COUNTING) {
+      throw new Error(
+        `setCounterDefaultLogAmount: task ${sourceTaskId} is not a COUNTING task`,
+      );
+    }
+    if (source.sharedCounterId != null) {
+      throw new Error(
+        `setCounterDefaultLogAmount: task ${sourceTaskId} is a linked derived counter; pass the source (template) task id instead`,
+      );
+    }
+    if (source.defaultLogAmount === amount) return;
+
+    const now = currentTimestamp();
+    await db.tasks.update(sourceTaskId, {
+      defaultLogAmount: amount,
+      updatedAt: now,
+      version: (source.version ?? 0) + 1,
+    });
+    const updated = await db.tasks.get(sourceTaskId);
+    if (updated) {
+      await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, updated, 0);
+    }
+  });
 }

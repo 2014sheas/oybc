@@ -38,6 +38,11 @@
   cursor: default;
 }
 
+/* Destructive items (e.g. "Delete counter…") — red label, same layout. */
+.itemDestructive {
+  color: var(--riso-red);
+}
+
 .item:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: -3px;

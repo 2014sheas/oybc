@@ -84,6 +84,14 @@ export interface SharedCounterGroup {
   unit: string | null;
   /** All-time running total = the source task's `currentCount`. Never null. */
   lifetime: number;
+  /**
+   * The counter's default log amount (R2 Counters UX refresh) — the source
+   * task's `defaultLogAmount`, or `null` when never set (callers fall back
+   * to `1`). Persisted per-counter via `setCounterDefaultLogAmount`; updated
+   * to the most-recently-used log amount each time the user logs with a
+   * different one.
+   */
+  defaultLogAmount: number | null;
   /** Source task first, then linked tasks (deterministic order). */
   tasks: SharedCounterMemberTask[];
   /** Total member tasks (source + linked). */
@@ -239,6 +247,7 @@ export function buildSharedCounterGroups(
       action: source.action ?? null,
       unit: source.unit ?? null,
       lifetime,
+      defaultLogAmount: source.defaultLogAmount ?? null,
       tasks: memberViews,
       taskCount: memberViews.length,
       boardCount: boardIds.size,

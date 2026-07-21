@@ -2,14 +2,44 @@
    Mirrors the `cn-led` styles from the shared-counters design handoff,
    translated to Riso web tokens. See docs/RISO_WEB.md dark-mode contract. */
 
+/* Whole card is the tap target → Detail (except the "+ Log" pill, which
+   stops propagation). `role="button"` on a <div> (not a real <button>) so it
+   can validly contain the nested "+ Log" <button> — mirrors the
+   outer-div-plus-inner-buttons split used by BoardListItem. */
 .card {
   background: var(--riso-paper-2);
   border: 2px solid var(--riso-ink);
   border-radius: var(--riso-r-card);
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
   padding: 15px 16px 13px;
-  margin-bottom: 14px;
-  /* No cursor/active: the "Open ›" link is the tap target */
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink);
+}
+
+.card:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--riso-shadow-ink);
+}
+
+.card:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+  .card:hover,
+  .card:active {
+    transform: none;
+  }
 }
 
 /* ─── Top row: name (left) + lifetime (right) ─── */
@@ -20,14 +50,6 @@
   gap: 12px;
 }
 
-.nameRow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-
 .name {
   font-family: var(--riso-font-head);
   font-weight: 800;
@@ -35,23 +57,7 @@
   letter-spacing: -0.02em;
   line-height: 1;
   color: var(--riso-ink);
-}
-
-/* Unit tag: blue filled pill — text must use --riso-on-color (static cream).
-   DARK-MODE CONTRACT: background is colored fill → text/border use static tokens. */
-.unitTag {
-  font-family: var(--riso-font-head);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1.5px solid var(--riso-ink-static);
-  background: var(--riso-blue);
-  color: var(--riso-on-color);
-  white-space: nowrap;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .lifetimeBlock {
@@ -172,11 +178,11 @@
   background: var(--riso-green);
 }
 
-/* ─── Footer: dashed divider + meta + open link ─── */
+/* ─── Footer: dashed divider + meta + "+ Log" pill + chevron ─── */
 .footer {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   font-size: 11px;
   font-weight: 700;
   color: var(--riso-muted);
@@ -190,25 +196,55 @@
   min-width: 0;
 }
 
-.openLink {
-  color: var(--riso-blue);
-  text-decoration: none;
-  font-family: var(--riso-font-head);
-  font-weight: 700;
-  font-size: 11px;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+/* "+ Log" pill — blue fill, on-color text (dark-mode contract: colored
+   fill → static content), 2px static border + 2px offset shadow. Stops
+   click-propagation to the card's own onClick (see CounterLedgerCard.tsx). */
+.logPill {
   flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink-static);
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s;
 }
 
-.openLink:hover {
-  text-decoration: underline;
+.logPill:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
 }
 
-.openLink:focus-visible {
+.logPill:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.logPill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.logPill:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
-  border-radius: 3px;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logPill {
+    transition: none;
+  }
 }
