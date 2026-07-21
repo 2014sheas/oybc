@@ -357,18 +357,6 @@ struct CounterDetailContent: View {
         return chips.firstIndex(where: { $0.value == selectedAmount })
     }
 
-    /// Validates a raw custom-amount input string into a positive integer,
-    /// or `nil` when the input isn't one (empty, non-numeric, zero,
-    /// negative, fractional, or leading/trailing junk). Intentionally strict
-    /// (digits only on the trimmed string) — mirrors web's
-    /// `parseCustomLogAmount`.
-    private static func parseCustomLogAmount(_ raw: String) -> Int? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
-        guard let n = Int(trimmed), n > 0 else { return nil }
-        return n
-    }
-
     // MARK: - Chip actions
 
     private func selectChip(_ value: Int) {
@@ -383,7 +371,9 @@ struct CounterDetailContent: View {
     }
 
     private func confirmCustomInput() {
-        guard let parsed = Self.parseCustomLogAmount(customDraft) else { return }
+        // R3: validation extracted to `CounterLogAmount.parseCustom` so
+        // `RisoCountingStepperSheet`'s board-play "#" chip shares the same rule.
+        guard let parsed = CounterLogAmount.parseCustom(customDraft) else { return }
         selectedAmount = parsed
         isCustomActive = true
         customOpen = false
@@ -674,8 +664,8 @@ struct CounterDetailContent: View {
                 .padding(.horizontal, 14)
                 .background(Capsule().fill(Color.risoGold))
                 .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-                .disabled(Self.parseCustomLogAmount(customDraft) == nil)
-                .opacity(Self.parseCustomLogAmount(customDraft) == nil ? 0.5 : 1)
+                .disabled(CounterLogAmount.parseCustom(customDraft) == nil)
+                .opacity(CounterLogAmount.parseCustom(customDraft) == nil ? 0.5 : 1)
         }
     }
 

@@ -45,6 +45,23 @@ private struct SwapTarget: Identifiable {
     let currentTaskId: String
 }
 
+// MARK: - CreditToastState (P2/R3 — shared-counter credited toast)
+
+/// The showing credited toast's render + Undo inputs, derived from a
+/// `SharedCounterCreditToastPayload` flash event. A distinct `toastKey`
+/// (fresh `UUID` per trigger) drives `CounterLogToastView`'s `.id(...)` so
+/// back-to-back logs restart the auto-dismiss timer cleanly — mirrors
+/// `CounterDetailView`'s `DetailToastState` pattern.
+private struct CreditToastState {
+    /// The shared counter's SOURCE task id — what `Undo` reverses.
+    let sourceTaskId: String
+    let amount: Int
+    let unit: String
+    let verb: CounterLogToastView.Verb
+    let message: String
+    let toastKey: String
+}
+
 // MARK: - ArrivalBannerData / ArrivalNavTarget (Shared Counters P3)
 
 /// The showing arrival-banner's copy inputs, derived from a `CounterArrivalEvent`.
@@ -154,13 +171,11 @@ struct BoardPlayView: View {
     /// rapid bingos no longer spawn overlapping dismiss tasks that cut a
     /// fresh toast short.
     @State private var bingoToastGeneration: Int = 0
-    // MARK: P2 — Shared-counter credited toast
-    /// Whether to show the shared-counter credit toast (slides from bottom).
-    @State private var showCreditToast: Bool = false
-    /// Copy shown in the credit toast, e.g. "Push-ups logged — also counted on Board A, Board B."
-    @State private var creditToastText: String = ""
-    /// Monotonic token so only the latest credit toast's auto-dismiss fires.
-    @State private var creditToastGeneration: Int = 0
+    // MARK: P2/R3 — Shared-counter credited toast
+    /// The showing credited toast's data (message + Undo target), or nil
+    /// when no toast is up. R3: unified onto `CounterLogToastView` (amount-
+    /// aware copy + Undo pill) — see `triggerCreditToast(payload:)`.
+    @State private var creditToast: CreditToastState? = nil
     /// Board task id of the counting cell whose stepper sheet is open.
     @State private var countingStepperBoardTaskId: String?
     // MARK: P3 — Shared-counter arrival banner (passive completion)
@@ -519,35 +534,31 @@ struct BoardPlayView: View {
                 .zIndex(12)
             }
 
-            // ── P2: Shared-counter credit toast (slides from bottom) ──
-            if showCreditToast {
+            // ── P2/R3: Shared-counter credited toast (slides from bottom) ──
+            // Unified onto `CounterLogToastView` (R2) via its `message`
+            // override — same card chrome as the Counters Hub/Detail toasts,
+            // now with the pinned "+N counterName — also counted on…" copy
+            // and an Undo pill that reverses the whole logged entry.
+            if let creditToast {
                 VStack {
                     Spacer()
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.left.arrow.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Color.risoBlue)
-                        Text(creditToastText)
-                            .font(.risoBody(12, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.risoPaper2)
-                    .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoBlue, lineWidth: Riso.Keyline.dense)
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .fill(Color.risoInk)
-                            .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
+                    CounterLogToastView(
+                        amount: creditToast.amount,
+                        unit: creditToast.unit,
+                        verb: creditToast.verb,
+                        message: creditToast.message,
+                        onUndo: {
+                            viewModel.undoSharedCounterLog(sourceTaskId: creditToast.sourceTaskId)
+                            withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
+                        },
+                        onDone: {
+                            withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
+                        }
                     )
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 100)
                 }
+                .id(creditToast.toastKey)
                 .transition(
                     .asymmetric(
                         insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -930,8 +941,8 @@ struct BoardPlayView: View {
             if let msg = event.risoNotification {
                 triggerRisoNotification(from: msg)
             }
-            if let text = event.creditToast {
-                triggerCreditToast(text: text)
+            if let payload = event.creditToast {
+                triggerCreditToast(payload: payload)
             }
         }
         // P3 — passive-completion arrival. The VM detects + seeds the baseline
@@ -992,6 +1003,13 @@ struct BoardPlayView: View {
                 // P2: Compute shared hint — other ACTIVE boards where a member
                 // task lives, excluding the current board.
                 let sharedHint: String? = sharedStepperHint(for: task)
+                // R3: resolve the shared-counter SOURCE (if any) to gate the
+                // amount-chip row and seed its "+{default}" chip — the chip
+                // row is shared-counting-squares-only per the copy contract;
+                // standalone counters keep the plain +/- stepper.
+                let sourceId = viewModel.sharedCounterSourceId(for: task)
+                let isSharedCounter = sourceId != nil
+                let defaultLogAmount = sourceId.flatMap { taskMap[$0]?.defaultLogAmount }
                 RisoCountingStepperSheet(
                     taskTitle: task.title,
                     currentCount: displayed,
@@ -999,11 +1017,13 @@ struct BoardPlayView: View {
                     unitText: task.unit ?? "",
                     isLinkedCounter: isLinked,
                     sharedHint: sharedHint,
-                    onIncrement: {
-                        viewModel.handleCountingTap(boardTask: bt, task: task)
+                    isSharedCounter: isSharedCounter,
+                    defaultLogAmount: defaultLogAmount,
+                    onIncrement: { amount, persistAsDefault in
+                        viewModel.handleCountingTap(boardTask: bt, task: task, amount: amount, persistAsDefault: persistAsDefault)
                     },
-                    onDecrement: {
-                        viewModel.handleCountingDecrement(boardTask: bt, task: task)
+                    onDecrement: { amount, persistAsDefault in
+                        viewModel.handleCountingDecrement(boardTask: bt, task: task, amount: amount, persistAsDefault: persistAsDefault)
                     }
                     // Dismissal clears `countingStepperBoardTaskId` via the
                     // .sheet(isPresented:) binding setter above.
@@ -1302,25 +1322,26 @@ struct BoardPlayView: View {
         }
     }
 
-    // MARK: - P2: Shared-counter credit toast helpers
+    // MARK: - P2/R3: Shared-counter credited toast helpers
 
-    /// Fires the credit toast for a shared-counter ripple that reached other boards.
-    /// Uses a generation token to prevent stale auto-dismiss from clipping a new toast.
+    /// Fires the credited toast for a shared-counter ripple that reached
+    /// other boards. R3: mounts a fresh `CreditToastState` (distinct
+    /// `toastKey`) so `CounterLogToastView`'s own `.id(...)`-scoped
+    /// auto-dismiss `.task` restarts cleanly for back-to-back logs — the
+    /// manual generation-token timer this used to hand-roll is now owned by
+    /// the shared component (mirrors `CounterDetailView`'s toast pattern).
     ///
-    /// - Parameter text: The full toast copy string.
-    private func triggerCreditToast(text: String) {
-        creditToastText = text
-        creditToastGeneration &+= 1
-        let generation = creditToastGeneration
+    /// - Parameter payload: The credited toast's copy + Undo target.
+    private func triggerCreditToast(payload: SharedCounterCreditToastPayload) {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-            showCreditToast = true
-        }
-        _Concurrency.Task.detached { @MainActor in
-            try? await _Concurrency.Task.sleep(nanoseconds: 2_600_000_000)
-            guard generation == creditToastGeneration else { return }
-            withAnimation(.easeOut(duration: 0.2)) {
-                showCreditToast = false
-            }
+            creditToast = CreditToastState(
+                sourceTaskId: payload.sourceTaskId,
+                amount: payload.amount,
+                unit: payload.unit,
+                verb: payload.isIncrement ? .logged : .removed,
+                message: payload.message,
+                toastKey: UUID().uuidString
+            )
         }
     }
 
@@ -1382,18 +1403,11 @@ struct BoardPlayView: View {
     ///
     /// - Parameter task: The `Task` backing the tapped counting square.
     private func sharedStepperHint(for task: Task) -> String? {
-        guard task.type == .counting else { return nil }
-
-        // Determine the source task id for this counter.
-        let sourceId: String
-        if let linkedSourceId = task.sharedCounterId {
-            sourceId = linkedSourceId
-        } else if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted })
-            || task.isCounter == true {
-            // P5: a promoted zero-link counter is its own source too.
-            sourceId = task.id
-        } else {
-            return nil  // Not in a shared group.
+        // R3: source detection extracted to `viewModel.sharedCounterSourceId(for:)`
+        // — shares the exact same rule as the tap-routing handlers and the
+        // chip-visibility gate below, instead of re-deriving it a third time.
+        guard task.type == .counting, let sourceId = viewModel.sharedCounterSourceId(for: task) else {
+            return nil
         }
 
         // Collect all member task ids (source + linked).
@@ -1582,12 +1596,13 @@ struct BoardPlayView: View {
         // P2: Shared-counter marker — true for source tasks that have linked tasks
         // pointing at them, for linked tasks with sharedCounterId set, or (P5)
         // for a promoted zero-link counter (`isCounter == true`) — mirrors web
-        // `useBoardPlayData.ts`'s `sharedCounterSourceIds` set exactly.
+        // `useBoardPlayData.ts`'s `sharedCounterSourceIds` set exactly. R3:
+        // routed through `viewModel.sharedCounterSourceId(for:)` (single
+        // source of truth for this detection, shared with `sharedStepperHint`
+        // and the tap-routing handlers).
         let isSharedCounterCell: Bool = {
             guard let t = task, t.type == .counting else { return false }
-            if t.sharedCounterId != nil { return true }
-            if t.isCounter == true { return true }
-            return allTasks.contains { $0.sharedCounterId == t.id && !$0.isDeleted }
+            return viewModel.sharedCounterSourceId(for: t) != nil
         }()
 
         // Compound child progress — mirrors original playSquare.
@@ -1716,16 +1731,22 @@ struct BoardPlayView: View {
         case .counting:
             if let t = task {
                 let actionLabel = t.action ?? "item"
+                // R3: shared counting squares use the counter's persisted
+                // default amount for this quick single-tap action (was
+                // hardcoded +1/-1) — the "#" custom entry still lives in the
+                // stepper sheet's chip row; this menu quick-action never
+                // persists a new default (mirrors the sheet's plain-tap rule).
+                let quickAmount = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
                 Button("+ Add \(actionLabel)", systemImage: "plus") {
                     guard !isBoardLocked else { return }
-                    viewModel.handleCountingTap(boardTask: boardTask, task: t)
+                    viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
                 }
                 // No maxVal gate — overshoot is a feature (never clamp);
                 // matches the cell-tap stepper + detail-sheet stepper.
                 .disabled(isProcessing || isBoardLocked)
                 Button("− Remove \(actionLabel)", systemImage: "minus") {
                     guard !isBoardLocked else { return }
-                    viewModel.handleCountingDecrement(boardTask: boardTask, task: t)
+                    viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
                 }
                 // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
                 .disabled(current == 0 || isProcessing || isBoardLocked)
@@ -2035,6 +2056,12 @@ struct BoardPlayView: View {
             return windowedCount(task)
         }()
 
+        // R3: shared counting squares' quick +/- here use the counter's
+        // persisted default amount (was hardcoded 1) — same rule as the
+        // context-menu quick actions; the "#" custom entry lives in the
+        // stepper sheet's chip row, not this modal.
+        let quickAmount = viewModel.sharedCounterSourceId(for: task).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
+
         detailSection("Progress") {
             VStack(alignment: .leading, spacing: 12) {
                 RisoProgressBar(
@@ -2052,7 +2079,7 @@ struct BoardPlayView: View {
                         system: "minus",
                         enabled: current > 0 && !isProcessing && !isBoardLocked
                     ) {
-                        viewModel.handleCountingDecrement(boardTask: boardTask, task: task)
+                        viewModel.handleCountingDecrement(boardTask: boardTask, task: task, amount: quickAmount)
                     }
 
                     Spacer()
@@ -2070,7 +2097,7 @@ struct BoardPlayView: View {
                         // feature, never clamped; matches the cell-tap stepper.
                         enabled: !isProcessing && !isBoardLocked
                     ) {
-                        viewModel.handleCountingTap(boardTask: boardTask, task: task)
+                        viewModel.handleCountingTap(boardTask: boardTask, task: task, amount: quickAmount)
                     }
                 }
             }

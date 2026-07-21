@@ -6,21 +6,23 @@ import SwiftUI
 /// web's `CounterLogToast` (`apps/web/src/components/counters/CounterLogToast.tsx`)
 /// — copy is VERBATIM per CLAUDE.md cross-platform parity.
 ///
-/// Deliberately a NEW component rather than an extension of the board-play
-/// credit toast (`BoardPlayView`'s inline `showCreditToast` / the web
-/// `RisoCreditedToast`): that toast has a fixed, different copy contract
-/// ("… also counted on {boards}.") wired to board-play's cross-board
-/// crediting story and carries no Undo affordance. This toast's contract
-/// (amount + Undo, no board list) is a different shape, not a variant of the
-/// same copy. R3 board-play is expected to reuse THIS component once its
-/// touchpoints add amount-aware logging with Undo.
+/// R3 board-play touchpoints unify board-play's ripple toast (formerly
+/// `BoardPlayView`'s inline `showCreditToast`, no Undo) onto THIS component
+/// via the `message` override below: the credited-toast copy contract
+/// ("+{N} {counterName} — also counted on {boards}.") differs from this
+/// view's own amount+unit-derived copy, so `message` lets a caller supply
+/// fully composed text while reusing the card chrome + Undo affordance +
+/// auto-dismiss timer verbatim. Web's twin is `CounterLogToast` merged with
+/// `RisoCreditedToast` per the same R3 Global Constraint ("prefer ONE toast
+/// component per platform").
 ///
 /// Mount a NEW instance (different `.id(...)`) per toast so the auto-dismiss
 /// timer restarts cleanly for back-to-back logs — see call sites in
-/// `CountersHubView.swift` / `CounterDetailView.swift`.
+/// `CountersHubView.swift` / `CounterDetailView.swift` / `BoardPlayView.swift`.
 struct CounterLogToastView: View {
 
-    /// Which write the toast is reporting — drives the copy contract.
+    /// Which write the toast is reporting — drives the default copy (ignored
+    /// when `message` overrides it).
     enum Verb {
         /// "Logged +{N} {noun} · Undo" — an increment (Hub "+ Log" pill /
         /// Detail "+ Add N").
@@ -29,11 +31,19 @@ struct CounterLogToastView: View {
         case removed
     }
 
-    /// Amount just logged (always positive — see `verb`).
+    /// Amount just logged (always positive — see `verb`). Unused for body
+    /// text when `message` is set, but still carried for callers/tests.
     let amount: Int
-    /// The counter's unit noun, e.g. "push-ups".
+    /// The counter's unit noun, e.g. "push-ups". Unused for body text when
+    /// `message` is set.
     let unit: String
     let verb: Verb
+    /// R3: a fully composed message that REPLACES the amount+unit+verb-
+    /// derived copy — the board-play credited toast's contract
+    /// ("+{N} {counterName} — also counted on {board list}.") isn't
+    /// expressible as amount/unit/verb alone (it carries a board list). `nil`
+    /// (the default) preserves the R2 Hub/Detail "Logged/Removed" copy.
+    var message: String? = nil
     /// Reverses the log entry (`AppDatabase.undoLastCounterLog`). The
     /// caller is responsible for clearing the toast after this resolves —
     /// mirrors web's `onUndo` (does NOT itself call `onDone`).
@@ -52,9 +62,13 @@ struct CounterLogToastView: View {
         }
     }
 
+    private var bodyText: String {
+        message ?? "\(verbLabel) \(unit)"
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Text("\(verbLabel) \(unit)")
+            Text(bodyText)
                 .font(.risoBody(12, .semibold))
                 .foregroundStyle(Color.risoInk)
                 .multilineTextAlignment(.leading)
@@ -115,6 +129,22 @@ struct CounterLogToastView: View {
             CounterLogToastView(amount: 5, unit: "reps", verb: .removed, onUndo: {}, onDone: {})
                 .padding(.horizontal, Riso.gutter)
                 .padding(.bottom, 24)
+        }
+    }
+}
+
+#Preview("Counter log toast — board-play credited (R3 message override)") {
+    ZStack {
+        RisoPaperBackground()
+        VStack {
+            Spacer()
+            CounterLogToastView(
+                amount: 10, unit: "push-ups", verb: .logged,
+                message: "+10 Push-ups — also counted on Daily Grind.",
+                onUndo: {}, onDone: {}
+            )
+            .padding(.horizontal, Riso.gutter)
+            .padding(.bottom, 24)
         }
     }
 }
