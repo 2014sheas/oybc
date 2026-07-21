@@ -490,6 +490,10 @@ export const TaskSchema = z.object({
   // P5 — Hub-born counters. See `Task.isCounter` for the full invariant
   // documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
   isCounter: z.boolean().optional(),
+  // Counters UX refresh (R2). See `Task.defaultLogAmount` for the full
+  // invariant documentation. Positive integer when present; forward-compat
+  // (unknown-drop safe like `isCounter`).
+  defaultLogAmount: z.number().int().positive().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.

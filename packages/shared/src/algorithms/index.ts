@@ -221,3 +221,18 @@ export type {
 export { resolveConflict } from './lwwResolve';
 
 export type { SyncableEntity, ConflictResult } from './lwwResolve';
+
+// ===== Counters UX refresh (R2) — milestone, daily totals, last-entry =====
+export { nextCounterMilestone, counterMilestoneProgress } from './counterMilestone';
+
+export type { CounterMilestoneProgress } from './counterMilestone';
+
+export { deriveCounterDailyTotals } from './counterDailyTotals';
+
+export type {
+  CounterDailyTotal,
+  CounterDailyTotalsResult,
+  DeriveCounterDailyTotalsOptions,
+} from './counterDailyTotals';
+
+export { selectLastIncrementEntry } from './lastCounterLogEntry';

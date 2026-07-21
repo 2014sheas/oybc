@@ -305,3 +305,30 @@ The P4 storage plan must include **counter-level** closed-window rollups
   titles to pair-derived counter names (`formatCounterName`) — R1 only
   changed the Hub/Detail/creation surfaces; `RisoCreditedToast` /
   `RisoArrivalBanner` still read `task.title` today.
+
+### Resolved (2026-07-20)
+
+Four decisions locked at R2 planning time (owner), recorded here per the R2
+Task 1 brief:
+
+1. **Default log amount lives on the source Task** — new additive optional
+   `Task.defaultLogAmount?: number` (positive int), synced per-row LWW like
+   every other task field, forward-compat like `isCounter`. NOT a new table,
+   NOT a preference.
+2. **Sparkline/Today are fed for REAL, rollups stay stubbed** — the
+   Counter Detail 7-day sparkline and "Today" stat derive from the source
+   task's real `task_events` (`deriveCounterDailyTotals`,
+   `src/algorithms/counterDailyTotals.ts`); Streak / Best week / Recent
+   weeks remain placeholder UI pending genuine P4 counter-level rollup
+   storage (§P4 contract above).
+3. **Reusable log toast + whole-entry Undo** — a single "Logged +N · Undo"
+   toast component is shared across Hub, Detail, and the R3 board-play
+   surfaces; Undo reverses the WHOLE last log entry (tombstone the last
+   increment `TaskEvent` on the source, correct `currentCount`, re-cascade)
+   via the pure selector `selectLastIncrementEntry`
+   (`src/algorithms/lastCounterLogEntry.ts`), not a flat −1.
+4. **Milestone helper lifted to shared** — `nextCounterMilestone` /
+   `counterMilestoneProgress` (`src/algorithms/counterMilestone.ts`) replace
+   the two drift-prone per-platform copies (web `nextMilestone` in
+   `CounterDetailPage.tsx`, iOS `milestone` in `CounterDetailView.swift`);
+   both platforms delete their local copy in favor of the shared export.
