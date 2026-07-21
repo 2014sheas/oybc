@@ -2,18 +2,37 @@ import SwiftUI
 
 // MARK: - Ledger card (Counters Hub)
 
-/// A single counter card in the Counters Hub "Ledger" layout.
+/// A single counter card in the Counters Hub "Ledger" layout (R2 Counters UX
+/// refresh — design handoff §Counters Hub).
 ///
-/// Layout (mirrors the design handoff `cn-led` card):
-/// - Top row: counter name + unit tag left; big blue lifetime + "all-time {unit}" right.
-/// - One `SharedCounterMemberRow` per ACTIVE member task.
-/// - Dashed divider.
-/// - Footer meta: "Shared by N tasks · N boards" + "Open ›" affordance.
+/// Layout:
+///   Top row:  counter name (left, Bricolage 800/21) | big blue lifetime +
+///             "ALL-TIME" label (right)
+///   Rows:     one row per ACTIVE member task (dot + board · window,
+///             logged/goal, full-width progress bar)
+///   Footer:   dashed divider · "N tasks · N boards" · "+ Log" pill (blue) ·
+///             muted "›" chevron
 ///
-/// Tapping the card (anywhere) triggers `onTap` — the Hub routes to CounterDetailView.
+/// The WHOLE card is tappable → Detail (`onOpenDetail`), except the "+ Log"
+/// pill, which is a genuinely distinct tap target (`onLog`) that logs the
+/// counter's current default amount (`group.defaultLogAmount ?? 1`) in
+/// place — one tap, no chip picker (that lives on Detail).
+///
+/// Nested-tap-target note: the card body drives navigation via
+/// `.onTapGesture` on the whole card rather than wrapping it in a `Button`
+/// or `NavigationLink` — a `Button`'s label containing another `Button`
+/// swallows the inner one's taps, but a `Button` nested inside an ancestor's
+/// `.onTapGesture` keeps receiving its own taps (SwiftUI resolves the tap to
+/// the most specific/deepest recognizer). This is what lets the "+ Log"
+/// pill act independently of the card-wide "open detail" tap.
 struct SharedCounterLedgerCard: View {
     let group: SharedCounterGroup
-    let onTap: () -> Void
+    /// Disables the "+ Log" pill while a log write is in flight for this counter.
+    var isLogging: Bool = false
+    /// Fired by a tap anywhere on the card EXCEPT the "+ Log" pill.
+    let onOpenDetail: () -> Void
+    /// Fired by the "+ Log" pill — logs `group.defaultLogAmount ?? 1`.
+    let onLog: () -> Void
 
     // MARK: - Derived
 
@@ -21,85 +40,90 @@ struct SharedCounterLedgerCard: View {
         group.tasks.filter { $0.isActive }
     }
 
-    private var unitLabel: String { group.unit ?? "units" }
+    private var unitLabel: String { group.unit ?? "" }
+    private var logAmount: Int { group.defaultLogAmount ?? 1 }
 
     // MARK: - Body
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 0) {
-                // Top row: name + unit tag / lifetime number
-                HStack(alignment: .top, spacing: 10) {
-                    // Left: name + unit tag
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(group.name)
-                            .font(.risoHead(16, .bold))
-                            .foregroundStyle(Color.risoInk)
-                            .lineLimit(1)
+        VStack(alignment: .leading, spacing: 0) {
+            // Top row: name + lifetime
+            HStack(alignment: .top, spacing: 10) {
+                Text(group.name)
+                    .font(.risoHead(21, .extraBold))
+                    .tracking(-0.42)
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
 
-                        if let action = group.action {
-                            Text("\(action) · \(unitLabel)")
-                                .font(.risoBody(11, .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                        }
-                    }
+                Spacer(minLength: 8)
 
-                    Spacer(minLength: 8)
-
-                    // Right: big blue lifetime + "all-time {unit}"
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(group.lifetime)")
-                            .font(.risoHead(28, .extraBold))
-                            .foregroundStyle(Color.risoBlue)
-                            .minimumScaleFactor(0.6)
-                            .lineLimit(1)
-                        Text("all-time \(unitLabel)")
-                            .font(.risoBody(10, .semibold))
-                            .foregroundStyle(Color.risoMuted)
-                    }
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(group.lifetime.formatted())
+                        .font(.risoHead(26, .extraBold))
+                        .foregroundStyle(Color.risoBlue)
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text("ALL-TIME")
+                        .font(.risoBody(9, .bold))
+                        .tracking(0.9)
+                        .foregroundStyle(Color.risoMuted)
                 }
-                .padding(.horizontal, Riso.cardPadding)
-                .padding(.top, Riso.cardPadding)
+            }
+            .padding(.horizontal, Riso.cardPadding)
+            .padding(.top, 15)
 
-                // Member task rows (active only)
-                if !activeMembers.isEmpty {
-                    Divider()
-                        .background(Color.risoInk.opacity(0.12))
-                        .padding(.horizontal, Riso.cardPadding)
-                        .padding(.top, 10)
-
+            // Active member task rows
+            if !activeMembers.isEmpty {
+                VStack(spacing: 0) {
                     ForEach(activeMembers) { member in
                         SharedCounterMemberRow(member: member, unit: unitLabel)
                     }
                 }
-
-                // Dashed divider before footer
-                dashedDivider
-                    .padding(.horizontal, Riso.cardPadding)
-                    .padding(.top, 10)
-
-                // Footer: "Shared by N tasks · N boards" / "Open ›"
-                HStack(spacing: 6) {
-                    Text("Shared by \(group.taskCount) task\(group.taskCount == 1 ? "" : "s") · \(group.boardCount) board\(group.boardCount == 1 ? "" : "s")")
-                        .font(.risoBody(11, .regular))
-                        .foregroundStyle(Color.risoMuted)
-
-                    Spacer(minLength: 4)
-
-                    Text("Open ›")
-                        .font(.risoBody(11, .semibold))
-                        .foregroundStyle(Color.risoBlue)
-                }
-                .padding(.horizontal, Riso.cardPadding)
-                .padding(.top, 8)
-                .padding(.bottom, Riso.cardPadding)
+                .padding(.top, 10)
             }
+
+            // Dashed divider before footer
+            dashedDivider
+                .padding(.horizontal, Riso.cardPadding)
+                .padding(.top, 12)
+
+            // Footer: "N tasks · N boards" · "+ Log" pill · "›" chevron
+            HStack(spacing: 10) {
+                Text("\(group.taskCount) task\(group.taskCount == 1 ? "" : "s") · \(group.boardCount) board\(group.boardCount == 1 ? "" : "s")")
+                    .font(.risoBody(11, .regular))
+                    .foregroundStyle(Color.risoMuted)
+
+                Spacer(minLength: 6)
+
+                Button(action: onLog) {
+                    Text("+ Log")
+                        .font(.risoHead(12, .extraBold))
+                        .foregroundStyle(Color.risoPaper)
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 14)
+                        .background(Capsule().fill(Color.risoBlue))
+                        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                }
+                .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+                .disabled(isLogging)
+                .accessibilityLabel("Log \(logAmount) \(unitLabel) for \(group.name)")
+
+                Text("›")
+                    .font(.risoHead(14, .bold))
+                    .foregroundStyle(Color.risoMuted)
+            }
+            .padding(.horizontal, Riso.cardPadding)
+            .padding(.top, 10)
+            .padding(.bottom, Riso.cardPadding)
         }
-        .buttonStyle(.plain)
-        .risoCard()
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+        .risoCard(fill: .risoPaper2)
+        .risoHardShadow(Riso.Shadow.card, radius: Riso.cardRadius)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpenDetail() }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(group.name), \(group.lifetime) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: - Dashed divider
@@ -145,7 +169,7 @@ struct SharedCounterMemberRow: View {
     }
 
     private var loggedLabel: String {
-        "\(member.logged)/\(member.goal)"
+        "\(member.logged.formatted())/\(member.goal.formatted())"
     }
 
     // MARK: - Body
@@ -156,28 +180,19 @@ struct SharedCounterMemberRow: View {
                 // Timeframe accent dot
                 Circle()
                     .fill(member.timeframe?.risoColor ?? Color.risoMuted)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 9, height: 9)
 
-                // Board name + window
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(member.boardName ?? "–")
-                        .font(.risoBody(12, .bold))
-                        .foregroundStyle(Color.risoInk)
-                        .lineLimit(1)
-
-                    if let window = member.window {
-                        Text(window)
-                            .font(.risoBody(10, .regular))
-                            .foregroundStyle(Color.risoMuted)
-                            .lineLimit(1)
-                    }
-                }
+                // Board name + window (one line: "Board · window")
+                Text(member.window.map { "\(member.boardName ?? "–") · \($0)" } ?? (member.boardName ?? "–"))
+                    .font(.risoBody(11, .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
 
                 Spacer(minLength: 6)
 
                 // Logged / goal
                 Text(loggedLabel)
-                    .font(.risoHead(13, .bold))
+                    .font(.risoHead(12, .bold))
                     .foregroundStyle(member.met ? Color.risoGreen : Color.risoInk)
             }
 

@@ -134,6 +134,16 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// (GRDB v23).
     var isCounter: Bool
 
+    /// R2 Counters UX refresh — the counter's last-used log amount
+    /// (positive integer), persisted per source counting task so the
+    /// Counters Hub "+ Log" pill and Counter Detail's amount-chip row default
+    /// to whatever the user logged with most recently. `nil` when never set
+    /// (callers fall back to `1`). Only meaningful when `type == .counting`
+    /// and `sharedCounterId == nil` (the source, not a linked/derived task).
+    /// Additive optional, forward-compat like `isCounter`; stored as
+    /// nullable INTEGER (GRDB v26).
+    var defaultLogAmount: Int?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "tasks"
@@ -180,7 +190,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         baseline: Int? = nil,
         lastSyncedCount: Int? = nil,
         createdInWizard: Bool = false,
-        isCounter: Bool = false
+        isCounter: Bool = false,
+        defaultLogAmount: Int? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -219,6 +230,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.lastSyncedCount = lastSyncedCount
         self.createdInWizard = createdInWizard
         self.isCounter = isCounter
+        self.defaultLogAmount = defaultLogAmount
     }
 
     // MARK: - Codable
@@ -245,6 +257,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case createdInWizard
         // P5 — hub-born counter flag (GRDB v23)
         case isCounter
+        // R2 Counters UX refresh — default log amount (GRDB v26)
+        case defaultLogAmount
     }
 
     // Custom decoding for progressCounters (stored as JSON string)
@@ -304,6 +318,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // P5 — hub-born counter flag. Forward-compat: pre-v23 local rows +
         // pre-feature sync payloads (and all non-hub-born tasks) decode as false.
         isCounter = try container.decodeIfPresent(Bool.self, forKey: .isCounter) ?? false
+        // R2 Counters UX refresh — default log amount. Forward-compat:
+        // pre-v26 local rows + pre-feature sync payloads decode as nil.
+        defaultLogAmount = try container.decodeIfPresent(Int.self, forKey: .defaultLogAmount)
     }
 
     // Custom encoding for progressCounters (store as JSON string)
@@ -359,6 +376,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encode(createdInWizard, forKey: .createdInWizard)
         // P5 — hub-born counter flag — always encoded, same rationale.
         try container.encode(isCounter, forKey: .isCounter)
+        // R2 Counters UX refresh — default log amount (additive optional).
+        try container.encodeIfPresent(defaultLogAmount, forKey: .defaultLogAmount)
     }
 }
 

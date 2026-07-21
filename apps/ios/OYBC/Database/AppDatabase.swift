@@ -814,6 +814,14 @@ final class AppDatabase {
             try MigrationV25Helpers.run(db, now: Self.currentTimestamp())
         }
 
+        // v26: R2 Counters UX refresh. Adds `defaultLogAmount` (nullable
+        // INTEGER) to `tasks` — the counter's last-used log amount,
+        // persisted per source counting task (docs/SHARED_COUNTERS.md
+        // §Counters UX refresh).
+        migrator.registerMigration("v26") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN defaultLogAmount INTEGER")
+        }
+
         return migrator
     }
 
