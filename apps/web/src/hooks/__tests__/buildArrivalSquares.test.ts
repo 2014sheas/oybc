@@ -68,7 +68,7 @@ describe('buildArrivalSquares', () => {
     ]);
   });
 
-  it('names the counter from a titleless source via generateCounterTaskTitle', () => {
+  it('names the counter from the pair-derived action + unit (verb elided for "Do")', () => {
     const source = makeTask({ id: 'src', title: '', action: 'Run', maxCount: 5, unit: 'miles', currentCount: 2 });
     const linked = makeTask({ id: 'lnk', sharedCounterId: 'src', baseline: 0, currentCount: 2 });
     const squares = buildArrivalSquares({
@@ -76,8 +76,30 @@ describe('buildArrivalSquares', () => {
       taskMap: { src: source, lnk: linked },
       sharedCounterSourceIds: new Set(['src']),
     });
-    expect(squares[0].counterName).not.toBe('');
+    expect(squares[0].counterName).toBe('Run miles');
     expect(squares[0].counterId).toBe('src');
+  });
+
+  it('R3: prefers the pair-derived name over a stored title when both are present', () => {
+    // Copy contract — counter names are pair-derived, NEVER raw task.title,
+    // even when a (stale or user-set) title exists alongside a real pair.
+    const source = makeTask({ id: 'src', title: 'My push-up counter', action: 'Do', unit: 'push-ups', currentCount: 4 });
+    const squares = buildArrivalSquares({
+      boardTasks: [bt('src')],
+      taskMap: { src: source },
+      sharedCounterSourceIds: new Set(['src']),
+    });
+    expect(squares[0].counterName).toBe('Push-ups');
+  });
+
+  it('R3: falls back to the stored title when the pair is empty', () => {
+    const source = makeTask({ id: 'src', title: 'Legacy counter name', currentCount: 4 });
+    const squares = buildArrivalSquares({
+      boardTasks: [bt('src')],
+      taskMap: { src: source },
+      sharedCounterSourceIds: new Set(['src']),
+    });
+    expect(squares[0].counterName).toBe('Legacy counter name');
   });
 
   it('excludes standalone (unlinked) counting tasks and non-counting tasks', () => {

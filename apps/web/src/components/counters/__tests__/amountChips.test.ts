@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAmountChipOptions, parseCustomLogAmount } from '../amountChips';
+import { buildAmountChipOptions, buildBoardQuickAmountOptions, parseCustomLogAmount } from '../amountChips';
 
 describe('buildAmountChipOptions', () => {
   it('builds the fixed 1 / default / 25 / # chip row', () => {
@@ -14,6 +14,24 @@ describe('buildAmountChipOptions', () => {
   it('renders the default chip verbatim even when it collides with 1 or 25', () => {
     expect(buildAmountChipOptions(1)[1]).toEqual({ value: 1, label: '1' });
     expect(buildAmountChipOptions(25)[1]).toEqual({ value: 25, label: '25' });
+  });
+});
+
+describe('buildBoardQuickAmountOptions', () => {
+  it('builds the 3-position 1 / default / # row (no fixed 25 chip)', () => {
+    expect(buildBoardQuickAmountOptions(10)).toEqual([
+      { value: 1, label: '1' },
+      { value: 10, label: '10' },
+      { value: null, label: '#' },
+    ]);
+  });
+
+  it('renders the default chip verbatim even when it collides with 1', () => {
+    expect(buildBoardQuickAmountOptions(1)).toEqual([
+      { value: 1, label: '1' },
+      { value: 1, label: '1' },
+      { value: null, label: '#' },
+    ]);
   });
 });
 

@@ -312,6 +312,130 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Shared-counter quick-action amount row (Counters Refresh R3) ──
+   Mirrors the Counter Detail Log card's chip styling (gold selected,
+   ink-static content — copy contract "gold selected, ink-static"). */
+
+.quickAmountRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.quickChipRow {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.quickChip {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.3rem;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  cursor: pointer;
+  transition: background 0.08s, transform 0.08s;
+}
+
+.quickChip:hover:not(:disabled) {
+  background: var(--riso-gold);
+}
+
+.quickChip:focus-visible {
+  outline: 2px solid var(--riso-ink);
+  outline-offset: 2px;
+}
+
+.quickChipSelected,
+.quickChipSelected:hover {
+  background: var(--riso-gold);
+  border-color: var(--riso-ink-static);
+  color: var(--riso-ink-static);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+
+.quickCustomInputRow {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.quickCustomInput {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--riso-r-cell);
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+
+.quickCustomInput:focus-visible {
+  outline: 2px solid var(--riso-ink);
+  outline-offset: 2px;
+}
+
+.quickCustomConfirm {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  cursor: pointer;
+}
+
+.quickCustomConfirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.quickAmountActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.quickAddBtn {
+  flex: 1;
+  height: 44px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.quickAddBtn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.quickAddBtn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.quickAddBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Step checkboxes */
 
 .stepsList {

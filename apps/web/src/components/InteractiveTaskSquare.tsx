@@ -6,6 +6,7 @@ import {
   type TaskSquareData,
   type SquareState,
 } from './interactiveTaskSquareUtils';
+import { parseCustomLogAmount, type AmountChipOption } from './counters/amountChips';
 
 // ─── FloatingContextMenu ──────────────────────────────────────────────────────
 
@@ -53,6 +54,25 @@ interface ContextMenuProps {
    * Only set when the task is a shared counting task with placements on other live boards.
    */
   sharedHint?: string;
+  /**
+   * Counters Refresh R3 — quick-action amount options for a shared counting
+   * square (source or linked). When present, replaces the counting section's
+   * "+ Add {action} (+1)" button with three amount actions: "+1", "+{default}"
+   * (skipped when it collides with 1), and "# Custom amount…". The custom item
+   * routes to `onOpenCustom` rather than opening an inline input here — a
+   * floating, cursor-anchored menu isn't a safe place to lay out a text field
+   * (position is measured once on mount; growing the menu would overflow).
+   * Callers wire `onOpenCustom` to open the square's detail modal, which owns
+   * the full picker (`DetailModal`'s `quickAmount` prop). Decrement / Reset
+   * stay the existing unlabeled-amount items — amount-mirrored decrement
+   * lives in the detail modal only.
+   */
+  sharedAmountActions?: {
+    unit: string;
+    defaultAmount: number;
+    onAdd: (amount: number) => void;
+    onOpenCustom: () => void;
+  };
 }
 
 /**
@@ -86,6 +106,7 @@ export function FloatingContextMenu({
   onSwapTask,
   onRemoveFromBoard,
   sharedHint,
+  sharedAmountActions,
   children,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -146,21 +167,58 @@ export function FloatingContextMenu({
 
       {sq.type === 'counting' && (
         <>
-          <button
-            className={styles.contextMenuItem}
-            onClick={() => {
-              onIncrementCount?.(sq.id);
-              onClose();
-            }}
-            // Phase 3 — Shared Counters: overshoot is intentional, so
-            // the add button is never disabled based on count alone. For
-            // linked counters (sharedCounterId != null) there is no
-            // meaningful high-end limit — the source drives completion.
-            // For standalone counters we also allow overshoot per the
-            // feedback_counter_overshoot_is_valid invariant.
-          >
-            + Add {sq.action} (+1)
-          </button>
+          {sharedAmountActions ? (
+            <>
+              {/* R3 — shared counting square quick actions. Overshoot is
+                  intentional (feedback_counter_overshoot_is_valid) — never
+                  disabled based on count. */}
+              <button
+                className={styles.contextMenuItem}
+                onClick={() => {
+                  sharedAmountActions.onAdd(1);
+                  onClose();
+                }}
+              >
+                + Add 1 {sharedAmountActions.unit}
+              </button>
+              {sharedAmountActions.defaultAmount !== 1 && (
+                <button
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    sharedAmountActions.onAdd(sharedAmountActions.defaultAmount);
+                    onClose();
+                  }}
+                >
+                  + Add {sharedAmountActions.defaultAmount} {sharedAmountActions.unit}
+                </button>
+              )}
+              <button
+                className={styles.contextMenuItem}
+                onClick={() => {
+                  sharedAmountActions.onOpenCustom();
+                  onClose();
+                }}
+              >
+                # Custom amount…
+              </button>
+            </>
+          ) : (
+            <button
+              className={styles.contextMenuItem}
+              onClick={() => {
+                onIncrementCount?.(sq.id);
+                onClose();
+              }}
+              // Phase 3 — Shared Counters: overshoot is intentional, so
+              // the add button is never disabled based on count alone. For
+              // linked counters (sharedCounterId != null) there is no
+              // meaningful high-end limit — the source drives completion.
+              // For standalone counters we also allow overshoot per the
+              // feedback_counter_overshoot_is_valid invariant.
+            >
+              + Add {sq.action} (+1)
+            </button>
+          )}
           <button
             className={styles.contextMenuItem}
             disabled={state.currentCount <= 0}
@@ -460,6 +518,37 @@ interface DetailModalProps {
    * Only set when the task is a shared counting task with placements on other live boards.
    */
   sharedHint?: string;
+  /**
+   * Counters Refresh R3 — quick-action amount picker for a shared counting
+   * square (source or linked). When present, REPLACES the plain −/value/+
+   * stepper with a "1 / {default} / #" chip row (R2 Detail Log card styling
+   * — gold selected, ink-static) plus mirrored Add/Remove buttons that both
+   * apply the selected amount. Absent for standalone (non-shared) counting
+   * tasks, which keep the original stepper via `onIncrementCount`/`onDecrementCount`.
+   */
+  quickAmount?: {
+    /** 3-position chip row — `buildBoardQuickAmountOptions(defaultAmount)`. */
+    options: AmountChipOption[];
+    /** Currently selected amount (a chip value, or the confirmed custom amount). */
+    selected: number;
+    /** True when `selected` came from the custom "#" input — governs which
+     *  chip renders highlighted AND whether logging persists it as the new default. */
+    isCustomActive: boolean;
+    customOpen: boolean;
+    customDraft: string;
+    unit: string;
+    /** Disables Add/Remove while a write is in flight or the board is locked. */
+    busy: boolean;
+    onSelectChip: (value: number) => void;
+    onOpenCustom: () => void;
+    onCustomDraftChange: (raw: string) => void;
+    onConfirmCustom: () => void;
+    onAdd: () => void;
+    onRemove: () => void;
+    removeDisabled: boolean;
+    /** Tooltip/aria text for a disabled Remove — set for linked (read-only) counters. */
+    removeTitle?: string;
+  };
 }
 
 /**
@@ -489,6 +578,7 @@ export function DetailModal({
   onCompoundChildToggle,
   onOpenInLibrary,
   sharedHint,
+  quickAmount,
 }: DetailModalProps) {
   // Close on Escape key
   useEffect(() => {
@@ -563,31 +653,92 @@ export function DetailModal({
               {sq.action} · {sq.maxCount} {sq.unit}
             </p>
             {/* Phase 3 — Shared Counters: linked derived counters show a
-                caption indicating they are driven by a source task, then
-                display their own progress bar and an increment button that
-                routes through incrementSharedCounter in BoardPlaySurface.
-                Decrement is intentionally disabled for linked counters —
-                the source accumulator only goes up on normal flow. */}
-            {sq.sharedCounterId != null ? (
-              <>
-                <p className={styles.linkedCounterCaption}>
-                  Linked counter — tap + to increment the shared source
-                </p>
-                {/* Progress bar (derived view) */}
-                <div className={styles.modalProgressBar}>
-                  <div
-                    className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting}`}
-                    style={{ width: `${fraction * 100}%` }}
-                  />
-                  <div className={styles.modalProgressLabel}>{barLabel}</div>
+                caption indicating they are driven by a source task. */}
+            {sq.sharedCounterId != null && (
+              <p className={styles.linkedCounterCaption}>
+                Linked counter — tap + to increment the shared source
+              </p>
+            )}
+            {/* Progress bar */}
+            <div className={styles.modalProgressBar}>
+              <div
+                className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting}`}
+                style={{ width: `${fraction * 100}%` }}
+              />
+              <div className={styles.modalProgressLabel}>{barLabel}</div>
+            </div>
+
+            {quickAmount ? (
+              // R3 — shared counting square: the "1 / {default} / #" quick-
+              // action row REPLACES the plain stepper. Both Add and Remove
+              // apply `quickAmount.selected` (mirrored), so decrementing
+              // after a bulk add removes the same bulk amount rather than
+              // silently reverting to single-unit stepping.
+              <div className={styles.quickAmountRow}>
+                <div className={styles.quickChipRow} role="group" aria-label="Log amount">
+                  {(() => {
+                    // Index-based (not per-item value comparison) so a chip
+                    // collision (e.g. default === 1) highlights only the
+                    // FIRST matching chip — mirrors Counter Detail's
+                    // `selectedChipIndex` convention.
+                    const selectedChipIndex = quickAmount.isCustomActive
+                      ? quickAmount.options.length - 1
+                      : quickAmount.options.findIndex((o) => o.value === quickAmount.selected);
+                    return quickAmount.options.map((chip, i) => {
+                      const selected = i === selectedChipIndex;
+                      const isCustomChip = chip.value === null;
+                      return (
+                        <button
+                          key={isCustomChip ? 'custom' : `${i}-${chip.value}`}
+                          type="button"
+                          className={`${styles.quickChip} ${selected ? styles.quickChipSelected : ''}`}
+                          aria-pressed={selected}
+                          onClick={() =>
+                            isCustomChip ? quickAmount.onOpenCustom() : quickAmount.onSelectChip(chip.value as number)
+                          }
+                        >
+                          {isCustomChip && selected ? quickAmount.selected : chip.label}
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
-                {/* Increment only — decrement is not available on linked counters */}
-                <div className={styles.counterRow}>
+                {quickAmount.customOpen && (
+                  <div className={styles.quickCustomInputRow}>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      step={1}
+                      autoFocus
+                      value={quickAmount.customDraft}
+                      onChange={(e) => quickAmount.onCustomDraftChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') quickAmount.onConfirmCustom();
+                        if (e.key === 'Escape') e.stopPropagation();
+                      }}
+                      className={styles.quickCustomInput}
+                      placeholder="Amount"
+                      aria-label="Custom log amount"
+                    />
+                    <button
+                      type="button"
+                      className={styles.quickCustomConfirm}
+                      onClick={quickAmount.onConfirmCustom}
+                      disabled={quickAmount.busy || parseCustomLogAmount(quickAmount.customDraft) == null}
+                    >
+                      OK
+                    </button>
+                  </div>
+                )}
+                <div className={styles.quickAmountActions}>
                   <button
+                    type="button"
                     className={styles.counterButton}
-                    disabled
-                    aria-label="Decrease (unavailable for linked counters)"
-                    title="Linked counters cannot be decremented directly"
+                    onClick={quickAmount.onRemove}
+                    disabled={quickAmount.busy || quickAmount.removeDisabled}
+                    title={quickAmount.removeTitle}
+                    aria-label={quickAmount.removeTitle ?? `Remove ${quickAmount.selected} ${quickAmount.unit}`}
                   >
                     −
                   </button>
@@ -595,52 +746,40 @@ export function DetailModal({
                     {state.currentCount} / {sq.maxCount}
                   </span>
                   <button
-                    className={styles.counterButton}
-                    onClick={() => onIncrementCount(sq.id)}
-                    aria-label="Increase source counter"
+                    type="button"
+                    className={styles.quickAddBtn}
+                    onClick={quickAmount.onAdd}
+                    disabled={quickAmount.busy}
+                    aria-label={`Add ${quickAmount.selected} ${quickAmount.unit}`}
                   >
-                    +
+                    + {quickAmount.selected}
                   </button>
                 </div>
-                {sharedHint && (
-                  <div className={styles.sharedHint}>{sharedHint}</div>
-                )}
-              </>
+              </div>
             ) : (
-              <>
-                {/* Progress bar */}
-                <div className={styles.modalProgressBar}>
-                  <div
-                    className={`${styles.modalProgressFill} ${styles.modalProgressFillCounting}`}
-                    style={{ width: `${fraction * 100}%` }}
-                  />
-                  <div className={styles.modalProgressLabel}>{barLabel}</div>
-                </div>
-                {/* Counter controls */}
-                <div className={styles.counterRow}>
-                  <button
-                    className={styles.counterButton}
-                    disabled={state.currentCount <= 0}
-                    onClick={() => onDecrementCount(sq.id)}
-                    aria-label="Decrease"
-                  >
-                    −
-                  </button>
-                  <span className={styles.counterValue}>
-                    {state.currentCount} / {sq.maxCount}
-                  </span>
-                  <button
-                    className={styles.counterButton}
-                    onClick={() => onIncrementCount(sq.id)}
-                    aria-label="Increase"
-                  >
-                    +
-                  </button>
-                </div>
-                {sharedHint && (
-                  <div className={styles.sharedHint}>{sharedHint}</div>
-                )}
-              </>
+              <div className={styles.counterRow}>
+                <button
+                  className={styles.counterButton}
+                  disabled={state.currentCount <= 0}
+                  onClick={() => onDecrementCount(sq.id)}
+                  aria-label="Decrease"
+                >
+                  −
+                </button>
+                <span className={styles.counterValue}>
+                  {state.currentCount} / {sq.maxCount}
+                </span>
+                <button
+                  className={styles.counterButton}
+                  onClick={() => onIncrementCount(sq.id)}
+                  aria-label="Increase"
+                >
+                  +
+                </button>
+              </div>
+            )}
+            {sharedHint && (
+              <div className={styles.sharedHint}>{sharedHint}</div>
             )}
           </>
         )}

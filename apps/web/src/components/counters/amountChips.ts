@@ -40,6 +40,28 @@ export function buildAmountChipOptions(defaultAmount: number): AmountChipOption[
 }
 
 /**
+ * Builds the board-play square quick-action chip row (R3 — Counters Refresh
+ * board-play touchpoints): `1`, the counter's current default amount, and
+ * the custom "#" chip.
+ *
+ * Deliberately a 3-position row, unlike `buildAmountChipOptions`'s 4 (no
+ * fixed `25` chip) — the handoff spec's board-square mock shows only
+ * `1 / {default} / #` for the in-context quick actions on a shared counting
+ * square's detail modal / context menu; the full `1 / {default} / 25 / #`
+ * row stays exclusive to Counter Detail's Log card.
+ *
+ * @param defaultAmount The counter's current default log amount (positive
+ *   integer; callers pass the source task's `defaultLogAmount ?? 1`).
+ */
+export function buildBoardQuickAmountOptions(defaultAmount: number): AmountChipOption[] {
+  return [
+    { value: 1, label: '1' },
+    { value: defaultAmount, label: String(defaultAmount) },
+    { value: null, label: '#' },
+  ];
+}
+
+/**
  * Validates a raw custom-amount input string into a positive integer, or
  * `null` when the input isn't one (empty, non-numeric, zero, negative,
  * fractional, or leading/trailing junk).
