@@ -223,7 +223,19 @@ struct BoardWizardTasksStepView: View {
                                 onTaskCreated(taskId, title, type)
                             },
                             onPendingCreated: onPendingCreated,
-                            onLibraryReloadRequested: onLibraryReloadRequested
+                            onLibraryReloadRequested: onLibraryReloadRequested,
+                            // Library-poll (owner decision 2026-07-21): the
+                            // same browsable+pending pool the compound
+                            // autocomplete + library sheet already use.
+                            // Matches are guaranteed unselected, so reusing
+                            // `toggleSelection` (add-only in this context)
+                            // is safe and keeps the Bug #85 pending-purge
+                            // semantics on any future deselect.
+                            libraryTasks: effectiveAllTasks,
+                            selectedIds: selectedTaskIds,
+                            onExistingTaskPicked: { task in
+                                toggleSelection(task.id)
+                            }
                         )
                     }
                     .padding(12)
