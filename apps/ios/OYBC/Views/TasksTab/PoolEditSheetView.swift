@@ -49,6 +49,10 @@ struct PoolEditSheetView: View {
     @State private var confirmingDelete = false
     @State private var busy = false
     @State private var errorMessage: String?
+    /// Presents the canonical full-type `NewTaskSheetView` (Normal / Counting
+    /// / Compound / Achievement) — replaces the old Normal-only quick-add
+    /// row so pool creation offers the same creator as every other surface.
+    @State private var showNewTaskSheet = false
 
     private var isEditMode: Bool { pool != nil }
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -127,6 +131,23 @@ struct PoolEditSheetView: View {
         // swipe-to-dismiss mid-save/delete would otherwise abandon the
         // sheet while a write is still in flight.
         .interactiveDismissDisabled(busy)
+        // "+ New task" — nested sheet presented from THIS view's own content
+        // so it stacks immediately on top of the pool sheet instead of
+        // queuing behind it (SwiftUI queues sibling `.sheet`s on one host;
+        // same fix as BoardPlayView's compoundChildDetailTaskId nested
+        // sheet). Immediate-persist (`onPendingCreated: nil` inside
+        // NewTaskSheetView) — the pool sheet is not a board wizard, so the
+        // created task is a real library task, not a wizard draft.
+        .sheet(isPresented: $showNewTaskSheet) {
+            NewTaskSheetView(
+                userId: userId,
+                onTaskCreated: { taskId, _, _ in
+                    if !poolTaskIds.contains(taskId) { poolTaskIds.append(taskId) }
+                },
+                onLibraryReloadRequested: { library.loadLibrary(userId: userId) },
+                taskLibrary: library.libraryTasks
+            )
+        }
     }
 
     // MARK: - Header
@@ -175,17 +196,9 @@ struct PoolEditSheetView: View {
             Text("ADD TASKS").font(.risoBody(11, .bold)).tracking(1.1).foregroundStyle(Color.risoMuted)
                 .padding(.top, 4)
 
-            RisoQuickAddRowView(
-                userId: userId,
-                defaultTimeframe: nil,
-                defaultStartDate: nil,
-                defaultEndDate: nil,
-                onTaskCreated: { taskId, _, _ in
-                    if !poolTaskIds.contains(taskId) { poolTaskIds.append(taskId) }
-                },
-                onPendingCreated: nil,
-                onLibraryReloadRequested: { library.loadLibrary(userId: userId) }
-            )
+            RisoButton(title: "+ New task", kind: .neutral, fullWidth: true) {
+                showNewTaskSheet = true
+            }
             .disabled(busy)
 
             libraryPickerToggle
