@@ -188,6 +188,7 @@
 		893DE653B6DD8D5826705284 /* AppleNonce.swift in Sources */ = {isa = PBXBuildFile; fileRef = 883F7DA1339B283615F3D7D3 /* AppleNonce.swift */; };
 		8967E907F1CD34716A106E0D /* LinkedCounterCaptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4264671AC3CD79751FF48640 /* LinkedCounterCaptionView.swift */; };
 		89726F46B3389A26D6BD0A9F /* TaskEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 690BB345FCCADB24822DAB7B /* TaskEvent.swift */; };
+		89836243839EF841C294BCB3 /* CounterLogAmount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3718CE6933B7906257063439 /* CounterLogAmount.swift */; };
 		8A50AFB2065146832C0D787E /* CounterMilestoneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA66CCEE20F4E9FCEF7D067 /* CounterMilestoneTests.swift */; };
 		8A71A65F7FD101728EDFEA0F /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C17DCB793B0A1C7A6A2519C /* AuthService.swift */; };
 		8B6A9DA5F42D67E7227653D4 /* RisoBoardStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */; };
@@ -438,6 +439,7 @@
 		3626155335AA5E2C10AD23BE /* AppDatabase+CompoundChildren.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+CompoundChildren.swift"; sourceTree = "<group>"; };
 		36BFCB077AA954687C6EFED5 /* AuthGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthGateView.swift; sourceTree = "<group>"; };
 		36EA507F7599B0592665136D /* TutorialGreenlogOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialGreenlogOverlay.swift; sourceTree = "<group>"; };
+		3718CE6933B7906257063439 /* CounterLogAmount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterLogAmount.swift; sourceTree = "<group>"; };
 		37CAB0C80A4529A0BC0F65F3 /* SquareEditTaskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareEditTaskSheet.swift; sourceTree = "<group>"; };
 		3A019CE553E070DCF2C4D253 /* RisoArrivalBannerSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoArrivalBannerSnapshotTests.swift; sourceTree = "<group>"; };
 		3B422216A7454DCF1674C7DE /* CounterName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterName.swift; sourceTree = "<group>"; };
@@ -682,7 +684,7 @@
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_2337646F-57A9-45CC-818B-999082F7447E" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_83AC0168-66DD-48C4-B53E-F72BF8D1E494" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1061,6 +1063,7 @@
 				1DB33D294A2926E5793E1FC6 /* BrowsableTasks.swift */,
 				2105A8784F87D62C29C28B7A /* CounterArrivals.swift */,
 				B3712CFA267080BC78DF53F4 /* CounterDailyTotals.swift */,
+				3718CE6933B7906257063439 /* CounterLogAmount.swift */,
 				5DA8A1C3733036A8098F453B /* CounterMilestone.swift */,
 				3B422216A7454DCF1674C7DE /* CounterName.swift */,
 				A0CB0EA87156513D6744FDB3 /* DateFormatting.swift */,
@@ -1250,10 +1253,10 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
-		"TEMP_8C0F336E-16B9-4593-9BEE-AAA3840B19A8" /* ios */ = {
+		"TEMP_DD472C7C-3DA7-47AF-BD2E-2D89666FBE27" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_2337646F-57A9-45CC-818B-999082F7447E" /* Signing.xcconfig */,
+				"TEMP_83AC0168-66DD-48C4-B53E-F72BF8D1E494" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1504,6 +1507,7 @@
 				982D33445D5B612C04045115 /* CounterArrivals.swift in Sources */,
 				73F170A613B065E17DE58E9C /* CounterDailyTotals.swift in Sources */,
 				9E6B3916C4CCBDB5F9186BAD /* CounterDetailView.swift in Sources */,
+				89836243839EF841C294BCB3 /* CounterLogAmount.swift in Sources */,
 				A8AF4B08A2BBC9B6848C87DB /* CounterLogToastView.swift in Sources */,
 				73483333626E98C1924C6D0E /* CounterMilestone.swift in Sources */,
 				E96130F162292C52CAF338F2 /* CounterName.swift in Sources */,
@@ -1774,7 +1778,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_2337646F-57A9-45CC-818B-999082F7447E" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_83AC0168-66DD-48C4-B53E-F72BF8D1E494" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1871,7 +1875,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_2337646F-57A9-45CC-818B-999082F7447E" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_83AC0168-66DD-48C4-B53E-F72BF8D1E494" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

@@ -15,14 +15,20 @@ export interface RisoArrivalBannerProps {
 
 /**
  * Gold arrival banner — the passive-completion "signature moment" (Shared
- * Counters P3). Shown on board-open when ≥1 shared-counter square filled in
- * from a log made elsewhere (Counter Detail / another board).
+ * Counters P3; copy tightened in Counters Refresh R3).
  *
- * Copy contract (verbatim, docs/SHARED_COUNTERS.md §P3):
- *   single:   "*{task name}* filled in here from your {counter name} counter
- *              — logged on another board · See every board it counts on ›"
- *   multiple: "**N squares** filled in from your counters — logged on other
- *              boards."
+ * Shown on board-open when ≥1 shared-counter square filled in from a log
+ * made elsewhere (Counter Detail / another board).
+ *
+ * Copy contract (pinned byte-exact, R3 board-play touchpoints):
+ *   single:   "{task name} filled in — you logged {counter name} elsewhere.
+ *              See every board ›"
+ *   multiple: "{N} squares filled in from your counters. Open counters ›"
+ *
+ * `taskName` is the SQUARE/task's own name (stays title-first — unaffected
+ * by R3); `counterName` is pair-derived (`formatCounterName`, stored-title
+ * fallback) per the R3 copy contract's counter-name rule — resolved by the
+ * caller (`useCounterArrivals`'s `counterDisplayName`).
  *
  * Riso gold surface with `--riso-ink-static` content (adaptive `--riso-ink`
  * would vanish on the light gold fill in dark mode — see
@@ -43,13 +49,13 @@ export function RisoArrivalBanner({
       <button type="button" className={styles.arrivalBody} onClick={onOpen}>
         {isSingle ? (
           <>
-            <em>{taskName}</em> filled in here from your {counterName} counter — logged on
-            another board <span className={styles.arrivalCta}>· See every board it counts on ›</span>
+            <em>{taskName}</em> filled in — you logged {counterName} elsewhere.{' '}
+            <span className={styles.arrivalCta}>See every board ›</span>
           </>
         ) : (
           <>
-            <strong>{squareCount} squares</strong> filled in from your counters — logged on other
-            boards.
+            <strong>{squareCount} squares</strong> filled in from your counters.{' '}
+            <span className={styles.arrivalCta}>Open counters ›</span>
           </>
         )}
       </button>

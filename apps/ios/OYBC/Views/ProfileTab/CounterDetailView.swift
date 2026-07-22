@@ -316,7 +316,7 @@ struct CounterDetailContent: View {
         self.deleteError = deleteError
         self.onLog = onLog
         self.onDeleteTap = onDeleteTap
-        _selectedAmount = State(initialValue: initialSelectedAmount ?? group.defaultLogAmount ?? 1)
+        _selectedAmount = State(initialValue: initialSelectedAmount ?? CounterLogAmount.initialChip(group.defaultLogAmount))
         _isCustomActive = State(initialValue: initialCustomActive)
     }
 
@@ -340,13 +340,15 @@ struct CounterDetailContent: View {
         /// `nil` marks the trailing custom "#" chip.
         let value: Int?
         let label: String
+
     }
 
     private var chips: [AmountChipOption] {
-        let defaultAmount = group.defaultLogAmount ?? 1
+        // FIXED presets (owner decision, 2026-07-21) — matches the handoff
+        // mock's literal "1 / 10 / 25 / #"; no dynamic "{default}" chip.
         return [
             AmountChipOption(value: 1, label: "1"),
-            AmountChipOption(value: defaultAmount, label: "\(defaultAmount)"),
+            AmountChipOption(value: 10, label: "10"),
             AmountChipOption(value: 25, label: "25"),
             AmountChipOption(value: nil, label: "#"),
         ]
@@ -355,18 +357,6 @@ struct CounterDetailContent: View {
     private var selectedChipIndex: Int? {
         if isCustomActive { return chips.count - 1 }
         return chips.firstIndex(where: { $0.value == selectedAmount })
-    }
-
-    /// Validates a raw custom-amount input string into a positive integer,
-    /// or `nil` when the input isn't one (empty, non-numeric, zero,
-    /// negative, fractional, or leading/trailing junk). Intentionally strict
-    /// (digits only on the trimmed string) — mirrors web's
-    /// `parseCustomLogAmount`.
-    private static func parseCustomLogAmount(_ raw: String) -> Int? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
-        guard let n = Int(trimmed), n > 0 else { return nil }
-        return n
     }
 
     // MARK: - Chip actions
@@ -383,7 +373,9 @@ struct CounterDetailContent: View {
     }
 
     private func confirmCustomInput() {
-        guard let parsed = Self.parseCustomLogAmount(customDraft) else { return }
+        // R3: validation extracted to `CounterLogAmount.parseCustom` so
+        // `RisoCountingStepperSheet`'s board-play "#" chip shares the same rule.
+        guard let parsed = CounterLogAmount.parseCustom(customDraft) else { return }
         selectedAmount = parsed
         isCustomActive = true
         customOpen = false
@@ -674,8 +666,8 @@ struct CounterDetailContent: View {
                 .padding(.horizontal, 14)
                 .background(Capsule().fill(Color.risoGold))
                 .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-                .disabled(Self.parseCustomLogAmount(customDraft) == nil)
-                .opacity(Self.parseCustomLogAmount(customDraft) == nil ? 0.5 : 1)
+                .disabled(CounterLogAmount.parseCustom(customDraft) == nil)
+                .opacity(CounterLogAmount.parseCustom(customDraft) == nil ? 0.5 : 1)
         }
     }
 

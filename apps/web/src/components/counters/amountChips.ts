@@ -30,13 +30,60 @@ export interface AmountChipOption {
  * @param defaultAmount The counter's current default log amount (positive
  *   integer; callers pass `group.defaultLogAmount ?? 1`).
  */
-export function buildAmountChipOptions(defaultAmount: number): AmountChipOption[] {
+export function buildAmountChipOptions(): AmountChipOption[] {
+  // FIXED presets (owner decision, 2026-07-21): no dynamic "{default}" chip —
+  // it collided with the fixed values (a fresh counter's default is 1) and
+  // read as a bug on device. The per-counter default still drives the plain
+  // board tap, the Hub "+ Log" pill, and what "#" persists; it just doesn't
+  // get its own chip. Matches the handoff mock's literal "1 / 10 / 25 / #".
   return [
     { value: 1, label: '1' },
-    { value: defaultAmount, label: String(defaultAmount) },
+    { value: 10, label: '10' },
     { value: 25, label: '25' },
     { value: null, label: '#' },
   ];
+}
+
+
+/**
+ * Builds the board-play square quick-action chip row (R3 — Counters Refresh
+ * board-play touchpoints): `1`, the counter's current default amount, and
+ * the custom "#" chip.
+ *
+ * Deliberately a 3-position row, unlike `buildAmountChipOptions`'s 4 (no
+ * fixed `25` chip) — the handoff spec's board-square mock shows only
+ * `1 / {default} / #` for the in-context quick actions on a shared counting
+ * square's detail modal / context menu; the full `1 / {default} / 25 / #`
+ * row stays exclusive to Counter Detail's Log card.
+ *
+ * @param defaultAmount The counter's current default log amount (positive
+ *   integer; callers pass the source task's `defaultLogAmount ?? 1`).
+ */
+export function buildBoardQuickAmountOptions(): AmountChipOption[] {
+  // FIXED signed presets (owner decision, 2026-07-21) — see
+  // buildAmountChipOptions; board row stays 3-position (no 25).
+  return [
+    { value: 1, label: '+1' },
+    { value: 10, label: '+10' },
+    { value: null, label: '#' },
+  ];
+}
+
+/** The fixed preset amounts backing both chip rows (excludes the custom "#"). */
+export const PRESET_LOG_AMOUNTS = [1, 10, 25] as const;
+
+/**
+ * The chip to pre-select when a picker opens: the counter's remembered
+ * `defaultLogAmount` when it happens to be a preset (so a habitual amount is
+ * one tap away), otherwise `10` — the fixed rows have no dynamic chip to
+ * carry an off-preset default, and a non-preset initial value would leave no
+ * chip highlighted. (The remembered default still drives the one-tap board
+ * paths — plain tap, Hub "+ Log" pill — independent of this.)
+ */
+export function initialChipAmount(defaultLogAmount: number | null | undefined): number {
+  return defaultLogAmount != null && (PRESET_LOG_AMOUNTS as readonly number[]).includes(defaultLogAmount)
+    ? defaultLogAmount
+    : 10;
 }
 
 /**

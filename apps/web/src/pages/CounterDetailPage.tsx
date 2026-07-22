@@ -15,7 +15,7 @@ import {
 } from '../db/operations/tasks';
 import { generateUUID } from '../db/utils';
 import { CounterDeleteConfirmDialog, CounterDetailTaskCard, CounterLogToast } from '../components/counters';
-import { buildAmountChipOptions, parseCustomLogAmount } from '../components/counters/amountChips';
+import { buildAmountChipOptions, initialChipAmount, parseCustomLogAmount } from '../components/counters/amountChips';
 import { RowContextMenu } from '../components/wizard/RowContextMenu';
 import { RisoSectionLabel } from '../components/riso';
 import profileStyles from './ProfilePage.module.css';
@@ -87,7 +87,7 @@ export function CounterDetailPage(): React.ReactElement {
     if (!group || !counterId) return;
     if (initializedForRef.current === counterId) return;
     initializedForRef.current = counterId;
-    setSelectedAmount(group.defaultLogAmount ?? 1);
+    setSelectedAmount(initialChipAmount(group.defaultLogAmount));
     setIsCustomActive(false);
     setCustomOpen(false);
     setCustomDraft('');
@@ -210,8 +210,7 @@ export function CounterDetailPage(): React.ReactElement {
   const inactiveTasks = group.tasks.filter((t) => !t.isActive);
   const lifetimeStr = group.lifetime.toLocaleString();
   const unitStr = group.unit ?? '';
-  const defaultAmount = group.defaultLogAmount ?? 1;
-  const chips = buildAmountChipOptions(defaultAmount);
+  const chips = buildAmountChipOptions();
   const selectedChipIndex = isCustomActive ? chips.length - 1 : chips.findIndex((c) => c.value === selectedAmount);
 
   const progress = counterMilestoneProgress(group.lifetime);

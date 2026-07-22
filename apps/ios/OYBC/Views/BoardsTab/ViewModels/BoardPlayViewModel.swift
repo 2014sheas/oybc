@@ -478,56 +478,83 @@ final class BoardPlayViewModel: ObservableObject {
         )
     }
 
-    /// Increments a counting task's `currentCount` by 1.
+    /// Resolves the shared-counter SOURCE task id for `task`, or `nil` when
+    /// it doesn't participate in any shared-counter group. R3: extracted out
+    /// of `handleCountingTap`/`handleCountingDecrement` so `BoardPlayView`
+    /// (chip visibility in `RisoCountingStepperSheet`, the context-menu
+    /// default amount, `sharedStepperHint`) shares the exact same detection
+    /// instead of re-deriving it — three call sites were re-implementing
+    /// this before R3.
     ///
-    /// Phase 3 — Shared Counters routing:
-    ///  (a) Linked derived counter (`task.sharedCounterId != nil`): tap increments
-    ///      the source task and propagates to all sibling linked tasks.
-    ///  (b) Source counter (`task.id` appears as a `sharedCounterId` on any task
-    ///      in `taskMap`): tap increments source + propagates to all linked tasks.
+    /// - (a) Linked derived counter: `task.sharedCounterId != nil` → that id.
+    /// - (b) Source counter: `task.id` appears as a `sharedCounterId` on any
+    ///   other live task, OR it's a promoted zero-link counter (P5:
+    ///   `isCounter == true`, no members yet) → `task.id`.
+    /// - (c) Neither → `nil` (standalone counter).
+    ///
+    /// Callers are responsible for gating on `task.type == .counting` first
+    /// — this helper doesn't check the type (mirrors the pre-existing
+    /// call-site convention).
+    func sharedCounterSourceId(for task: Task) -> String? {
+        if let linkedSourceId = task.sharedCounterId { return linkedSourceId }
+        if task.isCounter == true { return task.id }
+        if allTasks.contains(where: { $0.sharedCounterId == task.id && !$0.isDeleted }) {
+            return task.id
+        }
+        return nil
+    }
+
+    /// Increments a counting task by `amount` (default 1, preserving the
+    /// pre-R3 tap-equals-+1 behavior for every existing call site).
+    ///
+    /// Phase 3 — Shared Counters routing (`sharedCounterSourceId(for:)`):
+    ///  (a)/(b) Shared counter (source or linked): routes through
+    ///      `runSharedCounterIncrement`, which enforces the overshoot (no
+    ///      high-end clamp) and one-way-latch invariants inside a single
+    ///      GRDB write transaction.
     ///  (c) Standalone counter (no shared link): falls through to the legacy
-    ///      `runOrchestration` path.
-    ///
-    /// All shared-counter paths go through `incrementSharedCounter`, which
-    /// enforces the overshoot (no high-end clamp) and one-way-latch invariants
-    /// inside a single GRDB write transaction.
+    ///      `runOrchestration` path, `amount`-aware since R3 too (still
+    ///      always 1 from every current standalone call site — the R3
+    ///      amount-chip UI is shared-counter-squares-only per the copy
+    ///      contract).
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
     ///   - task: The `Task` providing `maxCount` and shared-counter fields.
-    func handleCountingTap(boardTask: BoardTask, task: Task) {
+    ///   - amount: Amount to log. Default 1 preserves prior behavior.
+    ///   - persistAsDefault: R3 — when `true`, the amount just used also
+    ///     becomes the shared counter's new `defaultLogAmount` (mirrors R2
+    ///     Detail). Only an explicit custom "#" entry passes `true` — one-tap
+    ///     chips (+1 / +default) and every pre-R3 call site pass `false` so a
+    ///     quick nudge never silently overwrites the user's preference.
+    func handleCountingTap(boardTask: BoardTask, task: Task, amount: Int = 1, persistAsDefault: Bool = false) {
         guard !isProcessing else { return }
 
-        // Detect whether this task participates in a shared-counter relationship.
-        if let sourceId = task.sharedCounterId {
-            // (a) Linked derived counter — increment the source.
-            // Resolve the source task title for the credit toast copy.
-            let sourceName = taskMap[sourceId]?.title ?? task.title
-            runSharedCounterIncrement(sourceTaskId: sourceId, counterName: sourceName)
+        if let sourceId = sharedCounterSourceId(for: task) {
+            let sourceTask = taskMap[sourceId]
+            let resolvedName = Self.counterDisplayName(sourceTask)
+            let counterName = resolvedName.isEmpty ? task.title : resolvedName
+            let unit = sourceTask?.unit ?? ""
+            runSharedCounterIncrement(
+                sourceTaskId: sourceId,
+                counterName: counterName,
+                unit: unit,
+                amount: amount,
+                persistAsDefault: persistAsDefault
+            )
             return
         }
 
-        // (b) Source counter — check if any task in the workspace links to this
-        // task, OR it's a promoted zero-link counter (P5: `isCounter == true`,
-        // no members yet — still routes through the shared-counter engine so
-        // its tap lands on the global lifetime total, not a per-board window).
-        let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
-            || task.isCounter == true
-        if isSource {
-            runSharedCounterIncrement(sourceTaskId: task.id, counterName: task.title)
-            return
-        }
-
-        // (c) Standalone counter — Windowed Completion. The grid shows the
-        //     WINDOWED count; +1 targets `windowedCount + 1`. NO high-end clamp
-        //     per feedback_counter_overshoot_is_valid: overshoot is intentional.
-        //     The DB layer appends a +1 increment event scoped to the board's
-        //     window.
+        // Standalone counter — Windowed Completion. The grid shows the
+        // WINDOWED count; `+amount` targets `windowedCount + amount`. NO
+        // high-end clamp per feedback_counter_overshoot_is_valid: overshoot
+        // is intentional. The DB layer appends a +amount increment event
+        // scoped to the board's window.
         guard task.maxCount != nil else { return }
         let windowed = windowedState(forTaskId: boardTask.taskId)
         runOrchestration(
             taskId: boardTask.taskId,
-            intent: .setWindowedCount(windowed.count + 1),
+            intent: .setWindowedCount(windowed.count + amount),
             boardTask: boardTask
         )
     }
@@ -541,8 +568,20 @@ final class BoardPlayViewModel: ObservableObject {
     ///
     /// - Parameters:
     ///   - sourceTaskId: The source (template) task id to increment.
-    ///   - counterName: Display name used in the credit toast copy.
-    private func runSharedCounterIncrement(sourceTaskId: String, counterName: String = "") {
+    ///   - counterName: Display name used in the credit toast copy (R3:
+    ///     pair-derived, resolved by the caller — never raw `task.title`).
+    ///   - unit: The counter's unit noun, threaded into the credit toast
+    ///     payload for the unified `CounterLogToastView`.
+    ///   - amount: Amount to log (R3; default 1 preserves prior behavior).
+    ///   - persistAsDefault: R3 — forwarded to `setCounterDefaultLogAmount`
+    ///     after a successful log; only `true` for an explicit custom entry.
+    private func runSharedCounterIncrement(
+        sourceTaskId: String,
+        counterName: String = "",
+        unit: String = "",
+        amount: Int = 1,
+        persistAsDefault: Bool = false
+    ) {
         guard !isProcessing else { return }
         isProcessing = true
         let currentBoardId = board?.id
@@ -556,7 +595,14 @@ final class BoardPlayViewModel: ObservableObject {
                     try? database.read { db in try Board.fetchOne(db, key: id) }
                 }
 
-                let creditResult = try database.incrementSharedCounter(sourceTaskId: sourceTaskId)
+                let creditResult = try database.incrementSharedCounter(sourceTaskId: sourceTaskId, by: amount)
+
+                // R3 — the amount just used becomes the new default ONLY for an
+                // explicit custom "#" entry (Global Constraints: one-tap chips
+                // never overwrite the counter's default). No-op if unchanged.
+                if persistAsDefault {
+                    try? database.setCounterDefaultLogAmount(sourceTaskId: sourceTaskId, amount: amount)
+                }
 
                 // Re-fetch the board after the write to detect bingo/greenlog changes.
                 let boardAfter: Board? = currentBoardId.flatMap { id in
@@ -583,10 +629,18 @@ final class BoardPlayViewModel: ObservableObject {
                     }
                 }
 
-                // P2: Build credit toast for OTHER boards that changed.
+                // P2/R3: Build the credited toast for OTHER boards that changed.
                 let otherBoards = creditResult.affectedBoards.filter { $0.boardId != currentBoardId }
-                let creditText: String? = otherBoards.isEmpty ? nil :
-                    self.sharedCreditToastText(counterName: counterName, otherBoards: otherBoards, isIncrement: true)
+                let creditPayload: SharedCounterCreditToastPayload? = otherBoards.isEmpty ? nil :
+                    SharedCounterCreditToastPayload(
+                        sourceTaskId: sourceTaskId,
+                        amount: amount,
+                        unit: unit,
+                        isIncrement: true,
+                        message: self.sharedCreditToastText(
+                            counterName: counterName, amount: amount, otherBoards: otherBoards, isIncrement: true
+                        )
+                    )
 
                 await MainActor.run {
                     self.isProcessing = false
@@ -595,7 +649,7 @@ final class BoardPlayViewModel: ObservableObject {
                         self.bingoMessage = msg
                         self.scheduleBingoMessageDismiss(msg)
                     }
-                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditText)
+                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
                 }
             } catch {
                 print("⚠️ BoardPlayView shared-counter increment error: \(error)")
@@ -612,8 +666,24 @@ final class BoardPlayViewModel: ObservableObject {
     ///
     /// - Parameters:
     ///   - sourceTaskId: The source (template) task id to decrement.
-    ///   - counterName: Display name used in the credit toast copy.
-    private func runSharedCounterDecrement(sourceTaskId: String, counterName: String = "") {
+    ///   - counterName: Display name used in the credit toast copy (R3:
+    ///     pair-derived, resolved by the caller — never raw `task.title`).
+    ///   - unit: The counter's unit noun, threaded into the credit toast payload.
+    ///   - amount: Amount to remove (R3; default 1 preserves prior behavior).
+    ///     The engine clamps at 0 — the toast/Undo use the CLAMPED
+    ///     `effectiveDelta`, not the requested `amount` (Global Constraints:
+    ///     the toast's delta must match what Undo will reverse).
+    ///   - persistAsDefault: R3 — forwarded to `setCounterDefaultLogAmount`
+    ///     using the REQUESTED `amount` (the user's chosen preference, even
+    ///     if the write itself got clamped) after a successful log; only
+    ///     `true` for an explicit custom entry.
+    private func runSharedCounterDecrement(
+        sourceTaskId: String,
+        counterName: String = "",
+        unit: String = "",
+        amount: Int = 1,
+        persistAsDefault: Bool = false
+    ) {
         guard !isProcessing else { return }
         isProcessing = true
         let currentBoardId = board?.id
@@ -622,24 +692,39 @@ final class BoardPlayViewModel: ObservableObject {
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             do {
-                let decrementResult = try database.decrementSharedCounter(sourceTaskId: sourceTaskId)
+                let decrementResult = try database.decrementSharedCounter(sourceTaskId: sourceTaskId, by: amount)
                 guard decrementResult.effectiveDelta > 0 else {
                     // No-op — source was already at 0; nothing to show.
                     await MainActor.run { self.isProcessing = false }
                     return
                 }
 
+                if persistAsDefault {
+                    try? database.setCounterDefaultLogAmount(sourceTaskId: sourceTaskId, amount: amount)
+                }
+
                 // No bingo-state-change toast on decrement: the one-way task
                 // latch means completion can't regress, so bingo lines can't be
                 // lost via a decrement (unlike the increment path).
                 let otherBoards = decrementResult.affectedBoards.filter { $0.boardId != currentBoardId }
-                let creditText: String? = otherBoards.isEmpty ? nil :
-                    self.sharedCreditToastText(counterName: counterName, otherBoards: otherBoards, isIncrement: false)
+                let creditPayload: SharedCounterCreditToastPayload? = otherBoards.isEmpty ? nil :
+                    SharedCounterCreditToastPayload(
+                        sourceTaskId: sourceTaskId,
+                        amount: decrementResult.effectiveDelta,
+                        unit: unit,
+                        isIncrement: false,
+                        message: self.sharedCreditToastText(
+                            counterName: counterName,
+                            amount: decrementResult.effectiveDelta,
+                            otherBoards: otherBoards,
+                            isIncrement: false
+                        )
+                    )
 
                 await MainActor.run {
                     self.isProcessing = false
                     self.reload()
-                    self.emitFlash(risoNotification: nil, creditToast: creditText)
+                    self.emitFlash(risoNotification: nil, creditToast: creditPayload)
                 }
             } catch {
                 print("⚠️ BoardPlayView shared-counter decrement error: \(error)")
@@ -650,40 +735,66 @@ final class BoardPlayViewModel: ObservableObject {
         }
     }
 
-    /// Decrements a counting task's `currentCount` by 1.
+    /// Reverses the SOURCE counter's last log entry (`undoLastCounterLog`) —
+    /// wired to the credited toast's Undo pill (R3 board-play touchpoints).
+    /// Mirrors `CounterDetailView.handleUndo`: runs the write off-main, then
+    /// reloads on the main actor. Reverses the counter's LATEST live entry
+    /// at tap time — if a second log landed elsewhere during the toast
+    /// window, THAT entry is reversed (not a no-op, and not necessarily the
+    /// displayed one); accepted single-user race, same semantics as R2's
+    /// Hub/Detail Undo (docs/SHARED_COUNTERS.md §R3) — matches
+    /// `undoLastCounterLog`'s own no-op contract.
+    ///
+    /// - Parameter sourceTaskId: The counter's source task id (the toast's
+    ///   `CreditToastState.sourceTaskId` on the view side).
+    func undoSharedCounterLog(sourceTaskId: String) {
+        let database = self.database
+        _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
+            _ = try? database.undoLastCounterLog(sourceTaskId: sourceTaskId)
+            await MainActor.run {
+                self?.reload()
+            }
+        }
+    }
+
+    /// Decrements a counting task by `amount` (default 1, preserving the
+    /// pre-R3 tap-equals-−1 behavior for every existing call site).
     /// Routes shared-counter tasks (source or linked) through
     /// `runSharedCounterDecrement`; standalone tasks use the legacy orchestration.
     ///
     /// - Parameters:
     ///   - boardTask: The counting task's `BoardTask` record.
     ///   - task: The `Task` providing current state.
-    func handleCountingDecrement(boardTask: BoardTask, task: Task) {
+    ///   - amount: Amount to remove. Default 1 preserves prior behavior.
+    ///   - persistAsDefault: R3 — see `handleCountingTap`.
+    func handleCountingDecrement(boardTask: BoardTask, task: Task, amount: Int = 1, persistAsDefault: Bool = false) {
         guard !isProcessing else { return }
 
-        // Shared-counter path: same detection as handleCountingTap.
-        if let sourceId = task.sharedCounterId {
-            runSharedCounterDecrement(sourceTaskId: sourceId, counterName: task.title)
-            return
-        }
-        // (b) Source counter — same detection as handleCountingTap, including
-        // the P5 zero-link `isCounter` branch.
-        let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
-            || task.isCounter == true
-        if isSource {
-            runSharedCounterDecrement(sourceTaskId: task.id, counterName: task.title)
+        if let sourceId = sharedCounterSourceId(for: task) {
+            let sourceTask = taskMap[sourceId]
+            let resolvedName = Self.counterDisplayName(sourceTask)
+            let counterName = resolvedName.isEmpty ? task.title : resolvedName
+            let unit = sourceTask?.unit ?? ""
+            runSharedCounterDecrement(
+                sourceTaskId: sourceId,
+                counterName: counterName,
+                unit: unit,
+                amount: amount,
+                persistAsDefault: persistAsDefault
+            )
             return
         }
 
-        // Standalone counter — Windowed Completion. Target `windowedCount - 1`
-        // (floored at 0); the DB layer appends a gated negative-delta increment
-        // event scoped to the board's window. isCompleted re-derives from the
-        // windowed sum (a windowed count below maxCount is no longer complete for
-        // this window — the lifetime latch no longer applies to standalone
-        // windowed counters, matching web).
+        // Standalone counter — Windowed Completion. Target `windowedCount -
+        // amount` (floored at 0); the DB layer appends a gated negative-delta
+        // increment event scoped to the board's window. isCompleted
+        // re-derives from the windowed sum (a windowed count below maxCount
+        // is no longer complete for this window — the lifetime latch no
+        // longer applies to standalone windowed counters, matching web).
         let windowed = windowedState(forTaskId: boardTask.taskId)
         runOrchestration(
             taskId: boardTask.taskId,
-            intent: .setWindowedCount(max(windowed.count - 1, 0)),
+            intent: .setWindowedCount(max(windowed.count - amount, 0)),
             boardTask: boardTask
         )
     }
@@ -966,36 +1077,44 @@ final class BoardPlayViewModel: ObservableObject {
 
     // MARK: - Flash + credit-toast helpers (B2-I2)
 
-    /// Builds the credit toast copy for an increment or decrement.
+    /// Builds the credited toast copy for an increment or decrement (R3
+    /// board-play touchpoints — pinned copy contract, byte-identical to web):
     ///
-    /// Increment: `"{name} logged — also counted on {A}, {B}."`
-    /// Decrement:  `"{name} removed — also taken off {A}, {B}."`
+    /// Increment: `"+{N} {counterName} — also counted on {board list}."`
+    /// Decrement:  `"−{N} {counterName} — also removed from {board list}."`
+    ///
+    /// The board-list join (comma-separated, unchanged from the pre-R3 copy)
+    /// is intentionally NOT touched here — the copy contract pins the verb
+    /// wording + sign + amount + counter-name only.
     ///
     /// Pure (reads only its parameters) so it is `nonisolated` — the shared-
     /// counter handlers build the copy on their background task before hopping
     /// to the main actor.
     ///
     /// - Parameters:
-    ///   - counterName: The counter's display name (source task title).
+    ///   - counterName: The counter's display name — pair-derived
+    ///     (`Self.counterDisplayName`), never raw `task.title`.
+    ///   - amount: The amount just logged/removed (matches what Undo will reverse).
     ///   - otherBoards: Boards OTHER than the current board that were credited.
     ///   - isIncrement: `true` for increment, `false` for decrement.
     private nonisolated func sharedCreditToastText(
         counterName: String,
+        amount: Int,
         otherBoards: [AppDatabase.AffectedBoard],
         isIncrement: Bool
     ) -> String {
         let boardNames = otherBoards.map { $0.boardName }.joined(separator: ", ")
         if isIncrement {
-            return "\(counterName) logged — also counted on \(boardNames)."
+            return "+\(amount) \(counterName) — also counted on \(boardNames)."
         } else {
-            return "\(counterName) removed — also taken off \(boardNames)."
+            return "−\(amount) \(counterName) — also removed from \(boardNames)."
         }
     }
 
     /// Publishes a one-shot `flashEvent` the view observes to fire its
-    /// `triggerRisoNotification(from:)` / `triggerCreditToast(text:)`
+    /// `triggerRisoNotification(from:)` / `triggerCreditToast(payload:)`
     /// animations. No-op when both payloads are nil.
-    private func emitFlash(risoNotification: String?, creditToast: String?) {
+    private func emitFlash(risoNotification: String?, creditToast: SharedCounterCreditToastPayload?) {
         guard risoNotification != nil || creditToast != nil else { return }
         flashEventCounter += 1
         flashEvent = BoardPlayFlashEvent(
@@ -1484,16 +1603,34 @@ final class BoardPlayViewModel: ObservableObject {
         return out
     }
 
-    /// The counter's display name — the source task's title, or the
-    /// auto-generated "Action N unit" for a titleless counting task. Matches
-    /// the label the grid + Counter Detail show.
+    /// The counter's display name — pair-derived via
+    /// `CounterName.formatCounterName(action, unit)`, falling back to the
+    /// source task's stored title only when the pair can't produce one
+    /// (R3 board-play touchpoints copy contract: NEVER raw `task.title` for
+    /// the COUNTER name — matches `SharedCounterGroups.swift`'s `name`
+    /// derivation and the Counters Hub/Detail labels verbatim).
     private static func counterDisplayName(_ source: Task?) -> String {
         guard let source = source else { return "" }
-        if !source.title.trimmingCharacters(in: .whitespaces).isEmpty { return source.title }
+        let derived = CounterName.formatCounterName(action: source.action, unit: source.unit)
+        return derived.isEmpty ? source.title : derived
+    }
+
+    /// A task's own SQUARE display name — its stored title (e.g. "Do 200
+    /// push-ups"), never the pair-derived counter name. R3 copy contract:
+    /// the arrival banner's single-square `{taskTitle}` names the SQUARE,
+    /// distinct from `counterDisplayName`'s counter reference — see
+    /// `detectArrivalsAndSeed`'s `singleTaskName`. Falls back to
+    /// `TaskTitle.generateCounterTaskTitle` only when the stored title is
+    /// blank (defensive — every counting task's title is stamped at
+    /// creation, so this should not normally trigger).
+    private static func taskSquareDisplayName(_ task: Task?) -> String {
+        guard let task = task else { return "" }
+        let trimmed = task.title.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { return trimmed }
         return TaskTitle.generateCounterTaskTitle(
-            action: source.action ?? "",
-            maxCount: source.maxCount,
-            unit: source.unit ?? ""
+            action: task.action ?? "",
+            maxCount: task.maxCount,
+            unit: task.unit ?? ""
         )
     }
 
@@ -1513,12 +1650,17 @@ final class BoardPlayViewModel: ObservableObject {
 
         guard result.totalArrivedSquares > 0 else { return }
 
-        // Resolve the single-square copy's task name (the display label, so a
-        // titleless counting task still reads as "single") from the one arrived
-        // square.
+        // Resolve the single-square copy's TASK name (the SQUARE's own
+        // title, e.g. "Do 200 push-ups") from the one arrived square. R3
+        // copy contract: this is deliberately NOT `counterDisplayName` (that
+        // function is pair-derived and reserved for the COUNTER reference —
+        // see `CounterArrivalEvent.singleTaskName`'s doc). Falls back to the
+        // pair-derived name only in the defensive case of a blank stored
+        // title (should not happen — `TaskTitle.generateCounterTaskTitle`
+        // stamps the title at creation).
         let map = taskMap
         let singleTaskName: String? = result.totalArrivedSquares == 1
-            ? result.arrivedTaskIds.first.flatMap { id in map[id].map { Self.counterDisplayName($0) } }
+            ? result.arrivedTaskIds.first.flatMap { id in map[id].map { Self.taskSquareDisplayName($0) } }
             : nil
 
         arrivalEventCounter += 1
@@ -1545,13 +1687,33 @@ final class BoardPlayViewModel: ObservableObject {
     }
 }
 
+// MARK: - SharedCounterCreditToastPayload
+
+/// The credited toast's copy + the data its Undo pill needs (R3 board-play
+/// touchpoints — unifies the board-play ripple toast with R2's
+/// `CounterLogToastView`, which now renders arbitrary `message` text with an
+/// Undo affordance instead of only its own verb-derived copy).
+struct SharedCounterCreditToastPayload: Equatable {
+    /// The shared counter's SOURCE task id — `Undo` reverses THIS counter's
+    /// last log entry via `AppDatabase.undoLastCounterLog(sourceTaskId:)`,
+    /// regardless of which board square triggered the toast.
+    let sourceTaskId: String
+    /// The amount just logged/removed — matches what Undo will reverse
+    /// (decrement uses the CLAMPED `effectiveDelta`, not the requested amount).
+    let amount: Int
+    let unit: String
+    let isIncrement: Bool
+    /// Full pinned copy contract string — see `sharedCreditToastText`.
+    let message: String
+}
+
 // MARK: - BoardPlayFlashEvent
 
 /// One-shot UI-effect signal published by `BoardPlayViewModel` after an
 /// interaction write completes. The write itself + all domain-state mutation
 /// (board stats, sync rows, the `@Published` arrays) happen in the view model;
 /// this carries ONLY the residual view-side animation triggers the view owns
-/// (`triggerRisoNotification(from:)` + `triggerCreditToast(text:)`), which
+/// (`triggerRisoNotification(from:)` + `triggerCreditToast(payload:)`), which
 /// depend on view `@State` / `AuthService` and can't move.
 ///
 /// A single event can carry BOTH a bingo/GREENLOG notification and a
@@ -1565,9 +1727,9 @@ struct BoardPlayFlashEvent: Identifiable, Equatable {
     /// Message for the view's `triggerRisoNotification(from:)` (bingo toast /
     /// GREENLOG overlay). Nil ⇒ the interaction produced no bingo-state change.
     let risoNotification: String?
-    /// Text for the view's `triggerCreditToast(text:)` (shared-counter ripple).
-    /// Nil ⇒ the ripple reached no OTHER board.
-    let creditToast: String?
+    /// Payload for the view's `triggerCreditToast(payload:)` (shared-counter
+    /// ripple). Nil ⇒ the ripple reached no OTHER board.
+    let creditToast: SharedCounterCreditToastPayload?
 }
 
 // MARK: - BoardPlayEditEvent

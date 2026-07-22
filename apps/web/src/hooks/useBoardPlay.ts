@@ -14,7 +14,12 @@ import {
 import { db } from '../db/internal';
 import { taskToSquareData, taskToSquareState, type SquareWindowContext } from '../db/adapters';
 import { handleTaskCompletion } from '../db/operations/orchestration';
-import { decrementSharedCounter, incrementSharedCounter } from '../db/operations/tasks';
+import {
+  decrementSharedCounter,
+  incrementSharedCounter,
+  setCounterDefaultLogAmount,
+} from '../db/operations/tasks';
+import { resolveCreditedCounterName } from '../components/boardPlaySharedCounterUtils';
 import {
   updateBoardTaskAndCascade,
   removeBoardTaskFromBoard,
@@ -63,10 +68,23 @@ export interface SquareDraftCell {
  *  new bingo to the toast; only the residual cases reach the transient flash. */
 export type FlashVariant = 'bingo' | 'greenlog';
 
-/** Credited-toast payload shown after a shared-counter ripple to OTHER boards. */
+/**
+ * Credited-toast payload shown after a shared-counter log ripples to OTHER
+ * boards (R3 — amount-aware + Undo; `sourceTaskId` lets the toast's Undo
+ * pill call `undoLastCounterLog`, which reverses the counter's LATEST live
+ * entry at tap time — normally the one this toast displays, but a log from
+ * another surface/device during the toast window would be reversed instead;
+ * accepted single-user race, same semantics as R2's Hub/Detail Undo — see
+ * docs/SHARED_COUNTERS.md §R3).
+ */
 export interface CreditedToast {
-  name: string;
-  delta: number;
+  /** The shared counter's source task id — what `undoLastCounterLog` reverses. */
+  sourceTaskId: string;
+  /** Pair-derived counter name (`resolveCreditedCounterName`), never raw `task.title`. */
+  counterName: string;
+  /** The amount actually applied (for a decrement, the clamped `effectiveDelta`) — matches what Undo will reverse. */
+  amount: number;
+  verb: 'logged' | 'removed';
   boardNames: string[];
   key: number;
 }
@@ -157,8 +175,27 @@ export interface UseBoardPlayResult {
     boardTaskId: string,
     updates: { isCompleted?: boolean; currentCount?: number; completedStepIds?: string[] },
   ) => Promise<void>;
-  handleSharedCounterIncrement: (sourceTaskId: string) => Promise<void>;
-  handleSharedCounterDecrement: (sourceTaskId: string) => Promise<void>;
+  /**
+   * @param sourceTaskId - The shared counter's source task id.
+   * @param amount - Amount to log (default 1 — back-compat for the plain
+   *   grid tap on a standalone counting task's shared-counter path). R3
+   *   callers (grid tap / detail modal / context menu) pass the resolved
+   *   amount explicitly — see `resolveSharedCounterDefaultAmount`.
+   * @param persistAsDefault - When true, also persists `amount` as the
+   *   counter's new `defaultLogAmount` (R3: only an explicit custom `#`
+   *   amount persists — one-tap chips/plain-tap paths pass `false`).
+   */
+  handleSharedCounterIncrement: (
+    sourceTaskId: string,
+    amount?: number,
+    persistAsDefault?: boolean,
+  ) => Promise<void>;
+  /** Mirrors `handleSharedCounterIncrement` — see its param docs. */
+  handleSharedCounterDecrement: (
+    sourceTaskId: string,
+    amount?: number,
+    persistAsDefault?: boolean,
+  ) => Promise<void>;
   handleCompoundChildToggle: (childTaskId: string) => Promise<void>;
   // ── Board-task write methods (from the play-mode swap/remove/add modals) ──
   swapBoardTask: (boardTaskId: string, newTaskId: string) => Promise<void>;
@@ -577,15 +614,25 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    * transaction and compare stats against the pre-increment snapshot.
    * Flash is best-effort — a query failure doesn't undo the write.
    *
+   * R3 — amount-aware: `amount` (default 1) is the actual units logged;
+   * when `persistAsDefault` is set, the amount also becomes the counter's
+   * new `defaultLogAmount` (custom "#" amounts only — see the param docs
+   * on `UseBoardPlayResult.handleSharedCounterIncrement`).
+   *
    * @param sourceTaskId - The source (template) task id to increment.
+   * @param amount - Units to log (default 1).
+   * @param persistAsDefault - Persist `amount` as the new default (default false).
    */
   const handleSharedCounterIncrement = useCallback(
-    async (sourceTaskId: string): Promise<void> => {
+    async (sourceTaskId: string, amount = 1, persistAsDefault = false): Promise<void> => {
       if (playLocked) return;
       try {
         // Capture the pre-increment board stats for flash comparison.
         const boardBefore = await db.boards.get(boardId);
-        const { affectedBoards } = await incrementSharedCounter(sourceTaskId);
+        const { affectedBoards } = await incrementSharedCounter(sourceTaskId, amount);
+        if (persistAsDefault) {
+          await setCounterDefaultLogAmount(sourceTaskId, amount);
+        }
         // Re-fetch to get post-increment board state.
         const boardAfter = await db.boards.get(boardId);
         if (!boardBefore || !boardAfter) return;
@@ -615,14 +662,12 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         // Credited toast: show when the increment rippled to OTHER boards.
         const otherBoards = affectedBoards.filter((b) => b.boardId !== boardId);
         if (otherBoards.length > 0) {
-          const sourceTask = taskMap[sourceTaskId];
-          const counterName = sourceTask
-            ? (sourceTask.title?.trim() ||
-               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount, sourceTask.unit ?? ''))
-            : '';
+          const counterName = resolveCreditedCounterName(taskMap[sourceTaskId]);
           onCreditedToast({
-            name: counterName,
-            delta: 1,
+            sourceTaskId,
+            counterName,
+            amount,
+            verb: 'logged',
             boardNames: otherBoards.map((b) => b.boardName),
             key: Date.now(),
           });
@@ -640,27 +685,35 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    * given source task id. Mirrors handleSharedCounterIncrement; the engine
    * clamps to 0 internally so this is always safe to call.
    *
+   * R3 — amount-aware: `amount` (default 1) is the amount requested; the
+   * toast (and `persistAsDefault`, when set) uses `effectiveDelta` — the
+   * actually-removed amount after the engine's clamp-at-0 — so the toast's
+   * displayed delta always matches what `undoLastCounterLog` will reverse.
+   *
    * @param sourceTaskId - The source task id (same rules as increment).
+   * @param amount - Units requested to remove (default 1).
+   * @param persistAsDefault - Persist `amount` as the new default (default false).
    */
   const handleSharedCounterDecrement = useCallback(
-    async (sourceTaskId: string): Promise<void> => {
+    async (sourceTaskId: string, amount = 1, persistAsDefault = false): Promise<void> => {
       if (playLocked) return;
       try {
-        const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId);
+        const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId, amount);
         // No-op: nothing changed (count was already 0).
         if (effectiveDelta === 0) return;
+        if (persistAsDefault) {
+          await setCounterDefaultLogAmount(sourceTaskId, amount);
+        }
 
         // Credited toast: show when the decrement rippled to OTHER boards.
         const otherBoards = affectedBoards.filter((b) => b.boardId !== boardId);
         if (otherBoards.length > 0) {
-          const sourceTask = taskMap[sourceTaskId];
-          const counterName = sourceTask
-            ? (sourceTask.title?.trim() ||
-               generateCounterTaskTitle(sourceTask.action ?? '', sourceTask.maxCount, sourceTask.unit ?? ''))
-            : '';
+          const counterName = resolveCreditedCounterName(taskMap[sourceTaskId]);
           onCreditedToast({
-            name: counterName,
-            delta: -effectiveDelta,
+            sourceTaskId,
+            counterName,
+            amount: effectiveDelta,
+            verb: 'removed',
             boardNames: otherBoards.map((b) => b.boardName),
             key: Date.now(),
           });

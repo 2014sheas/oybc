@@ -3,7 +3,7 @@ import {
   TaskType,
   deriveDisplayedCount,
   detectCounterArrivals,
-  generateCounterTaskTitle,
+  formatCounterName,
   snapshotCounterSquares,
   type ArrivalSquare,
   type ArrivedCounter,
@@ -26,14 +26,18 @@ export interface BuildArrivalSquaresInput {
 }
 
 /**
- * Resolve a counter's display name from its source task — the title, or the
- * auto-generated "Action N unit" for a titleless counting task. Matches the
- * label the board grid + Counter Detail show, so the banner copy is consistent.
+ * Resolve a counter's display name from its source task — pair-derived via
+ * `formatCounterName(action, unit)`, falling back to the stored title when
+ * the pair is empty (Counters Refresh R3 copy contract: NEVER raw
+ * `task.title` alone as the primary source for a COUNTER name; matches
+ * `sharedCounterGroups.ts` / `linkableCounter.ts`'s established fallback
+ * order). Feeds the arrival banner's `{counterName}` — the banner's
+ * `{taskName}` stays title-first (the SQUARE/task's own name, resolved
+ * separately by the caller) and is unaffected by this switch.
  */
 function counterDisplayName(source: Task | undefined): string {
   if (!source) return '';
-  if (source.title && source.title.trim()) return source.title;
-  return generateCounterTaskTitle(source.action ?? '', source.maxCount, source.unit ?? '');
+  return formatCounterName(source.action, source.unit) || source.title || '';
 }
 
 /**

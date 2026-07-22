@@ -4,11 +4,14 @@ import SwiftUI
 /// Counters P3). Shown on board-open when ≥1 shared-counter square filled in
 /// from a log made elsewhere (Counter Detail / another board).
 ///
-/// Copy contract (verbatim, docs/SHARED_COUNTERS.md §P3):
-///   single:   "*{task name}* filled in here from your {counter name} counter
-///              — logged on another board · See every board it counts on ›"
-///   multiple: "**N squares** filled in from your counters — logged on other
-///              boards."
+/// Copy contract (R3 board-play touchpoints — pinned byte-identical to web):
+///   single:   "{taskTitle} filled in — you logged {counterName} elsewhere.
+///              See every board ›"
+///   multiple: "{K} squares filled in from your counters. Open counters ›"
+///
+/// `taskName` still names the SQUARE/task (e.g. "Do 200 push-ups"); only the
+/// counter reference (`counterName`) switched to the pair-derived name — see
+/// `BoardPlayViewModel.counterDisplayName`.
 ///
 /// Riso gold surface with `Color.risoInkStatic` content — plain `risoInk`
 /// flips to cream in dark mode and would vanish on the light gold fill
@@ -35,11 +38,12 @@ struct RisoArrivalBanner: View {
     private var bannerText: Text {
         if isSingle, let taskName = taskName, let counterName = counterName {
             return Text(taskName).italic().fontWeight(.bold)
-                + Text(" filled in here from your \(counterName) counter — logged on another board · ")
-                + Text("See every board it counts on ›").fontWeight(.bold)
+                + Text(" filled in — you logged \(counterName) elsewhere. ")
+                + Text("See every board ›").fontWeight(.bold)
         }
         return Text("\(squareCount) squares").fontWeight(.bold)
-            + Text(" filled in from your counters — logged on other boards.")
+            + Text(" filled in from your counters. ")
+            + Text("Open counters ›").fontWeight(.bold)
     }
 
     var body: some View {

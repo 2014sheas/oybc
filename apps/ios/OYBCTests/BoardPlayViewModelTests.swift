@@ -516,7 +516,132 @@ final class BoardPlayViewModelTests: XCTestCase {
         // so the view model publishes a one-shot credit-toast flash event.
         XCTAssertTrue(waitUntil { vm.flashEvent?.creditToast != nil },
                       "credit toast flash event never published for the OTHER board")
-        XCTAssertTrue(try XCTUnwrap(vm.flashEvent?.creditToast).contains("Board b2"))
+        let payload = try XCTUnwrap(vm.flashEvent?.creditToast)
+        XCTAssertTrue(payload.message.contains("Board b2"))
+        // R3: pinned copy contract — "+{N} {counterName} — also counted on
+        // {board list}." `c-src` has action "Do" + unit "reps" (no title
+        // override), so the pair-derived counter name is "Reps" — proves
+        // this reads `formatCounterName` and NOT the stored title ("Task
+        // c-src"), which is exactly what R3's `counterDisplayName` fix targets.
+        XCTAssertEqual(payload.message, "+1 Reps — also counted on Board b2.")
+        XCTAssertEqual(payload.sourceTaskId, "c-src")
+        XCTAssertEqual(payload.amount, 1)
+    }
+
+    // MARK: - 8c. R3 board-play touchpoints — amount routing, default
+    // persistence, and Undo (name-source fallback is exercised above by
+    // `test_sharedCounterIncrement_incrementsSource_andEmitsCreditToast`'s
+    // "Reps" assertion).
+
+    /// A custom amount logged from board-play both (a) applies the exact
+    /// amount to the source's count and (b) persists as the counter's new
+    /// `defaultLogAmount` when `persistAsDefault: true` — mirrors R2 Detail's
+    /// "amount just used becomes the new default" rule.
+    func test_handleCountingTap_customAmount_persistsAsDefault_whenRequested() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        // isCounter: true — a P5 zero-link promoted source, so this routes
+        // through `runSharedCounterIncrement` (the ONLY path that persists a
+        // default). A plain standalone counting task never touches
+        // `defaultLogAmount` at all, which would make this test pass
+        // vacuously regardless of correctness.
+        try db.saveTask(makeCountingTask("c-src", maxCount: 100, currentCount: 0, isCounter: true))
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
+        let task = try XCTUnwrap(vm.taskMap["c-src"])
+
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 7, persistAsDefault: true)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 7 && !vm.isProcessing })
+        XCTAssertEqual(try XCTUnwrap(dbTask(db, "c-src")).defaultLogAmount, 7,
+                       "explicit custom amount must persist as the counter's new default")
+    }
+
+    /// Global Constraints: "One-tap paths (+1 chip / plain tap / +default) do
+    /// NOT change the default; only an explicit custom # amount does." A
+    /// one-tap +1 (persistAsDefault: false, the default parameter value)
+    /// must never overwrite an already-set default.
+    func test_handleCountingTap_oneTapAmount_neverPersistsAsDefault() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        // isCounter: true — see the sibling test above for why this must
+        // route through the shared-counter engine to be a meaningful assertion.
+        var task = makeCountingTask("c-src", maxCount: 100, currentCount: 0, isCounter: true)
+        task.defaultLogAmount = 10
+        try db.saveTask(task)
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
+        let loadedTask = try XCTUnwrap(vm.taskMap["c-src"])
+
+        // A quick "+1" tap — persistAsDefault stays false (the parameter default).
+        vm.handleCountingTap(boardTask: bt, task: loadedTask, amount: 1)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 1 && !vm.isProcessing })
+        XCTAssertEqual(try XCTUnwrap(dbTask(db, "c-src")).defaultLogAmount, 10,
+                       "a one-tap +1 must never overwrite the counter's persisted default")
+    }
+
+    /// The decrement engine clamps at 0 — the credited toast's amount (and
+    /// therefore what `Undo` will reverse) must reflect the CLAMPED
+    /// `effectiveDelta`, not the raw requested amount (Global Constraints:
+    /// "the toast's own displayed delta must match what Undo will reverse").
+    func test_handleCountingDecrement_toastAmount_matchesClampedEffectiveDelta() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveBoard(makeBoard(id: "b2"))
+        try db.saveTask(makeCountingTask("c-src", maxCount: 20, currentCount: 3))
+        try db.saveTask(makeCountingTask("c-lnk", maxCount: 20, currentCount: 3, sharedCounterId: "c-src"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt-lnk", boardId: "b2", taskId: "c-lnk", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
+        let task = try XCTUnwrap(vm.taskMap["c-src"])
+
+        // Request 10 off a source that only has 3 — clamps to effectiveDelta 3.
+        vm.handleCountingDecrement(boardTask: bt, task: task, amount: 10)
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 0 && !vm.isProcessing })
+        XCTAssertTrue(waitUntil { vm.flashEvent?.creditToast != nil },
+                      "credit toast flash event never published for the OTHER board")
+        let payload = try XCTUnwrap(vm.flashEvent?.creditToast)
+        XCTAssertEqual(payload.amount, 3, "toast amount must be the CLAMPED delta, not the requested 10")
+        XCTAssertTrue(payload.message.contains("−3"), "message must show the clamped amount")
+    }
+
+    /// `undoSharedCounterLog` (the credited toast's Undo pill) reverses the
+    /// source's last log entry via `AppDatabase.undoLastCounterLog` and
+    /// refreshes the published state.
+    func test_undoSharedCounterLog_reversesLastEntry_andReloads() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        // isCounter: true — `undoSharedCounterLog` is only ever wired to the
+        // shared-counter credited toast's Undo pill, so exercise it against
+        // the actual shared-counter engine's lifetime event (boardId nil),
+        // not the standalone windowed path's board-scoped event.
+        try db.saveTask(makeCountingTask("c-src", maxCount: 100, currentCount: 0, isCounter: true))
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
+        let task = try XCTUnwrap(vm.taskMap["c-src"])
+        vm.handleCountingTap(boardTask: bt, task: task, amount: 10)
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 10 && !vm.isProcessing })
+
+        vm.undoSharedCounterLog(sourceTaskId: "c-src")
+
+        XCTAssertTrue(waitUntil { self.dbTask(db, "c-src")?.currentCount == 0 },
+                      "Undo never reversed the +10 entry")
+        XCTAssertTrue(waitUntil { vm.taskMap["c-src"]?.currentCount == 0 },
+                      "Undo's reload never refreshed the published task map")
     }
 
     // MARK: - 8a. P5 zero-link `isCounter` tap-routing (review fix — no direct
