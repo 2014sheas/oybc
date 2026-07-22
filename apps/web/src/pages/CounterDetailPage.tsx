@@ -210,7 +210,6 @@ export function CounterDetailPage(): React.ReactElement {
   const inactiveTasks = group.tasks.filter((t) => !t.isActive);
   const lifetimeStr = group.lifetime.toLocaleString();
   const unitStr = group.unit ?? '';
-  const defaultAmount = group.defaultLogAmount ?? 1;
   const chips = buildAmountChipOptions();
   const selectedChipIndex = isCustomActive ? chips.length - 1 : chips.findIndex((c) => c.value === selectedAmount);
 
