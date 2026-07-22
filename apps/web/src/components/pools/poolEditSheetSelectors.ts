@@ -28,6 +28,27 @@ export function selectLibraryPickerResults(
     .filter((t) => q === '' || t.title.toLowerCase().includes(q));
 }
 
+/** Cap for `selectQuickAddMatches`'s inline dropdown — the quick-add row
+ *  is a compact affordance, not a full browse picker, so results are
+ *  capped tighter than the unbounded `selectLibraryPickerResults` list
+ *  the "Reuse a task from your library" picker renders. */
+export const QUICK_ADD_MATCH_CAP = 4;
+
+/**
+ * Quick-add library-poll matches (Quick-add library polling, owner
+ * decision 2026-07-21) — `WizardQuickAddRow`'s inline dropdown seam. A
+ * thin cap over `selectLibraryPickerResults`: reuses its exclude +
+ * title-contains filtering verbatim (never reinvented) and truncates to
+ * `QUICK_ADD_MATCH_CAP` for the compact inline UI.
+ */
+export function selectQuickAddMatches(
+  browsableTasks: readonly Task[],
+  selectedIds: ReadonlySet<string>,
+  query: string,
+): Task[] {
+  return selectLibraryPickerResults(browsableTasks, selectedIds, query).slice(0, QUICK_ADD_MATCH_CAP);
+}
+
 /**
  * Resolves a pool's raw `taskIds` (which may include ids that don't
  * resolve — soft-deleted or otherwise missing, preserved per `Pool`'s

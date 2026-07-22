@@ -562,7 +562,15 @@ export function BoardWizardTasksStep({
       {/* Quick-add row — inline NORMAL task entry. Hidden in "From a board…"
           mode since that flow has its own grid interaction. The full modal
           (NewTaskSheet) remains for Counting/Compound/Achievement types.
-          Web twin of iOS RisoQuickAddRowView. */}
+          Web twin of iOS RisoQuickAddRowView.
+          Library polling (owner decision 2026-07-21): `effectiveAllTasks`
+          is the SAME browsable+pending set the picker/autocomplete surfaces
+          below already use, so a typed title that matches an existing task
+          offers a reuse match instead of a duplicate. `onExistingTaskPicked`
+          reuses the exact `onTaskCreated` seam — both add the (new or
+          existing) task id to `selectedTaskIds` via the wizard's
+          `toggleTaskSelection`, and the dropdown already excludes selected
+          ids so this can never toggle one off. */}
       {activeFilter !== 'from-board' && (
         <WizardQuickAddRow
           userId={userId}
@@ -571,6 +579,9 @@ export function BoardWizardTasksStep({
           currentEndDate={currentEndDate}
           onTaskCreated={onTaskCreated}
           onPendingCreated={onPendingCreated}
+          libraryTasks={effectiveAllTasks}
+          selectedIds={selectedTaskIds}
+          onExistingTaskPicked={onTaskCreated}
         />
       )}
 

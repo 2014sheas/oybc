@@ -196,6 +196,37 @@ struct PoolEditSheetView: View {
             Text("ADD TASKS").font(.risoBody(11, .bold)).tracking(1.1).foregroundStyle(Color.risoMuted)
                 .padding(.top, 4)
 
+            // Polling quick-add row — owner decision 2026-07-21: RE-ADDS the
+            // create-only row #343 removed, now with the library-poll
+            // dropdown (mirrors the wizard Tasks step's usage). Sits ABOVE
+            // "New task" so typing a name that already exists in the
+            // library surfaces reuse before the user commits to a duplicate
+            // create. Immediate persist (`onPendingCreated: nil`) — this
+            // sheet is not a board wizard draft.
+            VStack(spacing: 0) {
+                RisoQuickAddRowView(
+                    userId: userId,
+                    // defaultTimeframe: nil — indefinite pool tasks, same as
+                    // the Tasks-tab quick-add / NewTaskSheetView.
+                    defaultStartDate: nil,
+                    defaultEndDate: nil,
+                    onTaskCreated: { taskId, _, _ in
+                        if !poolTaskIds.contains(taskId) { poolTaskIds.append(taskId) }
+                    },
+                    onPendingCreated: nil,
+                    onLibraryReloadRequested: { library.loadLibrary(userId: userId) },
+                    libraryTasks: library.browsableTasks,
+                    selectedIds: Set(poolTaskIds),
+                    onExistingTaskPicked: { task in
+                        if !poolTaskIds.contains(task.id) { poolTaskIds.append(task.id) }
+                    }
+                )
+            }
+            .padding(12)
+            .risoCard(fill: .risoPaper2)
+            .risoHardShadow(Riso.Shadow.small)
+            .disabled(busy)
+
             // Label "New task" (byte-matches web + the Tasks-tab a11y label);
             // the "+" is a systemImage, not baked into the string — matches
             // web's icon+text split.

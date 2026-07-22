@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { TaskType } from '@oybc/shared';
 import type { Task } from '@oybc/shared';
-import { resolvePoolChips, selectLibraryPickerResults } from '../poolEditSheetSelectors';
+import {
+  resolvePoolChips,
+  selectLibraryPickerResults,
+  selectQuickAddMatches,
+} from '../poolEditSheetSelectors';
 
 /**
  * poolEditSheetSelectors.test.ts — `PoolEditSheet`'s picker + chip
@@ -67,6 +71,40 @@ describe('selectLibraryPickerResults', () => {
     const t2 = buildTask('t2');
     const result = selectLibraryPickerResults([t1, t2], new Set(), '   ');
     expect(result.map((t) => t.id)).toEqual(['t1', 't2']);
+  });
+});
+
+/**
+ * `WizardQuickAddRow`'s inline library-poll dropdown seam (Quick-add
+ * library polling, owner decision 2026-07-21). Thin cap over
+ * `selectLibraryPickerResults` (covered above) — these cases cover the
+ * cap plus a light exclude/query smoke test for the wrapper itself.
+ */
+describe('selectQuickAddMatches', () => {
+  it('caps results at 4 even when more tasks match', () => {
+    const tasks = Array.from({ length: 6 }, (_, i) => buildTask(`t${i}`, { title: `Meditate ${i}` }));
+    const result = selectQuickAddMatches(tasks, new Set(), 'meditate');
+    expect(result).toHaveLength(4);
+    expect(result.map((t) => t.id)).toEqual(['t0', 't1', 't2', 't3']);
+  });
+
+  it('excludes already-selected ids before capping', () => {
+    const tasks = Array.from({ length: 5 }, (_, i) => buildTask(`t${i}`, { title: `Read ${i}` }));
+    const result = selectQuickAddMatches(tasks, new Set(['t0', 't1']), 'read');
+    expect(result.map((t) => t.id)).toEqual(['t2', 't3', 't4']);
+  });
+
+  it('filters by a case-insensitive, trimmed title query', () => {
+    const morning = buildTask('t1', { title: 'Morning Kickstart' });
+    const evening = buildTask('t2', { title: 'Evening wind-down' });
+    const result = selectQuickAddMatches([morning, evening], new Set(), '  MORNING  ');
+    expect(result.map((t) => t.id)).toEqual(['t1']);
+  });
+
+  it('returns no matches for an empty library or a query matching nothing', () => {
+    expect(selectQuickAddMatches([], new Set(), 'anything')).toEqual([]);
+    const t1 = buildTask('t1', { title: 'Stretch' });
+    expect(selectQuickAddMatches([t1], new Set(), 'zzz-no-match')).toEqual([]);
   });
 });
 
