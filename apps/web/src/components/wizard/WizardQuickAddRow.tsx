@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { TaskType, type Task, type Timeframe } from '@oybc/shared';
 import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
-import { RisoButton } from '../riso';
+import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
+import { selectQuickAddMatches } from '../pools/poolEditSheetSelectors';
 import styles from './WizardQuickAddRow.module.css';
 
 /**
@@ -41,7 +42,31 @@ export interface WizardQuickAddRowProps {
    * disables mid-submit regardless of this prop.
    */
   disabled?: boolean;
+  /**
+   * Library-polling (owner decision 2026-07-21) — OPTIONAL. The browsable
+   * task set (C6: excludes wizard-born drafts) to poll as the user types,
+   * so they can reuse an existing task instead of creating a duplicate.
+   * Must be provided together with `onExistingTaskPicked` to enable the
+   * inline matches dropdown; when either is omitted the row behaves
+   * exactly as the create-only baseline (no dropdown).
+   */
+  libraryTasks?: Task[];
+  /** Ids to exclude from the dropdown (already selected/added on this
+   *  surface). Defaults to empty — only meaningful alongside `libraryTasks`. */
+  selectedIds?: Set<string>;
+  /**
+   * Fired when the user taps a dropdown match to REUSE that existing task
+   * instead of creating a new one. The host appends the existing task's id
+   * (no DB write here — this row never creates on this path). Clears the
+   * input afterward, same as a create.
+   */
+  onExistingTaskPicked?: (task: Task) => void;
 }
+
+/** Stable empty-Set identity for the `selectedIds` default — avoids a new
+ *  Set() (and a wasted `libraryMatches` recompute) on every render when a
+ *  host omits the prop. */
+const EMPTY_SELECTED_IDS: ReadonlySet<string> = new Set();
 
 /** Rotating placeholder pool — mirrors the iOS `RisoQuickAddRowView` suggestions. */
 const PLACEHOLDERS = [
@@ -70,6 +95,16 @@ const PLACEHOLDERS = [
  *   no DB write — wizard writes atomically at board-save.
  * - Without `onPendingCreated` → immediate `createTask()` DB write.
  *
+ * Library polling (OPTIONAL, owner decision 2026-07-21): when both
+ * `libraryTasks` and `onExistingTaskPicked` are provided, typing polls the
+ * library via `selectQuickAddMatches` (the pool sheet's own
+ * `selectLibraryPickerResults` filter, just capped tighter) and renders an
+ * inline dropdown of matches under the field — tapping one reuses that
+ * EXISTING task instead of creating a duplicate. The Add button / Enter
+ * path is unchanged: it always creates a new Normal task from the typed
+ * text. Backward-compatible: omitting the new props (today's callers)
+ * renders no dropdown at all.
+ *
  * iOS source: `Views/CreateTab/Components/RisoQuickAddRowView.swift`.
  */
 export function WizardQuickAddRow({
@@ -80,16 +115,39 @@ export function WizardQuickAddRow({
   onTaskCreated,
   onPendingCreated,
   disabled = false,
+  libraryTasks,
+  selectedIds,
+  onExistingTaskPicked,
 }: WizardQuickAddRowProps): React.ReactElement {
   const [text, setText] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const trimmed = text.trim();
   const canSubmit = trimmed.length > 0 && !isSubmitting && !disabled;
   const placeholder = PLACEHOLDERS[placeholderIndex % PLACEHOLDERS.length];
   const deferPersist = onPendingCreated !== undefined;
+
+  // Library-poll matches — only computed when both polling props are
+  // present. `selectQuickAddMatches` reuses `selectLibraryPickerResults`
+  // (title-contains, case-insensitive, excludes `selectedIds`) verbatim,
+  // just capped for the inline dropdown.
+  const pollingEnabled = libraryTasks !== undefined && onExistingTaskPicked !== undefined;
+  const libraryMatches = useMemo<Task[]>(() => {
+    if (!pollingEnabled || trimmed === '') return [];
+    return selectQuickAddMatches(libraryTasks!, selectedIds ?? EMPTY_SELECTED_IDS, trimmed);
+  }, [pollingEnabled, libraryTasks, selectedIds, trimmed]);
+  const showDropdown = pollingEnabled && isFocused && trimmed !== '' && libraryMatches.length > 0;
+
+  function handleExistingPicked(task: Task): void {
+    onExistingTaskPicked!(task);
+    // Clear + refocus, same reset as a create — hides the dropdown since
+    // it requires non-empty text.
+    setText('');
+    inputRef.current?.focus();
+  }
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit) return;
@@ -164,30 +222,63 @@ export function WizardQuickAddRow({
   }
 
   return (
-    <div className={styles.row}>
-      <input
-        ref={inputRef}
-        type="text"
-        className={styles.input}
-        placeholder={placeholder}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        aria-label="New normal task title"
-        autoComplete="off"
-        spellCheck
-        disabled={isSubmitting || disabled}
-      />
-      <RisoButton
-        kind="primary"
-        size="small"
-        onClick={() => void handleSubmit()}
-        disabled={!canSubmit}
-        aria-label="Add task"
-        style={{ opacity: canSubmit ? 1 : 0.45, pointerEvents: canSubmit ? undefined : 'none' }}
-      >
-        Add
-      </RisoButton>
+    <div className={styles.wrap}>
+      <div className={styles.row}>
+        <input
+          ref={inputRef}
+          type="text"
+          className={styles.input}
+          placeholder={placeholder}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          aria-label="New normal task title"
+          autoComplete="off"
+          spellCheck
+          disabled={isSubmitting || disabled}
+        />
+        <RisoButton
+          kind="primary"
+          size="small"
+          onClick={() => void handleSubmit()}
+          disabled={!canSubmit}
+          aria-label="Add task"
+          style={{ opacity: canSubmit ? 1 : 0.45, pointerEvents: canSubmit ? undefined : 'none' }}
+        >
+          Add
+        </RisoButton>
+      </div>
+
+      {/* Library-poll dropdown — OPTIONAL (only when `libraryTasks` +
+          `onExistingTaskPicked` are both passed by the host). Mirrors the
+          iOS `RisoCompoundFieldsView.subAutocompleteDropdown` precedent's
+          shape; row style matches the pool sheet's library-reuse picker
+          row (`RisoTypeBadge` + title + plus icon). */}
+      {showDropdown && (
+        <ul className={styles.dropdownList} aria-label="Matching library tasks">
+          {libraryMatches.map((task) => (
+            <li key={task.id} className={styles.dropdownItem}>
+              <button
+                type="button"
+                className={styles.dropdownRowButton}
+                // Prevent the input's blur (which would hide this dropdown
+                // before the click registers) — standard "keep focus on
+                // mousedown" trick.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleExistingPicked(task)}
+              >
+                <RisoTypeBadge type={task.type} />
+                <span className={styles.dropdownRowTitle}>
+                  {task.title || '(untitled task)'}
+                </span>
+                <RisoIcon name="plus" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
 import { NewTaskSheet } from '../wizard/NewTaskSheet';
+import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import { computeDeckFloor, formatDeckPreview } from './poolDeckPreview';
 import { deletePoolFromSheet, savePoolFromSheet, POOL_NAME_MAX_LENGTH } from './poolEditSheetOps';
@@ -47,13 +48,17 @@ export interface PoolEditSheetProps {
  * docs/POOLS_RECURRING.md §Surfaces item 2 + the handoff screenshot
  * `02-pool-edit-sheet.png`.
  *
- * The ADD TASKS section originally used the Normal-only `WizardQuickAddRow`
- * (board-wizard quick-add); it was replaced with the full-type creator so
- * every task type is creatable directly from the pool sheet, matching the
- * Tasks-tab and board-wizard creation surfaces. The created task is a real,
- * immediately-persisted library task (no `createdInWizard` flag — this
- * sheet isn't a board wizard) that lands in the pool via the same `addTask`
- * append-to-pool handler the quick-add row used.
+ * The ADD TASKS section pairs the Normal-only `WizardQuickAddRow` (now with
+ * library polling — owner decision 2026-07-21: typing polls
+ * `browsableTasks` and offers up to 4 reuse matches inline, so a duplicate
+ * title reuses the existing task instead of creating a new one) ABOVE the
+ * full-type "New task" creator, so every task type is still creatable
+ * directly from the pool sheet, matching the Tasks-tab and board-wizard
+ * creation surfaces. The "Reuse a task from your library" browse-all picker
+ * below remains for finding a match without typing its exact title. Every
+ * created/reused task is a real, immediately-persisted library task (no
+ * `createdInWizard` flag — this sheet isn't a board wizard) that lands in
+ * the pool via the shared `addTask` append-to-pool handler.
  *
  * NO board-related actions render here (locked decision) — this sheet
  * only populates the pool; boards pull pools in from the wizard side.
@@ -243,6 +248,21 @@ export function PoolEditSheet({
           )}
 
           <span className={styles.kicker}>Add tasks</span>
+          {/* Polling quick-add — re-added (P5.x, owner decision 2026-07-21)
+              ABOVE the "New task" button. Typing polls `browsableTasks` for
+              up to 4 reuse matches; picking one appends the EXISTING task
+              via `addTask` (no create). Enter/Add still creates a new
+              Normal task, same as the board wizard's row. */}
+          <div className={styles.quickAddRow}>
+            <WizardQuickAddRow
+              userId={userId}
+              libraryTasks={browsableTasks}
+              selectedIds={selectedIdSet}
+              onTaskCreated={addTask}
+              onExistingTaskPicked={addTask}
+              disabled={busy}
+            />
+          </div>
           <div className={styles.quickAddRow}>
             <RisoButton
               kind="primary"
