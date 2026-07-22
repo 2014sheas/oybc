@@ -100,14 +100,17 @@ export function PoolEditSheet({
   const [error, setError] = useState<string | null>(null);
 
   // Escape-to-cancel, mirroring `CreateCounterSheet`/`NewTaskSheet`. Guards
-  // against dismissing mid-write.
+  // against dismissing mid-write, AND while the "New task" creator is open on
+  // top — that sheet has its own Escape handler, and without this guard one
+  // keypress would bubble to both and tear down the whole pool-edit session
+  // (discarding in-progress edits, orphaning a just-created task).
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape' && !busy) onClose();
+      if (e.key === 'Escape' && !busy && !showNewTaskSheet) onClose();
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, busy]);
+  }, [onClose, busy, showNewTaskSheet]);
 
   const trimmedName = name.trim();
   const tasksById = useMemo(() => new Map(allTasks.map((t) => [t.id, t] as const)), [allTasks]);
