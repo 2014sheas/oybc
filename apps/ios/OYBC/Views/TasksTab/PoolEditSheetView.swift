@@ -196,7 +196,10 @@ struct PoolEditSheetView: View {
             Text("ADD TASKS").font(.risoBody(11, .bold)).tracking(1.1).foregroundStyle(Color.risoMuted)
                 .padding(.top, 4)
 
-            RisoButton(title: "+ New task", kind: .neutral, fullWidth: true) {
+            // Label "New task" (byte-matches web + the Tasks-tab a11y label);
+            // the "+" is a systemImage, not baked into the string — matches
+            // web's icon+text split.
+            RisoButton(title: "New task", kind: .neutral, systemImage: "plus", fullWidth: true) {
                 showNewTaskSheet = true
             }
             .disabled(busy)

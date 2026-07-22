@@ -356,19 +356,27 @@ export function PoolEditSheet({
       </div>
       </div>
 
-      <NewTaskSheet
-        isOpen={showNewTaskSheet}
-        onClose={() => setShowNewTaskSheet(false)}
-        userId={userId}
-        // Same append-to-pool handler the retired quick-add row used —
-        // the new task (any of the 4 types) lands in `taskIds` exactly as
-        // before. Immediate-persist (no `onPendingCreated`/`deferPersist`):
-        // this sheet is not a board wizard, so the task is a real,
-        // already-saved library task from the moment it's created.
-        onTaskCreated={addTask}
-        onCompositeCreated={addTask}
-        submitLabel="Create & Select"
-      />
+      {/* Third-tier stacking context (z 1200 > this sheet's 1100 backdrop) so
+          the creator paints ABOVE the pool sheet — its own backdrop is z 1000
+          and would otherwise be occluded. Kept a fragment-sibling (not nested
+          in the pool backdrop) so a click on the creator's scrim can't bubble
+          to the pool backdrop's close handler. Inert until opened
+          (NewTaskSheet renders null when closed). */}
+      <div className={styles.newTaskLayer}>
+        <NewTaskSheet
+          isOpen={showNewTaskSheet}
+          onClose={() => setShowNewTaskSheet(false)}
+          userId={userId}
+          // Same append-to-pool handler the retired quick-add row used —
+          // the new task (any of the 4 types) lands in `taskIds` exactly as
+          // before. Immediate-persist (no `onPendingCreated`/`deferPersist`):
+          // this sheet is not a board wizard, so the task is a real,
+          // already-saved library task from the moment it's created.
+          onTaskCreated={addTask}
+          onCompositeCreated={addTask}
+          submitLabel="Create & Select"
+        />
+      </div>
     </>
   );
 }

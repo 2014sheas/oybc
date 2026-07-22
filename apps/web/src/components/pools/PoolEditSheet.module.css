@@ -328,3 +328,12 @@
     animation: none;
   }
 }
+
+/* Third-tier stacking context for the "New task" creator opened from this
+   sheet: its own backdrop is z 1000, this sheet's is 1100, so without a
+   higher context the creator paints behind. 1200 sits above this sheet
+   (the app's second-tier dialogs live at 1100 over the 1000-tier base). */
+.newTaskLayer {
+  position: relative;
+  z-index: 1200;
+}
