@@ -129,7 +129,7 @@ struct RisoBoardPlayCell: View {
 
     /// VoiceOver label: task name + type-appropriate progress/state.
     private var accessibilityLabel: String {
-        if isCenter { return "Free space" }
+        if isCenter { return title.isEmpty ? "Free space" : "\(title), free space" }
         switch taskType {
         case .counting:
             let sharedSuffix = isSharedCounter ? ", shared counter" : ""
@@ -155,10 +155,17 @@ struct RisoBoardPlayCell: View {
             StarShape()
                 .fill(Color.risoGold)
                 .frame(width: 17, height: 17)
-            Text("FREE")
+            // Render the passed-in title (a CUSTOM_FREE center's custom name),
+            // falling back to "FREE" when empty — was hardcoded to "FREE",
+            // which discarded custom names on the live grid (issue #345).
+            // Scale/clamp so a longer custom name still fits the small cell.
+            Text(title.isEmpty ? "FREE" : title)
                 .font(.risoHead(9, .extraBold))
                 .tracking(1.0)
                 .foregroundStyle(Color.risoGold)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.6)
         }
     }
 
