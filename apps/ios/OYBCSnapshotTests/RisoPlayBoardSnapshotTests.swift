@@ -141,6 +141,32 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
         )
     }
 
+    /// Regression for issue #345: a CUSTOM_FREE center cell must render its
+    /// custom name, not a hardcoded "FREE". `BoardPlayView` passes the board's
+    /// `centerSquareCustomName` as the cell `title`; `centerCellContent` now
+    /// renders that title (falling back to "FREE" only when empty).
+    func testCellCustomFreeCenterLight() {
+        let view = cellGrid([
+            RisoBoardPlayCell(title: "REST DAY", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "Treat yourself", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),
+        ])
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 200)), record: recordMode)
+    }
+
+    func testCellCustomFreeCenterDark() {
+        let view = cellGrid([
+            RisoBoardPlayCell(title: "REST DAY", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "Treat yourself", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),
+        ])
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 200), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
+    }
+
     func testCellBingoLineGoldRingLight() {
         let view = cellGrid([
             RisoBoardPlayCell(title: "Bingo incomplete", taskType: .normal, isCompleted: false, isBingoLine: true),

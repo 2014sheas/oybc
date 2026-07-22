@@ -150,15 +150,26 @@ struct RisoBoardPlayCell: View {
 
     @ViewBuilder
     private var centerCellContent: some View {
+        // The center label is the board's custom-free name when present,
+        // falling back to "FREE" (plain free space / empty custom name).
+        // Historically this rendered a hardcoded "FREE", which silently
+        // discarded CUSTOM_FREE center names on the live board (issue #345).
+        let centerLabel = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "FREE"
+            : title
         VStack(spacing: 3) {
             // Gold star shape
             StarShape()
                 .fill(Color.risoGold)
                 .frame(width: 17, height: 17)
-            Text("FREE")
+            Text(centerLabel)
                 .font(.risoHead(9, .extraBold))
                 .tracking(1.0)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.center)
                 .foregroundStyle(Color.risoGold)
+                .padding(.horizontal, 3)
         }
     }
 

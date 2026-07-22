@@ -1488,9 +1488,23 @@ struct BoardPlayView: View {
                 } else if isCenter,
                           let b = board,
                           (b.centerSquareType == .free || b.centerSquareType == .customFree) {
-                    // FREE center cell — gold FREE label, not interactive in play mode.
+                    // FREE center cell — gold label, not interactive in play mode.
+                    // Show the board's custom-free name when set (CUSTOM_FREE);
+                    // plain FREE and an empty custom name both render the short
+                    // "FREE" label. Previously this was hardcoded "FREE", which
+                    // silently discarded CUSTOM_FREE names on the live board
+                    // (issue #345).
+                    let centerLabel: String = {
+                        if b.centerSquareType == .customFree,
+                           let name = b.centerSquareCustomName?
+                               .trimmingCharacters(in: .whitespacesAndNewlines),
+                           !name.isEmpty {
+                            return name
+                        }
+                        return "FREE"
+                    }()
                     RisoBoardPlayCell(
-                        title: "FREE",
+                        title: centerLabel,
                         taskType: .normal,
                         isCompleted: false,
                         isBingoLine: highlighted.contains(index),
