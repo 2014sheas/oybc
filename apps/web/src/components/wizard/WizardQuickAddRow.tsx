@@ -122,7 +122,6 @@ export function WizardQuickAddRow({
   const [text, setText] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const trimmed = text.trim();
@@ -139,7 +138,11 @@ export function WizardQuickAddRow({
     if (!pollingEnabled || trimmed === '') return [];
     return selectQuickAddMatches(libraryTasks!, selectedIds ?? EMPTY_SELECTED_IDS, trimmed);
   }, [pollingEnabled, libraryTasks, selectedIds, trimmed]);
-  const showDropdown = pollingEnabled && isFocused && trimmed !== '' && libraryMatches.length > 0;
+  // Text-driven (not focus-gated) to match the app's existing inline
+  // autocomplete convention (RisoCompoundFieldsView) and iOS's twin — an
+  // in-flow suggestion list, so there's no floating overlay to dismiss on
+  // blur; it hides when the field clears or a match/create resets it.
+  const showDropdown = pollingEnabled && trimmed !== '' && libraryMatches.length > 0;
 
   function handleExistingPicked(task: Task): void {
     onExistingTaskPicked!(task);
@@ -232,8 +235,6 @@ export function WizardQuickAddRow({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
           aria-label="New normal task title"
           autoComplete="off"
           spellCheck
@@ -263,10 +264,6 @@ export function WizardQuickAddRow({
               <button
                 type="button"
                 className={styles.dropdownRowButton}
-                // Prevent the input's blur (which would hide this dropdown
-                // before the click registers) — standard "keep focus on
-                // mousedown" trick.
-                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleExistingPicked(task)}
               >
                 <RisoTypeBadge type={task.type} />
