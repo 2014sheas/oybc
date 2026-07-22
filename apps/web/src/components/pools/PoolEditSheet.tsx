@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
-import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
+import { NewTaskSheet } from '../wizard/NewTaskSheet';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import { computeDeckFloor, formatDeckPreview } from './poolDeckPreview';
 import { deletePoolFromSheet, savePoolFromSheet, POOL_NAME_MAX_LENGTH } from './poolEditSheetOps';
@@ -39,10 +39,21 @@ export interface PoolEditSheetProps {
  * PoolEditSheet — the Tasks-tab pool editor (Task Pools + Recurring Boards
  * Rework, P2). Extends the iOS `PoolEditSheet` baseline for the new `Pool`
  * entity: a NAME field replaces the old timeframe-keyed FEEDS segmented,
- * and the task list mirrors the board wizard's add pattern verbatim
- * (quick-add row + "reuse a task from your library" picker). See
+ * and the task list offers a "New task" button (byte-matching the
+ * Tasks-tab header button's label) opening the canonical full-type
+ * `NewTaskSheet` (Normal/Counting/Compound/Achievement — same component
+ * `pages/TasksPage.tsx` embeds for immediate-persist creation) alongside
+ * the "reuse a task from your library" picker. See
  * docs/POOLS_RECURRING.md §Surfaces item 2 + the handoff screenshot
  * `02-pool-edit-sheet.png`.
+ *
+ * The ADD TASKS section originally used the Normal-only `WizardQuickAddRow`
+ * (board-wizard quick-add); it was replaced with the full-type creator so
+ * every task type is creatable directly from the pool sheet, matching the
+ * Tasks-tab and board-wizard creation surfaces. The created task is a real,
+ * immediately-persisted library task (no `createdInWizard` flag — this
+ * sheet isn't a board wizard) that lands in the pool via the same `addTask`
+ * append-to-pool handler the quick-add row used.
  *
  * NO board-related actions render here (locked decision) — this sheet
  * only populates the pool; boards pull pools in from the wizard side.
@@ -81,6 +92,7 @@ export function PoolEditSheet({
     () => new Map(),
   );
 
+  const [showNewTaskSheet, setShowNewTaskSheet] = useState(false);
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [librarySearch, setLibrarySearch] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -88,14 +100,17 @@ export function PoolEditSheet({
   const [error, setError] = useState<string | null>(null);
 
   // Escape-to-cancel, mirroring `CreateCounterSheet`/`NewTaskSheet`. Guards
-  // against dismissing mid-write.
+  // against dismissing mid-write, AND while the "New task" creator is open on
+  // top — that sheet has its own Escape handler, and without this guard one
+  // keypress would bubble to both and tear down the whole pool-edit session
+  // (discarding in-progress edits, orphaning a just-created task).
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape' && !busy) onClose();
+      if (e.key === 'Escape' && !busy && !showNewTaskSheet) onClose();
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, busy]);
+  }, [onClose, busy, showNewTaskSheet]);
 
   const trimmedName = name.trim();
   const tasksById = useMemo(() => new Map(allTasks.map((t) => [t.id, t] as const)), [allTasks]);
@@ -167,13 +182,14 @@ export function PoolEditSheet({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="pool-edit-sheet-title"
-      className={styles.backdrop}
-      onClick={() => !busy && onClose()}
-    >
+    <>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pool-edit-sheet-title"
+        className={styles.backdrop}
+        onClick={() => !busy && onClose()}
+      >
       <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <h3 id="pool-edit-sheet-title" className={styles.title}>
@@ -228,7 +244,14 @@ export function PoolEditSheet({
 
           <span className={styles.kicker}>Add tasks</span>
           <div className={styles.quickAddRow}>
-            <WizardQuickAddRow userId={userId} onTaskCreated={addTask} disabled={busy} />
+            <RisoButton
+              kind="primary"
+              icon={<RisoIcon name="plus" size={16} />}
+              onClick={() => setShowNewTaskSheet(true)}
+              disabled={busy}
+            >
+              New task
+            </RisoButton>
           </div>
 
           <button
@@ -334,6 +357,29 @@ export function PoolEditSheet({
           </div>
         </div>
       </div>
-    </div>
+      </div>
+
+      {/* Third-tier stacking context (z 1200 > this sheet's 1100 backdrop) so
+          the creator paints ABOVE the pool sheet — its own backdrop is z 1000
+          and would otherwise be occluded. Kept a fragment-sibling (not nested
+          in the pool backdrop) so a click on the creator's scrim can't bubble
+          to the pool backdrop's close handler. Inert until opened
+          (NewTaskSheet renders null when closed). */}
+      <div className={styles.newTaskLayer}>
+        <NewTaskSheet
+          isOpen={showNewTaskSheet}
+          onClose={() => setShowNewTaskSheet(false)}
+          userId={userId}
+          // Same append-to-pool handler the retired quick-add row used —
+          // the new task (any of the 4 types) lands in `taskIds` exactly as
+          // before. Immediate-persist (no `onPendingCreated`/`deferPersist`):
+          // this sheet is not a board wizard, so the task is a real,
+          // already-saved library task from the moment it's created.
+          onTaskCreated={addTask}
+          onCompositeCreated={addTask}
+          submitLabel="Create & Select"
+        />
+      </div>
+    </>
   );
 }
