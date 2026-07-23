@@ -26,7 +26,7 @@ import {
   addBoardTaskToBoard,
   reorderBoardTasks,
 } from '../db/operations/boardTasks';
-import { updateTaskAndCascade, toggleTaskCompletionAndCascade, type UpdateTaskPatch } from '../db/operations/tasks';
+import { updateTaskAndCascade, toggleTaskCompletionAndCascade, undoLastCounterLog, type UpdateTaskPatch } from '../db/operations/tasks';
 import { deriveFlashOutcome } from '../components/boardPlayFlash';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { type SubMode } from '../components/boardEdit/BoardEditPanel';
@@ -196,6 +196,13 @@ export interface UseBoardPlayResult {
     amount?: number,
     persistAsDefault?: boolean,
   ) => Promise<void>;
+  /**
+   * Reverse the most recent shared-counter log for a source task (the
+   * credited-toast Undo pill), flashing any board COMPLETED→ACTIVE / lost-bingo
+   * transition the reversal causes (F1 — mirrors `handleSharedCounterDecrement`).
+   * May throw (invalid source); the caller owns the toast-dismiss + error path.
+   */
+  undoCounterLog: (sourceTaskId: string) => Promise<void>;
   handleCompoundChildToggle: (childTaskId: string) => Promise<void>;
   // ── Board-task write methods (from the play-mode swap/remove/add modals) ──
   swapBoardTask: (boardTaskId: string, newTaskId: string) => Promise<void>;
@@ -220,7 +227,6 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     boardTasks,
     taskMap,
     compoundChildrenByCompound,
-    allBoardTasks,
     gridSize,
     playLocked,
     squareWindowContext,
@@ -698,11 +704,36 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     async (sourceTaskId: string, amount = 1, persistAsDefault = false): Promise<void> => {
       if (playLocked) return;
       try {
+        // Capture the pre-decrement board stats for the board-transition flash.
+        const boardBefore = await db.boards.get(boardId);
         const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId, amount);
         // No-op: nothing changed (count was already 0).
         if (effectiveDelta === 0) return;
         if (persistAsDefault) {
           await setCounterDefaultLogAmount(sourceTaskId, amount);
+        }
+
+        // Board-transition flash (F1): decrementing a completed square can drop
+        // it below its goal on this window and flip the board COMPLETED→ACTIVE,
+        // dropping bingo lines. The increment path already flashes the mirror
+        // ACTIVE→COMPLETED case; without this the decrement silently reactivated
+        // the board with no feedback. Same before/after snapshot diff as
+        // handleSharedCounterIncrement, but only the reactivated / lost-bingo
+        // rungs can fire on a decrement (never greenlog / new bingos).
+        const boardAfter = await db.boards.get(boardId);
+        if (boardBefore && boardAfter) {
+          const prevBingos = new Set(boardBefore.completedLineIds ?? []);
+          const nextBingos = new Set(boardAfter.completedLineIds ?? []);
+          const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
+          const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
+          const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
+          const outcome = deriveFlashOutcome({
+            boardReactivated: wasCompleted && isNowActive,
+            lostBingos,
+            isGreenlog: false,
+            newBingos: [],
+          });
+          if (outcome) onFlash(outcome.text, outcome.variant);
         }
 
         // Credited toast: show when the decrement rippled to OTHER boards.
@@ -727,13 +758,57 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   );
 
   /**
+   * R3 — Undo the last shared-counter log for a source task (the credited
+   * toast's Undo pill routes here). Reversing a log runs the same board
+   * derivation cascade as a decrement, so it can drop a completed square below
+   * its goal on this window and flip the board COMPLETED→ACTIVE, dropping bingo
+   * lines (F1). Mirror handleSharedCounterDecrement's before/after snapshot diff
+   * so the reversal surfaces the same "Board reactivated / Bingo lost" flash a
+   * manual decrement does — previously the Undo pill was silent about it.
+   *
+   * Exceptions propagate to the caller (BoardPlaySurface's toast handler), which
+   * owns the error log + credited-toast dismissal.
+   */
+  const undoCounterLog = useCallback(
+    async (sourceTaskId: string): Promise<void> => {
+      // Capture the pre-undo board stats for the board-transition flash.
+      const boardBefore = await db.boards.get(boardId);
+      const { undoneAmount } = await undoLastCounterLog(sourceTaskId);
+      // No-op: nothing was reversed (no undoable entry) → no state change.
+      if (undoneAmount === 0) return;
+      const boardAfter = await db.boards.get(boardId);
+      if (!boardBefore || !boardAfter) return;
+
+      const prevBingos = new Set(boardBefore.completedLineIds ?? []);
+      const nextBingos = new Set(boardAfter.completedLineIds ?? []);
+      const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
+      const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
+      const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
+      const outcome = deriveFlashOutcome({
+        boardReactivated: wasCompleted && isNowActive,
+        lostBingos,
+        isGreenlog: false,
+        newBingos: [],
+      });
+      if (outcome) onFlash(outcome.text, outcome.variant);
+    },
+    [boardId, onFlash],
+  );
+
+  /**
    * Handles toggling a compound child task from the detail sheet.
    *
-   * Looks up the child's BoardTask on any board and delegates to
-   * `handleTaskCompletion` so the global Task update and cross-board cascade
-   * run atomically. If the child isn't placed on any board, falls back to a
-   * direct Task update via the orchestration layer using its own BoardTask
-   * id (or bails out gracefully).
+   * Only a placement on the CURRENT board can go through `handleComplete`, whose
+   * orchestration (`handleTaskCompletion`) hard-guards `targetBt.boardId ===
+   * boardId` and throws otherwise. A child placed only on ANOTHER board — or not
+   * placed at all — routes through the board-agnostic
+   * `toggleTaskCompletionAndCascade`, which updates the global Task + re-runs the
+   * cross-board cascade so the parent compound (on THIS board, since the user is
+   * opening its detail sheet) re-derives its completion + the board stats.
+   *
+   * (F2 — web↔iOS parity: iOS already falls through to the board-agnostic
+   * cascade for an other-board child; previously web misrouted the other-board
+   * BoardTask into `handleComplete` and threw "Something went wrong".)
    */
   const handleCompoundChildToggle = useCallback(
     async (childTaskId: string): Promise<void> => {
@@ -741,24 +816,21 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       const childTask = taskMap[childTaskId];
       if (!childTask) return;
 
-      // Find any BoardTask for this child Task on the current board first,
-      // then fall back to any board in the workspace.
-      const childBt =
-        boardTasks.find((bt) => bt.taskId === childTaskId) ??
-        allBoardTasks.find((bt) => bt.taskId === childTaskId);
+      // Only the CURRENT-board placement is eligible for handleComplete.
+      const currentBt = boardTasks.find((bt) => bt.taskId === childTaskId);
 
-      if (childBt) {
-        await handleComplete(childBt.id, { isCompleted: !childTask.isCompleted });
+      if (currentBt) {
+        await handleComplete(currentBt.id, { isCompleted: !childTask.isCompleted });
       } else {
-        // Child is not placed on any board, but the parent compound (on THIS
-        // board, since the user is opening its detail sheet) still derives
-        // through this child — so we must run the board cascade to recompute
-        // bingo state + denormalised board stats. `toggleTaskCompletionAndCascade`
-        // (issue #270, B2-W2 — relocated from an inline `db.transaction` here)
-        // wraps the Task update + sync enqueue + cascade in a single Dexie
-        // transaction so a downstream failure rolls back the partial writes;
-        // previously a crash between the task update and the cascade would
-        // leave the Task flipped but board stats stale forever.
+        // Child is not on the current board (placed elsewhere, or not at all),
+        // but the parent compound still derives through it — so run the
+        // board-agnostic cascade to recompute bingo state + denormalised board
+        // stats. `toggleTaskCompletionAndCascade` (issue #270, B2-W2 — relocated
+        // from an inline `db.transaction` here) wraps the Task update + sync
+        // enqueue + cascade in a single Dexie transaction so a downstream
+        // failure rolls back the partial writes; previously a crash between the
+        // task update and the cascade would leave the Task flipped but board
+        // stats stale forever.
         try {
           await toggleTaskCompletionAndCascade(childTaskId);
         } catch (err) {
@@ -767,7 +839,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         }
       }
     },
-    [playLocked, taskMap, boardTasks, allBoardTasks, handleComplete, onFlash]
+    [playLocked, taskMap, boardTasks, handleComplete, onFlash]
   );
 
   // ── Play-mode board-task write methods ─────────────────────────────────
@@ -838,6 +910,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     handleComplete,
     handleSharedCounterIncrement,
     handleSharedCounterDecrement,
+    undoCounterLog,
     handleCompoundChildToggle,
     swapBoardTask,
     removeBoardTask,
