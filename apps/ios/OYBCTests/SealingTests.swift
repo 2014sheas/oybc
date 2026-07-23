@@ -135,7 +135,7 @@ final class SealingTests: XCTestCase {
         XCTAssertEqual(board.sealedCompletedCells, [0])
         XCTAssertEqual(board.completedTasks, 1)
         XCTAssertEqual(board.version, 2)
-        XCTAssertEqual(board.status, .active) // sealing leaves status untouched
+        XCTAssertEqual(board.status, .completed) // F3: a fully-complete board (completedTasks >= boardSize²) seals as .completed
 
         let queued = try db.read { try SyncQueueItem.filter(Column("entityId") == "b1" && Column("entityType") == "boards").fetchCount($0) }
         XCTAssertGreaterThan(queued, 0)

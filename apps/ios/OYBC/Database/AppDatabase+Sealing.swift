@@ -116,6 +116,37 @@ extension AppDatabase {
         )
     }
 
+    /// Deterministic sealed board-status transition, mirroring the LIVE cascade's
+    /// completion predicate (`isGreenlogNow = completedTasks >= boardSize²`;
+    /// greenlog + active → completed; !greenlog + completed → active). Twin of
+    /// web's `applySealedStatus`.
+    ///
+    /// Without this, a board sealed while `.active` whose FINAL completing event
+    /// only arrives (via pull) after the seal re-derives to fully-complete stats
+    /// yet stays frozen `.active` forever — and a greenlog-trigger ACHIEVEMENT
+    /// (which gates on `status == .completed`) never fires. This is derivation
+    /// OUTPUT inside the deterministic pull path, so it does not violate "sealed
+    /// boards only mutate via deterministic pull-path re-derivation" — it IS that
+    /// path.
+    ///
+    /// `completedAtTs` is the seal instant (`board.sealedAt`), NOT wall-clock, so
+    /// every device computes the same status/completedAt from the same converged
+    /// event union — no LWW/version race. Returns the resolved (status,
+    /// completedAt); unchanged inputs return the board's current values.
+    static func resolveSealedStatus(
+        board: Board,
+        snapshot: SealSnapshot,
+        completedAtTs: String
+    ) -> (status: BoardStatus, completedAt: String?) {
+        let isGreenlog = snapshot.completedTasks >= board.boardSize * board.boardSize
+        if isGreenlog && board.status == .active {
+            return (.completed, completedAtTs)
+        } else if !isGreenlog && board.status == .completed {
+            return (.active, nil)
+        }
+        return (board.status, board.completedAt)
+    }
+
     /// Core seal within an existing transaction (docs §Sealing → Lifecycle step
     /// 3). Idempotent — already-sealed / missing / deleted boards are a no-op.
     ///
@@ -134,6 +165,11 @@ extension AppDatabase {
         board.completedTasks = snapshot.completedTasks
         board.linesCompleted = snapshot.linesCompleted
         board.completedLineIds = snapshot.completedLineIds.isEmpty ? nil : snapshot.completedLineIds
+        // Deterministic status from the sealed snapshot. `now` is the sealedAt
+        // instant being stamped, so this matches the re-derivation path's source.
+        let resolvedStatus = AppDatabase.resolveSealedStatus(board: board, snapshot: snapshot, completedAtTs: now)
+        board.status = resolvedStatus.status
+        board.completedAt = resolvedStatus.completedAt
         board.updatedAt = now
         board.version += 1
         try board.save(db)
@@ -274,8 +310,14 @@ extension AppDatabase {
                   !board.isDeleted, let sealedAt = board.sealedAt else { continue }
             let sealedAtMs = (DateFormatting.parseISO(sealedAt)?.timeIntervalSince1970 ?? 0) * 1000
             let snapshot = computeSealSnapshot(board: board, lookups: lookups, sealedAtMs: sealedAtMs)
-            // Local-only re-derivation: snapshot fields only, no version bump /
-            // enqueue. Raw UPDATE so no save-side version machinery fires.
+            // Local-only re-derivation: snapshot fields + deterministic status,
+            // no version bump / enqueue. Raw UPDATE so no save-side version
+            // machinery fires. `status`/`completedAt` derive from the converged
+            // event union via the same greenlog predicate the live cascade uses,
+            // with `completedAt` stamped from the deterministic `sealedAt`
+            // instant — so a board sealed while active whose final completing
+            // event lands post-seal converges to completed on every device.
+            let resolvedStatus = AppDatabase.resolveSealedStatus(board: board, snapshot: snapshot, completedAtTs: sealedAt)
             let cellsJson: String? = {
                 guard let data = try? JSONEncoder().encode(snapshot.sealedCompletedCells) else { return nil }
                 return String(data: data, encoding: .utf8)
@@ -288,10 +330,13 @@ extension AppDatabase {
             try db.execute(
                 sql: """
                     UPDATE boards
-                    SET sealedCompletedCells = ?, completedTasks = ?, linesCompleted = ?, completedLineIds = ?
+                    SET sealedCompletedCells = ?, completedTasks = ?, linesCompleted = ?, completedLineIds = ?, status = ?, completedAt = ?
                     WHERE id = ?
                     """,
-                arguments: [cellsJson, snapshot.completedTasks, snapshot.linesCompleted, linesJson, boardId]
+                arguments: [
+                    cellsJson, snapshot.completedTasks, snapshot.linesCompleted, linesJson,
+                    resolvedStatus.status.rawValue, resolvedStatus.completedAt, boardId
+                ]
             )
         }
     }

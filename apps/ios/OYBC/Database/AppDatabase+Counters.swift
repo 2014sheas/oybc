@@ -153,9 +153,13 @@ extension AppDatabase {
     /// `currentCount` is set to its current derived `displayed` value (via
     /// `deriveDisplayedCount`), so it becomes an independent counting task
     /// that keeps whatever progress it showed. The snapshot event is
-    /// anchored at `now` (NOT the seed sentinel) — it's a real, present-day
-    /// event, not backfill. No-op (returns without writing) if the source is
-    /// missing or already deleted.
+    /// anchored at `TaskEvents.seedEventOccurredAt` (the same far-past seed
+    /// sentinel `createCounterTask` uses), NOT `now` — it captures a one-time
+    /// carried-over lifetime balance, not a present-day activity occurrence,
+    /// so it must be excluded from day-bucketing (`deriveCounterDailyTotals`)
+    /// rather than inflating the member's "Today" / sparkline. The
+    /// authoritative `currentCount` (lifetime sum) is unchanged. No-op
+    /// (returns without writing) if the source is missing or already deleted.
     ///
     /// Ordering note: each member row is saved (clearing `sharedCounterId`)
     /// BEFORE `insertIncrementEventRaw` re-fetches it — that re-fetch is
@@ -194,12 +198,16 @@ extension AppDatabase {
                     now: now
                 ).enqueue(db)
                 if derived.displayed > 0 {
+                    // Anchor the carried-over lifetime snapshot at the seed
+                    // sentinel (not `now`) so it is excluded from day-bucketing
+                    // — it's a starting balance, not a present-day occurrence.
                     try Self.insertIncrementEventRaw(
                         db: db,
                         taskId: member.id,
                         delta: derived.displayed,
                         boardId: nil,
-                        now: now
+                        now: now,
+                        occurredAt: TaskEvents.seedEventOccurredAt
                     )
                 }
             }

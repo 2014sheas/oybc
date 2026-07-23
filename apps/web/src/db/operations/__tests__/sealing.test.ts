@@ -267,6 +267,124 @@ describe('sealBoard', () => {
   });
 });
 
+// ─── sealed board status (deterministic completion from the event union) ────────
+
+/**
+ * Fill a 3×3 NONE-center board with 9 normal tasks (one per cell) so a full set
+ * of in-window completions makes it greenlog. Returns the 9 task ids.
+ */
+async function seedFullBoard(boardId: string, over: Partial<Board> = {}): Promise<string[]> {
+  await seedBoard(boardId, over);
+  const ids: string[] = [];
+  for (let cell = 0; cell < 9; cell++) {
+    const id = `40000000-0000-4000-8000-0000000000${String(cell + 1).padStart(2, '0')}`;
+    await seedNormalTask(id);
+    await placeTask(boardId, id, cell);
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** Append an in-window completion event for every task id. */
+async function completeAll(ids: string[]): Promise<void> {
+  for (let i = 0; i < ids.length; i++) {
+    await db.taskEvents.add(completionEvent(`ce-${i}`, ids[i], IN_WINDOW));
+  }
+}
+
+describe('sealed board status (deterministic completion from the event union)', () => {
+  it('sealBoard stamps COMPLETED + completedAt when the sealed snapshot is greenlog', async () => {
+    const ids = await seedFullBoard(BOARD_SEALED);
+    await completeAll(ids);
+
+    const sealed = await sealBoard(BOARD_SEALED, PAST_BACKSTOP);
+    expect(sealed).toBe(true);
+
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.completedTasks).toBe(9);
+    expect(board?.status).toBe(BoardStatus.COMPLETED);
+    // completedAt stamped from the seal instant (== sealedAt).
+    expect(board?.completedAt).toBe(PAST_BACKSTOP);
+  });
+
+  it('flips a board sealed while ACTIVE to COMPLETED when its final completing event re-derives in (bug F3)', async () => {
+    const ids = await seedFullBoard(BOARD_SEALED);
+    // Complete 8 of 9 BEFORE the seal → sealed while still ACTIVE (grey cell 8).
+    for (let i = 0; i < 8; i++) {
+      await db.taskEvents.add(completionEvent(`ce-${i}`, ids[i], IN_WINDOW));
+    }
+    await sealBoard(BOARD_SEALED, PAST_BACKSTOP);
+    const preRederive = await db.boards.get(BOARD_SEALED);
+    expect(preRederive?.status).toBe(BoardStatus.ACTIVE);
+    expect(preRederive?.completedTasks).toBe(8);
+
+    // The FINAL completing event (occurredAt inside the sealed window) arrives
+    // via pull post-seal → re-derivation must converge the board to COMPLETED.
+    await db.taskEvents.add(completionEvent('ce-final', ids[8], '2026-07-01T15:00:00.000Z'));
+    await reDeriveSealedBoardsForTasks([ids[8]]);
+
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.completedTasks).toBe(9);
+    expect(board?.status).toBe(BoardStatus.COMPLETED);
+    // Deterministic completedAt: the seal instant, not wall-clock — every device
+    // computes the same value from the converged union.
+    expect(board?.completedAt).toBe(PAST_BACKSTOP);
+    // Re-derivation stays local-only: no version bump vs the seal write.
+    expect(board?.version).toBe(2);
+  });
+
+  it('leaves a still-incomplete sealed board ACTIVE after re-derivation', async () => {
+    const ids = await seedFullBoard(BOARD_SEALED);
+    await sealBoard(BOARD_SEALED, PAST_BACKSTOP); // sealed grey + ACTIVE
+
+    // A late pre-seal event completes only ONE cell → still short of greenlog.
+    await db.taskEvents.add(completionEvent('ce-one', ids[0], IN_WINDOW));
+    await reDeriveSealedBoardsForTasks([ids[0]]);
+
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.completedTasks).toBe(1);
+    expect(board?.status).toBe(BoardStatus.ACTIVE);
+    expect(board?.completedAt).toBeUndefined();
+  });
+
+  it('keeps a board that seals already-complete COMPLETED (and preserves its completedAt)', async () => {
+    const priorCompletedAt = '2026-07-01T12:30:00.000Z';
+    const ids = await seedFullBoard(BOARD_SEALED, {
+      status: BoardStatus.COMPLETED,
+      completedAt: priorCompletedAt,
+    });
+    await completeAll(ids); // greenlog in-window
+
+    await sealBoard(BOARD_SEALED, PAST_BACKSTOP);
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.completedTasks).toBe(9);
+    expect(board?.status).toBe(BoardStatus.COMPLETED);
+    // Already COMPLETED + still greenlog → neither transition fires; the
+    // original completedAt is preserved (not overwritten by the seal instant).
+    expect(board?.completedAt).toBe(priorCompletedAt);
+  });
+
+  it('reverts a sealed COMPLETED board to ACTIVE when a tombstone re-derives it below greenlog', async () => {
+    const ids = await seedFullBoard(BOARD_SEALED, {
+      status: BoardStatus.COMPLETED,
+      completedAt: '2026-07-01T12:30:00.000Z',
+    });
+    await completeAll(ids);
+    await sealBoard(BOARD_SEALED, PAST_BACKSTOP);
+    expect((await db.boards.get(BOARD_SEALED))?.status).toBe(BoardStatus.COMPLETED);
+
+    // One of the completions is tombstoned (its delete syncs in) → the sealed
+    // snapshot drops below greenlog and must revert deterministically.
+    await db.taskEvents.where('id').equals('ce-0').modify({ isDeleted: true });
+    await reDeriveSealedBoardsForTasks([ids[0]]);
+
+    const board = await db.boards.get(BOARD_SEALED);
+    expect(board?.completedTasks).toBe(8);
+    expect(board?.status).toBe(BoardStatus.ACTIVE);
+    expect(board?.completedAt).toBeUndefined();
+  });
+});
+
 // ─── backstop auto-seal ─────────────────────────────────────────────────────────
 
 describe('runBackstopAutoSeal', () => {

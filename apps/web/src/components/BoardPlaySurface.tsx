@@ -27,7 +27,6 @@ import {
   resolveSharedCounterSourceId,
 } from './boardPlaySharedCounterUtils';
 import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
-import { undoLastCounterLog } from '../db/operations/tasks';
 import { CellSwapModal } from './CellSwapModal';
 import { BoardStatusBadge } from './BoardStatusBadge';
 import { RecurringBadge } from './RecurringBadge';
@@ -118,7 +117,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     boardTasks,
     taskMap,
     compoundChildrenByCompound,
-    allBoardTasks,
     allBoards,
     achievementBadgesByBoardTaskId,
     sharedCounterSourceIds,
@@ -295,6 +293,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     handleComplete,
     handleSharedCounterIncrement,
     handleSharedCounterDecrement,
+    undoCounterLog,
     handleCompoundChildToggle,
     addTaskToCell,
   } = useBoardPlay({
@@ -303,7 +302,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     boardTasks,
     taskMap,
     compoundChildrenByCompound,
-    allBoardTasks,
     gridSize,
     // Sealing replaced the expiry lock (docs §Lifecycle): play handlers are
     // locked only on sealed boards; an expired-but-unsealed board stays live.
@@ -434,7 +432,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             // a failed undo must not leave the user believing it succeeded.
             void (async () => {
               try {
-                await undoLastCounterLog(sourceTaskId);
+                // Route through the hook so the reversal flashes any board
+                // COMPLETED→ACTIVE / lost-bingo transition it causes (F1).
+                await undoCounterLog(sourceTaskId);
               } catch (err) {
                 console.error('Undo failed', err);
               } finally {
