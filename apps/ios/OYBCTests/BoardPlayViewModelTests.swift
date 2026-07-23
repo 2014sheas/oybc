@@ -895,6 +895,28 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "removal must not touch the DB before Save")
     }
 
+    func test_editDraftBoardTasks_reflectsStagedRemoval() throws {
+        // Regression (review Critical): the Edit-tasks grid renders from
+        // `editDraftBoardTasks`; a staged removal must drop the cell (compactMap),
+        // and removing every cell must yield [] — NOT the full original board.
+        let db = try makeDb()
+        try seedWorkspace(db)   // b1: t1@(0,0) bt-b1-1, t2@(0,1) bt-b1-2
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertEqual(vm.editDraftBoardTasks.count, 2, "seeded draft renders both placements")
+
+        vm.handleEditRemove(cellKey: "0-1")
+        XCTAssertFalse(vm.editDraftBoardTasks.contains { $0.id == "bt-b1-2" },
+                       "removed cell must disappear from the rendered grid, not persist")
+        XCTAssertTrue(vm.editDraftBoardTasks.contains { $0.id == "bt-b1-1" })
+
+        // Remove the last remaining square → the grid must be empty, not the full board.
+        vm.handleEditRemove(cellKey: "0-0")
+        XCTAssertTrue(vm.editDraftBoardTasks.isEmpty,
+                      "all-removed draft renders an empty grid (guard must not resurrect originals)")
+        XCTAssertEqual(vm.editSquaresEditCount, 2, "both removals still count as edits (Save enabled)")
+    }
+
     func test_handleEditSave_commitsStagedRemoval() throws {
         let db = try makeDb()
         try seedWorkspace(db)   // b1: t1@(0,0) bt-b1-1, t2@(0,1) bt-b1-2

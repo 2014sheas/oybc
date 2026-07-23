@@ -243,11 +243,16 @@ final class BoardPlayViewModel: ObservableObject {
     /// `boardTasks:` in `BoardEditPanel` so the draft grid shows the staged
     /// tasks without touching the database.
     var editDraftBoardTasks: [BoardTask] {
-        guard !editSquaresDraft.isEmpty else { return boardTasks }
-        return boardTasks.map { bt in
+        // Sole consumer is BoardEditPanel (edit mode only), and `seedEditDraft`
+        // populates the draft synchronously before the view flips `editMode`, so
+        // a MISSING key here always means the cell was removed via
+        // `handleEditRemove` — drop it (compactMap → nil) so the grid renders the
+        // hole. An all-removed session correctly yields []. (Mirrors the way
+        // `editSquaresEditCount` treats an absent draft entry as a removal.)
+        return boardTasks.compactMap { bt in
             let key = "\(bt.row)-\(bt.col)"
-            guard let draft = editSquaresDraft[key],
-                  draft.stagedTaskId != bt.taskId else { return bt }
+            guard let draft = editSquaresDraft[key] else { return nil }
+            guard draft.stagedTaskId != bt.taskId else { return bt }
             var copy = bt
             copy.taskId = draft.stagedTaskId
             return copy
