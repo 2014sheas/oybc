@@ -238,6 +238,13 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   // Squares draft: per-cell staged state seeded when entering edit mode.
   // Never updated by live boardTasks changes (only by Replace/Edit actions).
   const [squaresDraft, setSquaresDraft] = useState<SquareDraftCell[]>([]);
+  // Whether the current edit session's draft has been seeded. Distinguishes the
+  // un-seeded first render (draft still [] because the seed effect runs a frame
+  // after `editMode` flips) from a legitimately EMPTY draft after the user has
+  // removed every square — the two are indistinguishable by `squaresDraft.length`
+  // alone, and conflating them silently disabled Save / skipped the discard
+  // confirm on "remove everything" (review Critical).
+  const [draftSeeded, setDraftSeeded] = useState(false);
 
   // Staged task-field overrides, keyed by taskId.
   // Applied to the grid display while in edit mode; committed on Save.
@@ -288,12 +295,13 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   // Phase 2b: the rearrange-move count excludes only truly pinned centers
   // (CHOSEN / FREE / CUSTOM_FREE). A NONE center is a regular movable cell.
   // Staged removals: pre-edit placements (still live in `boardTasks` during
-  // staging) absent from the current draft. Gated on `editMode` + a non-empty
-  // draft so the un-seeded first render (draft still []) doesn't briefly count
-  // every placement as removed. Mirrors iOS `editSquaresEditCount`.
+  // staging) absent from the current draft. Gated on `editMode` + `draftSeeded`
+  // (NOT `squaresDraft.length > 0`) so the un-seeded first render doesn't briefly
+  // count every placement as removed, while a legitimately empty draft (user
+  // removed every square) is still counted. Mirrors iOS `editSquaresEditCount`.
   const draftBoardTaskIds = new Set(squaresDraft.map((c) => c.boardTaskId));
   const stagedRemovalCount =
-    editMode && squaresDraft.length > 0
+    editMode && draftSeeded
       ? boardTasks.filter((bt) => !draftBoardTaskIds.has(bt.id)).length
       : 0;
 
@@ -315,6 +323,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   useEffect(() => {
     if (!editMode) {
       setSquaresDraft([]);
+      setDraftSeeded(false);
       setTaskOverrides(new Map());
       setSubMode('editTasks');
       setSquareTapMenu(null);
@@ -343,6 +352,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         originalCol: bt.col,
       })),
     );
+    setDraftSeeded(true);
     setTaskOverrides(new Map());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode]);

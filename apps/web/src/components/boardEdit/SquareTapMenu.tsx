@@ -57,6 +57,8 @@ const PAD = 10;
  * @param y - Click clientY coordinate
  * @param onReplace - Fires when user chooses "Replace task"
  * @param onEdit - Fires when user chooses "Edit task"
+ * @param onRemove - Fires when user chooses "Remove from board" (staged removal)
+ * @param onMakeFree - Fires when a center task chooses "Make it a free space"
  * @param onClose - Fired on scrim click or Escape
  */
 export function SquareTapMenu({
