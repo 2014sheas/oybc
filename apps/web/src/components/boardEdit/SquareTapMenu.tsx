@@ -19,6 +19,11 @@ interface SquareTapMenuProps {
   /** Called when the user picks "Edit task". Omit to hide the item. */
   onEdit?: () => void;
   /**
+   * Called when the user picks "Remove from board" — a destructive, staged
+   * removal (empties the cell; persisted on Save). Omit to hide the item.
+   */
+  onRemove?: () => void;
+  /**
    * Phase 2b — shown when the center cell holds a task (NONE center type)
    * and the user can convert it back to a free space. Omit to hide the item.
    */
@@ -60,6 +65,7 @@ export function SquareTapMenu({
   y: clickY,
   onReplace,
   onEdit,
+  onRemove,
   onMakeFree,
   onMakeTask,
   onClose,
@@ -68,7 +74,7 @@ export function SquareTapMenu({
   // Center the menu horizontally around the click point, clamped to viewport.
   // Place below click by default; flip above if near the bottom edge.
   // Compute height dynamically based on how many items are visible.
-  const itemCount = [onReplace, onEdit, onMakeFree, onMakeTask].filter(Boolean).length;
+  const itemCount = [onReplace, onEdit, onRemove, onMakeFree, onMakeTask].filter(Boolean).length;
   const menuH = MENU_HEADER_H + itemCount * MENU_ITEM_H;
 
   let x = clickX - MENU_W / 2;
@@ -162,12 +168,36 @@ export function SquareTapMenu({
           </button>
         )}
 
+        {/* Remove from board — destructive; staged, persisted on Save.
+            Hidden for center-toggle-only menus (no task). A pinned center
+            never opens this menu, so no extra guard is needed here. */}
+        {onRemove && (
+          <button
+            type="button"
+            className={`${styles.menuItem} ${styles.menuItemDanger}`}
+            onClick={() => {
+              onRemove();
+              onClose();
+            }}
+          >
+            {/* trash icon */}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+            Remove from board
+          </button>
+        )}
+
         {/* Phase 2b — Make it a free space (NONE center with task → FREE) */}
         {onMakeFree && (
           <button
             type="button"
             className={styles.menuItem}
-            autoFocus={!onReplace && !onEdit}
+            autoFocus={!onReplace && !onEdit && !onRemove}
             onClick={() => {
               onMakeFree();
               onClose();
@@ -190,7 +220,7 @@ export function SquareTapMenu({
           <button
             type="button"
             className={styles.menuItem}
-            autoFocus={!onReplace && !onEdit && !onMakeFree}
+            autoFocus={!onReplace && !onEdit && !onRemove && !onMakeFree}
             onClick={() => {
               onMakeTask();
               onClose();
