@@ -152,7 +152,7 @@ describe('computeSealedCompletedCells (fixture-driven, tests/fixtures/sealReDeri
 
   it('lifetime default (no window context) is available and returns the center cell for an empty board', () => {
     const board = toBoard(fixture.vectors[0].board);
-    const cells = computeSealedCompletedCells(board, [], {}, {});
+    const cells = computeSealedCompletedCells(board, [], {}, {}, [], undefined);
     // 3x3 FREE center → index 4 auto-filled.
     expect(cells).toEqual([4]);
   });

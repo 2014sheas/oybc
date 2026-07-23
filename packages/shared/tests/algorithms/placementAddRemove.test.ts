@@ -136,6 +136,7 @@ describe('placement add/remove — affected board computation', () => {
       {},
       taskById,
       [],
+      undefined,
     );
     // board-2 still has 1 placement, task not completed → completedTasks stays 0
     expect(stats.completedTasks).toBe(0);
@@ -154,12 +155,12 @@ describe('placement add/remove — affected board computation', () => {
 
     // Board before remove: completedTasks = 1
     const board = makeBoard('board-1', { boardSize: 3, totalTasks: 2, completedTasks: 1 });
-    const statsBefore = computeBoardStatsUpdate(board, boardTasks, {}, taskById, []);
+    const statsBefore = computeBoardStatsUpdate(board, boardTasks, {}, taskById, [], undefined);
     expect(statsBefore.completedTasks).toBe(1);
 
     // After removing the completed task placement:
     const afterRemove = [makeBoardTask('bt2', 'board-1', 'task-todo', 0, 1)];
-    const statsAfter = computeBoardStatsUpdate(board, afterRemove, {}, taskById, []);
+    const statsAfter = computeBoardStatsUpdate(board, afterRemove, {}, taskById, [], undefined);
     expect(statsAfter.completedTasks).toBe(0);
   });
 
@@ -197,12 +198,12 @@ describe('placement add/remove — affected board computation', () => {
     const board = makeBoard('board-1', { boardSize: 3, totalTasks: 9, linesCompleted: 1, completedLineIds: ['row-0'] });
 
     // Before remove: row 0 is a bingo
-    const statsBefore = computeBoardStatsUpdate(board, allBoardTasks, {}, taskById, []);
+    const statsBefore = computeBoardStatsUpdate(board, allBoardTasks, {}, taskById, [], undefined);
     expect(statsBefore.linesCompleted).toBe(1);
 
     // After removing bt1 (task-r0c0 at row=0, col=0):
     const afterRemove = allBoardTasks.filter((bt) => bt.id !== 'bt1');
-    const statsAfter = computeBoardStatsUpdate(board, afterRemove, {}, taskById, []);
+    const statsAfter = computeBoardStatsUpdate(board, afterRemove, {}, taskById, [], undefined);
     // Row 0 is now missing col=0, so the line is broken
     expect(statsAfter.linesCompleted).toBe(0);
   });
@@ -221,12 +222,12 @@ describe('placement add/remove — affected board computation', () => {
     const board = makeBoard('board-1', { boardSize: 3, totalTasks: 2 });
 
     // Before add: completedTasks = 0
-    const statsBefore = computeBoardStatsUpdate(board, existingBoardTasks, {}, taskById, []);
+    const statsBefore = computeBoardStatsUpdate(board, existingBoardTasks, {}, taskById, [], undefined);
     expect(statsBefore.completedTasks).toBe(0);
 
     // After adding the completed task placement:
     const afterAdd = [...existingBoardTasks, newPlacement];
-    const statsAfter = computeBoardStatsUpdate(board, afterAdd, {}, taskById, []);
+    const statsAfter = computeBoardStatsUpdate(board, afterAdd, {}, taskById, [], undefined);
     expect(statsAfter.completedTasks).toBe(1);
   });
 
@@ -242,7 +243,7 @@ describe('placement add/remove — affected board computation', () => {
     };
     const board = makeBoard('board-1', { boardSize: 3, totalTasks: 2 });
 
-    const statsOriginal = computeBoardStatsUpdate(board, original, {}, taskById, []);
+    const statsOriginal = computeBoardStatsUpdate(board, original, {}, taskById, [], undefined);
 
     // Remove task-A, then add it back (new BoardTask id, same taskId + position)
     const afterRemove = original.filter((bt) => bt.taskId !== 'task-A');
@@ -250,7 +251,7 @@ describe('placement add/remove — affected board computation', () => {
       ...afterRemove,
       makeBoardTask('bt-new-2', 'board-1', 'task-A', 0, 0),
     ];
-    const statsAfterRoundTrip = computeBoardStatsUpdate(board, afterAdd, {}, taskById, []);
+    const statsAfterRoundTrip = computeBoardStatsUpdate(board, afterAdd, {}, taskById, [], undefined);
 
     expect(statsAfterRoundTrip.completedTasks).toBe(statsOriginal.completedTasks);
     expect(statsAfterRoundTrip.linesCompleted).toBe(statsOriginal.linesCompleted);

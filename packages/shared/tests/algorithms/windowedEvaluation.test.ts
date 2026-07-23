@@ -200,7 +200,7 @@ describe('computeBoardStatsUpdate — window context', () => {
   it('lifetime default: a task completed pre-window still reads complete (today’s behavior)', () => {
     const t = makeTask({ id: 't', isCompleted: true });
     const board = makeBoard({});
-    const result = computeBoardStatsUpdate(board, [placement('t', 0, 0)], {}, { t });
+    const result = computeBoardStatsUpdate(board, [placement('t', 0, 0)], {}, { t }, [], undefined);
     expect(result.completedTasks).toBe(1);
   });
 

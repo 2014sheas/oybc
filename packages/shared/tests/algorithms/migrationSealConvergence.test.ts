@@ -125,7 +125,7 @@ describe('I-1 — migration bleed-greens converge to windowed truth on re-deriva
   it('migration seal (lifetime, no window context) keeps both bleed squares green', () => {
     // The migration path passes NO windowContext, so it reads the lifetime
     // isCompleted/currentCount caches — both squares bleed green (+ FREE center).
-    const cells = computeSealedCompletedCells(board(), boardTasks, {}, tasks, []);
+    const cells = computeSealedCompletedCells(board(), boardTasks, {}, tasks, [], undefined);
     expect(cells).toEqual([0, 1, 4]);
   });
 

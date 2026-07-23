@@ -244,7 +244,7 @@ describe('computeBoardStatsUpdate (fixture-driven, tests/fixtures/derivationPass
 
       const allBoards = v.allBoards.map(toBoard);
 
-      const result = computeBoardStatsUpdate(board, boardTasksOnBoard, childrenByCompound, taskById, allBoards);
+      const result = computeBoardStatsUpdate(board, boardTasksOnBoard, childrenByCompound, taskById, allBoards, undefined);
 
       expect(result.boardId).toBe(v.expected.boardId);
       expect(result.completedTasks).toBe(v.expected.completedTasks);
