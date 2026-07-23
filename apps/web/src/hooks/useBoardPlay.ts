@@ -104,7 +104,6 @@ export interface UseBoardPlayParams {
   boardTasks: BoardTask[];
   taskMap: Record<string, Task>;
   compoundChildrenByCompound: Record<string, CompoundChild[]>;
-  allBoardTasks: BoardTask[];
   gridSize: BoardSize;
   /**
    * Whether play-mode write handlers are locked. Windowed Completion (docs

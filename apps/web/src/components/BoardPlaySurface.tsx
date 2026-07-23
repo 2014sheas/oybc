@@ -117,7 +117,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     boardTasks,
     taskMap,
     compoundChildrenByCompound,
-    allBoardTasks,
     allBoards,
     achievementBadgesByBoardTaskId,
     sharedCounterSourceIds,
@@ -308,7 +307,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     boardTasks,
     taskMap,
     compoundChildrenByCompound,
-    allBoardTasks,
     gridSize,
     // Sealing replaced the expiry lock (docs §Lifecycle): play handlers are
     // locked only on sealed boards; an expired-but-unsealed board stays live.
