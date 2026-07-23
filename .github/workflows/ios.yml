@@ -91,7 +91,7 @@ jobs:
         # `packages:` section is the real source of truth for dependency
         # floors, so hashing it is the closest deterministic proxy — a
         # version bump there invalidates the cache, matching intent.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.DERIVED_DATA_PATH }}/SourcePackages
           key: ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('apps/ios/project.yml') }}
