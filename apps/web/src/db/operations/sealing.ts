@@ -1,5 +1,6 @@
 import { db } from '../internal';
 import {
+  BoardStatus,
   SyncOperationType,
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
@@ -138,11 +139,45 @@ function computeSealSnapshot(
 }
 
 /**
+ * Apply the deterministic board-status transition for a sealed snapshot onto a
+ * pending board `update`, mirroring the LIVE cascade's completion predicate
+ * (orchestration.ts `runBoardCascadeForTasks`: `isGreenlog = completedTasks >=
+ * boardSize²`; greenlog + ACTIVE → COMPLETED; !greenlog + COMPLETED → ACTIVE).
+ *
+ * Without this, a board sealed while ACTIVE whose FINAL completing event only
+ * arrives (via pull) after the seal would re-derive to fully-complete stats yet
+ * stay frozen ACTIVE forever — and a greenlog-trigger ACHIEVEMENT (which gates
+ * on `status === COMPLETED`) would never fire. This is derivation OUTPUT inside
+ * the deterministic pull path, so it does not violate "sealed boards only mutate
+ * via deterministic pull-path re-derivation" — it IS that path.
+ *
+ * `completedAtTs` is the seal instant (`board.sealedAt`), NOT wall-clock `now`,
+ * so every device computes the same status/completedAt from the same converged
+ * event union — no LWW/version race.
+ */
+function applySealedStatus(
+  board: Board,
+  snapshot: SealSnapshot,
+  update: Partial<Board>,
+  completedAtTs: string,
+): void {
+  const isGreenlog = snapshot.completedTasks >= board.boardSize * board.boardSize;
+  if (isGreenlog && board.status === BoardStatus.ACTIVE) {
+    update.status = BoardStatus.COMPLETED;
+    update.completedAt = completedAtTs;
+  } else if (!isGreenlog && board.status === BoardStatus.COMPLETED) {
+    update.status = BoardStatus.ACTIVE;
+    update.completedAt = undefined;
+  }
+}
+
+/**
  * Seal a board (docs §Sealing → Lifecycle step 3). One transaction: run the
  * derivation pass one final time, freeze `sealedAt` + `sealedCompletedCells` +
  * the derived stats, bump `version`/`updatedAt`, enqueue the Board sync.
- * `status` is untouched. Idempotent — already-sealed / missing / deleted boards
- * are a no-op.
+ * `status`/`completedAt` are set deterministically from the sealed snapshot via
+ * the SAME greenlog predicate the live cascade uses (see `applySealedStatus`).
+ * Idempotent — already-sealed / missing / deleted boards are a no-op.
  *
  * @param boardId The board to seal.
  * @param now     The seal timestamp (defaults to wall-clock).
@@ -170,6 +205,9 @@ export async function sealBoard(boardId: string, now: string = currentTimestamp(
         updatedAt: now,
         version: (board.version ?? 1) + 1,
       };
+      // Deterministic status from the sealed snapshot. `now` is the sealedAt
+      // instant being stamped, so this matches the re-derivation path's source.
+      applySealedStatus(board, snapshot, update, now);
       await db.boards.update(boardId, update);
       const updated = await db.boards.get(boardId);
       if (updated) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updated, 0);
@@ -244,12 +282,19 @@ export async function reDeriveSealedBoardsForTasks(
     const board = await db.boards.get(boardId);
     if (!board || board.isDeleted || !board.sealedAt) continue;
     const snapshot = computeSealSnapshot(board, lookups, new Date(board.sealedAt).getTime());
-    // Local-only re-derivation: snapshot fields only, no version bump / enqueue.
-    await db.boards.update(boardId, {
+    // Local-only re-derivation: snapshot fields + deterministic status, no
+    // version bump / enqueue. `status`/`completedAt` derive from the converged
+    // event union via the same greenlog predicate the live cascade uses, with
+    // `completedAt` stamped from the deterministic `sealedAt` instant — so a
+    // board sealed while ACTIVE whose final completing event lands post-seal
+    // converges to COMPLETED on every device (no LWW race).
+    const update: Partial<Board> = {
       sealedCompletedCells: snapshot.sealedCompletedCells,
       completedTasks: snapshot.completedTasks,
       linesCompleted: snapshot.linesCompleted,
       completedLineIds: snapshot.completedLineIds,
-    });
+    };
+    applySealedStatus(board, snapshot, update, board.sealedAt);
+    await db.boards.update(boardId, update);
   }
 }
