@@ -167,4 +167,32 @@ describe('Windowed Completion — phantom-bingo cascade regression', () => {
     const secondPass = await reDeriveActiveBoards('user-1');
     expect(secondPass).not.toContain('board-1');
   });
+
+  it('reDeriveActiveBoards reverts a phantom-COMPLETED board to ACTIVE', async () => {
+    // A board wrongly written COMPLETED by the pre-fix lifetime cascade: all 9
+    // cells hold lifetime-complete tasks, but NONE has an in-window event, so
+    // windowed resolution finds 0 complete → not a greenlog → must revert.
+    await seedBoard({
+      status: BoardStatus.COMPLETED,
+      completedAt: IN_WINDOW,
+      completedLineIds: ['row_0', 'row_1', 'row_2', 'col_0', 'col_1', 'col_2', 'diag_main', 'diag_anti'],
+      linesCompleted: 8,
+      completedTasks: 9,
+      version: 5,
+    });
+    for (let cell = 0; cell < 9; cell++) {
+      const id = `task-${cell}`;
+      await seedTask(id, PRE_WINDOW); // lifetime-complete only, no in-window event
+      await seedPlacement(`bt-${cell}`, id, Math.floor(cell / 3), cell % 3);
+    }
+
+    const healed = await reDeriveActiveBoards('user-1');
+    expect(healed).toContain('board-1');
+
+    const board = await db.boards.get('board-1');
+    expect(board!.status).toBe(BoardStatus.ACTIVE); // phantom greenlog reverted
+    expect(board!.completedAt).toBeUndefined(); // completedAt cleared on revert
+    expect(board!.completedLineIds ?? []).toEqual([]); // all phantom lines cleared
+    expect(board!.completedTasks).toBe(0); // no cell is windowed-complete
+  });
 });

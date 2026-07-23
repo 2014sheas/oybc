@@ -286,7 +286,9 @@ export async function reDeriveActiveBoards(
         b.userId === userId &&
         !b.isDeleted &&
         !b.sealedAt &&
-        (b.status === BoardStatus.ACTIVE || b.status === BoardStatus.COMPLETED),
+        (b.status === BoardStatus.ACTIVE ||
+          b.status === BoardStatus.COMPLETED ||
+          b.status === BoardStatus.ARCHIVED),
     )
     .toArray();
   if (boards.length === 0) return [];
