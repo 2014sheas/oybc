@@ -59,9 +59,10 @@ final class WindowedBingoCascadeTests: XCTestCase {
     /// (no FREE auto-fill). `completedLineIds` can be pre-seeded to simulate a
     /// board that already carries a stale phantom line.
     private func make3x3Board(id: String, completedLineIds: [String]? = nil,
-                              linesCompleted: Int = 0, completedTasks: Int = 0) -> Board {
+                              linesCompleted: Int = 0, completedTasks: Int = 0,
+                              status: BoardStatus = .active, completedAt: String? = nil) -> Board {
         var dict: [String: Any] = [
-            "id": id, "userId": userId, "name": "Board", "status": BoardStatus.active.rawValue,
+            "id": id, "userId": userId, "name": "Board", "status": status.rawValue,
             "boardSize": 3, "timeframe": Timeframe.monthly.rawValue,
             "startDate": windowStart, "endDate": windowEnd,
             "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
@@ -73,6 +74,7 @@ final class WindowedBingoCascadeTests: XCTestCase {
             // Stored as a JSON *string* (Board's custom Codable), so encode it.
             dict["completedLineIds"] = String(data: try! JSONEncoder().encode(ids), encoding: .utf8)!
         }
+        if let completedAt { dict["completedAt"] = completedAt }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -177,5 +179,35 @@ final class WindowedBingoCascadeTests: XCTestCase {
         XCTAssertFalse(changedAgain.contains("b1"), "converged board is not rewritten")
         XCTAssertEqual(try db.fetchBoard(id: "b1")!.version, versionAfterFirst,
                        "idempotent: no version bump on a converged board")
+    }
+
+    // MARK: - 4. Self-heal reverts a phantom-COMPLETED board to ACTIVE
+
+    func test_reDeriveActiveBoards_revertsPhantomGreenlogToActive() throws {
+        let db = try makeDb(); try seedUser(db)
+        // A board wrongly written COMPLETED by the pre-fix lifetime cascade: all 9
+        // cells hold lifetime-complete tasks, but NONE has an in-window event, so
+        // windowed resolution finds 0 complete → not a greenlog.
+        try db.saveBoard(make3x3Board(
+            id: "b1",
+            completedLineIds: ["row_0", "row_1", "row_2", "col_0", "col_1", "col_2", "diag_main", "diag_anti"],
+            linesCompleted: 8, completedTasks: 9,
+            status: .completed, completedAt: inWindowInstant
+        ))
+        for cell in 0..<9 {
+            let tid = "t\(cell)"
+            try db.saveTask(makeTask(tid, isCompleted: true)) // lifetime cache only, no event
+            try db.saveBoardTask(makeBoardTask(id: "bt\(cell)", boardId: "b1", taskId: tid,
+                                               row: cell / 3, col: cell % 3))
+        }
+
+        let changed = try db.reDeriveActiveBoards(userId: userId)
+        XCTAssertTrue(changed.contains("b1"), "self-heal rewrote the phantom-completed board")
+
+        let board = try db.fetchBoard(id: "b1")!
+        XCTAssertEqual(board.status, .active, "phantom greenlog reverted to ACTIVE")
+        XCTAssertNil(board.completedAt, "completedAt cleared on revert")
+        XCTAssertEqual(board.completedLineIds ?? [], [], "all phantom lines cleared")
+        XCTAssertEqual(board.completedTasks, 0, "no cell is windowed-complete")
     }
 }

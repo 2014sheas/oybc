@@ -180,11 +180,17 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         try container.encode(completedTasks, forKey: .completedTasks)
         try container.encode(linesCompleted, forKey: .linesCompleted)
 
-        // Encode completedLineIds as JSON string
+        // Encode completedLineIds as JSON string. When nil, persist an explicit
+        // SQL NULL (encodeNil) rather than omitting the key — otherwise `save(db)`
+        // leaves a stale prior value in the column, so clearing the last bingo
+        // line (some lines → zero) would never persist. This bit every cascade
+        // that writes `update.completedLineIds.isEmpty ? nil : …`.
         if let completedLineIds = completedLineIds,
            let data = try? JSONEncoder().encode(completedLineIds),
            let jsonString = String(data: data, encoding: .utf8) {
             try container.encode(jsonString, forKey: .completedLineIds)
+        } else {
+            try container.encodeNil(forKey: .completedLineIds)
         }
 
         try container.encode(createdAt, forKey: .createdAt)

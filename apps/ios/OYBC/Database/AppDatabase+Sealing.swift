@@ -367,7 +367,7 @@ extension AppDatabase {
             let boards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .fetchAll(db)
-                .filter { $0.sealedAt == nil && ($0.status == .active || $0.status == .completed) }
+                .filter { $0.sealedAt == nil && ($0.status == .active || $0.status == .completed || $0.status == .archived) }
             guard !boards.isEmpty else { return [] }
 
             let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
@@ -418,7 +418,7 @@ extension AppDatabase {
                 // differs from what's stored.
                 let changed = board.completedTasks != update.completedTasks
                     || board.linesCompleted != update.linesCompleted
-                    || (board.completedLineIds ?? []) != (newCompletedLineIds ?? [])
+                    || Set(board.completedLineIds ?? []) != Set(newCompletedLineIds ?? [])
                     || board.status != newStatus
                 guard changed else { continue }
 
