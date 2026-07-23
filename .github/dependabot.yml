@@ -21,6 +21,14 @@ updates:
       time: "06:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 is the new native (Go) compiler. `tsc` itself works with
+      # minor tsconfig fixes, but the surrounding TS tooling doesn't support it
+      # yet: @typescript-eslint crashes on `pnpm lint` and ts-jest can't run the
+      # shared/bingo-core unit suites. Ignore major bumps until the ecosystem
+      # catches up, then adopt deliberately. See closed PR #324.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # Group all minor + patch updates into one PR per ecosystem per
       # week so Monday morning isn't a flood of single-line bumps.
