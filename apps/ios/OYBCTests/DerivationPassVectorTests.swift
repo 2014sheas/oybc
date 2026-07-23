@@ -258,7 +258,8 @@ final class DerivationPassVectorTests: XCTestCase {
 
             let result = DerivationPass.computeBoardStatsUpdate(
                 board: board, boardTasksOnBoard: boardTasksOnBoard,
-                childrenByCompound: childrenByCompound, taskById: taskById, allBoards: allBoards
+                childrenByCompound: childrenByCompound, taskById: taskById, allBoards: allBoards,
+                windowContext: nil
             )
 
             XCTAssertEqual(result.boardId, v.expected.boardId, "Vector '\(v.name)' boardId")

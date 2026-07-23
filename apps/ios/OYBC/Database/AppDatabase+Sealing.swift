@@ -209,20 +209,23 @@ extension AppDatabase {
 
         for board in allBoards where isBoardPastBackstop(board, nowMs: nowMs) {
             let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == board.id }
-            // Lifetime derivation (no window context) = pre-migration state.
+            // Lifetime derivation (explicit nil window context) = pre-migration
+            // state. Deliberate: freeze the caches the user currently sees.
             let stats = DerivationPass.computeBoardStatsUpdate(
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoards
+                allBoards: allBoards,
+                windowContext: nil
             )
             let cells = DerivationPass.computeSealedCompletedCells(
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoards
+                allBoards: allBoards,
+                windowContext: nil
             )
 
             var sealed = board
@@ -338,6 +341,107 @@ extension AppDatabase {
                     resolvedStatus.status.rawValue, resolvedStatus.completedAt, boardId
                 ]
             )
+        }
+    }
+
+    /// One-shot windowed re-derivation self-heal (Windowed-bingo-cascade fix).
+    ///
+    /// Existing boards may carry stale `completedLineIds` / `linesCompleted`
+    /// written by the pre-fix edit/structure cascades, which resolved from the
+    /// lifetime `Task.isCompleted` cache instead of the board window — a cell
+    /// holding a lifetime-complete-but-out-of-window task could be counted into
+    /// a bingo line while rendering un-green (phantom bingo). This pass
+    /// recomputes each live board's stats against its own `[startDate, ∞)`
+    /// window and rewrites only the boards whose stats actually changed.
+    ///
+    /// Idempotent (a converged board is a no-op) and lazy/app-open only — same
+    /// posture as `runBackstopAutoSeal`: no background scheduling, one
+    /// transaction, only touches live (non-draft/archived, non-sealed,
+    /// non-deleted) boards. Sealed boards are untouched (they re-derive on the
+    /// pull path via `reDeriveSealedBoards`).
+    ///
+    /// - Returns: The ids of boards whose stats were rewritten by this pass.
+    @discardableResult
+    func reDeriveActiveBoards(userId: String, now: String = AppDatabase.currentTimestamp()) throws -> [String] {
+        try write { db in
+            let boards = try Board
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .fetchAll(db)
+                .filter { $0.sealedAt == nil && ($0.status == .active || $0.status == .completed) }
+            guard !boards.isEmpty else { return [] }
+
+            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            // Windowed resolution: each board evaluated against its own window.
+            let windowContext = try Self.buildWindowContext(db: db)
+
+            var changedIds: [String] = []
+            for board in boards {
+                var updated = board
+                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == board.id }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: board,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards,
+                    windowContext: windowContext
+                )
+
+                let totalSquares = board.boardSize * board.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+                let newCompletedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+
+                var newStatus = board.status
+                var newCompletedAt = board.completedAt
+                if isGreenlogNow, board.status == .active {
+                    newStatus = .completed
+                    newCompletedAt = now
+                } else if !isGreenlogNow, board.status == .completed {
+                    newStatus = .active
+                    newCompletedAt = nil
+                }
+
+                // Idempotent: only write when the windowed derivation actually
+                // differs from what's stored.
+                let changed = board.completedTasks != update.completedTasks
+                    || board.linesCompleted != update.linesCompleted
+                    || (board.completedLineIds ?? []) != (newCompletedLineIds ?? [])
+                    || board.status != newStatus
+                guard changed else { continue }
+
+                updated.completedTasks = update.completedTasks
+                updated.totalTasks = totalSquares
+                updated.linesCompleted = update.linesCompleted
+                updated.completedLineIds = newCompletedLineIds
+                updated.status = newStatus
+                updated.completedAt = newCompletedAt
+                updated.updatedAt = now
+                updated.version += 1
+
+                try updated.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: board.id,
+                    operationType: .update,
+                    payload: updated,
+                    now: now
+                ).enqueue(db)
+                changedIds.append(board.id)
+            }
+            return changedIds
         }
     }
 }

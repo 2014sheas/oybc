@@ -387,12 +387,17 @@ enum MigrationV7Helpers {
         let allBoardStructs: [Board] = try boardRows.map { try Board(row: $0) }
         for board in allBoardStructs {
             let boardTasksOnBoard = allBoardTaskStructs.filter { $0.boardId == board.id }
+            // Lifetime derivation (explicit nil window context): this is the v7
+            // compound-tasks-unification migration, which runs over historical
+            // data long before the event log exists. Windowed resolution is
+            // deliberately N/A here — freeze the pre-migration lifetime caches.
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoardStructs
+                allBoards: allBoardStructs,
+                windowContext: nil
             )
             let newVersion = board.version + 1
 

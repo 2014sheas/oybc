@@ -314,7 +314,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
         // row_0 not fully complete (t2 not done), no bingos
@@ -337,7 +338,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: childrenByCompound,
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -357,7 +359,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: childrenByCompound,
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -381,7 +384,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.linesCompleted, 1)
         XCTAssertTrue(result.completedLineIds.contains("row_0"))
@@ -406,7 +410,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertTrue(result.newBingos.contains("row_0"))
         XCTAssertEqual(result.lostBingos, [])
@@ -431,7 +436,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertTrue(result.lostBingos.contains("row_0"))
         XCTAssertEqual(result.newBingos, [])
@@ -446,7 +452,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -459,7 +466,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -472,7 +480,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -485,7 +494,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -510,7 +520,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         // auto-filled center counts + 4 explicit tasks
         XCTAssertEqual(result.completedTasks, 5)
@@ -530,7 +541,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -545,7 +557,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [stale],
             childrenByCompound: [:],
-            taskById: ["t1": t]
+            taskById: ["t1": t],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
         XCTAssertEqual(result.completedLineIds, [])
@@ -559,7 +572,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.newBingos, [])
         XCTAssertEqual(result.lostBingos, [])
@@ -573,7 +587,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.boardId, "myBoard")
     }
@@ -596,7 +611,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": ach]
+            taskById: ["ach1": ach],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -612,7 +628,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": ach]
+            taskById: ["ach1": ach],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -629,7 +646,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -644,7 +662,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -659,7 +678,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -673,7 +693,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent]
+            allBoards: [parent],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -691,7 +712,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -708,7 +730,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -723,7 +746,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent]
+            allBoards: [parent],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -738,7 +762,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1]
+            allBoards: [parent, s1],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -757,7 +782,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2, s3, s4]
+            allBoards: [parent, s1, s2, s3, s4],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -772,7 +798,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1]
+            allBoards: [parent, s1],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -787,7 +814,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1]
+            allBoards: [parent, s1],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -807,7 +835,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -822,7 +851,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -844,7 +874,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -867,7 +898,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -926,7 +958,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }

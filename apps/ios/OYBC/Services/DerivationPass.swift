@@ -118,7 +118,7 @@ enum DerivationPass {
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
         allBoards: [Board] = [],
-        windowContext: WindowEvaluationContext? = nil
+        windowContext: WindowEvaluationContext?
     ) -> BoardStatsUpdate {
         let built = computeBoardGrid(
             board: board,
@@ -170,7 +170,7 @@ enum DerivationPass {
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
         allBoards: [Board] = [],
-        windowContext: WindowEvaluationContext? = nil
+        windowContext: WindowEvaluationContext?
     ) -> [Int] {
         let built = computeBoardGrid(
             board: board,

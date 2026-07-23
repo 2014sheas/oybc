@@ -139,6 +139,12 @@ extension AppDatabase {
 
             // ── One derivation pass per affected board ──
 
+            // Windowed Completion: resolve each board against its own
+            // `[startDate, ∞)` window from the event log, not the lifetime
+            // `Task.isCompleted` cache (which would count out-of-window cells
+            // into bingo lines → phantom bingos).
+            let windowContext = try Self.buildWindowContext(db: db)
+
             for affectedBoardId in affectedBoardIds {
                 guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
                       !affectedBoard.isDeleted, affectedBoard.sealedAt == nil else { continue }
@@ -149,7 +155,8 @@ extension AppDatabase {
                     boardTasksOnBoard: boardTasksOnBoard,
                     childrenByCompound: childrenByCompound,
                     taskById: taskById,
-                    allBoards: allBoards
+                    allBoards: allBoards,
+                    windowContext: windowContext
                 )
 
                 let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
@@ -275,13 +282,18 @@ extension AppDatabase {
                 childrenByCompound[c.compoundTaskId, default: []].append(c)
             }
 
+            // Windowed Completion: resolve against this board's window from the
+            // event log, not the lifetime cache (see updateBoardTaskAndCascade).
+            let windowContext = try Self.buildWindowContext(db: db)
+
             let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
-                allBoards: allBoards
+                allBoards: allBoards,
+                windowContext: windowContext
             )
 
             // Rearranging cannot change which tasks are completed, so
@@ -364,6 +376,10 @@ extension AppDatabase {
                 childrenByCompound[c.compoundTaskId, default: []].append(c)
             }
 
+            // Windowed Completion: resolve against each board's window from the
+            // event log, not the lifetime cache (see updateBoardTaskAndCascade).
+            let windowContext = try Self.buildWindowContext(db: db)
+
             for boardId in affectedBoardIds {
                 guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
                 let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
@@ -372,7 +388,8 @@ extension AppDatabase {
                     boardTasksOnBoard: boardTasksOnBoard,
                     childrenByCompound: childrenByCompound,
                     taskById: taskById,
-                    allBoards: allBoards
+                    allBoards: allBoards,
+                    windowContext: windowContext
                 )
 
                 let totalSquares = board.boardSize * board.boardSize
@@ -473,6 +490,10 @@ extension AppDatabase {
                 childrenByCompound[c.compoundTaskId, default: []].append(c)
             }
 
+            // Windowed Completion: resolve against each board's window from the
+            // event log, not the lifetime cache (see updateBoardTaskAndCascade).
+            let windowContext = try Self.buildWindowContext(db: db)
+
             for affectedBoardId in affectedBoardIds {
                 guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted, board.sealedAt == nil else { continue }
                 let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
@@ -481,7 +502,8 @@ extension AppDatabase {
                     boardTasksOnBoard: boardTasksOnBoard,
                     childrenByCompound: childrenByCompound,
                     taskById: taskById,
-                    allBoards: allBoards
+                    allBoards: allBoards,
+                    windowContext: windowContext
                 )
 
                 let totalSquares = board.boardSize * board.boardSize
