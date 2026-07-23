@@ -10,37 +10,18 @@ import {
   type Board,
   type Task,
   type CompoundChild,
-  type TaskEvent,
   type BoardStatsUpdate,
-  type WindowEvaluationContext,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
+import { buildWindowContext } from './windowContext';
 import {
   appendCompletionEvent,
   appendIncrementEvent,
   tombstoneWindowCompletions,
 } from './taskEvents';
-
-/**
- * Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync). Load every
- * non-deleted TaskEvent grouped by `taskId` so the derivation pass evaluates
- * each board against its own window (`computeBoardStatsUpdate` keys the window
- * on `board.startDate`). Derived / compound / achievement squares are carved
- * out INSIDE the shared kernel (they read their lifetime caches), so passing
- * the full event map is always safe.
- */
-async function buildWindowContext(): Promise<WindowEvaluationContext> {
-  const events = await db.taskEvents.toArray();
-  const eventsByTaskId: Record<string, TaskEvent[]> = {};
-  for (const e of events) {
-    if (e.isDeleted) continue;
-    (eventsByTaskId[e.taskId] ??= []).push(e);
-  }
-  return { eventsByTaskId };
-}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -12,6 +12,7 @@ import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
+import { buildWindowContext } from './windowContext';
 
 /**
  * Board CRUD Operations
@@ -158,6 +159,12 @@ export async function updateBoardAndCascade(
   //    affected board. This replaces the previous per-task loop which did
   //    O(N) full-table scans for a 5×5 board (25 cascade calls).
   const taskIds = Array.from(new Set(placements.map((bt) => bt.taskId)));
+
+  // Windowed Completion — build the event map BEFORE the rw transaction so the
+  // cascade resolves each board against its own window (not the lifetime cache),
+  // and `db.taskEvents` need not be in the transaction scope.
+  const windowContext = await buildWindowContext();
+
   await db.transaction(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
@@ -201,6 +208,7 @@ export async function updateBoardAndCascade(
           childrenByCompound,
           taskById,
           allBoards,
+          windowContext,
         );
 
         const isGreenlog = stats.completedTasks >= freshBoard.boardSize * freshBoard.boardSize;

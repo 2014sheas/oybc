@@ -58,13 +58,16 @@ export async function runMigrationV14(_tx: Transaction): Promise<void> {
     if (!isBoardPastBackstop(board, nowMs)) continue;
 
     const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === board.id);
-    // Lifetime derivation (no window context) = pre-migration rendered state.
+    // Lifetime derivation (explicit `undefined` window context) = pre-migration
+    // rendered state. Deliberate: sealing an expired pre-v14 board freezes the
+    // completion the user actually saw, which was lifetime-resolved.
     const stats = computeBoardStatsUpdate(
       board,
       boardTasksOnBoard,
       childrenByCompound,
       taskById,
       allBoards,
+      undefined,
     );
     const cells = computeSealedCompletedCells(
       board,
@@ -72,6 +75,7 @@ export async function runMigrationV14(_tx: Transaction): Promise<void> {
       childrenByCompound,
       taskById,
       allBoards,
+      undefined,
     );
 
     const sealed: Board = {
