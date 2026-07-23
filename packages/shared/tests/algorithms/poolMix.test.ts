@@ -2,6 +2,7 @@ import {
   resolveMix,
   clearRemovalsForUntoggle,
   isLegacyShapedRecord,
+  mergeLegacyPoolTaskIds,
   clampMintedPoolName,
 } from '../../src/algorithms/poolMix';
 import { TaskType } from '../../src/constants/enums';
@@ -420,5 +421,47 @@ describe('clampMintedPoolName', () => {
     expect(clamped.length).toBeLessThanOrEqual(120);
     // No lone surrogate: round-trips through UTF-16 unchanged.
     expect([...clamped].every((cp) => cp.codePointAt(0)! <= 0x10ffff)).toBe(true);
+  });
+});
+
+// ─── F5: legacy-template edit preserves soft-deleted-but-not-removed refs ─────
+
+describe('mergeLegacyPoolTaskIds', () => {
+  it('preserves a soft-deleted-but-not-removed pool ref the resolved selection dropped', () => {
+    // Pool has [live, gone] where `gone` is soft-deleted. `resolveMix` would
+    // hydrate the wizard selection to just [live] (deleted filtered out), so a
+    // plain write of the selection would PRUNE `gone` — the contract breach.
+    const live = buildTask('live');
+    const gone = buildTask('gone', { isDeleted: true });
+    const tasksById = byId([live, gone]);
+    const merged = mergeLegacyPoolTaskIds(['live', 'gone'], ['live'], tasksById);
+    // `gone` survives (never shown to the user → can't have been removed).
+    expect(merged).toEqual(['live', 'gone']);
+  });
+
+  it('drops a resolvable ref the user explicitly removed from the selection', () => {
+    const a = buildTask('a');
+    const b = buildTask('b');
+    const tasksById = byId([a, b]);
+    // Both resolvable; user removed `b` (selection is just [a]) → `b` drops.
+    const merged = mergeLegacyPoolTaskIds(['a', 'b'], ['a'], tasksById);
+    expect(merged).toEqual(['a']);
+  });
+
+  it('appends newly-selected ids after the preserved existing order, deduped', () => {
+    const a = buildTask('a');
+    const gone = buildTask('gone', { isDeleted: true });
+    const added = buildTask('added');
+    const tasksById = byId([a, gone, added]);
+    // existing [a, gone] (gone soft-deleted, preserved); selection adds `added`.
+    const merged = mergeLegacyPoolTaskIds(['a', 'gone'], ['a', 'added'], tasksById);
+    expect(merged).toEqual(['a', 'gone', 'added']);
+  });
+
+  it('preserves a ref whose task is entirely missing from the library', () => {
+    const a = buildTask('a');
+    const tasksById = byId([a]); // `orphan` resolves to nothing
+    const merged = mergeLegacyPoolTaskIds(['a', 'orphan'], ['a'], tasksById);
+    expect(merged).toEqual(['a', 'orphan']);
   });
 });

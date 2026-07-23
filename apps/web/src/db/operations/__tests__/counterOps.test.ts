@@ -8,7 +8,13 @@ import {
   createCompound,
 } from '../tasks';
 import { createCompoundChild } from '../compoundChildren';
-import { SEED_EVENT_OCCURRED_AT, TaskType, OperatorType, type Task } from '@oybc/shared';
+import {
+  SEED_EVENT_OCCURRED_AT,
+  TaskType,
+  OperatorType,
+  deriveCounterDailyTotals,
+  type Task,
+} from '@oybc/shared';
 
 const NOW = '2026-07-16T10:00:00.000Z';
 
@@ -199,11 +205,48 @@ describe('deleteCounterWithUnlink (P5 decision 8)', () => {
     const memberEvents = await db.taskEvents.where('taskId').equals('member1').toArray();
     expect(memberEvents).toHaveLength(1);
     expect(memberEvents[0].delta).toBe(30);
-    expect(memberEvents[0].occurredAt).not.toBe(SEED_EVENT_OCCURRED_AT);
+    // F4: the carried-over lifetime snapshot is anchored at the seed sentinel
+    // (a starting balance), NOT `now` — so it stays out of day-bucketing.
+    expect(memberEvents[0].occurredAt).toBe(SEED_EVENT_OCCURRED_AT);
 
     const source = await db.tasks.get('src1');
     expect(source).toBeDefined();
     expect(source!.isDeleted).toBe(true);
+  });
+
+  it("F4: the unlink snapshot event does NOT inflate the member's Today bucket", async () => {
+    await db.tasks.add({
+      id: 'src4',
+      userId: 'u1',
+      title: 'Push-ups (reps)',
+      type: TaskType.COUNTING,
+      action: 'Push-ups',
+      unit: 'reps',
+      isCounter: true,
+      currentCount: 40,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    // member: baseline 10, maxCount 50, linked to src4 → displayed = 30
+    await db.tasks.add(counterMember({ id: 'member4', sharedCounterId: 'src4' }));
+
+    await deleteCounterWithUnlink('src4');
+
+    const memberEvents = await db.taskEvents.where('taskId').equals('member4').toArray();
+    // The whole lifetime snapshot must NOT fall into "Today" — feed the events
+    // to the sparkline/Today deriver with the same sentinel it uses in-app.
+    const { todayTotal } = deriveCounterDailyTotals(memberEvents, {
+      sourceTaskId: 'member4',
+      now: NOW,
+      days: 7,
+      seedSentinel: SEED_EVENT_OCCURRED_AT,
+    });
+    expect(todayTotal).toBe(0);
   });
 
   it('skips the snapshot event when the displayed value is 0', async () => {

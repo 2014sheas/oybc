@@ -157,6 +157,58 @@ enum PoolMix {
         return poolCount <= 1 && manualCount == 0 && removedCount == 0
     }
 
+    /// Preserve-merge for the legacy template editor's Pool write-through
+    /// (docs/POOLS_RECURRING.md §Migration — "seedTaskIds end state"). Swift
+    /// twin of `poolMix.ts`'s `mergeLegacyPoolTaskIds` — keep in sync.
+    ///
+    /// The legacy wizard hydrates its selection from `resolveMix`, whose
+    /// `resolvablePoolSupply` filters out soft-deleted tasks — so writing
+    /// that resolved selection STRAIGHT to `Pool.taskIds` would prune
+    /// soft-deleted-but-deliberately-preserved refs, breaking `Pool.taskIds`'s
+    /// contract (soft-deleted tasks are NOT auto-removed; consumers filter at
+    /// read time — a write must never prune). This computes the write set
+    /// that preserves them:
+    ///
+    ///   - An existing pool ref is KEPT when it is still in the selection
+    ///     (user kept it) OR is currently UNRESOLVABLE (soft-deleted /
+    ///     missing — it was never shown to the user, so it can't have been
+    ///     explicitly removed).
+    ///   - A resolvable ref the user dropped from the selection IS removed.
+    ///   - Newly-selected ids are appended in selection order.
+    ///
+    /// Existing pool order is preserved (dedup, existing first, additions
+    /// last). Mirrors the Pool-edit sheet's raw-list preservation semantics.
+    ///
+    /// - Parameters:
+    ///   - existingTaskIds: The linked Pool's current raw `taskIds` (may
+    ///     include soft-deleted / unresolvable refs).
+    ///   - selectedTaskIds: The wizard's post-edit resolved selection.
+    ///   - tasksById: Lookup used to classify each existing ref as resolvable
+    ///     (present + not soft-deleted) or not.
+    /// - Returns: The merged `taskIds` to write — deduped, existing order
+    ///   first, then any new additions in selection order.
+    static func mergeLegacyPoolTaskIds(
+        _ existingTaskIds: [String],
+        selectedTaskIds: [String],
+        tasksById: [String: Task]
+    ) -> [String] {
+        let selectedSet = Set(selectedTaskIds)
+        var result: [String] = []
+        var seen = Set<String>()
+        for taskId in existingTaskIds where !seen.contains(taskId) {
+            let resolvable = tasksById[taskId].map { !$0.isDeleted } ?? false
+            if selectedSet.contains(taskId) || !resolvable {
+                result.append(taskId)
+                seen.insert(taskId)
+            }
+        }
+        for taskId in selectedTaskIds where !seen.contains(taskId) {
+            result.append(taskId)
+            seen.insert(taskId)
+        }
+        return result
+    }
+
     /// `PoolSchema.name` is bounded to 120 chars (`z.string().min(1).max(120)`,
     /// `schemas.ts`) — mirrored by the write-helper layer here. Every site
     /// that MINTS a Pool by appending a fixed suffix word to a source name

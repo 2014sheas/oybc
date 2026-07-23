@@ -5,6 +5,7 @@ import {
   deriveSpawnedBoardName,
   getTimeframeBoundaries,
   isLegacyShapedRecord,
+  mergeLegacyPoolTaskIds,
   placeBoard,
   toLocalISO,
   type PendingTemplateSpawn,
@@ -16,7 +17,8 @@ import {
   fetchRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
-import { createPool, updatePool } from '../../db/operations/pools';
+import { createPool, updatePool, fetchPool } from '../../db/operations/pools';
+import { fetchTasks } from '../../db/operations/tasks.crud';
 import {
   persistWizardBoardRows,
   type WizardPendingTaskWrite,
@@ -357,7 +359,22 @@ export async function persistRecurringTemplate({
         // Pool. The Pool is the shared source of truth for the mix — no
         // change needed to the template's own poolIds/manualTaskIds/
         // removedTaskIds.
-        await updatePool(existingPoolId, { taskIds: seedTaskIds });
+        //
+        // `seedTaskIds` is hydrated from `resolveMix`, which filters out
+        // soft-deleted tasks — so writing it verbatim would prune soft-
+        // deleted-but-preserved refs the Pool deliberately keeps
+        // (`Pool.taskIds` contract). Preserve-merge against the existing pool
+        // so those refs survive; resolvable tasks the user removed still drop.
+        const existingPool = await fetchPool(existingPoolId);
+        const tasksById = Object.fromEntries(
+          (await fetchTasks(userId)).map((t) => [t.id, t] as const),
+        );
+        const mergedTaskIds = mergeLegacyPoolTaskIds(
+          existingPool?.taskIds ?? [],
+          seedTaskIds,
+          tasksById,
+        );
+        await updatePool(existingPoolId, { taskIds: mergedTaskIds });
         await updateRecurringBoardTemplate(editingTemplateId, baseUpdate);
       } else {
         // Defensive: a legacy-shaped record with no pool yet (edited

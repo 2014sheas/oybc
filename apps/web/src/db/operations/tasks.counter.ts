@@ -126,9 +126,12 @@ export async function promoteTaskToCounter(taskId: string): Promise<Task> {
  * `currentCount` is set to its current derived `displayed` value (via
  * `deriveDisplayedCount`), so it becomes an independent counting task that
  * keeps whatever progress it showed. The snapshot event is anchored at
- * `now` (NOT the seed sentinel) — it's a real, present-day event, not
- * backfill. No-op (returns without writing) if the source is missing or
- * already deleted.
+ * `SEED_EVENT_OCCURRED_AT` (the same far-past seed sentinel `createCounterTask`
+ * uses), NOT `now` — it captures a one-time carried-over lifetime balance, not
+ * a present-day activity occurrence, so it must be excluded from day-bucketing
+ * (`deriveCounterDailyTotals`) rather than inflating the member's "Today" /
+ * sparkline. The authoritative `currentCount` (lifetime sum) is unchanged.
+ * No-op (returns without writing) if the source is missing or already deleted.
  *
  * @param sourceId - The counter source task to delete.
  */
@@ -158,7 +161,12 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
         };
         await db.tasks.put(unlinked);
         await addToSyncQueue('tasks', m.id, SyncOperationType.UPDATE, unlinked);
-        if (displayed > 0) await insertIncrementEventRaw(m.id, displayed, undefined, now);
+        if (displayed > 0) {
+          // Anchor the carried-over lifetime snapshot at the seed sentinel (not
+          // `now`) so it is excluded from day-bucketing — it's a starting
+          // balance, not a present-day occurrence.
+          await insertIncrementEventRaw(m.id, displayed, undefined, now, SEED_EVENT_OCCURRED_AT);
+        }
       }
       await deleteTaskWithCascadeInTxn(sourceId, now);
     },
