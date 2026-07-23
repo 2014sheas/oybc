@@ -1198,8 +1198,10 @@ struct BoardPlayView: View {
     }
 
     /// Compact expiry string for the stat bar — "4d", "Expired", "Today", etc.
+    /// A custom board with an end date counts down like a timed board (it seals
+    /// at that date too); only INDEFINITE / no-endDate boards read "No end".
     private func risoExpiryText(board: Board) -> String {
-        guard board.timeframe != .custom, !board.isIndefinite else { return "No end" }
+        guard !board.isIndefinite else { return "No end" }
         guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "—" }
         let now = Date()
         guard now <= end else { return "Expired" }

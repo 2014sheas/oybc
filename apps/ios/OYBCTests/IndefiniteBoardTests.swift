@@ -98,6 +98,23 @@ final class IndefiniteBoardTests: XCTestCase {
         XCTAssertFalse(fetched.isIndefinite)
     }
 
+    /// Regression: a CUSTOM board with an end date must show a countdown /
+    /// "Expired" like a timed board (it seals at that date too) — not "No
+    /// deadline". Only INDEFINITE / no-endDate boards read "No deadline".
+    /// Fixed far dates keep this deterministic (no wall-clock flakiness).
+    func testCustomBoardExpiryLabelHonorsEndDate() {
+        let futureCustom = makeBoard(id: "c-fut", timeframe: .custom, endDate: "2099-01-01T00:00:00.000")
+        XCTAssertNotEqual(getExpiryLabel(futureCustom), "No deadline",
+                          "a custom board with a future end date must count down, not read 'No deadline'")
+
+        let pastCustom = makeBoard(id: "c-past", timeframe: .custom, endDate: "2000-01-01T00:00:00.000")
+        XCTAssertEqual(getExpiryLabel(pastCustom), "Expired")
+
+        // Genuinely open-ended boards still read "No deadline".
+        XCTAssertEqual(getExpiryLabel(makeBoard(id: "indef", timeframe: .indefinite, endDate: "2099-01-01T00:00:00.000")), "No deadline")
+        XCTAssertEqual(getExpiryLabel(makeBoard(id: "c-none", timeframe: .custom, endDate: nil)), "No deadline")
+    }
+
     /// The rebuild recreates the boards table; confirm its indexes survived.
     func testRebuiltBoardsTableKeepsIndexes() throws {
         let db = try makeDatabase()

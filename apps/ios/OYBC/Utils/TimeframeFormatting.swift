@@ -159,7 +159,9 @@ func isBoardExpired(_ board: Board) -> Bool {
 /// - Parameter board: The board to evaluate.
 /// - Returns: A short expiry label string.
 func getExpiryLabel(_ board: Board) -> String {
-    guard board.timeframe != .custom, !board.isIndefinite else { return "No deadline" }
+    // A custom board with an end date expires at that date like a timed board
+    // (it seals there too); only INDEFINITE / no-endDate boards read "No deadline".
+    guard !board.isIndefinite else { return "No deadline" }
     guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "No deadline" }
     let now = Date()
     guard now <= end else { return "Expired" }
