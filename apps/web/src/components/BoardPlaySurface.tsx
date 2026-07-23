@@ -175,10 +175,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     customOpen: boolean;
     customDraft: string;
   } | null>(null);
-  // M3 — cell swap: the boardTaskId whose square the user requested a swap for.
-  const [swapBoardTaskId, setSwapBoardTaskId] = useState<string | null>(null);
-  // M4 — remove from board: the boardTaskId pending removal confirmation.
-  const [removeBoardTaskId, setRemoveBoardTaskId] = useState<string | null>(null);
   // M4 — add to empty cell: the grid position {row, col} awaiting task selection.
   const [addCellPos, setAddCellPos] = useState<{ row: number; col: number } | null>(null);
 
@@ -290,6 +286,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     draftByPosition,
     arrangeSlots,
     handleEditReplace,
+    handleEditRemove,
     handleEditTaskDone,
     handleRearrangeReorder,
     commitSquareEdits,
@@ -298,8 +295,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     handleSharedCounterDecrement,
     undoCounterLog,
     handleCompoundChildToggle,
-    swapBoardTask,
-    removeBoardTask,
     addTaskToCell,
   } = useBoardPlay({
     board,
@@ -915,6 +910,13 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             onEdit={() => {
               setEditTaskSheetId(squareTapMenu.taskId);
             }}
+            // Staged removal — empties the cell (persisted on Save). A pinned
+            // center never opens this menu, so every square that reaches here
+            // is removable (a NONE-center task included).
+            onRemove={() => {
+              handleEditRemove(squareTapMenu.boardTaskId);
+              setSquareTapMenu(null);
+            }}
             // Phase 2b: NONE center task shows "Make it a free space" toggle.
             onMakeFree={squareTapMenu.isCenterTask ? () => {
               setDraftCenterType(CenterSquareType.FREE);
@@ -1147,16 +1149,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         // Linked derived counters are read-only — decrement/reset must be gated.
         const isLinkedCounter = squareData.sharedCounterId != null;
 
-        // M3 — Swap is available on ACTIVE non-sealed squares that are not a
-        // pinned center (sealed replaces the old expiry gate; the context menu
-        // is unreachable on sealed boards anyway). Phase 2b: NONE center
-        // (bt.isCenter may be true in DB for wizard-placed boards) is swappable
-        // — only FREE/CUSTOM_FREE/CHOSEN centers are pinned.
-        const swapEligible =
-          board.status === BoardStatus.ACTIVE &&
-          !isSealed &&
-          !(bt.isCenter && board.centerSquareType !== CenterSquareType.NONE);
-
         // Phase 2 — resolve the shared-counter hint for this task.
         const menuSharedHint = sharedCounterHintsByTaskId.get(task.id);
 
@@ -1222,88 +1214,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               setOpenedTaskInLibrary(taskId);
               setContextMenu(null);
             }}
-            onSwapTask={swapEligible ? () => {
-              setSwapBoardTaskId(bt.id);
-              setContextMenu(null);
-            } : undefined}
-            onRemoveFromBoard={swapEligible ? () => {
-              setRemoveBoardTaskId(bt.id);
-              setContextMenu(null);
-            } : undefined}
             sharedHint={menuSharedHint}
             sharedAmountActions={sharedAmountActions}
           />
-        );
-      })()}
-
-      {/* M3 — Cell Swap Modal */}
-      {!editMode && swapBoardTaskId && (() => {
-        const bt = boardTasks.find((b) => b.id === swapBoardTaskId);
-        if (!bt) return null;
-        return (
-          <CellSwapModal
-            mode="swap"
-            currentTaskId={bt.taskId}
-            candidateTasks={Object.values(taskMap)}
-            onClose={() => setSwapBoardTaskId(null)}
-            onConfirm={async (newTaskId) => {
-              setSwapBoardTaskId(null);
-              // The DB write + error flash live in `useBoardPlay.swapBoardTask`
-              // (B2-W3); the modal-dismiss stays here (routing state).
-              await swapBoardTask(swapBoardTaskId, newTaskId);
-            }}
-          />
-        );
-      })()}
-
-      {/* M4 — Remove from board confirmation */}
-      {!editMode && removeBoardTaskId && (() => {
-        const bt = boardTasks.find((b) => b.id === removeBoardTaskId);
-        const task = bt ? taskMap[bt.taskId] : undefined;
-        return (
-          <div
-            className={styles.removeConfirmBackdrop}
-            onClick={() => setRemoveBoardTaskId(null)}
-            role="presentation"
-          >
-            <div
-              className={styles.removeConfirmDialog}
-              onClick={(e) => e.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="remove-confirm-title"
-              aria-describedby="remove-confirm-body"
-            >
-              <h3 id="remove-confirm-title" className={styles.removeConfirmTitle}>
-                Remove from board?
-              </h3>
-              <p id="remove-confirm-body" className={styles.removeConfirmBody}>
-                <strong>{task?.title ?? 'This task'}</strong> will be removed from this board.
-                The task stays in your library and on any other boards where it appears.
-              </p>
-              <div className={styles.removeConfirmButtons}>
-                <button
-                  type="button"
-                  className={styles.removeConfirmCancel}
-                  onClick={() => setRemoveBoardTaskId(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className={styles.removeConfirmDanger}
-                  onClick={async () => {
-                    const targetId = removeBoardTaskId;
-                    setRemoveBoardTaskId(null);
-                    // DB write + error flash live in `useBoardPlay.removeBoardTask`.
-                    await removeBoardTask(targetId);
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          </div>
         );
       })()}
 

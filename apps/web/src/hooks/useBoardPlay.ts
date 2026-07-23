@@ -166,6 +166,8 @@ export interface UseBoardPlayResult {
   arrangeSlots: ArrangeSlot[];
   // ── Draft handlers ──
   handleEditReplace: (boardTaskId: string, newTaskId: string) => void;
+  /** Stage a removal for the given boardTaskId (empties the cell; committed on Save). */
+  handleEditRemove: (boardTaskId: string) => void;
   handleEditTaskDone: (taskId: string, patch: UpdateTaskPatch) => void;
   handleRearrangeReorder: (newSlots: ArrangeSlot[]) => void;
   commitSquareEdits: () => Promise<void>;
@@ -203,9 +205,7 @@ export interface UseBoardPlayResult {
    */
   undoCounterLog: (sourceTaskId: string) => Promise<void>;
   handleCompoundChildToggle: (childTaskId: string) => Promise<void>;
-  // ── Board-task write methods (from the play-mode swap/remove/add modals) ──
-  swapBoardTask: (boardTaskId: string, newTaskId: string) => Promise<void>;
-  removeBoardTask: (boardTaskId: string) => Promise<void>;
+  // ── Board-task write methods (from the play-mode add modal) ──
   addTaskToCell: (taskId: string, row: number, col: number) => Promise<void>;
 }
 
@@ -243,6 +243,13 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   // Squares draft: per-cell staged state seeded when entering edit mode.
   // Never updated by live boardTasks changes (only by Replace/Edit actions).
   const [squaresDraft, setSquaresDraft] = useState<SquareDraftCell[]>([]);
+  // Whether the current edit session's draft has been seeded. Distinguishes the
+  // un-seeded first render (draft still [] because the seed effect runs a frame
+  // after `editMode` flips) from a legitimately EMPTY draft after the user has
+  // removed every square — the two are indistinguishable by `squaresDraft.length`
+  // alone, and conflating them silently disabled Save / skipped the discard
+  // confirm on "remove everything" (review Critical).
+  const [draftSeeded, setDraftSeeded] = useState(false);
 
   // Staged task-field overrides, keyed by taskId.
   // Applied to the grid display while in edit mode; committed on Save.
@@ -292,6 +299,17 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   // (drag-to-insert / tap-to-swap), so a net-zero rearrange contributes 0.
   // Phase 2b: the rearrange-move count excludes only truly pinned centers
   // (CHOSEN / FREE / CUSTOM_FREE). A NONE center is a regular movable cell.
+  // Staged removals: pre-edit placements (still live in `boardTasks` during
+  // staging) absent from the current draft. Gated on `editMode` + `draftSeeded`
+  // (NOT `squaresDraft.length > 0`) so the un-seeded first render doesn't briefly
+  // count every placement as removed, while a legitimately empty draft (user
+  // removed every square) is still counted. Mirrors iOS `editSquaresEditCount`.
+  const draftBoardTaskIds = new Set(squaresDraft.map((c) => c.boardTaskId));
+  const stagedRemovalCount =
+    editMode && draftSeeded
+      ? boardTasks.filter((bt) => !draftBoardTaskIds.has(bt.id)).length
+      : 0;
+
   const squareEditCount =
     squaresDraft.filter((c) => c.taskId !== c.originalTaskId).length +
     taskOverrides.size +
@@ -299,7 +317,8 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       (c) =>
         !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
         (c.row !== c.originalRow || c.col !== c.originalCol),
-    ).length;
+    ).length +
+    stagedRemovalCount;
 
   // Seed the squares draft when entering edit mode; reset all draft state when
   // exiting. boardTasks is intentionally NOT in the dep array — we seed once
@@ -309,6 +328,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   useEffect(() => {
     if (!editMode) {
       setSquaresDraft([]);
+      setDraftSeeded(false);
       setTaskOverrides(new Map());
       setSubMode('editTasks');
       setSquareTapMenu(null);
@@ -337,6 +357,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         originalCol: bt.col,
       })),
     );
+    setDraftSeeded(true);
     setTaskOverrides(new Map());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode]);
@@ -363,6 +384,19 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       ),
     );
     // squareEditCount is derived from squaresDraft — no manual increment.
+  }, []);
+
+  /**
+   * Stage a Remove for the given boardTaskId.
+   * Called from the edit-mode square tap menu's "Remove from board" item.
+   * Drops the cell from the draft — arrangeSlots (a useMemo over squaresDraft)
+   * auto-reflects the now-empty position, and squareEditCount picks it up via
+   * the staged-removal term. NO DB write happens here — the placement is
+   * hard-deleted in commitSquareEdits at Save time.
+   */
+  const handleEditRemove = useCallback((boardTaskId: string) => {
+    setSquaresDraft((prev) => prev.filter((c) => c.boardTaskId !== boardTaskId));
+    // squareEditCount is derived from squaresDraft vs boardTasks — no manual increment.
   }, []);
 
   /**
@@ -555,7 +589,18 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     if (moves.length > 0) {
       await reorderBoardTasks(boardId, moves);
     }
-  }, [squaresDraft, taskOverrides, boardId, draftCenterType]);
+    // 4. Staged removals: pre-edit placements (still un-mutated in the DB during
+    //    staging) that are absent from the draft. `removeBoardTaskFromBoard`
+    //    hard-deletes the placement (own txn + cascade + sync-enqueue), leaving
+    //    the cell empty; it's idempotent, so a re-run after a partial failure is
+    //    safe. Loop mirrors the replacement loop above.
+    const draftIds = new Set(squaresDraft.map((c) => c.boardTaskId));
+    for (const bt of boardTasks) {
+      if (!draftIds.has(bt.id)) {
+        await removeBoardTaskFromBoard(bt.id);
+      }
+    }
+  }, [squaresDraft, taskOverrides, boardId, draftCenterType, boardTasks]);
 
   // ── Completion handler ─────────────────────────────────────────────────
 
@@ -842,34 +887,11 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   );
 
   // ── Play-mode board-task write methods ─────────────────────────────────
-  // The swap / remove / add modals live in the component's JSX; these methods
-  // own the DB call + error flash so the write leaves the JSX (B2-W3).
-
-  /** M3 — Cell swap: replace the given board-task's task with `newTaskId`. */
-  const swapBoardTask = useCallback(
-    async (boardTaskId: string, newTaskId: string): Promise<void> => {
-      try {
-        await updateBoardTaskAndCascade(boardTaskId, newTaskId);
-      } catch (err) {
-        console.error('Cell swap failed:', err);
-        onFlash('Swap failed — please try again', 'bingo');
-      }
-    },
-    [onFlash],
-  );
-
-  /** M4 — Remove the given board-task placement from this board. */
-  const removeBoardTask = useCallback(
-    async (boardTaskId: string): Promise<void> => {
-      try {
-        await removeBoardTaskFromBoard(boardTaskId);
-      } catch (err) {
-        console.error('Remove from board failed:', err);
-        onFlash('Remove failed — please try again', 'bingo');
-      }
-    },
-    [onFlash],
-  );
+  // The add modal lives in the component's JSX; this method owns the DB call +
+  // error flash so the write leaves the JSX (B2-W3). (The play-mode swap/remove
+  // context items were retired — those structural edits belong to Board Edit
+  // mode: swap → "Replace task", remove → the edit tap-menu's staged "Remove
+  // from board".)
 
   /** M4 — Add a task to the empty cell at (row, col) on this board. */
   const addTaskToCell = useCallback(
@@ -903,6 +925,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     draftByPosition,
     arrangeSlots,
     handleEditReplace,
+    handleEditRemove,
     handleEditTaskDone,
     handleRearrangeReorder,
     commitSquareEdits,
@@ -911,8 +934,6 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     handleSharedCounterDecrement,
     undoCounterLog,
     handleCompoundChildToggle,
-    swapBoardTask,
-    removeBoardTask,
     addTaskToCell,
   };
 }

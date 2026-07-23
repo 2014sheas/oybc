@@ -243,11 +243,16 @@ final class BoardPlayViewModel: ObservableObject {
     /// `boardTasks:` in `BoardEditPanel` so the draft grid shows the staged
     /// tasks without touching the database.
     var editDraftBoardTasks: [BoardTask] {
-        guard !editSquaresDraft.isEmpty else { return boardTasks }
-        return boardTasks.map { bt in
+        // Sole consumer is BoardEditPanel (edit mode only), and `seedEditDraft`
+        // populates the draft synchronously before the view flips `editMode`, so
+        // a MISSING key here always means the cell was removed via
+        // `handleEditRemove` — drop it (compactMap → nil) so the grid renders the
+        // hole. An all-removed session correctly yields []. (Mirrors the way
+        // `editSquaresEditCount` treats an absent draft entry as a removal.)
+        return boardTasks.compactMap { bt in
             let key = "\(bt.row)-\(bt.col)"
-            guard let draft = editSquaresDraft[key],
-                  draft.stagedTaskId != bt.taskId else { return bt }
+            guard let draft = editSquaresDraft[key] else { return nil }
+            guard draft.stagedTaskId != bt.taskId else { return bt }
             var copy = bt
             copy.taskId = draft.stagedTaskId
             return copy
@@ -286,7 +291,11 @@ final class BoardPlayViewModel: ObservableObject {
             .filter { $0.stagedTaskId != $0.originalTaskId }.count
         let overrides = editTaskOverrides.count
         let positionMoves = countPositionMoves(in: editRearrangeCells, gridSize: gridSize)
-        return replacements + overrides + positionMoves
+        // Staged removals — boardTaskIds seeded from the pre-edit placements but
+        // no longer present in the draft (removed via `handleEditRemove`).
+        let draftIds = Set(editSquaresDraft.values.map { $0.boardTaskId })
+        let removals = boardTasks.filter { !draftIds.contains($0.id) }.count
+        return replacements + overrides + positionMoves + removals
     }
 
     /// Returns the number of task cells that are in a different grid slot from
@@ -946,73 +955,6 @@ final class BoardPlayViewModel: ObservableObject {
         }
     }
 
-    /// Swap the task occupying a non-center square to a different task from the library.
-    ///
-    /// Delegates to `updateBoardTaskAndCascade`, which:
-    ///   1. Patches `BoardTask.taskId` atomically (version bump + sync enqueue).
-    ///   2. Computes the union of boards affected by the OLD and NEW task.
-    ///   3. Re-derives stats + GREENLOG transitions for each affected board.
-    ///
-    /// The swap runs on a detached `_Concurrency.Task` to avoid blocking the main thread.
-    /// UI is refreshed via `reload()` on completion (the sheet's `onDismiss`
-    /// also triggers a reload as a defensive belt-and-suspenders).
-    ///
-    /// - Parameters:
-    ///   - boardTaskId: The `BoardTask.id` whose cell is being swapped.
-    ///   - newTaskId: The replacement `Task.id`.
-    func handleCellSwap(boardTaskId: String, newTaskId: String) {
-        isProcessing = true
-        let database = self.database
-        _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
-            do {
-                try database.updateBoardTaskAndCascade(
-                    boardTaskId: boardTaskId,
-                    newTaskId: newTaskId
-                )
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
-                }
-            } catch {
-                print("⚠️ BoardPlayView cell swap error: \(error)")
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.bingoMessage = "Swap failed — please try again"
-                }
-            }
-        }
-    }
-
-    /// Remove a task placement from the current board.
-    ///
-    /// Delegates to `removeBoardTaskFromBoard`, which hard-deletes the
-    /// `BoardTask` row, enqueues a DELETE sync tombstone, and re-derives stats
-    /// for every board affected by the removed task. The underlying `Task` is
-    /// untouched.
-    ///
-    /// - Parameter boardTaskId: The `BoardTask.id` to remove.
-    func handleRemoveFromBoard(boardTaskId: String) {
-        isProcessing = true
-        let database = self.database
-        _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
-            do {
-                try database.removeBoardTaskFromBoard(boardTaskId)
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
-                }
-            } catch {
-                print("⚠️ BoardPlayView remove-from-board error: \(error)")
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.bingoMessage = "Remove failed — please try again"
-                }
-            }
-        }
-    }
-
     /// Add a task to an empty cell on the current board.
     ///
     /// Delegates to `addBoardTaskToBoard`, which creates a new `BoardTask`
@@ -1319,6 +1261,39 @@ final class BoardPlayViewModel: ObservableObject {
         }
     }
 
+    /// Stages a cell removal (no DB write). Drops the cell from the squares
+    /// draft so it renders empty; the placement is only hard-deleted from the
+    /// board on Save (`handleEditSave`, which diffs `boardTasks` against the
+    /// remaining draft). Increments `editSquaresEditCount` so the panel counter
+    /// + Save pill reflect the staged removal.
+    ///
+    /// A pinned free center has no `editSquaresDraft` entry, so the edit tap-menu
+    /// never surfaces Remove for it — pinned centers stay non-removable.
+    ///
+    /// - Parameter cellKey: The "row-col" key into `editSquaresDraft`.
+    func handleEditRemove(cellKey: String) {
+        guard let draft = editSquaresDraft[cellKey] else { return }
+        let removedBoardTaskId = draft.boardTaskId
+        editSquaresDraft.removeValue(forKey: cellKey)
+        // Keep an already-seeded rearrange grid in sync so a removal made after
+        // switching to Rearrange (which doesn't re-seed) shows the hole. Replace
+        // the removed cell in-place with an empty slot at its current position,
+        // mirroring `buildRearrangeCells`'s empty representation.
+        if let idx = editRearrangeCells?.firstIndex(where: { $0.id == removedBoardTaskId }) {
+            let size = gridSize
+            let stagedRow = size > 0 ? idx / size : 0
+            let stagedCol = size > 0 ? idx % size : 0
+            editRearrangeCells![idx] = RearrangeCellData(
+                id: "empty-\(stagedRow)-\(stagedCol)",
+                taskId: nil,
+                isCenter: false,
+                isEmpty: true,
+                originalRow: stagedRow,
+                originalCol: stagedCol
+            )
+        }
+    }
+
     /// Stages task-field overrides for a global Task (no DB write). The
     /// edit-mode draft task map picks this up immediately so the grid label
     /// updates.
@@ -1442,6 +1417,14 @@ final class BoardPlayViewModel: ObservableObject {
             return moves
         }()
 
+        // Staged removals — boardTaskIds present in the pre-edit placements
+        // (`boardTasks`, the seed source) but absent from the draft after one or
+        // more `handleEditRemove` actions. Deleted from the board on Save.
+        let cellRemovals: [String] = {
+            let draftIds = Set(editSquaresDraft.values.map { $0.boardTaskId })
+            return boardTasks.filter { !draftIds.contains($0.id) }.map { $0.id }
+        }()
+
         editSaveInFlight = true
         let bid = boardId
         let database = self.database
@@ -1503,6 +1486,14 @@ final class BoardPlayViewModel: ObservableObject {
                             )
                         }
                     )
+                }
+
+                // 5. Staged removals — hard-delete each removed BoardTask row.
+                //    `removeBoardTaskFromBoard` is idempotent (no-op if the row
+                //    is already gone), owns its own transaction + DELETE sync
+                //    tombstone, and re-derives stats for every affected board.
+                for removedId in cellRemovals {
+                    try database.removeBoardTaskFromBoard(removedId)
                 }
 
                 await MainActor.run {

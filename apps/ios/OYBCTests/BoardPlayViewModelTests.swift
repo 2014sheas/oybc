@@ -807,39 +807,7 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "cascade should have re-saved the board holding the compound")
     }
 
-    // MARK: - 10. cell swap / remove / add
-
-    func test_handleCellSwap_repointsPlacementToNewTask() throws {
-        let db = try makeDb()
-        try seedWorkspace(db)
-        let vm = loadedVM(db, boardId: "b1")
-
-        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "t1" })
-        vm.handleCellSwap(boardTaskId: bt.id, newTaskId: "t2")
-
-        XCTAssertTrue(waitUntil {
-            (try? db.fetchBoardTasks(boardId: "b1"))?.first { $0.id == bt.id }?.taskId == "t2"
-                && !vm.isProcessing
-        }, "swap never repointed the placement")
-        let swapped = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == bt.id })
-        XCTAssertEqual(swapped.taskId, "t2")
-    }
-
-    func test_handleRemoveFromBoard_deletesPlacement() throws {
-        let db = try makeDb()
-        try seedWorkspace(db)
-        let vm = loadedVM(db, boardId: "b1")
-
-        let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "t2" })
-        vm.handleRemoveFromBoard(boardTaskId: bt.id)
-
-        XCTAssertTrue(waitUntil {
-            (try? db.fetchBoardTasks(boardId: "b1"))?.contains { $0.id == bt.id } == false
-                && !vm.boardTasks.contains { $0.id == bt.id }
-                && !vm.isProcessing
-        }, "placement was never removed and published")
-        XCTAssertEqual(vm.boardTasks.count, 1, "published placements reflect the removal")
-    }
+    // MARK: - 10. cell add
 
     func test_handleAddTaskToCell_createsPlacement() throws {
         let db = try makeDb()
@@ -907,6 +875,65 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(vm.editSquaresEditCount, 2)
         XCTAssertEqual(vm.editDraftTaskMap["t2"]?.title, "Renamed t2",
                        "draft task map overlays the staged override")
+    }
+
+    func test_handleEditRemove_dropsCellFromDraft_andBumpsEditCount() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)   // b1: t1@(0,0), t2@(0,1)
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertEqual(vm.editSquaresEditCount, 0, "fresh draft is clean")
+        XCTAssertEqual(vm.editSquaresDraft.count, 2)
+
+        // Stage a removal of the (0,1) cell (t2). No DB write yet.
+        vm.handleEditRemove(cellKey: "0-1")
+
+        XCTAssertNil(vm.editSquaresDraft["0-1"], "removed cell is dropped from the draft")
+        XCTAssertEqual(vm.editSquaresEditCount, 1, "staged removal counts as one edit")
+        // No DB mutation until Save.
+        XCTAssertTrue(try db.fetchBoardTasks(boardId: "b1").contains { $0.id == "bt-b1-2" },
+                      "removal must not touch the DB before Save")
+    }
+
+    func test_editDraftBoardTasks_reflectsStagedRemoval() throws {
+        // Regression (review Critical): the Edit-tasks grid renders from
+        // `editDraftBoardTasks`; a staged removal must drop the cell (compactMap),
+        // and removing every cell must yield [] — NOT the full original board.
+        let db = try makeDb()
+        try seedWorkspace(db)   // b1: t1@(0,0) bt-b1-1, t2@(0,1) bt-b1-2
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertEqual(vm.editDraftBoardTasks.count, 2, "seeded draft renders both placements")
+
+        vm.handleEditRemove(cellKey: "0-1")
+        XCTAssertFalse(vm.editDraftBoardTasks.contains { $0.id == "bt-b1-2" },
+                       "removed cell must disappear from the rendered grid, not persist")
+        XCTAssertTrue(vm.editDraftBoardTasks.contains { $0.id == "bt-b1-1" })
+
+        // Remove the last remaining square → the grid must be empty, not the full board.
+        vm.handleEditRemove(cellKey: "0-0")
+        XCTAssertTrue(vm.editDraftBoardTasks.isEmpty,
+                      "all-removed draft renders an empty grid (guard must not resurrect originals)")
+        XCTAssertEqual(vm.editSquaresEditCount, 2, "both removals still count as edits (Save enabled)")
+    }
+
+    func test_handleEditSave_commitsStagedRemoval() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)   // b1: t1@(0,0) bt-b1-1, t2@(0,1) bt-b1-2
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        vm.handleEditRemove(cellKey: "0-1")
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"), "save should dispatch")
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
+                      "handleEditSave never emitted .saved")
+
+        // bt-b1-2 hard-deleted; the surviving placement (t1) is untouched.
+        let remaining = try db.fetchBoardTasks(boardId: "b1")
+        XCTAssertFalse(remaining.contains { $0.id == "bt-b1-2" }, "removed placement deleted on Save")
+        XCTAssertTrue(remaining.contains { $0.id == "bt-b1-1" }, "kept placement survives")
     }
 
     func test_seedEditDraft_reseedDiscardsPriorDraftEdits() throws {

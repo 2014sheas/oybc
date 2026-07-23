@@ -33,18 +33,6 @@ private struct BoardPlayTitleChrome: ViewModifier {
     }
 }
 
-// MARK: - SwapTarget
-
-/// Lightweight `Identifiable` wrapper used to drive the `.sheet(item:)` for
-/// the M3 cell-swap picker. Carries the boardTask id + the current task id so
-/// `CellSwapSheet` can exclude the current task from the eligible list.
-private struct SwapTarget: Identifiable {
-    /// The `BoardTask.id` whose cell is being swapped.
-    let id: String
-    /// The `Task.id` currently occupying the square (excluded from the picker).
-    let currentTaskId: String
-}
-
 // MARK: - CreditToastState (P2/R3 — shared-counter credited toast)
 
 /// The showing credited toast's render + Undo inputs, derived from a
@@ -238,10 +226,6 @@ struct BoardPlayView: View {
     /// (used to show the Phase-2b "Make it a free space" / "Make it a task
     /// square" toggle items in `confirmationDialog`).
     @State private var editCellMenuIsCenter: Bool = false
-    /// M3 — live-edit cell swap: the square whose task the user wants to replace.
-    @State private var swapTarget: SwapTarget? = nil
-    /// M4 — live-edit remove from board: the boardTaskId pending confirmation.
-    @State private var removeBoardTaskId: String? = nil
     /// M4 — live-edit add to empty cell: the grid position awaiting task selection.
     @State private var addCellPos: (row: Int, col: Int)? = nil
     /// M4 — tracks whether the add-cell sheet was dismissed via a confirmed selection.
@@ -330,9 +314,9 @@ struct BoardPlayView: View {
     //
     // NOTE (B2-I3): `editDraftBoardTasks` / `editDraftTaskMap` /
     // `editSquaresEditCount` / `countPositionMoves` moved to `BoardPlayViewModel`
-    // (read via `viewModel.editDraftBoardTasks` etc.). `editCellMenuTitle` +
-    // `isPinnedCenter` stay here — they read view-owned state (the cell-menu
-    // routing / `editMode`) alongside the VM draft state.
+    // (read via `viewModel.editDraftBoardTasks` etc.). `editCellMenuTitle`
+    // stays here — it reads view-owned state (the cell-menu routing / `editMode`)
+    // alongside the VM draft state.
 
     /// Display title for the tap-menu confirmationDialog.
     ///
@@ -348,18 +332,6 @@ struct BoardPlayView: View {
         guard let draft = viewModel.editSquaresDraft[key] else { return "Square" }
         let map = viewModel.editDraftTaskMap
         return map[draft.stagedTaskId]?.title ?? "Square"
-    }
-
-    /// Returns true when `boardTask.isCenter` AND the board's center type
-    /// (using the edit draft while in edit mode) is non-`.none`. This is the
-    /// Phase-2b "pinned center" predicate used by the live context menus.
-    ///
-    /// A `.none`-center board task that happens to sit at the middle position
-    /// is NOT pinned — Swap and Remove are enabled for it.
-    private func isPinnedCenter(boardTask: BoardTask) -> Bool {
-        guard boardTask.isCenter else { return false }
-        let effectiveCenterType = editMode ? viewModel.editCenterType : (board?.centerSquareType ?? .none)
-        return effectiveCenterType != .none
     }
 
     /// Compound children grouped by parent compound task ID, sorted by childIndex.
@@ -773,6 +745,13 @@ struct BoardPlayView: View {
                         }
                     }
                 }
+                // Staged removal — empties the cell in the draft; the placement
+                // is only deleted from the DB on Save (handleEditSave). A free
+                // center has no draft entry so this block is skipped for it,
+                // keeping a pinned center non-removable.
+                Button("Remove from board", role: .destructive) {
+                    viewModel.handleEditRemove(cellKey: cellKey)
+                }
             }
 
             // Phase 2b — Center toggle buttons. Only shown when the tapped cell
@@ -816,53 +795,6 @@ struct BoardPlayView: View {
                 onCancel: { editModeTaskTarget = nil }
             )
         }
-        // M3 — Cell swap sheet. Presented when the user taps "⎘ Swap with
-        // another task…" in the context menu of a non-center ACTIVE square.
-        .sheet(
-            item: $swapTarget,
-            onDismiss: {
-                // Reload so the grid reflects any completed swap. The board
-                // record itself is unchanged, so this skips the board fetch.
-                viewModel.reloadBoardTasksAndTaskData()
-            }
-        ) { target in
-            CellSwapSheet(
-                mode: .swap,
-                currentTaskId: target.currentTaskId,
-                candidateTasks: allTasks,
-                onDismiss: { swapTarget = nil },
-                onConfirm: { newTaskId in
-                    swapTarget = nil
-                    viewModel.handleCellSwap(boardTaskId: target.id, newTaskId: newTaskId)
-                }
-            )
-        }
-        // M4 — Remove from board confirmation. Presented when the user taps
-        // "⎘ Remove from board" in the context menu of a non-center ACTIVE square.
-        .alert(
-            "Remove from board?",
-            isPresented: Binding(
-                get: { removeBoardTaskId != nil },
-                set: { if !$0 { removeBoardTaskId = nil } }
-            ),
-            actions: {
-                Button("Cancel", role: .cancel) { removeBoardTaskId = nil }
-                Button("Remove", role: .destructive) {
-                    guard let targetId = removeBoardTaskId else { return }
-                    removeBoardTaskId = nil
-                    viewModel.handleRemoveFromBoard(boardTaskId: targetId)
-                }
-            },
-            message: {
-                if let btId = removeBoardTaskId,
-                   let bt = boardTasks.first(where: { $0.id == btId }),
-                   let task = taskMap[bt.taskId] {
-                    Text("\"\(task.title)\" will be removed from this board. The task stays in your library and on any other boards where it appears.")
-                } else {
-                    Text("This task will be removed from this board. The task stays in your library and on any other boards where it appears.")
-                }
-            }
-        )
         // Board-edit Save failure — a system alert pierces the edit overlay.
         .alert(
             "Couldn’t save",
@@ -1731,15 +1663,6 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                Divider()
-                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                }
-                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                    removeBoardTaskId = boardTask.id
-                }
-            }
 
         case .counting:
             if let t = task {
@@ -1769,15 +1692,6 @@ struct BoardPlayView: View {
                 Button("Open in library", systemImage: "book") {
                     taskDetailSheetTaskId = TaskIdItem(id: t.id)
                 }
-                if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                    Divider()
-                    Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                        swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                    }
-                    Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                        removeBoardTaskId = boardTask.id
-                    }
-                }
             }
 
         case .compound:
@@ -1787,15 +1701,6 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                Divider()
-                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                }
-                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                    removeBoardTaskId = boardTask.id
-                }
-            }
 
         case .achievement:
             Button("View Details", systemImage: "info.circle") {
@@ -1803,15 +1708,6 @@ struct BoardPlayView: View {
             }
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
-            }
-            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                Divider()
-                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                }
-                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                    removeBoardTaskId = boardTask.id
-                }
             }
         }
     }
@@ -2318,7 +2214,7 @@ struct BoardPlayView: View {
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)
     //
     // handleNormalTap / handleCountingTap / handleCountingDecrement /
-    // handleCompoundChildToggle / handleCellSwap / handleRemoveFromBoard /
+    // handleCompoundChildToggle /
     // handleAddTaskToCell (plus the private runOrchestration /
     // runSharedCounterIncrement / runSharedCounterDecrement they call) now
     // live on `viewModel`. The view's tap closures call `viewModel.handleX(...)`

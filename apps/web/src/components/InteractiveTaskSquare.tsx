@@ -37,18 +37,6 @@ interface ContextMenuProps {
    */
   onOpenInLibrary?: (taskId: string) => void;
   /**
-   * M3 — Live-edit cell swap. When provided, a "⎘ Swap with another task…"
-   * item is added. Must NOT be passed for center squares — the caller is
-   * responsible for the center-square exclusion guard.
-   */
-  onSwapTask?: () => void;
-  /**
-   * M4 — Live-edit remove from board. When provided, a "⎘ Remove from board"
-   * item is added. Must NOT be passed for center squares — the caller is
-   * responsible for the center-square exclusion guard.
-   */
-  onRemoveFromBoard?: () => void;
-  /**
    * Shared-counter hint shown below the counting controls.
    * Format: "↔ Shared · also counts on {board}" or "↔ Shared · also counts on {board} + N more".
    * Only set when the task is a shared counting task with placements on other live boards.
@@ -103,8 +91,6 @@ export function FloatingContextMenu({
   onMarkAllStepsIncomplete,
   onViewDetails,
   onOpenInLibrary,
-  onSwapTask,
-  onRemoveFromBoard,
   sharedHint,
   sharedAmountActions,
   children,
@@ -318,36 +304,6 @@ export function FloatingContextMenu({
         >
           ↗ Open in library
         </button>
-      )}
-
-      {onSwapTask && (
-        <>
-          <div className={styles.contextMenuDivider} />
-          <button
-            className={styles.contextMenuItem}
-            onClick={() => {
-              onSwapTask();
-              onClose();
-            }}
-          >
-            ⎘ Swap with another task…
-          </button>
-        </>
-      )}
-
-      {onRemoveFromBoard && (
-        <>
-          {!onSwapTask && <div className={styles.contextMenuDivider} />}
-          <button
-            className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
-            onClick={() => {
-              onRemoveFromBoard();
-              onClose();
-            }}
-          >
-            ⎘ Remove from board
-          </button>
-        </>
       )}
 
       </>)}
