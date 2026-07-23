@@ -506,7 +506,7 @@ struct BoardListView: View {
         }
         let base = formatTimeframeLabel(timeframe: board.timeframe, startDate: startDate)
         let expiry = getExpiryLabel(board)
-        guard board.timeframe != .custom, !board.isIndefinite,
+        guard !board.isIndefinite,
               !expiry.isEmpty, expiry != "No deadline" else {
             return base
         }
@@ -516,7 +516,7 @@ struct BoardListView: View {
     /// Returns true when the board's end date is within 24 hours of now.
     private func isBoardExpiringSoon(_ board: Board) -> Bool {
         guard board.status == .active,
-              board.timeframe != .custom, !board.isIndefinite,
+              !board.isIndefinite,
               let endStr = board.endDate,
               let end = parseISO8601Date(endStr) else { return false }
         let hoursLeft = end.timeIntervalSinceNow / 3600

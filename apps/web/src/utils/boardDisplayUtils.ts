@@ -17,15 +17,16 @@ export function statusLabel(status: BoardStatus | string): string {
 /**
  * Returns whether a board is expired (past its end date).
  *
- * Custom timeframe boards are never considered expired — they have user-specified
- * dates but no enforced deadline (by design, per SYNC_STRATEGY.md).
+ * A custom-timeframe board with a user-specified end date expires at that date
+ * just like a timed board — the seal/backstop logic already treats it as a
+ * closeable window (`isBoardSealable` only excludes INDEFINITE), so the display
+ * must agree. Only INDEFINITE / no-endDate boards are never expired.
  *
  * @param board - Object with timeframe and endDate fields
  * @returns true if the board's deadline has passed
  */
 export function isBoardExpired(board: { timeframe: string; endDate?: string }): boolean {
-  if (board.timeframe === Timeframe.CUSTOM) return false;
-  if (!board.endDate) return false;
+  if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return false;
   return isTimeframeExpired(board.endDate);
 }
 
@@ -34,8 +35,8 @@ export function isBoardExpired(board: { timeframe: string; endDate?: string }): 
  * has not yet passed.
  *
  * Mirrors iOS `isBoardExpiringSoon(_:)` in `BoardListView.swift`. Only fires
- * for ACTIVE boards with a non-custom, non-indefinite timeframe and a valid
- * endDate — all other boards return false.
+ * for ACTIVE boards with a valid endDate that isn't INDEFINITE — custom boards
+ * with an end date are included (they expire/seal like timed boards).
  *
  * @param board - Object with status, timeframe, and endDate fields
  * @returns true when endDate is in [now, now + 24h)
@@ -46,8 +47,7 @@ export function isBoardExpiringSoon(board: {
   endDate?: string;
 }): boolean {
   if (board.status !== BoardStatus.ACTIVE) return false;
-  if (board.timeframe === Timeframe.CUSTOM) return false;
-  // Mirror isBoardIndefinite: INDEFINITE timeframe or absent endDate = never expires.
+  // INDEFINITE timeframe or absent endDate = never expires.
   if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return false;
   const end = new Date(board.endDate).getTime();
   if (!Number.isFinite(end)) return false;
@@ -62,8 +62,7 @@ export function isBoardExpiringSoon(board: {
  * @returns "No deadline", "Expired", "Expires today", "1 day left", or "N days left"
  */
 export function getExpiryLabel(board: { timeframe: string; endDate?: string }): string {
-  if (board.timeframe === Timeframe.CUSTOM) return 'No deadline';
-  if (!board.endDate) return 'No deadline';
+  if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return 'No deadline';
   if (isTimeframeExpired(board.endDate)) return 'Expired';
   const endTime = new Date(board.endDate).getTime();
   if (!Number.isFinite(endTime)) return 'No deadline';
