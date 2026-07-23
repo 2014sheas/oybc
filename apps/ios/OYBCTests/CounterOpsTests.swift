@@ -273,7 +273,7 @@ final class CounterOpsTests: XCTestCase {
         let memberEvents = try db.read { try TaskEvent.filter(Column("taskId") == "member1").fetchAll($0) }
         XCTAssertEqual(memberEvents.count, 1)
         XCTAssertEqual(memberEvents[0].delta, 30)
-        XCTAssertNotEqual(memberEvents[0].occurredAt, TaskEvents.seedEventOccurredAt)
+        XCTAssertEqual(memberEvents[0].occurredAt, TaskEvents.seedEventOccurredAt) // F4: snapshot anchored at seed sentinel so it's excluded from day-bucketing
 
         let source = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "src1") })
         XCTAssertTrue(source.isDeleted)

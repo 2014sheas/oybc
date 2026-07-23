@@ -372,4 +372,48 @@ final class PoolMixTests: XCTestCase {
         XCTAssertEqual(clamped, String(repeating: "🎯", count: 57) + " pool")
         XCTAssertLessThanOrEqual(clamped.utf16.count, 120)
     }
+
+    // MARK: - F5: legacy-template edit preserves soft-deleted-but-not-removed refs
+    // Swift twins of poolMix.test.ts's `mergeLegacyPoolTaskIds` cases.
+
+    func testMergeLegacyPoolTaskIds_PreservesSoftDeletedNotRemovedRef() {
+        let live = buildTask("live")
+        let gone = buildTask("gone", isDeleted: true)
+        let tasksById = byId([live, gone], id: { $0.id })
+        let merged = PoolMix.mergeLegacyPoolTaskIds(
+            ["live", "gone"], selectedTaskIds: ["live"], tasksById: tasksById
+        )
+        // `gone` survives (never shown to the user → can't have been removed).
+        XCTAssertEqual(merged, ["live", "gone"])
+    }
+
+    func testMergeLegacyPoolTaskIds_DropsExplicitlyRemovedResolvableRef() {
+        let a = buildTask("a")
+        let b = buildTask("b")
+        let tasksById = byId([a, b], id: { $0.id })
+        let merged = PoolMix.mergeLegacyPoolTaskIds(
+            ["a", "b"], selectedTaskIds: ["a"], tasksById: tasksById
+        )
+        XCTAssertEqual(merged, ["a"])
+    }
+
+    func testMergeLegacyPoolTaskIds_AppendsAdditionsAfterPreservedOrder() {
+        let a = buildTask("a")
+        let gone = buildTask("gone", isDeleted: true)
+        let added = buildTask("added")
+        let tasksById = byId([a, gone, added], id: { $0.id })
+        let merged = PoolMix.mergeLegacyPoolTaskIds(
+            ["a", "gone"], selectedTaskIds: ["a", "added"], tasksById: tasksById
+        )
+        XCTAssertEqual(merged, ["a", "gone", "added"])
+    }
+
+    func testMergeLegacyPoolTaskIds_PreservesRefMissingFromLibrary() {
+        let a = buildTask("a")
+        let tasksById = byId([a], id: { $0.id })
+        let merged = PoolMix.mergeLegacyPoolTaskIds(
+            ["a", "orphan"], selectedTaskIds: ["a"], tasksById: tasksById
+        )
+        XCTAssertEqual(merged, ["a", "orphan"])
+    }
 }

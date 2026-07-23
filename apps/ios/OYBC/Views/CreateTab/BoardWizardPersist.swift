@@ -421,8 +421,25 @@ func persistRecurringTemplate(
                         // the linked Pool. The Pool is the shared source
                         // of truth for the mix — no change needed to the
                         // template's own poolIds/manualTaskIds/removedTaskIds.
+                        //
+                        // `seedTaskIds` is hydrated from `resolveMix`, which
+                        // filters out soft-deleted tasks — so writing it
+                        // verbatim would prune soft-deleted-but-preserved refs
+                        // the Pool deliberately keeps (`Pool.taskIds` contract).
+                        // Preserve-merge against the existing pool so those refs
+                        // survive; resolvable tasks the user removed still drop.
+                        let existingPool = try AppDatabase.shared.fetchPool(id: existingPoolId)
+                        let tasksById = Dictionary(
+                            (try AppDatabase.shared.fetchTasks(userId: userId)).map { ($0.id, $0) },
+                            uniquingKeysWith: { first, _ in first }
+                        )
+                        let mergedTaskIds = PoolMix.mergeLegacyPoolTaskIds(
+                            existingPool?.taskIds ?? [],
+                            selectedTaskIds: seedTaskIds,
+                            tasksById: tasksById
+                        )
                         try AppDatabase.shared.updatePoolAndEnqueue(
-                            id: existingPoolId, taskIds: seedTaskIds, now: now
+                            id: existingPoolId, taskIds: mergedTaskIds, now: now
                         )
                         let updated = baseUpdate(
                             poolIds: existing.poolIds,

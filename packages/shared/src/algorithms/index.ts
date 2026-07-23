@@ -157,6 +157,7 @@ export {
   resolveMix,
   clearRemovalsForUntoggle,
   isLegacyShapedRecord,
+  mergeLegacyPoolTaskIds,
   clampMintedPoolName,
 } from './poolMix';
 

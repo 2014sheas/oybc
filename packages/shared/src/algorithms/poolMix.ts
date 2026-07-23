@@ -212,6 +212,65 @@ export function isLegacyShapedRecord(record: PoolMixSource): boolean {
 }
 
 /**
+ * Preserve-merge for the legacy template editor's Pool write-through
+ * (docs/POOLS_RECURRING.md §Migration — "seedTaskIds end state").
+ *
+ * The legacy wizard hydrates its selection from `resolveMix`, whose
+ * `resolvablePoolSupply` filters out soft-deleted tasks — so writing that
+ * resolved selection STRAIGHT to `Pool.taskIds` would prune soft-deleted-
+ * but-deliberately-preserved refs, breaking `Pool.taskIds`'s contract
+ * ("Soft-deleted tasks are NOT auto-removed … the user's intent survives a
+ * temporary delete/undo"; consumers filter at read time — a write must never
+ * prune). This computes the write set that preserves them:
+ *
+ *   - An existing pool ref is KEPT when it is still in the selection (user
+ *     kept it) OR is currently UNRESOLVABLE (soft-deleted / missing — it was
+ *     never shown to the user, so it can't have been explicitly removed).
+ *   - A resolvable ref the user dropped from the selection IS removed.
+ *   - Newly-selected ids are appended in selection order.
+ *
+ * Existing pool order is preserved (dedup, existing first, additions last).
+ * Mirrors the Pool-edit sheet's raw-list preservation semantics (which keeps
+ * the raw `pool.taskIds` in state and only drops ids on explicit removal),
+ * without needing the wizard to carry the raw list through selection state.
+ *
+ * Has a Swift twin: `apps/ios/OYBC/Helpers/PoolMix.swift`
+ * (`mergeLegacyPoolTaskIds`) — keep them in sync.
+ *
+ * @param existingTaskIds The linked Pool's current raw `taskIds` (may include
+ *   soft-deleted / unresolvable refs).
+ * @param selectedTaskIds The wizard's post-edit resolved selection.
+ * @param tasksById Lookup used to classify each existing ref as resolvable
+ *   (present + not soft-deleted) or not.
+ * @returns The merged `taskIds` to write — deduped, existing order first,
+ *   then any new additions in selection order.
+ */
+export function mergeLegacyPoolTaskIds(
+  existingTaskIds: string[],
+  selectedTaskIds: string[],
+  tasksById: Record<string, Task>,
+): string[] {
+  const selectedSet = new Set(selectedTaskIds);
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const taskId of existingTaskIds) {
+    if (seen.has(taskId)) continue;
+    const task = tasksById[taskId];
+    const resolvable = task !== undefined && !task.isDeleted;
+    if (selectedSet.has(taskId) || !resolvable) {
+      result.push(taskId);
+      seen.add(taskId);
+    }
+  }
+  for (const taskId of selectedTaskIds) {
+    if (seen.has(taskId)) continue;
+    result.push(taskId);
+    seen.add(taskId);
+  }
+  return result;
+}
+
+/**
  * `PoolSchema.name` is bounded to 120 chars (`z.string().min(1).max(120)`,
  * `schemas.ts`). Every site that MINTS a Pool by appending a fixed suffix
  * word to a source name (a `RecurringBoardTemplate.name` — itself bounded
