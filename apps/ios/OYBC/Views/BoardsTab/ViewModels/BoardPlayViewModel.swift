@@ -692,6 +692,11 @@ final class BoardPlayViewModel: ObservableObject {
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             do {
+                // Capture pre-decrement board stats for the board-transition flash (F1).
+                let boardBefore: Board? = currentBoardId.flatMap { id in
+                    try? database.read { db in try Board.fetchOne(db, key: id) }
+                }
+
                 let decrementResult = try database.decrementSharedCounter(sourceTaskId: sourceTaskId, by: amount)
                 guard decrementResult.effectiveDelta > 0 else {
                     // No-op — source was already at 0; nothing to show.
@@ -703,9 +708,30 @@ final class BoardPlayViewModel: ObservableObject {
                     try? database.setCounterDefaultLogAmount(sourceTaskId: sourceTaskId, amount: amount)
                 }
 
-                // No bingo-state-change toast on decrement: the one-way task
-                // latch means completion can't regress, so bingo lines can't be
-                // lost via a decrement (unlike the increment path).
+                // Board-transition flash (F1): windowed completion is derived
+                // per-board from the event log, NOT the source task's lifetime
+                // latch — so removing a log can drop a completed square below its
+                // goal on this window and flip the board COMPLETED → ACTIVE,
+                // dropping bingo lines. The increment path already flashes the
+                // mirror ACTIVE → COMPLETED case; without this the decrement
+                // silently reactivated the board with no feedback. Only the
+                // reactivated / lost-bingo rungs can fire on a decrement (never
+                // greenlog / new bingos).
+                let boardAfter: Board? = currentBoardId.flatMap { id in
+                    try? database.read { db in try Board.fetchOne(db, key: id) }
+                }
+                var newBingoMsg: String? = nil
+                if let before = boardBefore, let after = boardAfter {
+                    let prevBingos = Set(before.completedLineIds ?? [])
+                    let nextBingos = Set(after.completedLineIds ?? [])
+                    let lost = prevBingos.subtracting(nextBingos).sorted()
+                    if before.status == .completed && after.status == .active {
+                        newBingoMsg = "Board reactivated — no longer complete"
+                    } else if !lost.isEmpty {
+                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                    }
+                }
+
                 let otherBoards = decrementResult.affectedBoards.filter { $0.boardId != currentBoardId }
                 let creditPayload: SharedCounterCreditToastPayload? = otherBoards.isEmpty ? nil :
                     SharedCounterCreditToastPayload(
@@ -724,7 +750,11 @@ final class BoardPlayViewModel: ObservableObject {
                 await MainActor.run {
                     self.isProcessing = false
                     self.reload()
-                    self.emitFlash(risoNotification: nil, creditToast: creditPayload)
+                    if let msg = newBingoMsg {
+                        self.bingoMessage = msg
+                        self.scheduleBingoMessageDismiss(msg)
+                    }
+                    self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
                 }
             } catch {
                 print("⚠️ BoardPlayView shared-counter decrement error: \(error)")
@@ -749,10 +779,46 @@ final class BoardPlayViewModel: ObservableObject {
     ///   `CreditToastState.sourceTaskId` on the view side).
     func undoSharedCounterLog(sourceTaskId: String) {
         let database = self.database
+        let currentBoardId = board?.id
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
-            _ = try? database.undoLastCounterLog(sourceTaskId: sourceTaskId)
+            guard let self = self else { return }
+            // Capture pre-undo board stats for the board-transition flash (F1).
+            let boardBefore: Board? = currentBoardId.flatMap { id in
+                try? database.read { db in try Board.fetchOne(db, key: id) }
+            }
+            let result = try? database.undoLastCounterLog(sourceTaskId: sourceTaskId)
+
+            // Board-transition flash (F1): reversing a log runs the same board
+            // derivation cascade as a decrement, so it can drop a completed
+            // square below its goal on this window and flip the board
+            // COMPLETED → ACTIVE, dropping bingo lines. Mirror the decrement
+            // path so the Undo pill surfaces the same feedback (only the
+            // reactivated / lost-bingo rungs can fire). No-op when nothing was
+            // reversed (`undoneAmount == 0`).
+            var newBingoMsg: String? = nil
+            if let result = result, result.undoneAmount > 0 {
+                let boardAfter: Board? = currentBoardId.flatMap { id in
+                    try? database.read { db in try Board.fetchOne(db, key: id) }
+                }
+                if let before = boardBefore, let after = boardAfter {
+                    let prevBingos = Set(before.completedLineIds ?? [])
+                    let nextBingos = Set(after.completedLineIds ?? [])
+                    let lost = prevBingos.subtracting(nextBingos).sorted()
+                    if before.status == .completed && after.status == .active {
+                        newBingoMsg = "Board reactivated — no longer complete"
+                    } else if !lost.isEmpty {
+                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
+                    }
+                }
+            }
+
             await MainActor.run {
-                self?.reload()
+                self.reload()
+                if let msg = newBingoMsg {
+                    self.bingoMessage = msg
+                    self.scheduleBingoMessageDismiss(msg)
+                    self.emitFlash(risoNotification: msg, creditToast: nil)
+                }
             }
         }
     }
