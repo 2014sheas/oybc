@@ -50,18 +50,25 @@ import type { BoardTask } from '../types';
  * then newer `updatedAt` — but adds a THIRD tier (lowest id) because this
  * rule must pick a single winner among N rows outright, not just decide
  * between two, and ties on both version and timestamp are much more likely
- * here (multiple rows created in the very same batched write). Unparseable
- * or missing `updatedAt` degrades gracefully to the id tie-break rather than
- * asserting a direction from an invalid comparison.
+ * here (multiple rows created in the very same batched write). An
+ * unparseable/missing `updatedAt` is normalized to a -Infinity sentinel
+ * (sorts OLDEST) so the comparator stays a genuine lexicographic
+ * (version, time, id) TOTAL order — the earlier "skip the date compare
+ * unless both sides parse" shape was NOT transitive: in a version-tied
+ * group of ≥3 rows mixing valid and invalid dates, pairwise comparisons
+ * silently switched between date-mode and id-mode, so the winner depended
+ * on input order — destroying the cross-device repair determinism this
+ * rule exists to provide (review Critical; pinned by the mixed-validity
+ * vector + the permutation-stability tests).
  */
 export function comparePlacementPrecedence(a: BoardTask, b: BoardTask): number {
   if (a.version !== b.version) return b.version - a.version;
 
-  const aTime = new Date(a.updatedAt).getTime();
-  const bTime = new Date(b.updatedAt).getTime();
-  const aValid = !Number.isNaN(aTime);
-  const bValid = !Number.isNaN(bTime);
-  if (aValid && bValid && aTime !== bTime) return bTime - aTime;
+  const aTimeRaw = new Date(a.updatedAt).getTime();
+  const bTimeRaw = new Date(b.updatedAt).getTime();
+  const aTime = Number.isNaN(aTimeRaw) ? -Infinity : aTimeRaw;
+  const bTime = Number.isNaN(bTimeRaw) ? -Infinity : bTimeRaw;
+  if (aTime !== bTime) return aTime > bTime ? -1 : 1;
 
   if (a.id !== b.id) return a.id < b.id ? -1 : 1;
   return 0;

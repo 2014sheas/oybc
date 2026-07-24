@@ -158,6 +158,23 @@ describe('comparePlacementPrecedence / pickPlacementWinner — unit behavior', (
     const a = toBoardTask({ id: 'bt-a', row: 0, col: 0, taskId: 't1', version: 1, updatedAt: '2026-06-01T00:00:00.000Z' });
     expect(comparePlacementPrecedence(a, a)).toBe(0);
   });
+
+  it('picks ONE winner across ALL permutations of a version-tied group mixing valid and invalid dates (transitivity regression)', () => {
+    // Review Critical: the pre-fix comparator skipped the date compare unless
+    // BOTH sides parsed, so pairwise comparisons switched between date-mode
+    // and id-mode — this exact trio produced 3 different winners across its
+    // 6 permutations. The fixed comparator is a lexicographic total order:
+    // the newest VALID date must win from every input order.
+    const m = toBoardTask({ id: 'bt-m', row: 0, col: 1, taskId: 't1', version: 1, updatedAt: 'not-a-date' });
+    const a = toBoardTask({ id: 'bt-a', row: 0, col: 1, taskId: 't2', version: 1, updatedAt: '2026-06-01T00:00:00.000Z' });
+    const z = toBoardTask({ id: 'bt-z', row: 0, col: 1, taskId: 't3', version: 1, updatedAt: '2026-06-09T00:00:00.000Z' });
+    const perms = [
+      [m, a, z], [m, z, a], [a, m, z], [a, z, m], [z, m, a], [z, a, m],
+    ];
+    for (const perm of perms) {
+      expect(pickPlacementWinner(perm).id).toBe('bt-z');
+    }
+  });
 });
 
 describe('placementResolutionVectors iOS bundle copy', () => {

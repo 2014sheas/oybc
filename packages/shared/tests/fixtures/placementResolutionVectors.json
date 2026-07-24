@@ -38,6 +38,17 @@
       "expectedSurvivorIds": ["bt-a"]
     },
     {
+      "name": "cell-collision-mixed-date-validity-transitive",
+      "_why": "Regression (review Critical): a version-tied group mixing valid and INVALID updatedAt must have ONE winner regardless of input order. The pre-fix comparator skipped the date compare unless both sides parsed, making it non-transitive — this exact trio produced 3 different winners across its 6 permutations. Invalid dates normalize to a sentinel that sorts OLDEST, so the newest VALID date (bt-z) wins deterministically.",
+      "boardSize": 3,
+      "placements": [
+        { "id": "bt-m", "row": 0, "col": 1, "taskId": "task-1", "version": 1, "updatedAt": "not-a-date", "isDeleted": false },
+        { "id": "bt-a", "row": 0, "col": 1, "taskId": "task-2", "version": 1, "updatedAt": "2026-06-01T00:00:00.000Z", "isDeleted": false },
+        { "id": "bt-z", "row": 0, "col": 1, "taskId": "task-3", "version": 1, "updatedAt": "2026-06-09T00:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedSurvivorIds": ["bt-z"]
+    },
+    {
       "name": "three-way-collision-single-winner",
       "boardSize": 5,
       "placements": [
