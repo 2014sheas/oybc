@@ -6,7 +6,14 @@ import {
   computeBoardStatsUpdate,
 } from '../../src/algorithms/derivationPass';
 import { CenterSquareType, TaskType, BoardStatus, Timeframe } from '../../src/constants/enums';
-import type { Task, CompoundChild, BoardTask, Board } from '../../src';
+import type {
+  Task,
+  CompoundChild,
+  BoardTask,
+  Board,
+  TaskEvent,
+  WindowEvaluationContext,
+} from '../../src';
 import type { BoardSize } from '@oybc/bingo-core';
 
 /**
@@ -63,6 +70,19 @@ interface MiniTask {
   referencedTemplateId: string | null;
   achievementTrigger: string | null;
   requiredCount: number | null;
+  /** Optional — carried only by windowed vectors (counting tasks). */
+  maxCount?: number | null;
+  currentCount?: number | null;
+  sharedCounterId?: string | null;
+}
+
+/** Minimal event shape for windowed vectors; the consumer fills the
+ *  TaskEvent boilerplate (id / userId / timestamps / version). */
+interface MiniEvent {
+  kind: string;
+  occurredAt: string;
+  delta?: number;
+  isDeleted?: boolean;
 }
 
 interface MiniBoardTaskFull {
@@ -91,6 +111,12 @@ interface CbsuVector {
   childrenByCompound: Record<string, MiniChild[]>;
   taskById: Record<string, MiniTask>;
   allBoards: MiniBoard[];
+  /** Optional — absent means lifetime resolution (the historical behavior of
+   *  every pre-existing vector); present means windowed evaluation against
+   *  `board.startDate` via these events (Windowed Completion seam). */
+  windowContext?: {
+    eventsByTaskId: Record<string, MiniEvent[]>;
+  };
   expected: {
     boardId: string;
     completedTasks: number;
@@ -148,6 +174,9 @@ function toTask(m: MiniTask): Task {
     referencedTemplateId: m.referencedTemplateId ?? undefined,
     achievementTrigger: (m.achievementTrigger as Task['achievementTrigger']) ?? undefined,
     requiredCount: m.requiredCount ?? undefined,
+    maxCount: m.maxCount ?? undefined,
+    currentCount: m.currentCount ?? undefined,
+    sharedCounterId: m.sharedCounterId ?? undefined,
     isCompleted: m.isCompleted,
     totalCompletions: 0,
     totalInstances: 0,
@@ -170,6 +199,34 @@ function toBoardTaskFull(m: MiniBoardTaskFull, boardId: string): BoardTask {
     updatedAt: BASE_TS,
     version: 1,
   };
+}
+
+/** Expand a windowed vector's minimal event into a full TaskEvent row. */
+function toEvent(m: MiniEvent, taskId: string, idx: number): TaskEvent {
+  return {
+    id: `${taskId}-ev-${idx}`,
+    userId: 'u',
+    taskId,
+    kind: m.kind as TaskEvent['kind'],
+    delta: m.delta,
+    occurredAt: m.occurredAt,
+    createdAt: m.occurredAt,
+    updatedAt: m.occurredAt,
+    version: 1,
+    isDeleted: m.isDeleted ?? false,
+  };
+}
+
+/** Build the kernel's WindowEvaluationContext from a vector's minimal shape. */
+function toWindowContext(
+  wc: CbsuVector['windowContext'],
+): WindowEvaluationContext | undefined {
+  if (!wc) return undefined;
+  const eventsByTaskId: Record<string, TaskEvent[]> = {};
+  for (const [taskId, events] of Object.entries(wc.eventsByTaskId)) {
+    eventsByTaskId[taskId] = events.map((e, idx) => toEvent(e, taskId, idx));
+  }
+  return { eventsByTaskId };
 }
 
 function toBoard(m: MiniBoard): Board {
@@ -244,7 +301,14 @@ describe('computeBoardStatsUpdate (fixture-driven, tests/fixtures/derivationPass
 
       const allBoards = v.allBoards.map(toBoard);
 
-      const result = computeBoardStatsUpdate(board, boardTasksOnBoard, childrenByCompound, taskById, allBoards, undefined);
+      const result = computeBoardStatsUpdate(
+        board,
+        boardTasksOnBoard,
+        childrenByCompound,
+        taskById,
+        allBoards,
+        toWindowContext(v.windowContext),
+      );
 
       expect(result.boardId).toBe(v.expected.boardId);
       expect(result.completedTasks).toBe(v.expected.completedTasks);
