@@ -308,7 +308,37 @@ extension AppDatabase {
             affectedBoardIds.formUnion(ids)
         }
 
-        for boardId in affectedBoardIds {
+        try reDeriveSealedBoardSnapshots(db: db, boardIds: affectedBoardIds, lookups: lookups)
+    }
+
+    /// Board-id-addressed sealed re-derivation — the shared loop body of
+    /// `reDeriveSealedBoards`, extracted so the BOARDS pull path can converge a
+    /// pulled sealed doc directly (transport-convergence hole: a stale sealed
+    /// snapshot pulled from a device that sealed offline with a partial event
+    /// union would otherwise stick until new events for a placed task happen to
+    /// arrive). Same deterministic, local-only semantics: snapshot fields +
+    /// deterministic status overwritten from the local converged event union
+    /// bounded at each board's own `sealedAt`, NO version bump, NO enqueue.
+    /// Non-sealed / deleted / missing boards are skipped, so callers may pass
+    /// candidate ids unconditionally.
+    ///
+    /// MUST run inside the caller's pull transaction (atomic pull-path
+    /// multi-write rule).
+    ///
+    /// - Parameters:
+    ///   - db: GRDB write transaction.
+    ///   - boardIds: Candidate board ids to re-derive.
+    ///   - lookups: Optional pre-loaded workspace lookups (callers that already
+    ///     loaded them pass through; otherwise loaded here).
+    static func reDeriveSealedBoardSnapshots(
+        db: Database,
+        boardIds: Set<String>,
+        lookups preloaded: SealLookups? = nil
+    ) throws {
+        guard !boardIds.isEmpty else { return }
+        let lookups = try preloaded ?? loadSealLookups(db: db)
+
+        for boardId in boardIds {
             guard let board = try Board.fetchOne(db, key: boardId),
                   !board.isDeleted, let sealedAt = board.sealedAt else { continue }
             let sealedAtMs = (DateFormatting.parseISO(sealedAt)?.timeIntervalSince1970 ?? 0) * 1000

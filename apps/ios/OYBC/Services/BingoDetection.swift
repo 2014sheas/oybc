@@ -140,9 +140,33 @@ enum BingoDetection {
         return "Bingo! (\(result.completedLines.joined(separator: ", ")))"
     }
 
+    /// Strict-parse the numeric suffix of a `row_N` / `col_N` line id.
+    ///
+    /// TS's `parseInt` prefix-parses (`"2x"` → 2), which would highlight a line
+    /// for a malformed id, and an out-of-range index (`col_7` on a 5×5) would
+    /// silently alias into wrong cells via `row * gridSize + col`. Both are
+    /// rejected here — the id must be all ASCII digits and resolve to
+    /// `0 <= n < gridSize`. Mirrors bingo-core's `parseLineIndex` so malformed /
+    /// out-of-range ids are skipped byte-identically on both platforms.
+    ///
+    /// - Parameters:
+    ///   - raw: The characters after the `row_` / `col_` prefix.
+    ///   - gridSize: Board size (3, 4, or 5).
+    /// - Returns: The parsed index, or `nil` when malformed or out of range.
+    private static func parseLineIndex(_ raw: Substring, gridSize: Int) -> Int? {
+        guard !raw.isEmpty, raw.allSatisfy({ ("0"..."9").contains($0) }) else { return nil }
+        // A digit run too long for Int (TS: a huge Number) is >= gridSize either
+        // way — treat parse overflow as out-of-range.
+        guard let n = Int(raw) else { return nil }
+        return n < gridSize ? n : nil
+    }
+
     /// Get the set of square indices that belong to completed bingo lines.
     ///
     /// Used for visual highlighting of squares that are part of a winning line.
+    ///
+    /// Malformed (`row_2x`, `row_`) and out-of-range (`col_7` on a 5×5) line
+    /// ids are skipped via `parseLineIndex` — identical to the TS kernel.
     ///
     /// - Parameters:
     ///   - completedLines: Array of line IDs (e.g., ["row_0", "diag_main"])
@@ -152,11 +176,11 @@ enum BingoDetection {
         var highlighted = Set<Int>()
 
         for lineId in completedLines {
-            if lineId.hasPrefix("row_"), let row = Int(lineId.dropFirst(4)) {
+            if lineId.hasPrefix("row_"), let row = parseLineIndex(lineId.dropFirst(4), gridSize: gridSize) {
                 for col in 0..<gridSize {
                     highlighted.insert(row * gridSize + col)
                 }
-            } else if lineId.hasPrefix("col_"), let col = Int(lineId.dropFirst(4)) {
+            } else if lineId.hasPrefix("col_"), let col = parseLineIndex(lineId.dropFirst(4), gridSize: gridSize) {
                 for row in 0..<gridSize {
                     highlighted.insert(row * gridSize + col)
                 }

@@ -54,12 +54,37 @@ final class DerivationPassVectorTests: XCTestCase {
         let referencedTemplateId: String?
         let achievementTrigger: String?
         let requiredCount: Int?
+        // Bingo-pipeline hardening (item 5): windowed counting-task vectors
+        // carry these so a shared-counter-derived task can hit the
+        // lifetime-cache carve-out, and a plain counting task can accumulate
+        // in-window increment events toward its goal.
+        let maxCount: Int?
+        let currentCount: Int?
+        let sharedCounterId: String?
 
         enum CodingKeys: String, CodingKey {
             case id, type, isCompleted, isDeleted, threshold
             case operatorField = "operator"
             case referencedBoardId, referencedTemplateId, achievementTrigger, requiredCount
+            case maxCount, currentCount, sharedCounterId
         }
+    }
+
+    /// One raw event in a fixture `windowContext.eventsByTaskId[taskId]` entry.
+    /// `isDeleted` defaults to `false` when absent (mirrors the fixture note).
+    private struct MiniWindowEvent: Decodable {
+        let kind: String
+        let occurredAt: String
+        let delta: Int?
+        let isDeleted: Bool?
+    }
+
+    /// Optional windowed-context block on a `computeBoardStatsUpdate` vector.
+    /// Absent on a vector means lifetime resolution (the historical default);
+    /// present means every event-owning task in `eventsByTaskId` resolves
+    /// against the board's window instead of the lifetime cache.
+    private struct MiniWindowContext: Decodable {
+        let eventsByTaskId: [String: [MiniWindowEvent]]
     }
 
     private struct MiniBoardTaskFull: Decodable {
@@ -97,6 +122,7 @@ final class DerivationPassVectorTests: XCTestCase {
         let childrenByCompound: [String: [MiniChild]]
         let taskById: [String: MiniTask]
         let allBoards: [MiniBoard]
+        let windowContext: MiniWindowContext?
         let expected: ExpectedStats
     }
 
@@ -156,6 +182,7 @@ final class DerivationPassVectorTests: XCTestCase {
             userId: "u",
             title: m.id,
             type: TaskType(rawValue: m.type) ?? .normal,
+            maxCount: m.maxCount,
             operatorType: m.operatorField.flatMap { OperatorType(rawValue: $0) },
             threshold: m.threshold,
             referencedBoardId: m.referencedBoardId,
@@ -165,11 +192,42 @@ final class DerivationPassVectorTests: XCTestCase {
             totalCompletions: 0,
             totalInstances: 0,
             isCompleted: m.isCompleted,
+            currentCount: m.currentCount,
             createdAt: ts,
             updatedAt: ts,
             version: 1,
-            isDeleted: m.isDeleted
+            isDeleted: m.isDeleted,
+            sharedCounterId: m.sharedCounterId
         )
+    }
+
+    /// Build a `WindowEvaluationContext` from a fixture's optional
+    /// `windowContext` block — filling `TaskEvent` boilerplate (id/userId/
+    /// timestamps/version) the fixture omits, `isDeleted` defaulting `false`
+    /// when absent. `nil` in ⇒ `nil` out (lifetime resolution).
+    private func toWindowContext(_ m: MiniWindowContext?) -> WindowEvaluationContext? {
+        guard let m else { return nil }
+        var eventsByTaskId: [String: [TaskEvent]] = [:]
+        for (taskId, events) in m.eventsByTaskId {
+            eventsByTaskId[taskId] = events.enumerated().map { idx, e in
+                TaskEvent(
+                    id: "\(taskId)-evt-\(idx)",
+                    userId: "u",
+                    taskId: taskId,
+                    kind: TaskEventKind(rawValue: e.kind) ?? .completion,
+                    delta: e.delta,
+                    occurredAt: e.occurredAt,
+                    boardId: nil,
+                    createdAt: e.occurredAt,
+                    updatedAt: e.occurredAt,
+                    lastSyncedAt: nil,
+                    version: 1,
+                    isDeleted: e.isDeleted ?? false,
+                    deletedAt: nil
+                )
+            }
+        }
+        return WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
     }
 
     private func toBoardTaskFull(_ m: MiniBoardTaskFull, boardId: String) -> BoardTask {
@@ -255,11 +313,12 @@ final class DerivationPassVectorTests: XCTestCase {
             for (key, t) in v.taskById { taskById[key] = toTask(t) }
 
             let allBoards = v.allBoards.map(toBoard)
+            let windowContext = toWindowContext(v.windowContext)
 
             let result = DerivationPass.computeBoardStatsUpdate(
                 board: board, boardTasksOnBoard: boardTasksOnBoard,
                 childrenByCompound: childrenByCompound, taskById: taskById, allBoards: allBoards,
-                windowContext: nil
+                windowContext: windowContext
             )
 
             XCTAssertEqual(result.boardId, v.expected.boardId, "Vector '\(v.name)' boardId")

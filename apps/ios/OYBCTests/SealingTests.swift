@@ -415,4 +415,66 @@ final class SealingTests: XCTestCase {
         XCTAssertEqual(board.sealedCompletedCells, [0])
         XCTAssertEqual(board.completedTasks, 1)
     }
+
+    // MARK: - Sealed/deleted DB-level guards (bingo-pipeline hardening item 6)
+    //
+    // UI already gates Board Edit and rearrange on `!sealedAt`, but a sealed
+    // board's snapshot is a frozen, read-only record — the DB level must hold
+    // too, since these two live-board write paths otherwise had no such check.
+
+    func test_updateBoardAndCascade_noOpsOnSealedBoard() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "sealed-b", sealedAt: pastBackstop))
+
+        try db.updateBoardAndCascade(
+            boardId: "sealed-b",
+            patch: AppDatabase.UpdateActiveBoardPatch(name: "Renamed")
+        )
+
+        let board = try fetchBoard(db, "sealed-b")
+        XCTAssertEqual(board.name, "B", "sealed board's metadata must not change")
+        XCTAssertEqual(board.version, 1, "no write happened — version untouched")
+    }
+
+    func test_updateBoardAndCascade_noOpsOnDeletedBoard() throws {
+        let db = try makeDb(); try seedUser(db)
+        var board = makeBoard(id: "dead-b")
+        board.isDeleted = true
+        try db.saveBoard(board)
+
+        try db.updateBoardAndCascade(
+            boardId: "dead-b",
+            patch: AppDatabase.UpdateActiveBoardPatch(name: "Renamed")
+        )
+
+        let after = try fetchBoard(db, "dead-b")
+        XCTAssertEqual(after.name, "B")
+        XCTAssertEqual(after.version, 1)
+    }
+
+    /// The guard sits on the bingo-line-cascade half of this function (the
+    /// board-stats recompute), matching the audit's precise target — the
+    /// per-move position write above it is unguarded either way (a rearrange
+    /// UI affordance is unreachable on a sealed board, so this is defense in
+    /// depth for the DB layer, not a user-visible path). What must hold: a
+    /// sealed board's FROZEN `sealedCompletedCells` / stats / version — the
+    /// permanent read-only record — is never touched by this call.
+    func test_updateBoardTaskPositions_sealedBoard_skipsCascadeNeverTouchesFrozenSnapshot() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoard(makeBoard(id: "sealed-b", sealedAt: pastBackstop, sealedCompletedCells: [0], size: 3))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "sealed-b", taskId: "t1", cell: 0, size: 3))
+
+        try db.updateBoardTaskPositions(
+            boardId: "sealed-b",
+            moves: [AppDatabase.BoardTaskPositionMove(boardTaskId: "bt1", row: 1, col: 1)]
+        )
+
+        // The board's frozen snapshot + version are untouched — the cascade
+        // never ran (`return`d before any board fetch/write).
+        let board = try fetchBoard(db, "sealed-b")
+        XCTAssertEqual(board.sealedCompletedCells, [0])
+        XCTAssertEqual(board.completedTasks, 0)
+        XCTAssertEqual(board.version, 1, "no board write happened — version untouched")
+    }
 }

@@ -874,6 +874,16 @@ final class SyncService: ObservableObject {
                            let compoundTaskId = remoteData["compoundTaskId"] as? String {
                             try runPullCascade(db: db, changedTaskId: compoundTaskId)
                         }
+                        // Sealed-board transport convergence: a pulled SEALED
+                        // boards doc may carry a stale snapshot (sealed offline
+                        // elsewhere with a partial event union). Re-derive THAT
+                        // board from the local converged event union bounded at
+                        // its own sealedAt — deterministic, local-only (no
+                        // version bump / enqueue), inside this transaction.
+                        if collection.firestoreName == "boards",
+                           remoteData["sealedAt"] is String {
+                            try AppDatabase.reDeriveSealedBoardSnapshots(db: db, boardIds: [remoteId])
+                        }
                     }
                 }
 
@@ -944,6 +954,17 @@ final class SyncService: ObservableObject {
         // that never had an endDate.)
         if docRef.parent.collectionID == "boards", cleaned["endDate"] == nil {
             cleaned["endDate"] = FieldValue.delete()
+        }
+
+        // Same carve-out for `completedAt`: a COMPLETED → ACTIVE revert clears
+        // the board's completedAt locally, but under `merge: true` simply
+        // omitting the field would leave the stale completion timestamp on
+        // Firestore — which a second device would then pull, resurrecting a
+        // completedAt on an active board. Explicitly delete it so the remote
+        // doc matches the local source of truth. (Harmless no-op on boards
+        // that never completed.)
+        if docRef.parent.collectionID == "boards", cleaned["completedAt"] == nil {
+            cleaned["completedAt"] = FieldValue.delete()
         }
 
         try await docRef.setData(cleaned, merge: true)
@@ -1101,6 +1122,20 @@ final class SyncService: ObservableObject {
            let boardId = cleaned["id"] as? String {
             try db.execute(
                 sql: "UPDATE \"boards\" SET endDate = NULL WHERE id = ?",
+                arguments: [boardId]
+            )
+        }
+
+        // Same replace semantics for `completedAt`: a remote boards doc whose
+        // completedAt was FieldValue.delete()-ed (COMPLETED → ACTIVE revert on
+        // the authoring device) must clear the stale local timestamp too —
+        // otherwise the row reads `status = active` yet still carries a
+        // completedAt. Mirrors the push-side carve-out above; harmless when
+        // the local row never had one.
+        if grdbTable == "boards", cleaned["completedAt"] == nil,
+           let boardId = cleaned["id"] as? String {
+            try db.execute(
+                sql: "UPDATE \"boards\" SET completedAt = NULL WHERE id = ?",
                 arguments: [boardId]
             )
         }
@@ -1576,6 +1611,13 @@ extension SyncService {
                     if collection.firestoreName == "compoundChildren",
                        let compoundTaskId = remoteData["compoundTaskId"] as? String {
                         try runPullCascade(db: db, changedTaskId: compoundTaskId)
+                    }
+                    // Sealed-board transport convergence — see the batch pull
+                    // path (`processPullCollection`) for rationale. Same
+                    // deterministic, local-only, same-transaction semantics.
+                    if collection.firestoreName == "boards",
+                       remoteData["sealedAt"] is String {
+                        try AppDatabase.reDeriveSealedBoardSnapshots(db: db, boardIds: [remoteId])
                     }
                     recordEvent(.pulled)
                 }

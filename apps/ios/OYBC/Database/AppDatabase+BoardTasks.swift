@@ -264,9 +264,13 @@ extension AppDatabase {
             }
 
             // ── 2. Re-derive bingo lines for this board ──
-            // Only one board is affected — the one being rearranged.
+            // Only one board is affected — the one being rearranged. UI
+            // gates rearrange on an unsealed/live board already, but the DB
+            // level must hold too (hardening item 6) — a sealed board's
+            // snapshot is a frozen, read-only record and must never be
+            // overwritten by a stats recompute.
             guard var board = try Board.fetchOne(db, key: boardId),
-                  !board.isDeleted else { return }
+                  !board.isDeleted, board.sealedAt == nil else { return }
 
             let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)

@@ -270,7 +270,13 @@ extension AppDatabase {
     ///   - patch: Editable fields for ACTIVE boards.
     func updateBoardAndCascade(boardId: String, patch: UpdateActiveBoardPatch) throws {
         try write { db in
-            guard var board = try Board.fetchOne(db, key: boardId) else { return }
+            // UI gates Board Edit on `!sealedAt` already, but the DB level
+            // must hold too (hardening item 6) — a sealed board's snapshot is
+            // a frozen, read-only record, so a metadata edit on a sealed or
+            // already-deleted board is a no-op rather than silently writing
+            // through.
+            guard var board = try Board.fetchOne(db, key: boardId),
+                  !board.isDeleted, board.sealedAt == nil else { return }
             let now = Self.currentTimestamp()
 
             // 1. Apply scalar fields.
@@ -488,6 +494,52 @@ extension AppDatabase {
             if boardToSave.status == .active, boardToSave.activatedAt == nil {
                 boardToSave.activatedAt = now
             }
+
+            // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this
+            // closes — respawn-bleed row): run the derivation pass over the
+            // just-built placements so stored stats are derivation output,
+            // never a hand-init. `persistWizardBoard` seeds `completedTasks:
+            // 0` / `linesCompleted: 0` (or preserves the prior draft's value
+            // on update) — this overwrites that with the real value. Without
+            // it, a board placing an already-in-window-complete task (or a
+            // FREE/CUSTOM_FREE center) would persist + sync wrong stats until
+            // the next app-open self-heal. Covers both fresh creation AND
+            // draft→active resume — both flow through this one function, and
+            // `activatedAt` above is already stamped by the time this runs.
+            // Mirrors the recurring-spawn path
+            // (`AppDatabase+RecurringTemplates.swift`) exactly, including
+            // reading `allBoards` BEFORE this board is inserted (same as
+            // spawn — an achievement referencing this board-in-progress is a
+            // same-transaction chicken-and-egg case neither path handles).
+            // Status logic is deliberately untouched here — a fresh board
+            // with a bingo from shared tasks legitimately shows those lines;
+            // status transitions stay the live-cascade's job.
+            let windowContext = try AppDatabase.buildWindowContext(db: db)
+            let allChildrenForDerivation = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildrenForDerivation {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+            let allTasksForDerivation = try Task.fetchAll(db)
+            var taskById: [String: Task] = [:]
+            for t in allTasksForDerivation { taskById[t.id] = t }
+            let allBoardsForDerivation = try Board
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let stats = DerivationPass.computeBoardStatsUpdate(
+                board: boardToSave,
+                boardTasksOnBoard: boardTasks,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoardsForDerivation,
+                windowContext: windowContext
+            )
+            boardToSave.completedTasks = stats.completedTasks
+            boardToSave.linesCompleted = stats.linesCompleted
+            boardToSave.completedLineIds = stats.completedLineIds.isEmpty ? nil : stats.completedLineIds
+
             try boardToSave.save(db)
 
             let boardSyncOp: SyncOperationType = isUpdate ? .update : .create

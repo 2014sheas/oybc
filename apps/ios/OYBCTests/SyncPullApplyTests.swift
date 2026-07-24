@@ -275,4 +275,93 @@ final class SyncPullApplyTests: XCTestCase {
         XCTAssertEqual(t.version, 2)
         XCTAssertEqual(t.lastSyncedCount, 5)
     }
+
+    // MARK: - 5. Sealed-board pull re-derive (bingo-pipeline hardening item 1)
+
+    private let boardsCol = (firestoreName: "boards", grdbTable: "boards")
+
+    /// A pulled SEALED `boards` doc may carry a stale snapshot (sealed OFFLINE
+    /// on another device against a partial event union). Historically the
+    /// pull-apply path LWW-upserted it verbatim and left it stale until a
+    /// later `taskEvents` pull happened to touch a placed task — and since
+    /// sealed re-derivation never bumps version/enqueues, the wrong snapshot
+    /// would sit there (and could even push back out as the "converged"
+    /// value on a subsequent, unrelated write). The fix: any pulled `boards`
+    /// doc with `sealedAt` set re-derives from the LOCAL converged event
+    /// union in the SAME transaction as the upsert.
+    func test_sealedBoardPull_convergesStaleSnapshotFromLocalEvents() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        let bid = newId()
+        let sealedAt = "2026-06-05T00:00:00.000Z"
+
+        // 3x3, centerSquareType NONE (no auto-fill) so the only green cell is
+        // the one placed task.
+        let boardDict: [String: Any] = [
+            "id": bid, "userId": userId, "name": "Board", "status": "active",
+            "boardSize": 3, "timeframe": Timeframe.monthly.rawValue,
+            "startDate": "2026-06-01T00:00:00.000Z", "endDate": "2026-06-30T23:59:59.000Z",
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": "2026-06-01T00:00:00.000Z", "updatedAt": "2026-06-01T00:00:00.000Z",
+            "version": 1, "isDeleted": false,
+        ]
+        let boardData = try JSONSerialization.data(withJSONObject: boardDict)
+        try db.saveBoard(try JSONDecoder().decode(Board.self, from: boardData))
+        try db.saveTask(makeTask(tid, isCompleted: false))
+        try db.saveBoardTask(makeBoardTask(id: newId(), boardId: bid, taskId: tid)) // cell 0
+
+        try db.write { txn in
+            // In-window, pre-seal completion — the LOCAL converged event
+            // union this device has (never leaves this device in this test).
+            try TaskEvent(
+                id: newId(), userId: userId, taskId: tid, kind: .completion, delta: nil,
+                occurredAt: "2026-06-01T12:00:00.000Z", boardId: nil,
+                createdAt: sealedAt, updatedAt: sealedAt,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(txn)
+            // Authentic local seal — correct snapshot, version bumps 1 → 2.
+            _ = try AppDatabase.sealBoardTx(db: txn, boardId: bid, now: sealedAt)
+        }
+
+        let sealedLocal = try XCTUnwrap(try db.fetchBoard(id: bid))
+        XCTAssertEqual(sealedLocal.completedTasks, 1, "sanity: local seal derived the real snapshot")
+        XCTAssertEqual(sealedLocal.sealedCompletedCells, [0])
+        XCTAssertEqual(sealedLocal.version, 2)
+        let syncRowsBefore = try syncRows(db).filter { $0.entityId == bid }.count
+
+        let sut = makeSut(db)
+
+        // A pulled remote doc for the SAME board / SAME sealedAt but a STALE
+        // (wrong) snapshot at a HIGHER version — LWW must apply it, and only
+        // the re-derive step corrects it back to the real snapshot.
+        let remote: [String: Any] = [
+            "id": bid, "userId": userId, "name": "Board", "status": "active",
+            "boardSize": 3, "timeframe": Timeframe.monthly.rawValue,
+            "startDate": "2026-06-01T00:00:00.000Z", "endDate": "2026-06-30T23:59:59.000Z",
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": "2026-06-01T00:00:00.000Z", "updatedAt": "2026-06-06T00:00:00.000Z",
+            "version": 5, "isDeleted": false,
+            "sealedAt": sealedAt,
+            "sealedCompletedCells": "[]",
+        ]
+        sut.applyRemoteSubdoc(collection: boardsCol, remoteData: remote, authenticatedUserId: userId)
+
+        let after = try XCTUnwrap(try db.fetchBoard(id: bid))
+        // Re-derived from the LOCAL converged event union — NOT the remote's
+        // stale empty snapshot.
+        XCTAssertEqual(after.completedTasks, 1)
+        XCTAssertEqual(after.sealedCompletedCells, [0])
+        // LWW upsert applied the remote's version verbatim; re-derivation is
+        // local-only and must NOT bump it further.
+        XCTAssertEqual(after.version, 5)
+
+        // Nothing new enqueued by the re-derive itself — same sync_queue row
+        // count for this board as right before the pull (pulls never author
+        // board writes; the earlier local seal's own enqueue is the only row).
+        let syncRowsAfter = try syncRows(db).filter { $0.entityId == bid }.count
+        XCTAssertEqual(syncRowsAfter, syncRowsBefore)
+    }
 }

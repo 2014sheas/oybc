@@ -982,6 +982,28 @@ extension AppDatabase {
     static func deleteTaskWithCascadeInDb(db: Database, taskId: String, now: String) throws {
         guard var task = try Task.fetchOne(db, key: taskId) else { return }
 
+        // Windowed Completion (hardening item 3): capture the affected-board
+        // set BEFORE any placements are removed below — reuses
+        // findTransitiveParentCompounds / findAffectedBoardIds exactly like
+        // `removeBoardTaskFromBoard`, so a board holding a bingo line through
+        // this task (directly or via a compound parent) re-derives in THIS
+        // transaction instead of relying on app-open self-heal (a persisted
+        // line could otherwise keep a bingo through a now-empty cell, and
+        // achievements could read it in the meantime).
+        let allBoardTasksPreDelete = try BoardTask.fetchAll(db)
+        let allCompoundChildrenPreDelete = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let parentCompoundsForDeletion = DerivationPass.findTransitiveParentCompounds(
+            changedTaskId: taskId,
+            children: allCompoundChildrenPreDelete
+        )
+        let affectedBoardIdsForDeletion = DerivationPass.findAffectedBoardIds(
+            changedTaskId: taskId,
+            parentCompounds: parentCompoundsForDeletion,
+            boardTasks: allBoardTasksPreDelete
+        )
+
         // 1. Hard-delete BoardTask placements.
         let placements = try BoardTask
             .filter(Column("taskId") == taskId)
@@ -1032,6 +1054,71 @@ extension AppDatabase {
             payload: task,
             now: now,
         ).enqueue(db)
+
+        // 5. Cascade — re-derive every affected board's stats + status from
+        // the post-delete state. Mirrors `removeBoardTaskFromBoard`'s loop
+        // verbatim: sealed/deleted boards skip, live boards get a version
+        // bump + sync enqueue.
+        if !affectedBoardIdsForDeletion.isEmpty {
+            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            // Windowed Completion: resolve against each board's own window
+            // from the event log, not the lifetime cache.
+            let windowContext = try Self.buildWindowContext(db: db)
+
+            for boardId in affectedBoardIdsForDeletion {
+                guard var board = try Board.fetchOne(db, key: boardId),
+                      !board.isDeleted, board.sealedAt == nil else { continue }
+                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: board,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards,
+                    windowContext: windowContext
+                )
+
+                let totalSquares = board.boardSize * board.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                board.completedTasks = update.completedTasks
+                board.totalTasks = totalSquares
+                board.linesCompleted = update.linesCompleted
+                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                board.updatedAt = now
+                board.version += 1
+
+                if isGreenlogNow, board.status == .active {
+                    board.status = .completed
+                    board.completedAt = now
+                } else if !isGreenlogNow, board.status == .completed {
+                    board.status = .active
+                    board.completedAt = nil
+                }
+
+                try board.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: boardId,
+                    operationType: .update,
+                    payload: board,
+                    now: now
+                ).enqueue(db)
+            }
+        }
     }
 
 }
