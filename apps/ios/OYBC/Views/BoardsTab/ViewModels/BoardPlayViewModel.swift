@@ -300,8 +300,13 @@ final class BoardPlayViewModel: ObservableObject {
         let positionMoves = countPositionMoves(in: editRearrangeCells, gridSize: gridSize)
         // Staged removals — boardTaskIds seeded from the pre-edit placements but
         // no longer present in the draft (removed via `handleEditRemove`).
+        // Diff against the RESOLVED set (matches `seedEditDraft`'s seed
+        // source + web's centralized resolution): a pre-repair collision
+        // loser is invisible to the edit UI and must not inflate the count
+        // as a change the user didn't make (PR-2 review).
         let draftIds = Set(editSquaresDraft.values.map { $0.boardTaskId })
-        let removals = boardTasks.filter { !draftIds.contains($0.id) }.count
+        let removals = PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize)
+            .filter { !draftIds.contains($0.id) }.count
         return replacements + overrides + positionMoves + removals
     }
 
@@ -1432,11 +1437,15 @@ final class BoardPlayViewModel: ObservableObject {
         }()
 
         // Staged removals — boardTaskIds present in the pre-edit placements
-        // (`boardTasks`, the seed source) but absent from the draft after one or
-        // more `handleEditRemove` actions. Deleted from the board on Save.
+        // (the RESOLVED seed source, matching `seedEditDraft` + web) but
+        // absent from the draft after one or more `handleEditRemove` actions.
+        // Deleted from the board on Save. Diffing the resolved set means a
+        // pre-repair collision loser is never folded in as a user-staged
+        // removal — the repair pass owns tombstoning losers (PR-2 review).
         let cellRemovals: [String] = {
             let draftIds = Set(editSquaresDraft.values.map { $0.boardTaskId })
-            return boardTasks.filter { !draftIds.contains($0.id) }.map { $0.id }
+            return PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize)
+                .filter { !draftIds.contains($0.id) }.map { $0.id }
         }()
 
         editSaveInFlight = true

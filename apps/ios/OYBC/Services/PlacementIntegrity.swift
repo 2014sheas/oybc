@@ -49,19 +49,20 @@ enum PlacementIntegrity {
 
     /// True when `a` should win over `b`. Mirrors the shared TS
     /// `comparePlacementPrecedence`: highest `version` → newest `updatedAt`
-    /// → lowest `id` (lexicographic). An unparseable `updatedAt` on EITHER
-    /// side (or an exact-equal parsed instant) degrades straight to the id
-    /// tie-break — never a raw string compare, matching the TS "unparseable
-    /// or missing updatedAt degrades gracefully to the id tie-break rather
-    /// than asserting a direction from an invalid comparison" contract.
+    /// → lowest `id` (lexicographic). An unparseable/missing `updatedAt` is
+    /// normalized to `Date.distantPast` (sorts OLDEST) so the comparator is
+    /// a genuine lexicographic (version, time, id) TOTAL order — the earlier
+    /// "skip the date compare unless both sides parse" shape was NOT
+    /// transitive (a version-tied group of ≥3 rows mixing valid and invalid
+    /// dates picked a winner dependent on input order — review Critical;
+    /// pinned by the mixed-validity vector + permutation-stability tests).
     static func wins(_ a: BoardTask, over b: BoardTask) -> Bool {
         if a.version != b.version { return a.version > b.version }
 
-        let aDate = DateFormatting.parseISO(a.updatedAt)
-        let bDate = DateFormatting.parseISO(b.updatedAt)
-        if let aDate, let bDate, aDate != bDate {
-            return aDate > bDate
-        }
+        let aTime = DateFormatting.parseISO(a.updatedAt) ?? Date.distantPast
+        let bTime = DateFormatting.parseISO(b.updatedAt) ?? Date.distantPast
+        if aTime != bTime { return aTime > bTime }
+
         return a.id < b.id
     }
 

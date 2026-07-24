@@ -246,4 +246,25 @@ final class PlacementIntegrityTests: XCTestCase {
 
         XCTAssertEqual(Set(forward.toTombstone.map(\.id)), Set(reversed.toTombstone.map(\.id)))
     }
+
+    /// Review Critical regression: a version-tied group mixing valid and
+    /// INVALID `updatedAt` must pick ONE winner from every input order. The
+    /// pre-fix comparator skipped the date compare unless both sides parsed
+    /// (non-transitive — this trio produced 3 different winners across its 6
+    /// permutations). Invalid dates now normalize to a sentinel that sorts
+    /// OLDEST, so the newest VALID date wins deterministically. Twin of the
+    /// TS permutation test + the `cell-collision-mixed-date-validity-
+    /// transitive` shared vector.
+    func test_winnerRule_mixedDateValidity_isPermutationStable() {
+        let m = bt("bt-m", row: 0, col: 1, taskId: "t1", updatedAt: "not-a-date")
+        let a = bt("bt-a", row: 0, col: 1, taskId: "t2", updatedAt: "2026-06-01T00:00:00.000Z")
+        let z = bt("bt-z", row: 0, col: 1, taskId: "t3", updatedAt: "2026-06-09T00:00:00.000Z")
+        let perms: [[BoardTask]] = [
+            [m, a, z], [m, z, a], [a, m, z], [a, z, m], [z, m, a], [z, a, m],
+        ]
+        for perm in perms {
+            XCTAssertEqual(PlacementIntegrity.pickWinner(perm).id, "bt-z",
+                           "winner must not depend on input order")
+        }
+    }
 }
