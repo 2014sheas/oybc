@@ -36,9 +36,15 @@ extension AppDatabase {
     }
 
     /// Load workspace lookups + a full non-deleted-event map within `db`.
+    ///
+    /// MIGRATION-REACHABLE: `sealExpiredBoardsAtMigration` (a pre-v27
+    /// migration) reaches this via `sealBoardTx`, so the board_tasks
+    /// tombstone filter must be applied in SWIFT, not SQL — the `isDeleted`
+    /// column only exists from v27 and the decode default (`false`) makes
+    /// pre-v27 rows read as live, which they all are.
     static func loadSealLookups(db: Database) throws -> SealLookups {
         let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-        let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
+        let allBoardTasks = try BoardTask.fetchAll(db).filter { !$0.isDeleted }
         let allTasks = try Task.fetchAll(db)
         let allBoards = try Board.fetchAll(db)
         let events = try TaskEvent.filter(Column("isDeleted") == false).fetchAll(db)
@@ -198,7 +204,10 @@ extension AppDatabase {
         let nowMs = (DateFormatting.parseISO(now)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970) * 1000
 
         let allBoards = try Board.fetchAll(db)
-        let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
+        // MIGRATION-TIME: runs pre-v27, where board_tasks has no isDeleted
+        // column — filter in Swift (decode defaults false; all pre-v27 rows
+        // are live), never in SQL.
+        let allBoardTasks = try BoardTask.fetchAll(db).filter { !$0.isDeleted }
         let allTasks = try Task.fetchAll(db)
         let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
 

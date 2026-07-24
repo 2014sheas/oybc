@@ -395,20 +395,23 @@ final class SyncPullApplyTests: XCTestCase {
     func test_boardTasksPull_tombstoneRemovesCellFromDerivedStatsInSameTxn() throws {
         let db = try makeDb()
         try seedUser(db)
-        let bid = "b1"
+        // Pull validation requires UUID-format ids (validateRemotePullDocument)
+        // — literal ids like "bt1" are rejected before the upsert ever runs.
+        let bid = newId()
         var board = makeBoard(id: bid)
         board.centerSquareType = .none // no FREE auto-fill to muddy the count
         try db.saveBoard(board)
 
         let tid = newId()
         let staysId = newId()
+        let removedBtId = newId(), staysBtId = newId()
         try db.saveTask(makeTask(tid))
         try db.saveTask(makeTask(staysId))
         try completeInWindow(db, taskId: tid)
         try completeInWindow(db, taskId: staysId)
-        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: bid, taskId: tid))
+        try db.saveBoardTask(makeBoardTask(id: removedBtId, boardId: bid, taskId: tid))
         try db.saveBoardTask(BoardTask(
-            id: "bt2", boardId: bid, taskId: staysId, row: 0, col: 1, isCenter: false,
+            id: staysBtId, boardId: bid, taskId: staysId, row: 0, col: 1, isCenter: false,
             createdAt: AppDatabase.currentTimestamp(), updatedAt: AppDatabase.currentTimestamp(),
             lastSyncedAt: nil, version: 1
         ))
@@ -417,7 +420,7 @@ final class SyncPullApplyTests: XCTestCase {
         // Remote tombstone for bt1 at a higher version — this device's own
         // completed cell was removed from the board on another device.
         let remote: [String: Any] = [
-            "id": "bt1", "boardId": bid, "taskId": tid, "row": 0, "col": 0,
+            "id": removedBtId, "boardId": bid, "taskId": tid, "row": 0, "col": 0,
             "isCenter": false, "createdAt": "2026-06-01T00:00:00.000",
             "updatedAt": "2026-06-02T00:00:00.000", "version": 2,
             "isDeleted": true, "deletedAt": "2026-06-02T00:00:00.000",
@@ -425,7 +428,7 @@ final class SyncPullApplyTests: XCTestCase {
         sut.applyRemoteSubdoc(collection: boardTasksCol, remoteData: remote, authenticatedUserId: userId)
 
         // The tombstone landed locally.
-        let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: removedBtId) })
         XCTAssertTrue(bt.isDeleted)
 
         // The cascade recomputed the board's stats WITHOUT the tombstoned
@@ -447,7 +450,7 @@ final class SyncPullApplyTests: XCTestCase {
     func test_boardTasksPull_liveRowPositionChange_recomputesCompletedLineIds() throws {
         let db = try makeDb()
         try seedUser(db)
-        let bid = "b1"
+        let bid = newId()
         var board = makeBoard(id: bid)
         board.centerSquareType = .none
         // Seed the STALE-but-was-correct prior cascade output: a row_0 bingo.
@@ -457,6 +460,7 @@ final class SyncPullApplyTests: XCTestCase {
         try db.saveBoard(board)
 
         let t1 = newId(), t2 = newId(), t3 = newId()
+        let bt1 = newId(), bt2 = newId(), bt3 = newId()
         try db.saveTask(makeTask(t1))
         try db.saveTask(makeTask(t2))
         try db.saveTask(makeTask(t3))
@@ -465,22 +469,22 @@ final class SyncPullApplyTests: XCTestCase {
         try completeInWindow(db, taskId: t3)
         let now = AppDatabase.currentTimestamp()
         try db.saveBoardTask(BoardTask(
-            id: "bt1", boardId: bid, taskId: t1, row: 0, col: 0, isCenter: false,
+            id: bt1, boardId: bid, taskId: t1, row: 0, col: 0, isCenter: false,
             createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
         ))
         try db.saveBoardTask(BoardTask(
-            id: "bt2", boardId: bid, taskId: t2, row: 0, col: 1, isCenter: false,
+            id: bt2, boardId: bid, taskId: t2, row: 0, col: 1, isCenter: false,
             createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
         ))
         try db.saveBoardTask(BoardTask(
-            id: "bt3", boardId: bid, taskId: t3, row: 0, col: 2, isCenter: false,
+            id: bt3, boardId: bid, taskId: t3, row: 0, col: 2, isCenter: false,
             createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
         ))
         let sut = makeSut(db)
 
         // Remote MOVES bt3 down to (1, 2) — row 0 no longer fully covered.
         let remote: [String: Any] = [
-            "id": "bt3", "boardId": bid, "taskId": t3, "row": 1, "col": 2,
+            "id": bt3, "boardId": bid, "taskId": t3, "row": 1, "col": 2,
             "isCenter": false, "createdAt": now, "updatedAt": "2026-06-02T00:00:00.000",
             "version": 2, "isDeleted": false,
         ]

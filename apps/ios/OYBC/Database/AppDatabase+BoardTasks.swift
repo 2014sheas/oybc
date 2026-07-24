@@ -63,7 +63,10 @@ extension AppDatabase {
     /// - Throws: GRDB write errors.
     func updateBoardTaskAndCascade(boardTaskId: String, newTaskId: String) throws {
         try write { db in
-            guard var boardTask = try BoardTask.fetchOne(db, key: boardTaskId) else { return }
+            // Tombstone guard: a placement deleted on another device mid-edit
+            // must not be resurrected/mutated by a stale swap (PR-1 review).
+            guard var boardTask = try BoardTask.fetchOne(db, key: boardTaskId),
+                  !boardTask.isDeleted else { return }
 
             let oldTaskId = boardTask.taskId
             // No-op guard: swapping to the same task writes nothing.
@@ -241,8 +244,10 @@ extension AppDatabase {
         try write { db in
             // ── 1. Apply position patches ──
             for move in moves {
+                // Tombstone guard mirrors updateBoardTaskAndCascade (PR-1 review).
                 guard var boardTask = try BoardTask.fetchOne(db, key: move.boardTaskId),
-                      boardTask.boardId == boardId else { continue }
+                      boardTask.boardId == boardId,
+                      !boardTask.isDeleted else { continue }
                 boardTask.row = move.row
                 boardTask.col = move.col
                 // `isCenter` follows the center-square-type rule set by the board,
