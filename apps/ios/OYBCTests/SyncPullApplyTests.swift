@@ -364,4 +364,131 @@ final class SyncPullApplyTests: XCTestCase {
         let syncRowsAfter = try syncRows(db).filter { $0.entityId == bid }.count
         XCTAssertEqual(syncRowsAfter, syncRowsBefore)
     }
+
+    // MARK: - 6. boardTasks-pull cascade (Board-integrity PR-1, docs/BOARD_INTEGRITY.md)
+
+    private let boardTasksCol = (firestoreName: "boardTasks", grdbTable: "board_tasks")
+
+    /// Appends an in-window `completion` TaskEvent so `taskId` reads WINDOWED
+    /// complete on `bid`'s board — the lifetime `Task.isCompleted` cache
+    /// alone is NOT read by the windowed board grid (docs/WINDOWED_COMPLETION.md).
+    /// Mirrors the sealed-pull test's event-seeding pattern above.
+    private func completeInWindow(_ db: AppDatabase, taskId: String, occurredAt: String = "2026-06-05T00:00:00.000Z") throws {
+        try db.write { txn in
+            try TaskEvent(
+                id: self.newId(), userId: self.userId, taskId: taskId, kind: .completion, delta: nil,
+                occurredAt: occurredAt, boardId: nil,
+                createdAt: occurredAt, updatedAt: occurredAt,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(txn)
+        }
+    }
+
+    /// Applying a pulled `boardTasks` TOMBSTONE removes that cell from the
+    /// board's derived stats in the SAME transaction as the upsert — the
+    /// gap this PR closes (previously a pulled `boardTasks` row triggered NO
+    /// board re-derivation at all, so `completedTasks` stayed stale on the
+    /// receiving device until an unrelated cascade happened to touch the
+    /// same board). A second, untouched placement stays counted, proving
+    /// the tombstoned cell specifically was excluded — not that windowed
+    /// derivation just came up empty for unrelated reasons.
+    func test_boardTasksPull_tombstoneRemovesCellFromDerivedStatsInSameTxn() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let bid = "b1"
+        var board = makeBoard(id: bid)
+        board.centerSquareType = .none // no FREE auto-fill to muddy the count
+        try db.saveBoard(board)
+
+        let tid = newId()
+        let staysId = newId()
+        try db.saveTask(makeTask(tid))
+        try db.saveTask(makeTask(staysId))
+        try completeInWindow(db, taskId: tid)
+        try completeInWindow(db, taskId: staysId)
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: bid, taskId: tid))
+        try db.saveBoardTask(BoardTask(
+            id: "bt2", boardId: bid, taskId: staysId, row: 0, col: 1, isCenter: false,
+            createdAt: AppDatabase.currentTimestamp(), updatedAt: AppDatabase.currentTimestamp(),
+            lastSyncedAt: nil, version: 1
+        ))
+        let sut = makeSut(db)
+
+        // Remote tombstone for bt1 at a higher version — this device's own
+        // completed cell was removed from the board on another device.
+        let remote: [String: Any] = [
+            "id": "bt1", "boardId": bid, "taskId": tid, "row": 0, "col": 0,
+            "isCenter": false, "createdAt": "2026-06-01T00:00:00.000",
+            "updatedAt": "2026-06-02T00:00:00.000", "version": 2,
+            "isDeleted": true, "deletedAt": "2026-06-02T00:00:00.000",
+        ]
+        sut.applyRemoteSubdoc(collection: boardTasksCol, remoteData: remote, authenticatedUserId: userId)
+
+        // The tombstone landed locally.
+        let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        XCTAssertTrue(bt.isDeleted)
+
+        // The cascade recomputed the board's stats WITHOUT the tombstoned
+        // cell (in the same transaction as the upsert) while still counting
+        // the surviving completed placement.
+        let b = try XCTUnwrap(try db.fetchBoard(id: bid))
+        XCTAssertEqual(b.completedTasks, 1, "only the surviving bt2 cell counts")
+        XCTAssertEqual(sut.totalPulled, 1)
+        let rows = try syncRows(db)
+        XCTAssertTrue(rows.contains { $0.entityType == "boards" && $0.entityId == bid && $0.operationType == .update })
+    }
+
+    /// Applying a pulled LIVE `boardTasks` row with a CHANGED position
+    /// recomputes `completedLineIds` — the positional-staleness regression.
+    /// `completedLineIds` is a positional bingo cache: three already-complete
+    /// (windowed, via TaskEvent) tasks placed across row 0 hold a `row_0`
+    /// bingo; pulling a move of one of them off that row must drop the line
+    /// even though every task's completion state is unchanged.
+    func test_boardTasksPull_liveRowPositionChange_recomputesCompletedLineIds() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let bid = "b1"
+        var board = makeBoard(id: bid)
+        board.centerSquareType = .none
+        // Seed the STALE-but-was-correct prior cascade output: a row_0 bingo.
+        board.completedTasks = 3
+        board.linesCompleted = 1
+        board.completedLineIds = ["row_0"]
+        try db.saveBoard(board)
+
+        let t1 = newId(), t2 = newId(), t3 = newId()
+        try db.saveTask(makeTask(t1))
+        try db.saveTask(makeTask(t2))
+        try db.saveTask(makeTask(t3))
+        try completeInWindow(db, taskId: t1)
+        try completeInWindow(db, taskId: t2)
+        try completeInWindow(db, taskId: t3)
+        let now = AppDatabase.currentTimestamp()
+        try db.saveBoardTask(BoardTask(
+            id: "bt1", boardId: bid, taskId: t1, row: 0, col: 0, isCenter: false,
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+        try db.saveBoardTask(BoardTask(
+            id: "bt2", boardId: bid, taskId: t2, row: 0, col: 1, isCenter: false,
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+        try db.saveBoardTask(BoardTask(
+            id: "bt3", boardId: bid, taskId: t3, row: 0, col: 2, isCenter: false,
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+        let sut = makeSut(db)
+
+        // Remote MOVES bt3 down to (1, 2) — row 0 no longer fully covered.
+        let remote: [String: Any] = [
+            "id": "bt3", "boardId": bid, "taskId": t3, "row": 1, "col": 2,
+            "isCenter": false, "createdAt": now, "updatedAt": "2026-06-02T00:00:00.000",
+            "version": 2, "isDeleted": false,
+        ]
+        sut.applyRemoteSubdoc(collection: boardTasksCol, remoteData: remote, authenticatedUserId: userId)
+
+        let b = try XCTUnwrap(try db.fetchBoard(id: bid))
+        XCTAssertEqual(b.completedTasks, 3, "completion count is unaffected by a pure position move")
+        XCTAssertEqual(b.linesCompleted, 0, "row_0 no longer holds after the pulled move")
+        XCTAssertEqual(b.completedLineIds ?? [], [])
+    }
 }

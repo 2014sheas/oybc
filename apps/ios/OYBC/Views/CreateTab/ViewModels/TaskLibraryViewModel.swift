@@ -225,7 +225,9 @@ final class TaskLibraryViewModel {
 
     private static func loadAllBoardTasks(database: AppDatabase) async throws -> [BoardTask] {
         try await database.read { db in
-            try BoardTask.fetchAll(db)
+            try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
         }
     }
 

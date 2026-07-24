@@ -161,9 +161,10 @@ extension AppDatabase {
             .fetchAll(db)
             .filter { $0.sealedAt != nil }
         guard !sealedBoards.isEmpty else { return [] }
-        // BoardTask has no `isDeleted` column — it's a pure placement record
-        // that's hard-deleted (never soft-deleted), unlike Board/CompoundChild.
-        let boardTasks = try BoardTask.fetchAll(db)
+        // Board-integrity PR-1: BoardTask is soft-deleted now, like every
+        // other synced collection — filter tombstones so a removed
+        // placement doesn't keep granting sealed-window immunity.
+        let boardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
         let children = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
         let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: taskId, children: children)
         let affected = DerivationPass.findAffectedBoardIds(changedTaskId: taskId, parentCompounds: parents, boardTasks: boardTasks)

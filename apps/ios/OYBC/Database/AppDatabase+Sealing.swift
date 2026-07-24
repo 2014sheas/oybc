@@ -38,7 +38,7 @@ extension AppDatabase {
     /// Load workspace lookups + a full non-deleted-event map within `db`.
     static func loadSealLookups(db: Database) throws -> SealLookups {
         let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-        let allBoardTasks = try BoardTask.fetchAll(db)
+        let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
         let allTasks = try Task.fetchAll(db)
         let allBoards = try Board.fetchAll(db)
         let events = try TaskEvent.filter(Column("isDeleted") == false).fetchAll(db)
@@ -198,7 +198,7 @@ extension AppDatabase {
         let nowMs = (DateFormatting.parseISO(now)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970) * 1000
 
         let allBoards = try Board.fetchAll(db)
-        let allBoardTasks = try BoardTask.fetchAll(db)
+        let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
         let allTasks = try Task.fetchAll(db)
         let allChildren = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
 
@@ -407,7 +407,9 @@ extension AppDatabase {
                 .filter { $0.sealedAt == nil }
             guard !boards.isEmpty else { return [] }
 
-            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasks: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
             let allBoards: [Board] = try Board.fetchAll(db)
             let allChildren: [CompoundChild] = try CompoundChild

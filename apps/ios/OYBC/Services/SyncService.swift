@@ -874,6 +874,19 @@ final class SyncService: ObservableObject {
                            let compoundTaskId = remoteData["compoundTaskId"] as? String {
                             try runPullCascade(db: db, changedTaskId: compoundTaskId)
                         }
+                        // Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md):
+                        // a pulled `boardTasks` row — live re-placement OR
+                        // tombstone — changes the affected board's grid
+                        // geometry, so its stats must re-derive in the same
+                        // transaction as the upsert. Without this, a pulled
+                        // placement change left `completedTasks` /
+                        // `completedLineIds` stale on the receiving device
+                        // until the next unrelated cascade happened to touch
+                        // that board.
+                        if collection.firestoreName == "boardTasks",
+                           let boardId = remoteData["boardId"] as? String {
+                            try runPullCascadeForBoardTask(db: db, boardId: boardId)
+                        }
                         // Sealed-board transport convergence: a pulled SEALED
                         // boards doc may carry a stale snapshot (sealed offline
                         // elsewhere with a partial event union). Re-derive THAT
@@ -1612,6 +1625,13 @@ extension SyncService {
                        let compoundTaskId = remoteData["compoundTaskId"] as? String {
                         try runPullCascade(db: db, changedTaskId: compoundTaskId)
                     }
+                    // Board-integrity PR-1 (tombstones) — see the batch pull
+                    // path (`processPullCollection`) for rationale. Same
+                    // deterministic, same-transaction semantics.
+                    if collection.firestoreName == "boardTasks",
+                       let boardId = remoteData["boardId"] as? String {
+                        try runPullCascadeForBoardTask(db: db, boardId: boardId)
+                    }
                     // Sealed-board transport convergence — see the batch pull
                     // path (`processPullCollection`) for rationale. Same
                     // deterministic, local-only, same-transaction semantics.
@@ -1649,7 +1669,9 @@ extension SyncService {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
         let allTasks: [Task] = try Task.fetchAll(db)
         // Phase 6.3 — same rationale as runBoardCascadeForTaskWithResults
         // (AppDatabase+Tasks): feed the workspace's boards into the
@@ -1719,6 +1741,92 @@ extension SyncService {
         }
     }
 
+    /// Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md) — the
+    /// `boardTasks`-pull cascade. A pulled `board_tasks` row — a LIVE
+    /// re-placement or a tombstone — changes ONE board's grid geometry
+    /// directly (unlike a `tasks` pull, which fans out via
+    /// `findAffectedBoardIds`). Recomputes that board's stats + enqueues its
+    /// sync, mirroring `runPullCascade`'s write shape exactly (same raw-SQL
+    /// UPDATE + sync_queue INSERT, no GREENLOG status transition — the pull
+    /// cascades never flip board status, consistent with `runPullCascade`/
+    /// `runPullCascadeForTasks`).
+    ///
+    /// Sealed boards: `computeBoardStatsUpdate`'s live path is for ACTIVE
+    /// boards only, so a sealed board takes the SAME sealed-transport-
+    /// convergence branch the `boards`-collection pull uses
+    /// (`reDeriveSealedBoardSnapshots`) instead of the live write below —
+    /// keeping a sealed snapshot coherent when a late/offline placement
+    /// change for a placed task arrives after the seal.
+    ///
+    /// **Throws** on any cascade failure so the caller's enclosing
+    /// transaction rolls back the upserted row (same contract as
+    /// `runPullCascade`).
+    ///
+    /// - Parameters:
+    ///   - db: GRDB transaction in which to perform the cascade. Caller is
+    ///         responsible for the enclosing `write { db in ... }` block.
+    ///   - boardId: The `boardId` of the `BoardTask` row that was just upserted.
+    private func runPullCascadeForBoardTask(db: Database, boardId: String) throws {
+        guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { return }
+
+        if board.sealedAt != nil {
+            try AppDatabase.reDeriveSealedBoardSnapshots(db: db, boardIds: [boardId])
+            return
+        }
+
+        let allChildren: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allTasks: [Task] = try Task.fetchAll(db)
+        let allBoards: [Board] = try Board.fetchAll(db)
+        let windowContext = try AppDatabase.buildWindowContext(db: db)
+
+        var taskById: [String: Task] = [:]
+        for t in allTasks { taskById[t.id] = t }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allChildren {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+
+        let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+        let update = DerivationPass.computeBoardStatsUpdate(
+            board: board,
+            boardTasksOnBoard: boardTasksOnBoard,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            allBoards: allBoards,
+            windowContext: windowContext
+        )
+
+        let now = AppDatabase.currentTimestamp()
+        let completedLineIdsJson = encodePullCascadeJSONArray(update.completedLineIds)
+        try db.execute(sql: """
+            UPDATE boards
+            SET completedTasks = ?, linesCompleted = ?, completedLineIds = ?,
+                updatedAt = ?, version = version + 1
+            WHERE id = ?
+            """, arguments: [
+                update.completedTasks,
+                update.linesCompleted,
+                completedLineIdsJson,
+                now,
+                boardId
+            ])
+
+        if let updatedBoard = try Board.fetchOne(db, key: boardId) {
+            let payload = try JSONEncoder().encode(updatedBoard)
+            let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
+            try db.execute(sql: """
+                INSERT INTO sync_queue
+                    (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                VALUES (?, 'boards', ?, 'update', ?, 'pending', 0, ?, 0)
+                """, arguments: [UUID().uuidString, boardId, payloadStr, now])
+        }
+    }
+
     /// Batched multi-task pull cascade (Windowed Completion, docs §Sync —
     /// "recompute each affected task's caches once, then run ONE derivation pass
     /// per affected live board"). Unions the boards affected across every changed
@@ -1732,7 +1840,9 @@ extension SyncService {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
         let allTasks: [Task] = try Task.fetchAll(db)
         let allBoards: [Board] = try Board.fetchAll(db)
         let windowContext = try AppDatabase.buildWindowContext(db: db)

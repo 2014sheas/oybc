@@ -430,9 +430,17 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             board: board, boardTasks: [newBt], pendingTasks: [], isUpdate: true, now: now
         )
 
-        // Old placement gone, new placement present.
-        let placements = try db.read { try BoardTask.filter(Column("boardId") == "wb2").fetchAll($0) }
-        XCTAssertEqual(placements.map { $0.id }, ["new-bt"])
+        // Old placement soft-deleted (tombstoned), new placement present and LIVE.
+        let livePlacements = try db.read {
+            try BoardTask
+                .filter(Column("boardId") == "wb2" && Column("isDeleted") == false)
+                .fetchAll($0)
+        }
+        XCTAssertEqual(livePlacements.map { $0.id }, ["new-bt"])
+        let oldBt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "old-bt") })
+        XCTAssertTrue(oldBt.isDeleted)
+        XCTAssertNotNil(oldBt.deletedAt)
+        XCTAssertEqual(oldBt.version, 2)
 
         let rows = try syncRows(db)
         XCTAssertEqual(count(rows, type: "boards", op: .update), 1)

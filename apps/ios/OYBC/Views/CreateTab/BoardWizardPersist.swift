@@ -179,8 +179,8 @@ func resolveWizardDates(controller: BoardWizardViewModel) -> ResolvedWizardDates
 ///   rows in a single transaction. Version always starts at 1.
 /// - **Draft update** (`draftBoardId` set): updates the existing
 ///   `Board` with new field values + target status (version bump
-///   via `saveBoard`), hard-deletes all of its `BoardTask` rows, then
-///   inserts the new placement.
+///   via `saveBoard`), soft-deletes (tombstones) all of its existing
+///   `BoardTask` rows, then inserts the new placement.
 ///
 /// Runs on a background queue; dispatches the provided callbacks on
 /// the main queue. Callers should already have validated

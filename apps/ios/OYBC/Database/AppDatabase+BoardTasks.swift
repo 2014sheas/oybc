@@ -7,40 +7,30 @@ extension AppDatabase {
     func fetchBoardTasks(boardId: String) throws -> [BoardTask] {
         return try read { db in
             try BoardTask
-                .filter(Column("boardId") == boardId)
+                .filter(Column("boardId") == boardId && Column("isDeleted") == false)
                 .fetchAll(db)
         }
     }
 
+    /// Fetch a single `BoardTask` by id, regardless of `isDeleted`. Internal
+    /// cascade helpers (`updateBoardTaskAndCascade`, `updateBoardTaskPositions`,
+    /// `removeBoardTaskFromBoard`) look up a row they already have the id for —
+    /// including a not-yet-tombstoned row mid-cascade — so this intentionally
+    /// does NOT filter tombstones, mirroring `fetchTask(id:)` / `fetchBoard(id:)`.
     func fetchBoardTask(id: String) throws -> BoardTask? {
         return try read { db in
             try BoardTask.fetchOne(db, key: id)
         }
     }
 
-    /// Fetch every `BoardTask` row that references a specific Task. Used
+    /// Fetch every LIVE `BoardTask` row that references a specific Task. Used
     /// by the Task detail view to list "placed on N boards" and by the
     /// cascade-delete impact preview.
     func fetchBoardTasksForTask(taskId: String) throws -> [BoardTask] {
         return try read { db in
             try BoardTask
-                .filter(Column("taskId") == taskId)
+                .filter(Column("taskId") == taskId && Column("isDeleted") == false)
                 .fetchAll(db)
-        }
-    }
-
-    /// Hard-deletes every `BoardTask` row for the given board. Used
-    /// when re-saving a draft whose task placement has changed —
-    /// simpler than diffing old vs new layout, and tolerable at scale
-    /// (boards have at most 25 cells).
-    ///
-    /// `BoardTask` has no `isDeleted` flag, so the deletion is literal;
-    /// the web twin uses the same pattern.
-    func deleteBoardTasksForBoard(boardId: String) throws {
-        try write { db in
-            _ = try BoardTask
-                .filter(Column("boardId") == boardId)
-                .deleteAll(db)
         }
     }
 
@@ -86,7 +76,9 @@ extension AppDatabase {
             let allChildren: [CompoundChild] = try CompoundChild
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
-            let allBoardTasksPre: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasksPre: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
 
             // ── Apply the boardTask patch ──
 
@@ -104,7 +96,9 @@ extension AppDatabase {
 
             // ── Post-patch workspace snapshot (for new-task cascade side) ──
 
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasksPost: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
             let allBoards: [Board] = try Board.fetchAll(db)
 
@@ -189,12 +183,14 @@ extension AppDatabase {
         }
     }
 
-    /// Fetch every BoardTask in the workspace. Used by the derivation pass
-    /// to find which boards contain a given task (directly or via a compound).
-    /// Small-N: typical user has under a few thousand BoardTasks.
+    /// Fetch every LIVE BoardTask in the workspace. Used by the derivation
+    /// pass to find which boards contain a given task (directly or via a
+    /// compound). Small-N: typical user has under a few thousand BoardTasks.
     func fetchAllBoardTasks() throws -> [BoardTask] {
         return try read { db in
-            try BoardTask.fetchAll(db)
+            try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
         }
     }
 
@@ -272,7 +268,9 @@ extension AppDatabase {
             guard var board = try Board.fetchOne(db, key: boardId),
                   !board.isDeleted, board.sealedAt == nil else { return }
 
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasksPost: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
             let allBoards: [Board] = try Board.fetchAll(db)
             let allChildren: [CompoundChild] = try CompoundChild
@@ -326,10 +324,25 @@ extension AppDatabase {
 
     /// Remove a single BoardTask placement from an ACTIVE board (live-edit M4).
     ///
-    /// Semantics mirror the web `removeBoardTaskFromBoard`:
-    ///   - Hard-deletes the BoardTask row (BoardTask has no isDeleted field;
-    ///     consistent with `deleteBoardTasksForBoard`).
-    ///   - Enqueues a DELETE sync tombstone.
+    /// Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md): SOFT-
+    /// deletes the BoardTask row — `isDeleted = true`, `deletedAt`/`updatedAt`
+    /// stamped, `version` bumped — mirroring every other synced collection
+    /// (`deleteBoard`, `CompoundChild`'s soft-delete in `deleteTaskWithCascadeInDb`).
+    /// The row STAYS in the local table as a tombstone; only the LIVE-filtered
+    /// readers (`fetchBoardTasks`, `fetchAllBoardTasks`, …) stop seeing it.
+    ///
+    /// The version bump is load-bearing for LWW: bumping BEFORE enqueue means
+    /// the tombstone's version is strictly greater than whatever this device
+    /// last pushed, so it beats an already-synced remote row on the next pull
+    /// — closing the self-restore hole where a same-version conflict tie used
+    /// to let the push loop's "remote wins" branch `table.put` the row back
+    /// locally within one sync cycle.
+    ///
+    /// Sequence:
+    ///   - Soft-delete the BoardTask row.
+    ///   - Enqueue a DELETE sync item whose payload is the POST-mutation
+    ///     tombstone (carries `isDeleted: true`) — mirrors how `deleteTaskWithCascadeInDb`
+    ///     enqueues soft-deleted CompoundChild links.
     ///   - Runs the batched cascade for every board affected by the removed task
     ///     (directly or via a compound parent), re-deriving stats + status.
     ///
@@ -338,7 +351,7 @@ extension AppDatabase {
     ///
     /// - Parameter boardTaskId: The `BoardTask.id` placement record to remove.
     func removeBoardTaskFromBoard(_ boardTaskId: String) throws {
-        guard let existing = try fetchBoardTask(id: boardTaskId) else { return }
+        guard var existing = try fetchBoardTask(id: boardTaskId), !existing.isDeleted else { return }
         let now = AppDatabase.currentTimestamp()
         let removedTaskId = existing.taskId
 
@@ -356,7 +369,11 @@ extension AppDatabase {
         )
 
         try write { db in
-            try BoardTask.deleteOne(db, key: boardTaskId)
+            existing.isDeleted = true
+            existing.deletedAt = now
+            existing.updatedAt = now
+            existing.version += 1
+            try existing.update(db)
 
             try SyncQueueBuilder.makeItem(
                 entityType: "boardTasks",
@@ -366,7 +383,9 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasksPost: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
             let allBoards: [Board] = try Board.fetchAll(db)
             let allChildren: [CompoundChild] = try CompoundChild
@@ -480,7 +499,9 @@ extension AppDatabase {
                 now: now
             ).enqueue(db)
 
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasksPost: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
             let allBoards: [Board] = try Board.fetchAll(db)
             let allChildren: [CompoundChild] = try CompoundChild

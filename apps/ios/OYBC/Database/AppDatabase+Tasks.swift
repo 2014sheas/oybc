@@ -80,7 +80,9 @@ extension AppDatabase {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
         let allTasks: [Task] = try Task.fetchAll(db)
         let allBoards: [Board] = try Board.fetchAll(db)
         // Windowed Completion — group events once so every board evaluates
@@ -219,7 +221,9 @@ extension AppDatabase {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
         let allTasks: [Task] = try Task.fetchAll(db)
         // Phase 6.3 — DerivationPass.computeBoardStatsUpdate needs the
         // workspace's boards to evaluate the specific-board / recurring-
@@ -903,16 +907,17 @@ extension AppDatabase {
     }
 
     /// Read-only impact calculation; safe to call before showing the
-    /// confirm dialog. Filters BoardTask placements to those on
-    /// non-deleted boards — `BoardTask` has no `isDeleted` column, so
-    /// orphan placements on soft-deleted boards would otherwise inflate
-    /// the user-facing count. The actual cascade still hard-deletes
-    /// every matching placement (storage cleanup); the dialog only
-    /// reports cells the user can still see.
+    /// confirm dialog. Filters BoardTask placements to LIVE rows on
+    /// non-deleted boards — both the row's own `isDeleted` (Board-integrity
+    /// PR-1: a tombstoned placement isn't a real cell) and the board's
+    /// `isDeleted` (an orphan placement on a soft-deleted board would
+    /// otherwise inflate the user-facing count). The actual cascade still
+    /// soft-deletes every matching LIVE placement (storage cleanup); the
+    /// dialog only reports cells the user can still see.
     func computeTaskDeletionImpact(taskId: String) throws -> TaskDeletionImpact {
         try read { db in
             let allPlacements = try BoardTask
-                .filter(Column("taskId") == taskId)
+                .filter(Column("taskId") == taskId && Column("isDeleted") == false)
                 .fetchAll(db)
             let placementBoardIds = Array(Set(allPlacements.map { $0.boardId }))
             let liveBoards: [Board] = placementBoardIds.isEmpty
@@ -946,9 +951,10 @@ extension AppDatabase {
 
     /// Cascade-delete a task. Mirrors web's `deleteTaskWithCascade`:
     ///
-    /// 1. **BoardTask placements** referencing this task — *hard-
-    ///    deleted* (BoardTask has no `isDeleted` field). Each removal
-    ///    queued for sync DELETE so other devices drop the placement.
+    /// 1. **BoardTask placements** referencing this task — SOFT-deleted
+    ///    (Board-integrity PR-1: version bump + isDeleted + deletedAt,
+    ///    matching every other synced collection). Each removal queued
+    ///    for sync DELETE so other devices drop the placement.
     /// 2. **`CompoundChild` rows where the task IS the parent compound**
     ///    — soft-deleted (version bump + isDeleted + deletedAt). The
     ///    child Tasks themselves stay alive.
@@ -990,7 +996,9 @@ extension AppDatabase {
         // transaction instead of relying on app-open self-heal (a persisted
         // line could otherwise keep a bingo through a now-empty cell, and
         // achievements could read it in the meantime).
-        let allBoardTasksPreDelete = try BoardTask.fetchAll(db)
+        let allBoardTasksPreDelete = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
         let allCompoundChildrenPreDelete = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
@@ -1004,12 +1012,16 @@ extension AppDatabase {
             boardTasks: allBoardTasksPreDelete
         )
 
-        // 1. Hard-delete BoardTask placements.
+        // 1. Soft-delete BoardTask placements (tombstone — see BoardTask's doc comment).
         let placements = try BoardTask
-            .filter(Column("taskId") == taskId)
+            .filter(Column("taskId") == taskId && Column("isDeleted") == false)
             .fetchAll(db)
-        for bt in placements {
-            _ = try bt.delete(db)
+        for var bt in placements {
+            bt.isDeleted = true
+            bt.deletedAt = now
+            bt.updatedAt = now
+            bt.version += 1
+            try bt.update(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "boardTasks",
                 entityId: bt.id,
@@ -1060,7 +1072,9 @@ extension AppDatabase {
         // verbatim: sealed/deleted boards skip, live boards get a version
         // bump + sync enqueue.
         if !affectedBoardIdsForDeletion.isEmpty {
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasksPost: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
             let allBoards: [Board] = try Board.fetchAll(db)
             let allChildren: [CompoundChild] = try CompoundChild

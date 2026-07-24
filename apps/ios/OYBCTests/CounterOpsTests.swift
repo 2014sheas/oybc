@@ -390,9 +390,10 @@ final class CounterOpsTests: XCTestCase {
 
         try db.deleteCounterWithUnlink(sourceId: "src5", now: now)
 
-        // The source's own placement is gone — hard-deleted + enqueued, same
-        // as any other cascade-deleted task's placement.
-        XCTAssertNil(try db.read { try BoardTask.fetchOne($0, key: "cbt") })
+        // The source's own placement is gone (tombstoned) + enqueued, same
+        // as any other cascade-deleted task's placement (Board-integrity PR-1).
+        let cbt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "cbt") })
+        XCTAssertTrue(cbt.isDeleted)
         let rows = try db.fetchPendingSyncItems()
         XCTAssertTrue(rows.contains { $0.entityType == "boardTasks" && $0.entityId == "cbt" && $0.operationType == .delete })
 
