@@ -286,9 +286,16 @@ export async function reDeriveActiveBoards(
         b.userId === userId &&
         !b.isDeleted &&
         !b.sealedAt &&
+        // Every non-sealed status is in scope. DRAFT/ARCHIVED matter because
+        // achievement bingo-triggers read ANY non-deleted board's persisted
+        // lines — a stale phantom line on a draft/archived board would poison
+        // a watcher forever if the heal skipped it. Status transitions below
+        // gate on ACTIVE/COMPLETED, so drafts/archived only get stats
+        // corrected, never status-flipped.
         (b.status === BoardStatus.ACTIVE ||
           b.status === BoardStatus.COMPLETED ||
-          b.status === BoardStatus.ARCHIVED),
+          b.status === BoardStatus.ARCHIVED ||
+          b.status === BoardStatus.DRAFT),
     )
     .toArray();
   if (boards.length === 0) return [];
@@ -303,7 +310,13 @@ export async function reDeriveActiveBoards(
   const rederivedIds: string[] = [];
 
   await db.transaction('rw', [db.boards, db.syncQueue], async () => {
-    for (const board of boards) {
+    for (const staleBoard of boards) {
+      // Re-read the row INSIDE the txn: the heal fires at app-open, exactly
+      // when the initial sync pull bursts — computing `changed`/version/status
+      // from the pre-txn snapshot could clobber a just-pulled newer row (and
+      // write a version LOWER than remote, silently losing LWW on the push).
+      const board = await db.boards.get(staleBoard.id);
+      if (!board || board.isDeleted || board.sealedAt) continue;
       const boardTasksOnBoard = lookups.allBoardTasks.filter((bt) => bt.boardId === board.id);
       const stats = computeBoardStatsUpdate(
         board,
