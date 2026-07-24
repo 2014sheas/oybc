@@ -63,8 +63,20 @@ enum BoardPreviewCells {
         let sealedCellSet = Set(isSealed ? (board.sealedCompletedCells ?? []) : [])
         let windowContext = CompoundWindowContext(windowStart: board.startDate, eventsByTaskId: eventsByTaskId)
 
+        // Board-integrity PR-2 (Part 2): resolve through
+        // `PlacementIntegrity.resolvePlacements` first — a raw duplicate
+        // row at one cell would otherwise render whichever row happens to
+        // iterate last (arbitrary), instead of the deterministic winner
+        // the live play grid (`BoardPlayView.btByPosition`) and derivation
+        // agree on. Second occurrence of the exact `btByPosition` pattern
+        // the spec calls out, feeding board mini-previews across
+        // `BoardListView` / `CoreBoardBrowserViewModel` / `SourceBoardsViewModel`.
+        let ownBoardTasks = PlacementIntegrity.resolvePlacements(
+            boardTasks.filter { $0.boardId == board.id },
+            boardSize: size
+        )
         var btByPosition: [String: BoardTask] = [:]
-        for bt in boardTasks where bt.boardId == board.id {
+        for bt in ownBoardTasks {
             btByPosition["\(bt.row)-\(bt.col)"] = bt
         }
 
