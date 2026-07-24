@@ -7,6 +7,7 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  resolvePlacements,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -210,7 +211,12 @@ export async function updateBoardAndCascade(
         const freshBoard = await db.boards.get(affectedBoardId);
         if (!freshBoard || freshBoard.isDeleted || freshBoard.sealedAt) continue;
 
-        const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
+        // Board-integrity PR-2 (Part 2) — resolve through the shared winner
+        // rule before deriving (see boardTasks.ts cascades for why).
+        const boardTasksOnBoard = resolvePlacements(
+          allBoardTasks.filter((bt) => bt.boardId === affectedBoardId),
+          freshBoard.boardSize,
+        );
         const stats = computeBoardStatsUpdate(
           freshBoard,
           boardTasksOnBoard,

@@ -11,6 +11,7 @@ import {
   computeBoardStatsUpdate,
   findAffectedBoardIds,
   findTransitiveParentCompounds,
+  resolvePlacements,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -268,8 +269,11 @@ export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promi
       const affectedBoard = await db.boards.get(affectedBoardId);
       if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
-      const boardTasksOnBoard = allBoardTasksPost.filter(
-        (bt) => bt.boardId === affectedBoardId,
+      // Board-integrity PR-2 (Part 2) — resolve through the shared winner
+      // rule before deriving (see boardTasks.ts cascades for why).
+      const boardTasksOnBoard = resolvePlacements(
+        allBoardTasksPost.filter((bt) => bt.boardId === affectedBoardId),
+        affectedBoard.boardSize,
       );
 
       const stats: BoardStatsUpdate = computeBoardStatsUpdate(

@@ -5,6 +5,7 @@ import {
   BoardStatus,
   TaskType,
   isWithinTimeframe,
+  resolvePlacements,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -75,7 +76,18 @@ export interface BoardPlayData {
 export function useBoardPlayData(board: Board, userId: string | undefined): BoardPlayData {
   const boardId = board.id;
 
-  const boardTasks = useBoardTasks(boardId) ?? EMPTY_BOARD_TASKS;
+  const gridSize = board.boardSize ?? 3;
+
+  // Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 2) — resolve the raw
+  // live rows through the shared winner rule BEFORE any reader (render,
+  // edit-draft seeding via this hook's `boardTasks` output, achievement
+  // badge lookup below) touches them, so no two readers can disagree about
+  // which row occupies a cell — even before the repair pass (Part 1) has
+  // caught up. `resolvePlacements` also drops out-of-bounds rows and
+  // filters tombstones (defense-in-depth on top of the query's own filter).
+  const rawBoardTasks = useBoardTasks(boardId) ?? EMPTY_BOARD_TASKS;
+  const boardTasks =
+    rawBoardTasks.length === 0 ? rawBoardTasks : resolvePlacements(rawBoardTasks, gridSize);
   // Post-unification, taskSteps was dropped in Dexie v5. The adapter still
   // accepts a steps array for the legacy progress branch, but every consumer
   // here passes EMPTY_TASK_STEPS — the live query was needlessly hitting a
@@ -249,11 +261,15 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     return hints;
   }, [taskMap, sharedCounterSourceIds, allBoardTasks, allBoards, boardId]);
 
+  // `boardTasks` is already `resolvePlacements` output above — sorted by
+  // (row, col, id) with at most one row per cell — so this sort/dict-build
+  // is now just a cheap re-derivation, not a second source of collision
+  // resolution. Kept as separate steps (rather than reading resolvePlacements'
+  // order directly) so this stays correct even if a future caller passes
+  // `boardTasks` through additional filtering before this point.
   const sortedBoardTasks = [...boardTasks].sort((a, b) =>
     a.row !== b.row ? a.row - b.row : a.col - b.col
   );
-
-  const gridSize = board.boardSize ?? 3;
 
   const btByPosition: Record<string, BoardTask> = {};
   for (const bt of sortedBoardTasks) {

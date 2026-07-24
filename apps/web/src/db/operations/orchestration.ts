@@ -7,6 +7,7 @@ import {
   findAffectedBoardIds,
   computeBoardStatsUpdate,
   resolveTaskWindowState,
+  resolvePlacements,
   type Board,
   type Task,
   type CompoundChild,
@@ -138,7 +139,12 @@ export async function runBoardCascadeForTasks(
     // deterministic pull-path re-derivation (see sealing.ts).
     if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
-    const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
+    // Board-integrity PR-2 (Part 2) — resolve through the shared winner
+    // rule before deriving (see boardTasks.ts cascades for why).
+    const boardTasksOnBoard = resolvePlacements(
+      allBoardTasks.filter((bt) => bt.boardId === affectedBoardId),
+      affectedBoard.boardSize,
+    );
     const stats: BoardStatsUpdate = computeBoardStatsUpdate(
       affectedBoard,
       boardTasksOnBoard,
@@ -245,7 +251,12 @@ export async function runBoardCascadeForBoardId(boardId: string): Promise<void> 
     (childrenByCompound[c.compoundTaskId] ??= []).push(c);
   }
 
-  const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === boardId);
+  // Board-integrity PR-2 (Part 2) — resolve through the shared winner rule
+  // before deriving (see boardTasks.ts cascades for why).
+  const boardTasksOnBoard = resolvePlacements(
+    allBoardTasks.filter((bt) => bt.boardId === boardId),
+    board.boardSize,
+  );
   const stats: BoardStatsUpdate = computeBoardStatsUpdate(
     board,
     boardTasksOnBoard,
