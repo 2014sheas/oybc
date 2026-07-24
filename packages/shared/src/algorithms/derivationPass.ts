@@ -255,8 +255,22 @@ function computeBoardGrid(
     const t = taskById[bt.taskId];
     if (!t || t.isDeleted) continue;
 
+    // Bounds guard: `BoardTaskSchema` only enforces `min(0)` on row/col, so a
+    // malformed placement (e.g. `row=0, col=7` on a 5×5) would otherwise alias
+    // into a WRONG cell via `row * size + col`. Skip out-of-range placements
+    // entirely; the flat-index guard below stays as defense-in-depth.
+    if (bt.row >= size || bt.col >= size) continue;
+
     const idx = bt.row * size + bt.col;
     if (idx < 0 || idx >= totalSquares) continue;
+
+    // Duplicate-placement guard: `completedTasks` counts per CELL, not per
+    // placement row. Two placements on one cell (possible via offline sync
+    // union — there is no (board,row,col) uniqueness constraint) must not
+    // double-count toward the greenlog predicate (`completedTasks >= size²`).
+    // Skipping an already-true cell is also order-independent: the cell is
+    // green iff ANY of its placements resolves complete, counted once.
+    if (grid[idx]) continue;
 
     // Phase 6.3 — ACHIEVEMENT-typed Tasks are cross-board watchers. The
     // backing Task carries the reference fields (board XOR template); the

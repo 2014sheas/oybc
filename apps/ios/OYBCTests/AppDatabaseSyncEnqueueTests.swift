@@ -440,6 +440,86 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(count(rows, type: "boardTasks", op: .create), 1)
     }
 
+    // MARK: - saveWizardBoard: derivation pass (bingo-pipeline hardening item 2)
+    //
+    // Before the fix, stats were hand-init'd to 0 (or preserved from the prior
+    // draft row) instead of derived from the just-written placements — a board
+    // placing an already-in-window-complete task, or with a FREE center, would
+    // store + sync wrong stats until the next app-open self-heal.
+
+    func test_saveWizardBoard_freshCreate_derivesStatsFromWindowedCompleteTaskAndFreeCenter() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Pre-existing library task, already complete WITHIN the new board's
+        // window (an in-window completion event — not just the lifetime cache,
+        // which windowed derivation never trusts).
+        try db.saveTask(makeTask("done1"))
+        try db.write { txn in
+            try TaskEvent(
+                id: "ev1", userId: "u1", taskId: "done1", kind: .completion, delta: nil,
+                occurredAt: "2026-06-15T00:00:00.000", boardId: nil,
+                createdAt: now, updatedAt: now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(txn)
+        }
+
+        // `makeBoard` defaults `centerSquareType` to FREE (3×3, so the center
+        // auto-fills) — this exercises both halves of the item-2 test note in
+        // one board: an already-windowed-complete placed task AND a FREE
+        // center both landing in the derived count.
+        let board = makeBoard(id: "wb-derive")
+        let bt = makeBoardTask(id: "wbt-derive", boardId: "wb-derive", taskId: "done1", row: 0, col: 0)
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [], isUpdate: false, now: now
+        )
+
+        let saved = try XCTUnwrap(try db.fetchBoard(id: "wb-derive"))
+        XCTAssertEqual(
+            saved.completedTasks, 2,
+            "derivation output (placed complete task + FREE center auto-fill), not the hand-init 0"
+        )
+    }
+
+    func test_saveWizardBoard_draftToActiveResume_derivesStatsAtActivation() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        try db.saveTask(makeTask("done2"))
+        try db.write { txn in
+            try TaskEvent(
+                id: "ev2", userId: "u1", taskId: "done2", kind: .completion, delta: nil,
+                occurredAt: "2026-06-15T00:00:00.000", boardId: nil,
+                createdAt: now, updatedAt: now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(txn)
+        }
+
+        // First save: a DRAFT with nothing placed yet — only the FREE center
+        // auto-fill counts.
+        var draft = makeBoard(id: "wb-resume", status: .draft)
+        try db.saveWizardBoard(board: draft, boardTasks: [], pendingTasks: [], isUpdate: false, now: now)
+        XCTAssertEqual(try db.fetchBoard(id: "wb-resume")?.completedTasks, 1)
+
+        // Resume the draft and save it ACTIVE with the complete task now
+        // placed — activation must derive from the just-written placements,
+        // not preserve/hand-init a stale value.
+        draft.status = .active
+        draft.version = 2
+        let bt = makeBoardTask(id: "wbt-resume", boardId: "wb-resume", taskId: "done2", row: 0, col: 0)
+        try db.saveWizardBoard(board: draft, boardTasks: [bt], pendingTasks: [], isUpdate: true, now: now)
+
+        let activated = try XCTUnwrap(try db.fetchBoard(id: "wb-resume"))
+        XCTAssertEqual(
+            activated.completedTasks, 2,
+            "derived from the just-written placements at activation, not a hand-init/preserved value"
+        )
+        XCTAssertNotNil(activated.activatedAt, "activation instant stamped")
+    }
+
     // MARK: - spawnRecurringBoard
 
     private func seedSpawnTasks(_ db: AppDatabase, count n: Int) throws -> [String] {

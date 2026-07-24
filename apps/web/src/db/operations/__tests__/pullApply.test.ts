@@ -292,3 +292,147 @@ describe('applyRemoteSubdoc — every SYNC_COLLECTIONS entry round-trips (C1 reg
     });
   }
 });
+
+/**
+ * Item 1 (bingo-pipeline hardening) — sealed-board pull re-derive transport
+ * convergence hole. `reDeriveSealedBoards(ForTasks)` previously fired only
+ * from the taskEvents-pull batch; a pulled `boards` doc was applied verbatim,
+ * so a stale sealed snapshot from another device (sealed offline with a
+ * partial event union) would stick locally — and since sealed re-derivation
+ * never bumps `version`/enqueues, the remote copy stayed stale for every
+ * future puller too. The fix: `applyRemoteSubdoc`'s `boards` branch now
+ * re-derives any pulled SEALED doc against the LOCAL converged event union,
+ * inside the same pull transaction.
+ */
+describe('applyRemoteSubdoc — sealed-board pull re-derive (item 1)', () => {
+  const TASK = '40000000-0000-4000-8000-000000000001';
+  const BOARD = '20000000-0000-4000-8000-000000000099';
+  const START = '2026-07-01T00:00:00.000Z';
+  const SEALED_AT = '2026-07-02T06:00:00.000Z';
+  const IN_WINDOW = '2026-07-01T12:00:00.000Z';
+
+  it('corrects a stale pulled sealed snapshot from the local event union, without bumping version or enqueuing sync', async () => {
+    // Local device: the task has a completion event squarely inside the
+    // window, so the LOCAL converged union says cell 0 is green.
+    const task: Task = {
+      id: TASK,
+      userId: USER,
+      title: 'N',
+      type: TaskType.NORMAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 1,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.add(task);
+    await db.taskEvents.add({
+      id: 'ev-local-1',
+      userId: USER,
+      taskId: TASK,
+      kind: 'completion',
+      occurredAt: IN_WINDOW,
+      createdAt: IN_WINDOW,
+      updatedAt: IN_WINDOW,
+      version: 1,
+      isDeleted: false,
+    } as TaskEvent);
+
+    // Local board is already sealed correctly (grey→green from the local
+    // union) at version 1.
+    const localSealed: Board = {
+      id: BOARD,
+      userId: USER,
+      name: 'B',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.DAILY,
+      startDate: START,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      totalTasks: 9,
+      completedTasks: 1,
+      linesCompleted: 0,
+      completedLineIds: [],
+      sealedAt: SEALED_AT,
+      sealedCompletedCells: [0],
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.boards.add(localSealed);
+    const localBoardTask: BoardTask = {
+      id: 'bt-1',
+      boardId: BOARD,
+      taskId: TASK,
+      row: 0,
+      col: 0,
+      isCenter: false,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+    };
+    await db.boardTasks.add(localBoardTask);
+
+    // A remote device sealed offline BEFORE the event above had synced to
+    // it, so its pulled snapshot claims cell 0 is still incomplete — and it
+    // carries a higher version, so LWW picks the remote row.
+    const staleRemote: Board = {
+      ...localSealed,
+      completedTasks: 0,
+      completedLineIds: [],
+      sealedCompletedCells: [],
+      version: 2,
+      updatedAt: SEALED_AT,
+    };
+
+    const status = await applyRemoteSubdoc('boards', staleRemote, USER);
+    expect(status).toMatch(/^Pulled /);
+
+    const board = await db.boards.get(BOARD);
+    // The LWW-applied row's version is whatever the pulled doc carried...
+    expect(board?.version).toBe(2);
+    // ...but the snapshot was corrected in-place from the LOCAL union —
+    // re-derivation does NOT bump the version any further, and it doesn't
+    // enqueue a sync entry (pull paths don't author writes).
+    expect(board?.completedTasks).toBe(1);
+    expect(board?.sealedCompletedCells).toEqual([0]);
+
+    const boardSyncEntries = (await db.syncQueue.toArray()).filter(
+      (i) => i.entityType === 'boards' && i.entityId === BOARD,
+    );
+    expect(boardSyncEntries).toHaveLength(0);
+  });
+
+  it('leaves a non-sealed pulled board doc untouched by the re-derive hook', async () => {
+    const liveBoard: Board = {
+      id: BOARD,
+      userId: USER,
+      name: 'B',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.DAILY,
+      startDate: START,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      totalTasks: 9,
+      completedTasks: 3,
+      linesCompleted: 0,
+      completedLineIds: [],
+      createdAt: START,
+      updatedAt: START,
+      version: 2,
+      isDeleted: false,
+    };
+
+    const status = await applyRemoteSubdoc('boards', liveBoard, USER);
+    expect(status).toMatch(/^Pulled /);
+
+    const board = await db.boards.get(BOARD);
+    expect(board?.completedTasks).toBe(3);
+    expect(board?.sealedAt).toBeUndefined();
+  });
+});

@@ -139,7 +139,9 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
   const now = currentTimestamp();
   await db.transaction(
     'rw',
-    [db.tasks, db.taskEvents, db.boardTasks, db.compoundChildren, db.syncQueue],
+    // `boards` is in scope for the cascade step of `deleteTaskWithCascadeInTxn`
+    // (the deleted source's own placements re-derive their boards in-txn).
+    [db.tasks, db.taskEvents, db.boardTasks, db.compoundChildren, db.boards, db.syncQueue],
     async () => {
       const source = await db.tasks.get(sourceId);
       if (!source || source.isDeleted) return;

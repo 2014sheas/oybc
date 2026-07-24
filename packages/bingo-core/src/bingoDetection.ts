@@ -146,6 +146,26 @@ export function formatBingoMessage(
 }
 
 /**
+ * Strict-parse the numeric suffix of a `row_N` / `col_N` line id.
+ *
+ * `parseInt` prefix-parses (`"2x"` → 2), which would highlight a line for a
+ * malformed id, and an out-of-range index (`col_7` on a 5×5) would silently
+ * alias into wrong cells via `row * gridSize + col`. Both are rejected here —
+ * the id must be all digits and resolve to `0 <= n < gridSize`. The Swift
+ * mirror (`BingoDetection.swift`) applies the identical rule so malformed /
+ * out-of-range ids are skipped byte-identically on both platforms.
+ *
+ * @param raw - The characters after the `row_` / `col_` prefix.
+ * @param gridSize - Board size (3, 4, or 5).
+ * @returns The parsed index, or `null` when malformed or out of range.
+ */
+function parseLineIndex(raw: string, gridSize: BoardSize): number | null {
+  if (raw.length === 0 || !/^[0-9]+$/.test(raw)) return null;
+  const n = Number(raw);
+  return n < gridSize ? n : null;
+}
+
+/**
  * Get the set of square indices that belong to completed bingo lines.
  *
  * Used for visual highlighting of squares that are part of a winning line.
@@ -162,12 +182,14 @@ export function getHighlightedSquares(
 
   for (const lineId of completedLines) {
     if (lineId.startsWith('row_')) {
-      const row = parseInt(lineId.substring(4), 10);
+      const row = parseLineIndex(lineId.substring(4), gridSize);
+      if (row === null) continue;
       for (let col = 0; col < gridSize; col++) {
         highlighted.add(row * gridSize + col);
       }
     } else if (lineId.startsWith('col_')) {
-      const col = parseInt(lineId.substring(4), 10);
+      const col = parseLineIndex(lineId.substring(4), gridSize);
+      if (col === null) continue;
       for (let row = 0; row < gridSize; row++) {
         highlighted.add(row * gridSize + col);
       }

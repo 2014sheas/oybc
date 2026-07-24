@@ -12,9 +12,12 @@ import { runBackstopAutoSeal, reDeriveActiveBoards } from '../db/operations/seal
  * having opened the app (the house lazy-detection invariant).
  *
  * Fire-and-forget: sealed boards re-render via the reactive `useBoards` query,
- * so this hook returns nothing. An in-flight guard blocks re-entry across
- * fast route re-mounts; `sealBoard` is itself idempotent so a double-run is a
- * no-op regardless.
+ * so this hook returns nothing. The in-flight guard is PER-INSTANCE (a ref):
+ * it blocks re-entry within one mounted instance, but two mounted instances
+ * (e.g. the AppShell mount + a page-level mount) each run their own pass —
+ * harmless, since IndexedDB serializes the writes and both passes
+ * compare-before-write (the second no-ops); `sealBoard` is itself idempotent
+ * so a double-run is a no-op regardless.
  *
  * @param userId The authenticated user's uid, or undefined when signed out.
  */

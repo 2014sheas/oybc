@@ -399,7 +399,45 @@ export async function reDeriveSealedBoardsForTasks(
     }
   }
 
-  for (const boardId of affectedBoardIds) {
+  await reDeriveSealedBoards(affectedBoardIds, lookups);
+}
+
+/**
+ * Pull-path seal re-derivation by explicit board id (transport-convergence
+ * hole fix): when a pulled `boards` doc that is SEALED LWW-applies locally, its
+ * snapshot fields are whatever the remote device had derived from ITS
+ * (possibly partial) event union at seal time. The local device may hold a
+ * larger converged union — so after applying the row, the caller re-derives
+ * that board's frozen snapshot from the LOCAL union, with the exact same
+ * deterministic, no-version-bump, no-enqueue semantics as
+ * {@link reDeriveSealedBoardsForTasks}. Without this, a stale sealed snapshot
+ * pulled from remote would stick forever unless new events for a placed task
+ * happened to arrive later.
+ *
+ * MUST run inside the caller's pull transaction (covering boards / boardTasks /
+ * tasks / compoundChildren / taskEvents), after the board row is upserted.
+ *
+ * @param boardIds The sealed board ids just applied by the pull.
+ */
+export async function reDeriveSealedBoardsByIds(boardIds: Iterable<string>): Promise<void> {
+  const ids = new Set(boardIds);
+  if (ids.size === 0) return;
+  const lookups = await loadDerivationLookups();
+  await reDeriveSealedBoards(ids, lookups);
+}
+
+/**
+ * Shared loop for the two sealed re-derivation entry points: for each id that
+ * resolves to a live SEALED board, recompute the frozen snapshot from the
+ * local event union bounded at its own `sealedAt` and overwrite the snapshot
+ * fields in place — no `version` bump, no sync enqueue (pull paths don't
+ * author writes; the input converges, so every device converges independently).
+ */
+async function reDeriveSealedBoards(
+  boardIds: Iterable<string>,
+  lookups: DerivationLookups,
+): Promise<void> {
+  for (const boardId of boardIds) {
     const board = await db.boards.get(boardId);
     if (!board || board.isDeleted || !board.sealedAt) continue;
     const snapshot = computeSealSnapshot(board, lookups, new Date(board.sealedAt).getTime());
