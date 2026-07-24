@@ -20,7 +20,12 @@ import type { BoardTask, CompoundChild } from '../../src/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeBoardTask(id: string, boardId: string, taskId: string): BoardTask {
+function makeBoardTask(
+  id: string,
+  boardId: string,
+  taskId: string,
+  overrides: Partial<BoardTask> = {},
+): BoardTask {
   return {
     id,
     boardId,
@@ -31,6 +36,8 @@ function makeBoardTask(id: string, boardId: string, taskId: string): BoardTask {
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
     version: 1,
+    isDeleted: false,
+    ...overrides,
   };
 }
 
@@ -167,5 +174,19 @@ describe('cellSwap cascade — affected board computation', () => {
     const affected = computeSwapAffectedBoardIds('task-old', 'task-new', allBoardTasks, []);
     // All three boards for old task; new task has no placements
     expect(affected).toEqual(new Set(['board-A', 'board-B', 'board-C']));
+  });
+
+  // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — findAffectedBoardIds
+  // must never surface a board via a TOMBSTONED placement. A pulled
+  // tombstone is exactly the case that would otherwise stall re-derivation:
+  // the board that lost its only placement of a task must still be found
+  // "affected" through some OTHER live path, never through the dead row.
+  it('findAffectedBoardIds excludes boards reachable only via a tombstoned placement', () => {
+    const allBoardTasks = [
+      makeBoardTask('bt1', 'board-A', 'task-x', { isDeleted: true }),
+      makeBoardTask('bt2', 'board-B', 'task-x'),
+    ];
+    const affected = findAffectedBoardIds('task-x', new Set(), allBoardTasks);
+    expect(affected).toEqual(new Set(['board-B']));
   });
 });

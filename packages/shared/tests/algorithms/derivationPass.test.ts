@@ -89,6 +89,7 @@ interface MiniBoardTaskFull {
   taskId: string;
   row: number;
   col: number;
+  isDeleted?: boolean;
 }
 
 interface MiniBoard {
@@ -159,6 +160,7 @@ function toBoardTaskRef(m: MiniBoardTaskRef): BoardTask {
     createdAt: BASE_TS,
     updatedAt: BASE_TS,
     version: 1,
+    isDeleted: false,
   };
 }
 
@@ -198,6 +200,7 @@ function toBoardTaskFull(m: MiniBoardTaskFull, boardId: string): BoardTask {
     createdAt: BASE_TS,
     updatedAt: BASE_TS,
     version: 1,
+    isDeleted: m.isDeleted ?? false,
   };
 }
 

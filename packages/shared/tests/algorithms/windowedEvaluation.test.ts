@@ -193,6 +193,7 @@ function placement(taskId: string, row: number, col: number): BoardTask {
     updatedAt: WINDOW_START,
     version: 1,
     isCenter: false,
+    isDeleted: false,
   };
 }
 

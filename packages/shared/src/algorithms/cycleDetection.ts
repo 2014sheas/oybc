@@ -179,6 +179,11 @@ export function hasCycle(
   };
 
   for (const bt of allBoardTasks) {
+    // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — a tombstoned
+    // placement no longer places the task on this board; including its
+    // edge would yield a false-positive cycle rejection for an
+    // Achievement that's no longer actually placed there.
+    if (bt.isDeleted) continue;
     const t = tasksById.get(bt.taskId);
     if (!t || t.type !== TaskType.ACHIEVEMENT) continue;
     // Skip placements on a deleted/missing board — derivation ignores
