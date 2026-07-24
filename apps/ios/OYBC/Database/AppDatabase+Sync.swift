@@ -255,6 +255,13 @@ extension AppDatabase {
         /// missing/deleted, not `.counting`, or itself a derived (linked)
         /// task. Mirrors web's `promoteTaskToCounter` throws.
         case counterPromotionRejected(String)
+        /// Board-integrity PR-2 (Part 3): a placement write would violate
+        /// an invariant — the target cell is already occupied by a LIVE
+        /// row, the task is already placed live on this board, the
+        /// row/col falls outside `[0, boardSize)`, or the owning board is
+        /// missing/deleted/sealed. Mirrors web's `addBoardTaskToBoard`
+        /// throws.
+        case invalidPlacement(String)
 
         var errorDescription: String? {
             switch self {
@@ -262,6 +269,7 @@ extension AppDatabase {
             case .invalidCompoundChild(let msg): return msg
             case .invalidCounterInput(let msg): return msg
             case .counterPromotionRejected(let msg): return msg
+            case .invalidPlacement(let msg): return msg
             }
         }
     }

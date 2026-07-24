@@ -477,4 +477,156 @@ final class SealingTests: XCTestCase {
         XCTAssertEqual(board.completedTasks, 0)
         XCTAssertEqual(board.version, 1, "no board write happened — version untouched")
     }
+
+    // MARK: - Board-integrity PR-2 (Part 1) — placement-integrity repair pass
+    //
+    // Twin of web's `repairPlacementIntegrity` self-heal tests. Repair runs
+    // as a PRE-step inside `reDeriveActiveBoards`, so most of these drive
+    // `reDeriveActiveBoards` directly (repair THEN re-derive, same pass) —
+    // matching how the app actually calls it (`BoardListView.onAppearLoad`).
+
+    /// A directly-constructed BoardTask with an explicit version/updatedAt,
+    /// for seeding the exact tie-break scenarios the winner rule covers.
+    /// `SealingTests.makeBoardTask` doesn't expose those knobs.
+    private func makeCorruptBoardTask(
+        id: String, boardId: String, taskId: String, row: Int, col: Int,
+        version: Int = 1, updatedAt: String? = nil
+    ) -> BoardTask {
+        let now = updatedAt ?? AppDatabase.currentTimestamp()
+        return BoardTask(
+            id: id, boardId: boardId, taskId: taskId, row: row, col: col,
+            isCenter: false, createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: version
+        )
+    }
+
+    private func boardTaskSyncDeleteCount(_ db: AppDatabase, boardTaskId: String) throws -> Int {
+        try db.read {
+            try SyncQueueItem
+                .filter(Column("entityId") == boardTaskId && Column("entityType") == "boardTasks")
+                .fetchCount($0)
+        }
+    }
+
+    func test_repairPlacementIntegrity_dupCell_tombstonesLoserBySameWinnerRule() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", size: 3))
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        // Two live rows collide at cell (0,0). t2's row has the higher
+        // version -> it must survive; t1's row is the loser.
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-lose", boardId: "b1", taskId: "t1", row: 0, col: 0, version: 1))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-win", boardId: "b1", taskId: "t2", row: 0, col: 0, version: 2))
+
+        let tombstoned = try db.repairPlacementIntegrity(userId: userId)
+
+        XCTAssertEqual(tombstoned, ["bt-lose"])
+        let lose = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-lose") })
+        XCTAssertTrue(lose.isDeleted)
+        XCTAssertEqual(lose.version, 2, "tombstone bumps version past its pre-repair value")
+        let win = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-win") })
+        XCTAssertFalse(win.isDeleted)
+        XCTAssertEqual(try boardTaskSyncDeleteCount(db, boardTaskId: "bt-lose"), 1)
+        XCTAssertEqual(try boardTaskSyncDeleteCount(db, boardTaskId: "bt-win"), 0)
+    }
+
+    func test_repairPlacementIntegrity_dupTask_tombstonesLoserAtDifferentCells() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", size: 3))
+        try db.saveTask(makeTask("t1"))
+        // Same task placed live at two DIFFERENT cells — the older/lower-
+        // version row loses even though there's no cell collision.
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-old", boardId: "b1", taskId: "t1", row: 0, col: 0, version: 1, updatedAt: "2026-01-01T00:00:00.000Z"))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-new", boardId: "b1", taskId: "t1", row: 1, col: 1, version: 1, updatedAt: "2026-06-01T00:00:00.000Z"))
+
+        let tombstoned = try db.repairPlacementIntegrity(userId: userId)
+
+        XCTAssertEqual(tombstoned, ["bt-old"])
+        XCTAssertTrue(try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-old") }).isDeleted)
+        XCTAssertFalse(try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-new") }).isDeleted)
+    }
+
+    func test_repairPlacementIntegrity_outOfBounds_alwaysTombstoned() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", size: 3))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-oob", boardId: "b1", taskId: "t1", row: 7, col: 0))
+
+        let tombstoned = try db.repairPlacementIntegrity(userId: userId)
+
+        XCTAssertEqual(tombstoned, ["bt-oob"])
+        XCTAssertTrue(try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-oob") }).isDeleted)
+    }
+
+    func test_repairPlacementIntegrity_cleanBoard_zeroWrites() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", size: 3))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+
+        XCTAssertEqual(try db.repairPlacementIntegrity(userId: userId), [])
+    }
+
+    func test_repairPlacementIntegrity_secondRunIsZeroWrites() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", size: 3))
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-lose", boardId: "b1", taskId: "t1", row: 0, col: 0, version: 1))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-win", boardId: "b1", taskId: "t2", row: 0, col: 0, version: 2))
+
+        XCTAssertEqual(try db.repairPlacementIntegrity(userId: userId).count, 1)
+        XCTAssertEqual(try db.repairPlacementIntegrity(userId: userId), [], "idempotent — the loser is already a tombstone, not re-selected")
+    }
+
+    /// Scope: sealed boards' LIVE rows are repaired too (their frozen
+    /// snapshot is a separate, untouched concern).
+    func test_repairPlacementIntegrity_sealedBoard_rowsRepairedSnapshotUntouched() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        try db.saveBoard(makeBoard(id: "b-sealed", sealedAt: pastBackstop, sealedCompletedCells: [], size: 3))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-lose", boardId: "b-sealed", taskId: "t1", row: 0, col: 0, version: 1))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-win", boardId: "b-sealed", taskId: "t2", row: 0, col: 0, version: 2))
+
+        let tombstoned = try db.repairPlacementIntegrity(userId: userId)
+
+        XCTAssertEqual(tombstoned, ["bt-lose"], "sealed board's corrupt ROW is still repaired")
+        let sealed = try fetchBoard(db, "b-sealed")
+        XCTAssertEqual(sealed.sealedCompletedCells, [], "frozen snapshot is untouched by the repair pass")
+        XCTAssertEqual(sealed.version, 1, "no board write happened for the sealed board")
+    }
+
+    /// Full pass ordering: `reDeriveActiveBoards` repairs FIRST, then
+    /// re-derives from the now-clean set in the SAME call — a duplicate
+    /// placement that inflated the STORED `completedTasks` (simulating the
+    /// pre-tombstone-era corruption: a stale/buggy pass counted the wrong
+    /// row at a colliding cell) gets corrected in one pass, and the loser
+    /// row is tombstoned.
+    func test_reDeriveActiveBoards_repairsThenRecomputesStatsFromCleanSet() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", size: 1))
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        // t1 has a real in-window completion event (windowed-complete);
+        // t2 has none (windowed-incomplete). Two live rows collide at the
+        // board's only cell (0,0): t1's row (loses — lower version) and
+        // t2's row (wins under the deterministic rule).
+        try db.write { try self.makeEvent("e1", taskId: "t1", occurredAt: self.inWindow).save($0) }
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-lose", boardId: "b1", taskId: "t1", row: 0, col: 0, version: 1))
+        try db.saveBoardTask(makeCorruptBoardTask(id: "bt-win", boardId: "b1", taskId: "t2", row: 0, col: 0, version: 2))
+
+        // Simulate the pre-fix stored corruption: a prior pass counted the
+        // colliding cell as complete (via the completed loser row).
+        var corrupted = try fetchBoard(db, "b1")
+        corrupted.completedTasks = 1
+        try db.saveBoard(corrupted)
+
+        let changed = try db.reDeriveActiveBoards(userId: userId)
+
+        XCTAssertTrue(try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-lose") }).isDeleted, "repair pre-step tombstoned the loser")
+        let board = try fetchBoard(db, "b1")
+        XCTAssertEqual(board.completedTasks, 0, "re-derive on the clean set: the surviving winner (t2) is incomplete")
+        XCTAssertEqual(changed, ["b1"])
+    }
 }

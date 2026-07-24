@@ -7,6 +7,7 @@ import {
   findAffectedBoardIds,
   findTransitiveParentCompounds,
   isBoardPastBackstop,
+  resolvePlacements,
   type Board,
   type BoardTask,
   type Task,
@@ -112,7 +113,12 @@ function computeSealSnapshot(
   lookups: DerivationLookups,
   sealedAtMs: number,
 ): SealSnapshot {
-  const boardTasksOnBoard = lookups.allBoardTasks.filter((bt) => bt.boardId === board.id);
+  // Board-integrity PR-2 (Part 2) — resolve through the shared winner rule
+  // before deriving (see boardTasks.ts cascades for why).
+  const boardTasksOnBoard = resolvePlacements(
+    lookups.allBoardTasks.filter((bt) => bt.boardId === board.id),
+    board.boardSize,
+  );
   const windowContext = boundedWindowContext(lookups.eventsByTaskId, sealedAtMs);
   const stats = computeBoardStatsUpdate(
     board,
@@ -317,7 +323,12 @@ export async function reDeriveActiveBoards(
       // write a version LOWER than remote, silently losing LWW on the push).
       const board = await db.boards.get(staleBoard.id);
       if (!board || board.isDeleted || board.sealedAt) continue;
-      const boardTasksOnBoard = lookups.allBoardTasks.filter((bt) => bt.boardId === board.id);
+      // Board-integrity PR-2 (Part 2) — resolve through the shared winner
+      // rule before deriving (see boardTasks.ts cascades for why).
+      const boardTasksOnBoard = resolvePlacements(
+        lookups.allBoardTasks.filter((bt) => bt.boardId === board.id),
+        board.boardSize,
+      );
       const stats = computeBoardStatsUpdate(
         board,
         boardTasksOnBoard,

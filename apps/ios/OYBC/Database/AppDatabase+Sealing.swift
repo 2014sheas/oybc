@@ -96,7 +96,15 @@ extension AppDatabase {
     /// `sealedAtMs` (docs §Seal snapshots re-derive). Deterministic: same
     /// converged union → same snapshot on any device.
     static func computeSealSnapshot(board: Board, lookups: SealLookups, sealedAtMs: Double) -> SealSnapshot {
-        let boardTasksOnBoard = lookups.allBoardTasks.filter { $0.boardId == board.id }
+        // Board-integrity PR-2 (Part 2): resolve collisions/OOB before
+        // deriving — a sealed board's placement rows may still carry
+        // pre-repair corruption (the repair pass tombstones ROWS but never
+        // touches a sealed board's frozen snapshot), so the snapshot itself
+        // must resolve deterministically the same way render/derivation do.
+        let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+            lookups.allBoardTasks.filter { $0.boardId == board.id },
+            boardSize: board.boardSize
+        )
         let windowContext = boundedWindowContext(eventsByTaskId: lookups.eventsByTaskId, sealedAtMs: sealedAtMs)
         let stats = DerivationPass.computeBoardStatsUpdate(
             board: board,
@@ -217,7 +225,14 @@ extension AppDatabase {
         for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
 
         for board in allBoards where isBoardPastBackstop(board, nowMs: nowMs) {
-            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == board.id }
+            // Board-integrity PR-2 (Part 2): resolve collisions/OOB before
+            // deriving. Pure Swift array logic — no SQL — so it's safe to
+            // call from this migration-reachable path (see the Swift-only
+            // tombstone-filter note on `allBoardTasks` above).
+            let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+                allBoardTasks.filter { $0.boardId == board.id },
+                boardSize: board.boardSize
+            )
             // Lifetime derivation (explicit nil window context) = pre-migration
             // state. Deliberate: freeze the caches the user currently sees.
             let stats = DerivationPass.computeBoardStatsUpdate(
@@ -383,6 +398,92 @@ extension AppDatabase {
         }
     }
 
+    /// Board-integrity PR-2 (Part 1) — placement-integrity repair pass
+    /// (`spec-p2-repair.md`, issue #359). Heals `board_tasks` corruption
+    /// from the pre-tombstone era: rows that violate one-row-per-cell,
+    /// one-live-row-per-task, or the `[0, boardSize)` bounds invariant.
+    ///
+    /// Scope: every non-deleted board for `userId`, ANY status — including
+    /// SEALED boards. A sealed board's frozen snapshot
+    /// (`sealedCompletedCells` / stats) is NOT recomputed here — that stays
+    /// the existing sealed-re-derivation path's job, untouched by this
+    /// pass. Only its LIVE `board_tasks` rows are tombstoned, which is data
+    /// hygiene on the placement table, not a mutation of the frozen record
+    /// (`computeSealSnapshot` resolves collisions defensively regardless,
+    /// so a sealed board's stats are correct either way).
+    ///
+    /// Losers are SOFT-deleted via the PR-1 tombstone write path
+    /// (`isDeleted`/`deletedAt`/`version + 1` + sync enqueue) — the SAME
+    /// pattern `removeBoardTaskFromBoard` uses — so every device converges
+    /// to the SAME winners: the winner rule
+    /// (`PlacementIntegrity.computeRepair`) is pure and deterministic, so two
+    /// devices repairing independently pick identical losers. No ping-pong.
+    ///
+    /// Idempotent: a clean board's rows resolve with zero losers, so a
+    /// second run performs zero writes.
+    ///
+    /// MUST run inside the caller's write transaction (this is the "Tx"
+    /// half — see `repairPlacementIntegrity` for the standalone wrapper).
+    ///
+    /// - Returns: The ids of `BoardTask` rows tombstoned by this pass.
+    @discardableResult
+    static func repairPlacementIntegrityTx(db: Database, userId: String, now: String) throws -> [String] {
+        let boards = try Board
+            .filter(Column("userId") == userId && Column("isDeleted") == false)
+            .fetchAll(db)
+        guard !boards.isEmpty else { return [] }
+
+        let allBoardTasks = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        guard !allBoardTasks.isEmpty else { return [] }
+
+        var tombstonedIds: [String] = []
+        for board in boards {
+            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == board.id }
+            guard !boardTasksOnBoard.isEmpty else { continue }
+
+            let repair = PlacementIntegrity.computeRepair(boardTasksOnBoard, boardSize: board.boardSize)
+            guard !repair.toTombstone.isEmpty else { continue }
+
+            for loser in repair.toTombstone {
+                // Re-fetch + re-check `isDeleted` rather than trusting the
+                // pre-loop snapshot — defense against two losers in the
+                // same resolution sharing an id (can't happen, ids are
+                // unique) and against a hypothetical future caller that
+                // re-enters this within the same board's loop.
+                guard var row = try BoardTask.fetchOne(db, key: loser.id), !row.isDeleted else { continue }
+                row.isDeleted = true
+                row.deletedAt = now
+                row.updatedAt = now
+                row.version += 1
+                try row.update(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: row.id,
+                    operationType: .delete,
+                    payload: row,
+                    now: now
+                ).enqueue(db)
+                tombstonedIds.append(row.id)
+            }
+        }
+        return tombstonedIds
+    }
+
+    /// Standalone-transaction wrapper for `repairPlacementIntegrityTx` —
+    /// tests and any future caller outside an existing write txn use this.
+    /// `reDeriveActiveBoards` calls the `Tx` half directly (it already owns
+    /// the transaction).
+    ///
+    /// - Returns: The ids of `BoardTask` rows tombstoned by this pass.
+    @discardableResult
+    func repairPlacementIntegrity(userId: String, now: String = AppDatabase.currentTimestamp()) throws -> [String] {
+        try write { db in
+            try Self.repairPlacementIntegrityTx(db: db, userId: userId, now: now)
+        }
+    }
+
     /// One-shot windowed re-derivation self-heal (Windowed-bingo-cascade fix).
     ///
     /// Existing boards may carry stale `completedLineIds` / `linesCompleted`
@@ -403,6 +504,15 @@ extension AppDatabase {
     @discardableResult
     func reDeriveActiveBoards(userId: String, now: String = AppDatabase.currentTimestamp()) throws -> [String] {
         try write { db in
+            // Board-integrity PR-2 (Part 1) — repair PRE-step: tombstone
+            // corrupted placement rows (dup-cell / dup-task / out-of-bounds,
+            // from the pre-tombstone era) across EVERY non-deleted board —
+            // including sealed ones (their ROWS get cleaned up; their
+            // frozen snapshot is untouched here) — before recomputing
+            // stats below, so re-derivation reads the now-clean set in the
+            // SAME pass. See `repairPlacementIntegrityTx`.
+            _ = try Self.repairPlacementIntegrityTx(db: db, userId: userId, now: now)
+
             let boards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .fetchAll(db)
@@ -438,7 +548,13 @@ extension AppDatabase {
             var changedIds: [String] = []
             for board in boards {
                 var updated = board
-                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == board.id }
+                // Board-integrity PR-2 (Part 2): resolve collisions/OOB
+                // before deriving — defense-in-depth on top of the repair
+                // pre-step above (see updateBoardTaskAndCascade).
+                let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+                    allBoardTasks.filter { $0.boardId == board.id },
+                    boardSize: board.boardSize
+                )
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: board,
                     boardTasksOnBoard: boardTasksOnBoard,

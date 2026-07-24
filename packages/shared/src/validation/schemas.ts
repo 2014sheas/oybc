@@ -600,11 +600,20 @@ export const TaskStepSchema = z.object({
 // of the ACHIEVEMENT-as-TaskType refactor — placements just record where
 // the task lives on a board, the rest is derived from the Task itself.
 
+// Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 3) — a sane upper bound
+// on row/col. The max grid is 5×5 (indexes 0-4), so 24 is generous headroom;
+// this is a coarse defense-in-depth guard, not the real bounds check — Zod
+// has no cross-field access to `Board.boardSize`, so the actual
+// `row/col < boardSize` validation happens at the write-path guards (write
+// wrappers) and the resolver's bounds-drop (`resolvePlacements` /
+// `computePlacementIntegrityRepair`, packages/shared/src/algorithms/placementResolution.ts).
+const BOARD_TASK_POSITION_MAX = 24;
+
 export const CreateBoardTaskInputSchema = z.object({
   boardId: z.string().uuid(),
   taskId: z.string().uuid(),
-  row: z.number().int().min(0),
-  col: z.number().int().min(0),
+  row: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
+  col: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   isCenter: z.boolean(),
 });
 
@@ -612,8 +621,8 @@ export const BoardTaskSchema = z.object({
   id: z.string().uuid(),
   boardId: z.string().uuid(),
   taskId: z.string().uuid(),
-  row: z.number().int().min(0),
-  col: z.number().int().min(0),
+  row: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
+  col: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   isCenter: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

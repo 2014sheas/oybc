@@ -86,19 +86,22 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         )
     }
 
-    private func makeBoard(id: String, userId: String = "u1", status: BoardStatus = .active) -> Board {
-        let dict: [String: Any] = [
+    private func makeBoard(
+        id: String, userId: String = "u1", status: BoardStatus = .active,
+        boardSize: Int = 3, sealedAt: String? = nil
+    ) -> Board {
+        var dict: [String: Any] = [
             "id": id,
             "userId": userId,
             "name": "Board \(id)",
             "status": status.rawValue,
-            "boardSize": 3,
+            "boardSize": boardSize,
             "timeframe": Timeframe.monthly.rawValue,
             "startDate": "2026-06-01T00:00:00.000",
             "endDate": "2026-06-30T23:59:59.999",
             "centerSquareType": CenterSquareType.free.rawValue,
             "isRandomized": false,
-            "totalTasks": 9,
+            "totalTasks": boardSize * boardSize,
             "completedTasks": 0,
             "linesCompleted": 0,
             "createdAt": "2026-06-01T00:00:00.000",
@@ -106,6 +109,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             "version": 1,
             "isDeleted": false,
         ]
+        if let sealedAt { dict["sealedAt"] = sealedAt }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -674,5 +678,116 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(bt.row, 0)
         XCTAssertEqual(bt.col, 0)
         XCTAssertEqual(bt.version, deadV, "rearrange on a tombstone must not bump version")
+    }
+
+    // MARK: - Board-integrity PR-2 (Part 3) — addBoardTaskToBoard write-invariant guards
+
+    func test_addBoardTaskToBoard_occupiedCell_throwsAndDoesNotWrite() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("tA"))
+        try db.saveTask(makeTask("tB"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-existing", boardId: "b1", taskId: "tA", row: 0, col: 0))
+
+        XCTAssertThrowsError(try db.addBoardTaskToBoard("b1", taskId: "tB", position: (row: 0, col: 0))) { error in
+            guard case AppDatabase.AppDatabaseError.invalidPlacement = error else {
+                return XCTFail("expected .invalidPlacement, got \(error)")
+            }
+        }
+        // No new row landed at the cell; the existing occupant is unchanged.
+        let live = try db.fetchBoardTasks(boardId: "b1")
+        XCTAssertEqual(live.count, 1)
+        XCTAssertEqual(live.first?.id, "bt-existing")
+    }
+
+    func test_addBoardTaskToBoard_taskAlreadyOnBoard_throwsAndDoesNotWrite() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("tA"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-existing", boardId: "b1", taskId: "tA", row: 0, col: 0))
+
+        XCTAssertThrowsError(try db.addBoardTaskToBoard("b1", taskId: "tA", position: (row: 1, col: 1))) { error in
+            guard case AppDatabase.AppDatabaseError.invalidPlacement = error else {
+                return XCTFail("expected .invalidPlacement, got \(error)")
+            }
+        }
+        let live = try db.fetchBoardTasks(boardId: "b1")
+        XCTAssertEqual(live.count, 1, "the duplicate placement was rejected, not added")
+    }
+
+    func test_addBoardTaskToBoard_outOfBounds_throwsAndDoesNotWrite() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", boardSize: 3))
+        try db.saveTask(makeTask("tA"))
+
+        XCTAssertThrowsError(try db.addBoardTaskToBoard("b1", taskId: "tA", position: (row: 3, col: 0))) { error in
+            guard case AppDatabase.AppDatabaseError.invalidPlacement = error else {
+                return XCTFail("expected .invalidPlacement, got \(error)")
+            }
+        }
+        XCTAssertTrue(try db.fetchBoardTasks(boardId: "b1").isEmpty)
+    }
+
+    func test_addBoardTaskToBoard_validPlacement_stillSucceeds() throws {
+        // Guardrail: the new invariant checks don't false-positive-reject a
+        // legitimate add-to-empty-cell.
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("tA"))
+
+        let created = try db.addBoardTaskToBoard("b1", taskId: "tA", position: (row: 1, col: 1))
+        XCTAssertEqual(created.row, 1)
+        XCTAssertEqual(created.col, 1)
+        XCTAssertEqual(try db.fetchBoardTasks(boardId: "b1").count, 1)
+    }
+
+    // MARK: - Board-integrity PR-2 (Part 4) — sealed-board guards on the three placement mutators
+
+    func test_addBoardTaskToBoard_sealedBoard_throwsAndDoesNotWrite() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b-sealed", sealedAt: "2026-06-15T00:00:00.000"))
+        try db.saveTask(makeTask("tA"))
+
+        XCTAssertThrowsError(try db.addBoardTaskToBoard("b-sealed", taskId: "tA", position: (row: 0, col: 0))) { error in
+            guard case AppDatabase.AppDatabaseError.invalidPlacement = error else {
+                return XCTFail("expected .invalidPlacement, got \(error)")
+            }
+        }
+        XCTAssertTrue(try db.fetchBoardTasks(boardId: "b-sealed").isEmpty)
+    }
+
+    func test_removeBoardTaskFromBoard_sealedBoard_noOpsLeavesRowLive() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b-sealed", sealedAt: "2026-06-15T00:00:00.000"))
+        try db.saveTask(makeTask("tA"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-sealed", taskId: "tA"))
+
+        try db.removeBoardTaskFromBoard("bt1")
+
+        let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        XCTAssertFalse(bt.isDeleted, "a sealed board's placement must not be removed")
+        XCTAssertEqual(bt.version, 1, "no write happened — version untouched")
+        XCTAssertEqual(count(try syncRows(db), type: "boardTasks", op: .delete), 0)
+    }
+
+    func test_updateBoardTaskAndCascade_sealedBoard_noOpsLeavesRowUnchanged() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b-sealed", sealedAt: "2026-06-15T00:00:00.000"))
+        try db.saveTask(makeTask("tA"))
+        try db.saveTask(makeTask("tB"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-sealed", taskId: "tA"))
+
+        try db.updateBoardTaskAndCascade(boardTaskId: "bt1", newTaskId: "tB")
+
+        let bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt1") })
+        XCTAssertEqual(bt.taskId, "tA", "a sealed board's placement must not be swapped")
+        XCTAssertEqual(bt.version, 1, "no write happened — version untouched")
     }
 }

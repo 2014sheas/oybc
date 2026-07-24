@@ -250,6 +250,24 @@ describe('BoardTaskSchema — post-simplification', () => {
     const result = BoardTaskSchema.safeParse(validBoardTask({ version: 0 }));
     expect(result.success).toBe(false);
   });
+
+  // Board-integrity PR-2 (Part 3) — sane upper bound on row/col. Max grid is
+  // 5×5 (indexes 0-4); 24 is generous headroom since Zod can't cross-validate
+  // against a specific Board's boardSize (that's the write-path guards' job).
+  it('accepts a board task at the max allowed row/col (24)', () => {
+    const result = BoardTaskSchema.safeParse(validBoardTask({ row: 24, col: 24 }));
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a board task with row exceeding the sane upper bound (25)', () => {
+    const result = BoardTaskSchema.safeParse(validBoardTask({ row: 25 }));
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a board task with col exceeding the sane upper bound (25)', () => {
+    const result = BoardTaskSchema.safeParse(validBoardTask({ col: 25 }));
+    expect(result.success).toBe(false);
+  });
 });
 
 // ── CompoundChildSchema ───────────────────────────────────────────────────────

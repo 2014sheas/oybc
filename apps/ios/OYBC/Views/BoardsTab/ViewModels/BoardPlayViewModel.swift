@@ -249,7 +249,14 @@ final class BoardPlayViewModel: ObservableObject {
         // `handleEditRemove` — drop it (compactMap → nil) so the grid renders the
         // hole. An all-removed session correctly yields []. (Mirrors the way
         // `editSquaresEditCount` treats an absent draft entry as a removal.)
-        return boardTasks.compactMap { bt in
+        //
+        // Board-integrity PR-2 (Part 2): resolve `boardTasks` first — a raw
+        // duplicate row sharing a cell with `editSquaresDraft`'s winner
+        // would otherwise ALSO match that draft key here (the draft is
+        // keyed by "row-col", not boardTaskId) and get its taskId
+        // overwritten to the staged value too, rendering two BoardTasks for
+        // one cell in `BoardEditStaticGrid`.
+        return PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize).compactMap { bt in
             let key = "\(bt.row)-\(bt.col)"
             guard let draft = editSquaresDraft[key] else { return nil }
             guard draft.stagedTaskId != bt.taskId else { return bt }
@@ -293,8 +300,13 @@ final class BoardPlayViewModel: ObservableObject {
         let positionMoves = countPositionMoves(in: editRearrangeCells, gridSize: gridSize)
         // Staged removals — boardTaskIds seeded from the pre-edit placements but
         // no longer present in the draft (removed via `handleEditRemove`).
+        // Diff against the RESOLVED set (matches `seedEditDraft`'s seed
+        // source + web's centralized resolution): a pre-repair collision
+        // loser is invisible to the edit UI and must not inflate the count
+        // as a change the user didn't make (PR-2 review).
         let draftIds = Set(editSquaresDraft.values.map { $0.boardTaskId })
-        let removals = boardTasks.filter { !draftIds.contains($0.id) }.count
+        let removals = PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize)
+            .filter { !draftIds.contains($0.id) }.count
         return replacements + overrides + positionMoves + removals
     }
 
@@ -1194,8 +1206,14 @@ final class BoardPlayViewModel: ObservableObject {
 
         // Phase 2 — seed the squares draft from the current live placement rows.
         // `boardTasks` is already loaded by `reload()` on appear.
+        //
+        // Board-integrity PR-2 (Part 2): resolve through
+        // `PlacementIntegrity.resolvePlacements` first — a raw duplicate row
+        // at one cell would otherwise seed the draft from whichever row
+        // happens to iterate last (arbitrary), instead of the deterministic
+        // winner render/derivation agree on.
         editSquaresDraft = [:]
-        for bt in boardTasks {
+        for bt in PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize) {
             let key = "\(bt.row)-\(bt.col)"
             editSquaresDraft[key] = SquaresDraftCell(
                 boardTaskId: bt.id,
@@ -1419,11 +1437,15 @@ final class BoardPlayViewModel: ObservableObject {
         }()
 
         // Staged removals — boardTaskIds present in the pre-edit placements
-        // (`boardTasks`, the seed source) but absent from the draft after one or
-        // more `handleEditRemove` actions. Deleted from the board on Save.
+        // (the RESOLVED seed source, matching `seedEditDraft` + web) but
+        // absent from the draft after one or more `handleEditRemove` actions.
+        // Deleted from the board on Save. Diffing the resolved set means a
+        // pre-repair collision loser is never folded in as a user-staged
+        // removal — the repair pass owns tombstoning losers (PR-2 review).
         let cellRemovals: [String] = {
             let draftIds = Set(editSquaresDraft.values.map { $0.boardTaskId })
-            return boardTasks.filter { !draftIds.contains($0.id) }.map { $0.id }
+            return PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize)
+                .filter { !draftIds.contains($0.id) }.map { $0.id }
         }()
 
         editSaveInFlight = true

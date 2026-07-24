@@ -4,10 +4,16 @@ import GRDB
 extension AppDatabase {
     // MARK: - BoardTasks
 
+    /// Board-integrity PR-2 (Part 2): stable `(row, col, id)` ordering at
+    /// the SQL layer so every reader of a board's raw placement rows sees
+    /// the same array order — matching `PlacementIntegrity.resolvePlacements`'s
+    /// own sort, so composing an already-ordered fetch with the resolver is
+    /// a no-op re-sort rather than a behavior change.
     func fetchBoardTasks(boardId: String) throws -> [BoardTask] {
         return try read { db in
             try BoardTask
                 .filter(Column("boardId") == boardId && Column("isDeleted") == false)
+                .order(Column("row"), Column("col"), Column("id"))
                 .fetchAll(db)
         }
     }
@@ -67,6 +73,14 @@ extension AppDatabase {
             // must not be resurrected/mutated by a stale swap (PR-1 review).
             guard var boardTask = try BoardTask.fetchOne(db, key: boardTaskId),
                   !boardTask.isDeleted else { return }
+
+            // Board-integrity PR-2 (Part 4): re-fetch the OWNING board
+            // inside the write txn — a sealed board's snapshot is a frozen,
+            // read-only record, so a swap on a just-sealed board (mid-
+            // session) must not mutate its placement. Matches the #357
+            // guard idiom in `updateBoardAndCascade` / `updateBoardTaskPositions`.
+            guard let owningBoard = try Board.fetchOne(db, key: boardTask.boardId),
+                  !owningBoard.isDeleted, owningBoard.sealedAt == nil else { return }
 
             let oldTaskId = boardTask.taskId
             // No-op guard: swapping to the same task writes nothing.
@@ -146,7 +160,14 @@ extension AppDatabase {
                 guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
                       !affectedBoard.isDeleted, affectedBoard.sealedAt == nil else { continue }
 
-                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
+                // Board-integrity PR-2 (Part 2): resolve collisions/OOB
+                // before deriving, so a corrupted (pre-repair or sealed-
+                // exempt) board's stats agree with what the same resolver
+                // shows the user in `btByPosition`/`seedEditDraft`.
+                let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+                    allBoardTasksPost.filter { $0.boardId == affectedBoardId },
+                    boardSize: affectedBoard.boardSize
+                )
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: affectedBoard,
                     boardTasksOnBoard: boardTasksOnBoard,
@@ -242,12 +263,28 @@ extension AppDatabase {
         let now = Self.currentTimestamp()
 
         try write { db in
+            // Board-integrity PR-2 (Part 3): resolve the board's size up
+            // front so each staged move can be bounds-checked before it's
+            // applied. A missing board falls through with `nil` — the
+            // moves proceed unchecked, matching the existing "position
+            // write is unguarded either way" posture documented on the
+            // sealed-board test below for a board this call can't find.
+            let boardSizeForBounds = try Board.fetchOne(db, key: boardId)?.boardSize
+
             // ── 1. Apply position patches ──
             for move in moves {
                 // Tombstone guard mirrors updateBoardTaskAndCascade (PR-1 review).
                 guard var boardTask = try BoardTask.fetchOne(db, key: move.boardTaskId),
                       boardTask.boardId == boardId,
                       !boardTask.isDeleted else { continue }
+                // Board-integrity PR-2 (Part 3): reject an out-of-bounds
+                // staged target — skip the move rather than writing a
+                // corrupt row (defense-in-depth; the Rearrange grid UI
+                // can't produce one by construction).
+                if let size = boardSizeForBounds,
+                   move.row < 0 || move.row >= size || move.col < 0 || move.col >= size {
+                    continue
+                }
                 boardTask.row = move.row
                 boardTask.col = move.col
                 // `isCenter` follows the center-square-type rule set by the board,
@@ -293,7 +330,12 @@ extension AppDatabase {
             // event log, not the lifetime cache (see updateBoardTaskAndCascade).
             let windowContext = try Self.buildWindowContext(db: db)
 
-            let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
+            // Board-integrity PR-2 (Part 2): resolve collisions/OOB before
+            // deriving (see updateBoardTaskAndCascade).
+            let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+                allBoardTasksPost.filter { $0.boardId == boardId },
+                boardSize: board.boardSize
+            )
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,
@@ -374,6 +416,14 @@ extension AppDatabase {
         )
 
         try write { db in
+            // Board-integrity PR-2 (Part 4): re-fetch the OWNING board
+            // inside the write txn — a sealed board's placements are part
+            // of its frozen record and must not be removed out from under
+            // it. Matches the #357 guard idiom in `updateBoardAndCascade` /
+            // `updateBoardTaskPositions`.
+            guard let owningBoard = try Board.fetchOne(db, key: existing.boardId),
+                  !owningBoard.isDeleted, owningBoard.sealedAt == nil else { return }
+
             existing.isDeleted = true
             existing.deletedAt = now
             existing.updatedAt = now
@@ -410,7 +460,12 @@ extension AppDatabase {
 
             for boardId in affectedBoardIds {
                 guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { continue }
-                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
+                // Board-integrity PR-2 (Part 2): resolve collisions/OOB
+                // before deriving (see updateBoardTaskAndCascade).
+                let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+                    allBoardTasksPost.filter { $0.boardId == boardId },
+                    boardSize: board.boardSize
+                )
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: board,
                     boardTasksOnBoard: boardTasksOnBoard,
@@ -495,6 +550,35 @@ extension AppDatabase {
         )
 
         try write { db in
+            // Board-integrity PR-2 (Part 4): re-fetch the OWNING board
+            // inside the write txn — a sealed/deleted/missing board
+            // refuses a new placement. Matches the #357 guard idiom in
+            // `updateBoardAndCascade` / `updateBoardTaskPositions`.
+            guard let owningBoard = try Board.fetchOne(db, key: boardId),
+                  !owningBoard.isDeleted, owningBoard.sealedAt == nil else {
+                throw AppDatabaseError.invalidPlacement("Board is sealed or no longer exists.")
+            }
+
+            // Board-integrity PR-2 (Part 3): reject placements that would
+            // violate the placement invariants. Checked against a FRESH
+            // in-txn read of the board's LIVE rows, not the pre-txn
+            // `allBoardTasksPre` snapshot above (which is only used to seed
+            // the affected-board-id search and could be stale under a
+            // concurrent write).
+            guard position.row >= 0, position.row < owningBoard.boardSize,
+                  position.col >= 0, position.col < owningBoard.boardSize else {
+                throw AppDatabaseError.invalidPlacement("Position is out of bounds for this board.")
+            }
+            let liveOnBoard = try BoardTask
+                .filter(Column("boardId") == boardId && Column("isDeleted") == false)
+                .fetchAll(db)
+            guard !liveOnBoard.contains(where: { $0.row == position.row && $0.col == position.col }) else {
+                throw AppDatabaseError.invalidPlacement("That cell is already occupied.")
+            }
+            guard !liveOnBoard.contains(where: { $0.taskId == taskId }) else {
+                throw AppDatabaseError.invalidPlacement("This task is already placed on this board.")
+            }
+
             try newBoardTask.save(db)
             try SyncQueueBuilder.makeItem(
                 entityType: "boardTasks",
@@ -526,7 +610,12 @@ extension AppDatabase {
 
             for affectedBoardId in affectedBoardIds {
                 guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted, board.sealedAt == nil else { continue }
-                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
+                // Board-integrity PR-2 (Part 2): resolve collisions/OOB
+                // before deriving (see updateBoardTaskAndCascade).
+                let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+                    allBoardTasksPost.filter { $0.boardId == affectedBoardId },
+                    boardSize: board.boardSize
+                )
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: board,
                     boardTasksOnBoard: boardTasksOnBoard,

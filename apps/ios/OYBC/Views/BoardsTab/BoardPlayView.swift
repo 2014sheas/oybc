@@ -357,9 +357,15 @@ struct BoardPlayView: View {
     }
 
     /// Position lookup for fast grid rendering: "row-col" → BoardTask.
+    ///
+    /// Board-integrity PR-2 (Part 2): resolves `boardTasks` through
+    /// `PlacementIntegrity.resolvePlacements` first, so a raw duplicate row
+    /// (pre-repair, or a sealed board whose corrupt rows aren't touched by
+    /// the repair pass's stats side) can't make this map disagree with what
+    /// derivation counted — both consume the SAME deterministic winner.
     private var btByPosition: [String: BoardTask] {
         var map: [String: BoardTask] = [:]
-        for bt in boardTasks {
+        for bt in PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize) {
             map["\(bt.row)-\(bt.col)"] = bt
         }
         return map

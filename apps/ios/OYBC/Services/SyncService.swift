@@ -129,6 +129,20 @@ private func validateRemotePullDocument(
         }
     }
 
+    // Board-integrity PR-2 (Part 3): mirror the shared `BoardTaskSchema`
+    // row/col upper bound (0..24 — max grid is 5×5, so 24 is the highest
+    // valid 0-based index). A malformed/out-of-range placement from a peer
+    // must never reach GRDB — `PlacementIntegrity.resolvePlacements`'s
+    // bounds-drop is defense-in-depth at READ time, but rejecting here
+    // keeps corrupt rows out of local storage entirely.
+    if collection == "boardTasks" {
+        let row = toInt(data["row"])
+        let col = toInt(data["col"])
+        guard (0...24).contains(row), (0...24).contains(col) else {
+            return "row/col out of bounds for \(collection)/\(id)"
+        }
+    }
+
     return nil
 }
 

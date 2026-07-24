@@ -1,9 +1,9 @@
 # Board Integrity — the 2026-07-24 four-auditor audit + the five-PR program
 
-> **Status: PR-1 SHIPPED (this doc lands with it, issue #358).** PR-2 (#359)
-> and PR-3 (#360) are speced; PR-4/PR-5 (#361/#362) are reserved in the audit
-> program but not yet scoped in detail — see [§The five-PR
-> program](#the-five-pr-program) for what's concretely known of each.
+> **Status: PR-1 (#358) and PR-2 (#359) SHIPPED.** PR-3 (#360) is speced;
+> PR-4/PR-5 (#361/#362) are reserved in the audit program but not yet scoped
+> in detail — see [§The five-PR program](#the-five-pr-program) for what's
+> concretely known of each.
 
 ## Why this doc exists
 
@@ -85,7 +85,7 @@ Update this table's "Fix owner" column as later PRs claim them.
 | PR | Issue | Title | Scope (one line) | Status |
 |---|---|---|---|---|
 | PR-1 | #358 | Durable BoardTask deletes (tombstones) + the boardTasks-pull cascade | Give `BoardTask` a soft-delete flag like every other collection; fix every deletion site to tombstone instead of physically delete; add the missing pull-cascade branch | **Shipped (this PR)** |
-| PR-2 | #359 | Placement-integrity repair + determinism + sealed guards | Repair existing duplicate/out-of-bounds placement rows in the wild (pre-tombstone-era corruption); make placement collision-resolution deterministic everywhere (one shared winner rule); enforce the invariants at write time; close the sealed-board placement-mutator bypass (finding 3) | Speced, not yet built |
+| PR-2 | #359 | Placement-integrity repair + determinism + sealed guards | Repair existing duplicate/out-of-bounds placement rows in the wild (pre-tombstone-era corruption); make placement collision-resolution deterministic everywhere (one shared winner rule, a provably transitive lexicographic (version, updatedAt, id) total order — invalid dates normalize to an oldest-sentinel); enforce the invariants at write time; close the sealed-board placement-mutator bypass (finding 3) | **Shipped** |
 | PR-3 | #360 | Unified board resolver — per-cell `computeBoardGrid` | Widen the canonical derivation kernel to return per-cell detail (including achievement badge inputs) and make every render surface on both platforms call INTO it instead of hand-copying the "is this cell complete?" logic — closing the web achievement render bug (finding 2) as the one user-visible behavior change | Speced, not yet built |
 | PR-4 | #361 | *(not yet scoped)* | Likely candidate: non-atomic save (finding 4) and/or push race (finding 5) | Reserved |
 | PR-5 | #362 | *(not yet scoped)* | Likely candidate: whichever of finding 4/5 PR-4 doesn't claim | Reserved |

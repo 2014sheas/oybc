@@ -5,6 +5,7 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  resolvePlacements,
   BoardStatus,
   type Board,
   type Task,
@@ -147,10 +148,25 @@ export async function fetchBoardTasksForBoards(
  * fields); see `apps/web/src/db/operations/tasks.ts` for the achievement
  * task creation path. Cycle detection for ACHIEVEMENT tasks happens at
  * the UI layer before this helper runs.
+ *
+ * Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 3) — write-path
+ * invariant guards, checked INSIDE the write transaction against fresh
+ * reads so a same-tick race can't slip a violation past the check: rejects
+ * a placement that would (i) collide with a live row already at this cell,
+ * (ii) place a Task that is already live elsewhere on this board, or
+ * (iii) fall outside the owning board's `[0, boardSize)` grid. Throws
+ * rather than silently no-opping, matching this file's other write-path
+ * error idiom (`throw new Error('functionName: message')`) — every known
+ * caller (the wizard's per-cell write loop) either has nothing to catch
+ * against (a violation here means the wizard itself built a bad placement
+ * array — a real bug worth surfacing loudly) or already wraps callers in
+ * try/catch (`addBoardTaskToBoard`, which does NOT call this — see its own
+ * guards below).
  */
 export async function createBoardTask(
   input: CreateBoardTaskInput
 ): Promise<BoardTask> {
+  const now = currentTimestamp();
   const boardTask: BoardTask = {
     id: generateUUID(),
     boardId: input.boardId,
@@ -158,14 +174,48 @@ export async function createBoardTask(
     row: input.row,
     col: input.col,
     isCenter: input.isCenter,
-    createdAt: currentTimestamp(),
-    updatedAt: currentTimestamp(),
+    createdAt: now,
+    updatedAt: now,
     version: 1,
     isDeleted: false,
   };
 
-  await db.boardTasks.add(boardTask);
-  await addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
+  await db.transaction('rw', [db.boards, db.boardTasks, db.syncQueue], async () => {
+    const owningBoard = await db.boards.get(input.boardId);
+    if (!owningBoard || owningBoard.isDeleted) {
+      throw new Error(`createBoardTask: board ${input.boardId} not found`);
+    }
+    if (
+      input.row < 0 ||
+      input.col < 0 ||
+      input.row >= owningBoard.boardSize ||
+      input.col >= owningBoard.boardSize
+    ) {
+      throw new Error(
+        `createBoardTask: (${input.row}, ${input.col}) is out of bounds for a ${owningBoard.boardSize}x${owningBoard.boardSize} board`,
+      );
+    }
+
+    const liveOnBoard = await db.boardTasks
+      .where('boardId')
+      .equals(input.boardId)
+      .filter((bt) => !bt.isDeleted)
+      .toArray();
+    if (liveOnBoard.some((bt) => bt.row === input.row && bt.col === input.col)) {
+      throw new Error(
+        `createBoardTask: cell (${input.row}, ${input.col}) is already occupied on board ${input.boardId}`,
+      );
+    }
+    if (liveOnBoard.some((bt) => bt.taskId === input.taskId)) {
+      throw new Error(
+        `createBoardTask: task ${input.taskId} is already placed on board ${input.boardId}`,
+      );
+    }
+
+    await db.boardTasks.add(boardTask);
+    await addToSyncQueue('boardTasks', boardTask.id, SyncOperationType.CREATE, boardTask);
+  });
+
   return boardTask;
 }
 
@@ -228,6 +278,15 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
     'rw',
     [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
+      // Board-integrity PR-2 (Part 4) — sealed-board guard: re-fetch the
+      // OWNING board fresh inside the write txn — the app-shell backstop can
+      // seal a board between the pre-txn reads above and this transaction
+      // opening, and a live-edit mutator must never write a placement
+      // change onto a board that has since sealed. Mirrors the
+      // updateBoardAndCascade / reorderBoardTasks sealed-board guards (#357).
+      const owningBoard = await db.boards.get(existing.boardId);
+      if (!owningBoard || owningBoard.isDeleted || owningBoard.sealedAt) return;
+
       // 1. Soft-delete (tombstone) the BoardTask placement.
       const tombstoned = buildBoardTaskTombstone(existing, now);
       await db.boardTasks.update(boardTaskId, tombstoned);
@@ -258,8 +317,14 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
         const affectedBoard = await db.boards.get(affectedBoardId);
         if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
-        const boardTasksOnBoard = allBoardTasksPost.filter(
-          (bt) => bt.boardId === affectedBoardId,
+        // Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 2) — resolve
+        // through the shared winner rule before deriving: a raw filter can
+        // still contain a cell collision (offline sync union, pre-repair
+        // corruption), and the kernel must never disagree with render about
+        // which row wins a cell.
+        const boardTasksOnBoard = resolvePlacements(
+          allBoardTasksPost.filter((bt) => bt.boardId === affectedBoardId),
+          affectedBoard.boardSize,
         );
 
         const stats: BoardStatsUpdate = computeBoardStatsUpdate(
@@ -365,6 +430,38 @@ export async function addBoardTaskToBoard(
     'rw',
     [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
+      // Board-integrity PR-2 (Part 4) — sealed-board guard: re-fetch the
+      // OWNING board fresh inside the write txn. The app-shell backstop can
+      // seal a board between the pre-txn reads above and this transaction
+      // opening; a live-edit mutator must never write a placement change
+      // onto a board that has since sealed. Mirrors the
+      // updateBoardAndCascade / reorderBoardTasks sealed-board guards (#357).
+      const owningBoard = await db.boards.get(boardId);
+      if (!owningBoard || owningBoard.isDeleted || owningBoard.sealedAt) {
+        throw new Error(`addBoardTaskToBoard: board ${boardId} is missing, deleted, or sealed`);
+      }
+
+      // Board-integrity PR-2 (Part 3) — write-path invariant guards, checked
+      // against FRESH reads inside the txn: reject a placement that would
+      // collide with a live row at this cell, place a task already live on
+      // this board, or fall outside the board's grid.
+      if (row < 0 || col < 0 || row >= owningBoard.boardSize || col >= owningBoard.boardSize) {
+        throw new Error(
+          `addBoardTaskToBoard: (${row}, ${col}) is out of bounds for a ${owningBoard.boardSize}x${owningBoard.boardSize} board`,
+        );
+      }
+      const liveOnBoard = await db.boardTasks
+        .where('boardId')
+        .equals(boardId)
+        .filter((bt) => !bt.isDeleted)
+        .toArray();
+      if (liveOnBoard.some((bt) => bt.row === row && bt.col === col)) {
+        throw new Error(`addBoardTaskToBoard: cell (${row}, ${col}) is already occupied`);
+      }
+      if (liveOnBoard.some((bt) => bt.taskId === taskId)) {
+        throw new Error(`addBoardTaskToBoard: task ${taskId} is already placed on board ${boardId}`);
+      }
+
       // 1. Write the new BoardTask placement.
       await db.boardTasks.add(newBoardTask);
       await addToSyncQueue('boardTasks', newBoardTask.id, SyncOperationType.CREATE, newBoardTask, 0);
@@ -390,8 +487,14 @@ export async function addBoardTaskToBoard(
         const affectedBoard = await db.boards.get(affectedBoardId);
         if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
-        const boardTasksOnBoard = allBoardTasksPost.filter(
-          (bt) => bt.boardId === affectedBoardId,
+        // Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 2) — resolve
+        // through the shared winner rule before deriving: a raw filter can
+        // still contain a cell collision (offline sync union, pre-repair
+        // corruption), and the kernel must never disagree with render about
+        // which row wins a cell.
+        const boardTasksOnBoard = resolvePlacements(
+          allBoardTasksPost.filter((bt) => bt.boardId === affectedBoardId),
+          affectedBoard.boardSize,
         );
 
         const stats: BoardStatsUpdate = computeBoardStatsUpdate(
@@ -501,6 +604,20 @@ export async function reorderBoardTasks(
   const board = allBoards.find((b) => b.id === boardId);
   if (!board || board.isDeleted || board.sealedAt) return;
 
+  // Board-integrity PR-2 (Part 3) — validate every staged move's target
+  // against the board's bounds BEFORE writing any of them. Rejecting the
+  // whole batch (rather than skipping just the bad move) avoids leaving a
+  // rearrange half-committed; `BoardEditPanel`'s Save flow already expects
+  // `onExtraCommit` (which calls this) to throw on failure and surfaces it
+  // as a real validation error, so a real bug here is loud, not silent.
+  for (const move of moves) {
+    if (move.row < 0 || move.col < 0 || move.row >= board.boardSize || move.col >= board.boardSize) {
+      throw new Error(
+        `reorderBoardTasks: target (${move.row}, ${move.col}) is out of bounds for a ${board.boardSize}x${board.boardSize} board`,
+      );
+    }
+  }
+
   // Windowed Completion — build the event map BEFORE the rw transaction so the
   // cascade resolves each board against its own window (not the lifetime cache),
   // and `db.taskEvents` need not be in the transaction scope.
@@ -530,11 +647,12 @@ export async function reorderBoardTasks(
       // 2. Re-derive bingo lines for this board from the post-move snapshot.
       //    Bingo lines are positional (row / col / diagonal), so any position
       //    change can create or break lines. Global Task completion is unchanged.
-      const boardTasksOnBoard = await db.boardTasks
-        .where('boardId')
-        .equals(boardId)
-        .filter((bt) => !bt.isDeleted)
-        .toArray();
+      // Board-integrity PR-2 (Part 2) — resolve through the shared winner
+      // rule before deriving (see the sibling cascades above for why).
+      const boardTasksOnBoard = resolvePlacements(
+        await db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).toArray(),
+        board.boardSize,
+      );
 
       const stats: BoardStatsUpdate = computeBoardStatsUpdate(
         board,
@@ -653,6 +771,13 @@ export async function updateBoardTaskAndCascade(
     'rw',
     [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
+      // Board-integrity PR-2 (Part 4) — sealed-board guard: re-fetch the
+      // OWNING board fresh inside the write txn (see removeBoardTaskFromBoard
+      // for the full rationale — same idiom, matching updateBoardAndCascade /
+      // reorderBoardTasks (#357)).
+      const owningBoard = await db.boards.get(existing.boardId);
+      if (!owningBoard || owningBoard.isDeleted || owningBoard.sealedAt) return;
+
       // 3a. Patch the BoardTask row.
       const patched: BoardTask = {
         ...existing,
@@ -685,8 +810,14 @@ export async function updateBoardTaskAndCascade(
         const affectedBoard = await db.boards.get(affectedBoardId);
         if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
-        const boardTasksOnBoard = allBoardTasksPost.filter(
-          (bt) => bt.boardId === affectedBoardId,
+        // Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 2) — resolve
+        // through the shared winner rule before deriving: a raw filter can
+        // still contain a cell collision (offline sync union, pre-repair
+        // corruption), and the kernel must never disagree with render about
+        // which row wins a cell.
+        const boardTasksOnBoard = resolvePlacements(
+          allBoardTasksPost.filter((bt) => bt.boardId === affectedBoardId),
+          affectedBoard.boardSize,
         );
 
         const stats: BoardStatsUpdate = computeBoardStatsUpdate(

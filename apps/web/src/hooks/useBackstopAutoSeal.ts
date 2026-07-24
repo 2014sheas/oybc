@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { runBackstopAutoSeal, reDeriveActiveBoards } from '../db/operations/sealing';
+import { repairPlacementIntegrity } from '../db/operations/placementIntegrity';
 
 /**
  * Windowed Completion — lazy auto-seal backstop hook
@@ -34,6 +35,14 @@ export function useBackstopAutoSeal(userId: string | undefined): void {
       try {
         if (cancelled) return;
         await runBackstopAutoSeal(userId);
+        if (cancelled) return;
+        // Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 1) —
+        // placement-integrity repair PRE-step: tombstone corrupted
+        // duplicate/out-of-bounds placement rows BEFORE re-deriving stats
+        // below, so the re-derive sees the already-clean placement set.
+        // Idempotent; runs after the backstop (a board sealed by the pass
+        // above is still in scope here — repair covers every status).
+        await repairPlacementIntegrity(userId);
         if (cancelled) return;
         // Windowed Completion self-heal — correct any board carrying stale
         // lifetime-derived stats from the pre-fix edit/structure cascades
