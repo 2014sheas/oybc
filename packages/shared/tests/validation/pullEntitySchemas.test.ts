@@ -228,6 +228,12 @@ describe('BoardTaskSchema pull validation', () => {
   it('rejects a board task with version = 0', () => {
     expect(BoardTaskSchema.safeParse({ ...validBoardTask(), version: 0 }).success).toBe(false);
   });
+
+  // Board-integrity PR-2 (Part 3) — a malformed/malicious remote payload with
+  // an out-of-sane-range row/col must not decode on pull.
+  it('rejects a pulled board task with a row past the sane upper bound (25)', () => {
+    expect(BoardTaskSchema.safeParse({ ...validBoardTask(), row: 25 }).success).toBe(false);
+  });
 });
 
 describe('CompositeTaskSchema / CompositeNodeSchema pull validation', () => {

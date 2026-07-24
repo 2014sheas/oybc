@@ -237,3 +237,13 @@ export type {
 } from './counterDailyTotals';
 
 export { selectLastIncrementEntry } from './lastCounterLogEntry';
+
+// ===== Board-integrity PR-2 — deterministic placement winner rule + repair =====
+export {
+  comparePlacementPrecedence,
+  pickPlacementWinner,
+  resolvePlacements,
+  computePlacementIntegrityRepair,
+} from './placementResolution';
+
+export type { PlacementIntegrityRepairResult } from './placementResolution';
