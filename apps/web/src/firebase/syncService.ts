@@ -805,5 +805,15 @@ async function writeSingleDoc(
     cleaned.endDate = deleteField();
   }
 
+  // Same carve-out for `completedAt`: a COMPLETED→ACTIVE revert (live cascade
+  // un-completing a board) clears `completedAt` locally by writing
+  // `undefined`, but under `merge: true` simply omitting the field would
+  // PRESERVE the stale completion timestamp on the remote doc for other
+  // devices to pull. Explicitly delete it so the remote matches the local
+  // source of truth. (Harmless no-op on docs that never had a completedAt.)
+  if (docRef.parent.id === 'boards' && cleaned.completedAt === undefined) {
+    cleaned.completedAt = deleteField();
+  }
+
   await setDoc(docRef, cleaned, { merge: true });
 }

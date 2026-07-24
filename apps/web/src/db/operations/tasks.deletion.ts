@@ -1,12 +1,20 @@
 import { db } from '../internal';
 import type {
   Board,
+  BoardStatsUpdate,
   CompoundChild,
   Task,
 } from '@oybc/shared';
-import { SyncOperationType } from '@oybc/shared';
+import {
+  BoardStatus,
+  SyncOperationType,
+  computeBoardStatsUpdate,
+  findAffectedBoardIds,
+  findTransitiveParentCompounds,
+} from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { buildWindowContext } from './windowContext';
 
 /**
  * Soft delete a task.
@@ -124,6 +132,11 @@ export async function computeTaskDeletionImpact(
  *    the parent Task itself are untouched.
  * 4. **The Task itself** — soft-deleted (version bump + isDeleted=true
  *    + deletedAt), matching `deleteTask`'s LWW semantics.
+ * 5. **Affected boards** — the standard windowed derivation cascade runs
+ *    over every board that placed the task (directly or via a compound
+ *    parent), so persisted bingo lines through the deleted task's cells
+ *    fall out in the SAME transaction instead of lingering until the
+ *    app-open self-heal (version bump + enqueue; sealed boards skipped).
  *
  * All sync-queue entries are enqueued inside the same transaction so a
  * crash mid-cascade leaves the queue consistent with the local-DB
@@ -137,7 +150,7 @@ export async function computeTaskDeletionImpact(
 export async function deleteTaskWithCascade(id: string): Promise<void> {
   await db.transaction(
     'rw',
-    [db.tasks, db.boardTasks, db.compoundChildren, db.syncQueue],
+    [db.tasks, db.boardTasks, db.compoundChildren, db.boards, db.taskEvents, db.syncQueue],
     async () => {
       await deleteTaskWithCascadeInTxn(id, currentTimestamp());
     },
@@ -153,9 +166,9 @@ export async function deleteTaskWithCascade(id: string): Promise<void> {
  * of this function opening its own.
  *
  * Callers MUST already be inside a `db.transaction('rw', [...])` that
- * covers at least `[tasks, boardTasks, compoundChildren, syncQueue]` (a
- * superset of that list is fine — `deleteCounterWithUnlink`'s transaction
- * also covers `taskEvents`).
+ * covers at least `[tasks, boardTasks, compoundChildren, boards,
+ * taskEvents, syncQueue]` (`boards` + `taskEvents` are required by the
+ * step-5 board cascade below).
  *
  * @param id - The task to cascade-delete.
  * @param now - The write timestamp shared with the caller's other writes
@@ -164,6 +177,16 @@ export async function deleteTaskWithCascade(id: string): Promise<void> {
 export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promise<void> {
   const existing = await db.tasks.get(id);
   if (!existing) return;
+
+  // 0. Compute the affected-board set BEFORE any delete write — boards
+  //    placing this task directly or via a compound parent (the same
+  //    reachability `removeBoardTaskFromBoard` uses). After the placements
+  //    are hard-deleted below, this reachability is no longer recoverable,
+  //    so it must be captured first.
+  const allBoardTasksPre = await db.boardTasks.toArray();
+  const allChildrenPre = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
+  const parents = findTransitiveParentCompounds(id, allChildrenPre);
+  const affectedBoardIds = Array.from(findAffectedBoardIds(id, parents, allBoardTasksPre));
 
   // 1. Hard-delete BoardTask placements.
   const placements = await db.boardTasks.where('taskId').equals(id).toArray();
@@ -206,5 +229,75 @@ export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promi
   const updatedTask = await db.tasks.get(id);
   if (updatedTask) {
     await addToSyncQueue('tasks', id, SyncOperationType.DELETE, updatedTask);
+  }
+
+  // 5. Windowed board cascade over the pre-computed affected set (mirrors
+  //    `removeBoardTaskFromBoard`'s loop). Without it, a board whose bingo
+  //    line ran through this task would keep the persisted line (and
+  //    achievement watchers would keep reading it) until the app-open
+  //    self-heal. Version bump + enqueue; sealed boards skipped.
+  if (affectedBoardIds.length > 0) {
+    // Inside the ambient transaction (scope includes `taskEvents`), so the
+    // cascade resolves each board against its own window.
+    const windowContext = await buildWindowContext();
+
+    const allBoardTasksPost = await db.boardTasks.toArray();
+    const allTasks = await db.tasks.toArray();
+    const allBoards = await db.boards.toArray();
+    const allChildrenPost = await db.compoundChildren.toArray();
+
+    const taskById: Record<string, Task> = {};
+    for (const t of allTasks) taskById[t.id] = t;
+
+    const childrenByCompound: Record<string, CompoundChild[]> = {};
+    for (const c of allChildrenPost) {
+      if (!c.isDeleted) {
+        (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+      }
+    }
+
+    for (const affectedBoardId of affectedBoardIds) {
+      const affectedBoard = await db.boards.get(affectedBoardId);
+      if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
+
+      const boardTasksOnBoard = allBoardTasksPost.filter(
+        (bt) => bt.boardId === affectedBoardId,
+      );
+
+      const stats: BoardStatsUpdate = computeBoardStatsUpdate(
+        affectedBoard,
+        boardTasksOnBoard,
+        childrenByCompound,
+        taskById,
+        allBoards,
+        windowContext,
+      );
+
+      const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
+      const isGreenlog = stats.completedTasks >= totalSquares;
+
+      const boardUpdate: Partial<Board> = {
+        completedTasks: stats.completedTasks,
+        linesCompleted: stats.linesCompleted,
+        completedLineIds: stats.completedLineIds,
+        updatedAt: now,
+        version: (affectedBoard.version ?? 1) + 1,
+      };
+
+      if (isGreenlog && affectedBoard.status === BoardStatus.ACTIVE) {
+        boardUpdate.status = BoardStatus.COMPLETED;
+        boardUpdate.completedAt = now;
+      } else if (!isGreenlog && affectedBoard.status === BoardStatus.COMPLETED) {
+        boardUpdate.status = BoardStatus.ACTIVE;
+        boardUpdate.completedAt = undefined;
+      }
+
+      await db.boards.update(affectedBoardId, boardUpdate);
+
+      const updatedBoard = await db.boards.get(affectedBoardId);
+      if (updatedBoard) {
+        await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
+      }
+    }
   }
 }

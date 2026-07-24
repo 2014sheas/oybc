@@ -18,6 +18,7 @@ import { db } from '../internal';
 import { resolveConflict, type SyncableEntity } from '../../firebase/conflictResolver';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { runBoardCascadeForTask } from './orchestration';
+import { reDeriveSealedBoardsByIds } from './sealing';
 
 /**
  * Apply a remote document from a syncable subcollection to the local Dexie
@@ -158,6 +159,21 @@ export async function applyRemoteSubdoc(
         const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
         if (typeof compoundTaskId === 'string' && compoundTaskId) {
           await runBoardCascadeForTask(compoundTaskId);
+        }
+      } else if (collectionName === 'boards') {
+        // Sealed-board transport convergence (docs §Seal snapshots re-derive):
+        // a pulled SEALED board doc carries whatever snapshot the sealing
+        // device derived from ITS event union — which may be a stale partial
+        // one (sealed offline elsewhere). Re-derive that board's frozen
+        // snapshot against the LOCAL converged union, with the same
+        // deterministic, no-version-bump, no-enqueue semantics as the
+        // taskEvents-pull re-derive hook, inside this same pull transaction.
+        // Without this, the stale snapshot sticks until (if ever) new events
+        // for a placed task arrive — and since sealed re-derivation never
+        // pushes, the remote copy stays stale for every future puller.
+        const sealedAt = (validated as { sealedAt?: unknown }).sealedAt;
+        if (typeof sealedAt === 'string' && sealedAt) {
+          await reDeriveSealedBoardsByIds([validated.id]);
         }
       }
     },

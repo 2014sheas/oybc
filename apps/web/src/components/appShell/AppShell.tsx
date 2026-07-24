@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { BoardStatus } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
 import { useBoards } from '../../hooks/useBoards';
+import { useBackstopAutoSeal } from '../../hooks/useBackstopAutoSeal';
 import type { AppliedTheme } from '../../hooks/useAppliedTheme';
 import { AppTopNav } from './AppTopNav';
 import { AppBottomNav } from './AppBottomNav';
@@ -28,6 +29,15 @@ export function AppShell({
   const { user } = useAuth();
   const boards = useBoards(user?.id);
   const activeCount = boards.filter((b) => b.status === BoardStatus.ACTIVE).length;
+
+  // Windowed Completion — backstop auto-seal + stale-stats self-heal on ANY
+  // authenticated surface, not just the Boards tab. A deep link straight to
+  // `/boards/:id` (or /tasks, /profile, …) previously never healed because the
+  // hook only mounted on `BoardsPage`. Mounting it here (the shell wraps every
+  // authenticated route) closes that hole; `BoardsPage` keeps its own mount so
+  // navigating to Boards still re-runs the pass. Both `sealBoard` and
+  // `reDeriveActiveBoards` are idempotent, so the double mount is harmless.
+  useBackstopAutoSeal(user?.id);
 
   return (
     <div className={`${styles.app} riso-grain`}>

@@ -2,10 +2,12 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  computeBoardStatsUpdate,
   isGoalLessCounter,
   type CompoundChild,
   type CreateBoardInput,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../internal';
 import { activateBoard, createBoard, updateBoard } from './boards';
@@ -82,7 +84,9 @@ export async function persistWizardBoardRows({
   let boardId = '';
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    // `taskEvents` is read-only here — the post-write derivation pass below
+    // resolves the just-written placements against the board's window.
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       // ── Bug #85: write pending tasks first ──────────────────────────────
       // Only persist pending tasks that are actually placed on the board — a
@@ -179,6 +183,53 @@ export async function persistWizardBoardRows({
 
       if (draftBoardId === null && status === 'active') {
         await activateBoard(boardId);
+      }
+
+      // ── Windowed derivation pass over the just-written placements ───────
+      // Stored stats are derivation output, never a hand-init (mirrors the
+      // recurring-spawn path — recurringBoardSpawn.ts). Without this, a board
+      // placing a task that is ALREADY complete in this board's window (or a
+      // FREE/CUSTOM_FREE center) would persist + sync `completedTasks: 0`
+      // until the next app-open self-heal. Runs after activation so the final
+      // row is derived exactly once, same-transaction as the board write.
+      // Status logic is deliberately NOT touched here — a fresh board with a
+      // bingo from shared tasks legitimately shows those lines; status
+      // transitions stay the live-cascade's job.
+      const freshBoard = await db.boards.get(boardId);
+      if (freshBoard && !freshBoard.isDeleted) {
+        const boardTasksOnBoard = await db.boardTasks
+          .where('boardId')
+          .equals(boardId)
+          .toArray();
+        const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
+        const childrenByCompound: Record<string, CompoundChild[]> = {};
+        for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+        const allTasks = await db.tasks.toArray();
+        const taskById: Record<string, Task> = {};
+        for (const t of allTasks) taskById[t.id] = t;
+        const eventsByTaskId: Record<string, TaskEvent[]> = {};
+        for (const e of await db.taskEvents.toArray()) {
+          if (e.isDeleted) continue;
+          (eventsByTaskId[e.taskId] ??= []).push(e);
+        }
+        const allBoards = await db.boards.toArray();
+        const stats = computeBoardStatsUpdate(
+          freshBoard,
+          boardTasksOnBoard,
+          childrenByCompound,
+          taskById,
+          allBoards,
+          { eventsByTaskId },
+        );
+        // `updateBoard` bumps version + updatedAt and enqueues an UPDATE; the
+        // D3 coalescer folds it into the pending CREATE/UPDATE for this board
+        // with the refreshed (derived) payload, so the row that reaches
+        // Firestore carries derivation output from the very first push.
+        await updateBoard(boardId, {
+          completedTasks: stats.completedTasks,
+          linesCompleted: stats.linesCompleted,
+          completedLineIds: stats.completedLineIds,
+        });
       }
     },
   );
