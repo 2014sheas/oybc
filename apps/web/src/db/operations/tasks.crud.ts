@@ -496,7 +496,7 @@ export async function updateTaskAndCascade(
   await updateTask(id, updates);
 
   // 2. Check if any board places this task.
-  const placements = await db.boardTasks.where('taskId').equals(id).toArray();
+  const placements = await db.boardTasks.where('taskId').equals(id).filter((bt) => !bt.isDeleted).toArray();
   if (placements.length === 0) return;
 
   // 3. Run the derivation cascade in a single transaction. One call to
@@ -595,10 +595,10 @@ export async function checkAchievementRetargetCycle(
   taskId: string,
   candidate: Pick<CycleCheckCandidate, 'referencedBoardId' | 'referencedTemplateId'>,
 ): Promise<string | null> {
-  const placements = await db.boardTasks.where('taskId').equals(taskId).toArray();
+  const placements = await db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
   const parentBoardIds = Array.from(new Set(placements.map((bt) => bt.boardId)));
 
-  const allBoardTasks = await db.boardTasks.toArray();
+  const allBoardTasks = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const allTasks = await db.tasks.filter((t) => !t.isDeleted).toArray();
   const allBoards = await db.boards.filter((b) => !b.isDeleted).toArray();
 

@@ -124,6 +124,7 @@ function runVector(v: Vector): number[] {
     updatedAt: board.startDate,
     version: 1,
     isCenter: false,
+    isDeleted: false,
   }));
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
   for (const e of v.events) {

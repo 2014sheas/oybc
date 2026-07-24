@@ -430,9 +430,17 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             board: board, boardTasks: [newBt], pendingTasks: [], isUpdate: true, now: now
         )
 
-        // Old placement gone, new placement present.
-        let placements = try db.read { try BoardTask.filter(Column("boardId") == "wb2").fetchAll($0) }
-        XCTAssertEqual(placements.map { $0.id }, ["new-bt"])
+        // Old placement soft-deleted (tombstoned), new placement present and LIVE.
+        let livePlacements = try db.read {
+            try BoardTask
+                .filter(Column("boardId") == "wb2" && Column("isDeleted") == false)
+                .fetchAll($0)
+        }
+        XCTAssertEqual(livePlacements.map { $0.id }, ["new-bt"])
+        let oldBt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "old-bt") })
+        XCTAssertTrue(oldBt.isDeleted)
+        XCTAssertNotNil(oldBt.deletedAt)
+        XCTAssertEqual(oldBt.version, 2)
 
         let rows = try syncRows(db)
         XCTAssertEqual(count(rows, type: "boards", op: .update), 1)
@@ -631,5 +639,40 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertNil(try db.fetchBoard(id: boardId))
         let rows = try syncRows(db)
         XCTAssertEqual(count(rows, type: "boards", op: .create), 0)
+    }
+
+    // MARK: - Tombstone guards on placement write paths (PR-1 review)
+
+    /// A placement tombstoned by a concurrent cross-device delete must not be
+    /// resurrected/mutated by a stale edit-session swap or rearrange — the
+    /// write paths guard on `isDeleted` and silently no-op.
+    func test_tombstonedPlacement_isImmuneToSwapAndRearrange() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "tg1"))
+        try db.saveTask(makeTask("tA"))
+        try db.saveTask(makeTask("tB"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-dead", boardId: "tg1", taskId: "tA"))
+
+        // Tombstone it (the PR-1 soft-delete path).
+        try db.removeBoardTaskFromBoard("bt-dead")
+        let deadV = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-dead") }).version
+
+        // Swap must no-op: taskId unchanged, version unchanged, still tombstoned.
+        try db.updateBoardTaskAndCascade(boardTaskId: "bt-dead", newTaskId: "tB")
+        var bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-dead") })
+        XCTAssertTrue(bt.isDeleted)
+        XCTAssertEqual(bt.taskId, "tA", "swap on a tombstone must not mutate it")
+        XCTAssertEqual(bt.version, deadV, "swap on a tombstone must not bump version")
+
+        // Rearrange must skip it: position unchanged.
+        try db.updateBoardTaskPositions(
+            boardId: "tg1",
+            moves: [AppDatabase.BoardTaskPositionMove(boardTaskId: "bt-dead", row: 2, col: 2)]
+        )
+        bt = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "bt-dead") })
+        XCTAssertEqual(bt.row, 0)
+        XCTAssertEqual(bt.col, 0)
+        XCTAssertEqual(bt.version, deadV, "rearrange on a tombstone must not bump version")
     }
 }

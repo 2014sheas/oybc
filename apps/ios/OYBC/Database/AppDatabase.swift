@@ -822,6 +822,23 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN defaultLogAmount INTEGER")
         }
 
+        // v27: Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md).
+        // `board_tasks` was the only synced collection with no `isDeleted`
+        // column — placement removal was always a literal SQL DELETE. The
+        // sync layer can only express a deletion as "push a doc with
+        // isDeleted:true" (it never calls Firestore `deleteDoc`), so a
+        // hard-deleted row left nothing local for the push loop to diff a
+        // higher version against: an already-synced remote row could win
+        // the next pull and resurrect the placement within one sync cycle.
+        // Adds `isDeleted`/`deletedAt` so placement removal becomes a soft-
+        // delete tombstone like every other synced collection (Board, Task,
+        // CompoundChild, …) — see `AppDatabase+BoardTasks.removeBoardTaskFromBoard`.
+        migrator.registerMigration("v27") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN isDeleted BOOLEAN NOT NULL DEFAULT 0")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN deletedAt TEXT")
+            try db.execute(sql: "CREATE INDEX idx_board_tasks_board_deleted ON board_tasks(boardId, isDeleted)")
+        }
+
         return migrator
     }
 

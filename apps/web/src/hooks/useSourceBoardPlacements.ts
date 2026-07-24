@@ -36,10 +36,12 @@ export function useSourceBoardPlacements(
         if (!boardId) return [];
 
         // Use the `boardId` index (declared in db/database.ts) so
-        // Dexie scans only the relevant board_tasks rows.
+        // Dexie scans only the relevant board_tasks rows. Tombstoned
+        // placements are excluded (docs/BOARD_INTEGRITY.md).
         const placements = await db.boardTasks
           .where('boardId')
           .equals(boardId)
+          .filter((bt) => !bt.isDeleted)
           .toArray();
 
         if (placements.length === 0) return [];

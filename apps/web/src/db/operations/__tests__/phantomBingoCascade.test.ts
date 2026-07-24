@@ -106,6 +106,7 @@ async function seedPlacement(id: string, taskId: string, row: number, col: numbe
     createdAt: '2026-05-01T00:00:00.000Z',
     updatedAt: '2026-05-01T00:00:00.000Z',
     version: 1,
+    isDeleted: false,
   };
   await db.boardTasks.add(bt);
 }

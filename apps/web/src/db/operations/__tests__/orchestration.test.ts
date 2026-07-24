@@ -110,6 +110,7 @@ async function seedBoardTask(overrides: Partial<BoardTask> = {}): Promise<BoardT
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     version: 1,
+    isDeleted: false,
     ...overrides,
   };
   await db.boardTasks.add(boardTask);
@@ -148,6 +149,7 @@ async function seedRemainingCompletedSquares(): Promise<void> {
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
         version: 1,
+        isDeleted: false,
       });
       // Windowed Completion: seed the completion event so the square is
       // windowed-green (the lifetime `isCompleted` cache is no longer read).

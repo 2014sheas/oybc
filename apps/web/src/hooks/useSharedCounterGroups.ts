@@ -34,7 +34,7 @@ export function useSharedCounterGroups(userId: string | undefined): SharedCounte
       const taskIds = tasks.map((t) => t.id);
       const boardTasks =
         taskIds.length > 0
-          ? await db.boardTasks.where('taskId').anyOf(taskIds).toArray()
+          ? await db.boardTasks.where('taskId').anyOf(taskIds).filter((bt) => !bt.isDeleted).toArray()
           : [];
 
       return buildSharedCounterGroups({ tasks, boardTasks, boards });

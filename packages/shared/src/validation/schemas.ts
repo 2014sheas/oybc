@@ -619,6 +619,14 @@ export const BoardTaskSchema = z.object({
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
+  // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — tombstone soft-delete.
+  // Defaulted (not required, unlike CompoundChild's `isDeleted`) so
+  // pre-existing synced boardTasks docs — written before this field
+  // existed — still decode on pull; the local migration backfills
+  // `isDeleted: false` on first launch. Mirrors Board's `isCore` and
+  // Task's `isCompleted` forward-compat defaults above.
+  isDeleted: z.boolean().default(false),
+  deletedAt: z.string().datetime().optional(),
 });
 
 // ===== CompoundChild Schemas =====

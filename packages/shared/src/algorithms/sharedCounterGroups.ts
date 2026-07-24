@@ -120,7 +120,7 @@ function pickPrimaryBoard(
 ): Board | null {
   const candidates: Board[] = [];
   for (const bt of boardTasks) {
-    if (bt.taskId !== taskId) continue;
+    if (bt.taskId !== taskId || bt.isDeleted) continue;
     const board = boardsById.get(bt.boardId);
     if (board && !board.isDeleted) candidates.push(board);
   }

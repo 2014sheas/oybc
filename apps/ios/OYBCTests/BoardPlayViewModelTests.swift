@@ -930,7 +930,8 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
                       "handleEditSave never emitted .saved")
 
-        // bt-b1-2 hard-deleted; the surviving placement (t1) is untouched.
+        // bt-b1-2 soft-deleted (tombstoned) — excluded from the live fetch;
+        // the surviving placement (t1) is untouched.
         let remaining = try db.fetchBoardTasks(boardId: "b1")
         XCTAssertFalse(remaining.contains { $0.id == "bt-b1-2" }, "removed placement deleted on Save")
         XCTAssertTrue(remaining.contains { $0.id == "bt-b1-1" }, "kept placement survives")

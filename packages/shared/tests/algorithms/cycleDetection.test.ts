@@ -111,6 +111,7 @@ function toBoardTask(m: MiniBoardTask, idx: number): BoardTask {
     createdAt: BASE_TS,
     updatedAt: BASE_TS,
     version: 1,
+    isDeleted: false,
   };
 }
 

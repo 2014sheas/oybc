@@ -11,7 +11,7 @@ import {
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
-import { fetchAllBoardTasks } from './boardTasks';
+import { fetchAllBoardTasks, buildBoardTaskTombstone } from './boardTasks';
 import { buildWindowContext } from './windowContext';
 
 /**
@@ -158,6 +158,7 @@ export async function updateBoardAndCascade(
   const placements = await db.boardTasks
     .where('boardId')
     .equals(boardId)
+    .filter((bt) => !bt.isDeleted)
     .toArray();
 
   if (placements.length === 0) return;
@@ -430,11 +431,12 @@ export async function deleteBoard(id: string): Promise<void> {
  * Delete a DRAFT board and its attached BoardTask placements atomically.
  *
  * Used by the Create Hub's drafts-list delete affordance. Soft-deletes the
- * Board (so sync propagates the tombstone) and hard-deletes the BoardTask
- * rows (BoardTask has no isDeleted field — placement removal is always
- * a literal delete; see `deleteBoardTasksForBoard`). Both happen inside one
- * Dexie transaction so a mid-flight failure rolls back instead of leaving
- * orphan BoardTask rows pointing at a soft-deleted Board.
+ * Board (so sync propagates the tombstone) and soft-deletes (tombstones)
+ * the BoardTask rows too (docs/BOARD_INTEGRITY.md — a hard delete here
+ * would let the pushed tombstone lose the LWW tie-break and resurrect the
+ * placement on the next pull; see `deleteBoardTasksForBoard`). Both happen
+ * inside one Dexie transaction so a mid-flight failure rolls back instead
+ * of leaving orphan BoardTask rows pointing at a soft-deleted Board.
  *
  * Caller is responsible for confirming the user wants the deletion.
  */
@@ -454,13 +456,14 @@ export async function deleteDraftWithCascade(id: string): Promise<void> {
       );
     }
 
-    const placements = await db.boardTasks.where('boardId').equals(id).toArray();
+    const now = currentTimestamp();
+    const placements = await db.boardTasks.where('boardId').equals(id).filter((bt) => !bt.isDeleted).toArray();
     for (const bt of placements) {
-      await db.boardTasks.delete(bt.id);
-      await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+      const tombstoned = buildBoardTaskTombstone(bt, now);
+      await db.boardTasks.update(bt.id, tombstoned);
+      await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
     }
 
-    const now = currentTimestamp();
     await db.boards.update(id, {
       isDeleted: true,
       deletedAt: now,

@@ -89,6 +89,7 @@ async function seedBoardTask(overrides: Partial<BoardTask> = {}): Promise<BoardT
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     version: 1,
+    isDeleted: false,
     ...overrides,
   };
   await db.boardTasks.add(boardTask);

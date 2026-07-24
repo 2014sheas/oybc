@@ -53,7 +53,9 @@ extension AppDatabase {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+        let allBoardTasks: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
         let allBoards: [Board] = try Board.fetchAll(db)
         // Windowed Completion — the source counting square is event-owning, so
         // its board reads are windowed; the cascade must evaluate with the event

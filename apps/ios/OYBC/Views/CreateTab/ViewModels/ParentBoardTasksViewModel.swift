@@ -95,7 +95,7 @@ final class ParentBoardTasksViewModel {
                 // as the user accumulates more boards and placements over
                 // time. Mirror of the web Dexie perf fix.
                 let parentBoardTasks = try BoardTask
-                    .filter(parentIds.contains(Column("boardId")))
+                    .filter(parentIds.contains(Column("boardId")) && Column("isDeleted") == false)
                     .fetchAll(db)
                 let taskIds = Set(parentBoardTasks.map { $0.taskId })
                 if taskIds.isEmpty { return [] }

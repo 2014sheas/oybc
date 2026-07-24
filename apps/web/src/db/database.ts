@@ -420,6 +420,18 @@ export class AppDatabase extends Dexie {
       // Dynamic import avoids a top-of-file cycle (migrationV16 imports `db`).
       return import('./operations/migrationV16').then((mod) => mod.runMigrationV16(tx));
     });
+
+    // v17: Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — BoardTask gains
+    // `isDeleted`/`deletedAt`, mirroring every other synced collection. See
+    // `operations/migrationV17.ts` for the full rationale + backfill body.
+    // No schema shape change (`isDeleted` is unindexed — filtering is a JS
+    // predicate on the small-N boardTasks scans, same as every other
+    // tombstoned collection), so `.stores({})` is a no-op; the version bump
+    // is the vehicle for the backfill `.upgrade()`, same pattern as v13/v14/v16.
+    this.version(17).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV17 imports `db`).
+      return import('./operations/migrationV17').then((mod) => mod.runMigrationV17(tx));
+    });
   }
 }
 

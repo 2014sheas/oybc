@@ -136,12 +136,11 @@ extension AppDatabase {
     ///
     /// Used by the Create Hub's drafts-list delete affordance (per-row
     /// `xmark` button gated behind a confirmation `Alert`). Soft-deletes
-    /// the Board (sync queue carries the tombstone) and hard-deletes the
-    /// BoardTask rows (BoardTask has no isDeleted flag — placement removal
-    /// is always a literal delete; see `deleteBoardTasksForBoard`). Both
-    /// happen inside one GRDB write transaction so a mid-flight failure
-    /// rolls back instead of leaving orphan BoardTask rows pointing at a
-    /// soft-deleted Board.
+    /// the Board AND its BoardTask placements (Board-integrity PR-1,
+    /// docs/BOARD_INTEGRITY.md — BoardTask placement removal is a tombstone
+    /// now, matching the Board itself). Both happen inside one GRDB write
+    /// transaction so a mid-flight failure rolls back instead of leaving
+    /// orphan live BoardTask rows pointing at a soft-deleted Board.
     ///
     /// Helper is draft-only by design — throws if called with a
     /// non-DRAFT board so misuse from a future caller surfaces loudly
@@ -163,10 +162,14 @@ extension AppDatabase {
             let now = Self.currentTimestamp()
 
             let placements = try BoardTask
-                .filter(Column("boardId") == id)
+                .filter(Column("boardId") == id && Column("isDeleted") == false)
                 .fetchAll(db)
-            for bt in placements {
-                try bt.delete(db)
+            for var bt in placements {
+                bt.isDeleted = true
+                bt.deletedAt = now
+                bt.updatedAt = now
+                bt.version += 1
+                try bt.update(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "boardTasks",
                     entityId: bt.id,
@@ -333,7 +336,7 @@ extension AppDatabase {
             //    per-task loop which did O(N) full-table scans (one per task
             //    on a 5×5 board = 25 cascade calls). (Copilot review #9)
             let placements = try BoardTask
-                .filter(Column("boardId") == boardId)
+                .filter(Column("boardId") == boardId && Column("isDeleted") == false)
                 .fetchAll(db)
             let taskIds = Array(Set(placements.map { $0.taskId }))
 
@@ -342,7 +345,9 @@ extension AppDatabase {
             let allChildren: [CompoundChild] = try CompoundChild
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
-            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
+            let allBoardTasks: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
             let allTasks: [Task] = try Task.fetchAll(db)
             let allBoards: [Board] = try Board.fetchAll(db)
 
@@ -443,7 +448,8 @@ extension AppDatabase {
     ///   - pendingTasks: Placed-only deferred payloads (parent + inline
     ///     children + links) to write first.
     ///   - isUpdate: `true` when updating an existing draft (old placements
-    ///     are hard-deleted + DELETE-enqueued first); `false` for fresh create.
+    ///     are soft-deleted (tombstoned) + DELETE-enqueued first); `false` for
+    ///     fresh create.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
     func saveWizardBoard(
         board: Board,
@@ -552,16 +558,24 @@ extension AppDatabase {
             ).enqueue(db)
 
             if isUpdate {
-                // Snapshot the existing BoardTasks before deleting
-                // so each gets a matching DELETE sync item whose
-                // payload reflects the row that actually existed.
+                // Board-integrity PR-1 (tombstones): the wizard doesn't diff
+                // old vs new layout — it always rewrites the full placement
+                // set. SOFT-delete every existing LIVE row (isDeleted, bumped
+                // version) rather than a literal SQL DELETE, so an
+                // already-synced device sees a tombstone win LWW instead of a
+                // hard-deleted row that a stale remote pull could resurrect.
+                // The fresh `boardTasks` rows below always carry NEW ids
+                // (`BoardWizardPersist` mints them per save), so there's no
+                // id collision between the old tombstones and the new rows.
                 let oldBoardTasks = try BoardTask
-                    .filter(Column("boardId") == board.id)
+                    .filter(Column("boardId") == board.id && Column("isDeleted") == false)
                     .fetchAll(db)
-                _ = try BoardTask
-                    .filter(Column("boardId") == board.id)
-                    .deleteAll(db)
-                for old in oldBoardTasks {
+                for var old in oldBoardTasks {
+                    old.isDeleted = true
+                    old.deletedAt = now
+                    old.updatedAt = now
+                    old.version += 1
+                    try old.update(db)
                     try SyncQueueBuilder.makeItem(
                         entityType: "boardTasks",
                         entityId: old.id,

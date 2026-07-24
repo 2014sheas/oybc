@@ -50,7 +50,8 @@ export function findTransitiveParentCompounds(
  *
  * @param changedTaskId   The Task whose state just changed.
  * @param parentCompounds Set of compound Task ids that transitively contain the changed task.
- * @param boardTasks      All BoardTask rows in the workspace.
+ * @param boardTasks      All BoardTask rows in the workspace (non-deleted
+ *                        rows are filtered internally — Board-integrity PR-1).
  * @returns Set of board ids that need their stats recomputed.
  */
 export function findAffectedBoardIds(
@@ -61,6 +62,7 @@ export function findAffectedBoardIds(
   const taskIds = new Set<string>([changedTaskId, ...parentCompounds]);
   const out = new Set<string>();
   for (const bt of boardTasks) {
+    if (bt.isDeleted) continue;
     if (taskIds.has(bt.taskId)) out.add(bt.boardId);
   }
   return out;
@@ -252,6 +254,14 @@ function computeBoardGrid(
   };
 
   for (const bt of boardTasksOnBoard) {
+    // Defense-in-depth: a tombstoned BoardTask placement (Board-integrity
+    // PR-1, docs/BOARD_INTEGRITY.md) must never render/count as a placed
+    // cell. Every known caller already pre-filters `!isDeleted` before
+    // building `boardTasksOnBoard`, but this kernel is the single point
+    // every cascade on both platforms funnels through — mirroring the same
+    // belt-and-suspenders posture `findTransitiveParentCompounds` and the
+    // `allBoards` index above already use for their own tombstoned inputs.
+    if (bt.isDeleted) continue;
     const t = taskById[bt.taskId];
     if (!t || t.isDeleted) continue;
 

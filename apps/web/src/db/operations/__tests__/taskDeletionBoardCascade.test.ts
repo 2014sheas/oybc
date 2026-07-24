@@ -15,8 +15,9 @@ import { deleteCounterWithUnlink } from '../tasks.counter';
 
 /**
  * Item 3 (bingo-pipeline hardening) — task delete / counter unlink ran no
- * board cascade. `deleteTaskWithCascadeInTxn` hard-deleted placements +
- * soft-deleted the Task but never re-derived affected boards, so a
+ * board cascade. `deleteTaskWithCascadeInTxn` tombstoned placements
+ * (soft-deleted, Board-integrity PR-1) + soft-deleted the Task but never
+ * re-derived affected boards, so a
  * persisted bingo line could keep glowing through a now-empty cell until the
  * next app-open self-heal (achievements watching the board would read the
  * stale line meanwhile). The fix computes the affected-board set BEFORE the
@@ -108,6 +109,7 @@ async function seedBoardWithCompletedRow0(
       createdAt: START,
       updatedAt: START,
       version: 1,
+      isDeleted: false,
     };
     await db.boardTasks.add(bt);
   }
@@ -132,18 +134,23 @@ describe('deleteTaskWithCascade — board cascade (item 3)', () => {
 
     const board = await db.boards.get(BOARD);
     expect(board?.completedLineIds).not.toContain('row_0');
-    // Only B and C's cells remain complete — A's placement was hard-deleted.
+    // Only B and C's cells remain complete — A's placement was tombstoned.
     expect(board?.completedTasks).toBe(2);
     expect(board?.version).toBe(2); // authored cascade write → version bump.
 
     const entries = await boardSyncEntries(BOARD);
     expect(entries.length).toBeGreaterThan(0);
 
-    // The task itself is soft-deleted and its placement gone.
+    // The task itself is soft-deleted and its placement is TOMBSTONED
+    // (Board-integrity PR-1, docs/BOARD_INTEGRITY.md): the row survives as
+    // a soft delete, not a physical delete — a hard delete here would let
+    // the pushed tombstone lose the LWW tie-break and resurrect the row.
     const task = await db.tasks.get(A);
     expect(task?.isDeleted).toBe(true);
     const placements = await db.boardTasks.where('taskId').equals(A).toArray();
-    expect(placements).toHaveLength(0);
+    expect(placements).toHaveLength(1);
+    expect(placements[0].isDeleted).toBe(true);
+    expect(placements[0].deletedAt).toBeTruthy();
   });
 
   it('skips a sealed board — the frozen snapshot is not touched by the live cascade', async () => {
@@ -259,8 +266,10 @@ describe('deleteCounterWithUnlink — board cascade on the source’s own placem
 
     const sourceTask = await db.tasks.get(SOURCE);
     expect(sourceTask?.isDeleted).toBe(true);
+    // Tombstoned, not physically removed (Board-integrity PR-1).
     const sourcePlacements = await db.boardTasks.where('taskId').equals(SOURCE).toArray();
-    expect(sourcePlacements).toHaveLength(0);
+    expect(sourcePlacements).toHaveLength(1);
+    expect(sourcePlacements[0].isDeleted).toBe(true);
 
     // The member is unlinked (standalone) but NOT deleted — unlink keeps it.
     const unlinkedMember = await db.tasks.get(member.id);

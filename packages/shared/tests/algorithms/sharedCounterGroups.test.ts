@@ -43,6 +43,7 @@ interface MiniBoard {
 interface MiniBoardTask {
   taskId: string;
   boardId: string;
+  isDeleted?: boolean;
 }
 
 interface MiniMemberTask {
@@ -144,6 +145,7 @@ function toBoardTask(m: MiniBoardTask): BoardTask {
     createdAt: TS,
     updatedAt: TS,
     version: 1,
+    isDeleted: m.isDeleted ?? false,
   };
 }
 
@@ -334,6 +336,64 @@ describe('pair-derived counter names (R1)', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0].name).toBe('Stored Title');
+  });
+});
+
+// Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — `pickPrimaryBoard` (the
+// internal board-resolution helper) must never surface a board through a
+// TOMBSTONED placement, or a member row would show a "primary board" it's
+// no longer actually placed on.
+describe('primary-board resolution excludes tombstoned placements', () => {
+  it('a member whose only placement is tombstoned resolves to no board (not the dead one)', () => {
+    const source = toTask({
+      id: 'src',
+      title: 'Source',
+      currentCount: 10,
+      maxCount: null,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+      isCounter: true,
+    });
+    const board = toBoard({ id: 'board-1', name: 'Board One', status: BoardStatus.ACTIVE, isDeleted: false });
+
+    const groups = buildSharedCounterGroups({
+      tasks: [source],
+      boards: [board],
+      boardTasks: [{ taskId: 'src', boardId: 'board-1', isDeleted: true }].map(toBoardTask),
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].boardCount).toBe(0);
+    expect(groups[0].tasks[0].boardId).toBeNull();
+    expect(groups[0].tasks[0].isActive).toBe(false);
+  });
+
+  it('a member with both a tombstoned and a live placement resolves to the live board', () => {
+    const source = toTask({
+      id: 'src',
+      title: 'Source',
+      currentCount: 10,
+      maxCount: null,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+      isCounter: true,
+    });
+    const deadBoard = toBoard({ id: 'board-dead', name: 'Dead', status: BoardStatus.ACTIVE, isDeleted: false });
+    const liveBoard = toBoard({ id: 'board-live', name: 'Live', status: BoardStatus.ACTIVE, isDeleted: false });
+
+    const groups = buildSharedCounterGroups({
+      tasks: [source],
+      boards: [deadBoard, liveBoard],
+      boardTasks: [
+        { taskId: 'src', boardId: 'board-dead', isDeleted: true },
+        { taskId: 'src', boardId: 'board-live' },
+      ].map(toBoardTask),
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].tasks[0].boardId).toBe('board-live');
   });
 });
 

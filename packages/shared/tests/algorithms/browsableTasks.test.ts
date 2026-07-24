@@ -36,7 +36,7 @@ function task(
   };
 }
 
-function placement(taskId: string, boardId: string): BoardTask {
+function placement(taskId: string, boardId: string, overrides: Partial<BoardTask> = {}): BoardTask {
   return {
     id: `bt-${taskId}-${boardId}`,
     boardId,
@@ -47,6 +47,8 @@ function placement(taskId: string, boardId: string): BoardTask {
     createdAt: '2026-07-01T12:00:00.000Z',
     updatedAt: '2026-07-01T12:00:00.000Z',
     version: 1,
+    isDeleted: false,
+    ...overrides,
   };
 }
 
@@ -161,6 +163,29 @@ describe('computeBrowsableTasks', () => {
     const tasks = [task('parent', true), task('child', true)];
     const result = computeBrowsableTasks(tasks, [], {}, { child: ['parent'] });
     expect(result).toHaveLength(0);
+  });
+
+  // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — a tombstoned BoardTask
+  // placement must not count as "live" for the wizard-orphan visibility rule.
+  it('wizard task whose only placement is TOMBSTONED is hidden (not visible via a dead placement)', () => {
+    const result = computeBrowsableTasks(
+      [task('a', true)],
+      [placement('a', 'activeBoard', { isDeleted: true })],
+      { activeBoard: BoardStatus.ACTIVE },
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it('wizard task stays visible via a live placement even with an unrelated tombstoned one', () => {
+    const result = computeBrowsableTasks(
+      [task('a', true)],
+      [
+        placement('a', 'draftBoard', { isDeleted: true }),
+        placement('a', 'activeBoard'),
+      ],
+      { draftBoard: BoardStatus.DRAFT, activeBoard: BoardStatus.ACTIVE },
+    );
+    expect(ids(result)).toEqual(new Set(['a']));
   });
 });
 

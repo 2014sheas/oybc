@@ -108,7 +108,7 @@ final class SourceBoardsViewModel {
 
                 let boardIds = Set(eligible.map { $0.id })
                 let allPlacements = try BoardTask
-                    .filter(boardIds.contains(Column("boardId")))
+                    .filter(boardIds.contains(Column("boardId")) && Column("isDeleted") == false)
                     .fetchAll(db)
                 if allPlacements.isEmpty {
                     var emptyCompl: [String: (Int, Int)] = [:]
@@ -213,7 +213,7 @@ final class SourceBoardsViewModel {
                 compoundLeaves: [String: [String]]
             ) in
                 let placements = try BoardTask
-                    .filter(Column("boardId") == boardId)
+                    .filter(Column("boardId") == boardId && Column("isDeleted") == false)
                     .fetchAll(db)
                 if placements.isEmpty { return ([], [:]) }
 

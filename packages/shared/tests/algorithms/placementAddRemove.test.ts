@@ -28,6 +28,7 @@ function makeBoardTask(
   taskId: string,
   row = 0,
   col = 0,
+  overrides: Partial<BoardTask> = {},
 ): BoardTask {
   return {
     id,
@@ -39,6 +40,8 @@ function makeBoardTask(
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
     version: 1,
+    isDeleted: false,
+    ...overrides,
   };
 }
 
@@ -161,6 +164,35 @@ describe('placement add/remove — affected board computation', () => {
     // After removing the completed task placement:
     const afterRemove = [makeBoardTask('bt2', 'board-1', 'task-todo', 0, 1)];
     const statsAfter = computeBoardStatsUpdate(board, afterRemove, {}, taskById, [], undefined);
+    expect(statsAfter.completedTasks).toBe(0);
+  });
+
+  // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — a TOMBSTONED row (still
+  // present in the array, `isDeleted: true`) must produce the SAME stats as
+  // physically removing it. This is the actual post-fix shape: placement
+  // "removal" is now a soft delete, so the row survives in `boardTasks` and
+  // the derivation kernel must exclude it itself.
+  it('a tombstoned (isDeleted:true) placement is excluded from board stats, same as a physical removal', () => {
+    const boardTasks = [
+      makeBoardTask('bt1', 'board-1', 'task-done', 0, 0),
+      makeBoardTask('bt2', 'board-1', 'task-todo', 0, 1),
+    ];
+    const taskById = {
+      'task-done': makeTask('task-done', { isCompleted: true }),
+      'task-todo': makeTask('task-todo'),
+    };
+    const board = makeBoard('board-1', { boardSize: 3, totalTasks: 2, completedTasks: 1 });
+
+    const statsBefore = computeBoardStatsUpdate(board, boardTasks, {}, taskById, [], undefined);
+    expect(statsBefore.completedTasks).toBe(1);
+
+    // Tombstone bt1 IN PLACE (row still present, unlike the physical-removal
+    // test above) — completedTasks must drop exactly as if it were gone.
+    const withTombstone = [
+      makeBoardTask('bt1', 'board-1', 'task-done', 0, 0, { isDeleted: true }),
+      makeBoardTask('bt2', 'board-1', 'task-todo', 0, 1),
+    ];
+    const statsAfter = computeBoardStatsUpdate(board, withTombstone, {}, taskById, [], undefined);
     expect(statsAfter.completedTasks).toBe(0);
   });
 

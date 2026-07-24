@@ -72,6 +72,7 @@ function makeBoardTask(taskId: string, row: number, col: number): BoardTask {
     createdAt: '2026-05-01T00:00:00.000',
     updatedAt: '2026-05-01T00:00:00.000',
     version: 1,
+    isDeleted: false,
   };
 }
 

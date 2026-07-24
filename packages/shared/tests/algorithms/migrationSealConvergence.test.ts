@@ -97,6 +97,7 @@ function bt(id: string, taskId: string, row: number, col: number): BoardTask {
     updatedAt: START,
     version: 1,
     isCenter: false,
+    isDeleted: false,
   };
 }
 

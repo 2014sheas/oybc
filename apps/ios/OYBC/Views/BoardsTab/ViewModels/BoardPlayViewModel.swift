@@ -1262,10 +1262,11 @@ final class BoardPlayViewModel: ObservableObject {
     }
 
     /// Stages a cell removal (no DB write). Drops the cell from the squares
-    /// draft so it renders empty; the placement is only hard-deleted from the
-    /// board on Save (`handleEditSave`, which diffs `boardTasks` against the
-    /// remaining draft). Increments `editSquaresEditCount` so the panel counter
-    /// + Save pill reflect the staged removal.
+    /// draft so it renders empty; the placement is only soft-deleted
+    /// (tombstoned) from the board on Save (`handleEditSave`, which diffs
+    /// `boardTasks` against the remaining draft). Increments
+    /// `editSquaresEditCount` so the panel counter + Save pill reflect the
+    /// staged removal.
     ///
     /// A pinned free center has no `editSquaresDraft` entry, so the edit tap-menu
     /// never surfaces Remove for it — pinned centers stay non-removable.
@@ -1488,10 +1489,11 @@ final class BoardPlayViewModel: ObservableObject {
                     )
                 }
 
-                // 5. Staged removals — hard-delete each removed BoardTask row.
-                //    `removeBoardTaskFromBoard` is idempotent (no-op if the row
-                //    is already gone), owns its own transaction + DELETE sync
-                //    tombstone, and re-derives stats for every affected board.
+                // 5. Staged removals — soft-delete (tombstone) each removed
+                //    BoardTask row. `removeBoardTaskFromBoard` is idempotent
+                //    (no-op if the row is already tombstoned), owns its own
+                //    transaction + DELETE sync tombstone, and re-derives
+                //    stats for every affected board.
                 for removedId in cellRemovals {
                     try database.removeBoardTaskFromBoard(removedId)
                 }

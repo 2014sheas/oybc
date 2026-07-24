@@ -34,7 +34,8 @@ import { BoardStatus, TaskType } from '../constants/enums';
  * (keeping wizard-created subtasks pool-addable once the board goes active).
  *
  * @param tasks - candidate library tasks (already user-scoped + non-deleted).
- * @param boardTasks - all `board_task` placement rows.
+ * @param boardTasks - all `board_task` placement rows (tombstoned rows are
+ *   filtered internally — Board-integrity PR-1, docs/BOARD_INTEGRITY.md).
  * @param boardStatusById - non-deleted `boardId → status`. Placements on
  *   missing (deleted) boards are ignored — a board absent from this map is
  *   treated as no live placement.
@@ -50,6 +51,7 @@ export function computeBrowsableTasks(
   // taskId → set of non-deleted board ids it's placed on.
   const placementsByTask: Record<string, Set<string>> = {};
   for (const bt of boardTasks) {
+    if (bt.isDeleted) continue; // tombstoned placement → not a live placement
     if (!boardStatusById[bt.boardId]) continue; // deleted / absent board → ignore
     (placementsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
   }

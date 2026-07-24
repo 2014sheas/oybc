@@ -147,6 +147,7 @@ async function placeTask(boardId: string, taskId: string, cell: number): Promise
     createdAt: START,
     updatedAt: START,
     version: 1,
+    isDeleted: false,
   };
   await db.boardTasks.add(bt);
 }

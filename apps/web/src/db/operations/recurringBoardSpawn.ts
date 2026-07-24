@@ -198,6 +198,7 @@ export async function spawnTemplateBoard(
           createdAt: now,
           updatedAt: now,
           version: 1,
+          isDeleted: false,
         });
       }
 
