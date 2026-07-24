@@ -455,8 +455,12 @@ export async function reorderBoardTasks(
     }
   }
 
+  // DB-level guard (matches the iOS twin + the sibling cascades in this file):
+  // a sealed board must never be mutated by a live rearrange — the app-shell
+  // backstop can seal a board while an edit session is already open, and
+  // sealed boards never mutate except via deterministic pull-path re-derivation.
   const board = allBoards.find((b) => b.id === boardId);
-  if (!board || board.isDeleted) return;
+  if (!board || board.isDeleted || board.sealedAt) return;
 
   // Windowed Completion — build the event map BEFORE the rw transaction so the
   // cascade resolves each board against its own window (not the lifetime cache),

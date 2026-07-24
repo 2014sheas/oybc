@@ -7,10 +7,10 @@ import {
   type CompoundChild,
   type CreateBoardInput,
   type Task,
-  type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../internal';
 import { activateBoard, createBoard, updateBoard } from './boards';
+import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { addToSyncQueue } from './syncQueue';
 import { currentTimestamp } from '../utils';
@@ -207,11 +207,9 @@ export async function persistWizardBoardRows({
         const allTasks = await db.tasks.toArray();
         const taskById: Record<string, Task> = {};
         for (const t of allTasks) taskById[t.id] = t;
-        const eventsByTaskId: Record<string, TaskEvent[]> = {};
-        for (const e of await db.taskEvents.toArray()) {
-          if (e.isDeleted) continue;
-          (eventsByTaskId[e.taskId] ??= []).push(e);
-        }
+        // `db.taskEvents` is in this transaction's scope, so the shared helper
+        // reads inside the txn (reuse-before-creating; same map shape).
+        const windowContext = await buildWindowContext();
         const allBoards = await db.boards.toArray();
         const stats = computeBoardStatsUpdate(
           freshBoard,
@@ -219,7 +217,7 @@ export async function persistWizardBoardRows({
           childrenByCompound,
           taskById,
           allBoards,
-          { eventsByTaskId },
+          windowContext,
         );
         // `updateBoard` bumps version + updatedAt and enqueues an UPDATE; the
         // D3 coalescer folds it into the pending CREATE/UPDATE for this board

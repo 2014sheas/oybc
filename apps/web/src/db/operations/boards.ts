@@ -143,6 +143,14 @@ export async function updateBoardAndCascade(
     }
   }
 
+  // DB-level guard (matches the iOS twin): a sealed or deleted board must
+  // never take a metadata edit — the app-shell backstop can seal a board
+  // while an edit session is already open, and sealed boards never mutate
+  // except via deterministic pull-path re-derivation. UI gates exist
+  // (Board Edit gates on !sealedAt) but the DB level must hold too.
+  const target = await db.boards.get(boardId);
+  if (!target || target.isDeleted || target.sealedAt) return;
+
   // 1. Apply patch (bumps version, enqueues boards sync entry).
   await updateBoard(boardId, sanitized);
 
