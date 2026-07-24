@@ -180,17 +180,22 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         try container.encode(completedTasks, forKey: .completedTasks)
         try container.encode(linesCompleted, forKey: .linesCompleted)
 
-        // Encode completedLineIds as JSON string. When nil, persist an explicit
-        // SQL NULL (encodeNil) rather than omitting the key — otherwise `save(db)`
-        // leaves a stale prior value in the column, so clearing the last bingo
-        // line (some lines → zero) would never persist. This bit every cascade
-        // that writes `update.completedLineIds.isEmpty ? nil : …`.
-        if let completedLineIds = completedLineIds,
-           let data = try? JSONEncoder().encode(completedLineIds),
+        // Encode completedLineIds as JSON string. When nil, persist "[]" — NOT
+        // an omitted key, and NOT encodeNil:
+        //   - Omitting the key makes `save(db)` keep the stale prior column
+        //     value, so clearing the LAST bingo line (some → zero) never
+        //     persists (every cascade writes `.isEmpty ? nil : …`).
+        //   - encodeNil persists locally but dies in sync: the push path's
+        //     `writeFirestoreDoc` strips NSNull and merges, so the stale array
+        //     survives on the Firestore doc and re-infects every device
+        //     (phantom-line resurrection + version churn).
+        // "[]" round-trips as an empty array everywhere: decode yields [],
+        // the push payload expands to a native [] that merge-overwrites, and
+        // all readers do `?? []`.
+        let lineIdsToEncode = completedLineIds ?? []
+        if let data = try? JSONEncoder().encode(lineIdsToEncode),
            let jsonString = String(data: data, encoding: .utf8) {
             try container.encode(jsonString, forKey: .completedLineIds)
-        } else {
-            try container.encodeNil(forKey: .completedLineIds)
         }
 
         try container.encode(createdAt, forKey: .createdAt)
@@ -206,7 +211,13 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         // Windowed Completion sealing.
         try container.encodeIfPresent(sealedAt, forKey: .sealedAt)
         try container.encodeIfPresent(activatedAt, forKey: .activatedAt)
-        // Encode sealedCompletedCells as a JSON string (like completedLineIds).
+        // Encode sealedCompletedCells as a JSON string. Deliberately OMITTED
+        // when nil (unlike completedLineIds above): nil here means "never
+        // sealed" — a distinct state from "sealed with zero complete" ([]) —
+        // and no live path ever clears it (seals are one-way; the pull-path
+        // re-derive writes via raw SQL UPDATE, bypassing this encoder). If a
+        // save()-based clear is ever added, revisit — omit-when-nil would keep
+        // the stale snapshot, the same trap completedLineIds hit.
         if let sealedCompletedCells = sealedCompletedCells,
            let data = try? JSONEncoder().encode(sealedCompletedCells),
            let jsonString = String(data: data, encoding: .utf8) {

@@ -367,7 +367,14 @@ extension AppDatabase {
             let boards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .fetchAll(db)
-                .filter { $0.sealedAt == nil && ($0.status == .active || $0.status == .completed || $0.status == .archived) }
+                // Every non-sealed status is in scope. DRAFT/ARCHIVED matter
+                // because achievement bingo-triggers read ANY non-deleted
+                // board's persisted lines — a stale phantom line on a draft/
+                // archived board would poison a watcher forever if the heal
+                // skipped it. Status transitions below gate on
+                // ACTIVE/COMPLETED, so drafts/archived only get stats
+                // corrected, never status-flipped.
+                .filter { $0.sealedAt == nil }
             guard !boards.isEmpty else { return [] }
 
             let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
@@ -423,7 +430,6 @@ extension AppDatabase {
                 guard changed else { continue }
 
                 updated.completedTasks = update.completedTasks
-                updated.totalTasks = totalSquares
                 updated.linesCompleted = update.linesCompleted
                 updated.completedLineIds = newCompletedLineIds
                 updated.status = newStatus
