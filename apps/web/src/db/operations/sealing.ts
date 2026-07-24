@@ -243,6 +243,127 @@ export async function runBackstopAutoSeal(
   return sealedIds;
 }
 
+/** Order-independent string-array equality (for comparing completedLineIds). */
+function sameStringSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = new Set(a);
+  for (const x of b) if (!sa.has(x)) return false;
+  return true;
+}
+
+/**
+ * Windowed Completion — one-shot self-heal for existing boards (app-open, lazy).
+ *
+ * Before this fix, the edit/structure cascades (add/remove/reorder/edit board +
+ * board-task) recomputed `completedLineIds`/`linesCompleted`/`completedTasks`
+ * from the LIFETIME `Task.isCompleted` cache instead of the board's window, so a
+ * cell holding a task that is lifetime-complete but NOT complete in THIS board's
+ * `[startDate, ∞)` window could be counted into a bingo line while rendering
+ * un-green (a phantom bingo). Boards edited under the old code carry that stale
+ * state on disk. This pass recomputes each live board's stats WINDOWED and, when
+ * anything changed, writes the corrected row (version bump + sync enqueue).
+ *
+ * Scope: the user's non-deleted, non-sealed boards in ACTIVE or COMPLETED status
+ * (DRAFT boards have no meaningful derived stats yet; sealed boards are frozen
+ * and only ever re-derive via the deterministic pull path). Idempotent — once a
+ * board has converged the recompute equals the stored value and it is skipped,
+ * so re-running on every app-open is a no-op and emits no sync churn.
+ *
+ * Lazy/app-open only, mirroring the backstop + recurring-spawn posture — no
+ * background scheduling, no DB write without the user having opened the app.
+ *
+ * @param userId The authenticated user's uid.
+ * @param now    The write timestamp (defaults to wall-clock).
+ * @returns The ids of boards this pass corrected.
+ */
+export async function reDeriveActiveBoards(
+  userId: string,
+  now: string = currentTimestamp(),
+): Promise<string[]> {
+  const boards = await db.boards
+    .filter(
+      (b) =>
+        b.userId === userId &&
+        !b.isDeleted &&
+        !b.sealedAt &&
+        // Every non-sealed status is in scope. DRAFT/ARCHIVED matter because
+        // achievement bingo-triggers read ANY non-deleted board's persisted
+        // lines — a stale phantom line on a draft/archived board would poison
+        // a watcher forever if the heal skipped it. Status transitions below
+        // gate on ACTIVE/COMPLETED, so drafts/archived only get stats
+        // corrected, never status-flipped.
+        (b.status === BoardStatus.ACTIVE ||
+          b.status === BoardStatus.COMPLETED ||
+          b.status === BoardStatus.ARCHIVED ||
+          b.status === BoardStatus.DRAFT),
+    )
+    .toArray();
+  if (boards.length === 0) return [];
+
+  // Build the derivation lookups + full non-deleted event map ONCE, before the
+  // rw transaction (so `db.taskEvents` need not be in the transaction scope —
+  // matches the live-cascade pattern). Active boards have no seal upper bound;
+  // the window is `[startDate, ∞)`, so the unbounded event map is the context.
+  const lookups = await loadDerivationLookups();
+  const windowContext: WindowEvaluationContext = { eventsByTaskId: lookups.eventsByTaskId };
+
+  const rederivedIds: string[] = [];
+
+  await db.transaction('rw', [db.boards, db.syncQueue], async () => {
+    for (const staleBoard of boards) {
+      // Re-read the row INSIDE the txn: the heal fires at app-open, exactly
+      // when the initial sync pull bursts — computing `changed`/version/status
+      // from the pre-txn snapshot could clobber a just-pulled newer row (and
+      // write a version LOWER than remote, silently losing LWW on the push).
+      const board = await db.boards.get(staleBoard.id);
+      if (!board || board.isDeleted || board.sealedAt) continue;
+      const boardTasksOnBoard = lookups.allBoardTasks.filter((bt) => bt.boardId === board.id);
+      const stats = computeBoardStatsUpdate(
+        board,
+        boardTasksOnBoard,
+        lookups.childrenByCompound,
+        lookups.taskById,
+        lookups.allBoards,
+        windowContext,
+      );
+
+      const isGreenlog = stats.completedTasks >= board.boardSize * board.boardSize;
+      let nextStatus = board.status;
+      let nextCompletedAt = board.completedAt;
+      if (isGreenlog && board.status === BoardStatus.ACTIVE) {
+        nextStatus = BoardStatus.COMPLETED;
+        nextCompletedAt = now;
+      } else if (!isGreenlog && board.status === BoardStatus.COMPLETED) {
+        nextStatus = BoardStatus.ACTIVE;
+        nextCompletedAt = undefined;
+      }
+
+      const changed =
+        !sameStringSet(board.completedLineIds ?? [], stats.completedLineIds) ||
+        (board.completedTasks ?? 0) !== stats.completedTasks ||
+        (board.linesCompleted ?? 0) !== stats.linesCompleted ||
+        board.status !== nextStatus;
+      if (!changed) continue;
+
+      const update: Partial<Board> = {
+        completedTasks: stats.completedTasks,
+        linesCompleted: stats.linesCompleted,
+        completedLineIds: stats.completedLineIds,
+        status: nextStatus,
+        completedAt: nextCompletedAt,
+        updatedAt: now,
+        version: (board.version ?? 1) + 1,
+      };
+      await db.boards.update(board.id, update);
+      const updated = await db.boards.get(board.id);
+      if (updated) await addToSyncQueue('boards', board.id, SyncOperationType.UPDATE, updated, 0);
+      rederivedIds.push(board.id);
+    }
+  });
+
+  return rederivedIds;
+}
+
 /**
  * Pull-path seal re-derivation (docs §Seal snapshots re-derive from the event
  * union). For every sealed board that places one of `changedTaskIds` (directly

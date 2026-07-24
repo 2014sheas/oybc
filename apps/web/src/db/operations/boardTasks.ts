@@ -14,6 +14,7 @@ import {
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
+import { buildWindowContext } from './windowContext';
 
 /**
  * BoardTask CRUD Operations
@@ -183,6 +184,11 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
   const parents = findTransitiveParentCompounds(removedTaskId, allCompoundChildren);
   const affectedBoardIds = Array.from(findAffectedBoardIds(removedTaskId, parents, allBoardTasksPre));
 
+  // Windowed Completion — build the event map BEFORE the rw transaction so the
+  // cascade resolves each board against its own window (not the lifetime cache),
+  // and `db.taskEvents` need not be in the transaction scope.
+  const windowContext = await buildWindowContext();
+
   await db.transaction(
     'rw',
     [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
@@ -224,6 +230,7 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
           childrenByCompound,
           taskById,
           allBoards,
+          windowContext,
         );
 
         const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
@@ -310,6 +317,11 @@ export async function addBoardTaskToBoard(
   const parents = findTransitiveParentCompounds(taskId, allCompoundChildren);
   const affectedBoardIds = Array.from(findAffectedBoardIds(taskId, parents, syntheticBoardTasks));
 
+  // Windowed Completion — build the event map BEFORE the rw transaction so the
+  // cascade resolves each board against its own window (not the lifetime cache),
+  // and `db.taskEvents` need not be in the transaction scope.
+  const windowContext = await buildWindowContext();
+
   await db.transaction(
     'rw',
     [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
@@ -349,6 +361,7 @@ export async function addBoardTaskToBoard(
           childrenByCompound,
           taskById,
           allBoards,
+          windowContext,
         );
 
         const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
@@ -445,6 +458,11 @@ export async function reorderBoardTasks(
   const board = allBoards.find((b) => b.id === boardId);
   if (!board || board.isDeleted) return;
 
+  // Windowed Completion — build the event map BEFORE the rw transaction so the
+  // cascade resolves each board against its own window (not the lifetime cache),
+  // and `db.taskEvents` need not be in the transaction scope.
+  const windowContext = await buildWindowContext();
+
   await db.transaction(
     'rw',
     [db.boardTasks, db.boards, db.syncQueue],
@@ -480,6 +498,7 @@ export async function reorderBoardTasks(
         childrenByCompound,
         taskById,
         allBoards,
+        windowContext,
       );
 
       const totalSquares = board.boardSize * board.boardSize;
@@ -580,6 +599,11 @@ export async function updateBoardTaskAndCascade(
 
   const affectedBoardIds = Array.from(new Set([...oldAffected, ...newAffected]));
 
+  // Windowed Completion — build the event map BEFORE the rw transaction so the
+  // cascade resolves each board against its own window (not the lifetime cache),
+  // and `db.taskEvents` need not be in the transaction scope.
+  const windowContext = await buildWindowContext();
+
   // 3. Write the patch + cascade in one transaction.
   await db.transaction(
     'rw',
@@ -627,6 +651,7 @@ export async function updateBoardTaskAndCascade(
           childrenByCompound,
           taskById,
           allBoards,
+          windowContext,
         );
 
         const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;

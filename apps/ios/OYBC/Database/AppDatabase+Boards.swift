@@ -362,6 +362,12 @@ extension AppDatabase {
                 affectedBoardIds.formUnion(ids)
             }
 
+            // Windowed Completion: resolve each board against its own
+            // `[startDate, ∞)` window from the event log, not the lifetime
+            // `Task.isCompleted` cache (which would count out-of-window cells
+            // into bingo lines → phantom bingos).
+            let windowContext = try Self.buildWindowContext(db: db)
+
             // Update each affected board exactly once.
             for affectedBoardId in affectedBoardIds {
                 // Re-fetch to see the just-written metadata update above.
@@ -373,7 +379,8 @@ extension AppDatabase {
                     boardTasksOnBoard: boardTasksOnBoard,
                     childrenByCompound: childrenByCompound,
                     taskById: taskById,
-                    allBoards: allBoards
+                    allBoards: allBoards,
+                    windowContext: windowContext
                 )
 
                 let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize

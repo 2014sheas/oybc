@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { runBackstopAutoSeal } from '../db/operations/sealing';
+import { runBackstopAutoSeal, reDeriveActiveBoards } from '../db/operations/sealing';
 
 /**
  * Windowed Completion — lazy auto-seal backstop hook
@@ -31,6 +31,12 @@ export function useBackstopAutoSeal(userId: string | undefined): void {
       try {
         if (cancelled) return;
         await runBackstopAutoSeal(userId);
+        if (cancelled) return;
+        // Windowed Completion self-heal — correct any board carrying stale
+        // lifetime-derived stats from the pre-fix edit/structure cascades
+        // (phantom bingo lines). Idempotent; runs after the backstop so newly
+        // sealed boards drop out of the active set here.
+        await reDeriveActiveBoards(userId);
       } catch (err) {
         console.error('[backstop-auto-seal] failed', err);
       } finally {

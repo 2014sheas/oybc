@@ -117,8 +117,8 @@ export function computeBoardStatsUpdate(
   boardTasksOnBoard: BoardTask[],
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
-  allBoards: Board[] = [],
-  windowContext?: WindowEvaluationContext,
+  allBoards: Board[],
+  windowContext: WindowEvaluationContext | undefined,
 ): BoardStatsUpdate {
   const { grid, completedTasks } = computeBoardGrid(
     board,
@@ -161,7 +161,10 @@ export function computeBoardStatsUpdate(
  * @param childrenByCompound Map of compoundTaskId → CompoundChild rows.
  * @param taskById           Map of taskId → Task.
  * @param allBoards          Cross-board context (achievement watchers).
- * @param windowContext      Optional windowed-event context; omitted = lifetime.
+ * @param windowContext      Windowed-event context; pass `undefined` for
+ *                           lifetime resolution (deliberate migration / seal
+ *                           snapshots). Required positionally so a live
+ *                           cascade can never silently fall back to lifetime.
  * @returns Ascending cell indexes that are green.
  */
 export function computeSealedCompletedCells(
@@ -169,8 +172,8 @@ export function computeSealedCompletedCells(
   boardTasksOnBoard: BoardTask[],
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
-  allBoards: Board[] = [],
-  windowContext?: WindowEvaluationContext,
+  allBoards: Board[],
+  windowContext: WindowEvaluationContext | undefined,
 ): number[] {
   const { grid } = computeBoardGrid(
     board,
