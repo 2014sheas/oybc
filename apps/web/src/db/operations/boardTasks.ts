@@ -21,80 +21,109 @@ import { buildWindowContext } from './windowContext';
  */
 
 /**
- * Fetch all board tasks for a board
+ * Fetch all non-deleted board tasks for a board
  */
 export async function fetchBoardTasks(boardId: string): Promise<BoardTask[]> {
-  return db.boardTasks.where('boardId').equals(boardId).toArray();
+  return db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).toArray();
 }
 
 /**
- * Fetch a single board task by ID
+ * Fetch a single board task by ID. Returns tombstoned rows too — callers
+ * that only want live placements should check `.isDeleted` themselves
+ * (mirrors `fetchCompoundChild`/`fetchBoard`, which are also un-filtered
+ * single-id lookups; the filtering convention lives on the collection-scan
+ * helpers, not point lookups).
  */
 export async function fetchBoardTask(id: string): Promise<BoardTask | undefined> {
   return db.boardTasks.get(id);
 }
 
 /**
- * Fetch every BoardTask placement row referencing a given Task.
+ * Fetch every non-deleted BoardTask placement row referencing a given Task.
  *
  * Distinct from `fetchBoardsUsingTask` (which returns just the boardIds) —
  * this returns the full placement rows for per-placement UI (task detail).
  *
  * @param taskId - The placed Task's id.
- * @returns All BoardTask rows whose `taskId` matches.
+ * @returns All non-deleted BoardTask rows whose `taskId` matches.
  */
 export async function fetchBoardTasksForTask(taskId: string): Promise<BoardTask[]> {
-  return db.boardTasks.where('taskId').equals(taskId).toArray();
+  return db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
 }
 
 /**
- * Count the BoardTask rows placed on a board.
+ * Count the non-deleted BoardTask rows placed on a board.
  *
  * Used by the board-edit panel to know whether a board has any candidate
  * tasks without loading every row.
  *
  * @param boardId - The board id.
- * @returns The number of BoardTask rows for that board.
+ * @returns The number of non-deleted BoardTask rows for that board.
  */
 export async function countBoardTasksForBoard(boardId: string): Promise<number> {
-  return db.boardTasks.where('boardId').equals(boardId).count();
+  return db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).count();
 }
 
 /**
- * Hard-deletes every `BoardTask` row for the given board and queues
- * each removal for sync. Used when re-saving a draft whose task
- * placement has changed — simpler than diffing the old layout
- * against the new one, and tolerable at scale (at most 25 cells).
+ * Soft-deletes (tombstones) every live `BoardTask` row for the given board
+ * and queues each tombstone for sync. Used when re-saving a draft whose
+ * task placement has changed — simpler than diffing the old layout against
+ * the new one, and tolerable at scale (at most 25 cells).
  *
- * `BoardTask` has no `isDeleted` flag, so the deletion is literal;
- * the sync queue `DELETE` operation propagates removal to Firestore
- * and other devices apply the delete on their next pull.
+ * Board-integrity PR-1 (docs/BOARD_INTEGRITY.md): `BoardTask` now carries
+ * `isDeleted`/`deletedAt` like every other synced collection. A hard
+ * `db.boardTasks.delete()` here would resurrect the row on the next pull
+ * whenever the pushed tombstone LOST the LWW tie-break (the exact bug this
+ * PR fixes) — the row must survive locally as a tombstone so the version
+ * bump wins the tie-break and the deletion actually sticks.
  */
 export async function deleteBoardTasksForBoard(boardId: string): Promise<void> {
-  const tasks = await db.boardTasks.where('boardId').equals(boardId).toArray();
+  const now = currentTimestamp();
+  const tasks = await db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).toArray();
   for (const bt of tasks) {
-    await db.boardTasks.delete(bt.id);
-    await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+    const tombstoned = buildBoardTaskTombstone(bt, now);
+    await db.boardTasks.update(bt.id, tombstoned);
+    await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
   }
 }
 
 /**
- * Fetch every BoardTask in the workspace.
+ * Build the tombstoned (soft-deleted) snapshot for a live BoardTask row.
+ * Pure — callers write it via `db.boardTasks.update`/`.put` and enqueue it
+ * for sync. Bumping `version` here is what makes the sync-layer LWW
+ * tie-break favor the tombstone over a same-version remote live row (the
+ * root fix of docs/BOARD_INTEGRITY.md PR-1 — see `BoardTask`'s docstring).
+ *
+ * @param existing - The live BoardTask row being removed.
+ * @param now - The shared write timestamp for this deletion.
+ */
+export function buildBoardTaskTombstone(existing: BoardTask, now: string): BoardTask {
+  return {
+    ...existing,
+    isDeleted: true,
+    deletedAt: now,
+    updatedAt: now,
+    version: (existing.version ?? 0) + 1,
+  };
+}
+
+/**
+ * Fetch every non-deleted BoardTask in the workspace.
  *
  * Used by the derivation pass to find which boards are affected by a
  * Task state change. Small-N: every BoardTask across every board.
  * Typical user has fewer than a few thousand.
  *
- * Note: BoardTask has no isDeleted field (placement removals are hard
- * deletes), so all returned rows are live.
+ * Filters tombstones here (not per call site) so no cascade caller can
+ * forget — a tombstoned placement must never contribute to board stats.
  */
 export async function fetchAllBoardTasks(): Promise<BoardTask[]> {
-  return db.boardTasks.toArray();
+  return db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
 }
 
 /**
- * Fetch BoardTask rows for the given board ids, grouped by boardId.
- * Returns a Map keyed by boardId; boards with no BoardTasks have an empty array entry.
+ * Fetch non-deleted BoardTask rows for the given board ids, grouped by boardId.
+ * Returns a Map keyed by boardId; boards with no live BoardTasks have an empty array entry.
  */
 export async function fetchBoardTasksForBoards(
   boardIds: string[],
@@ -102,7 +131,7 @@ export async function fetchBoardTasksForBoards(
   const out = new Map<string, BoardTask[]>();
   for (const id of boardIds) out.set(id, []);
   if (boardIds.length === 0) return out;
-  const rows = await db.boardTasks.where('boardId').anyOf(boardIds).toArray();
+  const rows = await db.boardTasks.where('boardId').anyOf(boardIds).filter((bt) => !bt.isDeleted).toArray();
   for (const row of rows) {
     const arr = out.get(row.boardId);
     if (arr) arr.push(row);
@@ -132,6 +161,7 @@ export async function createBoardTask(
     createdAt: currentTimestamp(),
     updatedAt: currentTimestamp(),
     version: 1,
+    isDeleted: false,
   };
 
   await db.boardTasks.add(boardTask);
@@ -140,10 +170,10 @@ export async function createBoardTask(
 }
 
 /**
- * Find all boards using a specific task
+ * Find all boards using a specific task (live placements only)
  */
 export async function fetchBoardsUsingTask(taskId: string): Promise<string[]> {
-  const boardTasks = await db.boardTasks.where('taskId').equals(taskId).toArray();
+  const boardTasks = await db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
   return [...new Set(boardTasks.map((bt) => bt.boardId))];
 }
 
@@ -152,10 +182,15 @@ export async function fetchBoardsUsingTask(taskId: string): Promise<string[]> {
 /**
  * Remove a single BoardTask placement from an ACTIVE board (live-edit M4).
  *
- * Semantics:
- *   - Hard-deletes the BoardTask row (BoardTask has no isDeleted field; removal
- *     is always a physical delete, consistent with `deleteBoardTasksForBoard`).
- *   - Enqueues a DELETE sync entry so the tombstone propagates to Firestore.
+ * Semantics (Board-integrity PR-1, docs/BOARD_INTEGRITY.md):
+ *   - SOFT-deletes (tombstones) the BoardTask row — `isDeleted`/`deletedAt`
+ *     set, `version` bumped, row stays in Dexie. The version bump is load-
+ *     bearing: it's what makes the tombstone WIN the sync-layer LWW
+ *     tie-break against a same-version remote live row, instead of the
+ *     stale pre-delete snapshot losing the tie and getting pushed BACK
+ *     locally by the safety-net pull (the self-revert bug this PR fixes).
+ *   - Enqueues a DELETE sync entry (with the fresh tombstoned payload, not
+ *     the pre-delete snapshot) so the tombstone propagates to Firestore.
  *   - Runs the batched cascade pattern from M2/M3: computes affected board IDs
  *     for the removed task (and any compound parents), then re-derives board stats
  *     + status for every affected board in one Dexie transaction.
@@ -171,13 +206,13 @@ export async function fetchBoardsUsingTask(taskId: string): Promise<string[]> {
  */
 export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<void> {
   const existing = await db.boardTasks.get(boardTaskId);
-  if (!existing) return;
+  if (!existing || existing.isDeleted) return;
 
   const now = currentTimestamp();
   const removedTaskId = existing.taskId;
 
   // Gather workspace data BEFORE the delete so we can compute affected boards.
-  const allBoardTasksPre = await db.boardTasks.toArray();
+  const allBoardTasksPre = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const allCompoundChildren = await fetchAllCompoundChildren();
 
   // Affected boards: those placing the removed task directly OR via a compound parent.
@@ -193,14 +228,17 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
     'rw',
     [db.boardTasks, db.boards, db.tasks, db.compoundChildren, db.syncQueue],
     async () => {
-      // 1. Hard-delete the BoardTask placement.
-      await db.boardTasks.delete(boardTaskId);
+      // 1. Soft-delete (tombstone) the BoardTask placement.
+      const tombstoned = buildBoardTaskTombstone(existing, now);
+      await db.boardTasks.update(boardTaskId, tombstoned);
 
-      // Enqueue DELETE tombstone for sync.
-      await addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.DELETE, existing, 0);
+      // Enqueue DELETE with the FRESH tombstoned payload (version bumped) —
+      // not `existing`, whose stale version was the root cause of the
+      // self-revert bug (see docstring above).
+      await addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.DELETE, tombstoned, 0);
 
       // 2. Fetch post-delete state for cascade pass.
-      const allBoardTasksPost = await db.boardTasks.toArray();
+      const allBoardTasksPost = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
       const allTasks = await db.tasks.toArray();
       const allBoards = await db.boards.toArray();
       const allChildren = await db.compoundChildren.toArray();
@@ -306,10 +344,11 @@ export async function addBoardTaskToBoard(
     createdAt: now,
     updatedAt: now,
     version: 1,
+    isDeleted: false,
   };
 
   // Gather workspace data BEFORE the insert for affected-board computation.
-  const allBoardTasksPre = await db.boardTasks.toArray();
+  const allBoardTasksPre = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const allCompoundChildren = await fetchAllCompoundChildren();
 
   // Compute affected boards using the post-insert state (the new placement is included).
@@ -331,7 +370,7 @@ export async function addBoardTaskToBoard(
       await addToSyncQueue('boardTasks', newBoardTask.id, SyncOperationType.CREATE, newBoardTask, 0);
 
       // 2. Fetch post-insert state for cascade pass.
-      const allBoardTasksPost = await db.boardTasks.toArray();
+      const allBoardTasksPost = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
       const allTasks = await db.tasks.toArray();
       const allBoards = await db.boards.toArray();
       const allChildren = await db.compoundChildren.toArray();
@@ -474,7 +513,7 @@ export async function reorderBoardTasks(
       // 1. Write new row/col for every moved BoardTask (version-bumped; isCenter kept).
       for (const move of moves) {
         const existing = await db.boardTasks.get(move.boardTaskId);
-        if (!existing) continue;
+        if (!existing || existing.isDeleted) continue;
 
         const patched: BoardTask = {
           ...existing,
@@ -494,6 +533,7 @@ export async function reorderBoardTasks(
       const boardTasksOnBoard = await db.boardTasks
         .where('boardId')
         .equals(boardId)
+        .filter((bt) => !bt.isDeleted)
         .toArray();
 
       const stats: BoardStatsUpdate = computeBoardStatsUpdate(
@@ -570,7 +610,7 @@ export async function updateBoardTaskAndCascade(
 ): Promise<void> {
   // 1. Fetch the existing BoardTask.
   const existing = await db.boardTasks.get(boardTaskId);
-  if (!existing) return;
+  if (!existing || existing.isDeleted) return;
 
   const oldTaskId = existing.taskId;
   // No-op guard: swapping to the same task is a no-op.
@@ -580,7 +620,7 @@ export async function updateBoardTaskAndCascade(
 
   // 2. Gather all workspace data for the cascade pass (fetched once outside
   //    the transaction so the transaction body stays thin).
-  const allBoardTasksPre = await db.boardTasks.toArray();
+  const allBoardTasksPre = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const allCompoundChildren = await fetchAllCompoundChildren();
 
   // Build the union of affected board IDs for OLD and NEW tasks.
@@ -625,7 +665,7 @@ export async function updateBoardTaskAndCascade(
 
       // 3b. Fetch fresh workspace data inside the transaction for the cascade pass.
       //     We need the post-patch boardTask list and the full task / child sets.
-      const allBoardTasksPost = await db.boardTasks.toArray();
+      const allBoardTasksPost = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
       const allTasks = await db.tasks.toArray();
       const allBoards = await db.boards.toArray();
       const allChildren = await db.compoundChildren.toArray();

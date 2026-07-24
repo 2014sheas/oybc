@@ -94,6 +94,7 @@ async function seedBoardWithTasks(boardId: string, taskIds: string[]): Promise<v
       createdAt: START,
       updatedAt: START,
       version: 1,
+      isDeleted: false,
     };
     await db.boardTasks.add(bt);
     cell += 1;

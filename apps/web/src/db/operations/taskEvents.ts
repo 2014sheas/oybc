@@ -151,8 +151,9 @@ export async function recomputeTaskCachesFromPull(taskId: string): Promise<void>
 async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWindow[]> {
   const sealedBoards = (await db.boards.toArray()).filter((b) => !b.isDeleted && b.sealedAt != null);
   if (sealedBoards.length === 0) return [];
-  // BoardTask rows are hard-deleted (no soft-delete flag), so no isDeleted filter.
-  const boardTasks = await db.boardTasks.toArray();
+  // Live placements only — a tombstoned BoardTask no longer places the task
+  // on this board (docs/BOARD_INTEGRITY.md).
+  const boardTasks = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const children = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
   const parents = findTransitiveParentCompounds(taskId, children);
   const affected = findAffectedBoardIds(taskId, parents, boardTasks);

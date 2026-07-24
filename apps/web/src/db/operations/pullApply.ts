@@ -17,7 +17,7 @@ import {
 import { db } from '../internal';
 import { resolveConflict, type SyncableEntity } from '../../firebase/conflictResolver';
 import { recordSyncEvent } from '../../firebase/syncStatus';
-import { runBoardCascadeForTask } from './orchestration';
+import { runBoardCascadeForTask, runBoardCascadeForBoardId } from './orchestration';
 import { reDeriveSealedBoardsByIds } from './sealing';
 
 /**
@@ -174,6 +174,30 @@ export async function applyRemoteSubdoc(
         const sealedAt = (validated as { sealedAt?: unknown }).sealedAt;
         if (typeof sealedAt === 'string' && sealedAt) {
           await reDeriveSealedBoardsByIds([validated.id]);
+        }
+      } else if (collectionName === 'boardTasks') {
+        // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — the boardTasks-pull
+        // cascade. Before this fix, a pulled placement (live OR tombstone)
+        // triggered NO board re-derivation, so a receiving device's
+        // `completedLineIds` (positional!) went stale after a remote
+        // rearrange, and a pulled tombstone left the removed cell counted in
+        // `completedTasks` until some unrelated cascade happened to touch
+        // the board. `boardId` is already known directly from the pulled
+        // row (unlike the `tasks` branch, which must resolve affected
+        // boards via task→board reachability, which a pulled tombstone is
+        // invisible to), so this recomputes that ONE board directly.
+        const boardId = (validated as { boardId?: unknown }).boardId;
+        if (typeof boardId === 'string' && boardId) {
+          await runBoardCascadeForBoardId(boardId);
+          // Sealed re-derive mirrors the `boards` branch above: the live
+          // cascade above is a no-op for a sealed board (never mutates it),
+          // so re-derive its frozen snapshot from the local converged event
+          // union so a pulled tombstone/rearrange still lands on the sealed
+          // record instead of sticking stale forever.
+          const affectedBoard = await db.boards.get(boardId);
+          if (affectedBoard?.sealedAt) {
+            await reDeriveSealedBoardsByIds([boardId]);
+          }
         }
       }
     },

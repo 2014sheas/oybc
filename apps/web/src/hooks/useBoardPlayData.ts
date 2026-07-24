@@ -87,7 +87,7 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
 
   // Workspace-wide BoardTask list for compound child toggle fallback.
   const allBoardTasks: BoardTask[] =
-    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+    useLiveQuery(() => db.boardTasks.filter((bt) => !bt.isDeleted).toArray(), []) ?? EMPTY_BOARD_TASKS;
 
   // Phase 6.3 — workspace data needed by per-cell badge data computation
   // for ACHIEVEMENT-typed Tasks. Reuses existing hooks; `useBoards`

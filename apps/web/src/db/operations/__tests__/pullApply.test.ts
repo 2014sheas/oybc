@@ -146,6 +146,7 @@ const FIXTURES: Record<
       createdAt: NOW,
       updatedAt: NOW,
       version: 1,
+      isDeleted: false,
     }),
   },
   compositeTasks: {
@@ -374,6 +375,7 @@ describe('applyRemoteSubdoc — sealed-board pull re-derive (item 1)', () => {
       createdAt: START,
       updatedAt: START,
       version: 1,
+      isDeleted: false,
     };
     await db.boardTasks.add(localBoardTask);
 

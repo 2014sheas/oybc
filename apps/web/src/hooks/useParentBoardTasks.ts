@@ -62,6 +62,7 @@ export function useParentBoardTasks(
         const parentBoardTasks = await db.boardTasks
           .where('boardId')
           .anyOf(parentIds)
+          .filter((bt) => !bt.isDeleted)
           .toArray();
 
         const taskIds = Array.from(

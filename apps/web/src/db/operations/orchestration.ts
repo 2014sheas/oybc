@@ -198,6 +198,89 @@ export async function runBoardCascadeForTasks(
   return resultMap;
 }
 
+/**
+ * Run the derivation pass for a SPECIFIC board, not via task-driven
+ * affected-board discovery (Board-integrity PR-1, docs/BOARD_INTEGRITY.md —
+ * the boardTasks-pull cascade).
+ *
+ * `runBoardCascadeForTask(s)` resolve the affected-board set by walking
+ * `taskId → boardId` reachability over the LIVE (non-deleted) `boardTasks`
+ * snapshot. That's wrong for a pulled `boardTasks` row: a pulled TOMBSTONE
+ * is (correctly) invisible to that reachability walk, so a board that lost
+ * its only placement of a task via a remote delete would never be
+ * discovered as "affected" and its stats would go stale forever. Here the
+ * board is already known directly from the pulled row's `boardId`, so this
+ * recomputes that ONE board unconditionally from the post-pull snapshot —
+ * mirroring `reorderBoardTasks`'s board-driven (not task-driven) recompute,
+ * which is exactly this same shape (positional bingo lines can change from
+ * either a live rearrange or a pulled one).
+ *
+ * Sealed boards are skipped (live derivation never mutates a sealed board);
+ * callers are responsible for invoking the deterministic sealed re-derive
+ * (`reDeriveSealedBoardsByIds`) separately when the board is sealed —
+ * mirrors the `boards`-pull branch in `pullApply.ts`.
+ *
+ * Same transaction contract as `runBoardCascadeForTask` — must run inside an
+ * active Dexie `rw` transaction covering `boards`, `boardTasks`, `tasks`,
+ * `compoundChildren`, and `syncQueue`.
+ *
+ * @param boardId The board to recompute.
+ */
+export async function runBoardCascadeForBoardId(boardId: string): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board || board.isDeleted || board.sealedAt) return;
+
+  const now = currentTimestamp();
+  const allChildren = await fetchAllCompoundChildren();
+  const allBoardTasks = await fetchAllBoardTasks();
+  const allTasks = await db.tasks.toArray();
+  const allBoards = await db.boards.toArray();
+  const windowContext = await buildWindowContext();
+
+  const taskById: Record<string, Task> = {};
+  for (const t of allTasks) taskById[t.id] = t;
+
+  const childrenByCompound: Record<string, CompoundChild[]> = {};
+  for (const c of allChildren) {
+    (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+  }
+
+  const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === boardId);
+  const stats: BoardStatsUpdate = computeBoardStatsUpdate(
+    board,
+    boardTasksOnBoard,
+    childrenByCompound,
+    taskById,
+    allBoards,
+    windowContext,
+  );
+
+  const totalSquares = board.boardSize * board.boardSize;
+  const isGreenlog = stats.completedTasks >= totalSquares;
+
+  const boardUpdate: Partial<Board> = {
+    completedTasks: stats.completedTasks,
+    linesCompleted: stats.linesCompleted,
+    completedLineIds: stats.completedLineIds,
+    updatedAt: now,
+    version: (board.version ?? 1) + 1,
+  };
+
+  if (isGreenlog && board.status === BoardStatus.ACTIVE) {
+    boardUpdate.status = BoardStatus.COMPLETED;
+    boardUpdate.completedAt = now;
+  } else if (!isGreenlog && board.status === BoardStatus.COMPLETED) {
+    boardUpdate.status = BoardStatus.ACTIVE;
+    boardUpdate.completedAt = undefined;
+  }
+
+  await db.boards.update(boardId, boardUpdate);
+  const updatedBoard = await db.boards.get(boardId);
+  if (updatedBoard) {
+    await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard, 0);
+  }
+}
+
 // ─── Orchestration ───────────────────────────────────────────────────────────
 
 /**
@@ -273,7 +356,7 @@ export async function handleTaskCompletion(
 
       // 2. Resolve target BoardTask + its underlying Task.
       const targetBt = await db.boardTasks.get(boardTaskId);
-      if (!targetBt) throw new Error(`BoardTask ${boardTaskId} not found`);
+      if (!targetBt || targetBt.isDeleted) throw new Error(`BoardTask ${boardTaskId} not found`);
       if (targetBt.boardId !== boardId) {
         throw new Error(`BoardTask ${boardTaskId} does not belong to board ${boardId}`);
       }

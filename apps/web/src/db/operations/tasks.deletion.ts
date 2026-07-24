@@ -15,6 +15,7 @@ import {
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { buildWindowContext } from './windowContext';
+import { buildBoardTaskTombstone } from './boardTasks';
 
 /**
  * Soft delete a task.
@@ -72,13 +73,14 @@ export interface TaskDeletionImpact {
 export async function computeTaskDeletionImpact(
   id: string,
 ): Promise<TaskDeletionImpact> {
-  const allPlacements = await db.boardTasks.where('taskId').equals(id).toArray();
-  // Filter to placements on non-deleted boards. `BoardTask` has no
-  // `isDeleted` column (deletes are hard) so an orphan placement on a
-  // soft-deleted board persists in the table forever — those rows
-  // shouldn't inflate the user-facing impact count. The actual cascade
-  // still hard-deletes ALL matching `BoardTask` rows (storage cleanup),
-  // but the dialog only reports on cells the user can still see.
+  const allPlacements = await db.boardTasks
+    .where('taskId').equals(id)
+    .filter((bt) => !bt.isDeleted)
+    .toArray();
+  // Filter to placements on non-deleted boards too. An orphan placement on
+  // a soft-deleted board shouldn't inflate the user-facing impact count.
+  // The actual cascade tombstones ALL matching live `BoardTask` rows, but
+  // the dialog only reports on cells the user can still see.
   const boardIdsAll = Array.from(new Set(allPlacements.map((bt) => bt.boardId)));
   const liveBoards =
     boardIdsAll.length === 0
@@ -118,11 +120,13 @@ export async function computeTaskDeletionImpact(
  * Dexie transaction so a partial cascade can't leave the database in a
  * half-deleted state:
  *
- * 1. **BoardTask placements** referencing this task — *hard-deleted*.
- *    `BoardTask` has no `isDeleted` field (`deleteBoardTasksForBoard`
- *    uses the same hard-delete pattern when a draft is re-saved). Each
- *    removal also gets a sync-queue DELETE so other devices drop the
- *    placement on their next pull.
+ * 1. **BoardTask placements** referencing this task — *soft-deleted*
+ *    (tombstoned: `isDeleted` + `deletedAt` + version bump), matching
+ *    `deleteBoardTasksForBoard`'s pattern when a draft is re-saved (see
+ *    docs/BOARD_INTEGRITY.md — a hard delete here would let the pushed
+ *    tombstone lose the LWW tie-break and resurrect the placement on the
+ *    next pull). Each tombstone also gets a sync-queue DELETE so other
+ *    devices drop the placement on their next pull.
  * 2. **`CompoundChild` rows where the task IS the parent compound** —
  *    soft-deleted (version bump + isDeleted=true + deletedAt). The
  *    child Tasks themselves stay alive — they may still be useful as
@@ -181,18 +185,22 @@ export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promi
   // 0. Compute the affected-board set BEFORE any delete write — boards
   //    placing this task directly or via a compound parent (the same
   //    reachability `removeBoardTaskFromBoard` uses). After the placements
-  //    are hard-deleted below, this reachability is no longer recoverable,
-  //    so it must be captured first.
-  const allBoardTasksPre = await db.boardTasks.toArray();
+  //    are tombstoned below, this reachability is no longer recoverable
+  //    via the live-only filter, so it must be captured first.
+  const allBoardTasksPre = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const allChildrenPre = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
   const parents = findTransitiveParentCompounds(id, allChildrenPre);
   const affectedBoardIds = Array.from(findAffectedBoardIds(id, parents, allBoardTasksPre));
 
-  // 1. Hard-delete BoardTask placements.
-  const placements = await db.boardTasks.where('taskId').equals(id).toArray();
+  // 1. Soft-delete (tombstone) BoardTask placements.
+  const placements = await db.boardTasks
+    .where('taskId').equals(id)
+    .filter((bt) => !bt.isDeleted)
+    .toArray();
   for (const bt of placements) {
-    await db.boardTasks.delete(bt.id);
-    await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+    const tombstoned = buildBoardTaskTombstone(bt, now);
+    await db.boardTasks.update(bt.id, tombstoned);
+    await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
   }
 
   // 2 + 3. Soft-delete compound-child links — both as-parent and
@@ -241,7 +249,7 @@ export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promi
     // cascade resolves each board against its own window.
     const windowContext = await buildWindowContext();
 
-    const allBoardTasksPost = await db.boardTasks.toArray();
+    const allBoardTasksPost = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
     const allTasks = await db.tasks.toArray();
     const allBoards = await db.boards.toArray();
     const allChildrenPost = await db.compoundChildren.toArray();

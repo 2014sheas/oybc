@@ -149,6 +149,7 @@ export async function incrementSharedCounter(
       const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
       const placements = await db.boardTasks
         .where('taskId').anyOf(allChangedTaskIds)
+        .filter((bt) => !bt.isDeleted)
         .toArray();
       const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
       const boardRows = uniqueBoardIds.length > 0
@@ -294,6 +295,7 @@ export async function decrementSharedCounter(
       const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
       const placements = await db.boardTasks
         .where('taskId').anyOf(allChangedTaskIds)
+        .filter((bt) => !bt.isDeleted)
         .toArray();
       const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
       const boardRows = uniqueBoardIds.length > 0
@@ -474,6 +476,7 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
       const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
       const placements = await db.boardTasks
         .where('taskId').anyOf(allChangedTaskIds)
+        .filter((bt) => !bt.isDeleted)
         .toArray();
       const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
       const boardRows = uniqueBoardIds.length > 0

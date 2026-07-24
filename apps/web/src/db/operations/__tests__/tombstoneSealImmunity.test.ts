@@ -103,6 +103,7 @@ async function placeTask(boardId: string, taskId: string, cell = 0): Promise<voi
     createdAt: START,
     updatedAt: START,
     version: 1,
+    isDeleted: false,
   };
   await db.boardTasks.add(bt);
 }

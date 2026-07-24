@@ -113,6 +113,7 @@ function makeBoardTask(boardId: string, taskId: string, row: number, col: number
     createdAt: START,
     updatedAt: START,
     version: 1,
+    isDeleted: false,
   };
 }
 

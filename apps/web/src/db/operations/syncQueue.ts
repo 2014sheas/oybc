@@ -67,7 +67,13 @@ export const TASK_EVENTS_ENTITY_TYPE = 'taskEvents';
  *   entity, create-then-delete nets to nothing anywhere → DROP. Otherwise keep
  *   the row as DELETE — pushing a tombstone for a doc that may not exist is
  *   harmless (it just writes an inert `isDeleted=true` doc), whereas an
- *   orphaned live doc is silent divergence.
+ *   orphaned live doc is silent divergence. (Board-integrity PR-1,
+ *   docs/BOARD_INTEGRITY.md: this was NOT true for `boardTasks` before —
+ *   `BoardTask` had no `isDeleted` field, so a DELETE-coalesced payload was
+ *   a plain live-looking snapshot with no tombstone marker at all, and the
+ *   sync layer never called Firestore `deleteDoc` either. `boardTasks` now
+ *   carries `isDeleted`/`deletedAt` like every other collection here, so
+ *   this reasoning applies to it uniformly too.)
  * - **UPDATE + DELETE → DELETE**: a standalone PENDING update means the create
  *   already pushed (the server has the doc), so the tombstone (a full snapshot
  *   with `isDeleted=true`) must be pushed to mark it deleted.

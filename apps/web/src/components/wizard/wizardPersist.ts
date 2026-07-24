@@ -198,7 +198,7 @@ export interface PersistWizardBoardArgs {
  *   flip to ACTIVE via `activateBoard` (second version bump).
  * - **Draft update** (`draftBoardId` set): `updateBoard` with the
  *   target status and all other fields → `deleteBoardTasksForBoard`
- *   (hard delete + sync DELETE) → per-cell `createBoardTask`.
+ *   (soft delete/tombstone + sync DELETE) → per-cell `createBoardTask`.
  *
  * Returns the resulting `boardId`. Errors propagate.
  */

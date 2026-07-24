@@ -106,11 +106,11 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   // Issue #73 — group compound children under their parent by default.
   const [groupByCompound, setGroupByCompound] = useState(true);
 
-  // Workspace-wide BoardTasks. `BoardTask` has no `isDeleted` field
-  // (deletes are hard via `deleteBoardTasksForBoard`), so the table
-  // already represents the live placement set. Small-N — even very
-  // active users have well under a few thousand placements. We need
-  // the `boardId` join to filter by `Board.status` below.
+  // Workspace-wide BoardTasks. `fetchAllBoardTasks` filters tombstoned
+  // rows internally (docs/BOARD_INTEGRITY.md), so this already represents
+  // the live placement set. Small-N — even very active users have well
+  // under a few thousand placements. We need the `boardId` join to filter
+  // by `Board.status` below.
   const allBoardTasks =
     useLiveQuery(() => fetchAllBoardTasks(), []) ?? EMPTY_BOARD_TASKS;
   const allBoards =

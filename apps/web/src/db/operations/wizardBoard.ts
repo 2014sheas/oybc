@@ -60,8 +60,8 @@ export interface PersistWizardBoardRowsInput {
  *   → per-cell `createBoardTask` → if `status === 'active'`, flip to ACTIVE
  *   via `activateBoard`.
  * - **Draft update** (`draftBoardId` set): `updateBoard` with the target
- *   status → `deleteBoardTasksForBoard` (hard delete + sync DELETE) →
- *   per-cell `createBoardTask`.
+ *   status → `deleteBoardTasksForBoard` (soft delete/tombstone + sync
+ *   DELETE, docs/BOARD_INTEGRITY.md) → per-cell `createBoardTask`.
  *
  * @param input - Resolved board fields, placement, and pending tasks.
  * @returns The resulting board id.
@@ -200,6 +200,7 @@ export async function persistWizardBoardRows({
         const boardTasksOnBoard = await db.boardTasks
           .where('boardId')
           .equals(boardId)
+          .filter((bt) => !bt.isDeleted)
           .toArray();
         const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
         const childrenByCompound: Record<string, CompoundChild[]> = {};

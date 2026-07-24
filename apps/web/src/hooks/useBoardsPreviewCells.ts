@@ -37,7 +37,8 @@ export function useBoardsPreviewCells(
   userId: string | undefined,
 ): Record<string, BoardPreviewCellsResult> {
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(userId);
-  const allBoardTasks: BoardTask[] = useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+  const allBoardTasks: BoardTask[] =
+    useLiveQuery(() => db.boardTasks.filter((bt) => !bt.isDeleted).toArray(), []) ?? EMPTY_BOARD_TASKS;
   const allTaskEvents: TaskEvent[] = useLiveQuery(() => db.taskEvents.toArray(), []) ?? EMPTY_TASK_EVENTS;
 
   // windowStart is irrelevant here — buildBoardPreviewCells reads each
