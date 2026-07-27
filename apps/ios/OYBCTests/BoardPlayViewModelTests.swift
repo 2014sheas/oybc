@@ -829,6 +829,40 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(vm.boardTasks.contains { $0.taskId == "t1" && $0.row == 1 && $0.col == 2 })
     }
 
+    /// Board-integrity PR-5 (issue #362, Item 4): `handleAddTaskToCell` lacked
+    /// the `guard !isProcessing else { return }` reentry guard every sibling
+    /// handler has. A rapid double-tap before the first write's async tail
+    /// completes must fire the write exactly once — the second call is a
+    /// silent no-op — not enqueue a second create + a duplicate-placement
+    /// error path.
+    func test_handleAddTaskToCell_reentrantCallIsNoOp() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("t1"))
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.handleAddTaskToCell(taskId: "t1", row: 1, col: 2)
+        XCTAssertTrue(vm.isProcessing, "first call should have set isProcessing synchronously")
+        // Fired while the first call's detached write is still in flight —
+        // the guard must make this a same-tick no-op.
+        vm.handleAddTaskToCell(taskId: "t1", row: 1, col: 2)
+
+        XCTAssertTrue(waitUntil {
+            (try? db.fetchBoardTasks(boardId: "b1"))?.contains {
+                $0.taskId == "t1" && $0.row == 1 && $0.col == 2
+            } == true
+                && !vm.isProcessing
+        }, "placement was never created and published")
+
+        let placements = try db.fetchBoardTasks(boardId: "b1").filter { $0.taskId == "t1" }
+        XCTAssertEqual(placements.count, 1, "reentrant call must not create a second placement")
+        let createSync = try db.fetchPendingSyncItems().filter {
+            $0.entityType == "boardTasks" && $0.operationType == .create
+        }
+        XCTAssertEqual(createSync.count, 1, "reentrant call must not enqueue a second create")
+    }
+
     // MARK: - 11. B2-I3 edit-mode draft layer
 
     func test_seedEditDraft_populatesDraftFieldsFromBoard() throws {

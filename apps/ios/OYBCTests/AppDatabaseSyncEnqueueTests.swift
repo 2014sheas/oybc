@@ -452,6 +452,76 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(count(rows, type: "boardTasks", op: .create), 1)
     }
 
+    // MARK: - saveWizardBoard: isCenter uniqueness guard (board-integrity PR-5, Item 3)
+
+    /// A single `isCenter: true` row (the normal CHOSEN-center case) must
+    /// still save cleanly — the guard only rejects a SECOND live center.
+    func test_saveWizardBoard_singleCenterRow_stillSucceeds() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+        try db.saveTask(makeTask("centerTask"))
+
+        let board = makeBoard(id: "wb-center-ok", boardSize: 3)
+        let centerBt = BoardTask(
+            id: "bt-center", boardId: "wb-center-ok", taskId: "centerTask",
+            row: 1, col: 1, isCenter: true,
+            createdAt: now, updatedAt: now, version: 1
+        )
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [centerBt], pendingTasks: [], isUpdate: false, now: now
+        )
+
+        let live = try db.fetchBoardTasks(boardId: "wb-center-ok")
+        XCTAssertEqual(live.map { $0.id }, ["bt-center"])
+    }
+
+    /// Board-integrity PR-5 (Item 3): nothing upstream previously prevented
+    /// two rows both claiming `isCenter: true` at DIFFERENT cells on the same
+    /// board. `saveWizardBoard`'s per-row insert loop now rejects a second
+    /// live center — mirrors web's `createBoardTask` guard (the per-cell
+    /// wizard-write-loop equivalent). The whole write rolls back: no board,
+    /// no placements, no sync rows.
+    func test_saveWizardBoard_twoCenterRows_throwsAndWritesNothing() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+        try db.saveTask(makeTask("centerTask"))
+        try db.saveTask(makeTask("otherCenterTask"))
+
+        let board = makeBoard(id: "wb-dup-center", boardSize: 3)
+        let centerBt1 = BoardTask(
+            id: "bt-center-1", boardId: "wb-dup-center", taskId: "centerTask",
+            row: 1, col: 1, isCenter: true,
+            createdAt: now, updatedAt: now, version: 1
+        )
+        // A SECOND center at a different cell — the bug this guard prevents.
+        let centerBt2 = BoardTask(
+            id: "bt-center-2", boardId: "wb-dup-center", taskId: "otherCenterTask",
+            row: 0, col: 0, isCenter: true,
+            createdAt: now, updatedAt: now, version: 1
+        )
+
+        XCTAssertThrowsError(
+            try db.saveWizardBoard(
+                board: board, boardTasks: [centerBt1, centerBt2],
+                pendingTasks: [], isUpdate: false, now: now
+            )
+        ) { error in
+            guard case AppDatabase.AppDatabaseError.invalidPlacement = error else {
+                return XCTFail("expected .invalidPlacement, got \(error)")
+            }
+        }
+
+        // Whole transaction rolled back — no board, no placements, no sync rows.
+        XCTAssertNil(try db.fetchBoard(id: "wb-dup-center"))
+        XCTAssertTrue(try db.fetchBoardTasks(boardId: "wb-dup-center").isEmpty)
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "boards", op: .create), 0)
+        XCTAssertEqual(count(rows, type: "boardTasks", op: .create), 0)
+    }
+
     // MARK: - saveWizardBoard: derivation pass (bingo-pipeline hardening item 2)
     //
     // Before the fix, stats were hand-init'd to 0 (or preserved from the prior

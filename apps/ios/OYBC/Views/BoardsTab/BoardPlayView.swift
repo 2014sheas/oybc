@@ -1003,6 +1003,14 @@ struct BoardPlayView: View {
                 pendingOpenBoardId = nil
                 onOpenBoard(target)
             }
+            // Board-integrity PR-5 (Item 5): this sheet's own content
+            // (`detailSheet`) can complete/edit the boardTask's task
+            // directly, and its NESTED child-detail sheet
+            // (`compoundChildDetailTaskId`) edits/deletes a compound
+            // child's `Task` via `AppDatabase.shared` — neither write goes
+            // through this VM, so refresh on dismiss the same way the M4
+            // add-cell sheet does on cancel.
+            viewModel.reloadBoardTasksAndTaskData()
         }) {
             detailSheet
         }
@@ -1026,6 +1034,11 @@ struct BoardPlayView: View {
                     pendingOpenBoardId = nil
                     onOpenBoard(target)
                 }
+                // Board-integrity PR-5 (Item 5): this sheet edits/deletes its
+                // task via `AppDatabase.shared` directly (bypasses this VM) —
+                // refresh so the grid reflects an edited title/type or a
+                // cascade-deleted placement.
+                viewModel.reloadBoardTasksAndTaskData()
             }
         ) { item in
             TaskDetailSheetView(
@@ -1785,6 +1798,18 @@ struct BoardPlayView: View {
                     // parent detail sheet; its onDismiss drains
                     // `pendingOpenBoardId` in a clean transaction.
                     if pendingOpenBoardId != nil { detailBoardTaskId = nil }
+                    // Board-integrity PR-5 (Item 5): this nested sheet
+                    // edits/deletes the compound CHILD's `Task` directly via
+                    // `AppDatabase.shared` — the parent `detailSheet`'s
+                    // compound-progress display and the underlying grid both
+                    // read stale in-memory state until refreshed. Reload
+                    // unconditionally (not just on cross-board nav) so a
+                    // plain "Done" dismiss after an edit/delete still picks
+                    // up the change. When `detailBoardTaskId` is ALSO about
+                    // to nil out (the cross-board branch above), the outer
+                    // sheet's own onDismiss reloads again — redundant but
+                    // harmless (cheap local reads).
+                    viewModel.reloadBoardTasksAndTaskData()
                 }
             ) { item in
                 TaskDetailSheetView(

@@ -1047,6 +1047,7 @@ final class BoardPlayViewModel: ObservableObject {
     ///   - col: 0-based grid column.
     func handleAddTaskToCell(taskId: String, row: Int, col: Int) {
         guard let b = board else { return }
+        guard !isProcessing else { return }
         isProcessing = true
         let database = self.database
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
