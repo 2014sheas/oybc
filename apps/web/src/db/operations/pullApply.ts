@@ -132,6 +132,10 @@ export async function applyRemoteSubdoc(
   const remoteWins = isNew || resolveConflict(localData!, validated).winner === 'remote';
 
   if (!remoteWins) {
+    // Read+enqueue share one transaction (mirrors the remote-wins branch's
+    // rationale below): a concurrent write between the outer read and the
+    // enqueue could otherwise snapshot a stale reassert payload (PR-4
+    // review I1). The row is RE-READ inside the txn for the same reason.
     // Board-integrity PR-4, item 1 (docs/BOARD_INTEGRITY.md): the push path
     // conflict-checks via getDoc → setDoc with no transaction, so two devices
     // racing the same doc can land the stale write AFTER the fresh one. Before
@@ -149,7 +153,14 @@ export async function applyRemoteSubdoc(
     // rather than lean on that invariant, so an already-converged pull
     // (identical version + updatedAt) never re-enqueues and loops forever.
     if (rowsGenuinelyDiffer(localData!, validated)) {
-      await addToSyncQueue(collectionName, localData!.id, SyncOperationType.UPDATE, localData, 0);
+      await db.transaction('rw', [table, db.syncQueue], async () => {
+        const fresh = (await table.get(validated.id)) as SyncableEntity | undefined;
+        // The row may have changed (or vanished) since the outer read —
+        // re-check the guard against the FRESH row before enqueueing it.
+        if (fresh && rowsGenuinelyDiffer(fresh, validated)) {
+          await addToSyncQueue(collectionName, fresh.id, SyncOperationType.UPDATE, fresh, 0);
+        }
+      });
     }
     return null; // local-wins → re-enqueued (if it differs) so it re-asserts
   }

@@ -43,7 +43,7 @@ import {
   type SyncCollection,
 } from '@oybc/shared';
 import { applyTaskEventsBatch } from '../db/operations/taskEventPull';
-import { applyRemoteSubdoc } from '../db/operations/pullApply';
+import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -340,10 +340,7 @@ async function applyRemoteUserDoc(
   // not a subcollection), so it can't share that function directly, but the
   // push loop already special-cases `entityType === 'users'` with its own
   // docRef, so a plain UPDATE enqueue drains through the same path.
-  const rowsDiffer =
-    localSyncable!.version !== remoteSyncable.version ||
-    localSyncable!.updatedAt !== remoteSyncable.updatedAt;
-  if (rowsDiffer) {
+  if (rowsGenuinelyDiffer(localSyncable!, remoteSyncable)) {
     await addToSyncQueue('users', userId, SyncOperationType.UPDATE, localUser, 0);
   }
   return null; // local-wins → re-enqueued (if it differs) so it re-asserts
