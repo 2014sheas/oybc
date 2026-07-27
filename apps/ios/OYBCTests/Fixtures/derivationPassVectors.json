@@ -1870,7 +1870,23 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "parent-ach1",
+          "taskId": "ach1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false,
+          "achievement": {
+            "mode": "recurringTemplate",
+            "referencedTemplateId": "t1",
+            "templateInWindowMet": 0,
+            "templateRequiredCount": 1
+          }
+        }
+      ]
     },
     {
       "name": "template-out-of-window-ignored",

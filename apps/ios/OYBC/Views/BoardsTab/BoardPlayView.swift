@@ -360,22 +360,13 @@ struct BoardPlayView: View {
     /// windowed-primitive path outside the kernel, with the achievement
     /// branch unified. Not used for sealed boards — those short-circuit to
     /// the frozen `sealedCompletedCells` snapshot before ever consulting this.
+    ///
+    /// Stored on the VM (rebuilt once per `apply(_:)` data change) rather
+    /// than computed here — the review flagged that a computed property runs
+    /// the full kernel pass once per rendered CELL (O(size²) derivations per
+    /// render).
     private var kernelCellStates: [String: DerivationPass.CellState] {
-        guard let board else { return [:] }
-        let resolved = PlacementIntegrity.resolvePlacements(boardTasks, boardSize: board.boardSize)
-        let built = DerivationPass.computeBoardGrid(
-            board: board,
-            boardTasksOnBoard: resolved,
-            childrenByCompound: compoundChildrenByCompound,
-            taskById: taskMap,
-            allBoards: allBoardsInWorkspace,
-            windowContext: WindowEvaluationContext(eventsByTaskId: windowEventsByTaskId)
-        )
-        var out: [String: DerivationPass.CellState] = [:]
-        for c in built.cells {
-            if let id = c.boardTaskId { out[id] = c }
-        }
-        return out
+        viewModel.kernelCellStates
     }
 
     /// Board tasks sorted row-major (ascending row then col).

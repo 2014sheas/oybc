@@ -100,7 +100,9 @@ enum BoardPreviewCells {
             )
             var out: [String: DerivationPass.CellState] = [:]
             for c in built.cells {
-                if let id = c.boardTaskId { out[id] = c }
+                // boardTaskId is non-optional — every CellState maps to a
+                // real placement (FREE-center auto-fill emits no CellState).
+                out[c.boardTaskId] = c
             }
             return out
         }()
