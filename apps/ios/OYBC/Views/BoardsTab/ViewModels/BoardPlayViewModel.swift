@@ -1431,30 +1431,60 @@ final class BoardPlayViewModel: ObservableObject {
             return wizardLocalISOString(nextDay.addingTimeInterval(-0.001))
         }
 
-        let startISO: String
+        let startISO: String?
         let endISO: String?
         var clearEnd = false
 
-        if editTimeframe == .indefinite {
-            startISO = wizardLocalISOString(cal.startOfDay(for: Date()))
-            endISO = nil
-            clearEnd = true
-        } else if editTimeframe == .custom {
-            startISO = snapStart(editCustomStartDate)
+        // Dates are written ONLY when the user actually changed the window
+        // (timeframe conversion, or new custom dates). A metadata-only Save
+        // must PRESERVE the stored window: under Windowed Completion,
+        // `startDate` is the completion window's lower bound — rewriting it
+        // silently re-windows the board and wipes the progress of every task
+        // whose events predate the new start. The old code recomputed dates
+        // on EVERY save (indefinite → re-anchored to today; core → today's
+        // window), resetting all progress except tasks completed on the edit
+        // day. Nil startDate/endDate in the patch = "leave unchanged".
+        let timeframeChanged = editTimeframe != board?.timeframe
+        let customDatesChanged = editTimeframe == .custom
+            && (editCustomStartDate != editOriginalCustomStartDate
+                || editCustomEndDate != editOriginalCustomEndDate)
+
+        if timeframeChanged {
+            // Deliberate re-window: converting the board recomputes its dates.
+            if editTimeframe == .indefinite {
+                startISO = wizardLocalISOString(cal.startOfDay(for: Date()))
+                endISO = nil
+                clearEnd = true
+            } else if editTimeframe == .custom {
+                let snappedStart = snapStart(editCustomStartDate)
+                let snappedEnd = snapEnd(editCustomEndDate)
+                // Carry over EditBoardSheet's guard: the end-date picker's min can lag a
+                // start-date change, so re-validate end >= start before persisting.
+                guard snappedEnd >= snappedStart else { return false }
+                startISO = snappedStart
+                endISO = snappedEnd
+            } else if let boundaries = computeTimeframeBoundaries(
+                timeframe: editTimeframe,
+                referenceDate: Date(),
+                weekStartDay: weekStartDay
+            ) {
+                startISO = wizardLocalISOString(boundaries.start)
+                endISO = wizardLocalISOString(boundaries.end)
+            } else {
+                return false
+            }
+        } else if customDatesChanged {
+            // Same CUSTOM timeframe, user picked new dates.
+            let snappedStart = snapStart(editCustomStartDate)
             let snappedEnd = snapEnd(editCustomEndDate)
-            // Carry over EditBoardSheet's guard: the end-date picker's min can lag a
-            // start-date change, so re-validate end >= start before persisting.
-            guard snappedEnd >= startISO else { return false }
+            guard snappedEnd >= snappedStart else { return false }
+            startISO = snappedStart
             endISO = snappedEnd
-        } else if let boundaries = computeTimeframeBoundaries(
-            timeframe: editTimeframe,
-            referenceDate: Date(),
-            weekStartDay: weekStartDay
-        ) {
-            startISO = wizardLocalISOString(boundaries.start)
-            endISO = wizardLocalISOString(boundaries.end)
         } else {
-            return false
+            // Window untouched — nil dates preserve the stored window (and
+            // every in-window completion event) across the save.
+            startISO = nil
+            endISO = nil
         }
 
         let patch = AppDatabase.UpdateActiveBoardPatch(
