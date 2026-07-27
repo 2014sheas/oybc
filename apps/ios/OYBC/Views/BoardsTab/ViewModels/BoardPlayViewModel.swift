@@ -369,6 +369,13 @@ final class BoardPlayViewModel: ObservableObject {
     ///     workspace boards / templates) resolve to empty arrays, matching
     ///     the pre-refactor `loadTaskData` behavior.
     ///   - database: Injected for tests; defaults to the production singleton.
+    /// Board-integrity PR-4 (Item 5, docs/BOARD_INTEGRITY.md): registered for
+    /// this VM's lifetime (init → deinit). iOS had no live-update mechanism
+    /// before this — a sync pull landing while a board-play screen was open
+    /// (e.g. another device completing a task) sat invisible until the user
+    /// navigated away and back; web is reactive via Dexie's `useLiveQuery`.
+    private var syncObserver: NSObjectProtocol?
+
     init(
         boardId: String,
         userId: String?,
@@ -379,6 +386,22 @@ final class BoardPlayViewModel: ObservableObject {
         self.userId = userId
         self.database = database
         self.arrivalStore = arrivalStore
+
+        self.syncObserver = NotificationCenter.default.addObserver(
+            forName: .oybcSyncDidApplyChanges,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            _Concurrency.Task { @MainActor [weak self] in
+                self?.handleSyncDidApplyChanges()
+            }
+        }
+    }
+
+    deinit {
+        if let syncObserver {
+            NotificationCenter.default.removeObserver(syncObserver)
+        }
     }
 
     /// Supply the authenticated user's id. Called by the view in `.onAppear`
@@ -386,6 +409,33 @@ final class BoardPlayViewModel: ObservableObject {
     /// reload — the caller reloads immediately after.
     func setUserId(_ userId: String?) {
         self.userId = userId
+    }
+
+    /// Board-integrity PR-4 (Item 5): reload in response to a sync pull's
+    /// post-apply signal.
+    ///
+    /// Guard: skips while `editSaveInFlight` — `handleEditSave`'s own commit
+    /// runs the composed write transaction (Item 3) and then calls `reload()`
+    /// itself on success; a pull-triggered reload racing in in the middle
+    /// would either be immediately superseded by that follow-up reload (the
+    /// `reloadToken` stale-result guard keeps whichever finishes last) or, in
+    /// the worst case, briefly show a stale grid mid-Save — never a torn
+    /// write, since `reload()` never writes.
+    ///
+    /// Residual (not guarded here): a reload while the user is IN edit mode
+    /// with unsaved staged changes (editMode == true but editSaveInFlight ==
+    /// false — `editMode` itself is view-side `@State`, not visible to the
+    /// VM). `editSquaresDraft` / `editTaskOverrides` are separate `@Published`
+    /// state seeded once from `boardTasks` at edit-mode-entry
+    /// (`seedEditDraft`), so a reload's fresh `boardTasks` does NOT
+    /// retroactively rewrite the staged draft — only the read-only grid
+    /// behind the edit panel would refresh. This matches how a local tap's
+    /// reload already behaves while edit mode is open today (no worse than
+    /// existing behavior), so it's left unguarded rather than threading a
+    /// second view-owned flag down into the VM.
+    private func handleSyncDidApplyChanges() {
+        guard !editSaveInFlight else { return }
+        reload()
     }
 
     // MARK: - Actions
@@ -398,6 +448,15 @@ final class BoardPlayViewModel: ObservableObject {
     /// `loadTaskData()` trio. Every site that called all three now calls
     /// this; the two dismiss handlers that called only the latter two use
     /// `reloadBoardTasksAndTaskData()` instead to preserve their scope.
+    ///
+    /// Board-integrity PR-4 (Item 4, docs/BOARD_INTEGRITY.md): `board` and
+    /// the task-data payload are now fetched together via `fetchSnapshot`
+    /// inside ONE `database.read {}` — previously this called
+    /// `database.fetchBoard(id:)` and `fetchTaskData` as two separate reads
+    /// (each itself doing several MORE separate reads), so a write landing
+    /// mid-sequence could hand this reload a torn snapshot (e.g. a board
+    /// whose `completedLineIds` reflects a just-pulled rearrange but whose
+    /// `boardTasks` still reflect the pre-pull placements).
     func reload() {
         reloadToken += 1
         let token = reloadToken
@@ -407,12 +466,11 @@ final class BoardPlayViewModel: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            let board = try? database.fetchBoard(id: boardId)
-            let payload = Self.fetchTaskData(boardId: boardId, userId: userId, database: database)
+            let snapshot = Self.fetchSnapshot(boardId: boardId, userId: userId, database: database)
             DispatchQueue.main.async {
                 guard token == self.reloadToken else { return }
-                self.board = board
-                self.apply(payload)
+                self.board = snapshot.board
+                self.apply(snapshot.payload)
             }
         }
     }
@@ -1463,70 +1521,90 @@ final class BoardPlayViewModel: ObservableObject {
         _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             do {
-                // 1. Metadata patch (name / timeframe / center).
-                try database.updateBoardAndCascade(boardId: bid, patch: patch)
+                // Board-integrity PR-4 (Item 3, docs/BOARD_INTEGRITY.md): the five
+                // sub-ops below used to run as five SEPARATE `database.write {}`
+                // transactions — a failure partway through left a half-applied
+                // board (e.g. metadata renamed but a cell replacement never
+                // landed) with only a generic "save failed" surfaced, and no way
+                // to roll back the pieces that DID commit. Composing them into
+                // ONE `database.write {}` makes the whole Save all-or-nothing.
+                //
+                // Each sub-op below calls the `db:`-scoped core of its normal
+                // instance-method entry point (`updateBoardAndCascade`,
+                // `updateBoardTaskAndCascade`, `saveTaskAndCascade`,
+                // `updateBoardTaskPositions`, `removeBoardTaskFromBoard`) instead
+                // of the instance method itself — GRDB's `DatabaseQueue.write` (and
+                // `.read`) are not reentrant, so calling the instance methods
+                // (which each open their own `write {}`) from inside this
+                // already-open transaction would trap. The op order and cascade
+                // semantics are otherwise unchanged.
+                try database.write { db in
+                    // 1. Metadata patch (name / timeframe / center).
+                    try AppDatabase.updateBoardAndCascade(db: db, boardId: bid, patch: patch)
 
-                // 2. Staged cell replacements — each repoints one BoardTask row
-                //    and re-derives board stats for the old + new task contexts.
-                for replacement in cellReplacements {
-                    try database.updateBoardTaskAndCascade(
-                        boardTaskId: replacement.boardTaskId,
-                        newTaskId: replacement.newTaskId
-                    )
-                }
-
-                // 3. Staged task-field overrides — each writes the global Task
-                //    and re-derives board stats for all boards the task is on.
-                let now = AppDatabase.currentTimestamp()
-                for (task, override) in taskOverridePairs {
-                    var updated = task
-                    updated.title = override.title
-                    updated.type  = override.type
-                    switch override.type {
-                    case .counting:
-                        // action can be cleared (nil) — assign unconditionally so the
-                        // commit matches the draft grid (which clears it on blank).
-                        updated.action = override.action
-                        if let u = override.unit   { updated.unit   = u }
-                        if let m = override.maxCount { updated.maxCount = m }
-                    case .normal:
-                        // Switching from Counting → Simple: clear counting fields.
-                        if task.type == .counting {
-                            updated.action   = nil
-                            updated.unit     = nil
-                            updated.maxCount = nil
-                        }
-                    default:
-                        break
+                    // 2. Staged cell replacements — each repoints one BoardTask row
+                    //    and re-derives board stats for the old + new task contexts.
+                    for replacement in cellReplacements {
+                        try AppDatabase.updateBoardTaskAndCascade(
+                            db: db,
+                            boardTaskId: replacement.boardTaskId,
+                            newTaskId: replacement.newTaskId
+                        )
                     }
-                    updated.updatedAt = now
-                    updated.version  += 1
-                    try database.saveTaskAndCascade(updated)
-                }
 
-                // 4. Phase 3 — Staged position moves: rewrite row/col on moved
-                //    BoardTask rows in a single atomic transaction, then re-derive
-                //    bingo lines for this board.
-                if !positionMoves.isEmpty {
-                    try database.updateBoardTaskPositions(
-                        boardId: bid,
-                        moves: positionMoves.map {
-                            AppDatabase.BoardTaskPositionMove(
-                                boardTaskId: $0.boardTaskId,
-                                row: $0.row,
-                                col: $0.col
-                            )
+                    // 3. Staged task-field overrides — each writes the global Task
+                    //    and re-derives board stats for all boards the task is on.
+                    let now = AppDatabase.currentTimestamp()
+                    for (task, override) in taskOverridePairs {
+                        var updated = task
+                        updated.title = override.title
+                        updated.type  = override.type
+                        switch override.type {
+                        case .counting:
+                            // action can be cleared (nil) — assign unconditionally so the
+                            // commit matches the draft grid (which clears it on blank).
+                            updated.action = override.action
+                            if let u = override.unit   { updated.unit   = u }
+                            if let m = override.maxCount { updated.maxCount = m }
+                        case .normal:
+                            // Switching from Counting → Simple: clear counting fields.
+                            if task.type == .counting {
+                                updated.action   = nil
+                                updated.unit     = nil
+                                updated.maxCount = nil
+                            }
+                        default:
+                            break
                         }
-                    )
-                }
+                        updated.updatedAt = now
+                        updated.version  += 1
+                        try AppDatabase.saveTaskAndCascade(db: db, task: updated)
+                    }
 
-                // 5. Staged removals — soft-delete (tombstone) each removed
-                //    BoardTask row. `removeBoardTaskFromBoard` is idempotent
-                //    (no-op if the row is already tombstoned), owns its own
-                //    transaction + DELETE sync tombstone, and re-derives
-                //    stats for every affected board.
-                for removedId in cellRemovals {
-                    try database.removeBoardTaskFromBoard(removedId)
+                    // 4. Phase 3 — Staged position moves: rewrite row/col on moved
+                    //    BoardTask rows, then re-derive bingo lines for this board.
+                    if !positionMoves.isEmpty {
+                        try AppDatabase.updateBoardTaskPositions(
+                            db: db,
+                            boardId: bid,
+                            moves: positionMoves.map {
+                                AppDatabase.BoardTaskPositionMove(
+                                    boardTaskId: $0.boardTaskId,
+                                    row: $0.row,
+                                    col: $0.col
+                                )
+                            }
+                        )
+                    }
+
+                    // 5. Staged removals — soft-delete (tombstone) each removed
+                    //    BoardTask row. `removeBoardTaskFromBoard` is idempotent
+                    //    (no-op if the row is already tombstoned) and re-derives
+                    //    stats for every affected board, in the SAME transaction
+                    //    as everything above.
+                    for removedId in cellRemovals {
+                        try AppDatabase.removeBoardTaskFromBoard(db: db, boardTaskId: removedId)
+                    }
                 }
 
                 await MainActor.run {
@@ -1588,24 +1666,131 @@ final class BoardPlayViewModel: ObservableObject {
     /// `reloadBoardTasksAndTaskData()`. Pure + `nonisolated` so it runs on the
     /// background queue. Mirrors the pre-refactor `loadTaskData` fetch set
     /// (plus the board's own placements) exactly.
+    ///
+    /// Board-integrity PR-4 (Item 4, docs/BOARD_INTEGRITY.md): all seven
+    /// sub-fetches now run inside ONE `database.read {}` transaction (via
+    /// `fetchTaskDataPayload(db:boardId:userId:)` below) instead of seven
+    /// separate `read {}` calls, each of which opened its own transaction.
+    /// Previously a sync pull (or another write) landing BETWEEN two of
+    /// those reads could produce a torn snapshot — e.g. `boardTasks`
+    /// reflecting a just-pulled rearrange while `windowEventsByTaskId` still
+    /// reflected the pre-pull state — surfacing as a transient lit-ring /
+    /// grey-cell mismatch on the grid. A single read transaction sees one
+    /// consistent point in time across every field.
     private nonisolated static func fetchTaskData(
         boardId: String,
         userId: String?,
         database: AppDatabase
     ) -> TaskDataPayload {
-        let boardTasks = (try? database.fetchBoardTasks(boardId: boardId)) ?? []
-        let tasks = userId.flatMap { id in try? database.fetchTasks(userId: id) } ?? []
-        let children = (try? database.fetchAllCompoundChildren()) ?? []
-        let workspaceBoards = userId.flatMap { id in try? database.fetchBoards(userId: id) } ?? []
-        let workspaceTemplates = userId.flatMap { id in
-            try? database.fetchRecurringBoardTemplates(userId: id)
-        } ?? []
-        let workspaceBoardTasks = (try? database.fetchAllBoardTasks()) ?? []
+        (try? database.read { db in
+            try fetchTaskDataPayload(db: db, boardId: boardId, userId: userId)
+        }) ?? Self.emptyTaskDataPayload
+    }
+
+    /// Combined board + task-data snapshot for `reload()`. Board-integrity
+    /// PR-4 (Item 4): the pre-fix `reload()` fetched `board` via its own
+    /// `database.fetchBoard(id:)` transaction, then separately called
+    /// `fetchTaskData` (a second transaction) — a write landing between the
+    /// two could still tear the board record against its own
+    /// placements/events even after `fetchTaskData` itself became atomic.
+    /// Fetching both in ONE `database.read {}` closes that remaining gap.
+    private nonisolated static func fetchSnapshot(
+        boardId: String,
+        userId: String?,
+        database: AppDatabase
+    ) -> (board: Board?, payload: TaskDataPayload) {
+        (try? database.read { db -> (Board?, TaskDataPayload) in
+            let board = try Board.fetchOne(db, key: boardId)
+            let payload = try fetchTaskDataPayload(db: db, boardId: boardId, userId: userId)
+            return (board, payload)
+        }) ?? (nil, Self.emptyTaskDataPayload)
+    }
+
+    /// Zero-value payload returned when a read fails (mirrors the pre-fix
+    /// per-field `?? []` fallbacks, collapsed to one shared constant now
+    /// that the fetch is a single all-or-nothing `read {}`).
+    private static var emptyTaskDataPayload: TaskDataPayload {
+        TaskDataPayload(
+            boardTasks: [],
+            allTasks: [],
+            allCompoundChildren: [],
+            allBoardsInWorkspace: [],
+            allTemplatesInWorkspace: [],
+            allBoardTasksInWorkspace: [],
+            windowEventsByTaskId: [:]
+        )
+    }
+
+    /// The actual per-field queries, run against an already-open `db` handle
+    /// so `fetchTaskData` and `fetchSnapshot` above can compose them into
+    /// whichever single transaction each needs. Bodies mirror
+    /// `AppDatabase.fetchBoardTasks(boardId:)` / `.fetchTasks(userId:)` /
+    /// `.fetchAllCompoundChildren()` / `.fetchBoards(userId:)` /
+    /// `.fetchRecurringBoardTemplates(userId:)` / `.fetchAllBoardTasks()` /
+    /// `.fetchNonDeletedTaskEvents(userId:)` exactly — those public wrappers
+    /// each open their OWN `read {}`, which is why they can't be called
+    /// directly from in here (GRDB's `read`/`write` aren't reentrant).
+    private nonisolated static func fetchTaskDataPayload(
+        db: Database,
+        boardId: String,
+        userId: String?
+    ) throws -> TaskDataPayload {
+        let boardTasks = try BoardTask
+            .filter(Column("boardId") == boardId && Column("isDeleted") == false)
+            .order(Column("row"), Column("col"), Column("id"))
+            .fetchAll(db)
+
+        let tasks: [Task]
+        if let userId {
+            tasks = try Task
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("title"))
+                .fetchAll(db)
+        } else {
+            tasks = []
+        }
+
+        let children = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+
+        let workspaceBoards: [Board]
+        if let userId {
+            workspaceBoards = try Board
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+        } else {
+            workspaceBoards = []
+        }
+
+        let workspaceTemplates: [RecurringBoardTemplate]
+        if let userId {
+            workspaceTemplates = try RecurringBoardTemplate
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+        } else {
+            workspaceTemplates = []
+        }
+
+        let workspaceBoardTasks = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+
         // Windowed Completion — group non-deleted events by taskId so the grid
         // + tap handlers resolve each event-owning square windowed.
-        let events = userId.flatMap { id in try? database.fetchNonDeletedTaskEvents(userId: id) } ?? []
+        let events: [TaskEvent]
+        if let userId {
+            events = try TaskEvent
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .fetchAll(db)
+        } else {
+            events = []
+        }
         var eventsByTaskId: [String: [TaskEvent]] = [:]
         for e in events { eventsByTaskId[e.taskId, default: []].append(e) }
+
         return TaskDataPayload(
             boardTasks: boardTasks,
             allTasks: tasks,

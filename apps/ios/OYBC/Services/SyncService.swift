@@ -2,6 +2,29 @@ import Foundation
 import FirebaseFirestore
 @preconcurrency import GRDB
 
+// MARK: - Live-update signal (Board-integrity PR-4, Item 5)
+
+extension Notification.Name {
+    /// Posted by `SyncService`, on the main queue, once per pull/listener batch
+    /// that applied ≥1 change to local GRDB — never per individual row.
+    /// Foreground-only: only ever posted from an active push/pull cycle (never
+    /// from a background task), so it carries no background-execution
+    /// implications and does not relax the recurring-boards lazy-detection
+    /// invariant (see CLAUDE.md §Recurring Boards).
+    ///
+    /// iOS had no live-update mechanism at all before this — a sync pull
+    /// landing while a screen was open (e.g. another device completing a task)
+    /// sat invisible until the user navigated away and back. Web is reactive
+    /// via Dexie's `useLiveQuery`; this is the closest iOS equivalent without
+    /// introducing a Combine/GRDB `ValueObservation` per screen.
+    ///
+    /// Observers: `BoardPlayViewModel`'s `syncObserver` (skips reload while an
+    /// edit-save is in flight) and `BoardListView.onAppearLoad`'s
+    /// `.onReceive`. Extend this pattern for future screens rather than
+    /// inventing a parallel ad-hoc mechanism.
+    static let oybcSyncDidApplyChanges = Notification.Name("oybcSyncDidApplyChanges")
+}
+
 // MARK: - Types
 
 /// Entity types that can be synced, mapped to their GRDB table names
@@ -545,6 +568,14 @@ final class SyncService: ObservableObject {
             }
         }
 
+        // Board-integrity PR-4 (Item 5): one signal per PULL BATCH (this
+        // whole `pullSync` call, covering the user doc + every subcollection),
+        // not per row — `result.pulled` already aggregates every applied
+        // write across both, including the batched `taskEvents` path.
+        if result.pulled > 0 {
+            postSyncDidApplyChanges()
+        }
+
         return result
     }
 
@@ -687,6 +718,123 @@ final class SyncService: ObservableObject {
         }
     }
 
+    // MARK: - Local-wins re-assert (Board-integrity PR-4, Item 1)
+
+    /// Push does getDoc → (later) setDoc, never a Firestore transaction — two
+    /// devices racing the same doc can let a stale write land AFTER a fresher
+    /// one. Historically, the next pull's LOCAL-wins resolution was a silent
+    /// no-op: nothing ever re-asserted the fresher local version, so the
+    /// devices + remote stayed divergent until some UNRELATED edit happened to
+    /// bump the row's version again.
+    ///
+    /// Fix: whenever a pull resolves local-wins, enqueue an UPDATE push for the
+    /// local row (the existing `SyncQueueBuilder` coalescer dedupes repeat
+    /// enqueues into one PENDING row, so this is idempotent and cheap even on
+    /// every 5-minute safety-net pull). This makes divergence self-healing
+    /// regardless of push races, for every syncable collection (`taskEvents` is
+    /// exempt — see below).
+    ///
+    /// Deliberately NOT doing: `runTransaction` on the push path — the
+    /// offline-first queue + LWW + this re-assert makes a Firestore transaction
+    /// redundant, and a transaction would serialize the push loop.
+    ///
+    /// Not applied to `taskEvents`: that collection's pull path
+    /// (`applyTaskEventsBatch`) has its own append-only union-by-id semantics
+    /// (docs/WINDOWED_COMPLETION.md §Sync) where a "local wins" outcome for one
+    /// event id means this device's copy (create OR tombstone) is already the
+    /// converged truth for that id — a stale delivery from before the
+    /// tombstone, not a race this needs to correct. Scoped here to the generic
+    /// per-collection pull path (`processPullCollection` / `applyRemoteSubdoc`)
+    /// and the `users` parent-doc pull path (`processPullUserDocument` /
+    /// `applyRemoteUserDoc`), mirroring web's `pullApply.ts` local-wins branch.
+    ///
+    /// - Parameters:
+    ///   - db: GRDB transaction to enqueue into (caller's ongoing write block).
+    ///   - entityType: The Firestore subcollection name (or `"users"`).
+    ///   - entityId: The document/row id.
+    ///   - localData: The LOCAL row that won the conflict (becomes the payload).
+    ///   - remoteData: The remote row that lost, used only for the diff guard.
+    private func reassertLocalWinIfNeeded(
+        db: Database,
+        entityType: String,
+        entityId: String,
+        localData: [String: Any],
+        remoteData: [String: Any]
+    ) throws {
+        // Loop guard: a local-win under `resolveConflict`'s rules already
+        // implies version or updatedAt genuinely differs (a byte-identical
+        // row can only tie, which resolves to "remote"). This check is
+        // defense-in-depth kept explicit so a future change to
+        // `resolveConflict` can't silently reintroduce a re-enqueue loop —
+        // it is also what the "no enqueue when rows are identical" test
+        // pins.
+        guard rowsGenuinelyDiffer(local: localData, remote: remoteData) else { return }
+
+        guard JSONSerialization.isValidJSONObject(localData),
+              let jsonData = try? JSONSerialization.data(withJSONObject: localData),
+              let payloadStr = String(data: jsonData, encoding: .utf8) else {
+            log("Could not build re-assert payload for \(entityType)/\(entityId)")
+            return
+        }
+
+        let item = SyncQueueItem(
+            id: AppDatabase.generateUUID(),
+            entityType: entityType,
+            entityId: entityId,
+            operationType: .update,
+            payload: payloadStr,
+            status: .pending,
+            retryCount: 0,
+            lastError: nil,
+            createdAt: AppDatabase.currentTimestamp(),
+            lastAttemptAt: nil,
+            completedAt: nil,
+            priority: 1
+        )
+        try item.enqueue(db)
+    }
+
+    /// Non-transactional wrapper for the two `users` pull paths, which don't
+    /// already hold an open `db: Database` (unlike the generic subcollection
+    /// paths, which run their whole apply inside one `write { db in }` block).
+    /// Opens its own small write — just a `sync_queue` insert/coalesce, no
+    /// cascade dependency, so a separate transaction is safe here.
+    private func reassertLocalWinIfNeeded(
+        entityType: String,
+        entityId: String,
+        localData: [String: Any],
+        remoteData: [String: Any]
+    ) throws {
+        try AppDatabase.shared.write { db in
+            try reassertLocalWinIfNeeded(
+                db: db, entityType: entityType, entityId: entityId,
+                localData: localData, remoteData: remoteData
+            )
+        }
+    }
+
+    /// True when `local`/`remote` differ in `version` or `updatedAt` — the
+    /// only two fields `resolveConflict` actually compares. See
+    /// `reassertLocalWinIfNeeded`'s loop-guard comment for why a local-win
+    /// already implies this is true; kept as an explicit, independently
+    /// testable check rather than relying on that invariant implicitly.
+    private func rowsGenuinelyDiffer(local: [String: Any], remote: [String: Any]) -> Bool {
+        if toInt(local["version"]) != toInt(remote["version"]) { return true }
+        let localUpdatedAt = local["updatedAt"] as? String ?? ""
+        let remoteUpdatedAt = remote["updatedAt"] as? String ?? ""
+        return localUpdatedAt != remoteUpdatedAt
+    }
+
+    // MARK: - Sync-applied live-update signal (Board-integrity PR-4, Item 5)
+
+    /// Posts `.oybcSyncDidApplyChanges` once. `SyncService` is `@MainActor`, so
+    /// every call site is already on the main queue/actor — this just makes
+    /// the "on main" requirement explicit at the call site rather than
+    /// implicit in the class-level `@MainActor`.
+    private func postSyncDidApplyChanges() {
+        NotificationCenter.default.post(name: .oybcSyncDidApplyChanges, object: nil)
+    }
+
     // MARK: - Pull Helpers
 
     /// Pulls the parent user document at `users/{userId}` and merges any
@@ -742,6 +890,13 @@ final class SyncService: ObservableObject {
                 let msg = "Kept local users/\(userId) (local v\(localV) >= remote v\(remoteV))"
                 result.details.append(msg)
                 log(msg)
+                // Board-integrity PR-4 (Item 1): re-assert the fresher local
+                // row so a push race that let a stale remote write land
+                // can't strand this device's newer data forever.
+                try reassertLocalWinIfNeeded(
+                    entityType: "users", entityId: userId,
+                    localData: localData!, remoteData: remoteData
+                )
             }
         } catch {
             let msg = "Pull failed for users/\(userId): \(error.localizedDescription)"
@@ -875,6 +1030,15 @@ final class SyncService: ObservableObject {
                             let localV = localData!["version"] as? Int ?? 0
                             let remoteV = remoteData["version"] as? Int ?? 0
                             pullOutcome = (false, "local v\(localV) >= remote v\(remoteV)")
+                            // Board-integrity PR-4 (Item 1): re-assert the
+                            // fresher local row so a push race that let a
+                            // stale remote write land can't strand this
+                            // device's newer data forever. Same transaction
+                            // as the (skipped) upsert.
+                            try reassertLocalWinIfNeeded(
+                                db: db, entityType: collection.firestoreName, entityId: remoteId,
+                                localData: localData!, remoteData: remoteData
+                            )
                         }
                     }
 
@@ -1456,7 +1620,12 @@ extension SyncService {
             }
             guard let snapshot, snapshot.exists, let data = snapshot.data() else { return }
             _Concurrency.Task { @MainActor in
-                self.applyRemoteUserDoc(userId: userId, remoteData: data)
+                let applied = self.applyRemoteUserDoc(userId: userId, remoteData: data)
+                // Board-integrity PR-4 (Item 5): only a real local write is
+                // "applied" — a local-win re-assert enqueues a push but
+                // changes nothing in local GRDB, so it shouldn't wake up a
+                // reload with no new data to show.
+                if applied { self.postSyncDidApplyChanges() }
             }
         }
         listenerRegistrations.append(userListener)
@@ -1499,20 +1668,33 @@ extension SyncService {
                         _Concurrency.Task { @MainActor in
                             let batch = self.applyTaskEventsBatch(userId: userId, rawDocs: rows)
                             for msg in batch.details { self.log(msg) }
+                            // Board-integrity PR-4 (Item 5): one signal per
+                            // batched delivery, not per event row.
+                            if batch.pulled > 0 { self.postSyncDidApplyChanges() }
                         }
                     }
                     return
                 }
-                for change in snapshot.documentChanges {
-                    if change.type == .removed { continue }
-                    let data = change.document.data()
-                    _Concurrency.Task { @MainActor in
-                        self.applyRemoteSubdoc(
+                // Board-integrity PR-4 (Item 5): apply every changed doc in
+                // THIS delivery inside one Task, then post at most once for
+                // the whole batch — previously each changed doc spawned its
+                // own independent `Task`, which would have meant one
+                // notification per row instead of per snapshot.
+                let changedDocs = snapshot.documentChanges
+                    .filter { $0.type != .removed }
+                    .map { $0.document.data() }
+                guard !changedDocs.isEmpty else { return }
+                _Concurrency.Task { @MainActor in
+                    var appliedAny = false
+                    for data in changedDocs {
+                        let applied = self.applyRemoteSubdoc(
                             collection: collection,
                             remoteData: data,
                             authenticatedUserId: userId
                         )
+                        if applied { appliedAny = true }
                     }
+                    if appliedAny { self.postSyncDidApplyChanges() }
                 }
             }
             listenerRegistrations.append(listener)
@@ -1522,14 +1704,21 @@ extension SyncService {
     /// Apply a remote `users/{userId}` payload to the local row, running
     /// the same LWW resolution as `processPullUserDocument` but invoked
     /// from a real-time snapshot rather than a scheduled poll.
-    private func applyRemoteUserDoc(userId: String, remoteData: [String: Any]) {
+    ///
+    /// - Returns: `true` if a remote value was written to local GRDB (new or
+    ///   remote-wins) — the signal callers use to decide whether to post
+    ///   `.oybcSyncDidApplyChanges` (Board-integrity PR-4, Item 5). A
+    ///   local-win re-assert enqueues a push but returns `false`: nothing in
+    ///   local GRDB changed, so there is nothing new for a screen to reload.
+    @discardableResult
+    private func applyRemoteUserDoc(userId: String, remoteData: [String: Any]) -> Bool {
         do {
             let localData = try fetchLocalRecord(grdbTable: "users", id: userId)
             if localData == nil {
                 try upsertLocalRecord(grdbTable: "users", data: remoteData)
                 recordEvent(.pulled)
                 log("Pulled users/\(userId) (new, listener)")
-                return
+                return true
             }
             let winner = resolveConflict(local: localData!, remote: remoteData)
             if winner == "remote" {
@@ -1542,22 +1731,38 @@ extension SyncService {
                 let remoteV = remoteData["version"] as? Int ?? 0
                 let localV = localData!["version"] as? Int ?? 0
                 log("Pulled users/\(userId) (remote v\(remoteV) > local v\(localV), listener)")
+                return true
             }
             // local-wins is a silent no-op for listener traffic — would
-            // otherwise spam the event log on every echo.
+            // otherwise spam the event log on every echo. Board-integrity
+            // PR-4 (Item 1): still re-assert the fresher local row so a push
+            // race can't strand it.
+            try reassertLocalWinIfNeeded(
+                entityType: "users", entityId: userId,
+                localData: localData!, remoteData: remoteData
+            )
+            return false
         } catch {
             log("Listener apply failed for users/\(userId): \(error.localizedDescription)")
+            return false
         }
     }
 
     /// Not `private` so `OYBCTests/SyncPullApplyTests.swift` can drive the
     /// pull-apply seam directly with crafted remote dicts (C4 widening
     /// precedent). Writes into the injected `database`.
+    ///
+    /// - Returns: `true` if a remote value was written to local GRDB (new or
+    ///   remote-wins) — the signal callers use to decide whether to post
+    ///   `.oybcSyncDidApplyChanges` (Board-integrity PR-4, Item 5). A
+    ///   local-win re-assert enqueues a push but returns `false`: nothing in
+    ///   local GRDB changed, so there is nothing new for a screen to reload.
+    @discardableResult
     func applyRemoteSubdoc(
         collection: (firestoreName: String, grdbTable: String),
         remoteData: [String: Any],
         authenticatedUserId: String
-    ) {
+    ) -> Bool {
         // Validate before touching GRDB. A malformed payload (bad version,
         // mismatched userId, missing id) is logged and dropped — the
         // safety-net pull will retry from Firestore on the next cycle.
@@ -1567,17 +1772,17 @@ extension SyncService {
             authenticatedUserId: authenticatedUserId
         ) {
             log("Listener skipped \(collection.firestoreName): \(reason)")
-            return
+            return false
         }
 
-        guard let remoteId = remoteData["id"] as? String else { return }
+        guard let remoteId = remoteData["id"] as? String else { return false }
         do {
             // Wrap fetch + upsert + cascade in one transaction so a cascade
             // failure rolls back the upsert. Previously the cascade ran in a
             // separate write tx and its catch swallowed errors — leaving the
             // task applied locally but board stats stale forever, with no
             // safety net to reconcile.
-            try database.write { db in
+            return try database.write { db -> Bool in
                 // CompoundChild has no userId column — children scope through
                 // their parent compound's userId. A crafted Firestore doc with
                 // a compoundTaskId pointing at another user's compound would
@@ -1586,7 +1791,7 @@ extension SyncService {
                 if collection.firestoreName == "compoundChildren" {
                     guard let compoundTaskId = remoteData["compoundTaskId"] as? String, !compoundTaskId.isEmpty else {
                         log("Listener skipped compoundChildren/\(remoteId): missing compoundTaskId")
-                        return
+                        return false
                     }
                     let parentRow = try Row.fetchOne(
                         db,
@@ -1597,12 +1802,12 @@ extension SyncService {
                         // No local parent yet — could be a cross-device race.
                         // Defer; safety-net pull retries.
                         log("Listener skipped compoundChildren/\(remoteId): parent compound not yet present locally")
-                        return
+                        return false
                     }
                     let parentUserId: String? = parentRow["userId"]
                     guard parentUserId == authenticatedUserId else {
                         log("Listener skipped compoundChildren/\(remoteId): parent userId mismatch")
-                        return
+                        return false
                     }
                 }
 
@@ -1625,6 +1830,16 @@ extension SyncService {
                         let remoteV = remoteData["version"] as? Int ?? 0
                         let localV = localData!["version"] as? Int ?? 0
                         log("Pulled \(collection.firestoreName)/\(remoteId) (remote v\(remoteV) > local v\(localV), listener)")
+                    } else {
+                        // Board-integrity PR-4 (Item 1): re-assert the
+                        // fresher local row so a push race that let a stale
+                        // remote write land can't strand this device's newer
+                        // data forever. Same transaction as the (skipped)
+                        // upsert.
+                        try reassertLocalWinIfNeeded(
+                            db: db, entityType: collection.firestoreName, entityId: remoteId,
+                            localData: localData!, remoteData: remoteData
+                        )
                     }
                 }
                 // Pull cascade — runs in the same transaction as the upsert so
@@ -1655,9 +1870,11 @@ extension SyncService {
                     }
                     recordEvent(.pulled)
                 }
+                return didWrite
             }
         } catch {
             log("Listener apply failed for \(collection.firestoreName)/\(remoteId): \(error.localizedDescription)")
+            return false
         }
     }
 

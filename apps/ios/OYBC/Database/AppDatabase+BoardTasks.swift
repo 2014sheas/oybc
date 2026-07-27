@@ -69,6 +69,20 @@ extension AppDatabase {
     /// - Throws: GRDB write errors.
     func updateBoardTaskAndCascade(boardTaskId: String, newTaskId: String) throws {
         try write { db in
+            try Self.updateBoardTaskAndCascade(db: db, boardTaskId: boardTaskId, newTaskId: newTaskId)
+        }
+    }
+
+    /// `db`-scoped core of `updateBoardTaskAndCascade` — Board-integrity PR-4
+    /// (Item 3, docs/BOARD_INTEGRITY.md): lets `BoardPlayViewModel.handleEditSave`
+    /// compose this cascade with the other Save sub-ops into ONE outer
+    /// `database.write { db in }` transaction (GRDB's `write` is not reentrant, so
+    /// the instance method above can't be called from inside another `write`
+    /// block). Identical body to the instance method.
+    ///
+    /// Must be called inside an active write transaction covering `boardTasks`,
+    /// `boards`, and `syncQueue`.
+    static func updateBoardTaskAndCascade(db: Database, boardTaskId: String, newTaskId: String) throws {
             // Tombstone guard: a placement deleted on another device mid-edit
             // must not be resurrected/mutated by a stale swap (PR-1 review).
             guard var boardTask = try BoardTask.fetchOne(db, key: boardTaskId),
@@ -204,7 +218,6 @@ extension AppDatabase {
                     now: now
                 ).enqueue(db)
             }
-        }
     }
 
     /// Fetch every LIVE BoardTask in the workspace. Used by the derivation
@@ -258,11 +271,31 @@ extension AppDatabase {
         boardId: String,
         moves: [BoardTaskPositionMove]
     ) throws {
+        try write { db in
+            try Self.updateBoardTaskPositions(db: db, boardId: boardId, moves: moves)
+        }
+    }
+
+    /// `db`-scoped core of `updateBoardTaskPositions` — Board-integrity PR-4
+    /// (Item 3, docs/BOARD_INTEGRITY.md): lets `BoardPlayViewModel.handleEditSave`
+    /// compose this cascade with the other Save sub-ops into ONE outer
+    /// `database.write { db in }` transaction (GRDB's `write` is not reentrant, so
+    /// the instance method above can't be called from inside another `write`
+    /// block). Identical body to the instance method (including the empty-`moves`
+    /// no-op guard, now evaluated inside the shared transaction rather than
+    /// short-circuiting before one is opened).
+    ///
+    /// Must be called inside an active write transaction covering `boardTasks`
+    /// and `boards`/`syncQueue`.
+    static func updateBoardTaskPositions(
+        db: Database,
+        boardId: String,
+        moves: [BoardTaskPositionMove]
+    ) throws {
         guard !moves.isEmpty else { return }
 
         let now = Self.currentTimestamp()
 
-        try write { db in
             // Board-integrity PR-2 (Part 3): resolve the board's size up
             // front so each staged move can be bounds-checked before it's
             // applied. A missing board falls through with `nil` — the
@@ -364,7 +397,6 @@ extension AppDatabase {
                 payload: board,
                 now: now
             ).enqueue(db)
-        }
     }
 
     // MARK: - M4 Live-Edit: Placement Add / Remove
@@ -398,12 +430,36 @@ extension AppDatabase {
     ///
     /// - Parameter boardTaskId: The `BoardTask.id` placement record to remove.
     func removeBoardTaskFromBoard(_ boardTaskId: String) throws {
-        guard var existing = try fetchBoardTask(id: boardTaskId), !existing.isDeleted else { return }
+        try write { db in
+            try Self.removeBoardTaskFromBoard(db: db, boardTaskId: boardTaskId)
+        }
+    }
+
+    /// `db`-scoped core of `removeBoardTaskFromBoard` — Board-integrity PR-4
+    /// (Item 3, docs/BOARD_INTEGRITY.md): lets `BoardPlayViewModel.handleEditSave`
+    /// compose this cascade with the other Save sub-ops into ONE outer
+    /// `database.write { db in }` transaction. GRDB's `write` (and `read`) are not
+    /// reentrant, so the instance method above — which used to fetch `existing` /
+    /// `allBoardTasksPre` / `allCompoundChildrenPre` via separate `read {}` calls
+    /// BEFORE opening its own `write {}` — can't have those pre-reads called from
+    /// inside another already-open `write` block either. They're folded into this
+    /// transaction (against the passed `db`) instead — a strict atomicity
+    /// improvement over the original (which had a read-then-write gap an
+    /// interleaved write from another thread/device could race).
+    ///
+    /// Must be called inside an active write transaction covering `boardTasks`
+    /// and `boards`/`syncQueue`.
+    static func removeBoardTaskFromBoard(db: Database, boardTaskId: String) throws {
+        guard var existing = try BoardTask.fetchOne(db, key: boardTaskId), !existing.isDeleted else { return }
         let now = AppDatabase.currentTimestamp()
         let removedTaskId = existing.taskId
 
-        let allBoardTasksPre = try fetchAllBoardTasks()
-        let allCompoundChildrenPre = try fetchAllCompoundChildren()
+        let allBoardTasksPre: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allCompoundChildrenPre: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
 
         let parentCompounds = DerivationPass.findTransitiveParentCompounds(
             changedTaskId: removedTaskId,
@@ -415,7 +471,6 @@ extension AppDatabase {
             boardTasks: allBoardTasksPre
         )
 
-        try write { db in
             // Board-integrity PR-2 (Part 4): re-fetch the OWNING board
             // inside the write txn — a sealed board's placements are part
             // of its frozen record and must not be removed out from under
@@ -502,7 +557,6 @@ extension AppDatabase {
                     now: now
                 ).enqueue(db)
             }
-        }
     }
 
     /// Add a Task to an empty cell on an ACTIVE board (live-edit M4).

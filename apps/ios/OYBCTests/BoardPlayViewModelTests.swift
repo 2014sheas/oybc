@@ -1260,4 +1260,179 @@ final class BoardPlayViewModelTests: XCTestCase {
             "derived counting tasks are carved out — the preview reads the lifetime cache, unchanged"
         )
     }
+
+    // MARK: - Item 3 (Board-integrity PR-4): single-transaction Save atomicity
+
+    /// Board-integrity PR-4 (Item 3, docs/BOARD_INTEGRITY.md): `handleEditSave`
+    /// now composes all five Save sub-ops into ONE `database.write {}`
+    /// transaction. This test forces a THROW inside the task-override step
+    /// (step 3) via a poisoned `tasks` row seeded directly with raw SQL (an
+    /// undecodable `type` value — the same technique
+    /// `SyncPullApplyTests.test_cascadeFailure_rollsBackUpsert` uses), so
+    /// `Task.fetchAll(db)` inside `runBoardCascadeForTask` throws. Every
+    /// cascade helper in this codebase does a full-table `Task.fetchAll`, so
+    /// the board here is seeded with ZERO existing placements — this makes
+    /// step 1 (`updateBoardAndCascade`) take its `guard !taskIds.isEmpty else
+    /// { return }` early-out (no cascade fetch there, so no throw), deferring
+    /// the actual throw to step 3, the only step this scenario exercises.
+    /// Before this fix, each step ran in its OWN transaction, so step 1's
+    /// rename would already have committed by the time step 3 failed; the
+    /// fix makes step 1's commit conditional on the WHOLE Save succeeding.
+    func test_handleEditSave_subOpThrows_rollsBackEntireTransaction() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))   // FREE center, 3×3, NO placements
+
+        // A real task to stage an override for.
+        try db.saveTask(makeTask("t-real"))
+
+        // A poisoned Task row — undecodable `type` — that ANY cascade's
+        // `Task.fetchAll(db)` will choke on.
+        let now = AppDatabase.currentTimestamp()
+        try db.write { txn in
+            try txn.execute(
+                sql: "INSERT INTO tasks (id, userId, title, type, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)",
+                arguments: ["t-poison", "u1", "Poison", "not_a_real_type", now, now]
+            )
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let boardBefore = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        // Stage: rename (step 1 — short-circuits at the empty-taskIds guard,
+        // since b1 has no placements) + a task-field override for the REAL
+        // task (step 3 — where the poisoned row's decode failure fires).
+        vm.editName = "Renamed b1"
+        vm.handleEditTaskOverride(
+            taskId: "t-real",
+            patch: .init(title: "Overridden", type: .normal, action: "", unit: "", maxCount: nil)
+        )
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"), "save should dispatch")
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome != nil }, "handleEditSave never emitted an outcome")
+
+        guard case .saveFailed = try XCTUnwrap(vm.editEvent?.outcome) else {
+            XCTFail("expected .saveFailed, got \(String(describing: vm.editEvent?.outcome))")
+            return
+        }
+
+        // The WHOLE transaction rolled back — the metadata rename that step 1
+        // already applied inside the transaction did NOT stick.
+        let boardAfter = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(boardAfter.name, boardBefore.name, "board must be UNCHANGED — the rename must not have stuck")
+        XCTAssertEqual(boardAfter.version, boardBefore.version, "version must not have bumped either")
+
+        // The task override was rolled back too.
+        let taskAfter = try XCTUnwrap(db.fetchTask(id: "t-real"))
+        XCTAssertEqual(taskAfter.title, "Task t-real", "override must not have persisted")
+    }
+
+    /// Happy-path atomicity companion (no injected failure): reuses the
+    /// existing `test_handleEditSave_commitsRename_replacement_andPosition_
+    /// thenEmitsSaved` composition (rename + replacement + position move) as
+    /// the txn-boundary observation the spec calls for when a failure can't
+    /// be forced into a specific step — that test already asserts every
+    /// sub-op's write landed together after ONE `handleEditSave` call, which
+    /// is only possible if they share one transaction (a per-step-transaction
+    /// design could exhibit the exact same final state by all steps merely
+    /// happening to succeed, so this is a companion, not a substitute, for
+    /// the forced-failure test above).
+
+    // MARK: - Item 4 (Board-integrity PR-4): atomic snapshot fetch
+
+    /// Board-integrity PR-4 (Item 4, docs/BOARD_INTEGRITY.md): `reload()` now
+    /// fetches `board` + the task-data payload from ONE `database.read {}`
+    /// snapshot (`fetchSnapshot`) instead of two-plus separate reads. Every
+    /// returned placement must belong to the SAME board record fetched
+    /// alongside it in that one transaction — a shape/parity check that the
+    /// combined fetch didn't change the loader's output contract.
+    func test_reload_snapshotIsInternallyConsistent_boardAndPlacementsAgree() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        vm.reload()
+
+        XCTAssertTrue(waitUntil { vm.board != nil })
+        XCTAssertFalse(vm.boardTasks.isEmpty)
+        for bt in vm.boardTasks {
+            XCTAssertEqual(bt.boardId, vm.board?.id)
+        }
+    }
+
+    /// The `board == nil` branch (no board exists for `boardId`) must not
+    /// collapse the WHOLE snapshot to empty — only `fetchSnapshot`'s own
+    /// thrown-error fallback does that. A legitimately-missing board must
+    /// still apply the task-data half of the same read (matching the
+    /// pre-fix behavior, where `fetchBoard` and `fetchTaskData` were
+    /// independent calls and a missing board never blanked out task data).
+    func test_reload_missingBoard_returnsNilBoardWithEmptyPayload_noCrash() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+
+        let vm = BoardPlayViewModel(boardId: "ghost-board", userId: "u1", database: db)
+        vm.reload()
+
+        XCTAssertTrue(waitUntil { !vm.allTasks.isEmpty }, "task-data half of the snapshot should still apply")
+        XCTAssertNil(vm.board, "no board exists for this id")
+        XCTAssertTrue(vm.boardTasks.isEmpty)
+    }
+
+    // MARK: - Item 5 (Board-integrity PR-4): sync pull → live reload signal
+
+    /// Board-integrity PR-4 (Item 5, docs/BOARD_INTEGRITY.md): the VM
+    /// observes `.oybcSyncDidApplyChanges` (posted by `SyncService` after a
+    /// pull applies ≥1 change) and reloads. iOS had no live-update mechanism
+    /// for an already-open board-play screen before this.
+    func test_syncNotification_triggersReload() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+
+        // A change made "elsewhere" (simulating a pull applying it) without
+        // going through the VM at all.
+        try db.dbQueue.write { txn in
+            try txn.execute(
+                sql: "UPDATE boards SET name = ? WHERE id = ?",
+                arguments: ["Renamed elsewhere", "b1"]
+            )
+        }
+        XCTAssertEqual(vm.board?.name, "Board b1", "sanity: the VM hasn't seen the external change yet")
+
+        NotificationCenter.default.post(name: .oybcSyncDidApplyChanges, object: nil)
+
+        XCTAssertTrue(
+            waitUntil { vm.board?.name == "Renamed elsewhere" },
+            "the VM never reloaded in response to the notification"
+        )
+    }
+
+    /// Skip-during-save guard: a notification arriving WHILE `handleEditSave`
+    /// has its commit in flight must not trigger a second, competing reload
+    /// — `editSaveInFlight` is the VM's own re-entry guard (reused here
+    /// rather than adding a second flag), and `handleEditSave`'s own
+    /// success/failure path already calls `reload()` once the commit
+    /// settles. This test can't directly observe `editSaveInFlight` (private),
+    /// so it pins the documented residual instead: posting the notification
+    /// never crashes/misbehaves even under a concurrent Save, and the Save's
+    /// own outcome still lands correctly.
+    func test_syncNotification_duringEditSave_doesNotDisruptTheSave() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        vm.editName = "Renamed via save"
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        // Fire the notification immediately after dispatching the save —
+        // `editSaveInFlight` is set synchronously before the detached task
+        // starts, so this reliably lands while the guard is up.
+        NotificationCenter.default.post(name: .oybcSyncDidApplyChanges, object: nil)
+
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
+                      "the Save must still complete normally despite the concurrent notification")
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).name, "Renamed via save")
+    }
 }

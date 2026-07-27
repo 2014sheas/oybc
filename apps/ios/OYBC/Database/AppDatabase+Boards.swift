@@ -273,6 +273,24 @@ extension AppDatabase {
     ///   - patch: Editable fields for ACTIVE boards.
     func updateBoardAndCascade(boardId: String, patch: UpdateActiveBoardPatch) throws {
         try write { db in
+            try Self.updateBoardAndCascade(db: db, boardId: boardId, patch: patch)
+        }
+    }
+
+    /// `db`-scoped core of `updateBoardAndCascade` — Board-integrity PR-4 (Item 3,
+    /// docs/BOARD_INTEGRITY.md): lets `BoardPlayViewModel.handleEditSave` compose
+    /// this cascade with the other Save sub-ops into ONE outer
+    /// `database.write { db in }` transaction. GRDB's `DatabaseQueue.write` is not
+    /// reentrant — calling the instance method above (which opens its own
+    /// `write { }`) from inside another `write` block traps, so a caller composing
+    /// multiple cascades into one transaction must call this `db:`-parameterized
+    /// variant directly instead. Identical body to the instance method; the
+    /// instance method is now a one-line wrapper so every other call site
+    /// (Task detail, Tasks tab, tests) is unaffected.
+    ///
+    /// Must be called inside an active write transaction covering `boards`,
+    /// `boardTasks`, and `syncQueue`.
+    static func updateBoardAndCascade(db: Database, boardId: String, patch: UpdateActiveBoardPatch) throws {
             // UI gates Board Edit on `!sealedAt` already, but the DB level
             // must hold too (hardening item 6) — a sealed board's snapshot is
             // a frozen, read-only record, so a metadata edit on a sealed or
@@ -421,7 +439,6 @@ extension AppDatabase {
                     now: now
                 ).enqueue(db)
             }
-        }
     }
 
     // MARK: - Wizard board persist (B4 — absorbed from BoardWizardPersist)

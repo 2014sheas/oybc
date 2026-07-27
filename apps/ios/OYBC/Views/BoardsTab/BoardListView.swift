@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// BoardListView — Riso-styled Boards home screen.
@@ -119,6 +120,14 @@ struct BoardListView: View {
         }
         .navigationBarHidden(true)
         .onAppear { onAppearLoad() }
+        // Board-integrity PR-4 (Item 5, docs/BOARD_INTEGRITY.md): reload the
+        // list when a sync pull lands while this screen is open — iOS had no
+        // live-update mechanism for this before (web is reactive via Dexie's
+        // `useLiveQuery`). Scoped to the boards list itself; preview cells
+        // refresh as a side effect of `loadBoards()`'s existing tail call.
+        .onReceive(NotificationCenter.default.publisher(for: .oybcSyncDidApplyChanges)) { _ in
+            loadBoards()
+        }
     }
 
     // MARK: - Content
