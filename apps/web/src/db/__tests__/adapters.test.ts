@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TaskType, type Task, type TaskEvent } from '@oybc/shared';
-import { buildSquareWindowContext, taskToSquareState } from '../adapters';
+import { TaskType, type CellState, type Task, type TaskEvent } from '@oybc/shared';
+import { buildSquareWindowContext, taskToSquareData, taskToSquareState } from '../adapters';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Task caches) — review
@@ -117,5 +117,85 @@ describe('mini-poster data path (RisoBoard + rearrange-preview regression)', () 
     const squareState = taskToSquareState(task, undefined, { [task.id]: task }, {});
 
     expect(squareState.isCompleted).toBe(true);
+  });
+});
+
+/**
+ * Board-integrity PR-3 (issue #360, finding 2) — "Web achievement render
+ * bug": before this branch existed, an ACHIEVEMENT-typed Task fell through
+ * `taskToSquareData`'s normal/counting else-branch (rendering as a plain
+ * 'normal' square) and `taskToSquareState`'s plain-task branch (reading
+ * `task.isCompleted`, a lifetime cache never written for achievement
+ * tasks — so always `false`/stale). A tap on the grid then ran the
+ * NORMAL-task completion write path (`handleComplete`'s `isCompleted`
+ * toggle), which could even auto-activate a DRAFT board. This suite covers
+ * the fix: `taskToSquareData` now tags the square TYPE, and
+ * `taskToSquareState` resolves `isCompleted` from the kernel's per-cell
+ * `CellState` (there is no cross-board context to resolve it locally).
+ */
+describe('ACHIEVEMENT branch (board-integrity PR-3, issue #360)', () => {
+  function makeAchievementTask(over: Partial<Task> = {}): Task {
+    return {
+      id: 'ach-1',
+      userId: 'user-1',
+      title: 'Finish the monthly',
+      type: TaskType.ACHIEVEMENT,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+      ...over,
+    };
+  }
+
+  it('taskToSquareData tags the square as type "achievement", not "normal"', () => {
+    const task = makeAchievementTask();
+    const squareData = taskToSquareData(task, []);
+    expect(squareData.type).toBe('achievement');
+  });
+
+  it('taskToSquareState resolves isCompleted from the kernel CellState, not task.isCompleted', () => {
+    const task = makeAchievementTask({ isCompleted: false }); // lifetime cache is stale-false
+    const cellState: CellState = {
+      boardTaskId: 'bt-1',
+      taskId: task.id,
+      row: 0,
+      col: 0,
+      idx: 0,
+      isCompleted: true, // the kernel says the watched board IS met
+      achievement: {
+        mode: 'specificBoard',
+        referencedBoardId: 'watched-board',
+        referencedBoardCompleted: true,
+      },
+    };
+
+    const squareState = taskToSquareState(task, undefined, { [task.id]: task }, {}, undefined, cellState);
+
+    expect(squareState.isCompleted).toBe(true);
+  });
+
+  it('taskToSquareState degrades to incomplete when no CellState is supplied (never crashes, never trusts the stale cache)', () => {
+    const task = makeAchievementTask({ isCompleted: true }); // even if the cache WERE true, the kernel is authoritative
+    const squareState = taskToSquareState(task, undefined, { [task.id]: task }, {});
+    expect(squareState.isCompleted).toBe(false);
+  });
+
+  it('an achievement square never reports counting/progress-step state', () => {
+    const task = makeAchievementTask();
+    const cellState: CellState = {
+      boardTaskId: 'bt-1',
+      taskId: task.id,
+      row: 0,
+      col: 0,
+      idx: 0,
+      isCompleted: true,
+    };
+    const squareState = taskToSquareState(task, undefined, { [task.id]: task }, {}, undefined, cellState);
+    expect(squareState.currentCount).toBe(0);
+    expect(squareState.completedStepIds.size).toBe(0);
   });
 });

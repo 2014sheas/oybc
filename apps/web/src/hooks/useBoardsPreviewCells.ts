@@ -5,6 +5,11 @@ import { db } from '../db/internal';
 import { buildSquareWindowContext } from '../db/adapters';
 import { buildBoardPreviewCells, type BoardPreviewCellsResult } from '../components/home/boardPreviewCells';
 import { useTaskLibrary } from '../pages/createPage/useTaskLibrary';
+import { useBoards } from './useBoards';
+
+// Stable empty fallback for `useBoards(...) ?? EMPTY_BOARDS` — see
+// EMPTY_BOARD_TASKS in useBoardPlayData.ts for why.
+const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
 
 // Stable empty fallbacks — see EMPTY_BOARD_TASKS in useBoardPlayData.ts for
 // why: preserves React Compiler's memoization of downstream deps instead of
@@ -40,6 +45,12 @@ export function useBoardsPreviewCells(
   const allBoardTasks: BoardTask[] =
     useLiveQuery(() => db.boardTasks.filter((bt) => !bt.isDeleted).toArray(), []) ?? EMPTY_BOARD_TASKS;
   const allTaskEvents: TaskEvent[] = useLiveQuery(() => db.taskEvents.toArray(), []) ?? EMPTY_TASK_EVENTS;
+  // Board-integrity PR-3 (issue #360) — cross-board context for the
+  // ACHIEVEMENT branch `buildBoardPreviewCells` now resolves via the shared
+  // kernel. Deliberately the FULL workspace board list, not `boards` (this
+  // hook's own param) — `boards` may be a filtered subset (e.g. HomePage's
+  // "rail"), but an achievement Task can watch a board outside that subset.
+  const allWorkspaceBoards: Board[] = useBoards(userId) ?? EMPTY_BOARDS;
 
   // windowStart is irrelevant here — buildBoardPreviewCells reads each
   // board's OWN startDate internally; only the taskId grouping is reused.
@@ -57,8 +68,9 @@ export function useBoardsPreviewCells(
         taskMap,
         compoundChildrenByCompound,
         eventsByTaskId,
+        allWorkspaceBoards,
       );
     }
     return out;
-  }, [boards, allBoardTasks, taskMap, compoundChildrenByCompound, eventsByTaskId]);
+  }, [boards, allBoardTasks, taskMap, compoundChildrenByCompound, eventsByTaskId, allWorkspaceBoards]);
 }

@@ -1,7 +1,9 @@
 import {
   CenterSquareType,
+  computeBoardGrid,
   type Board,
   type BoardTask,
+  type CellState,
   type CompoundChild,
   type Task,
   type TaskEvent,
@@ -53,11 +55,25 @@ export interface BoardPreviewCellsResult {
  *   renders `freeCenter` — the auto-completed center square.
  * - Any other unplaced position renders `empty`.
  *
+ * Board-integrity PR-3 (issue #360) — the ACHIEVEMENT branch of
+ * `taskToSquareState` needs the kernel's per-cell resolution (it has no
+ * cross-board context of its own). This function runs `computeBoardGrid`
+ * ONCE per board (over just this board's own placements) to get that
+ * resolution, then threads each cell's `CellState` through
+ * `taskToSquareState` exactly like `BoardPlaySurface`'s live grid does —
+ * closing this preview's inherited copy of the same web achievement-render
+ * gap (docs/BOARD_INTEGRITY.md finding 2).
+ *
  * @param board - The resolved board being previewed.
  * @param boardTasks - This board's BoardTask placements (any scope — extra rows for other boards are ignored via `boardId` filtering by the caller).
  * @param taskMap - Workspace task lookup, id → Task (same shape `useTaskLibrary` produces).
  * @param childrenByCompound - Workspace compound-children lookup, keyed by parent compound task id.
  * @param eventsByTaskId - Non-deleted TaskEvents grouped by taskId (same shape `buildSquareWindowContext` produces).
+ * @param allBoards - All non-deleted boards in the workspace (cross-board
+ *   context for ACHIEVEMENT-typed Tasks — NOT just the boards being
+ *   previewed on this page, since an achievement can watch a board outside
+ *   the current list/rail). Pass `[]` when unavailable; achievement cells
+ *   then degrade to "incomplete", matching the missing-reference semantic.
  */
 export function buildBoardPreviewCells(
   board: Board,
@@ -65,6 +81,7 @@ export function buildBoardPreviewCells(
   taskMap: Record<string, Task>,
   childrenByCompound: Record<string, CompoundChild[]>,
   eventsByTaskId: Record<string, TaskEvent[]>,
+  allBoards: Board[] = [],
 ): BoardPreviewCellsResult {
   const size = board.boardSize;
   const isSealed = board.sealedAt != null;
@@ -72,9 +89,26 @@ export function buildBoardPreviewCells(
   const windowContext: SquareWindowContext = { windowStart: board.startDate, eventsByTaskId };
 
   const btByPosition: Record<string, BoardTask> = {};
+  const boardTasksOnBoard: BoardTask[] = [];
   for (const bt of boardTasks) {
     if (bt.boardId !== board.id) continue;
     btByPosition[`${bt.row}-${bt.col}`] = bt;
+    boardTasksOnBoard.push(bt);
+  }
+
+  // Kernel pass — only consulted for the ACHIEVEMENT branch below (every
+  // other cell resolves through taskToSquareState exactly as before this
+  // widening; `grid`/`completedTasks` here are unused).
+  const cellStateByBoardTaskId: Record<string, CellState> = {};
+  for (const c of computeBoardGrid(
+    board,
+    boardTasksOnBoard,
+    childrenByCompound,
+    taskMap,
+    allBoards,
+    { eventsByTaskId },
+  ).cells) {
+    cellStateByBoardTaskId[c.boardTaskId] = c;
   }
 
   const hasFreeCenter =
@@ -101,7 +135,10 @@ export function buildBoardPreviewCells(
       }
 
       const taskChildren = childrenByCompound[task.id] ?? [];
-      const squareState = taskToSquareState(task, taskChildren, taskMap, childrenByCompound, windowContext);
+      const squareState = taskToSquareState(
+        task, taskChildren, taskMap, childrenByCompound, windowContext,
+        cellStateByBoardTaskId[bt.id],
+      );
       const cellIndex = row * size + col;
       const completed = isSealed ? sealedCellSet.has(cellIndex) : squareState.isCompleted;
       cells.push({ kind: 'task', completed });

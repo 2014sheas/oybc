@@ -11,8 +11,16 @@ export { styles as interactiveTaskSquareStyles };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** The four interaction modes a task square can have. */
-export type SquareTaskType = 'normal' | 'counting' | 'progress' | 'compound';
+/**
+ * The interaction modes a task square can have.
+ *
+ * Board-integrity PR-3 (issue #360) added `'achievement'`: a read-only
+ * square whose completion is resolved cross-board by the shared kernel
+ * (`computeBoardGrid`'s ACHIEVEMENT branch), never a local toggle. See
+ * `db/adapters.ts`'s `taskToSquareData`/`taskToSquareState` ACHIEVEMENT
+ * branches and their `cellState` parameter.
+ */
+export type SquareTaskType = 'normal' | 'counting' | 'progress' | 'compound' | 'achievement';
 
 /** A single step within a progress-type task. */
 export interface ProgressStep {

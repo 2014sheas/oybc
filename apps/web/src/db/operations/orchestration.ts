@@ -384,6 +384,20 @@ export async function handleTaskCompletion(
         );
       }
 
+      // Board-integrity PR-3 (issue #360, finding 2) — Achievement squares
+      // are read-only on the grid, same as Compound. Their state derives
+      // from the watched board/template via `computeBoardGrid`'s ACHIEVEMENT
+      // branch, never a local toggle. The render layer already makes an
+      // achievement-square tap a no-op (mirrors iOS); this guard is
+      // defense-in-depth against any other caller reaching this function
+      // directly for an achievement BoardTask.
+      if (targetTask.type === TaskType.ACHIEVEMENT) {
+        throw new Error(
+          'Achievement BoardTasks are read-only on the grid. Their completion ' +
+            'derives from the watched board or recurring template, never a local toggle.',
+        );
+      }
+
       // 3. Windowed Completion (docs §Write paths): board-context taps write
       //    TaskEvents (not the lifetime cache). The event choke points append
       //    the row, restamp the lifetime caches, bump `Task.version`, and
