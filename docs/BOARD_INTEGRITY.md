@@ -206,3 +206,48 @@ an unnoticed regression.
   task-delete/counter-unlink cascade) shortly before this audit; finding 6
   in the matrix above is this program's continuation of that work for the
   `boardTasks` collection specifically.
+
+
+## 2026-07-27 — Board-edit window fix: test-fleet findings record
+
+The progress-reset-on-edit fix (branch `bugfix/edit-preserves-board-window`)
+shipped with a two-agent test fleet (web Playwright+vitest; iOS XCTest on the
+simulator runtime) plus a review round. Complete findings inventory:
+
+**Fixed in that PR:**
+- Progress reset on edit — Board-Edit Save recomputed `startDate` on every
+  save (indefinite → today; core → today's window); under Windowed Completion
+  that re-windowed the board and wiped events older than the edit day. Dates
+  now written only on deliberate window changes.
+- **Browser Board-Edit Save was entirely broken** (`PrematureCommitError` on
+  every Save): an unconditional `await import('@oybc/shared')` inside
+  `updateBoardAndCascade` broke the Dexie transaction zone once PR-4 composed
+  Save into one transaction. First-ever Save e2e caught it. RULE: never
+  dynamic-import inside transactional code (documented at the site).
+
+**Found, NOT fixed — triage/track:**
+- `e2e/counter-arrivals.spec.ts` fails on CLEAN dev (confirmed unrelated to
+  the edit work; pre-existing). Needs its own triage.
+- React "unique key prop" warning from `BoardPlaySurface` in dev console
+  (surfaced during e2e runs; cosmetic, dev-only, but worth a look).
+- Narrow multi-device race: a sync pull mutating `board.startDate`/timeframe
+  while the edit panel is open can make a stale local Save re-window over the
+  remote edit (pre-existing; normal LWW still applies).
+
+**Deferred test-hardening (review minors):**
+- `edit-window.spec.ts` uses wall-clock-relative dates — on some weekdays the
+  pre-fix bug wouldn't have reproduced (current-week boundaries can contain
+  the backdated event); anchor with clock injection for permanent regression
+  power.
+- The composed-save + bingo-lines triple is covered pairwise, not in one test.
+- iOS timeframe-change destinations →INDEFINITE/→CUSTOM aren't exercised via
+  the real `handleEditSave` (weekly→daily is).
+- Dirty-counter display uses looser change-detection than the persist
+  decision (both platforms; cosmetic count mismatch only).
+
+**Process notes:** `git worktree add` doesn't copy gitignored `.env.local` —
+Playwright/Firebase init needs it hand-copied into each new worktree (same
+class as the GoogleService-Info.plist copy). iOS agent reports two
+pre-existing ~30s `waitUntil`-pattern tests in isolated runs (noise, not
+regression). Agent scratch reports live in gitignored `.superpowers/sdd/` —
+durable findings belong HERE or in issues, not only there.
