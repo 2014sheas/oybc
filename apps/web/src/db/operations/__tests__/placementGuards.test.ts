@@ -167,6 +167,58 @@ describe('createBoardTask — Part 3 write-path invariant guards', () => {
   });
 });
 
+describe('createBoardTask — PR-5 Item 3 isCenter uniqueness guard', () => {
+  it('rejects a second isCenter: true placement when a live center row already exists', async () => {
+    await db.boards.add(seedBoard({ centerSquareType: CenterSquareType.CHOSEN }));
+    await db.tasks.add(seedTask('task-A'));
+    await db.tasks.add(seedTask('task-B'));
+    await db.boardTasks.add(seedPlacement('bt-A', 'board-1', 'task-A', 1, 1, { isCenter: true }));
+
+    await expect(
+      createBoardTask({ boardId: 'board-1', taskId: 'task-B', row: 0, col: 2, isCenter: true }),
+    ).rejects.toThrow(/already has a live center placement/);
+
+    // Rejected — nothing written.
+    expect(await db.boardTasks.where('boardId').equals('board-1').count()).toBe(1);
+  });
+
+  it('does NOT reject an isCenter: true placement when the existing center row is tombstoned', async () => {
+    await db.boards.add(seedBoard({ centerSquareType: CenterSquareType.CHOSEN }));
+    await db.tasks.add(seedTask('task-A'));
+    await db.tasks.add(seedTask('task-B'));
+    await db.boardTasks.add(
+      seedPlacement('bt-A', 'board-1', 'task-A', 1, 1, { isCenter: true, isDeleted: true }),
+    );
+
+    const created = await createBoardTask({
+      boardId: 'board-1',
+      taskId: 'task-B',
+      row: 1,
+      col: 1,
+      isCenter: true,
+    });
+
+    expect((await db.boardTasks.get(created.id))?.isCenter).toBe(true);
+  });
+
+  it('does NOT reject a non-center placement even when a live center row already exists', async () => {
+    await db.boards.add(seedBoard({ centerSquareType: CenterSquareType.CHOSEN }));
+    await db.tasks.add(seedTask('task-A'));
+    await db.tasks.add(seedTask('task-B'));
+    await db.boardTasks.add(seedPlacement('bt-A', 'board-1', 'task-A', 1, 1, { isCenter: true }));
+
+    const created = await createBoardTask({
+      boardId: 'board-1',
+      taskId: 'task-B',
+      row: 0,
+      col: 0,
+      isCenter: false,
+    });
+
+    expect((await db.boardTasks.get(created.id))?.isCenter).toBe(false);
+  });
+});
+
 describe('reorderBoardTasks — Part 3 bounds guard on staged move targets', () => {
   it('rejects the WHOLE batch when any staged target falls outside the board grid — no partial writes', async () => {
     await db.boards.add(seedBoard({ boardSize: 3 }));

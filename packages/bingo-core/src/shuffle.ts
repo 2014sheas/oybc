@@ -20,7 +20,11 @@ export function fisherYatesShuffle<T>(
 ): T[] {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
+    // Math.floor(rng() * (i + 1)) is uniform over [0, i]; the min-clamp
+    // guards the rng() → (nearly) 1.0 edge (e.g. a buggy seeded LCG that can
+    // return exactly 1.0) so the index never exceeds i. Mirrors the Swift
+    // `Shuffle.fisherYatesShuffle`'s `min(j, i)` clamp (apps/ios/OYBC/Services/Shuffle.swift).
+    const j = Math.min(Math.floor(rng() * (i + 1)), i);
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result;

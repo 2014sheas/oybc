@@ -162,6 +162,22 @@ export async function fetchBoardTasksForBoards(
  * array — a real bug worth surfacing loudly) or already wraps callers in
  * try/catch (`addBoardTaskToBoard`, which does NOT call this — see its own
  * guards below).
+ *
+ * Board-integrity PR-5 (Item 3) — (iv) rejects an `isCenter: true` input
+ * when a live center row already exists on this board. Nothing upstream
+ * enforced single-center uniqueness before this: the wizard write loop only
+ * ever computes ONE positional center per board today, but a future caller,
+ * a sync-merge duplicate, or a retried write could otherwise slip a SECOND
+ * `isCenter: true` row onto the board at a different cell. Verified
+ * render-inert for both the live play grid (`BoardPlaySurface` — `isCenter`
+ * is computed purely from `row === floor(size/2) && col === floor(size/2)`,
+ * never from the `BoardTask.isCenter` field; cells are looked up via
+ * `btByPosition[row-col]`, not by `isCenter`) and the edit-mode rearrange
+ * grid (`useBoardPlay.ts` `arrangeSlots` — same positional computation) —
+ * so this guard is pure defense-in-depth, not a fix for a live rendering bug.
+ * Repair (`computePlacementIntegrityRepair`) intentionally does NOT dedupe
+ * a same-position-valid, different-cell second center row — see
+ * docs/BOARD_INTEGRITY.md.
  */
 export async function createBoardTask(
   input: CreateBoardTaskInput
@@ -209,6 +225,11 @@ export async function createBoardTask(
     if (liveOnBoard.some((bt) => bt.taskId === input.taskId)) {
       throw new Error(
         `createBoardTask: task ${input.taskId} is already placed on board ${input.boardId}`,
+      );
+    }
+    if (input.isCenter && liveOnBoard.some((bt) => bt.isCenter)) {
+      throw new Error(
+        `createBoardTask: board ${input.boardId} already has a live center placement`,
       );
     }
 
@@ -378,6 +399,13 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
  * Shared-task semantics: if the task is already globally completed (isCompleted
  * is true on the Task row), the cascade immediately counts this cell as
  * completed and increments board.completedTasks. No cloning, no reset.
+ *
+ * Board-integrity PR-5 (Item 3): no `isCenter` uniqueness guard is needed
+ * here — unlike `createBoardTask`, this path always constructs its new row
+ * with `isCenter: false` (below) and has no parameter through which a caller
+ * could set it true. `createBoardTask` (the board-scoped placement path
+ * that DOES accept a caller-supplied `isCenter`, used by the wizard write
+ * loop) carries the actual guard.
  *
  * Caller is responsible for:
  *   - Confirming the target cell is currently empty.

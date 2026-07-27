@@ -603,7 +603,33 @@ extension AppDatabase {
                 }
             }
 
+            // Board-integrity PR-5 (Item 3) — isCenter uniqueness guard.
+            // Nothing upstream enforced single-center uniqueness before this:
+            // `makeWizardBoardTaskRows` only ever computes ONE positional
+            // center per placement today, but a future caller or placement
+            // bug could otherwise slip a SECOND `isCenter: true` row onto
+            // this board at a different cell. Fresh in-txn read (mirrors the
+            // `addBoardTaskToBoard` PR-2 guard idiom) — for a fresh create
+            // this is always 0; for a draft update the old rows were just
+            // tombstoned above, so it's also 0 today, but the read (rather
+            // than trusting that invariant) is what makes this guard survive
+            // a future change to the update path. Mirrors web's
+            // `createBoardTask` guard (the wizard write loop's per-cell
+            // equivalent — see docs/BOARD_INTEGRITY.md).
+            var liveCenterCount = try BoardTask
+                .filter(Column("boardId") == board.id
+                        && Column("isDeleted") == false
+                        && Column("isCenter") == true)
+                .fetchCount(db)
             for bt in boardTasks {
+                if bt.isCenter {
+                    guard liveCenterCount == 0 else {
+                        throw AppDatabaseError.invalidPlacement(
+                            "Board already has a center placement."
+                        )
+                    }
+                    liveCenterCount += 1
+                }
                 try bt.save(db)
                 try SyncQueueBuilder.makeItem(
                     entityType: "boardTasks",

@@ -244,7 +244,29 @@ extension AppDatabase {
                 updatedTemplate.version += 1
 
                 try board.insert(db)
+
+                // Board-integrity PR-5 (Item 3) — isCenter uniqueness guard,
+                // same rationale + fresh in-txn read as `saveWizardBoard`
+                // (AppDatabase+Boards.swift): a spawned board is always
+                // brand-new so this reads 0 today, but the check (rather
+                // than trusting `makeWizardBoardTaskRows`'s current
+                // single-center invariant) protects against a future
+                // placement-builder bug slipping a second `isCenter: true`
+                // row onto the freshly-spawned board.
+                var liveCenterCount = try BoardTask
+                    .filter(Column("boardId") == board.id
+                            && Column("isDeleted") == false
+                            && Column("isCenter") == true)
+                    .fetchCount(db)
                 for bt in boardTasks {
+                    if bt.isCenter {
+                        guard liveCenterCount == 0 else {
+                            throw AppDatabaseError.invalidPlacement(
+                                "Board already has a center placement."
+                            )
+                        }
+                        liveCenterCount += 1
+                    }
                     try bt.insert(db)
                 }
                 try updatedTemplate.update(db)
