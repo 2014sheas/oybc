@@ -27,6 +27,7 @@ import {
   reorderBoardTasks,
 } from '../db/operations/boardTasks';
 import { updateTaskAndCascade, toggleTaskCompletionAndCascade, undoLastCounterLog, type UpdateTaskPatch } from '../db/operations/tasks';
+import { updateBoardAndCascade, type UpdateActiveBoardPatch } from '../db/operations/boards';
 import { deriveFlashOutcome } from '../components/boardPlayFlash';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { type SubMode } from '../components/boardEdit/BoardEditPanel';
@@ -170,7 +171,15 @@ export interface UseBoardPlayResult {
   handleEditRemove: (boardTaskId: string) => void;
   handleEditTaskDone: (taskId: string, patch: UpdateTaskPatch) => void;
   handleRearrangeReorder: (newSlots: ArrangeSlot[]) => void;
-  commitSquareEdits: () => Promise<void>;
+  /**
+   * Commits every staged square edit, then (board-integrity PR-4, item 3,
+   * docs/BOARD_INTEGRITY.md) the board-metadata patch too — ALL in one Dexie
+   * transaction. `metadataPatch` is optional only so existing non-Save
+   * callers (none today) aren't forced to supply one; `BoardEditPanel`'s
+   * `handleSave` always passes it, folding what used to be its own separate
+   * `updateBoardAndCascade` call into this single atomic commit.
+   */
+  commitSquareEdits: (metadataPatch?: UpdateActiveBoardPatch) => Promise<void>;
   // ── Completion handlers ──
   handleComplete: (
     boardTaskId: string,
@@ -565,42 +574,92 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     squareWindowContext,
   ]);
 
-  const commitSquareEdits = useCallback(async (): Promise<void> => {
-    // 1. Cell replacements: cells whose staged taskId differs from the original.
-    for (const cell of squaresDraft) {
-      if (cell.taskId !== cell.originalTaskId) {
-        await updateBoardTaskAndCascade(cell.boardTaskId, cell.taskId);
-      }
-    }
-    // 2. Global task-field edits: apply UpdateTaskPatch for each staged override.
-    for (const [taskId, patch] of taskOverrides.entries()) {
-      await updateTaskAndCascade(taskId, patch);
-    }
-    // 3. Position reorders (Phase 3): cells whose staged row/col differs from original.
-    //    Committed as a single atomic Dexie transaction via reorderBoardTasks.
-    //    Phase 2b: NONE center is not pinned — its moves ARE included.
-    const moves = squaresDraft
-      .filter(
-        (c) =>
-          !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
-          (c.row !== c.originalRow || c.col !== c.originalCol),
-      )
-      .map((c) => ({ boardTaskId: c.boardTaskId, row: c.row, col: c.col }));
-    if (moves.length > 0) {
-      await reorderBoardTasks(boardId, moves);
-    }
-    // 4. Staged removals: pre-edit placements (still un-mutated in the DB during
-    //    staging) that are absent from the draft. `removeBoardTaskFromBoard`
-    //    hard-deletes the placement (own txn + cascade + sync-enqueue), leaving
-    //    the cell empty; it's idempotent, so a re-run after a partial failure is
-    //    safe. Loop mirrors the replacement loop above.
-    const draftIds = new Set(squaresDraft.map((c) => c.boardTaskId));
-    for (const bt of boardTasks) {
-      if (!draftIds.has(bt.id)) {
-        await removeBoardTaskFromBoard(bt.id);
-      }
-    }
-  }, [squaresDraft, taskOverrides, boardId, draftCenterType, boardTasks]);
+  /**
+   * Board-integrity PR-4, item 3 (docs/BOARD_INTEGRITY.md): Board-Edit Save
+   * used to run as ~5 sequential Dexie transactions (one per staged
+   * replacement, one per task-field override, one for the reorder batch, one
+   * per removal, then a SEPARATE `updateBoardAndCascade` transaction back in
+   * `BoardEditPanel`). A mid-sequence failure left a half-applied board with
+   * only a generic "save failed" — and web's Cancel never rolled back the
+   * part that DID commit.
+   *
+   * Fix: every step below (including the board-metadata patch, folded in as
+   * step 5) now runs inside ONE outer `db.transaction(...)`. Every helper
+   * called here (`updateBoardTaskAndCascade`, `updateTaskAndCascade`,
+   * `reorderBoardTasks`, `removeBoardTaskFromBoard`, `updateBoardAndCascade`)
+   * already opens its OWN `db.transaction('rw', [...])` internally — Dexie
+   * transactions are reentrant: when a nested `db.transaction()` call's
+   * requested table scope is a subset of the ALREADY-open ambient
+   * transaction's scope (verified for exactly this outer scope during PR-4
+   * review), Dexie joins the same underlying IndexedDB transaction instead of
+   * opening a new one. So wrapping the unchanged call sequence in the outer
+   * transaction below is sufficient for atomicity — no "InTxn" duplicate
+   * variants were needed for any of these five ops. The outer scope is the
+   * union of every table any of them touches (directly or via
+   * `addToSyncQueue`/`buildWindowContext`).
+   *
+   * Op order is UNCHANGED from before this fix: replacements → task-field
+   * overrides → reorders → removals → (new) metadata patch. A throw at any
+   * step now rolls back every write from every earlier step too, so a
+   * partial Save can never be observed — the board is either fully saved or
+   * untouched.
+   *
+   * @param metadataPatch - The board-metadata patch from `BoardEditPanel`'s
+   *   Save button (name/timeframe/dates/center). Optional so a future
+   *   non-Save caller could commit just the square edits, but every current
+   *   caller (Save) supplies it.
+   */
+  const commitSquareEdits = useCallback(
+    async (metadataPatch?: UpdateActiveBoardPatch): Promise<void> => {
+      await db.transaction(
+        'rw',
+        [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
+        async () => {
+          // 1. Cell replacements: cells whose staged taskId differs from the original.
+          for (const cell of squaresDraft) {
+            if (cell.taskId !== cell.originalTaskId) {
+              await updateBoardTaskAndCascade(cell.boardTaskId, cell.taskId);
+            }
+          }
+          // 2. Global task-field edits: apply UpdateTaskPatch for each staged override.
+          for (const [taskId, patch] of taskOverrides.entries()) {
+            await updateTaskAndCascade(taskId, patch);
+          }
+          // 3. Position reorders (Phase 3): cells whose staged row/col differs from original.
+          //    Phase 2b: NONE center is not pinned — its moves ARE included.
+          const moves = squaresDraft
+            .filter(
+              (c) =>
+                !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
+                (c.row !== c.originalRow || c.col !== c.originalCol),
+            )
+            .map((c) => ({ boardTaskId: c.boardTaskId, row: c.row, col: c.col }));
+          if (moves.length > 0) {
+            await reorderBoardTasks(boardId, moves);
+          }
+          // 4. Staged removals: pre-edit placements (still un-mutated in the DB during
+          //    staging) that are absent from the draft. `removeBoardTaskFromBoard`
+          //    tombstones the placement + cascades + enqueues sync, leaving the
+          //    cell empty; it's idempotent, so a re-run after a partial failure is
+          //    safe. Loop mirrors the replacement loop above.
+          const draftIds = new Set(squaresDraft.map((c) => c.boardTaskId));
+          for (const bt of boardTasks) {
+            if (!draftIds.has(bt.id)) {
+              await removeBoardTaskFromBoard(bt.id);
+            }
+          }
+          // 5. Board-metadata patch (name/timeframe/dates/center) — folded into
+          //    this same transaction (item 3). Previously a separate
+          //    `updateBoardAndCascade` call made by `BoardEditPanel` AFTER this
+          //    function had already returned (and already committed).
+          if (metadataPatch) {
+            await updateBoardAndCascade(boardId, metadataPatch);
+          }
+        },
+      );
+    },
+    [squaresDraft, taskOverrides, boardId, draftCenterType, boardTasks],
+  );
 
   // ── Completion handler ─────────────────────────────────────────────────
 

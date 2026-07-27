@@ -30,6 +30,7 @@ import {
   promoteEligibleFailedItems,
   countExhaustedSyncItems,
   retryExhaustedSyncItems,
+  addToSyncQueue,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
@@ -332,7 +333,20 @@ async function applyRemoteUserDoc(
     recordSyncEvent('pulled');
     return `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`;
   }
-  return null; // local-wins → silent no-op
+  // Board-integrity PR-4, item 1: same generic-path fix as
+  // `applyRemoteSubdoc` in `db/operations/pullApply.ts` — see that
+  // function's doc comment for the full race + self-healing rationale.
+  // The `users` doc isn't a `SyncCollection` (it lives at `users/{userId}`,
+  // not a subcollection), so it can't share that function directly, but the
+  // push loop already special-cases `entityType === 'users'` with its own
+  // docRef, so a plain UPDATE enqueue drains through the same path.
+  const rowsDiffer =
+    localSyncable!.version !== remoteSyncable.version ||
+    localSyncable!.updatedAt !== remoteSyncable.updatedAt;
+  if (rowsDiffer) {
+    await addToSyncQueue('users', userId, SyncOperationType.UPDATE, localUser, 0);
+  }
+  return null; // local-wins → re-enqueued (if it differs) so it re-asserts
 }
 
 // `applyRemoteSubdoc` (apply a remote document from a syncable subcollection

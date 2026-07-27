@@ -121,6 +121,44 @@ describe("users/{userId} parent doc (firestore.rules:6-19)", () => {
     await assertSucceeds(setDoc(ref, { id: uid, version: 1 }));
     await assertFails(deleteDoc(ref));
   });
+
+  // Board-integrity PR-4, item 2 (docs/BOARD_INTEGRITY.md): version
+  // monotonicity on update. Verified against `resolveConflict`'s tie
+  // semantics (packages/shared/src/algorithms/lwwResolve.ts) — same-version
+  // ties are broken client-side by `updatedAt`, so `>=` (never `>`) must be
+  // the boundary or a legitimate equal-version re-push would be rejected.
+  describe("version monotonicity on update", () => {
+    it("denies an update whose version REGRESSES below the stored version", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}`);
+      await assertSucceeds(setDoc(ref, { id: uid, version: 5 }));
+      await assertFails(setDoc(ref, { id: uid, version: 4 }));
+    });
+
+    it("allows an update whose version EQUALS the stored version (LWW tie, must not be treated as a regression)", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}`);
+      await assertSucceeds(setDoc(ref, { id: uid, version: 5 }));
+      await assertSucceeds(setDoc(ref, { id: uid, version: 5, email: "same-version-repush" }));
+    });
+
+    it("allows an update whose version ADVANCES beyond the stored version", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}`);
+      await assertSucceeds(setDoc(ref, { id: uid, version: 5 }));
+      await assertSucceeds(setDoc(ref, { id: uid, version: 6 }));
+    });
+
+    it("allows creating a brand-new user doc regardless of its starting version (no prior doc to regress against)", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}`);
+      await assertSucceeds(setDoc(ref, { id: uid, version: 1 }));
+    });
+  });
 });
 
 describe("users/{userId}/{collection}/{docId} subcollections (firestore.rules:21-74)", () => {
@@ -293,6 +331,63 @@ describe("users/{userId}/{collection}/{docId} subcollections (firestore.rules:21
     await assertFails(
       updateDoc(ref, boardPayload(uid, "board1", { name: "Hacked name" })),
     );
+  });
+
+  // Board-integrity PR-4, item 2 (docs/BOARD_INTEGRITY.md): version
+  // monotonicity on update, mirrored here for the per-collection entity
+  // rule (`validEntityWrite()` + the `request.resource.data.version >=
+  // resource.data.version` check on the `allow update` rule).
+  describe("version monotonicity on update", () => {
+    it("denies an update whose version REGRESSES below the stored version", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}/boards/board1`);
+      await assertSucceeds(setDoc(ref, boardPayload(uid, "board1", { version: 5 })));
+      await assertFails(setDoc(ref, boardPayload(uid, "board1", { version: 4 })));
+    });
+
+    it("allows an update whose version EQUALS the stored version (LWW tie, must not be treated as a regression)", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}/boards/board1`);
+      await assertSucceeds(setDoc(ref, boardPayload(uid, "board1", { version: 5 })));
+      await assertSucceeds(
+        setDoc(ref, boardPayload(uid, "board1", { version: 5, name: "Same-version repush" })),
+      );
+    });
+
+    it("allows an update whose version ADVANCES beyond the stored version", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}/boards/board1`);
+      await assertSucceeds(setDoc(ref, boardPayload(uid, "board1", { version: 5 })));
+      await assertSucceeds(setDoc(ref, boardPayload(uid, "board1", { version: 6 })));
+    });
+
+    it("allows creating a brand-new doc regardless of its starting version (no prior doc to regress against)", async () => {
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}/boards/board1`);
+      await assertSucceeds(setDoc(ref, boardPayload(uid, "board1", { version: 1 })));
+    });
+
+    it("denies a delete-tombstone push (setDoc merge on an existing doc) whose version REGRESSES", async () => {
+      // Mirrors the app's actual delete transport: `writeSingleDoc` always
+      // uses `setDoc(ref, cleaned, { merge: true })`, even for tombstones —
+      // Firestore classifies that as an `update` (not `create`) once the doc
+      // already exists, so it's gated by the same monotonicity rule.
+      const uid = "alice";
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const ref = doc(db, `users/${uid}/boards/board1`);
+      await assertSucceeds(setDoc(ref, boardPayload(uid, "board1", { version: 5 })));
+      await assertFails(
+        setDoc(
+          ref,
+          boardPayload(uid, "board1", { version: 4, isDeleted: true }),
+          { merge: true },
+        ),
+      );
+    });
   });
 });
 
