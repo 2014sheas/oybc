@@ -24,9 +24,10 @@ export {
   findAffectedBoardIds,
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
+  computeBoardGrid,
 } from './derivationPass';
 
-export type { BoardStatsUpdate } from './derivationPass';
+export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './derivationPass';
 
 // ===== Windowed Completion — task events + windowed evaluation (PR A) =====
 export {

@@ -329,7 +329,17 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-comp",
+          "taskId": "comp",
+          "row": 1,
+          "col": 1,
+          "idx": 4,
+          "isCompleted": true
+        }
+      ]
     },
     {
       "name": "compound-one-incomplete-not-counted",
@@ -691,7 +701,8 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": []
     },
     {
       "name": "center-auto-fill-custom-free",
@@ -1217,7 +1228,22 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "parent-ach1",
+          "taskId": "ach1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true,
+          "achievement": {
+            "mode": "specificBoard",
+            "referencedBoardId": "ref",
+            "referencedBoardCompleted": true
+          }
+        }
+      ]
     },
     {
       "name": "referenced-board-active-incomplete",
@@ -1288,7 +1314,22 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "parent-ach1",
+          "taskId": "ach1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false,
+          "achievement": {
+            "mode": "specificBoard",
+            "referencedBoardId": "ref",
+            "referencedBoardCompleted": false
+          }
+        }
+      ]
     },
     {
       "name": "referenced-board-soft-deleted-incomplete",
@@ -1501,7 +1542,23 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "parent-ach1",
+          "taskId": "ach1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true,
+          "achievement": {
+            "mode": "recurringTemplate",
+            "referencedTemplateId": "t1",
+            "templateInWindowMet": 2,
+            "templateRequiredCount": 2
+          }
+        }
+      ]
     },
     {
       "name": "template-indefinite-host-admits-no-upper-bound",
@@ -1738,7 +1795,23 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "parent-ach1",
+          "taskId": "ach1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false,
+          "achievement": {
+            "mode": "recurringTemplate",
+            "referencedTemplateId": "t1",
+            "templateInWindowMet": 1,
+            "templateRequiredCount": 2
+          }
+        }
+      ]
     },
     {
       "name": "template-empty-window-incomplete",
@@ -3096,7 +3169,17 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-t1",
+          "taskId": "t1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
     },
     {
       "name": "windowed-counting-in-window-increments-reach-goal",
@@ -3166,7 +3249,17 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-t1",
+          "taskId": "t1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
     },
     {
       "name": "windowed-derived-counter-carve-out-honors-lifetime-cache",
@@ -3218,7 +3311,17 @@
         "completedLineIds": [],
         "newBingos": [],
         "lostBingos": []
-      }
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-t1",
+          "taskId": "t1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
     },
     {
       "name": "window-seam-same-board-lifetime-resolution-counts",
