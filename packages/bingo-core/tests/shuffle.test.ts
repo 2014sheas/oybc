@@ -102,4 +102,36 @@ describe('fisherYatesShuffle', () => {
     const result = fisherYatesShuffle(input);
     expect(result.sort()).toEqual([1, 2, 3]);
   });
+
+  // Board-integrity PR-5 (issue #362), Item 2: an rng() returning exactly
+  // 1.0 (possible from a buggy seeded LCG — the Numerical Recipes LCG in
+  // seededRng.ts / BoardPlacementTests.swift is mod-2^32 and so in principle
+  // CAN emit state=0 → 0/4294967296 = 0, but a hostile/adversarial rng could
+  // just as easily emit 1.0 directly) must not push the swap index out of
+  // bounds. Swift's `Shuffle.fisherYatesShuffle` already clamps via
+  // `min(j, i)`; this pins the TS side to the same behavior instead of
+  // silently reading/writing `result[i + 1]` (undefined at the top of the
+  // array, and a real out-of-bounds write for smaller arrays).
+  it('clamps an adversarial rng() that returns exactly 1.0 (no out-of-bounds index)', () => {
+    const alwaysOne = () => 1.0;
+    const input = [0, 1, 2, 3, 4];
+    // Without the min(j, i) clamp, Math.floor(1.0 * (i + 1)) === i + 1 for
+    // every i, so result[i + 1] would be swapped in instead of result[i]:
+    // an out-of-bounds read/write (undefined at i = length - 1, and a
+    // silent no-op — not even a shuffle — for the rest).
+    const result = fisherYatesShuffle(input, alwaysOne);
+    expect(result).toHaveLength(5);
+    expect(result.every((v) => v !== undefined)).toBe(true);
+    expect([...result].sort()).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('an adversarial rng() returning 1.0 clamps to swapping with self (identity at the clamped index)', () => {
+    // With j clamped to i, result[i] <-> result[j] is a self-swap at every
+    // step, so the array comes back in ORIGINAL order — pinning the exact
+    // clamped semantics, not just "doesn't crash".
+    const alwaysOne = () => 1.0;
+    const input = ['a', 'b', 'c', 'd', 'e'];
+    const result = fisherYatesShuffle(input, alwaysOne);
+    expect(result).toEqual(input);
+  });
 });
