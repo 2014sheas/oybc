@@ -1,6 +1,7 @@
 import {
   CenterSquareType,
   computeBoardGrid,
+  resolvePlacements,
   type Board,
   type BoardTask,
   type CellState,
@@ -89,11 +90,15 @@ export function buildBoardPreviewCells(
   const windowContext: SquareWindowContext = { windowStart: board.startDate, eventsByTaskId };
 
   const btByPosition: Record<string, BoardTask> = {};
-  const boardTasksOnBoard: BoardTask[] = [];
-  for (const bt of boardTasks) {
-    if (bt.boardId !== board.id) continue;
+  // Resolve through the PR-2 winner rule (matches the iOS twin + every other
+  // render surface) so an un-repaired legacy duplicate placement can't make
+  // the preview pick a different, order-dependent "winner" than the grid.
+  const boardTasksOnBoard: BoardTask[] = resolvePlacements(
+    boardTasks.filter((bt) => bt.boardId === board.id),
+    size,
+  );
+  for (const bt of boardTasksOnBoard) {
     btByPosition[`${bt.row}-${bt.col}`] = bt;
-    boardTasksOnBoard.push(bt);
   }
 
   // Kernel pass — only consulted for the ACHIEVEMENT branch below (every
