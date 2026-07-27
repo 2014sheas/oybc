@@ -2,6 +2,7 @@ import { db } from '../internal';
 import type { Board, Task, CompoundChild, CreateBoardInput } from '@oybc/shared';
 import {
   BoardStatus,
+  CenterSquareType,
   SyncOperationType,
   Timeframe,
   findTransitiveParentCompounds,
@@ -97,7 +98,15 @@ export async function updateBoardAndCascade(
   // "clear" as `undefined` in the Partial update (Dexie skips undefined keys).
   // For startDate/endDate the EditBoardSheet always provides a concrete
   // string, so null is converted to undefined as a safety net.
-  const { CenterSquareType } = await import('@oybc/shared');
+  //
+  // NOTE: CenterSquareType is a STATIC import. It was previously an
+  // unconditional `await import('@oybc/shared')` here — harmless when this
+  // function opened its own transaction (the import awaited before the txn),
+  // but fatal once PR-4 composed Board-Edit Save into one outer Dexie
+  // transaction: an awaited dynamic import inside an open Dexie transaction
+  // leaves its zone, throwing PrematureCommitError on EVERY real Save in the
+  // browser (invisible to node-side vitest timing; caught by the first e2e to
+  // ever press Save). Never dynamic-import inside transactional code.
 
   const sanitized: Partial<Board> = {};
   if (patch.name !== undefined) sanitized.name = patch.name;

@@ -68,11 +68,11 @@ import {
  * and passes cleanly under fake-indexeddb + Node — that harness doesn't
  * reproduce the real-browser Promise/PSD-zone timing that trips this up.
  *
- * `test.fail()` below marks this as a KNOWN failure so it doesn't spuriously
+ * This spec proves BOTH fixes end-to-end (the dynamic-import txn break AND
  * red-flag CI for a reason unrelated to whatever change is under review, but
  * still loudly flags (as an unexpected PASS) the moment someone fixes the
  * dynamic-import bug — at which point this test should also start proving
- * the window-preservation fix for real and the `test.fail()` line should be
+ * the window-preservation fix). It was originally landed as `test.fail()` while
  * deleted.
  */
 
@@ -135,15 +135,6 @@ test.describe('Board-Edit preserves the board window (bugfix/edit-preserves-boar
   test('renaming a board via Edit -> Save keeps a backdated completion green', async ({
     page,
   }) => {
-    test.fail(
-      true,
-      'BLOCKED by a pre-existing, unrelated Critical bug: apps/web/src/db/operations/boards.ts:100 ' +
-        "(`await import('@oybc/shared')` inside `updateBoardAndCascade`) breaks the Dexie transaction " +
-        "when called from `commitSquareEdits`'s already-open transaction (apps/web/src/hooks/useBoardPlay.ts:656) " +
-        '— every Board-Edit Save throws PrematureCommitError in the real browser. See the file-header comment. ' +
-        'Delete this test.fail() once that bug is fixed — this test should then also prove the window-preservation fix.',
-    );
-
     // ── 1. Open the board — the square is green from the in-window completion. ──
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByRole('heading', { name: BOARD_NAME })).toBeVisible();

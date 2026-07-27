@@ -270,21 +270,42 @@ export function BoardEditPanel({
       patch.centerSquareCustomName = centerCustomName.trim() || null;
     }
 
-    // Timeframe + dates.
+    // Timeframe + dates — ONLY when the user actually changed the window.
+    //
+    // A metadata-only Save must PRESERVE the board's stored window: under
+    // Windowed Completion, `startDate` is the completion window's lower bound
+    // — rewriting it silently re-windows the board and wipes the progress of
+    // every task whose completion events predate the new start. The old code
+    // did exactly that on EVERY save (indefinite → re-anchored to today; core
+    // → recomputed from today's window), which reset all progress except
+    // tasks completed on the edit day.
     patch.timeframe = timeframe;
-    if (timeframe === Timeframe.INDEFINITE) {
-      // Ongoing board — anchor startDate to today, clear the deadline.
-      const dayStart = new Date();
-      dayStart.setHours(0, 0, 0, 0);
-      patch.startDate = toLocalISO(dayStart);
-      patch.endDate = null;
-    } else if (timeframe === Timeframe.CUSTOM) {
+    const timeframeChanged = timeframe !== (board.timeframe as Timeframe);
+    const customDatesChanged =
+      timeframe === Timeframe.CUSTOM &&
+      (customStartDate !== origStart || customEndDate !== origEnd);
+    if (timeframeChanged) {
+      // A deliberate re-window: converting the board recomputes its dates.
+      if (timeframe === Timeframe.INDEFINITE) {
+        // Ongoing board — anchor startDate to today, clear the deadline.
+        const dayStart = new Date();
+        dayStart.setHours(0, 0, 0, 0);
+        patch.startDate = toLocalISO(dayStart);
+        patch.endDate = null;
+      } else if (timeframe === Timeframe.CUSTOM) {
+        patch.startDate = snapStart(customStartDate);
+        patch.endDate = snapEnd(customEndDate);
+      } else if (computedBoundaries) {
+        patch.startDate = computedBoundaries.startDate;
+        patch.endDate = computedBoundaries.endDate;
+      }
+    } else if (customDatesChanged) {
+      // Same CUSTOM timeframe, user picked new dates.
       patch.startDate = snapStart(customStartDate);
       patch.endDate = snapEnd(customEndDate);
-    } else if (computedBoundaries) {
-      patch.startDate = computedBoundaries.startDate;
-      patch.endDate = computedBoundaries.endDate;
     }
+    // else: window untouched — omit startDate/endDate so the stored window
+    // (and every in-window completion event) survives the save.
 
     setSaving(true);
     try {
