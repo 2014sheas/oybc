@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  AchievementTrigger,
   BoardStatus,
-  TaskType,
-  isWithinTimeframe,
+  computeBoardGrid,
+  detectBingos,
   resolvePlacements,
   type Board,
   type BoardSize,
   type BoardTask,
+  type CellState,
   type CompoundChild,
   type RecurringBoardTemplate,
   type Task,
@@ -48,6 +48,26 @@ export interface BoardPlayData {
   allBoardTasks: BoardTask[];
   allBoards: Board[];
   achievementBadgesByBoardTaskId: Record<string, AchievementSquareBadgeData>;
+  /**
+   * Board-integrity PR-3 (issue #360) — the kernel's per-cell resolution
+   * (`computeBoardGrid`'s `cells[]`), keyed by `BoardTask.id`. The single
+   * source of truth for "is this cell done" (including the ACHIEVEMENT
+   * branch, which `taskToSquareState` can't resolve on its own — it has no
+   * cross-board context). Every render surface that needs a cell's
+   * completion should read from here rather than re-deriving.
+   */
+  cellStateByBoardTaskId: Record<string, CellState>;
+  /**
+   * Board-integrity PR-3, Part 3 (ring coherence) — the bingo line ids
+   * detected from the SAME live kernel grid `cellStateByBoardTaskId` was
+   * built from, for THIS render. On a live (unsealed) board this is what
+   * the gold ring should highlight from — not `board.completedLineIds`,
+   * whose write lags one cascade transaction behind the reactive grid (the
+   * render-side stale-ring window pull-ordering transients created). Sealed
+   * boards render their frozen `board.completedLineIds`/`sealedCompletedCells`
+   * snapshot instead (this field is still computed for them but unused).
+   */
+  liveCompletedLineIds: string[];
   sharedCounterSourceIds: Set<string>;
   sharedCounterHintsByTaskId: Map<string, string>;
   sortedBoardTasks: BoardTask[];
@@ -109,73 +129,93 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   const allTemplates: RecurringBoardTemplate[] =
     useRecurringBoardTemplates(userId) ?? EMPTY_TEMPLATES;
 
+  // Windowed Completion — all non-deleted TaskEvents grouped by taskId, plus
+  // the board's window start. `taskToSquareState` uses this to resolve each
+  // primitive square windowed (derived / compound carve-outs handled inside).
+  // Shared with RisoBoard + useBoardPlay's rearrange preview via
+  // `useSquareWindowContext` so every board-square surface reads windowed.
+  // Hoisted above the kernel memo below (PR-3) since `computeBoardGrid`
+  // needs its `eventsByTaskId` to resolve windowed primitive cells.
+  const squareWindowContext: SquareWindowContext = useSquareWindowContext(board);
+
+  // Board-integrity PR-3 (issue #360) — the ONE per-cell resolver. Runs the
+  // canonical derivation kernel over this board's resolved placements, once
+  // per render, memoized on the same inputs `computeBoardStatsUpdate` /
+  // `computeSealedCompletedCells` key off. Every render surface that needs
+  // "is this cell done" — including the ACHIEVEMENT branch, which
+  // `taskToSquareState` can't resolve on its own (it has no cross-board
+  // context) — reads from `cellStateByBoardTaskId` below instead of
+  // re-deriving the branch order locally (closes the web achievement-render
+  // bug: docs/BOARD_INTEGRITY.md finding 2).
+  const kernelResult = useMemo(
+    () =>
+      computeBoardGrid(
+        board,
+        boardTasks,
+        compoundChildrenByCompound,
+        taskMap,
+        allBoards,
+        { eventsByTaskId: squareWindowContext.eventsByTaskId },
+      ),
+    [board, boardTasks, compoundChildrenByCompound, taskMap, allBoards, squareWindowContext],
+  );
+
+  const cellStateByBoardTaskId = useMemo<Record<string, CellState>>(() => {
+    const out: Record<string, CellState> = {};
+    for (const c of kernelResult.cells) out[c.boardTaskId] = c;
+    return out;
+  }, [kernelResult]);
+
+  // Board-integrity PR-3, Part 3 (ring coherence) — bingo lines detected
+  // from the SAME live grid `cellStateByBoardTaskId` was built from, for
+  // THIS render. See the `liveCompletedLineIds` doc on `BoardPlayData`.
+  const liveCompletedLineIds = useMemo(
+    () => detectBingos(kernelResult.grid, gridSize).completedLines,
+    [kernelResult, gridSize],
+  );
+
   // Phase 6.3 — per-cell achievement-task badge data, keyed by
-  // BoardTask.id. The badge labels what each ACHIEVEMENT-typed Task is
-  // watching; the cell's actual completion state still comes from
-  // derivationPass.
-  //
-  // Build the lookup maps once per render (boardById, spawnsByTemplate)
-  // then loop cells to assemble the badge entries. This mirrors the
-  // performance optimization in `derivationPass.ts` — without the
-  // template index, each template-mode cell would re-scan all boards.
+  // BoardTask.id. Board-integrity PR-3: the kernel (`cellStateByBoardTaskId`)
+  // already resolved WHICH board/template each achievement cell watches and
+  // whether it's met; this memo only adds the display NAME lookups
+  // (board/template name), which are outside the kernel's completion-
+  // derivation domain (see `AchievementCellBadge`'s doc comment in
+  // derivationPass.ts) — no more hand-copying the trigger/meets/spawn-filter
+  // logic here.
   const achievementBadgesByBoardTaskId = useMemo<Record<string, AchievementSquareBadgeData>>(() => {
     const out: Record<string, AchievementSquareBadgeData> = {};
     const boardById = new Map<string, Board>();
-    const spawnsByTemplate = new Map<string, Board[]>();
     for (const b of allBoards) {
       if (b.isDeleted) continue;
       boardById.set(b.id, b);
-      if (b.spawnedFromTemplateId) {
-        const list = spawnsByTemplate.get(b.spawnedFromTemplateId) ?? [];
-        list.push(b);
-        spawnsByTemplate.set(b.spawnedFromTemplateId, list);
-      }
     }
     const templateById = new Map(allTemplates.map((t) => [t.id, t]));
 
     for (const bt of boardTasks) {
-      const t = taskMap[bt.taskId];
-      if (!t || t.type !== TaskType.ACHIEVEMENT) continue;
-      const trigger = t.achievementTrigger ?? AchievementTrigger.GREENLOG;
-      const meets = (b: Board): boolean =>
-        trigger === AchievementTrigger.BINGO
-          ? (b.linesCompleted ?? 0) > 0
-          : b.status === BoardStatus.COMPLETED;
-      // Phase 6.3 precedence: referencedBoardId wins when both fields
-      // somehow get set. The Zod refinement should prevent this, but
-      // the badge stays predictable for bad-data payloads.
-      if (t.referencedBoardId) {
-        const ref = boardById.get(t.referencedBoardId);
+      const achievement = cellStateByBoardTaskId[bt.id]?.achievement;
+      if (!achievement) continue;
+      if (achievement.mode === 'specificBoard') {
+        const ref = achievement.referencedBoardId ? boardById.get(achievement.referencedBoardId) : undefined;
         out[bt.id] = {
           mode: 'specificBoard',
           referencedBoardName: ref?.name,
-          referencedBoardCompleted: ref ? meets(ref) : false,
+          referencedBoardCompleted: achievement.referencedBoardCompleted ?? false,
         };
         continue;
       }
-      if (t.referencedTemplateId) {
-        const tmpl = templateById.get(t.referencedTemplateId);
-        const spawns = spawnsByTemplate.get(t.referencedTemplateId) ?? [];
-        // Parse to timestamps via the shared helper — `Board.startDate`/
-        // `endDate` may be local-ISO (no zone) or UTC-with-`Z` (sync
-        // round-trips), and the two encodings don't compare correctly
-        // as strings. Same fix as derivationPass.ts.
-        const inWindow = spawns.filter((b) =>
-          isWithinTimeframe(b.startDate, board.startDate, board.endDate),
-        );
-        const met = inWindow.filter(meets).length;
-        out[bt.id] = {
-          mode: 'recurringTemplate',
-          templateName: tmpl?.name,
-          templateInWindowMet: met,
-          templateRequiredCount: t.requiredCount ?? 0,
-        };
-      }
-      // No reference set on an ACHIEVEMENT task: skip the badge entirely
-      // (the cell renders as a regular task; derivation marks incomplete).
+      // mode === 'recurringTemplate'
+      const tmpl = achievement.referencedTemplateId
+        ? templateById.get(achievement.referencedTemplateId)
+        : undefined;
+      out[bt.id] = {
+        mode: 'recurringTemplate',
+        templateName: tmpl?.name,
+        templateInWindowMet: achievement.templateInWindowMet ?? 0,
+        templateRequiredCount: achievement.templateRequiredCount ?? 0,
+      };
     }
     return out;
-  }, [boardTasks, allBoards, allTemplates, taskMap, board.startDate, board.endDate]);
+  }, [boardTasks, cellStateByBoardTaskId, allBoards, allTemplates]);
 
   // Phase 3 — Shared Counters: Set of task ids that are shared-counter SOURCES
   // (i.e., at least one other task points to them via `sharedCounterId`).
@@ -278,13 +318,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
 
   const isExpired = isBoardExpired(board);
 
-  // Windowed Completion — all non-deleted TaskEvents grouped by taskId, plus
-  // the board's window start. `taskToSquareState` uses this to resolve each
-  // primitive square windowed (derived / compound carve-outs handled inside).
-  // Shared with RisoBoard + useBoardPlay's rearrange preview via
-  // `useSquareWindowContext` so every board-square surface reads windowed.
-  const squareWindowContext: SquareWindowContext = useSquareWindowContext(board);
-
   return {
     boardTasks,
     taskMap,
@@ -292,6 +325,8 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     allBoardTasks,
     allBoards,
     achievementBadgesByBoardTaskId,
+    cellStateByBoardTaskId,
+    liveCompletedLineIds,
     sharedCounterSourceIds,
     sharedCounterHintsByTaskId,
     sortedBoardTasks,

@@ -4,6 +4,8 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  computeBoardGrid,
+  type CellState,
 } from '../../src/algorithms/derivationPass';
 import { CenterSquareType, TaskType, BoardStatus, Timeframe } from '../../src/constants/enums';
 import type {
@@ -126,6 +128,17 @@ interface CbsuVector {
     newBingos: string[];
     lostBingos: string[];
   };
+  /**
+   * Board-integrity PR-3 (issue #360) — OPTIONAL per-cell assertions against
+   * `computeBoardGrid`'s widened `cells[]` output, pinned for a representative
+   * subset of vectors (normal windowed, counting, compound, derived carve-out,
+   * achievement board-mode met/unmet, achievement template-mode met/unmet,
+   * FREE center — which contributes NO cells entry, only the auto-fill grid
+   * bit). Absent on every other (pre-PR-3) vector — `computeBoardStatsUpdate`
+   * itself doesn't expose `cells`, so this is checked via a SEPARATE
+   * `computeBoardGrid` call below, not by widening `expected`.
+   */
+  expectedCells?: CellState[];
 }
 
 interface Fixture {
@@ -319,6 +332,25 @@ describe('computeBoardStatsUpdate (fixture-driven, tests/fixtures/derivationPass
       expect(result.completedLineIds).toEqual(v.expected.completedLineIds);
       expect(result.newBingos).toEqual(v.expected.newBingos);
       expect(result.lostBingos).toEqual(v.expected.lostBingos);
+
+      // Board-integrity PR-3 — per-cell `cells[]` assertion, only for vectors
+      // that carry `expectedCells`. Calls `computeBoardGrid` directly (NOT
+      // `computeBoardStatsUpdate`, whose own return type is unchanged) with
+      // the EXACT same inputs, so this also pins that the widened kernel's
+      // grid/completedTasks stay byte-identical to computeBoardStatsUpdate's
+      // independently-asserted result above.
+      if (v.expectedCells) {
+        const gridResult = computeBoardGrid(
+          board,
+          boardTasksOnBoard,
+          childrenByCompound,
+          taskById,
+          allBoards,
+          toWindowContext(v.windowContext),
+        );
+        expect(gridResult.completedTasks).toBe(v.expected.completedTasks);
+        expect(gridResult.cells).toEqual(v.expectedCells);
+      }
     });
   }
 });

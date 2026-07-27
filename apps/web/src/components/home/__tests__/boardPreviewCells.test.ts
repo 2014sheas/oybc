@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AchievementTrigger,
   BoardStatus,
   CenterSquareType,
   OperatorType,
@@ -91,6 +92,23 @@ function makeCompoundTask(id: string, over: Partial<Task> = {}): Task {
     title: `Compound ${id}`,
     type: TaskType.COMPOUND,
     operator: OperatorType.AND,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 1,
+    createdAt: START,
+    updatedAt: START,
+    version: 1,
+    isDeleted: false,
+    ...over,
+  };
+}
+
+function makeAchievementTask(id: string, over: Partial<Task> = {}): Task {
+  return {
+    id,
+    userId: USER,
+    title: `Achievement ${id}`,
+    type: TaskType.ACHIEVEMENT,
     isCompleted: false,
     totalCompletions: 0,
     totalInstances: 1,
@@ -319,5 +337,102 @@ describe('buildBoardPreviewCells', () => {
     const boardTasks = [makeBoardTask(board.id, 'missing-task', 0, 0)];
     const { cells } = buildBoardPreviewCells(board, boardTasks, {}, {}, {});
     expect(cells[0]).toEqual({ kind: 'empty' });
+  });
+
+  /**
+   * Board-integrity PR-3 (issue #360, finding 2) — the mini-preview's own
+   * copy of the web achievement-render gap: pre-fix, `taskToSquareState`
+   * had no ACHIEVEMENT branch, so a placed achievement Task always fell
+   * through to the plain-task branch (`task.isCompleted`, never written for
+   * achievement tasks) and rendered permanently `completed: false` — same
+   * bug as the live play grid, just a second hand-copy of it. Fixed by
+   * running the shared kernel (`computeBoardGrid`) once per board and
+   * threading its per-cell resolution through `taskToSquareState`.
+   */
+  describe('ACHIEVEMENT-typed tasks (board-integrity PR-3, issue #360)', () => {
+    it('a specific-board watcher resolves completed when the referenced board is GREENLOG', () => {
+      const board = makeBoard({ boardSize: 3, id: 'board-1' });
+      const watchedBoard = makeBoard({
+        id: 'watched-board',
+        status: BoardStatus.COMPLETED,
+      });
+      const achievement = makeAchievementTask('ach-1', {
+        achievementTrigger: AchievementTrigger.GREENLOG,
+        referencedBoardId: watchedBoard.id,
+      });
+      const boardTasks = [makeBoardTask(board.id, achievement.id, 0, 0)];
+      const taskMap = { [achievement.id]: achievement };
+
+      const { cells } = buildBoardPreviewCells(
+        board, boardTasks, taskMap, {}, {}, [board, watchedBoard],
+      );
+
+      expect(cells[0]).toEqual({ kind: 'task', completed: true });
+    });
+
+    it('a specific-board watcher resolves incomplete when the referenced board has not met the trigger', () => {
+      const board = makeBoard({ boardSize: 3, id: 'board-1' });
+      const watchedBoard = makeBoard({ id: 'watched-board', status: BoardStatus.ACTIVE });
+      const achievement = makeAchievementTask('ach-1', {
+        achievementTrigger: AchievementTrigger.GREENLOG,
+        referencedBoardId: watchedBoard.id,
+      });
+      const boardTasks = [makeBoardTask(board.id, achievement.id, 0, 0)];
+      const taskMap = { [achievement.id]: achievement };
+
+      const { cells } = buildBoardPreviewCells(
+        board, boardTasks, taskMap, {}, {}, [board, watchedBoard],
+      );
+
+      expect(cells[0]).toEqual({ kind: 'task', completed: false });
+    });
+
+    it('without allBoards (the default []), an achievement cell degrades to incomplete rather than crashing', () => {
+      const board = makeBoard({ boardSize: 3, id: 'board-1' });
+      const achievement = makeAchievementTask('ach-1', {
+        achievementTrigger: AchievementTrigger.GREENLOG,
+        referencedBoardId: 'some-other-board',
+      });
+      const boardTasks = [makeBoardTask(board.id, achievement.id, 0, 0)];
+      const taskMap = { [achievement.id]: achievement };
+
+      const { cells } = buildBoardPreviewCells(board, boardTasks, taskMap, {}, {});
+
+      expect(cells[0]).toEqual({ kind: 'task', completed: false });
+    });
+
+    it('a recurring-template watcher resolves completed once enough in-window spawns meet the trigger', () => {
+      const board = makeBoard({
+        boardSize: 3,
+        id: 'board-1',
+        startDate: '2026-07-01T00:00:00.000Z',
+        endDate: '2026-07-31T23:59:59.000Z',
+      });
+      const achievement = makeAchievementTask('ach-1', {
+        achievementTrigger: AchievementTrigger.GREENLOG,
+        referencedTemplateId: 'template-1',
+        requiredCount: 2,
+      });
+      const spawn1 = makeBoard({
+        id: 'spawn-1',
+        status: BoardStatus.COMPLETED,
+        spawnedFromTemplateId: 'template-1',
+        startDate: '2026-07-05T00:00:00.000Z',
+      });
+      const spawn2 = makeBoard({
+        id: 'spawn-2',
+        status: BoardStatus.COMPLETED,
+        spawnedFromTemplateId: 'template-1',
+        startDate: '2026-07-12T00:00:00.000Z',
+      });
+      const boardTasks = [makeBoardTask(board.id, achievement.id, 0, 0)];
+      const taskMap = { [achievement.id]: achievement };
+
+      const { cells } = buildBoardPreviewCells(
+        board, boardTasks, taskMap, {}, {}, [board, spawn1, spawn2],
+      );
+
+      expect(cells[0]).toEqual({ kind: 'task', completed: true });
+    });
   });
 });

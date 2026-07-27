@@ -119,6 +119,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     compoundChildrenByCompound,
     allBoards,
     achievementBadgesByBoardTaskId,
+    cellStateByBoardTaskId,
+    liveCompletedLineIds,
     sharedCounterSourceIds,
     sharedCounterHintsByTaskId,
     sortedBoardTasks,
@@ -589,8 +591,18 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         >
           {(() => {
             const cells: React.ReactElement[] = [];
-            // Gold-ring the cells in completed bingo lines.
-            const highlightedSquares = getHighlightedSquares(board.completedLineIds ?? [], gridSize);
+            // Gold-ring the cells in completed bingo lines. Board-integrity
+            // PR-3, Part 3 (ring coherence): a LIVE (unsealed) board rings
+            // from `liveCompletedLineIds` — detected from the SAME kernel
+            // grid `cellStateByBoardTaskId` was built from THIS render —
+            // rather than `board.completedLineIds`, whose write lags one
+            // cascade transaction behind the reactive grid. A SEALED board
+            // keeps its frozen `completedLineIds` snapshot (the permanent
+            // read-only record; never re-derived live).
+            const highlightedSquares = getHighlightedSquares(
+              isSealed ? (board.completedLineIds ?? []) : liveCompletedLineIds,
+              gridSize,
+            );
 
             for (let row = 0; row < gridSize; row++) {
               for (let col = 0; col < gridSize; col++) {
@@ -707,11 +719,14 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   : baseTask;
 
                 const taskChildren = compoundChildrenByCompound[task.id] ?? [];
+                // Board-integrity PR-3 — the kernel's per-cell resolution for
+                // THIS placement (achievement completion has no other source).
+                const cellState = boardTaskId ? cellStateByBoardTaskId[boardTaskId] : undefined;
                 const squareData = taskToSquareData(
                   task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
                 );
                 const squareState = taskToSquareState(
-                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState,
                 );
                 // Windowed Completion — on a SEALED board, `done` reads the
                 // frozen `sealedCompletedCells` snapshot (docs §Effects of
@@ -779,6 +794,15 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 // to log late activity; the backstop bounds the overtime).
                 const handlePlayClick = (!editMode && !isSealed)
                   ? () => {
+                      // Board-integrity PR-3 (issue #360, finding 2) —
+                      // Achievement squares are read-only on the grid; tap
+                      // is a no-op (mirrors iOS `case .achievement: break`).
+                      // Detail is reachable via the context-menu "View
+                      // Details" item (falls through FloatingContextMenu's
+                      // type switch to the common item), never a plain tap.
+                      if (squareData.type === 'achievement') {
+                        return;
+                      }
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
                         setSelectedSquareId(boardTaskId);
                       } else if (squareData.type === 'counting') {
@@ -994,6 +1018,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          cellStateByBoardTaskId[bt.id],
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters)
         // rather than the raw task.currentCount accumulator. For standalone
@@ -1118,6 +1143,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             onOpenInLibrary={(taskId) => setOpenedTaskInLibrary(taskId)}
             sharedHint={modalSharedHint}
             quickAmount={quickAmount}
+            achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
           />
         );
       })()}
@@ -1143,6 +1169,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          cellStateByBoardTaskId[bt.id],
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters).
         const menuCurrentCount = squareState.currentCount;

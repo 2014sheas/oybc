@@ -69,6 +69,69 @@ export function findAffectedBoardIds(
 }
 
 /**
+ * Board-integrity PR-3 (issue #360) — per-cell achievement-badge inputs
+ * attached to a {@link CellState} when the cell's Task is ACHIEVEMENT-typed
+ * and carries a reference (`referencedBoardId` XOR `referencedTemplateId`).
+ *
+ * Deliberately carries only the RAW ids/counts the kernel already computed
+ * while resolving `isCompleted` — NOT display names. Both platforms' render
+ * layers already maintain their own board/template lookup maps (for other
+ * reasons — the workspace board list, the recurring-template list); adding a
+ * `RecurringBoardTemplate[]` parameter to the kernel just to resolve a label
+ * string would widen `computeBoardStatsUpdate`/`computeSealedCompletedCells`
+ * beyond the "signatures unchanged" constraint for a cosmetic lookup the
+ * caller can do in one line from data it already has. See
+ * `apps/web/src/hooks/useBoardPlayData.ts`'s `achievementBadgesByBoardTaskId`
+ * memo (web) / `BoardPlayView.achievementBadge(for:)` (iOS) for the thin
+ * name-resolution step built on top of these ids.
+ */
+export interface AchievementCellBadge {
+  mode: 'specificBoard' | 'recurringTemplate';
+  /** Specific-board mode only. */
+  referencedBoardId?: string;
+  /** Specific-board mode only — whether the referenced board (if it still
+   *  exists and isn't soft-deleted) currently meets the Task's trigger. */
+  referencedBoardCompleted?: boolean;
+  /** Recurring-template mode only. */
+  referencedTemplateId?: string;
+  /** Recurring-template mode only — count of in-window spawns meeting the
+   *  trigger (0 when the in-window spawn set is empty). */
+  templateInWindowMet?: number;
+  /** Recurring-template mode only — the Task's `requiredCount` (0 if unset). */
+  templateRequiredCount?: number;
+}
+
+/**
+ * Board-integrity PR-3 (issue #360) — one per-cell resolution result from
+ * {@link computeBoardGrid}, one entry per surviving `BoardTask` placement
+ * (i.e. NOT the odd-board FREE/CUSTOM_FREE center auto-fill, which is not a
+ * placement and has no BoardTask/Task id to key on).
+ *
+ * This is the single per-cell "is this done, and if it's an achievement
+ * square what is it watching" resolution both platforms' render surfaces
+ * (play grid, board-preview mini-grid, achievement badge) now read instead
+ * of hand-mirroring the branch order themselves.
+ */
+export interface CellState {
+  boardTaskId: string;
+  taskId: string;
+  row: number;
+  col: number;
+  /** Flat index (`row * boardSize + col`) — matches `grid`'s indexing and
+   *  `Board.sealedCompletedCells`'s encoding. */
+  idx: number;
+  /** Exactly the boolean this placement contributed to `grid[idx]` — for a
+   *  cell a later duplicate placement lost to (the `grid[idx]` dup-guard),
+   *  no CellState is emitted at all (see {@link computeBoardGrid}). */
+  isCompleted: boolean;
+  /** Present only when the Task is ACHIEVEMENT-typed and carries a
+   *  reference. Absent for every other cell, and for a reference-less
+   *  ACHIEVEMENT Task (degrades to incomplete, no badge — write-time
+   *  validation should already reject that shape). */
+  achievement?: AchievementCellBadge;
+}
+
+/**
  * The shape returned by `computeBoardStatsUpdate` — a payload the caller
  * applies to the `boards` row, plus signals it can surface to the user.
  */
@@ -193,27 +256,36 @@ export function computeSealedCompletedCells(
 }
 
 /**
- * Shared grid builder for `computeBoardStatsUpdate` + `computeSealedCompletedCells`.
+ * Shared grid builder for `computeBoardStatsUpdate` + `computeSealedCompletedCells`
+ * — and, as of Board-integrity PR-3 (issue #360), the ONE per-cell resolver
+ * both platforms' render surfaces (play grid, board-preview mini-grid,
+ * achievement badge) call into directly instead of hand-mirroring this
+ * branch order themselves.
  *
  * Returns the completion grid plus the `completedTasks` tally computed with the
- * exact same increment logic both callers historically used. When
- * `windowContext` is absent the resolution is byte-identical to the pre-Windowed
- * -Completion behavior (lifetime `isCompleted` cache); when present, primitive
- * squares resolve against the board's window via events and derived-counting
- * squares stay on their cache (the carve-out).
+ * exact same increment logic both callers historically used, PLUS `cells` — a
+ * {@link CellState} per surviving BoardTask placement (see that type's docs).
+ * `grid`/`completedTasks` are computed by the EXACT same code path as before
+ * PR-3 (only additionally recorded into a `cells` entry) — this widening is
+ * additive and byte-identical for those two fields. When `windowContext` is
+ * absent the resolution is byte-identical to the pre-Windowed-Completion
+ * behavior (lifetime `isCompleted` cache); when present, primitive squares
+ * resolve against the board's window via events and derived-counting squares
+ * stay on their cache (the carve-out).
  */
-function computeBoardGrid(
+export function computeBoardGrid(
   board: Board,
   boardTasksOnBoard: BoardTask[],
   childrenByCompound: Record<string, CompoundChild[]>,
   taskById: Record<string, Task>,
   allBoards: Board[],
   windowContext: WindowEvaluationContext | undefined,
-): { grid: boolean[]; completedTasks: number } {
+): { grid: boolean[]; completedTasks: number; cells: CellState[] } {
   const size = board.boardSize as BoardSize;
   const totalSquares = size * size;
   const grid: boolean[] = new Array(totalSquares).fill(false);
   let completedTasks = 0;
+  const cells: CellState[] = [];
 
   // Window context for compound + primitive resolution. `board.startDate` is
   // the window lower bound `[startDate, ∞)`; indefinite boards use it too.
@@ -310,10 +382,24 @@ function computeBoardGrid(
         // ignored in this mode (the named board is either done or not).
         buildBoardIndexes();
         const ref = boardById!.get(t.referencedBoardId);
-        if (ref && meets(ref)) {
+        const refCompleted = ref ? meets(ref) : false;
+        if (refCompleted) {
           grid[idx] = true;
           completedTasks += 1;
         }
+        cells.push({
+          boardTaskId: bt.id,
+          taskId: t.id,
+          row: bt.row,
+          col: bt.col,
+          idx,
+          isCompleted: refCompleted,
+          achievement: {
+            mode: 'specificBoard',
+            referencedBoardId: t.referencedBoardId,
+            referencedBoardCompleted: refCompleted,
+          },
+        });
         continue;
       }
 
@@ -339,18 +425,44 @@ function computeBoardGrid(
         const inWindow = spawns.filter((b) =>
           isWithinTimeframe(b.startDate, board.startDate, board.endDate),
         );
-        if (inWindow.length === 0) continue;
+        // `metCount` is computed regardless of whether inWindow is empty
+        // (naturally 0 in that case) so the badge always carries an
+        // honest "M/N" pair — matches the pre-PR-3 UI memos, which never
+        // skipped assembling the badge just because the window was empty.
         const metCount = inWindow.filter(meets).length;
         const required = t.requiredCount ?? 0;
-        if (required > 0 && metCount >= required) {
+        const templateDone = inWindow.length > 0 && required > 0 && metCount >= required;
+        if (templateDone) {
           grid[idx] = true;
           completedTasks += 1;
         }
+        cells.push({
+          boardTaskId: bt.id,
+          taskId: t.id,
+          row: bt.row,
+          col: bt.col,
+          idx,
+          isCompleted: templateDone,
+          achievement: {
+            mode: 'recurringTemplate',
+            referencedTemplateId: t.referencedTemplateId,
+            templateInWindowMet: metCount,
+            templateRequiredCount: required,
+          },
+        });
         continue;
       }
 
       // No reference set → incomplete (achievement Task lacking the XOR
       // value should have been rejected at write time; degrade safely).
+      cells.push({
+        boardTaskId: bt.id,
+        taskId: t.id,
+        row: bt.row,
+        col: bt.col,
+        idx,
+        isCompleted: false,
+      });
       continue;
     }
 
@@ -362,6 +474,7 @@ function computeBoardGrid(
       grid[idx] = true;
       completedTasks += 1;
     }
+    cells.push({ boardTaskId: bt.id, taskId: t.id, row: bt.row, col: bt.col, idx, isCompleted: isDone });
   }
 
   // Center auto-fill for odd-sized boards with FREE / CUSTOM_FREE center.
@@ -383,5 +496,5 @@ function computeBoardGrid(
     }
   }
 
-  return { grid, completedTasks };
+  return { grid, completedTasks, cells };
 }

@@ -346,6 +346,29 @@ struct BoardPlayView: View {
         return grouped
     }
 
+    /// Board-integrity PR-3 — kernel-derived per-cell state for THIS board,
+    /// keyed by `boardTaskId`. `DerivationPass.computeBoardGrid` is now the
+    /// ONE implementation of the ACHIEVEMENT branch (trigger/reference
+    /// resolution); this re-runs it against the same live inputs already
+    /// assembled for compound/primitive rendering below and is consulted
+    /// ONLY for achievement cells (`risoPlaySquare`'s achievement branch,
+    /// `achievementBadge(for:)`, `achievementDetailContent`) — those three
+    /// surfaces used to hand-copy the trigger/meets/spawn-filter logic
+    /// separately and could drift; now they can't. Compound + windowed-
+    /// primitive cells keep resolving inline above (their `@Published`-backed
+    /// reactive paths), per the PR-3 judgment rule: at most one thin
+    /// windowed-primitive path outside the kernel, with the achievement
+    /// branch unified. Not used for sealed boards — those short-circuit to
+    /// the frozen `sealedCompletedCells` snapshot before ever consulting this.
+    ///
+    /// Stored on the VM (rebuilt once per `apply(_:)` data change) rather
+    /// than computed here — the review flagged that a computed property runs
+    /// the full kernel pass once per rendered CELL (O(size²) derivations per
+    /// render).
+    private var kernelCellStates: [String: DerivationPass.CellState] {
+        viewModel.kernelCellStates
+    }
+
     /// Board tasks sorted row-major (ascending row then col).
     private var sortedBoardTasks: [BoardTask] {
         boardTasks.sorted { $0.row == $1.row ? $0.col < $1.col : $0.row < $1.row }
@@ -1050,54 +1073,38 @@ struct BoardPlayView: View {
     // MARK: - Phase 6.3: per-cell achievement-task badge data
 
     /// Compute the achievement-task badge for one BoardTask. nil if the
-    /// backing Task is not ACHIEVEMENT-typed. Mirrors the TS-side
-    /// `achievementBadgesByBoardTaskId` memo in BoardPlayPage.tsx.
+    /// backing Task is not ACHIEVEMENT-typed (or the kernel has no
+    /// achievement metadata for it — e.g. no reference set). Mirrors the
+    /// TS-side `achievementBadgesByBoardTaskId` memo in BoardPlayPage.tsx.
+    ///
+    /// Board-integrity PR-3 — the met/count/required numbers come straight
+    /// from `kernelCellStates`; only the display NAME lookups (board /
+    /// template name) stay local, since names aren't part of the kernel's
+    /// completion-derivation domain.
     private func achievementBadge(for bt: BoardTask) -> AchievementSquareBadgeData? {
         guard let task = taskMap[bt.taskId], task.type == .achievement else { return nil }
-        guard let parent = board else { return nil }
-        let trigger = task.achievementTrigger ?? .greenlog
-        let meets: (Board) -> Bool = { b in
-            switch trigger {
-            case .bingo:
-                return (b.linesCompleted ?? 0) > 0
-            case .greenlog:
-                return b.status == .completed
+        guard let achievement = kernelCellStates[bt.id]?.achievement else { return nil }
+        switch achievement.mode {
+        case .specificBoard:
+            let ref = achievement.referencedBoardId.flatMap { refId in
+                allBoardsInWorkspace.first(where: { $0.id == refId && !$0.isDeleted })
             }
-        }
-        // Precedence: referencedBoardId wins when both somehow get set.
-        // Mirrors derivationPass's bad-data rule.
-        if let refBoardId = task.referencedBoardId {
-            let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted })
             return AchievementSquareBadgeData(
                 mode: .specificBoard,
                 referencedBoardName: ref?.name,
-                referencedBoardCompleted: ref.map(meets) ?? false
+                referencedBoardCompleted: achievement.referencedBoardCompleted ?? false
             )
-        }
-        if let refTemplateId = task.referencedTemplateId {
-            let template = allTemplatesInWorkspace.first(where: { $0.id == refTemplateId })
-            // Use the timestamp-based window helper rather than
-            // lexicographic string compare — Board dates can be local-ISO
-            // or UTC-with-`Z` and the two don't sort correctly as strings.
-            let spawns = allBoardsInWorkspace.filter { b in
-                !b.isDeleted
-                    && b.spawnedFromTemplateId == refTemplateId
-                    && DateFormatting.isWithinTimeframe(
-                        b.startDate,
-                        startDate: parent.startDate,
-                        endDate: parent.endDate
-                    )
+        case .recurringTemplate:
+            let template = achievement.referencedTemplateId.flatMap { tid in
+                allTemplatesInWorkspace.first(where: { $0.id == tid })
             }
-            let metCount = spawns.filter(meets).count
             return AchievementSquareBadgeData(
                 mode: .recurringTemplate,
                 templateName: template?.name,
-                templateInWindowMet: metCount,
-                templateRequiredCount: task.requiredCount ?? 0
+                templateInWindowMet: achievement.templateInWindowMet ?? 0,
+                templateRequiredCount: achievement.templateRequiredCount ?? 0
             )
         }
-        // No reference set: no badge (cell renders as regular task).
-        return nil
     }
 
     // MARK: - Riso Play Header
@@ -1515,7 +1522,9 @@ struct BoardPlayView: View {
                 )
             }
             if task.type == .achievement {
-                return achievementCellIsCompleted(for: task)
+                // Board-integrity PR-3 — the kernel's ACHIEVEMENT branch is
+                // the single source of truth; see `kernelCellStates`.
+                return kernelCellStates[boardTask.id]?.isCompleted ?? false
             }
             // Windowed Completion — derived counters (sharedCounterId set) stay
             // on their propagation-stamped lifetime cache (carve-out); every
@@ -1720,48 +1729,6 @@ struct BoardPlayView: View {
         }
     }
 
-    // MARK: - Phase 6.3: ACHIEVEMENT cell completion (local mirror of DerivationPass)
-
-    /// Local mirror of DerivationPass's ACHIEVEMENT branch for per-cell
-    /// rendering. The persisted `board.completedTasks` count already
-    /// reflects this (derivation writes it on every Task cascade), but
-    /// per-cell green-tinting reads from this helper so the UI doesn't
-    /// have to round-trip through DerivationPass on every render.
-    private func achievementCellIsCompleted(for task: Task) -> Bool {
-        guard let parent = board else { return false }
-        let trigger = task.achievementTrigger ?? .greenlog
-        let meets: (Board) -> Bool = { b in
-            switch trigger {
-            case .bingo:
-                return (b.linesCompleted ?? 0) > 0
-            case .greenlog:
-                return b.status == .completed
-            }
-        }
-        if let refBoardId = task.referencedBoardId {
-            guard let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted }) else {
-                return false
-            }
-            return meets(ref)
-        }
-        if let refTemplateId = task.referencedTemplateId {
-            let spawns = allBoardsInWorkspace.filter { b in
-                !b.isDeleted
-                    && b.spawnedFromTemplateId == refTemplateId
-                    && DateFormatting.isWithinTimeframe(
-                        b.startDate,
-                        startDate: parent.startDate,
-                        endDate: parent.endDate
-                    )
-            }
-            if spawns.isEmpty { return false }
-            let metCount = spawns.filter(meets).count
-            let required = task.requiredCount ?? 0
-            return required > 0 && metCount >= required
-        }
-        return false
-    }
-
     // MARK: - Detail Sheet
 
     /// Modal sheet for viewing and toggling task details (steps for progress, counter for counting).
@@ -1799,7 +1766,7 @@ struct BoardPlayView: View {
                             case .compound:
                                 compoundDetailContent(boardTask: bt, task: task)
                             case .achievement:
-                                achievementDetailContent(task: task)
+                                achievementDetailContent(boardTask: bt, task: task)
                             }
                         }
                         .padding(.horizontal, Riso.gutter)
@@ -2121,30 +2088,27 @@ struct BoardPlayView: View {
 
     /// Phase 6.3 — detail content for an ACHIEVEMENT-typed Task.
     /// Surfaces the cross-board target's current state so the user can
-    /// understand why the cell is (or isn't) complete. Uses the same
-    /// trigger-aware `meets` predicate as `achievementBadge(for:)` and
-    /// `achievementCellIsCompleted(for:)` so the three surfaces never
-    /// drift on completion semantics.
+    /// understand why the cell is (or isn't) complete.
+    ///
+    /// Board-integrity PR-3 — met/count/required numbers come straight from
+    /// `kernelCellStates` (the same lookup `achievementBadge(for:)` and the
+    /// play-grid completion branch consult), so this is no longer a THIRD
+    /// hand-copy of the trigger/meets/spawn-filter logic; only the display
+    /// NAME lookups (board/template name — outside the kernel's domain) stay
+    /// local.
     @ViewBuilder
-    private func achievementDetailContent(task: Task) -> some View {
+    private func achievementDetailContent(boardTask: BoardTask, task: Task) -> some View {
         let trigger = task.achievementTrigger ?? .greenlog
-        let meets: (Board) -> Bool = { b in
-            switch trigger {
-            case .bingo:
-                return (b.linesCompleted ?? 0) > 0
-            case .greenlog:
-                return b.status == .completed
-            }
-        }
+        let achievement = kernelCellStates[boardTask.id]?.achievement
 
         if let refBoardId = task.referencedBoardId {
-            // Match the !isDeleted filter used by achievementBadge(for:) and
-            // achievementCellIsCompleted(for:) so a soft-deleted watched board
-            // doesn't show here while the cell reads as not-complete.
+            // Match the !isDeleted filter used by achievementBadge(for:) so
+            // a soft-deleted watched board doesn't show here while the cell
+            // reads as not-complete.
             let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted })
+            let isMet = achievement?.referencedBoardCompleted ?? false
             detailSection("Watching board") {
                 if let ref {
-                    let isMet = meets(ref)
                     HStack(spacing: 8) {
                         Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(isMet ? Color.risoGreen : Color.risoMuted)
@@ -2164,9 +2128,17 @@ struct BoardPlayView: View {
             }
         } else if let refTemplateId = task.referencedTemplateId {
             let template = allTemplatesInWorkspace.first(where: { $0.id == refTemplateId })
-            let parent = board
-            let spawns: [Board] = {
-                guard let parent else { return [] }
+            let metCount = achievement?.templateInWindowMet ?? 0
+            let required = achievement?.templateRequiredCount ?? (task.requiredCount ?? 0)
+            // Total in-window spawn count (not just those meeting the
+            // trigger) is a display-only detail outside the kernel's
+            // completion-derivation domain (the kernel's CellState only
+            // carries `templateInWindowMet`, the met subset) — mirrors how
+            // board/template NAME lookups above also stay local. Recomputed
+            // with a plain filter (no trigger evaluation), so it can't drift
+            // on completion semantics.
+            let inWindowCount: Int = {
+                guard let parent = board else { return 0 }
                 return allBoardsInWorkspace.filter { b in
                     !b.isDeleted
                         && b.spawnedFromTemplateId == refTemplateId
@@ -2175,10 +2147,8 @@ struct BoardPlayView: View {
                             startDate: parent.startDate,
                             endDate: parent.endDate
                         )
-                }
+                }.count
             }()
-            let metCount = spawns.filter(meets).count
-            let required = task.requiredCount ?? 0
             detailSection("Watching template") {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -2199,7 +2169,7 @@ struct BoardPlayView: View {
                             .font(.risoBody(12, .bold))
                             .foregroundStyle(Color.risoMuted)
                     }
-                    Text("\(spawns.count) in-window spawn\(spawns.count == 1 ? "" : "s")")
+                    Text("\(inWindowCount) in-window spawn\(inWindowCount == 1 ? "" : "s")")
                         .font(.risoBody(12, .regular))
                         .foregroundStyle(Color.risoMuted)
                 }

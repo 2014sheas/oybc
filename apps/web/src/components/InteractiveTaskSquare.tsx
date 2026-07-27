@@ -481,6 +481,15 @@ interface DetailModalProps {
    */
   sharedHint?: string;
   /**
+   * Board-integrity PR-3 (issue #360) — achievement-square watch-target
+   * data, when `sq.type === 'achievement'`. Same shape as the grid badge
+   * (`formatAchievementBadgeLabel` below); the modal is the read-only
+   * "View Details" surface for an achievement square (tap on the grid is a
+   * no-op — mirrors iOS), so this is the only place its watch target is
+   * explained to the user.
+   */
+  achievementBadge?: AchievementSquareBadgeData;
+  /**
    * Counters Refresh R3 — quick-action amount picker for a shared counting
    * square (source or linked). When present, REPLACES the plain −/value/+
    * stepper with a "1 / {default} / #" chip row (R2 Detail Log card styling
@@ -541,6 +550,7 @@ export function DetailModal({
   onOpenInLibrary,
   sharedHint,
   quickAmount,
+  achievementBadge,
 }: DetailModalProps) {
   // Close on Escape key
   useEffect(() => {
@@ -838,6 +848,22 @@ export function DetailModal({
             </ul>
             <p className={styles.compoundFooter}>
               Completion applies to all boards where this task appears.
+            </p>
+          </>
+        )}
+
+        {/* Achievement task — board-integrity PR-3 (issue #360). Read-only:
+            no toggle/increment affordance. Tap on the grid is a no-op
+            (mirrors iOS); this modal (reached via the context menu's "View
+            Details") is the only place the watch target is explained. */}
+        {sq.type === 'achievement' && (
+          <>
+            <p className={styles.modalDescription}>
+              Read-only — completion tracks another board or recurring
+              template, not a local toggle.
+            </p>
+            <p className={styles.modalMeta}>
+              {achievementBadge ? formatAchievementBadgeLabel(achievementBadge) : 'No watch target set.'}
             </p>
           </>
         )}

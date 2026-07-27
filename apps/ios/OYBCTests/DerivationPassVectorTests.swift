@@ -115,6 +115,30 @@ final class DerivationPassVectorTests: XCTestCase {
         let lostBingos: [String]
     }
 
+    /// Board-integrity PR-3 (issue #360) — the JSON shape of one
+    /// `AchievementCellBadge` entry inside a fixture's `expectedCells`.
+    private struct MiniAchievementBadge: Decodable {
+        let mode: String
+        let referencedBoardId: String?
+        let referencedBoardCompleted: Bool?
+        let referencedTemplateId: String?
+        let templateInWindowMet: Int?
+        let templateRequiredCount: Int?
+    }
+
+    /// Board-integrity PR-3 (issue #360) — the JSON shape of one
+    /// `computeBoardGrid` `cells[]` entry, asserted only for vectors that
+    /// carry `expectedCells` (see `CbsuVector.expectedCells`).
+    private struct MiniCellState: Decodable {
+        let boardTaskId: String
+        let taskId: String
+        let row: Int
+        let col: Int
+        let idx: Int
+        let isCompleted: Bool
+        let achievement: MiniAchievementBadge?
+    }
+
     private struct CbsuVector: Decodable {
         let name: String
         let board: MiniBoard
@@ -124,6 +148,14 @@ final class DerivationPassVectorTests: XCTestCase {
         let allBoards: [MiniBoard]
         let windowContext: MiniWindowContext?
         let expected: ExpectedStats
+        /// Board-integrity PR-3 (issue #360) — OPTIONAL per-cell assertions
+        /// against `computeBoardGrid`'s widened `cells[]` output, pinned for
+        /// a representative subset of vectors. Absent on every other
+        /// (pre-PR-3) vector — `computeBoardStatsUpdate` itself doesn't
+        /// expose `cells`, so this is checked via a SEPARATE
+        /// `computeBoardGrid` call, not by widening `expected`. Mirrors the
+        /// shared TS `derivationPass.test.ts`'s `CbsuVector.expectedCells`.
+        let expectedCells: [MiniCellState]?
     }
 
     private struct Fixture: Decodable {
@@ -244,6 +276,33 @@ final class DerivationPassVectorTests: XCTestCase {
         )
     }
 
+    /// Board-integrity PR-3 (issue #360) — build the real
+    /// `DerivationPass.CellState` a fixture's `expectedCells` entry
+    /// describes, so it can be compared against `computeBoardGrid`'s actual
+    /// output via `Equatable` rather than field-by-field.
+    private func toAchievementBadge(_ m: MiniAchievementBadge) -> DerivationPass.AchievementCellBadge {
+        DerivationPass.AchievementCellBadge(
+            mode: DerivationPass.AchievementCellBadge.Mode(rawValue: m.mode) ?? .specificBoard,
+            referencedBoardId: m.referencedBoardId,
+            referencedBoardCompleted: m.referencedBoardCompleted,
+            referencedTemplateId: m.referencedTemplateId,
+            templateInWindowMet: m.templateInWindowMet,
+            templateRequiredCount: m.templateRequiredCount
+        )
+    }
+
+    private func toCellState(_ m: MiniCellState) -> DerivationPass.CellState {
+        DerivationPass.CellState(
+            boardTaskId: m.boardTaskId,
+            taskId: m.taskId,
+            row: m.row,
+            col: m.col,
+            idx: m.idx,
+            isCompleted: m.isCompleted,
+            achievement: m.achievement.map(toAchievementBadge)
+        )
+    }
+
     private func toBoard(_ m: MiniBoard) -> Board {
         var dict: [String: Any] = [
             "id": m.id,
@@ -327,6 +386,23 @@ final class DerivationPassVectorTests: XCTestCase {
             XCTAssertEqual(result.completedLineIds, v.expected.completedLineIds, "Vector '\(v.name)' completedLineIds")
             XCTAssertEqual(result.newBingos, v.expected.newBingos, "Vector '\(v.name)' newBingos")
             XCTAssertEqual(result.lostBingos, v.expected.lostBingos, "Vector '\(v.name)' lostBingos")
+
+            // Board-integrity PR-3 — per-cell `cells[]` assertion, only for
+            // vectors that carry `expectedCells`. Calls `computeBoardGrid`
+            // directly (NOT `computeBoardStatsUpdate`, whose own return type
+            // is unchanged) with the EXACT same inputs, so this also pins
+            // that the widened kernel's grid/completedTasks stay
+            // byte-identical to computeBoardStatsUpdate's independently-
+            // asserted result above. Mirrors the shared TS test.
+            if let expectedCells = v.expectedCells {
+                let built = DerivationPass.computeBoardGrid(
+                    board: board, boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound, taskById: taskById,
+                    allBoards: allBoards, windowContext: windowContext
+                )
+                XCTAssertEqual(built.completedTasks, v.expected.completedTasks, "Vector '\(v.name)' cells.completedTasks")
+                XCTAssertEqual(built.cells, expectedCells.map(toCellState), "Vector '\(v.name)' cells")
+            }
         }
     }
 }

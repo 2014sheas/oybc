@@ -219,3 +219,30 @@ describe('handleTaskCompletion — boardCompleted vs isGreenlog gating (issue #2
     expect(result.boardCompleted).toBe(false);
   });
 });
+
+/**
+ * Board-integrity PR-3 (issue #360, finding 2) — Achievement squares are
+ * read-only on the grid, same as Compound (their completion derives from a
+ * watched board/template via the shared kernel, never a local toggle). The
+ * render layer already makes an achievement-square tap a no-op; this guard
+ * is defense-in-depth for any other caller reaching `handleTaskCompletion`
+ * directly for an achievement BoardTask.
+ */
+describe('handleTaskCompletion — ACHIEVEMENT BoardTasks are read-only (board-integrity PR-3, issue #360)', () => {
+  it('rejects isCompleted writes against an ACHIEVEMENT-typed Task', async () => {
+    await seedTask({
+      type: TaskType.ACHIEVEMENT,
+      referencedBoardId: 'some-other-board',
+    });
+    await seedBoard();
+    await seedBoardTask();
+
+    await expect(
+      handleTaskCompletion('board-1', 'bt-1', { isCompleted: true }),
+    ).rejects.toThrow(/Achievement BoardTasks are read-only/);
+
+    // No mutation should have happened — the board's stats stay untouched.
+    const board = await db.boards.get('board-1');
+    expect(board?.completedTasks).toBe(0);
+  });
+});

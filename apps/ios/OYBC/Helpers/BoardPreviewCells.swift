@@ -36,10 +36,12 @@ struct BoardPreviewCellsResult: Equatable {
 /// — see that file's doc comment for the rule list (sealed short-circuit,
 /// windowed live evaluation, FREE center, empty cells). The one
 /// platform-specific addition is the ACHIEVEMENT branch: iOS's play grid
-/// (`BoardPlayView.risoPlaySquare` / `achievementCellIsCompleted`) live-derives
-/// achievement completion from cross-board references rather than trusting the
-/// lifetime `Task.isCompleted` cache the way web's `taskToSquareState` does —
-/// this function reuses that exact iOS derivation, not a reinvented one.
+/// live-derives achievement completion from cross-board references rather
+/// than trusting the lifetime `Task.isCompleted` cache the way web's
+/// `taskToSquareState` does. Board-integrity PR-3 — this now calls straight
+/// into `DerivationPass.computeBoardGrid`'s per-cell ACHIEVEMENT resolution
+/// (the ONE implementation of that branch on iOS) rather than hand-copying
+/// the trigger/reference logic a third time.
 enum BoardPreviewCells {
 
     /// - Parameters:
@@ -48,7 +50,7 @@ enum BoardPreviewCells {
     ///   - taskMap: Workspace task lookup, id → Task.
     ///   - childrenByCompound: Workspace compound-children lookup, keyed by parent compound task id.
     ///   - eventsByTaskId: Non-deleted TaskEvents grouped by taskId.
-    ///   - allBoardsInWorkspace: Non-deleted workspace boards, needed only to resolve ACHIEVEMENT squares' cross-board reference. Pass `[]` if unavailable — a placed achievement square then reads incomplete, the same safe default `achievementCellIsCompleted` uses when its reference can't be resolved.
+    ///   - allBoardsInWorkspace: Non-deleted workspace boards, needed only to resolve ACHIEVEMENT squares' cross-board reference. Pass `[]` if unavailable — a placed achievement square then reads incomplete, the same safe default `DerivationPass.computeBoardGrid` uses when its reference can't be resolved.
     /// - Returns: The row-major preview grid.
     static func build(
         board: Board,
@@ -79,6 +81,31 @@ enum BoardPreviewCells {
         for bt in ownBoardTasks {
             btByPosition["\(bt.row)-\(bt.col)"] = bt
         }
+
+        // Board-integrity PR-3 — kernel per-cell state, keyed by
+        // boardTaskId, consulted ONLY for the ACHIEVEMENT branch below.
+        // Compound/primitive/sealed resolution stays inline (same judgment
+        // rule `BoardPlayView.kernelCellStates` follows) — this removes the
+        // "mirror-of-mirror" (this file used to hand-copy
+        // `BoardPlayView.achievementCellIsCompleted`, itself a hand-copy of
+        // `DerivationPass`'s ACHIEVEMENT branch).
+        let kernelCells: [String: DerivationPass.CellState] = {
+            let built = DerivationPass.computeBoardGrid(
+                board: board,
+                boardTasksOnBoard: ownBoardTasks,
+                childrenByCompound: childrenByCompound,
+                taskById: taskMap,
+                allBoards: allBoardsInWorkspace,
+                windowContext: WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
+            )
+            var out: [String: DerivationPass.CellState] = [:]
+            for c in built.cells {
+                // boardTaskId is non-optional — every CellState maps to a
+                // real placement (FREE-center auto-fill emits no CellState).
+                out[c.boardTaskId] = c
+            }
+            return out
+        }()
 
         let hasFreeCenter = size % 2 == 1 && (board.centerSquareType == .free || board.centerSquareType == .customFree)
         let centerRow = size / 2
@@ -112,7 +139,7 @@ enum BoardPreviewCells {
                         windowContext: windowContext
                     )
                 } else if task.type == .achievement {
-                    completed = achievementIsCompleted(task: task, parent: board, allBoardsInWorkspace: allBoardsInWorkspace)
+                    completed = kernelCells[bt.id]?.isCompleted ?? false
                 } else if task.sharedCounterId != nil {
                     // Windowed Completion carve-out — derived counters stay on
                     // their propagation-stamped lifetime cache, never windowed.
@@ -212,38 +239,5 @@ enum BoardPreviewCells {
             )
         }
         return out
-    }
-
-    /// Local mirror of `BoardPlayView.achievementCellIsCompleted` — see that
-    /// method's doc comment. Kept in lockstep by hand (both are small, direct
-    /// ports of `DerivationPass`'s ACHIEVEMENT branch).
-    private static func achievementIsCompleted(task: Task, parent: Board, allBoardsInWorkspace: [Board]) -> Bool {
-        let trigger = task.achievementTrigger ?? .greenlog
-        let meets: (Board) -> Bool = { b in
-            switch trigger {
-            case .bingo:
-                return b.linesCompleted > 0
-            case .greenlog:
-                return b.status == .completed
-            }
-        }
-        if let refBoardId = task.referencedBoardId {
-            guard let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted }) else {
-                return false
-            }
-            return meets(ref)
-        }
-        if let refTemplateId = task.referencedTemplateId {
-            let spawns = allBoardsInWorkspace.filter { b in
-                !b.isDeleted
-                    && b.spawnedFromTemplateId == refTemplateId
-                    && DateFormatting.isWithinTimeframe(b.startDate, startDate: parent.startDate, endDate: parent.endDate)
-            }
-            if spawns.isEmpty { return false }
-            let metCount = spawns.filter(meets).count
-            let required = task.requiredCount ?? 0
-            return required > 0 && metCount >= required
-        }
-        return false
     }
 }

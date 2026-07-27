@@ -56,6 +56,15 @@ final class BoardPlayViewModel: ObservableObject {
     /// of web's `SquareWindowContext`.
     @Published private(set) var windowEventsByTaskId: [String: [TaskEvent]] = [:]
 
+    /// Kernel per-cell states for the CURRENT board — the single source of
+    /// truth every achievement/completion render read funnels through
+    /// (PR-3, docs/BOARD_INTEGRITY.md). Stored (not computed) so the full
+    /// resolvePlacements + computeBoardGrid pass runs ONCE per data change
+    /// (`apply(_:)` after every reload), not once per rendered cell — the
+    /// PR-3 review flagged the per-cell recompute (O(size²) kernel passes
+    /// per render) as the perf-shape to avoid.
+    @Published private(set) var kernelCellStates: [String: DerivationPass.CellState] = [:]
+
     // MARK: - Interaction state (B2-I2)
 
     /// True while an interaction write (tap / stepper / swap / add / remove) is
@@ -1608,6 +1617,36 @@ final class BoardPlayViewModel: ObservableObject {
         )
     }
 
+    /// Rebuild `kernelCellStates` from the freshly-applied published data.
+    /// Called at the end of `apply(_:)` — `reload()` assigns `board` just
+    /// before calling it, so every board/data change funnels through here.
+    private func rebuildKernelCellStates() {
+        guard let board else { kernelCellStates = [:]; return }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allCompoundChildren {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+        for id in childrenByCompound.keys {
+            childrenByCompound[id]?.sort { $0.childIndex < $1.childIndex }
+        }
+        let resolved = PlacementIntegrity.resolvePlacements(boardTasks, boardSize: board.boardSize)
+        let built = DerivationPass.computeBoardGrid(
+            board: board,
+            boardTasksOnBoard: resolved,
+            childrenByCompound: childrenByCompound,
+            taskById: taskMap,
+            allBoards: allBoardsInWorkspace,
+            windowContext: WindowEvaluationContext(eventsByTaskId: windowEventsByTaskId)
+        )
+        var out: [String: DerivationPass.CellState] = [:]
+        for c in built.cells {
+            // boardTaskId is non-optional — every CellState maps to a real
+            // placement (the FREE-center auto-fill emits no CellState).
+            out[c.boardTaskId] = c
+        }
+        kernelCellStates = out
+    }
+
     private func apply(_ payload: TaskDataPayload) {
         boardTasks = payload.boardTasks
         allTasks = payload.allTasks
@@ -1616,6 +1655,7 @@ final class BoardPlayViewModel: ObservableObject {
         allTemplatesInWorkspace = payload.allTemplatesInWorkspace
         allBoardTasksInWorkspace = payload.allBoardTasksInWorkspace
         windowEventsByTaskId = payload.windowEventsByTaskId
+        rebuildKernelCellStates()
 
         // Shared Counters P3 — passive-completion detection. On a board-open
         // reload (flagged), diff the freshly-applied shared-counting squares
