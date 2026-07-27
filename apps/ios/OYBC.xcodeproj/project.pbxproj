@@ -14,6 +14,7 @@
 		01DC61B31BA33B12D2AF771D /* RisoCounterLinkHintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08D27AC8377DDCF2159B8E29 /* RisoCounterLinkHintView.swift */; };
 		020E10C1F3BABC28404C7615 /* SyncExhaustedRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82CC793387A6846DCE84C89 /* SyncExhaustedRetryTests.swift */; };
 		031ED4BC75160A11C0B5B9B1 /* NotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE98FE8DA5998F25F01F6C0 /* NotificationDelegate.swift */; };
+		037A2B0E4453AF68EA5769CE /* placementVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */; };
 		03B8B91B1D8AF8EF6F22A607 /* AchievementSquareBadgeData.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */; };
 		03DF70174285CDA62B66861A /* RisoTasksTabSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB413B80CC1E7378AC5DC120 /* RisoTasksTabSnapshotTests.swift */; };
 		0566F8903B793E702A2D93CB /* AppDatabase+TaskEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7CD53258EB4B447ED75650D /* AppDatabase+TaskEvents.swift */; };
@@ -656,6 +657,7 @@
 		DBBE3843E4352198EC48EA98 /* ProgressCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressCounter.swift; sourceTree = "<group>"; };
 		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
 		DF7B94F09C3473C58879F79F /* RisoBingoToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBingoToast.swift; sourceTree = "<group>"; };
+		DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = placementVectors.json; sourceTree = "<group>"; };
 		E06C42D379970D782F6091C7 /* UUIDv5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UUIDv5.swift; sourceTree = "<group>"; };
 		E0805FB6A426E25DAF0CEB91 /* RisoCompoundFieldsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCompoundFieldsView.swift; sourceTree = "<group>"; };
 		E16586B715F5FB4174C2717A /* FromBoardGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FromBoardGridView.swift; sourceTree = "<group>"; };
@@ -696,7 +698,7 @@
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_7BC587E1-66D5-4B4A-B7D5-74B419214D25" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_035AAD69-E4F8-4610-912C-9BE7F71C85A7" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1261,6 +1263,7 @@
 				D1E19952808D89ADF5D4E7BB /* linkableCounterVectors.json */,
 				0C2A995EBED205956CD51C82 /* lwwVectors.json */,
 				422944BA2ACB6754EA434ACE /* placementResolutionVectors.json */,
+				DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */,
 				0676DF0E73EE487B71D9E33E /* sealReDerivationVectors.json */,
 				0B256FACD299D5C32BB3D497 /* sharedCounterGroupsVectors.json */,
 				F400B446804D5F03E47D2C03 /* sharedCounterVectors.json */,
@@ -1271,10 +1274,10 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
-		"TEMP_8BD383C8-A777-4807-8799-64B0702BC03F" /* ios */ = {
+		"TEMP_30DD77E1-F5D1-417B-A571-BBC35A025B76" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_7BC587E1-66D5-4B4A-B7D5-74B419214D25" /* Signing.xcconfig */,
+				"TEMP_035AAD69-E4F8-4610-912C-9BE7F71C85A7" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1409,6 +1412,7 @@
 				10A591CACC3171124CA43F12 /* linkableCounterVectors.json in Resources */,
 				3BED634E51A00A3AB1B405FF /* lwwVectors.json in Resources */,
 				60704647070E07C5DE79A190 /* placementResolutionVectors.json in Resources */,
+				037A2B0E4453AF68EA5769CE /* placementVectors.json in Resources */,
 				8BBC4441D63DB5DD783EC96C /* sealReDerivationVectors.json in Resources */,
 				A1E2F8C968D9E8D2000D1C65 /* sharedCounterGroupsVectors.json in Resources */,
 				1A446DC8939BA72B8FDDB357 /* sharedCounterVectors.json in Resources */,
@@ -1802,7 +1806,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_7BC587E1-66D5-4B4A-B7D5-74B419214D25" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_035AAD69-E4F8-4610-912C-9BE7F71C85A7" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1899,7 +1903,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_7BC587E1-66D5-4B4A-B7D5-74B419214D25" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_035AAD69-E4F8-4610-912C-9BE7F71C85A7" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

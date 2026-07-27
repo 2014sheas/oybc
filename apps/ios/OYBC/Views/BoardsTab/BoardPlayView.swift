@@ -1621,12 +1621,24 @@ struct BoardPlayView: View {
             }
         }()
 
+        // Positional center-ness (PR-5, parity with web): never trust the
+        // row's OWN isCenter flag — a stray duplicate-center row (pre-guard
+        // corruption) would misrender a real task as the gold center cell. A
+        // placed cell renders center styling only when it actually SITS at
+        // the positional center of a CHOSEN-center board.
+        let renderAsCenter: Bool = {
+            guard let b = board, gridSize % 2 == 1 else { return false }
+            let isPositionalCenter = index / gridSize == gridSize / 2
+                && index % gridSize == gridSize / 2
+            return isPositionalCenter && b.centerSquareType == .chosen
+        }()
+
         RisoBoardPlayCell(
             title: task?.title ?? "Unknown",
             taskType: cellKind,
             isCompleted: isCompleted,
             isBingoLine: highlighted.contains(index),
-            isCenter: boardTask.isCenter,
+            isCenter: renderAsCenter,
             isLocked: isBoardLocked,
             currentCount: current,
             maxCount: maxVal,

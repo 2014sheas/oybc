@@ -166,14 +166,23 @@ an unnoticed regression.
   duplicates (one task placed twice on a board), but a second live
   `isCenter: true` row at a DIFFERENT, otherwise-valid cell is a distinct
   failure mode the repair pass doesn't target. This is left as write-time
-  prevention only (PR-5's `createBoardTask` guard) rather than also adding
-  a repair-pass phase, because it's verified render-inert on both
-  platforms' current render paths (center-cell rendering is computed
-  positionally — `row/col === floor(size/2)` — never by reading the
-  `BoardTask.isCenter` field) — so an already-existing stray row from
-  before the write guard shipped poses no live rendering risk today, only
-  a latent one if a future render path started trusting `isCenter` instead
-  of position.
+  prevention only (PR-5's `createBoardTask`/`saveWizardBoard` guards)
+  rather than also adding a repair-pass phase, because both platforms'
+  render paths now compute center-cell rendering POSITIONALLY — `row/col
+  === floor(size/2)` (+ CHOSEN center type) — never by reading the
+  `BoardTask.isCenter` field. NOTE: web was always positional, but iOS's
+  play grid originally passed the row's own `isCenter` into the cell (a
+  stray duplicate-center row would have misrendered a real task as the
+  gold center) — the PR-5 verification caught the claim being false there,
+  and iOS was converted to the positional rule in the same PR. So the
+  inertness now HOLDS by construction for the PLAY grids on both
+  platforms. (Edit-mode staging surfaces — rearrange grid, wizard
+  previews — still read the `isCenter` carried on their DERIVED draft
+  cells; those seed through the resolved, write-guard-protected path, so
+  the exposure is limited to pre-guard corrupt data opened in edit mode —
+  accepted.) A stray row from before the write guard poses no play-render
+  risk, only a latent one if a future render path started trusting
+  `isCenter` over position.
 - **Migration tie-break note** — the legacy `composite_tasks` /
   `composite_nodes` / `task_steps` tables (see CLAUDE.md's Task model
   section) are read-only, first-launch-backfill-only; they carry no

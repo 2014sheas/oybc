@@ -133,8 +133,11 @@ export function CoreBoardWindowPage(): React.ReactElement {
   // prev/next pager keeps CoreBoardWindowPage mounted and just swaps the
   // date route param, so a same-component board.id change is reachable here
   // (unlike BoardPlayPage's /boards/:id, where no in-page nav swaps :id).
-  // Without the key, BoardPlaySurface's hook state (edit-mode drafts, staged
-  // rearranges) would carry over from the previous window's board into the
-  // new one instead of resetting.
+  // Without the key, BoardPlaySurface's local state — open context menu /
+  // detail modal, selectedSquareId, greenlog/share overlays, toasts — would
+  // carry over from the previous window's board into the new one, binding
+  // menus/modals to stale boardTaskIds. (Edit-mode drafts aren't the risk
+  // HERE — this site passes allowEdit={false} — but the same key guards
+  // them wherever editing is allowed.)
   return <BoardPlaySurface key={board.id} board={board} userId={user?.id} header={bar} allowEdit={false} />;
 }
