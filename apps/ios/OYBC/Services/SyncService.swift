@@ -770,13 +770,30 @@ final class SyncService: ObservableObject {
         // pins.
         guard rowsGenuinelyDiffer(local: localData, remote: remoteData) else { return }
 
-        guard JSONSerialization.isValidJSONObject(localData),
-              let jsonData = try? JSONSerialization.data(withJSONObject: localData),
-              let payloadStr = String(data: jsonData, encoding: .utf8) else {
-            log("Could not build re-assert payload for \(entityType)/\(entityId)")
+        // Build the payload from the TYPED model via the same
+        // `SyncQueueBuilder.encodePayload` path every other enqueue uses —
+        // NEVER from the raw GRDB row dict. GRDB's `DatabaseValue.storage`
+        // has no `.bool` case, so a raw-dict payload serialises booleans as
+        // 0/1 integers and leaves JSON-array columns as their stringified
+        // column values; web's strict Zod (`z.boolean()`, `z.array`) then
+        // rejects the whole doc — silently defeating the reassert (PR-4
+        // review Critical C1). The models' custom `encode(to:)` produce
+        // wire-correct types.
+        guard let payloadStr = try Self.encodedLocalPayload(
+            db: db, entityType: entityType, entityId: entityId
+        ) else {
+            // Legacy drain-only tables (taskSteps/composite*) have no live
+            // model path and never need a reassert.
+            log("No typed re-assert payload for \(entityType)/\(entityId) — skipped")
             return
         }
 
+        // Always `.update`, even when the local winner is itself a tombstone
+        // racing an older live remote: the push transport writes the FULL
+        // payload (which carries isDeleted) regardless of the op-type label,
+        // and the coalescer treats CREATE/UPDATE distinctions as cosmetic —
+        // so a pending .delete coalescing to .update here is label-only, not
+        // a resurrection (PR-4 review M2).
         let item = SyncQueueItem(
             id: AppDatabase.generateUUID(),
             entityType: entityType,
@@ -792,6 +809,37 @@ final class SyncService: ObservableObject {
             priority: 1
         )
         try item.enqueue(db)
+    }
+
+    /// Fetch the local row AS ITS TYPED MODEL and encode it with
+    /// `SyncQueueBuilder.encodePayload` — the wire-correct JSON every other
+    /// enqueue site produces. Returns nil for tables with no live model
+    /// (legacy drain-only collections).
+    private static func encodedLocalPayload(
+        db: Database,
+        entityType: String,
+        entityId: String
+    ) throws -> String? {
+        switch entityType {
+        case "boards":
+            return try Board.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        case "tasks":
+            return try Task.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        case "boardTasks":
+            return try BoardTask.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        case "compoundChildren":
+            return try CompoundChild.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        case "recurringBoardTemplates":
+            return try RecurringBoardTemplate.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        case "pools":
+            return try Pool.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        case "coreBoardDefaults":
+            return try CoreBoardDefault.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        case "users":
+            return try User.fetchOne(db, key: entityId).map(SyncQueueBuilder.encodePayload)
+        default:
+            return nil
+        }
     }
 
     /// Non-transactional wrapper for the two `users` pull paths, which don't

@@ -1286,6 +1286,15 @@ final class BoardPlayViewModelTests: XCTestCase {
         // A real task to stage an override for.
         try db.saveTask(makeTask("t-real"))
 
+        // Load the VM BEFORE seeding the poison: Item 4 made reload() an
+        // all-or-nothing snapshot read, so an undecodable row present at
+        // load time nils the ENTIRE snapshot (by design — loud, not torn)
+        // and the VM never loads. The poison must land after load, before
+        // Save, so it fires inside Save's cascade — the path under test.
+        let vm = loadedVM(db, boardId: "b1")
+        let boardBefore = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
         // A poisoned Task row — undecodable `type` — that ANY cascade's
         // `Task.fetchAll(db)` will choke on.
         let now = AppDatabase.currentTimestamp()
@@ -1295,10 +1304,6 @@ final class BoardPlayViewModelTests: XCTestCase {
                 arguments: ["t-poison", "u1", "Poison", "not_a_real_type", now, now]
             )
         }
-
-        let vm = loadedVM(db, boardId: "b1")
-        let boardBefore = try XCTUnwrap(db.fetchBoard(id: "b1"))
-        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
 
         // Stage: rename (step 1 — short-circuits at the empty-taskIds guard,
         // since b1 has no placements) + a task-field override for the REAL

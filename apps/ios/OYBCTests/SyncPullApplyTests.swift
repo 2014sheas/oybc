@@ -529,6 +529,17 @@ final class SyncPullApplyTests: XCTestCase {
         let payloadDict = try XCTUnwrap(JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
         XCTAssertEqual(payloadDict["title"] as? String, "Local", "payload is the LOCAL winner, not the remote loser")
         XCTAssertEqual(payloadDict["version"] as? Int, 5)
+        // Wire-type fidelity (PR-4 review C1): the payload must come from the
+        // TYPED model encode, not a raw GRDB row dict — booleans must be real
+        // JSON booleans (a raw row dict serialises them as 0/1 integers,
+        // which web's strict Zod rejects, silently defeating the reassert).
+        // Asserted on the raw JSON text: NSNumber(0/1) bridges to Bool via
+        // `as? Bool`, so a dictionary-level check could not catch the
+        // regression.
+        XCTAssertTrue(reassert.payload.contains("\"isCompleted\":false"),
+                      "isCompleted must serialise as a JSON boolean, not 0/1")
+        XCTAssertFalse(reassert.payload.contains("\"isCompleted\":0"),
+                       "raw GRDB row-dict payload detected (0/1 boolean)")
 
         // Local GRDB row itself is untouched (matches test 2 above).
         let t = try XCTUnwrap(try db.fetchTask(id: tid))

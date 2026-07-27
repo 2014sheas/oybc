@@ -1709,7 +1709,9 @@ final class BoardPlayViewModel: ObservableObject {
     /// Zero-value payload returned when a read fails (mirrors the pre-fix
     /// per-field `?? []` fallbacks, collapsed to one shared constant now
     /// that the fetch is a single all-or-nothing `read {}`).
-    private static var emptyTaskDataPayload: TaskDataPayload {
+    /// `nonisolated`: a pure value constructor with no main-actor state,
+    /// referenced from the nonisolated background fetch helpers.
+    private nonisolated static var emptyTaskDataPayload: TaskDataPayload {
         TaskDataPayload(
             boardTasks: [],
             allTasks: [],
