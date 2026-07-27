@@ -68,12 +68,13 @@ import {
  * and passes cleanly under fake-indexeddb + Node — that harness doesn't
  * reproduce the real-browser Promise/PSD-zone timing that trips this up.
  *
- * This spec proves BOTH fixes end-to-end (the dynamic-import txn break AND
- * red-flag CI for a reason unrelated to whatever change is under review, but
- * still loudly flags (as an unexpected PASS) the moment someone fixes the
- * dynamic-import bug — at which point this test should also start proving
- * the window-preservation fix). It was originally landed as `test.fail()` while
- * deleted.
+ * BOTH bugs were fixed in this same branch (window preservation in
+ * `BoardEditPanel.tsx`; the dynamic import hoisted static in `boards.ts`),
+ * so this spec now PASSES and proves both end-to-end: the Save completes at
+ * all (no PrematureCommitError), and the rename leaves the backdated
+ * completion green (the window survived). It was originally landed as
+ * `test.fail()` while the import bug blocked it; that marker was removed
+ * when the fix landed.
  */
 
 const BOARD_ID = 'ffffffff-bbbb-0000-0000-00000000000a';
