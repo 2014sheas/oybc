@@ -12,6 +12,7 @@ import {
   CoreBoardDefaultSchema,
   TaskEventSchema,
   USER_SCOPED_SYNC_COLLECTIONS,
+  SyncOperationType,
   type SyncCollection,
 } from '@oybc/shared';
 import { db } from '../internal';
@@ -19,6 +20,7 @@ import { resolveConflict, type SyncableEntity } from '../../firebase/conflictRes
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { runBoardCascadeForTask, runBoardCascadeForBoardId } from './orchestration';
 import { reDeriveSealedBoardsByIds } from './sealing';
+import { addToSyncQueue } from './syncQueue';
 
 /**
  * Apply a remote document from a syncable subcollection to the local Dexie
@@ -45,6 +47,27 @@ import { reDeriveSealedBoardsByIds } from './sealing';
  *   checks on user-scoped collections.
  * @returns A short status string for logging; `null` if local-wins.
  */
+/**
+ * Loop-guard predicate for the pull-path local-wins re-enqueue (board-integrity
+ * PR-4, item 1, docs/BOARD_INTEGRITY.md): a local row that's identical to the
+ * remote one it "won" against must never be re-enqueued, or every pull cycle
+ * of an already-converged doc would push a redundant no-op forever.
+ *
+ * `resolveConflict` only ever picks 'local' when `local.version >
+ * remote.version`, or (equal version and) `local.updatedAt` is strictly
+ * newer — so in practice this always returns `true` on the local-wins branch.
+ * It's checked explicitly (rather than leaning on that invariant) so a future
+ * change to the tie-break can't silently reopen the enqueue-loop.
+ *
+ * Exported so it's independently unit-testable — the "identical rows never
+ * enqueue" case is otherwise unreachable through `applyRemoteSubdoc` alone,
+ * since an exact tie always resolves 'remote' (server authority), never
+ * 'local'.
+ */
+export function rowsGenuinelyDiffer(local: SyncableEntity, remote: SyncableEntity): boolean {
+  return local.version !== remote.version || local.updatedAt !== remote.updatedAt;
+}
+
 export async function applyRemoteSubdoc(
   collectionName: SyncCollection,
   remoteData: unknown,
@@ -109,7 +132,37 @@ export async function applyRemoteSubdoc(
   const remoteWins = isNew || resolveConflict(localData!, validated).winner === 'remote';
 
   if (!remoteWins) {
-    return null; // local-wins → silent no-op
+    // Read+enqueue share one transaction (mirrors the remote-wins branch's
+    // rationale below): a concurrent write between the outer read and the
+    // enqueue could otherwise snapshot a stale reassert payload (PR-4
+    // review I1). The row is RE-READ inside the txn for the same reason.
+    // Board-integrity PR-4, item 1 (docs/BOARD_INTEGRITY.md): the push path
+    // conflict-checks via getDoc → setDoc with no transaction, so two devices
+    // racing the same doc can land the stale write AFTER the fresh one. Before
+    // this fix, "local wins" here was a silent no-op — the fresher local row
+    // never re-pushed, so the divergence was permanent until some unrelated
+    // edit happened to bump the row's version again. Re-enqueue an UPDATE for
+    // the local row so it keeps re-asserting; `addToSyncQueue` coalesces
+    // repeats and the push path re-checks conflicts itself, so a redundant
+    // enqueue is at worst a harmless no-op push.
+    //
+    // Loop guard: only enqueue when the rows genuinely differ.
+    // `resolveConflict` only returns 'local' when local.version > remote.version,
+    // or (equal version and) local.updatedAt is strictly newer than remote's —
+    // either way the two rows differ by construction — but check explicitly
+    // rather than lean on that invariant, so an already-converged pull
+    // (identical version + updatedAt) never re-enqueues and loops forever.
+    if (rowsGenuinelyDiffer(localData!, validated)) {
+      await db.transaction('rw', [table, db.syncQueue], async () => {
+        const fresh = (await table.get(validated.id)) as SyncableEntity | undefined;
+        // The row may have changed (or vanished) since the outer read —
+        // re-check the guard against the FRESH row before enqueueing it.
+        if (fresh && rowsGenuinelyDiffer(fresh, validated)) {
+          await addToSyncQueue(collectionName, fresh.id, SyncOperationType.UPDATE, fresh, 0);
+        }
+      });
+    }
+    return null; // local-wins → re-enqueued (if it differs) so it re-asserts
   }
 
   // Apply the remote row to local Dexie under standard LWW. The cascade runs

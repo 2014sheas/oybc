@@ -495,4 +495,138 @@ final class SyncPullApplyTests: XCTestCase {
         XCTAssertEqual(b.linesCompleted, 0, "row_0 no longer holds after the pulled move")
         XCTAssertEqual(b.completedLineIds ?? [], [])
     }
+
+    // MARK: - 7. Local-wins re-assert (Board-integrity PR-4, Item 1)
+
+    /// The push path's getDoc → setDoc race means a stale write can land
+    /// AFTER a fresher one; before this fix, the next pull's local-wins
+    /// resolution was a SILENT no-op, so the fresher local version never
+    /// re-pushed. The fix: a local-wins pull now enqueues an UPDATE for the
+    /// local row, coalescing (idempotent) with any existing PENDING item.
+    func test_localWins_enqueuesUpdateForFresherLocalRow() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        try db.saveTask(makeTask(tid, title: "Local", version: 5))
+        let sut = makeSut(db)
+
+        // Stale remote (lower version) — local wins.
+        let remote: [String: Any] = [
+            "id": tid, "userId": userId, "title": "Remote", "type": "normal",
+            "isCompleted": false, "version": 2,
+            "updatedAt": "2026-06-01T00:00:00.000",
+            "createdAt": "2026-06-01T00:00:00.000", "isDeleted": false,
+        ]
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+
+        // A pending UPDATE was enqueued for the LOCAL row (not the remote's
+        // stale data) so it re-asserts on the next push.
+        let rows = try syncRows(db)
+        let reassert = try XCTUnwrap(rows.first { $0.entityType == "tasks" && $0.entityId == tid })
+        XCTAssertEqual(reassert.operationType, .update)
+        XCTAssertEqual(reassert.status, .pending)
+        let payloadData = try XCTUnwrap(reassert.payload.data(using: .utf8))
+        let payloadDict = try XCTUnwrap(JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
+        XCTAssertEqual(payloadDict["title"] as? String, "Local", "payload is the LOCAL winner, not the remote loser")
+        XCTAssertEqual(payloadDict["version"] as? Int, 5)
+        // Wire-type fidelity (PR-4 review C1): the payload must come from the
+        // TYPED model encode, not a raw GRDB row dict — booleans must be real
+        // JSON booleans (a raw row dict serialises them as 0/1 integers,
+        // which web's strict Zod rejects, silently defeating the reassert).
+        // Asserted on the raw JSON text: NSNumber(0/1) bridges to Bool via
+        // `as? Bool`, so a dictionary-level check could not catch the
+        // regression.
+        XCTAssertTrue(reassert.payload.contains("\"isCompleted\":false"),
+                      "isCompleted must serialise as a JSON boolean, not 0/1")
+        XCTAssertFalse(reassert.payload.contains("\"isCompleted\":0"),
+                       "raw GRDB row-dict payload detected (0/1 boolean)")
+
+        // Local GRDB row itself is untouched (matches test 2 above).
+        let t = try XCTUnwrap(try db.fetchTask(id: tid))
+        XCTAssertEqual(t.title, "Local")
+        XCTAssertEqual(t.version, 5)
+    }
+
+    /// Repeated local-wins pulls (e.g. the 5-minute safety net re-pulling the
+    /// same stale remote doc before the reasserted push lands) must coalesce
+    /// into ONE pending row, not pile up duplicates.
+    func test_localWins_repeatedPulls_coalesceIntoOnePendingRow() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        try db.saveTask(makeTask(tid, title: "Local", version: 5))
+        let sut = makeSut(db)
+
+        let remote: [String: Any] = [
+            "id": tid, "userId": userId, "title": "Remote", "type": "normal",
+            "isCompleted": false, "version": 2,
+            "updatedAt": "2026-06-01T00:00:00.000",
+            "createdAt": "2026-06-01T00:00:00.000", "isDeleted": false,
+        ]
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+
+        let rows = try syncRows(db).filter { $0.entityType == "tasks" && $0.entityId == tid }
+        XCTAssertEqual(rows.count, 1, "the coalescer must collapse repeat re-asserts into one pending row")
+    }
+
+    /// Remote-wins must NEVER enqueue a re-assert — the remote data just
+    /// became the new local truth, so there is nothing fresher to push back.
+    func test_remoteWins_doesNotEnqueueReassert() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        try db.saveTask(makeTask(tid, title: "Local", version: 1))
+        let sut = makeSut(db)
+
+        let remote: [String: Any] = [
+            "id": tid, "userId": userId, "title": "Remote", "type": "normal",
+            "isCompleted": false, "version": 2,
+            "updatedAt": "2026-06-02T00:00:00.000",
+            "createdAt": "2026-06-01T00:00:00.000", "isDeleted": false,
+        ]
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+
+        // Remote-wins landed (sanity)...
+        let t = try XCTUnwrap(try db.fetchTask(id: tid))
+        XCTAssertEqual(t.title, "Remote")
+        // ...and no re-assert was enqueued for this entity.
+        let rows = try syncRows(db).filter { $0.entityType == "tasks" && $0.entityId == tid }
+        XCTAssertTrue(rows.isEmpty, "remote-wins must not enqueue a push")
+    }
+
+    /// Loop guard: pulling back an ECHO of a row this device already holds
+    /// (identical version + updatedAt — e.g. this device's own just-pushed
+    /// write reflected back by a listener) must not enqueue anything. Per
+    /// `resolveConflict`'s exact-tie→remote rule, an identical row always
+    /// takes the remote-wins branch (never local-wins), so the loop-guard
+    /// property holds by construction; this test pins that the one reachable
+    /// "echo" path produces zero re-asserts.
+    func test_identicalRowEcho_doesNotEnqueueReassert() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        let sharedUpdatedAt = "2026-06-02T00:00:00.000"
+        try db.saveTask(makeTask(tid, title: "Task", version: 3))
+        try db.write { txn in
+            try txn.execute(
+                sql: "UPDATE tasks SET updatedAt = ? WHERE id = ?",
+                arguments: [sharedUpdatedAt, tid]
+            )
+        }
+        let sut = makeSut(db)
+
+        // Byte-identical echo: same version, same updatedAt.
+        let remote: [String: Any] = [
+            "id": tid, "userId": userId, "title": "Task", "type": "normal",
+            "isCompleted": false, "version": 3,
+            "updatedAt": sharedUpdatedAt,
+            "createdAt": "2026-06-01T00:00:00.000", "isDeleted": false,
+        ]
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+
+        let rows = try syncRows(db).filter { $0.entityType == "tasks" && $0.entityId == tid }
+        XCTAssertTrue(rows.isEmpty, "an identical echo must not enqueue a re-assert")
+    }
 }

@@ -157,17 +157,30 @@ extension AppDatabase {
     ///   `updatedAt` and `version`).
     func saveTaskAndCascade(_ task: Task) throws {
         try write { db in
-            try task.save(db)
-            let now = Self.currentTimestamp()
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: task.id,
-                operationType: .update,
-                payload: task,
-                now: now
-            ).enqueue(db)
-            try Self.runBoardCascadeForTask(db: db, changedTaskId: task.id, now: now)
+            try Self.saveTaskAndCascade(db: db, task: task)
         }
+    }
+
+    /// `db`-scoped core of `saveTaskAndCascade` — Board-integrity PR-4 (Item 3,
+    /// docs/BOARD_INTEGRITY.md): lets `BoardPlayViewModel.handleEditSave` compose
+    /// this cascade with the other Save sub-ops into ONE outer
+    /// `database.write { db in }` transaction (GRDB's `write` is not reentrant, so
+    /// the instance method above can't be called from inside another `write`
+    /// block). Identical body to the instance method.
+    ///
+    /// Must be called inside an active write transaction covering `tasks`,
+    /// `boardTasks`, `compoundChildren`, `boards`, and `syncQueue`.
+    static func saveTaskAndCascade(db: Database, task: Task) throws {
+        try task.save(db)
+        let now = Self.currentTimestamp()
+        try SyncQueueBuilder.makeItem(
+            entityType: "tasks",
+            entityId: task.id,
+            operationType: .update,
+            payload: task,
+            now: now
+        ).enqueue(db)
+        try Self.runBoardCascadeForTask(db: db, changedTaskId: task.id, now: now)
     }
 
     // MARK: - Local board-interaction orchestration (B4)

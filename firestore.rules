@@ -4,15 +4,34 @@ service cloud.firestore {
     // Parent user document: holds the authenticated user's profile + synced
     // preferences. Acts as scope root for the entity subcollections below.
     match /users/{userId} {
+      // Shared shape checks for both create and update. Version monotonicity
+      // (board-integrity PR-4, item 2, docs/BOARD_INTEGRITY.md) is NOT part of
+      // this — it only applies on update, where `resource` (the existing doc)
+      // is guaranteed to exist; referencing `resource.data` here would error
+      // on create, when no prior doc exists.
+      function validUserWrite() {
+        return request.auth != null
+               && request.auth.uid == userId
+               && request.resource.data.keys().hasAll(['id', 'version'])
+               && request.resource.data.version is number
+               && request.resource.data.id == userId
+               && request.resource.size() < 10000;
+      }
+
       allow read: if request.auth != null
                   && request.auth.uid == userId;
 
-      allow create, update: if request.auth != null
-                            && request.auth.uid == userId
-                            && request.resource.data.keys().hasAll(['id', 'version'])
-                            && request.resource.data.version is number
-                            && request.resource.data.id == userId
-                            && request.resource.size() < 10000;
+      allow create: if validUserWrite();
+
+      // Version monotonicity: reject a write whose version has REGRESSED
+      // versus what's already stored. `>=` (not `>`) is deliberate —
+      // `resolveConflict` (packages/shared/src/algorithms/lwwResolve.ts)
+      // breaks a same-version tie client-side via `updatedAt`, so an
+      // equal-version update (a legitimate LWW-tied re-push, or the
+      // board-integrity PR-4 item-1 local-wins re-enqueue) must be
+      // permitted, never rejected as a "regression".
+      allow update: if validUserWrite()
+                    && request.resource.data.version >= resource.data.version;
 
       // Parent user doc is never client-deleted — the user is the scope root.
       allow delete: if false;
@@ -68,16 +87,43 @@ service cloud.firestore {
                   && request.auth.uid == userId
                   && isKnownCollection();
 
-      // Writes: auth + collection + field validation + id consistency
-      // + (for user-scoped collections) payload.userId === path userId.
-      allow create, update: if request.auth != null
-                            && request.auth.uid == userId
-                            && isKnownCollection()
-                            && request.resource.data.keys().hasAll(['id', 'version'])
-                            && request.resource.data.version is number
-                            && request.resource.data.id == docId
-                            && userIdMatchesPath()
-                            && request.resource.size() < 10000;
+      // Shared shape checks for both create and update: auth + collection +
+      // field validation + id consistency + (for user-scoped collections)
+      // payload.userId === path userId.
+      function validEntityWrite() {
+        return request.auth != null
+               && request.auth.uid == userId
+               && isKnownCollection()
+               && request.resource.data.keys().hasAll(['id', 'version'])
+               && request.resource.data.version is number
+               && request.resource.data.id == docId
+               && userIdMatchesPath()
+               && request.resource.size() < 10000;
+      }
+
+      allow create: if validEntityWrite();
+
+      // Version monotonicity (board-integrity PR-4, item 2,
+      // docs/BOARD_INTEGRITY.md): reject a write whose version has
+      // REGRESSED versus what's already stored — this is what makes the
+      // rules actually enforce LWW server-side instead of trusting every
+      // client to have resolved conflicts correctly before pushing.
+      //
+      // `>=` (never `>`) is deliberate and was verified against
+      // `resolveConflict`'s tie semantics (packages/shared/src/algorithms
+      // /lwwResolve.ts): same-version conflicts are broken client-side by
+      // `updatedAt`, so an equal-version update is a legitimate write (a
+      // same-version content edit, or the board-integrity PR-4 item-1
+      // local-wins re-enqueue re-asserting an already-synced version after
+      // a losing remote write raced in) and must be permitted, never
+      // rejected as a false "regression". Only a STRICTLY lower incoming
+      // version is disallowed.
+      //
+      // `resource` is guaranteed non-null here (update implies the doc
+      // already exists), and every existing doc satisfies `version is
+      // number` per the write rule that created it.
+      allow update: if validEntityWrite()
+                    && request.resource.data.version >= resource.data.version;
 
       // Deletes: auth + collection only (no resource validation needed)
       allow delete: if request.auth != null

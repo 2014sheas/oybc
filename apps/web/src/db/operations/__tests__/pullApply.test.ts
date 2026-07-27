@@ -4,6 +4,7 @@ import {
   BoardSize,
   CenterSquareType,
   OperatorType,
+  SyncOperationType,
   TaskType,
   Timeframe,
   SYNC_COLLECTIONS,
@@ -16,13 +17,14 @@ import {
   type DefaultPool,
   type Pool,
   type RecurringBoardTemplate,
+  type SyncableEntity,
   type SyncCollection,
   type Task,
   type TaskEvent,
   type TaskStep,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { applyRemoteSubdoc } from '../pullApply';
+import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../pullApply';
 
 /**
  * Cross-platform review finding C1 (P1 final fix wave,
@@ -72,9 +74,13 @@ function uuid(n: number): string {
 }
 
 afterEach(async () => {
-  await Promise.all(
-    LIVE_SYNC_COLLECTIONS.map((c) => db.table(c).clear()),
-  );
+  await Promise.all([
+    ...LIVE_SYNC_COLLECTIONS.map((c) => db.table(c).clear()),
+    // Item 1 (board-integrity PR-4) tests below assert on sync-queue
+    // contents; `syncQueue` isn't a SYNC_COLLECTIONS table so it's cleared
+    // separately here to keep every test's queue assertions isolated.
+    db.syncQueue.clear(),
+  ]);
 });
 
 /**
@@ -436,5 +442,151 @@ describe('applyRemoteSubdoc — sealed-board pull re-derive (item 1)', () => {
     const board = await db.boards.get(BOARD);
     expect(board?.completedTasks).toBe(3);
     expect(board?.sealedAt).toBeUndefined();
+  });
+});
+
+/**
+ * Item 1 (board-integrity PR-4, docs/BOARD_INTEGRITY.md): the push path
+ * conflict-checks via getDoc → setDoc with no transaction, so a stale write
+ * can land AFTER a fresher one on a cross-device race. Before this fix,
+ * "local wins" on pull was a silent no-op — nothing ever re-pushed the
+ * fresher local row, so the divergence stuck forever. The fix: re-enqueue an
+ * UPDATE for the local row whenever pull resolves local-wins AND the rows
+ * genuinely differ (loop guard — an already-converged pull must never
+ * enqueue, or every sync of an in-sync doc would loop).
+ */
+describe('applyRemoteSubdoc — local-wins re-enqueue (item 1)', () => {
+  const TASK = '50000000-0000-4000-8000-000000000001';
+  const OLD = '2026-07-01T00:00:00.000Z';
+  const NEWER = '2026-07-02T00:00:00.000Z';
+
+  function localTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: TASK,
+      userId: USER,
+      title: 'Local task',
+      type: TaskType.NORMAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: OLD,
+      updatedAt: NEWER,
+      version: 2,
+      isDeleted: false,
+      ...overrides,
+    };
+  }
+
+  it('enqueues an UPDATE for the local row when pull resolves local-wins (higher local version)', async () => {
+    const local = localTask({ version: 2, updatedAt: NEWER });
+    await db.tasks.add(local);
+
+    // Remote is stale — lower version. resolveConflict picks local.
+    const remote: Task = { ...local, title: 'Stale remote', version: 1, updatedAt: OLD };
+
+    const status = await applyRemoteSubdoc('tasks', remote, USER);
+    expect(status).toBeNull();
+
+    // Local row is untouched (local-wins never writes it).
+    const stored = await db.tasks.get(TASK);
+    expect(stored?.version).toBe(2);
+    expect(stored?.title).toBe('Local task');
+
+    const entries = (await db.syncQueue.toArray()).filter(
+      (i) => i.entityType === 'tasks' && i.entityId === TASK,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].operationType).toBe(SyncOperationType.UPDATE);
+    const payload = JSON.parse(entries[0].payload) as Task;
+    expect(payload.version).toBe(2);
+    expect(payload.title).toBe('Local task');
+  });
+
+  it('enqueues an UPDATE for the local row when pull resolves local-wins (same version, newer local updatedAt)', async () => {
+    const local = localTask({ version: 3, updatedAt: NEWER });
+    await db.tasks.add(local);
+
+    // Same version, older updatedAt — resolveConflict still picks local.
+    const remote: Task = { ...local, title: 'Stale remote', version: 3, updatedAt: OLD };
+
+    const status = await applyRemoteSubdoc('tasks', remote, USER);
+    expect(status).toBeNull();
+
+    const entries = (await db.syncQueue.toArray()).filter(
+      (i) => i.entityType === 'tasks' && i.entityId === TASK,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].operationType).toBe(SyncOperationType.UPDATE);
+  });
+
+  it('does NOT enqueue when remote wins (higher remote version)', async () => {
+    const local = localTask({ version: 1, updatedAt: OLD });
+    await db.tasks.add(local);
+
+    const remote: Task = { ...local, title: 'Fresh remote', version: 2, updatedAt: NEWER };
+
+    const status = await applyRemoteSubdoc('tasks', remote, USER);
+    expect(status).toMatch(/^Pulled /);
+
+    const entries = (await db.syncQueue.toArray()).filter(
+      (i) => i.entityType === 'tasks' && i.entityId === TASK,
+    );
+    expect(entries).toHaveLength(0);
+  });
+
+  it('does NOT enqueue when the pulled row is brand new locally (isNew branch)', async () => {
+    const remote = localTask({ version: 1, updatedAt: OLD });
+
+    const status = await applyRemoteSubdoc('tasks', remote, USER);
+    expect(status).toMatch(/^Pulled .*\(new\)/);
+
+    const entries = (await db.syncQueue.toArray()).filter(
+      (i) => i.entityType === 'tasks' && i.entityId === TASK,
+    );
+    expect(entries).toHaveLength(0);
+  });
+
+  it('does NOT enqueue when the pulled row is identical (tie → remote-wins through the public API)', async () => {
+    const local = localTask({ version: 2, updatedAt: NEWER });
+    await db.tasks.add(local);
+    const identicalRemote: Task = { ...local };
+
+    // Sanity: resolveConflict on an identical pair resolves remote-wins
+    // (exact tie → server authority), so this exercises the remote-wins
+    // branch, not local-wins — confirming no enqueue happens either way.
+    const status = await applyRemoteSubdoc('tasks', identicalRemote, USER);
+    expect(status).toMatch(/^Pulled /);
+
+    const entries = (await db.syncQueue.toArray()).filter(
+      (i) => i.entityType === 'tasks' && i.entityId === TASK,
+    );
+    expect(entries).toHaveLength(0);
+  });
+
+  describe('rowsGenuinelyDiffer (loop-guard predicate, unit)', () => {
+    // `Task` doesn't structurally satisfy `SyncableEntity`'s index signature
+    // (same as `applyRemoteSubdoc`'s own `validated as SyncableEntity` cast
+    // above) — cast through `unknown`, matching that convention.
+    function asSyncable(task: Task): SyncableEntity {
+      return task as unknown as SyncableEntity;
+    }
+
+    it('returns false for identical version + updatedAt — the actual loop-guard case', () => {
+      const local = localTask({ version: 2, updatedAt: NEWER });
+      const remote = { ...local };
+      expect(rowsGenuinelyDiffer(asSyncable(local), asSyncable(remote))).toBe(false);
+    });
+
+    it('returns true when versions differ', () => {
+      const local = localTask({ version: 2, updatedAt: NEWER });
+      const remote = { ...local, version: 1 };
+      expect(rowsGenuinelyDiffer(asSyncable(local), asSyncable(remote))).toBe(true);
+    });
+
+    it('returns true when versions match but updatedAt differs', () => {
+      const local = localTask({ version: 2, updatedAt: NEWER });
+      const remote = { ...local, updatedAt: OLD };
+      expect(rowsGenuinelyDiffer(asSyncable(local), asSyncable(remote))).toBe(true);
+    });
   });
 });

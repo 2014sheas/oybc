@@ -478,6 +478,82 @@ final class SealingTests: XCTestCase {
         XCTAssertEqual(board.version, 1, "no board write happened — version untouched")
     }
 
+    // MARK: - Board-integrity PR-4 (Item 3) — `db:`-scoped cascade cores
+    //
+    // `BoardPlayViewModel.handleEditSave` composes several cascade helpers
+    // into ONE outer `database.write { db in }` transaction via their new
+    // `static func …(db: Database, …)` cores (GRDB's `write`/`read` aren't
+    // reentrant, so the pre-existing instance methods — which each open
+    // their OWN `write {}` — can't be called from inside another already-open
+    // transaction). These cores are byte-identical bodies lifted out of the
+    // instance methods, so the sealed/deleted DB-level guards above must hold
+    // for the static entry points too — this is the exact code path the
+    // composed Save now calls.
+
+    func test_updateBoardAndCascade_dbScoped_noOpsOnSealedBoard() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "sealed-b", sealedAt: pastBackstop))
+
+        try db.write { txn in
+            try AppDatabase.updateBoardAndCascade(
+                db: txn,
+                boardId: "sealed-b",
+                patch: AppDatabase.UpdateActiveBoardPatch(name: "Renamed")
+            )
+        }
+
+        let board = try fetchBoard(db, "sealed-b")
+        XCTAssertEqual(board.name, "B", "sealed board's metadata must not change via the db-scoped core either")
+        XCTAssertEqual(board.version, 1, "no write happened — version untouched")
+    }
+
+    func test_updateBoardTaskPositions_dbScoped_sealedBoard_skipsCascade() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoard(makeBoard(id: "sealed-b", sealedAt: pastBackstop, sealedCompletedCells: [0], size: 3))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "sealed-b", taskId: "t1", cell: 0, size: 3))
+
+        try db.write { txn in
+            try AppDatabase.updateBoardTaskPositions(
+                db: txn,
+                boardId: "sealed-b",
+                moves: [AppDatabase.BoardTaskPositionMove(boardTaskId: "bt1", row: 1, col: 1)]
+            )
+        }
+
+        let board = try fetchBoard(db, "sealed-b")
+        XCTAssertEqual(board.sealedCompletedCells, [0])
+        XCTAssertEqual(board.version, 1, "no board write happened — version untouched")
+    }
+
+    /// Multiple `db:`-scoped cores composed into ONE transaction (mirroring
+    /// `handleEditSave`'s composition) must not trip GRDB's reentrancy guard
+    /// — this is the actual defect the instance-method versions would hit if
+    /// called from inside an already-open `write {}` block.
+    func test_dbScopedCores_composeIntoOneTransaction_withoutReentrancyTrap() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoard(makeBoard(id: "b1", size: 3))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", cell: 0, size: 3))
+
+        try db.write { txn in
+            try AppDatabase.updateBoardAndCascade(
+                db: txn, boardId: "b1",
+                patch: AppDatabase.UpdateActiveBoardPatch(name: "Composed")
+            )
+            try AppDatabase.updateBoardTaskPositions(
+                db: txn, boardId: "b1",
+                moves: [AppDatabase.BoardTaskPositionMove(boardTaskId: "bt1", row: 1, col: 1)]
+            )
+        }
+
+        let board = try fetchBoard(db, "b1")
+        XCTAssertEqual(board.name, "Composed")
+        let bt = try XCTUnwrap(db.fetchBoardTask(id: "bt1"))
+        XCTAssertEqual(bt.row, 1)
+        XCTAssertEqual(bt.col, 1)
+    }
+
     // MARK: - Board-integrity PR-2 (Part 1) — placement-integrity repair pass
     //
     // Twin of web's `repairPlacementIntegrity` self-heal tests. Repair runs

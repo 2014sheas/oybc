@@ -11,7 +11,6 @@ import { BoardSetupForm } from '../wizard/BoardSetupForm';
 import { RisoButton, RisoSegmented, RisoSectionLabel } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
 import {
-  updateBoardAndCascade,
   archiveBoard,
   type UpdateActiveBoardPatch,
 } from '../../db/operations/boards';
@@ -47,12 +46,14 @@ export interface BoardEditPanelProps {
    */
   squareEditCount: number;
   /**
-   * Called at the START of handleSave — commits all staged square edits
-   * (BoardTask replacements + global Task field patches) BEFORE the
-   * metadata `updateBoardAndCascade` write. Must throw on error (the
-   * panel's catch block will surface the failure to the user).
+   * Commits the WHOLE Save: staged square edits (BoardTask replacements +
+   * global Task field patches + reorders + removals) AND the board-metadata
+   * patch, all in one atomic Dexie transaction (board-integrity PR-4, item 3,
+   * docs/BOARD_INTEGRITY.md). Must throw on error (the panel's catch block
+   * surfaces the failure to the user) — a throw rolls back every write in
+   * the transaction, so a failed Save can never leave the board half-edited.
    */
-  onExtraCommit: () => Promise<void>;
+  onExtraCommit: (metadataPatch: UpdateActiveBoardPatch) => Promise<void>;
   /**
    * Called when the user cancels with no unsaved changes, or after
    * the inline "Discard changes?" confirm. The parent exits edit mode.
@@ -110,7 +111,12 @@ function snapEnd(ymd: string): string {
  * when the board is in edit mode (Phase 1).
  *
  * Carries all form state previously held by EditBoardSheet, with the same
- * validation and save path (`updateBoardAndCascade`). Phase 1 scope:
+ * validation as before. The metadata write itself (`updateBoardAndCascade`)
+ * now happens INSIDE `onExtraCommit` (board-integrity PR-4, item 3,
+ * docs/BOARD_INTEGRITY.md) — this component builds the patch and hands it
+ * to `onExtraCommit`, which commits it atomically alongside the staged
+ * square edits, rather than calling it here as a second, separate write.
+ * Phase 1 scope:
  *   - Cancel (confirms if dirty) + "Editing" gold pill with red dot.
  *   - Board metadata fields via `BoardSetupForm` (name, timeframe, dates, center).
  *   - Immutable board-size chip (active boards cannot be resized).
@@ -122,7 +128,7 @@ function snapEnd(ymd: string): string {
  * @param board - The ACTIVE board to edit. Must be non-null.
  * @param weekStartDay - Drives timeframe boundary computation.
  * @param onCancel - Called on clean cancel or after Discard confirm.
- * @param onSaved - Called after a successful `updateBoardAndCascade` write.
+ * @param onSaved - Called after a successful save (square edits + metadata, one transaction).
  * @param onArchived - Called after a successful `archiveBoard` write.
  */
 export function BoardEditPanel({
@@ -282,11 +288,12 @@ export function BoardEditPanel({
 
     setSaving(true);
     try {
-      // 1. Commit square edits (replacements + task-field patches) first.
-      //    onExtraCommit throws on failure; the catch block surfaces the error.
-      await onExtraCommit();
-      // 2. Commit metadata (name / timeframe / dates / center).
-      await updateBoardAndCascade(board.id, patch);
+      // Commit EVERYTHING (square edits — replacements / task-field patches /
+      // reorders / removals — THEN the metadata patch) as one atomic Dexie
+      // transaction (board-integrity PR-4, item 3). onExtraCommit throws on
+      // any failure; the catch block surfaces it, and the whole transaction
+      // rolls back — no more partial-Save state.
+      await onExtraCommit(patch);
       onSaved();
     } catch (err) {
       console.error('BoardEditPanel: save failed', err);
