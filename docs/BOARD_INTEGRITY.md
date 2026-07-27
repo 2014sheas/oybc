@@ -1,9 +1,10 @@
 # Board Integrity — the 2026-07-24 four-auditor audit + the five-PR program
 
-> **Status: PR-1 (#358) and PR-2 (#359) SHIPPED.** PR-3 (#360) is speced;
-> PR-4/PR-5 (#361/#362) are reserved in the audit program but not yet scoped
-> in detail — see [§The five-PR program](#the-five-pr-program) for what's
-> concretely known of each.
+> **Status: ALL FIVE PRs SHIPPED.** PR-1 (#358), PR-2 (#359), PR-3 (#360),
+> PR-4 (#361), and PR-5 (#362) are all merged — the board-integrity program
+> is closed. See [§The five-PR program](#the-five-pr-program) for what each
+> shipped and [§Residual accepted risks](#residual-accepted-risks) for what
+> the program deliberately left open.
 
 ## Why this doc exists
 
@@ -68,17 +69,16 @@ full site-by-site sweep.
 | # | Finding | Surface | Root cause (short) | Fix owner |
 |---|---|---|---|---|
 | 1 | **Tombstone defect** — deleted placements self-revert | sync (both platforms) | `BoardTask` had no soft-delete flag; a stale-version DELETE payload loses the LWW tie-break against the still-live remote row | **PR-1 / #358** (this PR) |
-| 2 | **Web achievement render bug** — ACHIEVEMENT squares never render complete on web; tapping one runs the normal-task completion handler (no state change, but can auto-activate a DRAFT board) | web render + tap | Web's render adapters (`db/adapters.ts`) have no ACHIEVEMENT branch — falls through to the primitive branch, which reads a lifetime-completion cache that's never written for achievement tasks. iOS already renders these correctly via its own hand-mirror of the resolution logic | **PR-3 / #360** |
+| 2 | **Web achievement render bug** — ACHIEVEMENT squares never render complete on web; tapping one runs the normal-task completion handler (no state change, but can auto-activate a DRAFT board) | web render + tap | Web's render adapters (`db/adapters.ts`) have no ACHIEVEMENT branch — falls through to the primitive branch, which reads a lifetime-completion cache that's never written for achievement tasks. iOS already renders these correctly via its own hand-mirror of the resolution logic | **PR-3 / #360 (shipped)** |
 | 3 | **Sealed bypass** — the placement mutators (`removeBoardTaskFromBoard`, `addBoardTaskToBoard`, `updateBoardTaskAndCascade`) have no sealed-board guard, unlike the sibling metadata-edit/rearrange cascades PR #357 hardened | write path (both platforms) | The sealed-immutability invariant (docs/WINDOWED_COMPLETION.md §Sealing) was enforced ad hoc per call site rather than uniformly; these three sites were missed | **PR-2 / #359** |
-| 4 | **Non-atomic save** — a board's placement set can be written across more than one non-transactional step, risking a partial write (orphaned/missing placements) if interrupted mid-flight | write path | Some board-save call sites predate the current one-Dexie-transaction convention (see CLAUDE.md "Atomic pull-path multi-writes"); not every write site was audited against it | Scoped in a later PR of the program (#361/#362 — not yet detailed as of this PR) |
-| 5 | **Push race** — concurrent pushes from two devices (or a push racing a coalesced re-enqueue) can interleave in ways the per-item LWW check doesn't fully account for | sync queue | Related to, but distinct from, finding 1's tie-break bug — this is about ordering/interleaving of multiple in-flight sync-queue items rather than a single stale payload | Scoped in a later PR of the program (#361/#362 — not yet detailed as of this PR) |
+| 4 | **Non-atomic save** — a board's placement set can be written across more than one non-transactional step, risking a partial write (orphaned/missing placements) if interrupted mid-flight | write path | Some board-save call sites predate the current one-Dexie-transaction convention (see CLAUDE.md "Atomic pull-path multi-writes"); not every write site was audited against it | **PR-4 / #361** (single-transaction Board-Edit Save — `useBoardPlay.commitSquareEdits` now wraps the whole staged-edit sequence + board-metadata patch in one `db.transaction(...)`) |
+| 5 | **Push race** — concurrent pushes from two devices (or a push racing a coalesced re-enqueue) can interleave in ways the per-item LWW check doesn't fully account for | sync queue | Related to, but distinct from, finding 1's tie-break bug — this is about ordering/interleaving of multiple in-flight sync-queue items rather than a single stale payload | **PR-4 / #361** (pull-path local-wins re-enqueue — a fresher local write that lost a push race re-asserts via a coalesced UPDATE instead of diverging silently; plus `firestore.rules` version-monotonicity split so `allow update` requires `version >=` the stored value) |
 | 6 | **Pull-cascade gaps** — a pulled row doesn't always trigger the same re-derivation a local write would | pull path (both platforms) | `boardTasks` pulls triggered no cascade at all (closed by PR-1); other collections' pull cascades were separately hardened by the bingo-pipeline hardening PR (#357, items 1–3: sealed re-derive, wizard-creation derivation, task-delete/counter-unlink cascade) | **PR-1 / #358** (the `boardTasks` slice); prior art in **#357** |
-| 7 | **Uniqueness** — no enforced invariant that a board has at most one live placement per cell or per task; duplicate rows from the pre-tombstone era can double-count a cell or alias into the wrong grid position | data integrity (both platforms) | No DB-level uniqueness constraint on `(boardId, row, col)` or `(boardId, taskId)`, and no deterministic collision-resolution rule when duplicates exist | **PR-2 / #359** (repair pass + write-time guards) |
+| 7 | **Uniqueness** — no enforced invariant that a board has at most one live placement per cell or per task; duplicate rows from the pre-tombstone era can double-count a cell or alias into the wrong grid position | data integrity (both platforms) | No DB-level uniqueness constraint on `(boardId, row, col)` or `(boardId, taskId)`, and no deterministic collision-resolution rule when duplicates exist | **PR-2 / #359** (repair pass + write-time guards); **PR-5 / #362** closed the last gap in this family — a second live `isCenter: true` row (a different failure mode than a cell/task collision) is now rejected at write time too |
 
-Findings 4 and 5 are named in the audit but not yet broken into a scoped PR
-spec as of PR-1 landing — they're recorded here so the program's full scope
-stays visible, not because this PR (or PR-2/PR-3) does anything about them.
-Update this table's "Fix owner" column as later PRs claim them.
+All seven findings are closed as of PR-5. See
+[§Residual accepted risks](#residual-accepted-risks) for what remains
+open BY DESIGN (accepted, not missed).
 
 ## The five-PR program
 
@@ -86,9 +86,9 @@ Update this table's "Fix owner" column as later PRs claim them.
 |---|---|---|---|---|
 | PR-1 | #358 | Durable BoardTask deletes (tombstones) + the boardTasks-pull cascade | Give `BoardTask` a soft-delete flag like every other collection; fix every deletion site to tombstone instead of physically delete; add the missing pull-cascade branch | **Shipped (this PR)** |
 | PR-2 | #359 | Placement-integrity repair + determinism + sealed guards | Repair existing duplicate/out-of-bounds placement rows in the wild (pre-tombstone-era corruption); make placement collision-resolution deterministic everywhere (one shared winner rule, a provably transitive lexicographic (version, updatedAt, id) total order — invalid dates normalize to an oldest-sentinel); enforce the invariants at write time; close the sealed-board placement-mutator bypass (finding 3) | **Shipped** |
-| PR-3 | #360 | Unified board resolver — per-cell `computeBoardGrid` | Widen the canonical derivation kernel to return per-cell detail (including achievement badge inputs) and make every render surface on both platforms call INTO it instead of hand-copying the "is this cell complete?" logic — closing the web achievement render bug (finding 2) as the one user-visible behavior change | Speced, not yet built |
-| PR-4 | #361 | *(not yet scoped)* | Likely candidate: non-atomic save (finding 4) and/or push race (finding 5) | Reserved |
-| PR-5 | #362 | *(not yet scoped)* | Likely candidate: whichever of finding 4/5 PR-4 doesn't claim | Reserved |
+| PR-3 | #360 | Unified board resolver — per-cell `computeBoardGrid` | Widen the canonical derivation kernel to return per-cell detail (including achievement badge inputs) and make every render surface on both platforms call INTO it instead of hand-copying the "is this cell complete?" logic — closing the web achievement render bug (finding 2) as the one user-visible behavior change | **Shipped** |
+| PR-4 | #361 | Sync + atomicity hardening — reassert, rules monotonicity, atomic saves | Pull-path local-wins re-enqueue (a fresher local write that lost a push race re-asserts instead of diverging silently — finding 5); `firestore.rules` version-monotonicity (separate create/update rules, `allow update` requires `version >=`); single-transaction Board-Edit Save (finding 4) | **Shipped** |
+| PR-5 | #362 | Kernel pins + minors sweep | Pin the last unhardened kernels with cross-platform shared vectors (`placeBoard`/`fisherYatesShuffle`/`centerSquare`, previously only hand-copied-array-tested); clamp a TS/Swift shuffle rng-edge divergence; add the last write-time uniqueness guard (a second live `isCenter: true` row, finding 7's remaining gap); a handful of iOS reentry-guard/staleness minors; dead-code + docs sweep (this doc's closing update) | **Shipped** |
 
 ## The "one resolver" direction
 
@@ -111,8 +111,76 @@ implementation per platform — the kernel's — with every UI surface a thin
 consumer of its output. This is the direction the whole program points at:
 PR-1 hardened the sync-layer edge of the pipeline (this doc), PR-2 hardens
 the write-time edge (deterministic, invariant-enforced), and PR-3 collapses
-the read-time edge onto one resolver. Findings 4/5 (whichever PR claims them)
-round out the remaining write-path and sync-queue-ordering gaps.
+the read-time edge onto one resolver. PR-4 rounded out the remaining
+write-path atomicity and sync-queue-ordering gaps (findings 4/5), and PR-5
+pinned the last unhardened kernels and closed the remaining uniqueness gap
+(finding 7).
+
+## Residual accepted risks
+
+The program is closed, but a handful of items were identified during the
+audit and PR-5's own sweep and deliberately left unfixed — either because
+they're self-healing by a different mechanism already in place, or because
+fixing them would cost more than the residual risk warrants. Recorded here
+so a future contributor re-discovering one of these doesn't mistake it for
+an unnoticed regression.
+
+- **Orphaned `BoardTask` rows after `deleteBoard`** — deleting a board does
+  not walk its `BoardTask` rows and tombstone them individually; they become
+  unreachable (no live board to join against) but are not soft-deleted
+  themselves. This is a storage/GC gap, not a correctness bug: every reader
+  in the pipeline resolves placements by joining through a live, non-deleted
+  `Board` row first (`computeBoardGrid`, the fetch helpers, the sync
+  collections list), so an orphaned `BoardTask` can never render, count
+  toward stats, or leak into another board's derivation. It just sits in
+  Dexie/GRDB (and Firestore) unreferenced. A future storage-hygiene pass
+  could sweep these; not scoped here.
+- **Achievement fan-out staleness** — an ACHIEVEMENT square's badge reads
+  its watched board/template's CURRENT state at render time
+  (`computeBoardGrid`'s achievement branch), not a cached/propagated value.
+  A watched board's state can change without every watching board's
+  `completedTasks`/`linesCompleted` being eagerly recomputed at that exact
+  moment — but because every render always calls the same live resolver,
+  the NEXT render of any watching board (including the very next
+  interaction) shows the correct state. This is "eventually consistent by
+  construction," not a bug to fix: there is no persisted-then-stale
+  achievement cache to invalidate, because there is no cache.
+- **The pre-txn affected-set staleness edge** — `addBoardTaskToBoard`,
+  `removeBoardTaskFromBoard`, and `updateBoardTaskAndCascade` all compute
+  `affectedBoardIds` from a snapshot read BEFORE opening their write
+  transaction (see each function's own comments in
+  `apps/web/src/db/operations/boardTasks.ts`), then re-derive stats for
+  each affected board INSIDE the transaction. A concurrent write landing in
+  that narrow window (pre-txn read → txn open) that changes which boards
+  are "affected" by this same task would not be reflected in this call's
+  affected-set — but the sealed-board guard (PR-2) and each board's own
+  independent cascade-on-its-own-write still keep every board internally
+  consistent; the edge case is "one cascade pass computes a stats update
+  for a board that a concurrent second cascade also touches," which the
+  safety-net pull cycle and each board's own next local write both
+  self-correct. Single-user, mostly-offline usage makes the actual window
+  vanishingly rare in practice.
+- **`computePlacementIntegrityRepair` does not dedupe a second `isCenter`
+  row at a different cell** — the PR-2 repair pass collapses same-CELL
+  collisions (two rows claiming the same `(row, col)`) and same-TASK
+  duplicates (one task placed twice on a board), but a second live
+  `isCenter: true` row at a DIFFERENT, otherwise-valid cell is a distinct
+  failure mode the repair pass doesn't target. This is left as write-time
+  prevention only (PR-5's `createBoardTask` guard) rather than also adding
+  a repair-pass phase, because it's verified render-inert on both
+  platforms' current render paths (center-cell rendering is computed
+  positionally — `row/col === floor(size/2)` — never by reading the
+  `BoardTask.isCenter` field) — so an already-existing stray row from
+  before the write guard shipped poses no live rendering risk today, only
+  a latent one if a future render path started trusting `isCenter` instead
+  of position.
+- **Migration tie-break note** — the legacy `composite_tasks` /
+  `composite_nodes` / `task_steps` tables (see CLAUDE.md's Task model
+  section) are read-only, first-launch-backfill-only; they carry no
+  `isDeleted`/version machinery of their own and are never touched by any
+  live LWW tie-break. They're mentioned here only because the audit's sync
+  trace passed through them on its way to `BoardTask` — they are NOT part
+  of this program's scope and needed no change.
 
 ## See also
 
