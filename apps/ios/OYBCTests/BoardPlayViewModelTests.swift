@@ -1474,4 +1474,487 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "the Save must still complete normally despite the concurrent notification")
         XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).name, "Renamed via save")
     }
+
+    // MARK: - 14. bugfix/edit-preserves-board-window
+    //
+    // `handleEditSave` used to recompute the board's `startDate`/`endDate` on
+    // EVERY Save — indefinite boards re-anchored to `startOfDay(Date())`, core
+    // (daily/weekly/monthly/yearly) boards re-snapped to
+    // `computeTimeframeBoundaries(referenceDate: Date())` — even when the user
+    // only renamed the board or replaced a cell. Under Windowed Completion, a
+    // board's window lower bound is the completion-evaluation floor: silently
+    // moving it forward wipes the windowed-complete state of every task whose
+    // completion event predates the new start (`resolveTaskWindowState`'s
+    // `occurred >= lower` gate in `OYBC/Helpers/TaskEvents.swift`).
+    //
+    // The fix: `startDate`/`endDate` in the `UpdateActiveBoardPatch` are `nil`
+    // (⇒ "leave unchanged" at the DB layer, see
+    // `AppDatabase.UpdateActiveBoardPatch`) UNLESS the user actually changed
+    // the window — a timeframe conversion, or new CUSTOM dates. This section
+    // pins that fix, sweeps it across the Save sub-op matrix (replace /
+    // rearrange / remove composed together), and cross-checks that the other
+    // "is this cell complete" surfaces (`kernelCellStates`, `BoardPreviewCells`,
+    // `reDeriveActiveBoards` self-heal) all agree with the play grid after an
+    // edit-save — no divergence introduced by editing.
+
+    /// `n` calendar days from "now" (negative = past), snapped to local
+    /// start-of-day and formatted exactly like `handleEditSave`'s own
+    /// `wizardLocalISOString(cal.startOfDay(for:))` — so a would-be re-window
+    /// (if the fix regressed) is directly comparable against this value.
+    private func offsetDaysISO(_ n: Int) -> String {
+        let cal = Calendar.current
+        let date = cal.date(byAdding: .day, value: n, to: Date())!
+        return wizardLocalISOString(cal.startOfDay(for: date))
+    }
+
+    /// Same day offset as `offsetDaysISO`, but at local noon — used for
+    /// `TaskEvent.occurredAt` so the instant is unambiguously inside (or
+    /// outside) a given day's window regardless of timezone rounding.
+    private func offsetDaysInstantISO(_ n: Int) -> String {
+        let cal = Calendar.current
+        let date = cal.date(byAdding: .day, value: n, to: Date())!
+        let noon = cal.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+        return wizardLocalISOString(noon)
+    }
+
+    /// A completion `TaskEvent` at `occurredAt`, saved directly (bypassing any
+    /// cascade) — the exact shape `WindowedBingoCascadeTests.makeCompletionEvent`
+    /// uses.
+    private func makeCompletionEvent(_ id: String, taskId: String, occurredAt: String, userId: String = "u1") -> TaskEvent {
+        let now = AppDatabase.currentTimestamp()
+        return TaskEvent(
+            id: id, userId: userId, taskId: taskId, kind: .completion, delta: nil,
+            occurredAt: occurredAt, boardId: nil, createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    /// A parameterized board fixture (the other builders in this file hardcode
+    /// timeframe/dates) — lets these tests set an arbitrary timeframe +
+    /// startDate/endDate/boardSize/center to exercise the re-window matrix.
+    private func makeCustomBoard(
+        id: String,
+        userId: String = "u1",
+        timeframe: Timeframe,
+        startDate: String,
+        endDate: String?,
+        boardSize: Int = 3,
+        centerSquareType: CenterSquareType = .none,
+        name: String = "Board"
+    ) -> Board {
+        var dict: [String: Any] = [
+            "id": id, "userId": userId, "name": name, "status": BoardStatus.active.rawValue,
+            "boardSize": boardSize, "timeframe": timeframe.rawValue,
+            "startDate": startDate,
+            "centerSquareType": centerSquareType.rawValue, "isRandomized": false,
+            "totalTasks": boardSize * boardSize, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": startDate, "updatedAt": startDate,
+            "version": 1, "isDeleted": false,
+        ]
+        if let endDate { dict["endDate"] = endDate }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
+    // MARK: 14a. Pin the fix — metadata-only Save preserves the window
+
+    func test_handleEditSave_metadataOnlyRename_indefiniteBoard_preservesStartDate_andWindowedCompletion() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-5)
+        try db.saveBoard(makeCustomBoard(id: "b-indef", timeframe: .indefinite, startDate: start, endDate: nil, boardSize: 1))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-indef", taskId: "t1", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            try self.makeCompletionEvent("evt1", taskId: "t1", occurredAt: self.offsetDaysInstantISO(-2)).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b-indef")
+        let liveBoard = try XCTUnwrap(vm.board)
+        XCTAssertEqual(liveBoard.timeframe, .indefinite)
+        vm.seedEditDraft(from: liveBoard)
+
+        // ONLY a rename is staged — no timeframe/date change.
+        vm.editName = "Renamed Indefinite"
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b-indef"))
+        XCTAssertEqual(saved.name, "Renamed Indefinite")
+        XCTAssertEqual(saved.startDate, start,
+                       "a metadata-only Save on an INDEFINITE board must not re-anchor startDate to today")
+        XCTAssertEqual(saved.completedTasks, 1,
+                       "the pre-existing in-window completion must survive the save")
+
+        let vm2 = loadedVM(db, boardId: "b-indef")
+        XCTAssertTrue(vm2.windowedState(forTaskId: "t1").isCompleted,
+                      "windowed completion must survive a metadata-only save (the worst pre-fix case)")
+    }
+
+    func test_handleEditSave_metadataOnlyRename_coreBoard_preservesStartDate_andWindowedCompletion() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-5)
+        let end = offsetDaysISO(25)
+        try db.saveBoard(makeCustomBoard(id: "b-core", timeframe: .monthly, startDate: start, endDate: end, boardSize: 1))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-core", taskId: "t1", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            try self.makeCompletionEvent("evt1", taskId: "t1", occurredAt: self.offsetDaysInstantISO(-2)).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b-core")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+
+        // Metadata-only Save: center type change, timeframe/dates untouched.
+        vm.editCenterType = .free
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b-core"))
+        XCTAssertEqual(saved.centerSquareType, .free)
+        XCTAssertEqual(saved.startDate, start,
+                       "a metadata-only Save on a CORE (monthly) board must not re-snap to today's window")
+        XCTAssertEqual(saved.endDate, end, "endDate must also be preserved, not recomputed")
+        XCTAssertEqual(saved.completedTasks, 1, "in-window completion must survive the save")
+    }
+
+    func test_handleEditSave_timeframeChange_deliberatelyRewindows_dropsOutOfWindowCompletion() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-10)
+        let end = offsetDaysISO(20)
+        try db.saveBoard(makeCustomBoard(id: "b-tf", timeframe: .weekly, startDate: start, endDate: end, boardSize: 1))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-tf", taskId: "t1", row: 0, col: 0))
+        // Completion event 2 days ago — inside the OLD (10-days-ago-start) window,
+        // but guaranteed OUTSIDE a re-windowed DAILY board (which only covers today).
+        try db.dbQueue.write { database in
+            try self.makeCompletionEvent("evt1", taskId: "t1", occurredAt: self.offsetDaysInstantISO(-2)).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b-tf")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+        XCTAssertEqual(vm.editTimeframe, .weekly)
+
+        // Deliberate timeframe conversion: weekly → daily.
+        vm.editTimeframe = .daily
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b-tf"))
+        XCTAssertEqual(saved.timeframe, .daily)
+        XCTAssertNotEqual(saved.startDate, start,
+                          "a deliberate timeframe conversion DOES re-window the board — pinned as intentional")
+        let expected = try XCTUnwrap(computeTimeframeBoundaries(timeframe: .daily, referenceDate: Date(), weekStartDay: "monday"))
+        XCTAssertEqual(String(saved.startDate.prefix(10)), String(wizardLocalISOString(expected.start).prefix(10)),
+                       "re-windowed startDate matches today's daily boundary")
+        XCTAssertEqual(saved.completedTasks, 0,
+                       "the pre-existing completion predates the new daily window — deliberately dropped by the conversion")
+    }
+
+    // MARK: 14b. Edit × completion × bingo matrix
+
+    func test_handleEditSave_composedEdit_preservesUntouchedCellsWindowedCompletion() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-5)
+        let end = offsetDaysISO(25)
+        try db.saveBoard(makeCustomBoard(id: "b1", timeframe: .monthly, startDate: start, endDate: end, boardSize: 3))
+        for id in ["t1", "t2", "t2b", "t3", "t4", "t5"] {
+            try db.saveTask(makeTask(id))
+        }
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt2", boardId: "b1", taskId: "t2", row: 0, col: 1))
+        try db.saveBoardTask(makeBoardTask(id: "bt3", boardId: "b1", taskId: "t3", row: 0, col: 2))
+        try db.saveBoardTask(makeBoardTask(id: "bt4", boardId: "b1", taskId: "t4", row: 1, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt5", boardId: "b1", taskId: "t5", row: 1, col: 1))
+        // (2,2) intentionally left empty — the rearrange target.
+
+        let instant = offsetDaysInstantISO(-2)
+        try db.dbQueue.write { database in
+            for (evtId, taskId) in [("evt1", "t1"), ("evt4", "t4"), ("evt5", "t5")] {
+                try self.makeCompletionEvent(evtId, taskId: taskId, occurredAt: instant).insert(database)
+            }
+        }
+        // t2 and t3 stay windowed-incomplete.
+
+        let vm = loadedVM(db, boardId: "b1")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+
+        vm.editName = "Composed Edit"                                   // rename
+        vm.handleEditCellReplace(cellKey: "0-1", newTaskId: "t2b")      // replace t2 → t2b
+        vm.handleEditRemove(cellKey: "1-0")                             // remove t4's cell
+        vm.seedRearrangeCells(for: liveBoard)                           // rearrange: move t5 (1,1) → (2,2)
+        var cells = try XCTUnwrap(vm.editRearrangeCells)
+        let idxOf: (Int, Int) -> Int = { r, c in r * 3 + c }
+        cells.swapAt(idxOf(1, 1), idxOf(2, 2))
+        vm.handleRearrange(newCells: cells)
+
+        XCTAssertEqual(vm.editSquaresEditCount, 3, "one replace + one removal + one position move")
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(saved.name, "Composed Edit")
+        XCTAssertEqual(saved.startDate, start,
+                       "a composed structural Save (replace+remove+rearrange, no timeframe change) must not re-window")
+
+        let placements = try db.fetchBoardTasks(boardId: "b1")
+        let bt1 = try XCTUnwrap(placements.first { $0.id == "bt1" })
+        XCTAssertEqual(bt1.row, 0, "untouched cell keeps its position")
+        XCTAssertEqual(bt1.col, 0, "untouched cell keeps its position")
+        let bt2 = try XCTUnwrap(placements.first { $0.id == "bt2" })
+        XCTAssertEqual(bt2.taskId, "t2b", "replaced cell now holds the new task")
+        let bt3 = try XCTUnwrap(placements.first { $0.id == "bt3" })
+        XCTAssertEqual(bt3.taskId, "t3", "untouched cell keeps its task")
+        XCTAssertFalse(placements.contains { $0.id == "bt4" }, "removed cell's placement is gone")
+        let bt5 = try XCTUnwrap(placements.first { $0.id == "bt5" })
+        XCTAssertEqual(bt5.row, 2, "moved cell landed at its staged position")
+        XCTAssertEqual(bt5.col, 2, "moved cell landed at its staged position")
+
+        let vm2 = loadedVM(db, boardId: "b1")
+        XCTAssertTrue(vm2.windowedState(forTaskId: "t1").isCompleted,
+                      "untouched completed cell survives the composed edit")
+        XCTAssertFalse(vm2.windowedState(forTaskId: "t3").isCompleted,
+                       "untouched incomplete cell stays incomplete — no phantom bleed")
+        XCTAssertTrue(vm2.windowedState(forTaskId: "t5").isCompleted,
+                      "rearranged cell's windowed completion persists across the position move")
+        XCTAssertEqual(saved.completedTasks, 2, "t1 + t5 complete; t2b/t3 incomplete; t4 removed")
+    }
+
+    func test_handleEditSave_rearrangeMovesCompletedCell_bingoLinesRecomputePositionally_completionPersists() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-5)
+        let end = offsetDaysISO(25)
+        try db.saveBoard(makeCustomBoard(id: "b1", timeframe: .monthly, startDate: start, endDate: end, boardSize: 3))
+        for id in ["t1", "t2", "t3", "t6", "t7"] {
+            try db.saveTask(makeTask(id))
+        }
+        // Pre-edit: row_0 = t1,t2,t3 all windowed-complete.
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt2", boardId: "b1", taskId: "t2", row: 0, col: 1))
+        try db.saveBoardTask(makeBoardTask(id: "bt3", boardId: "b1", taskId: "t3", row: 0, col: 2))
+        // Also completed, sitting on row_2 with (2,2) left empty for the move target.
+        try db.saveBoardTask(makeBoardTask(id: "bt6", boardId: "b1", taskId: "t6", row: 2, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt7", boardId: "b1", taskId: "t7", row: 2, col: 1))
+
+        let instant = offsetDaysInstantISO(-2)
+        try db.dbQueue.write { database in
+            for (evtId, taskId) in [("e1", "t1"), ("e2", "t2"), ("e3", "t3"), ("e6", "t6"), ("e7", "t7")] {
+                try self.makeCompletionEvent(evtId, taskId: taskId, occurredAt: instant).insert(database)
+            }
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+        vm.seedRearrangeCells(for: liveBoard)
+        var cells = try XCTUnwrap(vm.editRearrangeCells)
+        let idxOf: (Int, Int) -> Int = { r, c in r * 3 + c }
+        // Move t3 (0,2) → (2,2): breaks row_0, completes row_2.
+        cells.swapAt(idxOf(0, 2), idxOf(2, 2))
+        vm.handleRearrange(newCells: cells)
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        let lines = Set(saved.completedLineIds ?? [])
+        XCTAssertFalse(lines.contains("row_0"), "row_0 broke — its third cell (t3) moved away")
+        XCTAssertTrue(lines.contains("row_2"), "row_2 newly completes — t3 landed on its third cell")
+
+        let bt3 = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt3" })
+        XCTAssertEqual(bt3.row, 2, "the moved cell committed to its new position")
+        XCTAssertEqual(bt3.col, 2, "the moved cell committed to its new position")
+
+        let vm2 = loadedVM(db, boardId: "b1")
+        XCTAssertTrue(vm2.windowedState(forTaskId: "t3").isCompleted,
+                      "the moved cell's windowed completion persists through the rearrange")
+    }
+
+    func test_handleEditSave_removingCompletedCell_dropsOnlyThatPlacement() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-5)
+        let end = offsetDaysISO(25)
+        try db.saveBoard(makeCustomBoard(id: "bA", timeframe: .monthly, startDate: start, endDate: end, boardSize: 3))
+        try db.saveBoard(makeCustomBoard(id: "bB", timeframe: .monthly, startDate: start, endDate: end, boardSize: 1))
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        // t1 is placed on BOTH boards — shared-task semantics (CLAUDE.md
+        // §Recurring Boards): completing it anywhere completes it everywhere,
+        // but a per-board REMOVE must only tombstone that board's placement.
+        try db.saveBoardTask(makeBoardTask(id: "btA1", boardId: "bA", taskId: "t1", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "btA2", boardId: "bA", taskId: "t2", row: 0, col: 1))
+        try db.saveBoardTask(makeBoardTask(id: "btB1", boardId: "bB", taskId: "t1", row: 0, col: 0))
+
+        let instant = offsetDaysInstantISO(-2)
+        try db.dbQueue.write { database in
+            for (evtId, taskId) in [("evtT1", "t1"), ("evtT2", "t2")] {
+                try self.makeCompletionEvent(evtId, taskId: taskId, occurredAt: instant).insert(database)
+            }
+        }
+
+        let vm = loadedVM(db, boardId: "bA")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+        vm.handleEditRemove(cellKey: "0-0")   // removes t1's placement on bA ONLY
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let placementsA = try db.fetchBoardTasks(boardId: "bA")
+        XCTAssertFalse(placementsA.contains { $0.id == "btA1" }, "removed placement is gone")
+        XCTAssertTrue(placementsA.contains { $0.id == "btA2" }, "sibling placement on the SAME board survives")
+
+        let placementsB = try db.fetchBoardTasks(boardId: "bB")
+        XCTAssertTrue(placementsB.contains { $0.id == "btB1" },
+                      "removing t1's placement on bA must not cascade-delete its placement on bB")
+
+        let t1Events = try db.dbQueue.read { database in
+            try TaskEvent.filter(Column("taskId") == "t1" && Column("isDeleted") == false).fetchAll(database)
+        }
+        XCTAssertEqual(t1Events.count, 1, "removing a placement must not delete the task's completion event")
+
+        let savedA = try XCTUnwrap(db.fetchBoard(id: "bA"))
+        XCTAssertEqual(savedA.completedTasks, 1, "only t2 remains placed+complete on bA")
+
+        let vmB = loadedVM(db, boardId: "bB")
+        XCTAssertTrue(vmB.windowedState(forTaskId: "t1").isCompleted,
+                      "t1 stays windowed-complete on bB — completion is global per Task, untouched by bA's removal")
+    }
+
+    func test_handleEditSave_customDatesChanged_appliesNewWindow() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-30)
+        let end = offsetDaysISO(-1)
+        try db.saveBoard(makeCustomBoard(id: "b-custom", timeframe: .custom, startDate: start, endDate: end, boardSize: 1))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-custom", taskId: "t1", row: 0, col: 0))
+
+        // Completion event inside the OLD custom window but before the NEW
+        // window the user is about to pick.
+        let oldInstant = offsetDaysInstantISO(-20)
+        try db.dbQueue.write { database in
+            try self.makeCompletionEvent("evt1", taskId: "t1", occurredAt: oldInstant).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b-custom")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+        XCTAssertEqual(vm.editTimeframe, .custom)
+
+        let cal = Calendar.current
+        vm.editCustomStartDate = cal.date(byAdding: .day, value: -5, to: Date())!
+        vm.editCustomEndDate = cal.date(byAdding: .day, value: 25, to: Date())!
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b-custom"))
+        XCTAssertNotEqual(saved.startDate, start, "changing the custom dates DOES apply the new window — deliberate")
+        XCTAssertEqual(saved.completedTasks, 0, "the old completion predates the newly-picked custom window")
+    }
+
+    func test_handleEditSave_customDatesChanged_endBeforeStart_rejectsSaveWithNoMutation() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-30)
+        let end = offsetDaysISO(-1)
+        try db.saveBoard(makeCustomBoard(id: "b-custom2", timeframe: .custom, startDate: start, endDate: end, boardSize: 1))
+
+        let vm = loadedVM(db, boardId: "b-custom2")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+
+        let cal = Calendar.current
+        vm.editCustomStartDate = Date()
+        vm.editCustomEndDate = cal.date(byAdding: .day, value: -3, to: Date())!   // end < start
+
+        XCTAssertFalse(vm.handleEditSave(weekStartDay: "monday"),
+                       "end < start must reject the save before any DB write (carried-over EditBoardSheet guard)")
+
+        let unchanged = try XCTUnwrap(db.fetchBoard(id: "b-custom2"))
+        XCTAssertEqual(unchanged.startDate, start, "a rejected save must not mutate the board at all")
+        XCTAssertEqual(unchanged.version, 1)
+    }
+
+    // MARK: 14c. Cross-interface sweep — kernel / preview / self-heal agree
+
+    func test_handleEditSave_afterSave_kernelCellStates_boardPreview_andSelfHeal_allAgree() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let start = offsetDaysISO(-5)
+        let end = offsetDaysISO(25)
+        try db.saveBoard(makeCustomBoard(id: "b1", timeframe: .monthly, startDate: start, endDate: end, boardSize: 3))
+        for id in ["t1", "t2", "t3", "t4"] {
+            try db.saveTask(makeTask(id))
+        }
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt2", boardId: "b1", taskId: "t2", row: 0, col: 1))
+        try db.saveBoardTask(makeBoardTask(id: "bt3", boardId: "b1", taskId: "t3", row: 0, col: 2))
+
+        let instant = offsetDaysInstantISO(-2)
+        try db.dbQueue.write { database in
+            try self.makeCompletionEvent("evt1", taskId: "t1", occurredAt: instant).insert(database)
+        }
+        // t2, t3 stay windowed-incomplete; t4 is an unplaced replacement target.
+
+        let vm = loadedVM(db, boardId: "b1")
+        let liveBoard = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: liveBoard)
+        vm.editName = "Swept"
+        vm.handleEditCellReplace(cellKey: "0-1", newTaskId: "t4")   // t2 → t4 @ (0,1)
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let vm2 = loadedVM(db, boardId: "b1")
+        let placements = try db.fetchBoardTasks(boardId: "b1")
+        let bt1 = try XCTUnwrap(placements.first { $0.id == "bt1" })
+        let bt2 = try XCTUnwrap(placements.first { $0.id == "bt2" })
+        let bt3 = try XCTUnwrap(placements.first { $0.id == "bt3" })
+
+        // 1. kernelCellStates (the play grid's source of truth) agrees with
+        //    the windowed read for every remaining cell.
+        XCTAssertEqual(vm2.kernelCellStates[bt1.id]?.isCompleted, true)
+        XCTAssertEqual(vm2.kernelCellStates[bt1.id]?.isCompleted, vm2.windowedState(forTaskId: "t1").isCompleted)
+        XCTAssertEqual(vm2.kernelCellStates[bt2.id]?.isCompleted, false)
+        XCTAssertEqual(vm2.kernelCellStates[bt2.id]?.isCompleted, vm2.windowedState(forTaskId: "t4").isCompleted)
+        XCTAssertEqual(vm2.kernelCellStates[bt3.id]?.isCompleted, false)
+        XCTAssertEqual(vm2.kernelCellStates[bt3.id]?.isCompleted, vm2.windowedState(forTaskId: "t3").isCompleted)
+
+        // 2. BoardPreviewCells.build (the mini-preview surface) agrees with
+        //    the same per-cell completion.
+        let savedBoard = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        let workspace = BoardPreviewCells.fetchWorkspaceData(userId: "u1", database: db)
+        let preview = BoardPreviewCells.build(
+            board: savedBoard,
+            boardTasks: placements,
+            taskMap: workspace.taskMap,
+            childrenByCompound: workspace.childrenByCompound,
+            eventsByTaskId: workspace.eventsByTaskId,
+            allBoardsInWorkspace: workspace.allBoardsInWorkspace
+        )
+        XCTAssertEqual(preview.cells[0], .task(completed: true), "(0,0)=t1")
+        XCTAssertEqual(preview.cells[1], .task(completed: false), "(0,1)=t4")
+        XCTAssertEqual(preview.cells[2], .task(completed: false), "(0,2)=t3")
+
+        // 3. Self-heal (`reDeriveActiveBoards`, the app-open repair pass) is a
+        //    no-op — the edit-save already left the board converged, so no
+        //    further version bump / stat drift is introduced by editing.
+        let versionBeforeHeal = savedBoard.version
+        let changed = try db.reDeriveActiveBoards(userId: "u1")
+        XCTAssertFalse(changed.contains("b1"),
+                       "an edit-save must leave the board self-heal-converged, not needing a repair pass")
+        let afterHeal = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(afterHeal.version, versionBeforeHeal,
+                       "self-heal must not bump version on an already-converged board")
+    }
 }
