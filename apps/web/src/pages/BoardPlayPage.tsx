@@ -49,6 +49,16 @@ export function BoardPlayPage(): React.ReactElement {
 
   return (
     <BoardPlaySurface
+      // Board-integrity PR-5 (Item 6): key by board.id so React remounts
+      // BoardPlaySurface (and its useBoardPlay/useBoardPlayData hook state —
+      // edit-mode drafts, staged rearranges, etc.) whenever the route's :id
+      // param changes to a DIFFERENT board, instead of reusing the same
+      // component instance across boards. Currently unreachable in practice
+      // (no in-page nav swaps :id under this route without a full page
+      // load), but structurally undefended without it — a stale edit-draft
+      // diffed against a NEW board's live placements could hard-delete real
+      // placements it never staged.
+      key={board.id}
       board={board}
       userId={user?.id}
       header={<Link to="/boards" className={styles.backLink}>&larr; Back to boards</Link>}

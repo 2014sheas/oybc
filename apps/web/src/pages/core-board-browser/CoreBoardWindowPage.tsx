@@ -128,5 +128,13 @@ export function CoreBoardWindowPage(): React.ReactElement {
       </div>
     );
   }
-  return <BoardPlaySurface board={board} userId={user?.id} header={bar} allowEdit={false} />;
+  // Board-integrity PR-5 (Item 6): key by board.id — THIS site is the one
+  // where the underlying board genuinely changes without an unmount: the
+  // prev/next pager keeps CoreBoardWindowPage mounted and just swaps the
+  // date route param, so a same-component board.id change is reachable here
+  // (unlike BoardPlayPage's /boards/:id, where no in-page nav swaps :id).
+  // Without the key, BoardPlaySurface's hook state (edit-mode drafts, staged
+  // rearranges) would carry over from the previous window's board into the
+  // new one instead of resetting.
+  return <BoardPlaySurface key={board.id} board={board} userId={user?.id} header={bar} allowEdit={false} />;
 }
