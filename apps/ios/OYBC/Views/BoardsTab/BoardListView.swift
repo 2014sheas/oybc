@@ -103,23 +103,10 @@ struct BoardListView: View {
     // MARK: - Derived
 
     private var filteredBoards: [Board] {
-        guard activeFilter != "all" else { return boards }
-        return boards.filter { board in
-            // A board whose run is over: sealed, or past its end date. A
-            // sealed-but-incomplete board keeps status ACTIVE forever by
-            // design (F3 sealing rule), so status alone can't classify it.
-            let ended = board.sealedAt != nil || isBoardExpired(board)
-            // The Completed tab gathers every finished board — genuinely
-            // greenlogged (status) PLUS ended boards stuck on ACTIVE. The
-            // card badges (CLOSED / Expired / Completed) distinguish them.
-            if activeFilter == "completed" {
-                return board.status == .completed || (board.status == .active && ended)
-            }
-            guard board.status.rawValue == activeFilter else { return false }
-            // The Active tab hides ended boards (still visible under All).
-            if activeFilter == "active", ended { return false }
-            return true
-        }
+        // Chip semantics (incl. "Completed = every board whose run is over")
+        // live in the shared, unit-tested predicate — see
+        // `boardMatchesListFilter` in TimeframeFormatting.swift.
+        boards.filter { boardMatchesListFilter($0, filter: activeFilter) }
     }
 
     // MARK: - Body

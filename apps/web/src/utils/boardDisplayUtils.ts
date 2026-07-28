@@ -31,6 +31,38 @@ export function isBoardExpired(board: { timeframe: string; endDate?: string }): 
 }
 
 /**
+ * Boards-list filter-chip predicate (All / Active / Completed / Draft),
+ * shared by `BoardsPage` and pinned by unit tests — mirror of iOS
+ * `boardMatchesListFilter(_:filter:)` in `TimeframeFormatting.swift`.
+ *
+ * - `'all'` — every board.
+ * - `'completed'` — every board whose run is over: status COMPLETED
+ *   (greenlog), PLUS ACTIVE boards that are sealed or expired. A
+ *   sealed-but-incomplete board keeps status ACTIVE forever by design
+ *   (the F3 sealing rule), so status alone can't classify it. Card badges
+ *   (Closed / Expired / Completed) distinguish how each board finished.
+ * - `'active'` — ACTIVE boards still in play (not sealed, not expired).
+ * - anything else (`'draft'`) — exact status match.
+ *
+ * @param board - Object with status, timeframe, endDate, and sealedAt fields
+ * @param filter - The selected chip value
+ * @returns true when the board belongs under the given chip
+ */
+export function boardMatchesListFilter(
+  board: { status: string; timeframe: string; endDate?: string; sealedAt?: string | null },
+  filter: string
+): boolean {
+  if (filter === 'all') return true;
+  const ended = board.sealedAt != null || isBoardExpired(board);
+  if (filter === BoardStatus.COMPLETED) {
+    return board.status === BoardStatus.COMPLETED || (board.status === BoardStatus.ACTIVE && ended);
+  }
+  if (board.status !== filter) return false;
+  if (filter === BoardStatus.ACTIVE && ended) return false;
+  return true;
+}
+
+/**
  * Returns whether an active board's end date is within the next 24 hours but
  * has not yet passed.
  *

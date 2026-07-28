@@ -33,17 +33,20 @@ final class IndefiniteBoardTests: XCTestCase {
     }
 
     /// Build a Board via JSON (the same path production uses). Omit `endDate`
-    /// to model an indefinite board.
+    /// to model an indefinite board; pass `status`/`sealedAt` for the
+    /// filter-chip classification tests.
     private func makeBoard(
         id: String,
         timeframe: Timeframe,
-        endDate: String?
+        endDate: String?,
+        status: BoardStatus = .active,
+        sealedAt: String? = nil
     ) -> Board {
         var dict: [String: Any] = [
             "id": id,
             "userId": "u1",
             "name": "Ongoing",
-            "status": BoardStatus.active.rawValue,
+            "status": status.rawValue,
             "boardSize": 3,
             "timeframe": timeframe.rawValue,
             "startDate": "2026-06-21T00:00:00.000",
@@ -58,6 +61,7 @@ final class IndefiniteBoardTests: XCTestCase {
             "isDeleted": false,
         ]
         if let endDate { dict["endDate"] = endDate }
+        if let sealedAt { dict["sealedAt"] = sealedAt }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -131,6 +135,48 @@ final class IndefiniteBoardTests: XCTestCase {
                        "indefinite wins even with a stray past endDate")
         XCTAssertTrue(isBoardExpired(makeBoard(id: "m-past", timeframe: .monthly, endDate: "2000-01-01T00:00:00.000")),
                       "timed boards keep expiring as before")
+    }
+
+    /// Boards-list filter-chip semantics (PR #372): "Completed" gathers every
+    /// board whose run is over — greenlogged (status) PLUS ACTIVE boards that
+    /// are sealed or expired (a sealed-but-incomplete board keeps status
+    /// ACTIVE forever by the F3 sealing rule). Mirrors the web pin in
+    /// `boardDisplayUtils.test.ts`.
+    func testBoardsListFilterChipClassification() {
+        let past = "2000-01-01T00:00:00.000"
+        let future = "2099-01-01T00:00:00.000"
+        let greenlogged = makeBoard(id: "g", timeframe: .monthly, endDate: past, status: .completed)
+        let sealedActive = makeBoard(id: "s", timeframe: .monthly, endDate: past, sealedAt: past)
+        let expiredActive = makeBoard(id: "e", timeframe: .custom, endDate: past)
+        let liveActive = makeBoard(id: "l", timeframe: .monthly, endDate: future)
+        let indefiniteActive = makeBoard(id: "i", timeframe: .indefinite, endDate: nil)
+        let staleDraft = makeBoard(id: "d", timeframe: .monthly, endDate: past, status: .draft)
+        let archived = makeBoard(id: "a", timeframe: .monthly, endDate: past, status: .archived)
+        let all = [greenlogged, sealedActive, expiredActive, liveActive, indefiniteActive, staleDraft, archived]
+
+        // Completed gathers every finished board: greenlogged + sealed + expired.
+        XCTAssertTrue(boardMatchesListFilter(greenlogged, filter: "completed"))
+        XCTAssertTrue(boardMatchesListFilter(sealedActive, filter: "completed"))
+        XCTAssertTrue(boardMatchesListFilter(expiredActive, filter: "completed"))
+        // …and excludes in-play, draft, and archived boards.
+        XCTAssertFalse(boardMatchesListFilter(liveActive, filter: "completed"))
+        XCTAssertFalse(boardMatchesListFilter(indefiniteActive, filter: "completed"))
+        XCTAssertFalse(boardMatchesListFilter(staleDraft, filter: "completed"),
+                       "a draft with stale dates is not a finished board")
+        XCTAssertFalse(boardMatchesListFilter(archived, filter: "completed"))
+
+        // Active = still in play only (sealed/expired hidden).
+        XCTAssertTrue(boardMatchesListFilter(liveActive, filter: "active"))
+        XCTAssertTrue(boardMatchesListFilter(indefiniteActive, filter: "active"))
+        XCTAssertFalse(boardMatchesListFilter(sealedActive, filter: "active"))
+        XCTAssertFalse(boardMatchesListFilter(expiredActive, filter: "active"))
+
+        // Draft is an exact status match; All passes everything through.
+        XCTAssertTrue(boardMatchesListFilter(staleDraft, filter: "draft"))
+        XCTAssertFalse(boardMatchesListFilter(liveActive, filter: "draft"))
+        for board in all {
+            XCTAssertTrue(boardMatchesListFilter(board, filter: "all"))
+        }
     }
 
     /// The rebuild recreates the boards table; confirm its indexes survived.
