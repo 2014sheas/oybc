@@ -83,11 +83,19 @@ export function BoardsPage(): React.ReactElement {
 
   const filteredBoards = allBoards.filter((b) => {
     if (activeFilter === 'all') return true;
+    // A board whose run is over: sealed, or past its end date. A
+    // sealed-but-incomplete board keeps status ACTIVE forever by design
+    // (F3 sealing rule), so status alone can't classify it.
+    const ended = b.sealedAt != null || isBoardExpired(b);
+    // The Completed tab gathers every finished board — genuinely greenlogged
+    // (status) PLUS ended boards stuck on ACTIVE. The card badges
+    // (Closed / Expired / Completed) distinguish them.
+    if (activeFilter === BoardStatus.COMPLETED) {
+      return b.status === BoardStatus.COMPLETED || (b.status === BoardStatus.ACTIVE && ended);
+    }
     if (b.status !== activeFilter) return false;
-    // The Active tab hides expired and sealed boards (still visible under
-    // All). A sealed-but-incomplete board keeps status ACTIVE forever by
-    // design, so status alone can't exclude it.
-    if (activeFilter === 'active' && (b.sealedAt != null || isBoardExpired(b))) return false;
+    // The Active tab hides ended boards (still visible under All).
+    if (activeFilter === 'active' && ended) return false;
     return true;
   });
 
