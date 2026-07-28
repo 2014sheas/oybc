@@ -103,15 +103,10 @@ struct BoardListView: View {
     // MARK: - Derived
 
     private var filteredBoards: [Board] {
-        guard activeFilter != "all" else { return boards }
-        return boards.filter { board in
-            guard board.status.rawValue == activeFilter else { return false }
-            // The Active tab hides expired and sealed boards (still visible
-            // under All). A sealed-but-incomplete board keeps status ACTIVE
-            // forever by design, so status alone can't exclude it.
-            if activeFilter == "active", board.sealedAt != nil || isBoardExpired(board) { return false }
-            return true
-        }
+        // Chip semantics (incl. "Completed = every board whose run is over")
+        // live in the shared, unit-tested predicate — see
+        // `boardMatchesListFilter` in TimeframeFormatting.swift.
+        boards.filter { boardMatchesListFilter($0, filter: activeFilter) }
     }
 
     // MARK: - Body

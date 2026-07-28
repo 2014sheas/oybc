@@ -10,7 +10,7 @@ import {
   useClosingOutBoards,
   useBoardsPreviewCells,
 } from '../hooks';
-import { isBoardExpired } from '../utils/boardDisplayUtils';
+import { boardMatchesListFilter } from '../utils/boardDisplayUtils';
 import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
 import { sealBoard } from '../db/operations/sealing';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
@@ -81,15 +81,9 @@ export function BoardsPage(): React.ReactElement {
     navigate(`/create?recurringTimeframe=${p.timeframe}&windowDate=${p.startDate.slice(0, 10)}`);
   }
 
-  const filteredBoards = allBoards.filter((b) => {
-    if (activeFilter === 'all') return true;
-    if (b.status !== activeFilter) return false;
-    // The Active tab hides expired and sealed boards (still visible under
-    // All). A sealed-but-incomplete board keeps status ACTIVE forever by
-    // design, so status alone can't exclude it.
-    if (activeFilter === 'active' && (b.sealedAt != null || isBoardExpired(b))) return false;
-    return true;
-  });
+  // Chip semantics (incl. "Completed = every board whose run is over") live in
+  // the shared, unit-tested predicate — see boardDisplayUtils.ts.
+  const filteredBoards = allBoards.filter((b) => boardMatchesListFilter(b, activeFilter));
 
   return (
     <div>

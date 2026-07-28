@@ -150,6 +150,34 @@ func isBoardExpired(_ board: Board) -> Bool {
     return Date() > end
 }
 
+/// Boards-list filter-chip predicate (All / Active / Completed / Draft),
+/// shared by `BoardListView` and pinned by unit tests — mirror of web
+/// `boardMatchesListFilter` in `boardDisplayUtils.ts`.
+///
+/// - "all" — every board.
+/// - "completed" — every board whose run is over: status COMPLETED
+///   (greenlog), PLUS ACTIVE boards that are sealed or expired. A
+///   sealed-but-incomplete board keeps status ACTIVE forever by design
+///   (the F3 sealing rule), so status alone can't classify it. Card badges
+///   (CLOSED / Expired / Completed) distinguish how each board finished.
+/// - "active" — ACTIVE boards still in play (not sealed, not expired).
+/// - anything else ("draft") — exact status match.
+///
+/// - Parameters:
+///   - board: The board to classify.
+///   - filter: The selected chip value.
+/// - Returns: `true` when the board belongs under the given chip.
+func boardMatchesListFilter(_ board: Board, filter: String) -> Bool {
+    guard filter != "all" else { return true }
+    let ended = board.sealedAt != nil || isBoardExpired(board)
+    if filter == BoardStatus.completed.rawValue {
+        return board.status == .completed || (board.status == .active && ended)
+    }
+    guard board.status.rawValue == filter else { return false }
+    if filter == BoardStatus.active.rawValue, ended { return false }
+    return true
+}
+
 /// Returns a human-readable expiry indicator for a board.
 ///
 /// - "No deadline" — Custom or Indefinite board (no end date)
